@@ -107,6 +107,20 @@ const PICKER_CHIP_INDENT: Pixels = px(16.0);
 const PICKER_FOOTER_PAD_V: Pixels = px(12.0);
 const PICKER_FOOTER_PAD_H: Pixels = px(16.0);
 
+/// Authoring depth ceiling for nested sub-chains. Drilling past this into an
+/// *empty* branch is disabled (no new depth is created), while an already-deeper
+/// chain stays fully editable at its existing depth. Deliberately small so the
+/// breadcrumb stays legible.
+const UI_MAX_NESTING_DEPTH: usize = 8;
+/// Drill-in chip corner (fixed 6px, off the `Radius` scale) and its leading-edge
+/// hairline width (0.5px, shared with [`HALF_BORDER`]).
+const CHIP_RADIUS: Pixels = px(6.0);
+/// Branch-affordance glyph size — the drill-chip chevron and the add-case plus
+/// (fixed 11px, off the `FONT_*` scale).
+const BRANCH_GLYPH: Pixels = px(11.0);
+/// Single-value switch-case match input width (fixed 160px in the source).
+const CASE_MATCH_W: Pixels = px(160.0);
+
 /// Local id for a seeded action. `forge-desktop` wires no actions repo yet, so the
 /// tree is seeded in-memory and ids are minted from a per-view counter rather than
 /// the runtime's persistent `ActionId`.
@@ -202,6 +216,15 @@ pub struct ScreenActionsView {
     step_menu_open: Option<usize>,
     trigger_picker: Option<TriggerPickerForm>,
     pending_trigger_unlink: Option<usize>,
+    /// Drill-in path into the selected action's nested sub-chains. Empty = the
+    /// step list renders the action's top-level chain; each frame descends one
+    /// composite branch or switch case.
+    nav_path: Vec<NavFrame>,
+    /// Live match inputs for the switch cases in the *current* chain, keyed by
+    /// `(step_index, case_index)`. Rebuilt whenever the current chain changes so a
+    /// case's single-value match owns its own edit state (mirrors every other
+    /// inline field in the screen). Multi-value imported matches carry no input.
+    case_fields: BTreeMap<(usize, usize), CaseField>,
     next_id: u64,
     _search_sub: Subscription,
 }
@@ -236,6 +259,8 @@ impl ScreenActionsView {
             step_menu_open: None,
             trigger_picker: None,
             pending_trigger_unlink: None,
+            nav_path: Vec::new(),
+            case_fields: BTreeMap::new(),
             next_id,
             _search_sub: search_sub,
         }
@@ -316,7 +341,9 @@ impl ScreenActionsView {
     fn select(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.selected = Some(id);
         self.detail = self.find(id).map(build_detail);
+        self.nav_path.clear();
         self.step_menu_open = None;
+        self.sync_case_fields(cx);
         cx.notify();
     }
 
@@ -451,6 +478,8 @@ impl ScreenActionsView {
             if self.selected == Some(id) {
                 self.selected = None;
                 self.detail = None;
+                self.nav_path.clear();
+                self.case_fields.clear();
             }
         }
         cx.notify();
@@ -561,6 +590,8 @@ impl ScreenActionsView {
         }
         self.selected = Some(id);
         self.detail = self.find(id).map(build_detail);
+        self.nav_path.clear();
+        self.sync_case_fields(cx);
         self.add_modal = None;
         cx.notify();
     }
@@ -911,7 +942,9 @@ impl ScreenActionsView {
     // --- editor: step interaction handlers --------------------------------
 
     /// Copies `id`/`n` out of the loaded detail before touching the tree so the
-    /// summary borrow ends before the mutable group iteration begins.
+    /// summary borrow ends before the mutable group iteration begins. The tree badge
+    /// tracks the action's *top-level* chain length, so a nested edit leaves it
+    /// unchanged.
     fn sync_selected_count(&mut self) {
         let Some((id, n)) = self.detail.as_ref().map(|d| (d.action_id, d.steps.len())) else {
             return;
@@ -923,16 +956,34 @@ impl ScreenActionsView {
         }
     }
 
+    /// The chain the step list currently renders — the action's top-level steps at
+    /// root, or the nested sub-chain [`Self::nav_path`] descends into. Falls back to
+    /// an empty slice when the path no longer resolves (never panics).
+    fn current_chain(&self) -> &[EditorStep] {
+        match &self.detail {
+            Some(detail) => resolve_chain(&detail.steps, &self.nav_path).unwrap_or(&[]),
+            None => &[],
+        }
+    }
+
+    /// Mutable handle to the current chain. Clones the (small, `Copy`-framed) nav path
+    /// so the detail can be borrowed mutably alongside it.
+    fn current_chain_mut(&mut self) -> Option<&mut Vec<EditorStep>> {
+        let path = self.nav_path.clone();
+        resolve_chain_mut(&mut self.detail.as_mut()?.steps, &path)
+    }
+
     fn move_step(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
-        if let Some(detail) = self.detail.as_mut()
-            && from < detail.steps.len()
-            && to < detail.steps.len()
+        if let Some(chain) = self.current_chain_mut()
+            && from < chain.len()
+            && to < chain.len()
             && from != to
         {
-            let step = detail.steps.remove(from);
-            detail.steps.insert(to, step);
+            let step = chain.remove(from);
+            chain.insert(to, step);
         }
         self.step_menu_open = None;
+        self.sync_case_fields(cx);
         cx.notify();
     }
 
@@ -951,36 +1002,182 @@ impl ScreenActionsView {
     }
 
     fn move_step_bottom(&mut self, i: usize, cx: &mut Context<Self>) {
-        let last = self.detail.as_ref().map(|d| d.steps.len()).unwrap_or(0);
+        let last = self.current_chain().len();
         if last > 0 {
             self.move_step(i, last - 1, cx);
         }
     }
 
     fn duplicate_step(&mut self, i: usize, cx: &mut Context<Self>) {
-        if let Some(detail) = self.detail.as_mut()
-            && let Some(src) = detail.steps.get(i)
+        if let Some(chain) = self.current_chain_mut()
+            && let Some(src) = chain.get(i)
         {
-            let clone = EditorStep {
-                kind: src.kind,
-                config: src.config.clone(),
-            };
-            detail.steps.insert(i + 1, clone);
+            let clone = src.clone();
+            chain.insert(i + 1, clone);
         }
         self.sync_selected_count();
         self.step_menu_open = None;
+        self.sync_case_fields(cx);
         cx.notify();
     }
 
     fn remove_step(&mut self, i: usize, cx: &mut Context<Self>) {
-        if let Some(detail) = self.detail.as_mut()
-            && i < detail.steps.len()
+        if let Some(chain) = self.current_chain_mut()
+            && i < chain.len()
         {
-            detail.steps.remove(i);
+            chain.remove(i);
         }
         self.sync_selected_count();
         self.step_menu_open = None;
+        self.sync_case_fields(cx);
         cx.notify();
+    }
+
+    // --- editor: branch drill-in + switch cases ---------------------------
+
+    /// Descends into a composite step's nested sub-chain or a switch case, pushing a
+    /// nav frame. Refuses to create new depth past the authoring cap on an empty
+    /// branch — mirrors the disabled drill-in chip so a stale click is inert.
+    fn enter_branch(
+        &mut self,
+        step_index: usize,
+        chain_key: &'static str,
+        case_index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        let count = self
+            .current_chain()
+            .get(step_index)
+            .map(|s| branch_count(s, chain_key, case_index))
+            .unwrap_or(0);
+        if self.nav_path.len() >= UI_MAX_NESTING_DEPTH && count == 0 {
+            return;
+        }
+        self.nav_path.push(NavFrame {
+            step_index,
+            chain_key,
+            case_index,
+        });
+        self.step_menu_open = None;
+        self.sync_case_fields(cx);
+        cx.notify();
+    }
+
+    /// Pops the nav path back to `depth` (a breadcrumb ancestor segment).
+    fn breadcrumb_pop(&mut self, depth: usize, cx: &mut Context<Self>) {
+        self.nav_path.truncate(depth);
+        self.step_menu_open = None;
+        self.sync_case_fields(cx);
+        cx.notify();
+    }
+
+    fn add_switch_case(&mut self, step_index: usize, cx: &mut Context<Self>) {
+        if let Some(chain) = self.current_chain_mut()
+            && let Some(cases) = chain.get_mut(step_index).and_then(|s| s.cases.as_mut())
+        {
+            cases.push(SwitchCase {
+                match_value: CaseMatch::Single(String::new()),
+                chain: Vec::new(),
+            });
+        }
+        self.sync_case_fields(cx);
+        cx.notify();
+    }
+
+    fn remove_switch_case(&mut self, step_index: usize, case_index: usize, cx: &mut Context<Self>) {
+        if let Some(chain) = self.current_chain_mut()
+            && let Some(cases) = chain.get_mut(step_index).and_then(|s| s.cases.as_mut())
+            && case_index < cases.len()
+        {
+            cases.remove(case_index);
+        }
+        self.sync_case_fields(cx);
+        cx.notify();
+    }
+
+    fn move_switch_case(
+        &mut self,
+        step_index: usize,
+        case_index: usize,
+        up: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(chain) = self.current_chain_mut()
+            && let Some(cases) = chain.get_mut(step_index).and_then(|s| s.cases.as_mut())
+        {
+            let target = if up {
+                case_index.checked_sub(1)
+            } else {
+                case_index.checked_add(1).filter(|&t| t < cases.len())
+            };
+            if let Some(t) = target
+                && case_index < cases.len()
+            {
+                cases.swap(case_index, t);
+            }
+        }
+        self.sync_case_fields(cx);
+        cx.notify();
+    }
+
+    /// Writes a switch case's single-value match back into the model. Multi-value
+    /// imported matches carry no input, so they are never reached here.
+    fn commit_case_match(
+        &mut self,
+        step_index: usize,
+        case_index: usize,
+        value: String,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(chain) = self.current_chain_mut()
+            && let Some(case) = chain
+                .get_mut(step_index)
+                .and_then(|s| s.cases.as_mut())
+                .and_then(|cases| cases.get_mut(case_index))
+            && let CaseMatch::Single(m) = &mut case.match_value
+        {
+            *m = value.trim().to_owned();
+        }
+        cx.notify();
+    }
+
+    /// Rebuilds the per-case match inputs for every switch step in the current chain.
+    /// Called at each edge that reshapes the current chain (nav change, step reorder,
+    /// case add/remove/move) so the `(step_index, case_index)` keys stay accurate.
+    fn sync_case_fields(&mut self, cx: &mut Context<Self>) {
+        let specs: Vec<(usize, usize, String)> = {
+            let chain = self.current_chain();
+            let mut specs = Vec::new();
+            for (si, step) in chain.iter().enumerate() {
+                if let Some(cases) = &step.cases {
+                    for (ci, case) in cases.iter().enumerate() {
+                        if let CaseMatch::Single(m) = &case.match_value {
+                            specs.push((si, ci, m.clone()));
+                        }
+                    }
+                }
+            }
+            specs
+        };
+
+        let palette = cx.palette();
+        let mut fields = BTreeMap::new();
+        for (si, ci, seed) in specs {
+            let field = cx.new(|cx| {
+                let mut input = TextInput::new("match value", cx).with_palette(palette);
+                if !seed.is_empty() {
+                    input.set_content(seed, cx);
+                }
+                input
+            });
+            let sub = cx.subscribe(&field, move |this, _f, event: &InputEvent, cx| {
+                if let InputEvent::Submitted(text) = event {
+                    this.commit_case_match(si, ci, text.to_string(), cx);
+                }
+            });
+            fields.insert((si, ci), CaseField { field, _sub: sub });
+        }
+        self.case_fields = fields;
     }
 
     fn toggle_step_menu(&mut self, i: usize, cx: &mut Context<Self>) {
@@ -1018,14 +1215,16 @@ impl ScreenActionsView {
         let mut mode = SubFormStep::PickKind;
         let mut selected_kind = None;
         let mut fields: Vec<(&'static SubField, Entity<TextInput>)> = Vec::new();
-        if let Some(i) = editing
-            && let Some(step) = self.detail.as_ref().and_then(|d| d.steps.get(i))
-        {
-            let kind = step.kind;
-            let seed = step.config.clone();
-            fields = build_sub_fields(kind, &seed, palette, cx);
-            selected_kind = Some(kind);
-            mode = SubFormStep::FillForm;
+        if let Some(i) = editing {
+            let seeded = self
+                .current_chain()
+                .get(i)
+                .map(|step| (step.kind, step.config.clone()));
+            if let Some((kind, seed)) = seeded {
+                fields = build_sub_fields(kind, &seed, palette, cx);
+                selected_kind = Some(kind);
+                mode = SubFormStep::FillForm;
+            }
         }
 
         if editing.is_none() {
@@ -1099,15 +1298,20 @@ impl ScreenActionsView {
         for (spec, input) in &fields {
             config.insert(spec.key.to_owned(), input.read(cx).content().to_owned());
         }
-        let step = EditorStep { kind, config };
 
-        if let Some(detail) = self.detail.as_mut() {
+        if let Some(chain) = self.current_chain_mut() {
             match editing {
-                Some(i) if i < detail.steps.len() => detail.steps[i] = step,
-                _ => detail.steps.push(step),
+                // Editing keeps the step's nested branches / cases intact — only its
+                // kind + scalar config are re-authored from the form.
+                Some(i) if i < chain.len() => {
+                    chain[i].kind = kind;
+                    chain[i].config = config;
+                }
+                _ => chain.push(EditorStep::new(kind, config)),
             }
         }
         self.sync_selected_count();
+        self.sync_case_fields(cx);
         self.sub_form = None;
         cx.notify();
     }
@@ -1436,26 +1640,52 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let header = div().flex().items_center().child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_muted)
-                .child(format!("{} sub-actions", detail.steps.len())),
-        );
+        let current = resolve_chain(&detail.steps, &self.nav_path).unwrap_or(&[]);
+        let total = current.len();
+        let at_root = self.nav_path.is_empty();
+        let depth = self.nav_path.len();
 
-        let total = detail.steps.len();
+        // At root: the mono sub-action count. Drilled in: a breadcrumb of the nav
+        // path with the current chain's length pinned to the right edge.
+        let header = if at_root {
+            div().flex().items_center().child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(format!("{total} sub-actions")),
+            )
+        } else {
+            div()
+                .flex()
+                .items_center()
+                .child(self.render_breadcrumb(detail, palette, cx))
+                .child(div().flex_1())
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child(total.to_string()),
+                )
+        };
+
         let mut steps_col = div().flex().flex_col();
-        if detail.steps.is_empty() {
+        if current.is_empty() {
+            let empty_label = if at_root {
+                "This action has no steps yet"
+            } else {
+                "No steps yet · click Add step to start"
+            };
             steps_col = steps_col.child(empty_placeholder_card(
                 Icon::Plus,
                 palette.brand,
-                "This action has no steps yet",
+                empty_label,
                 palette,
             ));
         }
-        for (i, step) in detail.steps.iter().enumerate() {
-            steps_col = steps_col.child(self.render_step_block(step, i, total, palette, cx));
+        for (i, step) in current.iter().enumerate() {
+            steps_col = steps_col.child(self.render_step_block(step, i, total, depth, palette, cx));
         }
         steps_col = steps_col.child(
             div()
@@ -1487,6 +1717,7 @@ impl ScreenActionsView {
         step: &EditorStep,
         i: usize,
         total: usize,
+        depth: usize,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1539,10 +1770,310 @@ impl ScreenActionsView {
             .child(left_col)
             .child(div().flex_1().min_w(px(0.0)).child(card));
 
+        // Composite / switch steps carry their branch drill-ins indented under the
+        // card body, aligned past the step-circle column.
+        let block: AnyElement = match self.render_branch_affordances(step, i, depth, palette, cx) {
+            Some(branches) => {
+                let indented = div()
+                    .pl(STEP_COL_W + spacing(Spacing::Xs, Density::Cozy))
+                    .pt(spacing(Spacing::Xxs, Density::Cozy))
+                    .child(branches);
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(step_row)
+                    .child(indented)
+                    .into_any_element()
+            }
+            None => step_row.into_any_element(),
+        };
+
         div()
             .w_full()
             .pb(if is_last { px(0.0) } else { STEP_GAP })
-            .child(step_row)
+            .child(block)
+            .into_any_element()
+    }
+
+    /// The breadcrumb that replaces the step-count header while drilled in. Every
+    /// ancestor segment pops the nav path to its depth; the current (final) segment
+    /// is inert.
+    fn render_breadcrumb(
+        &self,
+        detail: &ActionDetail,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        // `(label, pop_target)` — a `Some(depth)` target makes the segment a
+        // pop-to-that-depth button; `None` is the inert current segment.
+        let mut segments: Vec<(String, Option<usize>)> = vec![("Steps".to_owned(), Some(0))];
+        for (depth, frame) in self.nav_path.iter().enumerate() {
+            let prefix = resolve_chain(&detail.steps, &self.nav_path[..depth]).unwrap_or(&[]);
+            let step_label = prefix
+                .get(frame.step_index)
+                .map(|s| s.kind.label().to_owned())
+                .unwrap_or_else(|| "Sub-action".to_owned());
+            let branch_label = match frame.case_index {
+                Some(ci) => format!("Case {}", ci + 1),
+                None => branch_field_label(frame.chain_key).to_owned(),
+            };
+            let pop_target = if depth + 1 == self.nav_path.len() {
+                None
+            } else {
+                Some(depth + 1)
+            };
+            segments.push((format!("{step_label} \u{2023} {branch_label}"), pop_target));
+        }
+
+        let last = segments.len().saturating_sub(1);
+        let mut row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy));
+        for (idx, (label, target)) in segments.into_iter().enumerate() {
+            if idx > 0 {
+                row = row.child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_faint)
+                        .child("\u{25B8}"),
+                );
+            }
+            match target {
+                Some(depth) => {
+                    row = row.child(
+                        div()
+                            .id(SharedString::from(format!("actions-breadcrumb-{depth}")))
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                this.breadcrumb_pop(depth, cx)
+                            }))
+                            .child(label),
+                    );
+                }
+                None => {
+                    let color = if idx == last {
+                        palette.text_secondary
+                    } else {
+                        palette.text_muted
+                    };
+                    row = row.child(
+                        div()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(color)
+                            .child(label),
+                    );
+                }
+            }
+        }
+        row.into_any_element()
+    }
+
+    /// The drill-in affordances under a composite / switch step: one chip per single
+    /// sub-chain (then / else / body / default) and, for a switch, a full per-case row
+    /// editor. `None` when the step declares no nested chains.
+    fn render_branch_affordances(
+        &self,
+        step: &EditorStep,
+        step_index: usize,
+        depth: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let specs = step.kind.branch_specs();
+        if specs.is_empty() {
+            return None;
+        }
+        let at_cap = depth >= UI_MAX_NESTING_DEPTH;
+        let mut rows: Vec<AnyElement> = Vec::new();
+        let mut capped_empty = false;
+
+        for spec in specs {
+            match spec {
+                BranchSpec::Chain { key, label } => {
+                    let count = branch_count(step, key, None);
+                    let disabled = at_cap && count == 0;
+                    capped_empty |= disabled;
+                    let key = *key;
+                    rows.push(drill_in_chip(
+                        SharedString::from(format!("actions-drill-{step_index}-{key}")),
+                        label,
+                        count,
+                        disabled,
+                        palette,
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.enter_branch(step_index, key, None, cx)
+                        }),
+                    ));
+                }
+                BranchSpec::Cases { key, label } => {
+                    let key = *key;
+                    let case_total = step.cases.as_ref().map(Vec::len).unwrap_or(0);
+                    rows.push(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(format!("{label}:"))
+                            .into_any_element(),
+                    );
+                    for ci in 0..case_total {
+                        rows.push(self.render_case_row(
+                            step, step_index, ci, key, case_total, at_cap, palette, cx,
+                        ));
+                    }
+                    rows.push(self.render_add_case(step_index, palette, cx));
+                    if at_cap {
+                        capped_empty |=
+                            (0..case_total).any(|ci| branch_count(step, key, Some(ci)) == 0);
+                    }
+                }
+            }
+        }
+
+        if capped_empty {
+            rows.push(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.warning)
+                    .child("Max nesting depth reached · cannot nest deeper here")
+                    .into_any_element(),
+            );
+        }
+
+        Some(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .children(rows)
+                .into_any_element(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_case_row(
+        &self,
+        step: &EditorStep,
+        step_index: usize,
+        ci: usize,
+        key: &'static str,
+        case_total: usize,
+        at_cap: bool,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let count = branch_count(step, key, Some(ci));
+        let disabled = at_cap && count == 0;
+
+        let is_multi = step
+            .cases
+            .as_ref()
+            .and_then(|cases| cases.get(ci))
+            .map(|c| matches!(c.match_value, CaseMatch::Multi))
+            .unwrap_or(false);
+        let match_el: AnyElement = if is_multi {
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.text_faint)
+                .child("multi-value match (read-only)")
+                .into_any_element()
+        } else {
+            div()
+                .w(CASE_MATCH_W)
+                .flex_none()
+                .children(
+                    self.case_fields
+                        .get(&(step_index, ci))
+                        .map(|f| f.field.clone()),
+                )
+                .into_any_element()
+        };
+
+        let drill = drill_in_chip(
+            SharedString::from(format!("actions-drill-{step_index}-case-{ci}")),
+            "Chain",
+            count,
+            disabled,
+            palette,
+            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.enter_branch(step_index, key, Some(ci), cx)
+            }),
+        );
+        let move_up = step_icon_btn(
+            SharedString::from(format!("actions-case-up-{step_index}-{ci}")),
+            Icon::ArrowUp,
+            ci == 0,
+            palette,
+            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.move_switch_case(step_index, ci, true, cx)
+            }),
+        );
+        let move_down = step_icon_btn(
+            SharedString::from(format!("actions-case-down-{step_index}-{ci}")),
+            Icon::ArrowDown,
+            ci + 1 >= case_total,
+            palette,
+            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.move_switch_case(step_index, ci, false, cx)
+            }),
+        );
+        let remove = step_icon_btn(
+            SharedString::from(format!("actions-case-del-{step_index}-{ci}")),
+            Icon::Eraser,
+            false,
+            palette,
+            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.remove_switch_case(step_index, ci, cx)
+            }),
+        );
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(match_el)
+            .child(drill)
+            .child(move_up)
+            .child(move_down)
+            .child(remove)
+            .into_any_element()
+    }
+
+    fn render_add_case(
+        &self,
+        step_index: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id(SharedString::from(format!("actions-add-case-{step_index}")))
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .cursor_pointer()
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.add_switch_case(step_index, cx)
+                }),
+            )
+            .child(icon(Icon::Plus, BRANCH_GLYPH, palette.brand))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.brand)
+                    .child("Add case"),
+            )
             .into_any_element()
     }
 
@@ -2767,9 +3298,12 @@ enum SubKind {
     Log,
     ReadFile,
     SubAction,
+    IfThenElse,
+    Loop,
+    Switch,
 }
 
-const SUB_KINDS: [SubKind; 9] = [
+const SUB_KINDS: [SubKind; 12] = [
     SubKind::SendChat,
     SubKind::Speak,
     SubKind::PlaySound,
@@ -2779,6 +3313,9 @@ const SUB_KINDS: [SubKind; 9] = [
     SubKind::Log,
     SubKind::ReadFile,
     SubKind::SubAction,
+    SubKind::IfThenElse,
+    SubKind::Loop,
+    SubKind::Switch,
 ];
 
 /// One editable config entry a sub-action kind exposes in the add-sub-action form.
@@ -2839,6 +3376,9 @@ impl SubKind {
             SubKind::Log => "Write log",
             SubKind::ReadFile => "Read file",
             SubKind::SubAction => "Run sub-action",
+            SubKind::IfThenElse => "If / Then / Else",
+            SubKind::Loop => "Loop",
+            SubKind::Switch => "Switch / Case",
         }
     }
 
@@ -2853,6 +3393,11 @@ impl SubKind {
             SubKind::Log => "Write a line to the log",
             SubKind::ReadFile => "Read a file into a variable",
             SubKind::SubAction => "Run another action inline",
+            SubKind::IfThenElse => "Run one of two sub-chains depending on a condition",
+            SubKind::Loop => {
+                "Repeat a sub-chain a fixed count, over an array, or while a condition holds"
+            }
+            SubKind::Switch => "Run the sub-chain whose case matches an expression",
         }
     }
 
@@ -2869,6 +3414,11 @@ impl SubKind {
             SubKind::Log => Icon::InfoCircle,
             SubKind::ReadFile => Icon::FileCode,
             SubKind::SubAction => Icon::Bolt,
+            // The kit ships no git-branch / list-checks glyph, so the composite kinds
+            // degrade to the nearest tabler icon (Loop maps exactly to Repeat).
+            SubKind::IfThenElse => Icon::TargetArrow,
+            SubKind::Loop => Icon::Repeat,
+            SubKind::Switch => Icon::Notebook,
         }
     }
 
@@ -2878,10 +3428,61 @@ impl SubKind {
             SubKind::Speak => SubCategory::Tts,
             SubKind::PlaySound => SubCategory::Audio,
             SubKind::SetGlobal => SubCategory::Globals,
-            SubKind::RandomInt | SubKind::SubAction => SubCategory::Logic,
+            SubKind::RandomInt
+            | SubKind::SubAction
+            | SubKind::IfThenElse
+            | SubKind::Loop
+            | SubKind::Switch => SubCategory::Logic,
             SubKind::Delay => SubCategory::Delay,
             SubKind::Log => SubCategory::Util,
             SubKind::ReadFile => SubCategory::Files,
+        }
+    }
+
+    /// Config keys holding a single nested sub-chain, in the order they seed a fresh
+    /// step's `branches`.
+    fn default_branch_keys(self) -> &'static [&'static str] {
+        match self {
+            SubKind::IfThenElse => &["then_chain", "else_chain"],
+            SubKind::Loop => &["body"],
+            SubKind::Switch => &["default_chain"],
+            _ => &[],
+        }
+    }
+
+    fn has_cases(self) -> bool {
+        matches!(self, SubKind::Switch)
+    }
+
+    /// The branch affordances a composite kind renders under its step card, ordered to
+    /// match the runtime editor (a switch shows its case list before the default chip).
+    fn branch_specs(self) -> &'static [BranchSpec] {
+        match self {
+            SubKind::IfThenElse => &[
+                BranchSpec::Chain {
+                    key: "then_chain",
+                    label: "Then",
+                },
+                BranchSpec::Chain {
+                    key: "else_chain",
+                    label: "Else",
+                },
+            ],
+            SubKind::Loop => &[BranchSpec::Chain {
+                key: "body",
+                label: "Body",
+            }],
+            SubKind::Switch => &[
+                BranchSpec::Cases {
+                    key: "cases",
+                    label: "Cases",
+                },
+                BranchSpec::Chain {
+                    key: "default_chain",
+                    label: "Default",
+                },
+            ],
+            _ => &[],
         }
     }
 
@@ -2972,6 +3573,21 @@ impl SubKind {
                 label: "ACTION",
                 placeholder: "!other",
             }],
+            SubKind::IfThenElse => &[SubField {
+                key: "condition",
+                label: "CONDITION",
+                placeholder: "%value% > 0",
+            }],
+            SubKind::Loop => &[SubField {
+                key: "count",
+                label: "COUNT",
+                placeholder: "3",
+            }],
+            SubKind::Switch => &[SubField {
+                key: "expression",
+                label: "EXPRESSION",
+                placeholder: "%value%",
+            }],
         }
     }
 
@@ -2986,6 +3602,9 @@ impl SubKind {
             SubKind::Log => &[("level", "info"), ("message", "shoutout done for %user%")],
             SubKind::ReadFile => &[("path", "~/quotes.txt"), ("target_var", "lines")],
             SubKind::SubAction => &[("action_id", "!quote")],
+            SubKind::IfThenElse => &[("condition", "%followage% > 30")],
+            SubKind::Loop => &[("count", "3")],
+            SubKind::Switch => &[("expression", "%tier%")],
         };
         pairs
             .iter()
@@ -2995,13 +3614,164 @@ impl SubKind {
 }
 
 /// A single sub-action step in the editor chain: its kind plus a string-keyed config
-/// bag the summary line and the edit form read.
+/// bag the summary line and the edit form read. Composite kinds also carry their
+/// nested `branches` (single sub-chains keyed then / else / body / default) and, for a
+/// switch, an ordered `cases` list — modelled directly on the step rather than as
+/// encoded config blobs, since `forge-desktop` seeds the chain in memory.
+#[derive(Clone)]
 struct EditorStep {
     kind: SubKind,
     config: BTreeMap<String, String>,
+    branches: Vec<SubChain>,
+    cases: Option<Vec<SwitchCase>>,
+}
+
+/// One named nested sub-chain a composite step holds (e.g. `then_chain` → "Then").
+#[derive(Clone)]
+struct SubChain {
+    key: &'static str,
+    steps: Vec<EditorStep>,
+}
+
+/// One switch case: a match value paired with its own nested chain.
+#[derive(Clone)]
+struct SwitchCase {
+    match_value: CaseMatch,
+    chain: Vec<EditorStep>,
+}
+
+/// A switch case's match. A single authored value is editable; an imported
+/// multi-value match stays read-only per the single-value authoring contract.
+#[derive(Clone)]
+enum CaseMatch {
+    Single(String),
+    Multi,
+}
+
+/// Names one branch affordance a composite kind exposes, in render order — mirroring
+/// the runtime editor's field ordering (a switch shows its case list before its
+/// `default_chain` chip).
+enum BranchSpec {
+    Chain {
+        key: &'static str,
+        label: &'static str,
+    },
+    Cases {
+        key: &'static str,
+        label: &'static str,
+    },
+}
+
+/// A live match input for one switch case, plus the subscription routing its submit
+/// back into the model.
+struct CaseField {
+    field: Entity<TextInput>,
+    _sub: Subscription,
+}
+
+/// One drill-in frame: the parent step's index in the chain it was reached from, the
+/// branch key it descends (unused for cases, which resolve through `cases`), and —
+/// for a switch — which case row's chain was entered.
+#[derive(Clone, Copy)]
+struct NavFrame {
+    step_index: usize,
+    chain_key: &'static str,
+    case_index: Option<usize>,
+}
+
+/// Resolves a nav path to the chain it points at, starting from an action's top-level
+/// steps. An unresolvable frame yields `None` (never a panic).
+fn resolve_chain<'a>(root: &'a [EditorStep], path: &[NavFrame]) -> Option<&'a [EditorStep]> {
+    let mut current = root;
+    for frame in path {
+        let step = current.get(frame.step_index)?;
+        current = match frame.case_index {
+            None => step
+                .branches
+                .iter()
+                .find(|b| b.key == frame.chain_key)?
+                .steps
+                .as_slice(),
+            Some(ci) => step.cases.as_ref()?.get(ci)?.chain.as_slice(),
+        };
+    }
+    Some(current)
+}
+
+/// Mutable twin of [`resolve_chain`].
+fn resolve_chain_mut<'a>(
+    root: &'a mut Vec<EditorStep>,
+    path: &[NavFrame],
+) -> Option<&'a mut Vec<EditorStep>> {
+    let mut current = root;
+    for frame in path {
+        let step = current.get_mut(frame.step_index)?;
+        current = match frame.case_index {
+            None => {
+                &mut step
+                    .branches
+                    .iter_mut()
+                    .find(|b| b.key == frame.chain_key)?
+                    .steps
+            }
+            Some(ci) => &mut step.cases.as_mut()?.get_mut(ci)?.chain,
+        };
+    }
+    Some(current)
+}
+
+/// Step count in the branch a drill-in frame would enter, used to gate descending
+/// past the depth cap into an empty branch.
+fn branch_count(step: &EditorStep, chain_key: &str, case_index: Option<usize>) -> usize {
+    match case_index {
+        None => step
+            .branches
+            .iter()
+            .find(|b| b.key == chain_key)
+            .map(|b| b.steps.len())
+            .unwrap_or(0),
+        Some(ci) => step
+            .cases
+            .as_ref()
+            .and_then(|cases| cases.get(ci))
+            .map(|c| c.chain.len())
+            .unwrap_or(0),
+    }
+}
+
+/// Human label for a single-sub-chain branch key in the breadcrumb.
+fn branch_field_label(chain_key: &str) -> &'static str {
+    match chain_key {
+        "then_chain" => "Then",
+        "else_chain" => "Else",
+        "body" => "Body",
+        "default_chain" => "Default",
+        _ => "Branch",
+    }
 }
 
 impl EditorStep {
+    /// Builds a step, seeding its nested branch structure from the kind so a composite
+    /// added via the picker starts with empty (drillable) branches and a switch with an
+    /// empty case list.
+    fn new(kind: SubKind, config: BTreeMap<String, String>) -> Self {
+        let branches = kind
+            .default_branch_keys()
+            .iter()
+            .map(|key| SubChain {
+                key,
+                steps: Vec::new(),
+            })
+            .collect();
+        let cases = kind.has_cases().then(Vec::new);
+        Self {
+            kind,
+            config,
+            branches,
+            cases,
+        }
+    }
+
     fn get(&self, key: &str) -> &str {
         self.config.get(key).map(String::as_str).unwrap_or("")
     }
@@ -3054,6 +3824,16 @@ impl EditorStep {
                 format!("{} \u{2192} %{}%", self.get("path"), self.get("target_var"))
             }
             SubKind::SubAction => self.get("action_id").to_owned(),
+            SubKind::IfThenElse => format!("if {}", self.get("condition")),
+            SubKind::Loop => {
+                let count = if self.get("count").is_empty() {
+                    "0"
+                } else {
+                    self.get("count")
+                };
+                format!("repeat {count}\u{00d7}")
+            }
+            SubKind::Switch => format!("switch {}", self.get("expression")),
         }
     }
 }
@@ -3380,6 +4160,59 @@ fn build_sub_fields(
         .collect()
 }
 
+/// A leaf (non-composite) step seeded from its kind's default config.
+fn leaf_step(kind: SubKind) -> EditorStep {
+    EditorStep::new(kind, kind.seed_config())
+}
+
+/// A populated if/then-else: the then-chain nests a loop (so drilling reaches three
+/// breadcrumb segments), the else-chain holds one leaf.
+fn seed_if_then_else_step() -> EditorStep {
+    let mut step = EditorStep::new(SubKind::IfThenElse, SubKind::IfThenElse.seed_config());
+    for branch in &mut step.branches {
+        match branch.key {
+            "then_chain" => {
+                let mut loop_step = EditorStep::new(SubKind::Loop, SubKind::Loop.seed_config());
+                for body in &mut loop_step.branches {
+                    if body.key == "body" {
+                        body.steps = vec![leaf_step(SubKind::Speak)];
+                    }
+                }
+                branch.steps = vec![leaf_step(SubKind::SendChat), loop_step];
+            }
+            "else_chain" => branch.steps = vec![leaf_step(SubKind::Log)],
+            _ => {}
+        }
+    }
+    step
+}
+
+/// A populated switch: three cases (one an imported read-only multi-value match) plus
+/// a default chain.
+fn seed_switch_step() -> EditorStep {
+    let mut step = EditorStep::new(SubKind::Switch, SubKind::Switch.seed_config());
+    step.cases = Some(vec![
+        SwitchCase {
+            match_value: CaseMatch::Single("1000".to_owned()),
+            chain: vec![leaf_step(SubKind::SendChat)],
+        },
+        SwitchCase {
+            match_value: CaseMatch::Single("3000".to_owned()),
+            chain: vec![leaf_step(SubKind::Speak)],
+        },
+        SwitchCase {
+            match_value: CaseMatch::Multi,
+            chain: vec![leaf_step(SubKind::PlaySound)],
+        },
+    ]);
+    for branch in &mut step.branches {
+        if branch.key == "default_chain" {
+            branch.steps = vec![leaf_step(SubKind::Log)];
+        }
+    }
+    step
+}
+
 /// Seeds an [`ActionDetail`] from a cached tree summary: a `sub_action_count`-long
 /// chain cycling representative kinds, one or two trigger links, and a description on
 /// the busier actions.
@@ -3395,15 +4228,20 @@ fn build_detail(summary: &ActionSummary) -> ActionDetail {
         SubKind::ReadFile,
         SubKind::SubAction,
     ];
-    let steps = (0..summary.sub_action_count)
+    let mut steps: Vec<EditorStep> = (0..summary.sub_action_count)
         .map(|i| {
             let kind = ORDER[i % ORDER.len()];
-            EditorStep {
-                kind,
-                config: kind.seed_config(),
-            }
+            EditorStep::new(kind, kind.seed_config())
         })
         .collect();
+
+    // The busiest seeded action grows two composite steps so branch drill-in (down to
+    // a nested loop body — three breadcrumb segments), switch-case editing, and the
+    // read-only multi-value match are all exercisable without a runtime registry.
+    if summary.sub_action_count >= 7 {
+        steps.push(seed_if_then_else_step());
+        steps.push(seed_switch_step());
+    }
 
     let mut triggers = vec![SeededTrigger {
         name: format!("Command {}", summary.name),
@@ -3589,6 +4427,51 @@ fn step_icon_btn(
         .size(STEP_BTN)
         .rounded(STEP_BTN_RADIUS)
         .child(icon(glyph, STEP_BTN_GLYPH, color));
+    if disabled {
+        return base.into_any_element();
+    }
+    let hover = palette.surface_overlay;
+    base.id(id.into())
+        .cursor_pointer()
+        .hover(move |s| s.bg(hover))
+        .on_click(handler)
+        .into_any_element()
+}
+
+/// A drill-in chip entering a nested sub-chain: a "label · count" caption + a chevron,
+/// framed by a 0.5px hairline with a 6px corner, washing `surface_overlay` on hover.
+/// Disabled (past the depth cap on an empty branch) it inks `disabled` and takes no
+/// click.
+fn drill_in_chip(
+    id: impl Into<ElementId>,
+    label: &str,
+    count: usize,
+    disabled: bool,
+    palette: &ForgePalette,
+    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    let color = if disabled {
+        palette.disabled
+    } else {
+        palette.brand
+    };
+    let base = div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .px(spacing(Spacing::Xs, Density::Cozy))
+        .rounded(CHIP_RADIUS)
+        .border(HALF_BORDER)
+        .border_color(palette.border_regular)
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(color)
+                .child(format!("{label} \u{00b7} {count}")),
+        )
+        .child(icon(Icon::ChevronRight, BRANCH_GLYPH, color));
     if disabled {
         return base.into_any_element();
     }

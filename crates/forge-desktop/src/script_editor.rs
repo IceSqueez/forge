@@ -1,7 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextArea,
-    TextInput, badge, breadcrumb, confirm_modal, icon, overlay, radius, spacing, with_alpha,
+    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
+    Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, icon, modal,
+    overlay, primary_button, radius, spacing, with_alpha,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
@@ -19,6 +20,11 @@ const LEFT_PANE_W: Pixels = px(200.0);
 const STRIPE_W: Pixels = px(2.0);
 /// Indent to a file row nested under its folder header (design paddingLeft 14px).
 const FILE_INDENT: Pixels = px(14.0);
+/// Right API-reference pane width — the design pins it at a fixed 220px, off the
+/// `Spacing` scale, so it is carried as a literal.
+const RIGHT_PANE_W: Pixels = px(220.0);
+/// The API-pane header pin glyph size (design 12px, off the `FONT_*` scale).
+const GLYPH_PIN: Pixels = px(12.0);
 
 /// One code line's row height in the gutter, matched to the [`TextArea`]'s line
 /// height (`FONT_XS` × 1.5 = 18px) so the numbers sit level with the buffer rows.
@@ -124,6 +130,41 @@ struct ConsoleLine {
     text: SharedString,
 }
 
+/// A navigation the user asked for while the open buffer had unsaved edits, parked
+/// pending a discard-or-cancel confirmation. Selecting a different file or voicing the
+/// "Actions" crumb while dirty arms this instead of silently dropping the edits.
+enum PendingNav {
+    SelectScript(u64),
+    GoBack,
+}
+
+/// One labeled argument field in the run modal: the contract input's `name` and its
+/// type `label`, plus the child [`TextInput`] carrying the entered value. A stub — the
+/// real screen derives these from the script's parsed `@input` contract.
+struct RunInput {
+    name: SharedString,
+    label: SharedString,
+    input: Entity<TextInput>,
+    _sub: Subscription,
+}
+
+/// The open run modal: the dialog title, the per-argument input fields, and an optional
+/// validation error line. Present only while the modal is up.
+struct RunModalState {
+    title: SharedString,
+    script_name: String,
+    inputs: Vec<RunInput>,
+    error: Option<SharedString>,
+}
+
+/// One API-reference group: a monospace uppercase header (e.g. `FORGE :: CORE`) over
+/// its function signatures. Seeded locally standing in for the runtime's rhai symbol
+/// catalog, which the real screen filters through the storage/script surface.
+struct ApiGroup {
+    label: &'static str,
+    fns: &'static [&'static str],
+}
+
 /// Seeded type-check status shown in the page header: `None` renders "Type-check
 /// passed" in the success hue, `Some(n)` the error count in the warning hue. Runtime
 /// type-check results replace this over the storage/script-compile path once wired.
@@ -151,8 +192,13 @@ pub struct ScriptEditorView {
     shared: Vec<ScriptFile>,
     variables: Vec<(SharedString, SharedString)>,
     selected: Option<u64>,
+    /// The open buffer's content as last loaded from its file, so a discard can revert
+    /// the in-memory edits back to it. Refreshed at every [`ScriptEditorView::open_file`].
+    open_original: String,
     rename: Option<RenameState>,
     pending_delete: Option<u64>,
+    /// A navigation deferred behind the discard-unsaved-changes confirm.
+    pending_nav: Option<PendingNav>,
     code_input: Entity<TextArea>,
     _code_sub: Subscription,
     console: Vec<ConsoleLine>,
@@ -161,6 +207,11 @@ pub struct ScriptEditorView {
     problems: Vec<SharedString>,
     type_check: TypeCheck,
     api_docs_open: bool,
+    /// Live search box filtering the API-reference pane by signature.
+    api_search: Entity<TextInput>,
+    _api_search_sub: Subscription,
+    /// The open run modal, or `None` when it is closed.
+    run_modal: Option<RunModalState>,
     next_id: u64,
 }
 
@@ -185,7 +236,7 @@ impl ScriptEditorView {
                 .mono()
                 .with_font_size(FONT_XS)
                 .with_height(code_field_height(&seed_content));
-            area.set_content(seed_content, cx);
+            area.set_content(seed_content.clone(), cx);
             area
         });
         let code_sub = cx.subscribe(&code_input, |this, _area, event: &InputEvent, cx| {
@@ -202,6 +253,21 @@ impl ScriptEditorView {
             .max()
             .map_or(0, |m| m + 1);
 
+        let api_search = cx.new(|cx| {
+            TextInput::new("Search modules\u{2026}", cx)
+                .with_palette(palette)
+                .with_font_size(FONT_XS)
+                .leading_icon(Icon::Search, palette.text_faint)
+                .on_surface()
+                .static_chrome(palette.surface_overlay, Radius::Sm)
+        });
+        let api_search_sub = cx.subscribe(&api_search, |_this, _f, event: &InputEvent, cx| {
+            // Re-filter the API pane against the new query.
+            if let InputEvent::Changed(_) = event {
+                cx.notify();
+            }
+        });
+
         Self {
             folders,
             shared,
@@ -211,8 +277,10 @@ impl ScriptEditorView {
                 ("%user%".into(), "User".into()),
             ],
             selected,
+            open_original: seed_content,
             rename: None,
             pending_delete: None,
+            pending_nav: None,
             code_input,
             _code_sub: code_sub,
             console: seed_console(),
@@ -221,6 +289,9 @@ impl ScriptEditorView {
             problems: vec!["Ln 8 · unused binding `parts` before reassignment".into()],
             type_check: None,
             api_docs_open: false,
+            api_search,
+            _api_search_sub: api_search_sub,
+            run_modal: None,
             next_id,
         }
     }
@@ -253,10 +324,74 @@ impl ScriptEditorView {
 
     // --- navigation -------------------------------------------------------
 
+    /// Whether the open buffer holds unsaved edits — the selected file's dirty flag.
+    fn current_dirty(&self) -> bool {
+        self.selected
+            .and_then(|id| self.find_file(id))
+            .is_some_and(|f| f.dirty)
+    }
+
+    /// Loads `id`'s content into the code buffer, records it as the revert baseline and
+    /// regrows the field. The shared open path for select / discard-then-switch / delete
+    /// fallthrough, so every open leaves `open_original` in sync with the buffer.
+    fn open_file(&mut self, id: u64, cx: &mut Context<Self>) {
+        let Some(content) = self.find_file(id).map(|f| f.content.clone()) else {
+            return;
+        };
+        self.selected = Some(id);
+        self.open_original = content.clone();
+        let height = code_field_height(&content);
+        self.code_input.update(cx, |area, cx| {
+            area.set_content(content, cx);
+            area.set_height(height, cx);
+        });
+    }
+
+    /// Reverts the open buffer's in-memory edits back to `open_original` and clears its
+    /// dirty flag — the discard half of the unsaved-changes gate.
+    fn revert_current(&mut self, cx: &mut Context<Self>) {
+        let original = self.open_original.clone();
+        if let Some(id) = self.selected
+            && let Some(file) = self.find_file_mut(id)
+        {
+            file.content = original.clone();
+            file.dirty = false;
+        }
+        let height = code_field_height(&original);
+        self.code_input.update(cx, |area, cx| {
+            area.set_content(original, cx);
+            area.set_height(height, cx);
+        });
+    }
+
     /// The "Actions" breadcrumb crumb: voices navigation back to the Actions screen,
-    /// which the shell routes.
+    /// which the shell routes. A dirty buffer arms the discard gate first.
     fn go_back(&mut self, cx: &mut Context<Self>) {
+        if self.current_dirty() {
+            self.pending_nav = Some(PendingNav::GoBack);
+            cx.notify();
+            return;
+        }
         cx.emit(NavRequested(Screen::Actions));
+    }
+
+    /// Discard confirmed: drop the open edits, then perform the deferred navigation.
+    fn confirm_discard(&mut self, cx: &mut Context<Self>) {
+        let Some(nav) = self.pending_nav.take() else {
+            return;
+        };
+        self.revert_current(cx);
+        match nav {
+            PendingNav::SelectScript(id) => self.open_file(id, cx),
+            PendingNav::GoBack => cx.emit(NavRequested(Screen::Actions)),
+        }
+        cx.notify();
+    }
+
+    /// Discard cancelled: keep the user on the open script with edits intact.
+    fn cancel_discard(&mut self, cx: &mut Context<Self>) {
+        self.pending_nav = None;
+        cx.notify();
     }
 
     // --- file tree actions ------------------------------------------------
@@ -272,15 +407,12 @@ impl ScriptEditorView {
         if self.selected == Some(id) {
             return;
         }
-        let content = self.find_file(id).map(|f| f.content.clone());
-        if let Some(content) = content {
-            self.selected = Some(id);
-            let height = code_field_height(&content);
-            self.code_input.update(cx, |area, cx| {
-                area.set_content(content, cx);
-                area.set_height(height, cx);
-            });
+        if self.current_dirty() {
+            self.pending_nav = Some(PendingNav::SelectScript(id));
+            cx.notify();
+            return;
         }
+        self.open_file(id, cx);
         cx.notify();
     }
 
@@ -332,6 +464,7 @@ impl ScriptEditorView {
         }
 
         self.selected = Some(id);
+        self.open_original = content.clone();
         let height = code_field_height(&content);
         self.code_input.update(cx, |area, cx| {
             area.set_content(content, cx);
@@ -369,19 +502,10 @@ impl ScriptEditorView {
                 .map(|f| f.id)
                 .next();
             match next {
-                Some(next_id) => {
-                    self.selected = Some(next_id);
-                    let content = self.find_file(next_id).map(|f| f.content.clone());
-                    if let Some(content) = content {
-                        let height = code_field_height(&content);
-                        self.code_input.update(cx, |area, cx| {
-                            area.set_content(content, cx);
-                            area.set_height(height, cx);
-                        });
-                    }
-                }
+                Some(next_id) => self.open_file(next_id, cx),
                 None => {
                     self.selected = None;
+                    self.open_original = String::new();
                     self.code_input.update(cx, |area, cx| {
                         area.set_content("", cx);
                         area.set_height(code_field_height(""), cx);
@@ -436,19 +560,91 @@ impl ScriptEditorView {
 
     // --- toolbar actions --------------------------------------------------
 
-    fn run(&mut self, cx: &mut Context<Self>) {
-        let name = self
-            .selected
-            .and_then(|id| self.find_file(id))
-            .map(|f| f.name.clone())
-            .unwrap_or_else(|| "script".to_owned());
-        self.console.push(ConsoleLine {
-            time: "--:--:--".into(),
-            tag: LogTag::Run,
-            text: format!("{name} with sample inputs (stub — no runtime wired)").into(),
+    /// Opens the run modal for the selected script, seeding its argument fields from a
+    /// representative `@input` contract. A stub — the real screen parses the open
+    /// script's own contract and dispatches the run through the runtime.
+    fn open_run_modal(&mut self, cx: &mut Context<Self>) {
+        let (script_name, title) = match self.selected.and_then(|id| self.find_file(id)) {
+            Some(f) => (f.name.clone(), format!("Run {}", f.name)),
+            None => ("script".to_owned(), "Run script".to_owned()),
+        };
+        let palette = cx.palette();
+        let mut inputs = Vec::new();
+        for (name, label) in [("lines", "array"), ("idx", "int")] {
+            inputs.push(self.build_run_input(name, label, palette, cx));
+        }
+        self.run_modal = Some(RunModalState {
+            title: title.into(),
+            script_name,
+            inputs,
+            error: None,
         });
+        cx.notify();
+    }
+
+    /// Builds one run-modal argument field: a placeholder'd, `elevated`-filled input
+    /// whose edits clear any standing validation error.
+    fn build_run_input(
+        &self,
+        name: &str,
+        label: &str,
+        palette: ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> RunInput {
+        let placeholder = format!("Enter {label} value\u{2026}");
+        let input = cx.new(|cx| {
+            TextInput::new(placeholder, cx)
+                .with_palette(palette)
+                .with_font_size(FONT_SM)
+                .on_surface()
+                .static_chrome(palette.border_input, Radius::Sm)
+        });
+        let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event
+                && let Some(modal) = this.run_modal.as_mut()
+            {
+                modal.error = None;
+                cx.notify();
+            }
+        });
+        RunInput {
+            name: name.to_owned().into(),
+            label: label.to_owned().into(),
+            input,
+            _sub: sub,
+        }
+    }
+
+    /// Run submitted: reject any empty field with an inline error, else close the modal
+    /// and append the seeded run-result lines to the Output console. A stub — no rhai
+    /// runtime is wired, so the result is canned rather than executed.
+    fn submit_run(&mut self, cx: &mut Context<Self>) {
+        let Some(modal) = self.run_modal.as_ref() else {
+            return;
+        };
+        let missing = modal
+            .inputs
+            .iter()
+            .find(|f| f.input.read(cx).content().trim().is_empty())
+            .map(|f| f.name.clone());
+        if let Some(name) = missing {
+            if let Some(modal) = self.run_modal.as_mut() {
+                modal.error = Some(format!("Enter a value for {name}").into());
+            }
+            cx.notify();
+            return;
+        }
+
+        let name = modal.script_name.clone();
+        self.run_modal = None;
+        self.console.extend(seed_run_result(&name));
         self.console_tab = ConsoleTab::Output;
         self.console_collapsed = false;
+        cx.notify();
+    }
+
+    fn cancel_run(&mut self, cx: &mut Context<Self>) {
+        self.run_modal = None;
         cx.notify();
     }
 
@@ -589,7 +785,7 @@ impl ScriptEditorView {
             .bg(palette.success)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.success, 0.92)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.run(cx)))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_run_modal(cx)))
             .child(icon(Icon::PlayerPlay, GLYPH_RUN, palette.shell))
             .child(
                 div()
@@ -1203,6 +1399,196 @@ impl ScriptEditorView {
                 .into_any_element(),
         )
     }
+
+    // --- render: right API-reference pane --------------------------------
+
+    /// The 220px API-reference pane (shown only while `api_docs_open`): a header with a
+    /// pin affordance, a live search box, then the seeded `FORGE :: *` groups whose
+    /// function rows the search filters by signature. Empty match set → a muted line.
+    fn right_pane(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let query = self.api_search.read(cx).content().trim().to_lowercase();
+
+        let header = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .pb(spacing(Spacing::Xs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child("API reference"),
+            )
+            .child(icon(Icon::Pin, GLYPH_PIN, palette.text_faint));
+
+        let search = div()
+            .pb(spacing(Spacing::Sm, Density::Cozy))
+            .child(self.api_search.clone());
+
+        let mut pane = div()
+            .id("script-api-pane")
+            .flex_none()
+            .w(RIGHT_PANE_W)
+            .h_full()
+            .overflow_y_scroll()
+            .bg(palette.shell)
+            .border_l(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .p(spacing(Spacing::Sm, Density::Cozy))
+            .child(header)
+            .child(search);
+
+        let mut any = false;
+        for group in api_catalog() {
+            let matches: Vec<&&str> = group
+                .fns
+                .iter()
+                .filter(|sig| query.is_empty() || sig.to_lowercase().contains(&query))
+                .collect();
+            if matches.is_empty() {
+                continue;
+            }
+            any = true;
+
+            let mut section = div().flex().flex_col().child(
+                div()
+                    .pt(spacing(Spacing::Sm, Density::Cozy))
+                    .pb(spacing(Spacing::Xxs, Density::Cozy))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(group.label),
+            );
+            for sig in matches {
+                section = section.child(api_fn_row(sig, palette));
+            }
+            pane = pane.child(section);
+        }
+
+        if !any {
+            pane = pane.child(
+                div()
+                    .pt(spacing(Spacing::Sm, Density::Cozy))
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child("No matching methods."),
+            );
+        }
+
+        pane.into_any_element()
+    }
+
+    // --- render: run modal + discard confirm -----------------------------
+
+    fn run_modal_overlay(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let modal_state = self.run_modal.as_ref()?;
+
+        let mut body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, Density::Cozy));
+        for field in &modal_state.inputs {
+            body = body.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(spacing(Spacing::Xxs, Density::Cozy))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(format!("{}: {}", field.name, field.label)),
+                    )
+                    .child(field.input.clone()),
+            );
+        }
+        if let Some(err) = &modal_state.error {
+            body = body.child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.random)
+                    .child(err.clone()),
+            );
+        }
+
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(ghost_button("Cancel", palette).on_click(
+                "script-run-cancel",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_run(cx)),
+            ))
+            .child(primary_button("Run", palette).on_click(
+                "script-run-submit",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_run(cx)),
+            ));
+
+        let card = modal(modal_state.title.clone(), body, palette)
+            .size(ModalSize::Md)
+            .footer(footer)
+            .on_close(
+                "script-run-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_run(cx)),
+            );
+
+        let view = cx.entity();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("script-run-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_run(cx));
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn discard_overlay(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        self.pending_nav.as_ref()?;
+
+        let card = confirm_modal(
+            "Discard unsaved changes?",
+            "The open script has unsaved edits. Leaving now discards them.",
+            ConfirmTone::Warning,
+            palette,
+        )
+        .esc_hint("to keep editing")
+        .on_cancel(
+            "script-discard-cancel",
+            "Keep editing",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_discard(cx)),
+        )
+        .on_confirm(
+            "script-discard-confirm",
+            "Discard",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_discard(cx)),
+        );
+
+        let view = cx.entity();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("script-discard-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_discard(cx));
+                })
+                .into_any_element(),
+        )
+    }
 }
 
 impl Render for ScriptEditorView {
@@ -1226,6 +1612,8 @@ impl Render for ScriptEditorView {
             .child(code)
             .child(console);
 
+        let right = self.api_docs_open.then(|| self.right_pane(&palette, cx));
+
         let body = div()
             .w_full()
             .flex_1()
@@ -1233,9 +1621,19 @@ impl Render for ScriptEditorView {
             .flex()
             .flex_row()
             .child(left)
-            .child(centre);
+            .child(centre)
+            .children(right);
 
-        let overlay = self.delete_overlay(&palette, cx);
+        // One overlay at a time, in priority order: run modal, then the two confirms.
+        let overlay = if self.run_modal.is_some() {
+            self.run_modal_overlay(&palette, cx)
+        } else if self.pending_delete.is_some() {
+            self.delete_overlay(&palette, cx)
+        } else if self.pending_nav.is_some() {
+            self.discard_overlay(&palette, cx)
+        } else {
+            None
+        };
 
         div()
             .size_full()
@@ -1328,6 +1726,78 @@ fn console_row(line: &ConsoleLine, palette: &ForgePalette) -> impl IntoElement {
 /// A muted single-line console placeholder (empty output / no problems / no test run).
 fn muted_line(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div().text_color(palette.text_faint).child(text)
+}
+
+/// One API-reference function row: a brand-filled `fn` badge over the monospace
+/// signature (design: badge shell-ink, signature `text_primary`).
+fn api_fn_row(sig: &'static str, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .child(badge(palette.brand, palette.shell, "fn", true, FONT_XXS))
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_primary)
+                .child(sig),
+        )
+}
+
+/// The seeded API-reference catalog — the design's five `FORGE :: *` groups and their
+/// function signatures. A stub standing in for the runtime's live rhai symbol catalog.
+fn api_catalog() -> &'static [ApiGroup] {
+    &[
+        ApiGroup {
+            label: "FORGE :: CORE",
+            fns: &["log(msg)", "warn(msg)", "sleep(ms)"],
+        },
+        ApiGroup {
+            label: "FORGE :: CHAT",
+            fns: &["send(text)", "reply(to, text)", "whisper(user, msg)"],
+        },
+        ApiGroup {
+            label: "FORGE :: GLOBALS",
+            fns: &["get(key)", "set(key, val)", "incr(key)"],
+        },
+        ApiGroup {
+            label: "FORGE :: OBS",
+            fns: &["set_scene(n)", "toggle_source(n)", "set_mute(n, b)"],
+        },
+        ApiGroup {
+            label: "FORGE :: HTTP",
+            fns: &["get(url)", "post(url, b)"],
+        },
+    ]
+}
+
+/// The canned run-result lines the run modal appends before a rhai runtime streams real
+/// output — the design's sample run, retargeted to the run's script `name`.
+fn seed_run_result(name: &str) -> Vec<ConsoleLine> {
+    vec![
+        ConsoleLine {
+            time: "--:--:--".into(),
+            tag: LogTag::Run,
+            text: format!("{name} with inputs").into(),
+        },
+        ConsoleLine {
+            time: "--:--:--".into(),
+            tag: LogTag::Info,
+            text: "quote #2 by GLaDOS".into(),
+        },
+        ConsoleLine {
+            time: "--:--:--".into(),
+            tag: LogTag::Ok,
+            text: "returned: \"The cake is a lie.\" — GLaDOS".into(),
+        },
+        ConsoleLine {
+            time: "--:--:--".into(),
+            tag: LogTag::Stats,
+            text: "executed in 1.84ms · 0 errors".into(),
+        },
+    ]
 }
 
 /// The representative scripts the screen seeds before a script store is wired — the

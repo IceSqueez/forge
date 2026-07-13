@@ -86,6 +86,26 @@ const PANE_PAD_H: Pixels = px(22.0);
 const STEP_GAP: Pixels = px(6.0);
 /// Right side-sheet width for the add-sub-action panel (fixed 480px seed in the source).
 const SUB_SHEET_W: Pixels = px(480.0);
+/// Right side-sheet width for the trigger picker (fixed 560px seed in the source).
+const PICKER_SHEET_W: Pixels = px(560.0);
+/// Trigger-picker platform column width (fixed 140px) and subgroup column width
+/// (fixed 160px); the trigger list fills the remaining width.
+const PICKER_PLATFORM_W: Pixels = px(140.0);
+const PICKER_SUBGROUP_W: Pixels = px(160.0);
+/// Vertical hairline rule between the picker's three columns (fixed 0.5px).
+const PICKER_DIV_W: Pixels = px(0.5);
+/// Leading brand-dot disc on a platform row (fixed 6px) and its corner (fixed 3px).
+const PICKER_PLATFORM_DOT: Pixels = px(6.0);
+const PICKER_PLATFORM_DOT_RADIUS: Pixels = px(3.0);
+/// Platform / subgroup / default-trigger button corner (fixed 4px).
+const PICKER_BTN_RADIUS: Pixels = px(4.0);
+/// Selected-row outline width on a platform / subgroup button (fixed 1px).
+const PICKER_SEL_BORDER: Pixels = px(1.0);
+/// Leading indent ahead of a custom-instance chip's icon (fixed 16px).
+const PICKER_CHIP_INDENT: Pixels = px(16.0);
+/// Picker footer bar padding (fixed 12px vertical / 16px horizontal).
+const PICKER_FOOTER_PAD_V: Pixels = px(12.0);
+const PICKER_FOOTER_PAD_H: Pixels = px(16.0);
 
 /// Local id for a seeded action. `forge-desktop` wires no actions repo yet, so the
 /// tree is seeded in-memory and ids are minted from a per-view counter rather than
@@ -180,6 +200,8 @@ pub struct ScreenActionsView {
     detail: Option<ActionDetail>,
     sub_form: Option<AddSubActionForm>,
     step_menu_open: Option<usize>,
+    trigger_picker: Option<TriggerPickerForm>,
+    pending_trigger_unlink: Option<usize>,
     next_id: u64,
     _search_sub: Subscription,
 }
@@ -212,6 +234,8 @@ impl ScreenActionsView {
             detail: None,
             sub_form: None,
             step_menu_open: None,
+            trigger_picker: None,
+            pending_trigger_unlink: None,
             next_id,
             _search_sub: search_sub,
         }
@@ -1088,6 +1112,86 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    // --- trigger links: picker + unlink -----------------------------------
+
+    fn open_trigger_picker(&mut self, cx: &mut Context<Self>) {
+        let Some(action_id) = self.selected else {
+            return;
+        };
+        if self.detail.is_none() {
+            return;
+        }
+        self.trigger_picker = Some(TriggerPickerForm {
+            action_id,
+            level1: None,
+            level2: None,
+            entries: seed_picker_entries(),
+        });
+        cx.notify();
+    }
+
+    fn cancel_trigger_picker(&mut self, cx: &mut Context<Self>) {
+        self.trigger_picker = None;
+        cx.notify();
+    }
+
+    fn picker_select_platform(&mut self, group: PlatformGroup, cx: &mut Context<Self>) {
+        if let Some(form) = self.trigger_picker.as_mut() {
+            form.level1 = Some(group);
+            form.level2 = None;
+        }
+        cx.notify();
+    }
+
+    fn picker_select_subgroup(&mut self, label: String, cx: &mut Context<Self>) {
+        if let Some(form) = self.trigger_picker.as_mut() {
+            form.level2 = Some(label);
+        }
+        cx.notify();
+    }
+
+    /// Links a picked trigger to the open action by appending its card to the loaded
+    /// detail, then closes the picker. Applies only while the picker's action is still
+    /// the selected one.
+    fn link_trigger(&mut self, trigger: SeededTrigger, cx: &mut Context<Self>) {
+        let same = self
+            .trigger_picker
+            .as_ref()
+            .zip(self.detail.as_ref())
+            .is_some_and(|(f, d)| f.action_id == d.action_id);
+        if same && let Some(detail) = self.detail.as_mut() {
+            detail.triggers.push(trigger);
+        }
+        self.trigger_picker = None;
+        cx.notify();
+    }
+
+    /// Navigate-to-registry intent for a trigger card. The triggers registry screen is
+    /// not yet built in `forge-desktop`, so the click is inert.
+    fn trigger_card_clicked(&mut self, cx: &mut Context<Self>) {
+        cx.notify();
+    }
+
+    fn request_trigger_unlink(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.pending_trigger_unlink = Some(index);
+        cx.notify();
+    }
+
+    fn cancel_trigger_unlink(&mut self, cx: &mut Context<Self>) {
+        self.pending_trigger_unlink = None;
+        cx.notify();
+    }
+
+    fn confirm_trigger_unlink(&mut self, cx: &mut Context<Self>) {
+        if let Some(i) = self.pending_trigger_unlink.take()
+            && let Some(detail) = self.detail.as_mut()
+            && i < detail.triggers.len()
+        {
+            detail.triggers.remove(i);
+        }
+        cx.notify();
+    }
+
     // --- render: right editor pane ----------------------------------------
 
     fn render_editor_pane(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
@@ -1304,19 +1408,17 @@ impl ScreenActionsView {
                 palette,
             ));
         } else {
-            for trigger in &detail.triggers {
-                col = col.child(render_trigger_card(trigger, palette));
+            for (index, trigger) in detail.triggers.iter().enumerate() {
+                col = col.child(self.render_trigger_card(index, trigger, palette, cx));
             }
         }
-        // Spawn C wires the trigger picker; the button renders in its final visual but
-        // is intentionally inert here.
         col = col.child(add_row_button(
             "actions-add-trigger",
             Icon::Plus,
             "Add trigger",
             palette.warning,
             palette,
-            cx.listener(|_this, _: &ClickEvent, _, cx| cx.notify()),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.open_trigger_picker(cx)),
         ));
 
         div()
@@ -1646,20 +1748,43 @@ impl ScreenActionsView {
             )
             .child(form.search_field.clone());
 
+        let matches = |kind: SubKind| {
+            search_lower.is_empty()
+                || kind.label().to_lowercase().contains(&search_lower)
+                || kind.summary_hint().to_lowercase().contains(&search_lower)
+        };
+
+        // Category section order mirrors the source's label-keyed grouping: sections
+        // sorted by their display label, kinds sorted by label within each section.
+        let mut categories: Vec<SubCategory> = Vec::new();
+        for kind in SUB_KINDS {
+            let cat = kind.category();
+            if !categories.contains(&cat) {
+                categories.push(cat);
+            }
+        }
+        categories.sort_by(|a, b| a.label().cmp(b.label()));
+
         let mut list = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy));
         let mut any = false;
-        for kind in SUB_KINDS {
-            if !search_lower.is_empty()
-                && !kind.label().to_lowercase().contains(&search_lower)
-                && !kind.summary_hint().to_lowercase().contains(&search_lower)
-            {
+        for cat in categories {
+            let mut kinds: Vec<SubKind> = SUB_KINDS
+                .into_iter()
+                .filter(|k| k.category() == cat && matches(*k))
+                .collect();
+            if kinds.is_empty() {
                 continue;
             }
+            kinds.sort_by(|a, b| a.label().cmp(b.label()));
             any = true;
-            list = list.child(render_kind_row(kind, palette, cx));
+            list = list.child(picker_section_header(cat.label(), kinds.len(), palette));
+            let dot_color = cat.color(palette);
+            for kind in kinds {
+                list = list.child(render_kind_row(kind, dot_color, palette, cx));
+            }
         }
         if !any {
             list = list.child(
@@ -2001,6 +2126,493 @@ impl ScreenActionsView {
             })
             .into_any_element()
     }
+
+    // --- render: trigger-link card + picker + unlink confirm --------------
+
+    /// A trigger-link card: a leading dot + kind glyph, the name / kind / condition
+    /// title cluster, and a trailing unlink `X` that arms the two-phase confirm. The
+    /// card body carries the navigate-to-registry click (inert until that screen
+    /// exists); the `X`'s own handler runs first, so a click on it unlinks without the
+    /// inert navigate interfering.
+    fn render_trigger_card(
+        &self,
+        index: usize,
+        trigger: &SeededTrigger,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let accent = if trigger.enabled {
+            palette.brand
+        } else {
+            palette.disabled
+        };
+        let name_color = if trigger.enabled {
+            palette.text_primary
+        } else {
+            palette.text_faint
+        };
+
+        let leading = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(status_dot(accent, TRIGGER_DOT))
+            .child(icon(trigger.glyph, CARD_GLYPH, accent));
+
+        let title = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(FONT_XS)
+                    .text_color(name_color)
+                    .child(trigger.name.clone()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(trigger.kind_label.clone()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.bits)
+                    .child(trigger.condition.clone()),
+            );
+
+        let hover = palette.surface_overlay;
+        let unlink = div()
+            .id(SharedString::from(format!(
+                "actions-trigger-unlink-{index}"
+            )))
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(STEP_BTN)
+            .rounded(STEP_BTN_RADIUS)
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.request_trigger_unlink(index, cx)
+            }))
+            .child(icon(Icon::X, CARD_GLYPH, palette.random));
+
+        row_card(title, palette)
+            .leading(leading)
+            .trailing(unlink)
+            .idle_background(palette.elevated)
+            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
+            .on_click(
+                SharedString::from(format!("actions-trigger-card-{index}")),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.trigger_card_clicked(cx)),
+            )
+            .into_any_element()
+    }
+
+    fn render_trigger_picker(
+        &self,
+        form: &TriggerPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let platform_col = self.render_picker_platforms(form, palette, cx);
+        let subgroup_col = self.render_picker_subgroups(form, palette, cx);
+        let trigger_col = self.render_picker_entries(form, palette, cx);
+
+        let vdivider = || {
+            div()
+                .w(PICKER_DIV_W)
+                .h_full()
+                .flex_none()
+                .bg(palette.border_regular)
+        };
+
+        let body = div()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_row()
+            .child(platform_col)
+            .child(vdivider())
+            .child(subgroup_col)
+            .child(vdivider())
+            .child(trigger_col);
+
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_end()
+            .py(PICKER_FOOTER_PAD_V)
+            .px(PICKER_FOOTER_PAD_H)
+            .border(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .child(secondary_button("Cancel", palette).on_click(
+                "actions-picker-cancel",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_picker(cx)),
+            ));
+
+        let content = div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(body)
+            .child(footer);
+
+        let sheet = side_sheet(PICKER_SHEET_W, content, palette)
+            .position(SheetPosition::Right)
+            .header("Add trigger")
+            .on_close(
+                "actions-picker-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_picker(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(sheet, palette)
+            .position(OverlayPosition::Right(PICKER_SHEET_W))
+            .on_dismiss("actions-picker-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_trigger_picker(cx));
+            })
+            .into_any_element()
+    }
+
+    fn render_picker_platforms(
+        &self,
+        form: &TriggerPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .py(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Xs, Density::Cozy));
+
+        for group in PLATFORM_GROUPS {
+            let selected = form.level1 == Some(group);
+            let dot = div()
+                .size(PICKER_PLATFORM_DOT)
+                .flex_none()
+                .rounded(PICKER_PLATFORM_DOT_RADIUS)
+                .bg(group.color(palette));
+            let label = div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(if selected {
+                    palette.text_primary
+                } else {
+                    palette.text_secondary
+                })
+                .child(group.label());
+
+            let mut btn = div()
+                .id(SharedString::from(format!(
+                    "actions-picker-plat-{}",
+                    group.key()
+                )))
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .py(spacing(Spacing::Xs, Density::Cozy))
+                .px(spacing(Spacing::Sm, Density::Cozy))
+                .rounded(PICKER_BTN_RADIUS)
+                .border(if selected { PICKER_SEL_BORDER } else { px(0.0) })
+                .border_color(palette.brand)
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.picker_select_platform(group, cx)
+                }))
+                .child(dot)
+                .child(label);
+            if selected {
+                btn = btn.bg(palette.surface_overlay);
+            }
+            col = col.child(btn);
+        }
+
+        div()
+            .id("actions-picker-platforms")
+            .w(PICKER_PLATFORM_W)
+            .flex_none()
+            .h_full()
+            .overflow_y_scroll()
+            .child(col)
+            .into_any_element()
+    }
+
+    fn render_picker_subgroups(
+        &self,
+        form: &TriggerPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .py(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Xs, Density::Cozy));
+
+        let subgroups = form.subgroups();
+        if form.level1.is_none() {
+            col = col.child(picker_hint("Select a platform", palette));
+        } else if subgroups.is_empty() {
+            col = col.child(picker_hint("No triggers available", palette));
+        } else {
+            for label in subgroups {
+                let selected = form.level2.as_deref() == Some(label.as_str());
+                let click_label = label.clone();
+                let mut btn = div()
+                    .id(SharedString::from(format!("actions-picker-sub-{label}")))
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .py(spacing(Spacing::Xs, Density::Cozy))
+                    .px(spacing(Spacing::Sm, Density::Cozy))
+                    .rounded(PICKER_BTN_RADIUS)
+                    .border(if selected { PICKER_SEL_BORDER } else { px(0.0) })
+                    .border_color(palette.brand)
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.picker_select_subgroup(click_label.clone(), cx)
+                    }))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_SM)
+                            .text_color(if selected {
+                                palette.text_primary
+                            } else {
+                                palette.text_secondary
+                            })
+                            .child(label.clone()),
+                    );
+                if selected {
+                    btn = btn.bg(palette.surface_overlay);
+                }
+                col = col.child(btn);
+            }
+        }
+
+        div()
+            .id("actions-picker-subgroups")
+            .w(PICKER_SUBGROUP_W)
+            .flex_none()
+            .h_full()
+            .overflow_y_scroll()
+            .child(col)
+            .into_any_element()
+    }
+
+    fn render_picker_entries(
+        &self,
+        form: &TriggerPickerForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .py(spacing(Spacing::Xs, Density::Cozy))
+            .px(spacing(Spacing::Sm, Density::Cozy));
+
+        let visible = form.visible_entries();
+        if form.level1.is_none() {
+            col = col.child(picker_hint(
+                "Select a platform to browse triggers.",
+                palette,
+            ));
+        } else if visible.is_empty() {
+            col = col.child(picker_hint(
+                "No triggers available for this selection.",
+                palette,
+            ));
+        } else {
+            for entry in visible {
+                let group = platform_group_for(entry.kind_id);
+                col = col.child(self.render_picker_default(entry, group, palette, cx));
+                for chip in &entry.customs {
+                    col = col.child(self.render_picker_custom(entry, chip, group, palette, cx));
+                }
+            }
+        }
+
+        div()
+            .id("actions-picker-entries")
+            .flex_1()
+            .min_w(px(0.0))
+            .h_full()
+            .overflow_y_scroll()
+            .child(col)
+            .into_any_element()
+    }
+
+    fn render_picker_default(
+        &self,
+        entry: &PickerEntry,
+        group: PlatformGroup,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let name = entry.label.to_owned();
+        let kind_label = group.label().to_owned();
+        let glyph = group.glyph();
+        let hover = palette.surface_overlay;
+
+        div()
+            .id(SharedString::from(format!(
+                "actions-picker-default-{}",
+                entry.default_id
+            )))
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .py(spacing(Spacing::Xs, Density::Cozy))
+            .px(spacing(Spacing::Xs, Density::Cozy))
+            .rounded(PICKER_BTN_RADIUS)
+            .border(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.link_trigger(
+                    SeededTrigger {
+                        name: name.clone(),
+                        kind_label: kind_label.clone(),
+                        condition: String::new(),
+                        glyph,
+                        enabled: true,
+                    },
+                    cx,
+                )
+            }))
+            .child(icon(Icon::PlayerPlay, FONT_XS, palette.brand))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(entry.label.to_owned()),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_faint)
+                    .child("(default)"),
+            )
+            .into_any_element()
+    }
+
+    fn render_picker_custom(
+        &self,
+        entry: &PickerEntry,
+        chip: &PickerCustom,
+        group: PlatformGroup,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let name = chip.name.to_owned();
+        let kind_label = entry.label.to_owned();
+        let condition = chip.override_summary.to_owned();
+        let glyph = group.glyph();
+        let hover = palette.surface_overlay;
+
+        div()
+            .id(SharedString::from(format!(
+                "actions-picker-custom-{}",
+                chip.id
+            )))
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .py(spacing(Spacing::Xxs, Density::Cozy))
+            .px(spacing(Spacing::Xs, Density::Cozy))
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.link_trigger(
+                    SeededTrigger {
+                        name: name.clone(),
+                        kind_label: kind_label.clone(),
+                        condition: condition.clone(),
+                        glyph,
+                        enabled: true,
+                    },
+                    cx,
+                )
+            }))
+            .child(div().w(PICKER_CHIP_INDENT).flex_none())
+            .child(icon(Icon::Plus, FONT_XS, palette.success))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_secondary)
+                    .child(chip.name.to_owned()),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(chip.override_summary.to_owned()),
+            )
+            .into_any_element()
+    }
+
+    fn render_trigger_unlink_confirm(
+        &self,
+        index: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let name = self
+            .detail
+            .as_ref()
+            .and_then(|d| d.triggers.get(index))
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+        let card = confirm_modal(
+            "Delete trigger link?",
+            "This item will be permanently removed. This action cannot be undone.",
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .item_name(name)
+        .esc_hint("to cancel")
+        .on_cancel(
+            "actions-trigger-unlink-cancel",
+            "Cancel",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_unlink(cx)),
+        )
+        .on_confirm(
+            "actions-trigger-unlink-confirm",
+            "Delete",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_trigger_unlink(cx)),
+        );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("actions-trigger-unlink-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_trigger_unlink(cx));
+            })
+            .into_any_element()
+    }
 }
 
 impl Render for ScreenActionsView {
@@ -2030,6 +2642,13 @@ impl Render for ScreenActionsView {
             .sub_form
             .as_ref()
             .map(|form| self.render_sub_action_modal(form, &palette, cx));
+        let picker = self
+            .trigger_picker
+            .as_ref()
+            .map(|form| self.render_trigger_picker(form, &palette, cx));
+        let unlink_modal = self
+            .pending_trigger_unlink
+            .map(|index| self.render_trigger_unlink_confirm(index, &palette, cx));
 
         div()
             .size_full()
@@ -2041,6 +2660,8 @@ impl Render for ScreenActionsView {
             .children(add_modal)
             .children(delete_modal)
             .children(sub_modal)
+            .children(picker)
+            .children(unlink_modal)
     }
 }
 
@@ -2167,6 +2788,45 @@ struct SubField {
     placeholder: &'static str,
 }
 
+/// The category a [`SubKind`] groups under in the kind picker. The full runtime
+/// registry carries more categories; the seeded subset touches only these.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SubCategory {
+    Chat,
+    Tts,
+    Audio,
+    Globals,
+    Logic,
+    Delay,
+    Files,
+    Util,
+}
+
+impl SubCategory {
+    fn label(self) -> &'static str {
+        match self {
+            SubCategory::Chat => "Chat",
+            SubCategory::Tts => "Text-to-speech",
+            SubCategory::Audio => "Audio",
+            SubCategory::Globals => "Globals",
+            SubCategory::Logic => "Logic",
+            SubCategory::Delay => "Delay",
+            SubCategory::Files => "Files",
+            SubCategory::Util => "Utilities",
+        }
+    }
+
+    fn color(self, palette: &ForgePalette) -> Rgba {
+        match self {
+            SubCategory::Chat => palette.brand,
+            SubCategory::Tts | SubCategory::Audio => palette.success,
+            SubCategory::Globals => palette.warning,
+            SubCategory::Files => palette.random,
+            SubCategory::Logic | SubCategory::Delay | SubCategory::Util => palette.text_muted,
+        }
+    }
+}
+
 impl SubKind {
     fn label(self) -> &'static str {
         match self {
@@ -2212,13 +2872,16 @@ impl SubKind {
         }
     }
 
-    fn accent(self, palette: &ForgePalette) -> Rgba {
+    fn category(self) -> SubCategory {
         match self {
-            SubKind::SendChat => palette.brand,
-            SubKind::Speak | SubKind::PlaySound => palette.success,
-            SubKind::SetGlobal | SubKind::RandomInt => palette.warning,
-            SubKind::ReadFile => palette.random,
-            SubKind::Delay | SubKind::Log | SubKind::SubAction => palette.info,
+            SubKind::SendChat => SubCategory::Chat,
+            SubKind::Speak => SubCategory::Tts,
+            SubKind::PlaySound => SubCategory::Audio,
+            SubKind::SetGlobal => SubCategory::Globals,
+            SubKind::RandomInt | SubKind::SubAction => SubCategory::Logic,
+            SubKind::Delay => SubCategory::Delay,
+            SubKind::Log => SubCategory::Util,
+            SubKind::ReadFile => SubCategory::Files,
         }
     }
 
@@ -2395,14 +3058,271 @@ impl EditorStep {
     }
 }
 
-/// A read-only trigger link shown under the editor's TRIGGERS section (spawn C wires
-/// the interactive picker, unlink and drill-in).
+/// A trigger link shown under the editor's TRIGGERS section.
 struct SeededTrigger {
     name: String,
     kind_label: String,
     condition: String,
     glyph: Icon,
     enabled: bool,
+}
+
+// ── trigger picker stub state ──────────────────────────────────────────────
+
+/// A top-level platform grouping in the two-level trigger picker. The real screen
+/// derives this from a trigger's `kind_id` prefix over the registry; here the seeded
+/// entries carry `kind_id`s that map through [`platform_group_for`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PlatformGroup {
+    Twitch,
+    YouTube,
+    Kick,
+    Obs,
+    VTube,
+    Midi,
+    Hotkey,
+    Discord,
+    Script,
+    Core,
+}
+
+const PLATFORM_GROUPS: [PlatformGroup; 10] = [
+    PlatformGroup::Twitch,
+    PlatformGroup::YouTube,
+    PlatformGroup::Kick,
+    PlatformGroup::Obs,
+    PlatformGroup::VTube,
+    PlatformGroup::Midi,
+    PlatformGroup::Hotkey,
+    PlatformGroup::Discord,
+    PlatformGroup::Script,
+    PlatformGroup::Core,
+];
+
+impl PlatformGroup {
+    fn label(self) -> &'static str {
+        match self {
+            PlatformGroup::Twitch => "Twitch",
+            PlatformGroup::YouTube => "YouTube",
+            PlatformGroup::Kick => "Kick",
+            PlatformGroup::Obs => "OBS",
+            PlatformGroup::VTube => "VTube Studio",
+            PlatformGroup::Midi => "MIDI",
+            PlatformGroup::Hotkey => "Hotkey",
+            PlatformGroup::Discord => "Discord",
+            PlatformGroup::Script => "Script",
+            PlatformGroup::Core => "Core",
+        }
+    }
+
+    /// Stable slug used to mint gpui element ids for the platform rows.
+    fn key(self) -> &'static str {
+        match self {
+            PlatformGroup::Twitch => "twitch",
+            PlatformGroup::YouTube => "youtube",
+            PlatformGroup::Kick => "kick",
+            PlatformGroup::Obs => "obs",
+            PlatformGroup::VTube => "vtube",
+            PlatformGroup::Midi => "midi",
+            PlatformGroup::Hotkey => "hotkey",
+            PlatformGroup::Discord => "discord",
+            PlatformGroup::Script => "script",
+            PlatformGroup::Core => "core",
+        }
+    }
+
+    fn color(self, palette: &ForgePalette) -> Rgba {
+        match self {
+            PlatformGroup::Twitch => palette.brand,
+            PlatformGroup::YouTube => palette.platform_youtube,
+            PlatformGroup::Kick => palette.platform_kick,
+            PlatformGroup::Obs => palette.text_secondary,
+            PlatformGroup::VTube => palette.accent_teal,
+            PlatformGroup::Midi => palette.random,
+            PlatformGroup::Hotkey => palette.warning,
+            PlatformGroup::Discord => palette.info,
+            PlatformGroup::Script => palette.warning,
+            PlatformGroup::Core => palette.info,
+        }
+    }
+
+    /// Leading glyph on a linked trigger card, standing in for the descriptor icon the
+    /// real registry supplies.
+    fn glyph(self) -> Icon {
+        match self {
+            PlatformGroup::Twitch
+            | PlatformGroup::YouTube
+            | PlatformGroup::Kick
+            | PlatformGroup::Discord => Icon::MessageCircle,
+            PlatformGroup::Obs | PlatformGroup::VTube => Icon::Bolt,
+            PlatformGroup::Midi | PlatformGroup::Hotkey => Icon::Bolt,
+            PlatformGroup::Script => Icon::Variable,
+            PlatformGroup::Core => Icon::Clock,
+        }
+    }
+}
+
+fn platform_group_for(kind_id: &str) -> PlatformGroup {
+    if kind_id.starts_with("twitch.") {
+        PlatformGroup::Twitch
+    } else if kind_id.starts_with("youtube.") {
+        PlatformGroup::YouTube
+    } else if kind_id.starts_with("kick.") {
+        PlatformGroup::Kick
+    } else if kind_id.starts_with("obs.") {
+        PlatformGroup::Obs
+    } else if kind_id.starts_with("vtube.") {
+        PlatformGroup::VTube
+    } else if kind_id.starts_with("midi.") {
+        PlatformGroup::Midi
+    } else if kind_id.starts_with("hotkey.") {
+        PlatformGroup::Hotkey
+    } else if kind_id.starts_with("discord.") {
+        PlatformGroup::Discord
+    } else if kind_id.starts_with("script.") {
+        PlatformGroup::Script
+    } else {
+        PlatformGroup::Core
+    }
+}
+
+/// The second `kind_id` segment title-cased into a subgroup label, mirroring the
+/// registry's grouping (`obs.scenes.current_changed` → "Scenes").
+fn sub_group_label_for(kind_id: &str) -> String {
+    let Some(segment) = kind_id.split('.').nth(1) else {
+        return "Other".to_owned();
+    };
+    segment
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// One selectable trigger in the picker: a default instance plus any user-defined
+/// custom instances.
+struct PickerEntry {
+    kind_id: &'static str,
+    label: &'static str,
+    sub_group: String,
+    default_id: u64,
+    customs: Vec<PickerCustom>,
+}
+
+/// A user-defined custom instance chip nested under its [`PickerEntry`].
+struct PickerCustom {
+    id: u64,
+    name: &'static str,
+    override_summary: &'static str,
+}
+
+/// The open trigger picker: the action it links into plus the two-level selection
+/// (`level1` platform, `level2` subgroup) over the seeded entries.
+struct TriggerPickerForm {
+    action_id: ActionId,
+    level1: Option<PlatformGroup>,
+    level2: Option<String>,
+    entries: Vec<PickerEntry>,
+}
+
+impl TriggerPickerForm {
+    /// Entries under the selected platform (all entries while no platform is picked).
+    fn platform_entries(&self) -> Vec<&PickerEntry> {
+        self.entries
+            .iter()
+            .filter(|e| {
+                self.level1
+                    .map(|g| platform_group_for(e.kind_id) == g)
+                    .unwrap_or(true)
+            })
+            .collect()
+    }
+
+    /// Distinct subgroup labels under the selected platform, in first-seen order.
+    fn subgroups(&self) -> Vec<String> {
+        let mut seen: Vec<String> = Vec::new();
+        for entry in self.platform_entries() {
+            if !seen.iter().any(|s| s == &entry.sub_group) {
+                seen.push(entry.sub_group.clone());
+            }
+        }
+        seen
+    }
+
+    /// Entries surviving both the platform and (when set) the subgroup selection.
+    fn visible_entries(&self) -> Vec<&PickerEntry> {
+        self.platform_entries()
+            .into_iter()
+            .filter(|e| {
+                self.level2
+                    .as_deref()
+                    .map(|sg| sg == e.sub_group)
+                    .unwrap_or(true)
+            })
+            .collect()
+    }
+}
+
+/// The representative picker catalog seeded before a trigger registry is wired: a few
+/// platforms, each carrying one or two kinds with a default and an occasional custom
+/// instance, so every column and both the default/custom rows render populated.
+fn seed_picker_entries() -> Vec<PickerEntry> {
+    let counter = std::cell::Cell::new(0u64);
+    let id = || {
+        let v = counter.get();
+        counter.set(v + 1);
+        v
+    };
+    let entry =
+        |kind_id: &'static str, label: &'static str, customs: Vec<PickerCustom>| PickerEntry {
+            kind_id,
+            label,
+            sub_group: sub_group_label_for(kind_id),
+            default_id: id(),
+            customs,
+        };
+    vec![
+        entry(
+            "twitch.chat.command",
+            "Chat command",
+            vec![PickerCustom {
+                id: id(),
+                name: "!hello",
+                override_summary: "command=!hello",
+            }],
+        ),
+        entry(
+            "twitch.support.subscriber",
+            "New subscriber",
+            vec![PickerCustom {
+                id: id(),
+                name: "VIP sub alert",
+                override_summary: "tier=3000",
+            }],
+        ),
+        entry("twitch.points.reward", "Channel point reward", Vec::new()),
+        entry("youtube.chat.message", "Chat message", Vec::new()),
+        entry("youtube.support.member", "New member", Vec::new()),
+        entry("kick.chat.command", "Chat command", Vec::new()),
+        entry("obs.scenes.current_changed", "Scene changed", Vec::new()),
+        entry("obs.stream.started", "Stream started", Vec::new()),
+        entry("core.timer.tick", "Timer tick", Vec::new()),
+    ]
+}
+
+/// A faint mono hint line inside a picker column (empty / prompt states).
+fn picker_hint(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XS)
+        .text_color(palette.text_faint)
+        .child(label)
 }
 
 /// The loaded editor payload for the selected action — seeded locally until the
@@ -2680,73 +3600,27 @@ fn step_icon_btn(
         .into_any_element()
 }
 
-/// A read-only trigger-link card: a leading dot + kind glyph, the name / kind /
-/// condition title cluster, and a faint (inert) unlink glyph.
-fn render_trigger_card(trigger: &SeededTrigger, palette: &ForgePalette) -> AnyElement {
-    let accent = if trigger.enabled {
-        palette.brand
-    } else {
-        palette.disabled
-    };
-    let name_color = if trigger.enabled {
-        palette.text_primary
-    } else {
-        palette.text_faint
-    };
-
-    let leading = div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .child(status_dot(accent, TRIGGER_DOT))
-        .child(icon(trigger.glyph, CARD_GLYPH, accent));
-
-    let title = div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_size(FONT_XS)
-                .text_color(name_color)
-                .child(trigger.name.clone()),
-        )
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(trigger.kind_label.clone()),
-        )
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.bits)
-                .child(trigger.condition.clone()),
-        );
-
-    let unlink = div()
-        .flex()
-        .items_center()
-        .justify_center()
-        .size(STEP_BTN)
-        .child(icon(Icon::X, CARD_GLYPH, palette.text_faint));
-
-    row_card(title, palette)
-        .leading(leading)
-        .trailing(unlink)
-        .idle_background(palette.elevated)
-        .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
-        .into_any_element()
+/// A category section header inside the kind picker: an uppercase mono label with the
+/// group's kind count, matching the source's `LABEL · N` section bar.
+fn picker_section_header(
+    label: &'static str,
+    count: usize,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    div()
+        .py(spacing(Spacing::Xs, Density::Cozy))
+        .px(spacing(Spacing::Md, Density::Cozy))
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XXS)
+        .text_color(palette.text_muted)
+        .child(format!("{} \u{b7} {}", label.to_uppercase(), count))
 }
 
-/// A sub-action-kind picker row: a leading accent dot, the kind label and its
+/// A sub-action-kind picker row: a leading category dot, the kind label and its
 /// one-line summary, selecting the kind on click.
 fn render_kind_row(
     kind: SubKind,
+    dot_color: Rgba,
     palette: &ForgePalette,
     cx: &mut Context<ScreenActionsView>,
 ) -> AnyElement {
@@ -2762,7 +3636,7 @@ fn render_kind_row(
         .child(kind.summary_hint());
 
     row_card(title, palette)
-        .leading(status_dot(kind.accent(palette), TRIGGER_DOT))
+        .leading(status_dot(dot_color, TRIGGER_DOT))
         .meta(meta)
         .on_click(
             SharedString::from(format!("actions-kind-{}", kind.label())),

@@ -1,11 +1,12 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XXS, ForgePalette,
-    Spacing, StatusVariant, badge, breadcrumb, card, spacing, with_alpha,
+    Spacing, StatusVariant, badge, breadcrumb, spacing, with_alpha,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
 };
 
+use crate::cloud_tts_engines::CloudTtsEnginesView;
 use crate::presentation::ActivePresentation;
 use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
@@ -89,6 +90,7 @@ pub struct TtsView {
     aliases: Entity<VoiceAliasesView>,
     filters: Entity<TtsFiltersView>,
     triggers: Entity<TtsTriggersView>,
+    cloud: Entity<CloudTtsEnginesView>,
 }
 
 impl TtsView {
@@ -98,6 +100,7 @@ impl TtsView {
         let aliases = cx.new(VoiceAliasesView::new);
         let filters = cx.new(TtsFiltersView::new);
         let triggers = cx.new(TtsTriggersView::new);
+        let cloud = cx.new(CloudTtsEnginesView::new);
         Self {
             section: TtsSection::Dashboard,
             dashboard,
@@ -105,6 +108,7 @@ impl TtsView {
             aliases,
             filters,
             triggers,
+            cloud,
         }
     }
 
@@ -201,17 +205,15 @@ impl TtsView {
             .child(div().w_full().h(TAB_INDICATOR_H).bg(indicator))
     }
 
-    /// The active section's pane. Dashboard and Engines render their real child
-    /// view-entities; the other four render a deferred placeholder inside the screen
-    /// frame.
-    fn render_content(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    /// The active section's pane — each section renders its own child view-entity.
+    fn render_content(&self) -> AnyElement {
         match self.section {
             TtsSection::Dashboard => self.dashboard.clone().into_any_element(),
             TtsSection::Engines => self.engines.clone().into_any_element(),
             TtsSection::Aliases => self.aliases.clone().into_any_element(),
             TtsSection::Filters => self.filters.clone().into_any_element(),
             TtsSection::Triggers => self.triggers.clone().into_any_element(),
-            other => deferred_pane(other, palette, density),
+            TtsSection::CloudEngines => self.cloud.clone().into_any_element(),
         }
     }
 }
@@ -223,7 +225,7 @@ impl Render for TtsView {
 
         let header = self.render_header(&palette);
         let tab_bar = self.render_tab_bar(&palette, density, cx);
-        let content = self.render_content(&palette, density);
+        let content = self.render_content();
 
         div()
             .size_full()
@@ -234,37 +236,4 @@ impl Render for TtsView {
             .child(tab_bar)
             .child(div().w_full().flex_1().min_h(px(0.0)).child(content))
     }
-}
-
-/// A not-yet-built section's pane: a centred card naming the section and noting the
-/// slice is deferred, rendered inside the real screen frame (breadcrumb + tab bar
-/// stay live above it).
-fn deferred_pane(section: TtsSection, palette: &ForgePalette, density: Density) -> AnyElement {
-    div()
-        .w_full()
-        .flex_1()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(spacing(Spacing::Sm, density))
-        .p(spacing(Spacing::Lg, density))
-        .bg(palette.base)
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(FONT_SM)
-                .text_color(palette.text_primary)
-                .child(section.label()),
-        )
-        .child(card(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child("This section arrives in a later slice."),
-            palette,
-        ))
-        .into_any_element()
 }

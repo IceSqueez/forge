@@ -3,6 +3,7 @@ mod builtin_sections;
 mod chat;
 mod chat_feed;
 mod chrome;
+mod cloud_tts_engines;
 mod event_feed;
 mod event_log;
 mod footer;

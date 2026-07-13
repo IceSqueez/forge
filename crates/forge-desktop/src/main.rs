@@ -28,6 +28,7 @@ mod topics;
 mod tts;
 mod tts_dashboard;
 mod tts_engines;
+mod tts_filters;
 mod voice_aliases;
 
 use std::sync::Arc;

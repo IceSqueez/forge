@@ -21,6 +21,7 @@ use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
 use crate::stream_apps::StreamAppsView;
 use crate::topics::Topics;
+use crate::triggers_registry::TriggersRegistryView;
 use crate::tts::TtsView;
 
 /// Root shell view-entity. Holds the router discriminant, the single active-screen
@@ -138,6 +139,7 @@ impl AppShell {
             Screen::Tts => cx.new(TtsView::new).into(),
             Screen::Server => cx.new(ServerConsoleView::new).into(),
             Screen::Actions => cx.new(ScreenActionsView::new).into(),
+            Screen::Triggers => cx.new(TriggersRegistryView::new).into(),
             other => cx.new(|_| ScreenStub::new(other.clone())).into(),
         }
     }

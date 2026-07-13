@@ -28,6 +28,7 @@ mod soundboard;
 mod stream_apps;
 mod titlebar;
 mod topics;
+mod triggers_registry;
 mod tts;
 mod tts_dashboard;
 mod tts_engines;

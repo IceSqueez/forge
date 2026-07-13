@@ -5,10 +5,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, CredentialId,
-    CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalTransit, GlobalsRepo,
-    HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, TtsTriggerSettingsRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    CredentialsRepo, DataProvider, EXPECTED_SCHEMA_VERSION, EventLogRepo, GlobalEntry,
+    GlobalTransit, GlobalsRepo, HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
+    TtsTriggerSettingsRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -49,9 +49,7 @@ pub struct SqliteBackend {
 
 impl SqliteBackend {
     pub async fn open(url: &str) -> Result<Self, SqliteStorageError> {
-        let pool = connect(url).await?;
-        apply_migrations(&pool).await?;
-        crate::registry_migration::migrate_registry_format(&pool).await?;
+        let pool = Self::migrate_and_gate(url).await?;
         let credentials = SqliteCredentialsRepo::new(pool.clone())?;
         Ok(Self::from_pool_and_credentials(
             pool,
@@ -62,9 +60,7 @@ impl SqliteBackend {
 
     #[doc(hidden)]
     pub async fn open_with_key(url: &str, key: [u8; 32]) -> Result<Self, SqliteStorageError> {
-        let pool = connect(url).await?;
-        apply_migrations(&pool).await?;
-        crate::registry_migration::migrate_registry_format(&pool).await?;
+        let pool = Self::migrate_and_gate(url).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
         Ok(Self::from_pool_and_credentials(
             pool,
@@ -79,15 +75,35 @@ impl SqliteBackend {
         key: [u8; 32],
         prune_interval: Duration,
     ) -> Result<Self, SqliteStorageError> {
-        let pool = connect(url).await?;
-        apply_migrations(&pool).await?;
-        crate::registry_migration::migrate_registry_format(&pool).await?;
+        let pool = Self::migrate_and_gate(url).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,
             prune_interval,
         ))
+    }
+
+    /// Connects, rolls migrations forward, then fails with
+    /// [`SqliteStorageError::SchemaMismatch`] unless the database's applied version equals
+    /// [`EXPECTED_SCHEMA_VERSION`]. A database newer than this build is rejected here rather
+    /// than surfacing as a generic migration failure. Returns only a version-matched pool, so
+    /// no repository is ever constructed against an incompatible schema.
+    async fn migrate_and_gate(url: &str) -> Result<sqlx::SqlitePool, SqliteStorageError> {
+        let pool = connect(url).await?;
+        apply_migrations(&pool).await?;
+        crate::registry_migration::migrate_registry_format(&pool).await?;
+
+        let found = crate::migrations::applied_version(&pool).await?;
+        if found != EXPECTED_SCHEMA_VERSION {
+            pool.close().await;
+            return Err(SqliteStorageError::SchemaMismatch {
+                expected: EXPECTED_SCHEMA_VERSION,
+                found,
+            });
+        }
+
+        Ok(pool)
     }
 
     pub fn shutdown_retention_pruner(&self) {
@@ -421,14 +437,7 @@ impl DataProvider for SqliteBackend {
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {
-        let version: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| StorageError::Connection {
-                reason: e.to_string(),
-            })?;
-
-        Ok(version.unwrap_or(0) as u32)
+        Ok(crate::migrations::applied_version(&self.pool).await?)
     }
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError> {

@@ -3,6 +3,9 @@ pub enum SqliteStorageError {
     #[error("migration failed ({migration}): {reason}")]
     Migration { migration: String, reason: String },
 
+    #[error("schema version mismatch: code expects {expected}, database is at {found}")]
+    SchemaMismatch { expected: u32, found: u32 },
+
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 
@@ -21,6 +24,9 @@ impl From<SqliteStorageError> for forge_storage::StorageError {
         match e {
             SqliteStorageError::Migration { migration, reason } => {
                 Self::Migration { migration, reason }
+            }
+            SqliteStorageError::SchemaMismatch { expected, found } => {
+                Self::SchemaMismatch { expected, found }
             }
             SqliteStorageError::Sqlx(inner) => Self::Connection {
                 reason: inner.to_string(),

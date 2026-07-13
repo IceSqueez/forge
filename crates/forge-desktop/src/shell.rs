@@ -2,6 +2,7 @@ use forge_platform_core::BuiltinId;
 use gpui::{AnyView, AppContext, Context, Entity, FocusHandle, Window, div, prelude::*};
 
 use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, SHELL_CONTEXT};
+use crate::actions_screen::ScreenActionsView;
 use crate::chat::ChatView;
 use crate::chrome::Chrome;
 use crate::event_feed::EventFeedView;
@@ -136,6 +137,7 @@ impl AppShell {
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
             Screen::Tts => cx.new(TtsView::new).into(),
             Screen::Server => cx.new(ServerConsoleView::new).into(),
+            Screen::Actions => cx.new(ScreenActionsView::new).into(),
             other => cx.new(|_| ScreenStub::new(other.clone())).into(),
         }
     }

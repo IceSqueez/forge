@@ -21,6 +21,11 @@ use crate::integrations::BuiltinObject;
 // is wired, so the whole surface is held rather than consumed field-by-field yet.
 #[allow(dead_code)]
 pub struct RuntimeHandles {
+    /// The tokio runtime handle owned by `main`. Screens that dispatch a runtime
+    /// verb doing real network I/O (a lifecycle control's reconnect/disconnect/
+    /// refresh, a quick action) spawn onto this handle so the future runs with a
+    /// tokio reactor, rather than gpui's foreground executor which has none.
+    pub rt_handle: tokio::runtime::Handle,
     pub backend: Arc<dyn DataProvider>,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,

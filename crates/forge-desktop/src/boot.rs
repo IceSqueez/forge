@@ -136,6 +136,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     }
 
     Ok(RuntimeHandles {
+        rt_handle: tokio::runtime::Handle::current(),
         backend,
         bus,
         script_registry,

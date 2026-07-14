@@ -34,13 +34,19 @@ use crate::toasts::PushToast;
 /// alt-state, health, content and quick actions track the real `ConnectionState`.
 pub struct IntegrationDetail {
     // Live trait surface, held so the snapshot can be re-read on a connection change.
-    // `control` (lifecycle verbs) is wired to real dispatch in a later phase.
     status: Arc<dyn BuiltinStatus>,
     health: Arc<dyn BuiltinHealth>,
     content: Arc<dyn BuiltinContent>,
     quick: Arc<dyn QuickActions>,
-    #[allow(dead_code)]
+    // The lifecycle-verb handle (reconnect / disconnect / refresh-token). `None`
+    // when this integration exposes no control surface (seed fallback / no
+    // credentials); a lifecycle action is then a silent no-op, matching the header
+    // buttons that still render but do nothing.
     control: Option<Arc<dyn BuiltinControl>>,
+    // The tokio runtime handle onto which a control verb is spawned: the verb does
+    // real network I/O, so it must run with a tokio reactor rather than on gpui's
+    // foreground executor.
+    rt_handle: tokio::runtime::Handle,
     icon: SectionIcon,
     display_name: String,
     version: Option<String>,
@@ -73,6 +79,7 @@ impl IntegrationDetail {
         content: Arc<dyn BuiltinContent>,
         quick: Arc<dyn QuickActions>,
         control: Option<Arc<dyn BuiltinControl>>,
+        rt_handle: tokio::runtime::Handle,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -116,6 +123,7 @@ impl IntegrationDetail {
             content,
             quick,
             control,
+            rt_handle,
             icon,
             display_name,
             version,
@@ -168,20 +176,42 @@ impl IntegrationDetail {
 
     fn on_header_action(&mut self, action: HeaderAction, cx: &mut Context<Self>) {
         match action {
+            // Destructive: arm the two-phase confirm gate; the verb itself fires
+            // only once the modal is accepted (see `confirm_disconnect`).
             HeaderAction::Disconnect => {
                 self.pending_disconnect = true;
+                cx.notify();
             }
-            HeaderAction::Reconnect => {
-                self.toast = Some("Reconnect requested".to_owned());
-            }
-            HeaderAction::RefreshToken => {
-                self.toast = Some("Token refresh requested".to_owned());
-            }
+            HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect),
+            HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken),
             HeaderAction::Settings => {
                 self.toast = Some("Settings coming soon".to_owned());
+                cx.notify();
             }
         }
-        cx.notify();
+    }
+
+    /// Spawns a lifecycle verb onto the tokio runtime. With no `control` surface the
+    /// dispatch is a silent no-op (the header button still renders but does nothing),
+    /// matching how the integration presents an absent control. The resulting steady
+    /// connection state is not returned here: it is observed through the
+    /// `platform.connection.changed` bridge, which advances the connectivity topic and
+    /// triggers `reload`. A rejected verb is logged with the trait's coarse,
+    /// PII-safe reason and never surfaced as transport detail.
+    fn dispatch_control(&self, verb: ControlVerb) {
+        let Some(ctrl) = self.control.clone() else {
+            return;
+        };
+        self.rt_handle.spawn(async move {
+            let outcome = match verb {
+                ControlVerb::Reconnect => ctrl.reconnect().await,
+                ControlVerb::Disconnect => ctrl.disconnect().await,
+                ControlVerb::RefreshToken => ctrl.refresh_token().await,
+            };
+            if let Err(failure) = outcome {
+                eprintln!("forge-desktop: integration control action failed: {failure}");
+            }
+        });
     }
 
     fn cancel_disconnect(&mut self, cx: &mut Context<Self>) {
@@ -191,7 +221,7 @@ impl IntegrationDetail {
 
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
         self.pending_disconnect = false;
-        self.toast = Some(format!("Disconnecting {}", self.display_name));
+        self.dispatch_control(ControlVerb::Disconnect);
         cx.notify();
     }
 
@@ -712,6 +742,14 @@ fn hero_identity(icon_str: &str, display_name: &str, palette: &ForgePalette) -> 
             (initial, palette.brand)
         }
     }
+}
+
+/// The lifecycle verb a control dispatch runs, routing the three `BuiltinControl`
+/// methods through the single spawn site in [`IntegrationDetail::dispatch_control`].
+enum ControlVerb {
+    Reconnect,
+    Disconnect,
+    RefreshToken,
 }
 
 fn header_action_label(action: &HeaderAction) -> &'static str {

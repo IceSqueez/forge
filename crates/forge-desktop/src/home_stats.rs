@@ -1,6 +1,7 @@
 use forge_components::ForgePalette;
 use forge_events::{Event, EventSource};
 use forge_platform_core::BuiltinId;
+use forge_runtime::LiveViewerCount;
 use gpui::{Rgba, SharedString};
 
 use crate::event_log::EventLog;
@@ -240,6 +241,23 @@ impl HomeStats {
     /// leaves it directly exercisable. Dormant until the runtime publishes the event.
     pub fn record_action_done(&mut self) {
         self.triggers_fired = Some(self.triggers_fired.unwrap_or(0) + 1);
+    }
+
+    /// Applies the latest aggregate concurrent-viewer figure from the live-viewer
+    /// bridge, mapping `Empty` (no connected platform reports) to the "—" empty state
+    /// and `Reporting(n)` to a concrete count. Reports whether the value actually moved
+    /// so the bridge only repaints Home on a real change. Kept free of `cx` so it stays
+    /// directly exercisable.
+    pub fn set_live_viewers(&mut self, count: LiveViewerCount) -> bool {
+        let next = match count {
+            LiveViewerCount::Reporting(n) => Some(n),
+            LiveViewerCount::Empty => None,
+        };
+        if self.live_viewers == next {
+            return false;
+        }
+        self.live_viewers = next;
+        true
     }
 
     // --- display accessors (pure, kept off render for testability) -----------

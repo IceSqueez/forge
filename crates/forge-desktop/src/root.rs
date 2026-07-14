@@ -7,7 +7,8 @@ use forge_components::{
 };
 use forge_events::EventsError;
 use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
-use forge_runtime::EventBus;
+use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
+use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
 };
@@ -115,8 +116,10 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 let status_for_clock = status.clone();
                 let chat_feed_for_bridge = chat_feed.clone();
                 let home_stats_for_bridge = home_stats.clone();
+                let home_stats_for_viewers = home_stats.clone();
                 let event_log_for_bridge = event_log.clone();
                 let platforms_for_bridge = platforms.clone();
+                let live_viewers_handle = handles.live_viewers.clone();
                 let applied = window.update(cx, |root, window, cx| {
                     // Seed the connectivity cache from each mounted builtin's live
                     // connection snapshot before the bridge takes over live updates.
@@ -140,6 +143,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                         bus,
                     );
                     start_uptime_clock(cx, status_for_clock);
+                    start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
                 }
             }
             Err(failure) => {
@@ -252,6 +256,35 @@ fn start_uptime_clock(cx: &mut AsyncApp, status: Entity<RuntimeStatus>) {
                 .update(cx, |status, cx| {
                     status.refresh(Instant::now());
                     cx.notify();
+                })
+                .is_err()
+            {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
+/// Live concurrent-viewer drain, owned by the shell for the app's lifetime. It watches
+/// the runtime's sole viewer-aggregate `watch` channel (latest-wins: a slow paint
+/// resynchronizes to the newest figure, never blocking the aggregator) and folds each
+/// aggregate into the Home [`HomeStats`] entity — `Empty` collapsing the "viewers now"
+/// cell to "—", `Reporting(n)` to the summed count — repainting Home only on a real
+/// change. A closed channel or a released Home entity ends the task.
+fn start_live_viewers_bridge(
+    cx: &mut AsyncApp,
+    home_stats: Entity<HomeStats>,
+    handle: LiveViewerAggregatorHandle,
+) {
+    cx.spawn(async move |cx| {
+        let mut stream = std::pin::pin!(handle.subscribe());
+        while let Some(count) = stream.next().await {
+            if home_stats
+                .update(cx, |stats, cx| {
+                    if stats.set_live_viewers(count) {
+                        cx.notify();
+                    }
                 })
                 .is_err()
             {

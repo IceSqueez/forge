@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use forge_storage::{StorageError, TriggerInstanceRepo};
 use forge_types::{ActionId, PlatformScope, TriggerInstance, TriggerInstanceId};
+use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
 
@@ -45,6 +46,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope
              FROM trigger_instances
+             WHERE archived_at IS NULL
              ORDER BY user_defined ASC, name ASC",
         )
         .fetch_all(&self.pool)
@@ -59,7 +61,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope
-             FROM trigger_instances WHERE user_defined = 1 ORDER BY name",
+             FROM trigger_instances WHERE user_defined = 1 AND archived_at IS NULL ORDER BY name",
         )
         .fetch_all(&self.pool)
         .await
@@ -80,7 +82,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
                     ti.platform_scope
              FROM trigger_instances ti
              JOIN action_trigger_instances ati ON ati.trigger_instance_id = ti.id
-             WHERE ati.action_id = ?
+             WHERE ati.action_id = ? AND ti.archived_at IS NULL
              ORDER BY ati.position",
         )
         .bind(&action_id_str)
@@ -99,7 +101,10 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     ) -> Result<Vec<ActionId>, StorageError> {
         let id_str = instance_id.to_string();
         let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT action_id FROM action_trigger_instances WHERE trigger_instance_id = ?",
+            "SELECT ati.action_id
+             FROM action_trigger_instances ati
+             JOIN actions a ON a.id = ati.action_id
+             WHERE ati.trigger_instance_id = ? AND a.archived_at IS NULL",
         )
         .bind(&id_str)
         .fetch_all(&self.pool)
@@ -162,7 +167,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let id_str = id.to_string();
         let row: Option<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope
-             FROM trigger_instances WHERE id = ?",
+             FROM trigger_instances WHERE id = ? AND archived_at IS NULL",
         )
         .bind(&id_str)
         .fetch_optional(&self.pool)
@@ -209,7 +214,21 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
-        let action_ids = self.actions_using(id).await?;
+        // Unfiltered by archived_at — `action_trigger_instances.trigger_instance_id` is
+        // ON DELETE RESTRICT regardless of the linked action's archive state, so a link
+        // from an archived action must still block the hard delete here.
+        let id_str_probe = id.to_string();
+        let linked_rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT action_id FROM action_trigger_instances WHERE trigger_instance_id = ?",
+        )
+        .bind(&id_str_probe)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        let action_ids = linked_rows
+            .into_iter()
+            .map(|(s,)| parse_id::<ActionId>(&s, "action").map_err(StorageError::from))
+            .collect::<Result<Vec<_>, _>>()?;
 
         if !action_ids.is_empty() {
             let used_in_count = action_ids.len() as u32;
@@ -291,5 +310,49 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(())
+    }
+
+    async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
+        let id_str = id.to_string();
+        let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        let result = sqlx::query(
+            "UPDATE trigger_instances SET archived_at = ? WHERE id = ? AND archived_at IS NULL",
+        )
+        .bind(now_ms)
+        .bind(&id_str)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn restore(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
+        let id_str = id.to_string();
+        let result = sqlx::query(
+            "UPDATE trigger_instances SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
+        )
+        .bind(&id_str)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        let rows: Vec<InstanceRow> = sqlx::query_as(
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope
+             FROM trigger_instances
+             WHERE archived_at IS NOT NULL
+             ORDER BY user_defined ASC, name ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
     }
 }

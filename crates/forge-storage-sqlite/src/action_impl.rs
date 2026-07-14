@@ -93,7 +93,7 @@ impl ActionRepo for SqliteActionRepo {
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
         let rows: Vec<ActionRow> = sqlx::query_as(
             "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions ORDER BY name",
+             FROM actions WHERE archived_at IS NULL ORDER BY name",
         )
         .fetch_all(&self.pool)
         .await
@@ -108,7 +108,7 @@ impl ActionRepo for SqliteActionRepo {
         let id_str = id.to_string();
         let row: Option<ActionRow> = sqlx::query_as(
             "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE id = ?",
+             FROM actions WHERE id = ? AND archived_at IS NULL",
         )
         .bind(&id_str)
         .fetch_optional(&self.pool)
@@ -180,7 +180,7 @@ impl ActionRepo for SqliteActionRepo {
         let group_val = group.unwrap_or("");
         let rows: Vec<ActionRow> = sqlx::query_as(
             "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE group_name = ? ORDER BY name",
+             FROM actions WHERE group_name = ? AND archived_at IS NULL ORDER BY name",
         )
         .bind(group_val)
         .fetch_all(&self.pool)
@@ -339,5 +339,46 @@ impl ActionRepo for SqliteActionRepo {
             avg_duration_ms: avg_dur_raw.map(|v| v.round() as u64),
             errors_7d: errors_7d_raw.max(0) as u64,
         })
+    }
+
+    async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
+        let id_str = id.to_string();
+        let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        let result =
+            sqlx::query("UPDATE actions SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
+                .bind(now_ms)
+                .bind(&id_str)
+                .execute(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn restore(&self, id: ActionId) -> Result<bool, StorageError> {
+        let id_str = id.to_string();
+        let result = sqlx::query(
+            "UPDATE actions SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
+        )
+        .bind(&id_str)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
+        let rows: Vec<ActionRow> = sqlx::query_as(
+            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
+             FROM actions WHERE archived_at IS NOT NULL ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
     }
 }

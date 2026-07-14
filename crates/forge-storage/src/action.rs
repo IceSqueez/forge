@@ -67,6 +67,35 @@ pub trait ActionRepo: Send + Sync {
         copy.name = new_name.to_owned();
         self.save(&copy).await
     }
+
+    /// Marks `id` archived: invisible to `get`, `list`, and `list_by_group` until
+    /// [`Self::restore`] is called. The row and its telemetry survive untouched — this
+    /// is a soft delete, not [`Self::delete`]. Returns `false` when `id` does not
+    /// exist or is already archived.
+    ///
+    /// The default impl has no generic representation of archived state without a
+    /// dedicated column, so it returns [`StorageError::NotReady`]; a real backend
+    /// must override this.
+    async fn archive(&self, _id: ActionId) -> Result<bool, StorageError> {
+        Err(StorageError::NotReady)
+    }
+
+    /// Clears the marker set by [`Self::archive`], restoring `id` to `get`/`list`/
+    /// `list_by_group` visibility. Returns `false` when `id` does not exist or is not
+    /// currently archived.
+    ///
+    /// See [`Self::archive`] for the default-impl caveat.
+    async fn restore(&self, _id: ActionId) -> Result<bool, StorageError> {
+        Err(StorageError::NotReady)
+    }
+
+    /// Returns archived actions only — the mirror of `list`, which excludes them.
+    ///
+    /// The default impl reports no archived entries, consistent with a backend that
+    /// does not support archiving.
+    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
+        Ok(Vec::new())
+    }
 }
 
 #[cfg(test)]

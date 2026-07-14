@@ -228,6 +228,18 @@ impl GlobalsRepo for SqliteBackend {
         self.globals.list().await
     }
 
+    async fn archive(&self, name: &str) -> Result<bool, StorageError> {
+        self.globals.archive(name).await
+    }
+
+    async fn restore(&self, name: &str) -> Result<bool, StorageError> {
+        self.globals.restore(name).await
+    }
+
+    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+        self.globals.list_archived().await
+    }
+
     async fn storage_bytes(&self) -> Result<u64, StorageError> {
         self.globals.storage_bytes().await
     }

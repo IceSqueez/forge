@@ -25,15 +25,41 @@ impl SqliteGlobalsRepo {
     }
 }
 
+type GlobalRow = (String, String, i64, i64, i64, i64, i64);
+
+fn decode_entries(rows: Vec<GlobalRow>) -> Result<Vec<GlobalEntry>, StorageError> {
+    let mut entries = Vec::with_capacity(rows.len());
+    for (name, value_json, persisted_int, reads, writes, created_at_ms, last_modified_ms) in rows {
+        let value: Variant = serde_json::from_str(&value_json)
+            .map_err(|e| StorageError::Parse(format!("variant decode for '{name}': {e}")))?;
+
+        let created_at = from_epoch_ms(created_at_ms)?;
+        let last_modified = from_epoch_ms(last_modified_ms)?;
+
+        entries.push(GlobalEntry {
+            name,
+            value,
+            persisted: persisted_int != 0,
+            reads: reads as u64,
+            writes: writes as u64,
+            created_at,
+            last_modified,
+        });
+    }
+    Ok(entries)
+}
+
 #[async_trait]
 impl GlobalsRepo for SqliteGlobalsRepo {
     async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-        let row: Option<(String,)> =
-            sqlx::query_as("UPDATE globals SET reads = reads + 1 WHERE name = ? RETURNING value")
-                .bind(name)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<(String,)> = sqlx::query_as(
+            "UPDATE globals SET reads = reads + 1 \
+             WHERE name = ? AND archived_at IS NULL RETURNING value",
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         let Some((value_json,)) = row else {
             return Ok(None);
@@ -75,11 +101,12 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     }
 
     async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
-        let row: Option<(i64,)> = sqlx::query_as("SELECT persisted FROM globals WHERE name = ?")
-            .bind(name)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT persisted FROM globals WHERE name = ? AND archived_at IS NULL")
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(row.map(|(p,)| p != 0))
     }
@@ -145,35 +172,53 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     }
 
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        let rows: Vec<(String, String, i64, i64, i64, i64, i64)> = sqlx::query_as(
-            "SELECT name, value, persisted, reads, writes, created_at, last_modified FROM globals",
+        let rows: Vec<GlobalRow> = sqlx::query_as(
+            "SELECT name, value, persisted, reads, writes, created_at, last_modified \
+             FROM globals WHERE archived_at IS NULL",
         )
         .fetch_all(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        let mut entries = Vec::with_capacity(rows.len());
-        for (name, value_json, persisted_int, reads, writes, created_at_ms, last_modified_ms) in
-            rows
-        {
-            let value: Variant = serde_json::from_str(&value_json)
-                .map_err(|e| StorageError::Parse(format!("variant decode for '{name}': {e}")))?;
+        decode_entries(rows)
+    }
 
-            let created_at = from_epoch_ms(created_at_ms)?;
-            let last_modified = from_epoch_ms(last_modified_ms)?;
+    async fn archive(&self, name: &str) -> Result<bool, StorageError> {
+        let now_ms = epoch_ms_now();
+        let result = sqlx::query(
+            "UPDATE globals SET archived_at = ? WHERE name = ? AND archived_at IS NULL",
+        )
+        .bind(now_ms)
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
-            entries.push(GlobalEntry {
-                name,
-                value,
-                persisted: persisted_int != 0,
-                reads: reads as u64,
-                writes: writes as u64,
-                created_at,
-                last_modified,
-            });
-        }
+        Ok(result.rows_affected() > 0)
+    }
 
-        Ok(entries)
+    async fn restore(&self, name: &str) -> Result<bool, StorageError> {
+        let result = sqlx::query(
+            "UPDATE globals SET archived_at = NULL WHERE name = ? AND archived_at IS NOT NULL",
+        )
+        .bind(name)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+        let rows: Vec<GlobalRow> = sqlx::query_as(
+            "SELECT name, value, persisted, reads, writes, created_at, last_modified \
+             FROM globals WHERE archived_at IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        decode_entries(rows)
     }
 
     async fn storage_bytes(&self) -> Result<u64, StorageError> {
@@ -208,7 +253,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
              SET value         = json_set(value, '$.value', json_extract(value, '$.value') + ?), \
                  writes        = writes + 1, \
                  last_modified = ? \
-             WHERE name = ? AND type_tag IN ('int', 'float') \
+             WHERE name = ? AND type_tag IN ('int', 'float') AND archived_at IS NULL \
              RETURNING value",
         )
         .bind(amount)
@@ -224,11 +269,13 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             return Ok(variant);
         }
 
-        let tag: Option<String> = sqlx::query_scalar("SELECT type_tag FROM globals WHERE name = ?")
-            .bind(name)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let tag: Option<String> = sqlx::query_scalar(
+            "SELECT type_tag FROM globals WHERE name = ? AND archived_at IS NULL",
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         match tag {
             None => Err(StorageError::NotFound {

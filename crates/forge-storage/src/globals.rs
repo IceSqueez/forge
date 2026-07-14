@@ -94,6 +94,35 @@ pub trait GlobalsRepo: Send + Sync {
 
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
+    /// Marks `name` archived: invisible to `get`, `list`, `persisted`, and `incr` until
+    /// [`Self::restore`] is called. The row and its telemetry survive untouched — this
+    /// is a soft delete, not [`Self::delete`]. Returns `false` when `name` does not
+    /// exist or is already archived.
+    ///
+    /// The default impl has no generic representation of archived state without a
+    /// dedicated column, so it returns [`StorageError::NotReady`]; a real backend
+    /// must override this.
+    async fn archive(&self, _name: &str) -> Result<bool, StorageError> {
+        Err(StorageError::NotReady)
+    }
+
+    /// Clears the marker set by [`Self::archive`], restoring `name` to `get`/`list`/
+    /// `persisted`/`incr` visibility. Returns `false` when `name` does not exist or is
+    /// not currently archived.
+    ///
+    /// See [`Self::archive`] for the default-impl caveat.
+    async fn restore(&self, _name: &str) -> Result<bool, StorageError> {
+        Err(StorageError::NotReady)
+    }
+
+    /// Returns archived globals only — the mirror of `list`, which excludes them.
+    ///
+    /// The default impl reports no archived entries, consistent with a backend that
+    /// does not support archiving.
+    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+        Ok(Vec::new())
+    }
+
     /// Sums the footprint of ALL globals, persisted and session-scoped alike — the
     /// Data screen's total storage-used figure, not a disk-durable-only figure.
     async fn storage_bytes(&self) -> Result<u64, StorageError>;

@@ -7,7 +7,7 @@ pub struct AliasId(pub String);
 
 impl AliasId {
     pub fn new() -> Self {
-        Self(ulid::Ulid::new().to_string())
+        Self(ulid::Ulid::r#gen().to_string())
     }
 }
 

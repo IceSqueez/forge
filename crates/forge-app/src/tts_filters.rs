@@ -360,7 +360,7 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
                 _ => {
                     let position = state.rules.len() as u32;
                     state.rules.push(FilterRule {
-                        id: ulid::Ulid::new().to_string(),
+                        id: ulid::Ulid::r#gen().to_string(),
                         name: draft.name,
                         enabled: true,
                         position,

@@ -268,9 +268,26 @@ impl AppShell {
             Screen::Actions => {
                 let action_repo = handles.backend.action_repo();
                 let queue_repo = handles.backend.queue_repo();
+                let actions_service = Arc::new(forge_runtime::actions::ActionsService::new(
+                    handles.backend.action_repo(),
+                    handles.backend.queue_repo(),
+                    handles.backend.history_repo(),
+                    handles.backend.trigger_instance_repo(),
+                    handles.backend.soundboard_clips_repo(),
+                ));
+                let sub_action_registry = handles.sub_action_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| ScreenActionsView::new(action_repo, queue_repo, rt_handle, cx))
-                    .into()
+                cx.new(|cx| {
+                    ScreenActionsView::new(
+                        action_repo,
+                        queue_repo,
+                        actions_service,
+                        sub_action_registry,
+                        rt_handle,
+                        cx,
+                    )
+                })
+                .into()
             }
             Screen::Triggers => cx.new(TriggersRegistryView::new).into(),
             Screen::Scripts => {

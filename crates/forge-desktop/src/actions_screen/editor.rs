@@ -1,188 +1,214 @@
 //! Actions screen — editor detail pane: header, the sub-action step chain and
-//! step controls, the edit-sub-action side sheet, the triggers section, the
-//! unified add grid picker and the trigger-unlink confirm.
+//! step controls, the edit-sub-action side sheet, the placeholder triggers
+//! section, and the unified add-sub-action grid picker.
 
 use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
-    BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM,
-    FONT_XS, FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent,
-    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, MenuPlacement,
-    OverlayPosition, Radius, SheetPosition, Spacing, TextInput, confirm_modal,
-    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, overlay, primary_button,
-    radius, row_card, secondary_button, side_sheet, spacing, status_dot,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup,
+    GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, MenuPlacement, OverlayPosition,
+    Radius, SheetPosition, Spacing, TextInput, ghost_button_with_icon, icon, menu_button,
+    menu_divider, menu_item, overlay, primary_button, radius, row_card, secondary_button,
+    side_sheet, spacing, status_dot, toggle,
 };
+use forge_registry::{FormField, SubActionCategory, SubActionRegistry, SubActionRunner};
+use forge_types::{SubActionConfig, SubActionStep, Variant};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
     Window, div, px,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
-fn platform_group_for(kind_id: &str) -> PlatformGroup {
-    if kind_id.starts_with("twitch.") {
-        PlatformGroup::Twitch
-    } else if kind_id.starts_with("youtube.") {
-        PlatformGroup::YouTube
-    } else if kind_id.starts_with("kick.") {
-        PlatformGroup::Kick
-    } else if kind_id.starts_with("obs.") {
-        PlatformGroup::Obs
-    } else if kind_id.starts_with("vtube.") {
-        PlatformGroup::VTube
-    } else if kind_id.starts_with("midi.") {
-        PlatformGroup::Midi
-    } else if kind_id.starts_with("hotkey.") {
-        PlatformGroup::Hotkey
-    } else if kind_id.starts_with("discord.") {
-        PlatformGroup::Discord
-    } else if kind_id.starts_with("script.") {
-        PlatformGroup::Script
-    } else {
-        PlatformGroup::Core
+/// The step-card leading glyph name, its title, and the mono summary line for a
+/// step whose `kind_id` the registry does not resolve — the runner's own
+/// label/icon take precedence when present.
+fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
+    fn as_str(v: &Variant) -> &str {
+        if let Variant::String(s) = v {
+            s.as_str()
+        } else {
+            ""
+        }
+    }
+    fn as_i64(v: &Variant) -> i64 {
+        if let Variant::Int(n) = v { *n } else { 0 }
+    }
+    match step.kind_id.as_str() {
+        "twitch.chat.send_message" => {
+            let target = step.config.get("target").map(as_str).unwrap_or("twitch");
+            let message = step.config.get("message").map(as_str).unwrap_or("");
+            (
+                "send",
+                "Send chat message".to_owned(),
+                format!("\u{2192} {target}: \"{message}\""),
+            )
+        }
+        "core.globals.set" => {
+            let name = step.config.get("name").map(as_str).unwrap_or("");
+            let value = step.config.get("value").map(as_str).unwrap_or("");
+            (
+                "variable",
+                "Set global".to_owned(),
+                format!("{name} = \"{value}\""),
+            )
+        }
+        "core.logic.wait" => {
+            let ms = step.config.get("ms").map(as_i64).unwrap_or(0);
+            ("clock", "Delay".to_owned(), format!("{ms} ms"))
+        }
+        "core.log.write" => {
+            let level = step.config.get("level").map(as_str).unwrap_or("info");
+            let message = step.config.get("message").map(as_str).unwrap_or("");
+            (
+                "info-circle",
+                "Write log".to_owned(),
+                format!("[{level}] \"{message}\""),
+            )
+        }
+        "soundboard.sound.play" => {
+            let clip_id = step.config.get("clip_id").map(as_str).unwrap_or("");
+            ("music", "Play sound".to_owned(), clip_id.to_owned())
+        }
+        "tts.speak.text" => {
+            let text = step.config.get("text").map(as_str).unwrap_or("");
+            ("volume", "Speak (TTS)".to_owned(), text.to_owned())
+        }
+        "core.file.read" => {
+            let path = step.config.get("path").map(as_str).unwrap_or("");
+            let var = step.config.get("target_var").map(as_str).unwrap_or("");
+            (
+                "file",
+                "Read file".to_owned(),
+                format!("{path} \u{2192} %{var}%"),
+            )
+        }
+        "core.random.int" => {
+            let min = step.config.get("min").map(as_i64).unwrap_or(0);
+            let max = step.config.get("max").map(as_i64).unwrap_or(0);
+            let var = step.config.get("target_var").map(as_str).unwrap_or("");
+            (
+                "dice",
+                "Random number".to_owned(),
+                format!("[{min}..{max}] \u{2192} %{var}%"),
+            )
+        }
+        _ => ("bolt", "Run sub-action".to_owned(), step.kind_id.clone()),
     }
 }
 
-/// The second `kind_id` segment title-cased into a subgroup label, mirroring the
-/// registry's grouping (`obs.scenes.current_changed` → "Scenes").
-fn sub_group_label_for(kind_id: &str) -> String {
-    let Some(segment) = kind_id.split('.').nth(1) else {
-        return "Other".to_owned();
-    };
-    segment
-        .split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+fn sub_category_label(cat: SubActionCategory) -> &'static str {
+    match cat {
+        SubActionCategory::Chat => "Chat",
+        SubActionCategory::Moderation => "Moderation",
+        SubActionCategory::ChannelPoints => "Channel Points",
+        SubActionCategory::PollsPredictions => "Polls & Predictions",
+        SubActionCategory::Globals => "Globals",
+        SubActionCategory::Logic => "Logic",
+        SubActionCategory::Delay => "Delay",
+        SubActionCategory::Scripts => "Scripts",
+        SubActionCategory::Files => "Files",
+        SubActionCategory::Twitch => "Twitch",
+        SubActionCategory::YouTube => "YouTube",
+        SubActionCategory::Kick => "Kick",
+        SubActionCategory::Obs => "OBS",
+        SubActionCategory::VTube => "VTube Studio",
+        SubActionCategory::Discord => "Discord",
+        SubActionCategory::Midi => "MIDI",
+        SubActionCategory::Hotkey => "Hotkey",
+        SubActionCategory::Audio => "Audio",
+        SubActionCategory::Tts => "Text-to-speech",
+        SubActionCategory::Http => "HTTP",
+        SubActionCategory::Server => "Server",
+        SubActionCategory::Util => "Utilities",
+    }
 }
 
-/// The representative catalog seeded before a trigger registry is wired: a few
-/// platforms, each carrying one or two kinds with a default and an occasional custom
-/// instance, so every grid group and both the default / saved cards render populated.
-fn seed_picker_entries() -> Vec<PickerEntry> {
-    let counter = std::cell::Cell::new(0u64);
-    let id = || {
-        let v = counter.get();
-        counter.set(v + 1);
-        v
-    };
-    let entry = |kind_id: &'static str,
-                 label: &'static str,
-                 desc: &'static str,
-                 customs: Vec<PickerCustom>| PickerEntry {
-        kind_id,
-        label,
-        desc,
-        sub_group: sub_group_label_for(kind_id),
-        default_id: id(),
-        customs,
-    };
-    vec![
-        entry(
-            "twitch.chat.command",
-            "Chat command",
-            "Fires on a !command in chat",
-            vec![PickerCustom {
-                id: id(),
-                name: "!hello",
-                override_summary: "command=!hello",
-                enabled: true,
-            }],
-        ),
-        entry(
-            "twitch.support.subscriber",
-            "New subscriber",
-            "A new paid subscription",
-            vec![
-                PickerCustom {
-                    id: id(),
-                    name: "VIP sub alert",
-                    override_summary: "tier=3000",
-                    enabled: true,
-                },
-                PickerCustom {
-                    id: id(),
-                    name: "Gift-bomb alert",
-                    override_summary: "min gifts=5",
-                    enabled: false,
-                },
-            ],
-        ),
-        entry(
-            "twitch.points.reward",
-            "Channel point reward",
-            "A channel-point reward redeemed",
-            Vec::new(),
-        ),
-        entry(
-            "youtube.chat.message",
-            "Chat message",
-            "Every message posted in chat",
-            Vec::new(),
-        ),
-        entry(
-            "youtube.support.member",
-            "New member",
-            "A new channel membership",
-            Vec::new(),
-        ),
-        entry(
-            "kick.chat.command",
-            "Chat command",
-            "Fires on a !command in chat",
-            Vec::new(),
-        ),
-        entry(
-            "obs.scenes.current_changed",
-            "Scene changed",
-            "Active scene switched",
-            Vec::new(),
-        ),
-        entry(
-            "obs.stream.started",
-            "Stream started",
-            "OBS started streaming",
-            Vec::new(),
-        ),
-        entry(
-            "core.timer.tick",
-            "Timer tick",
-            "Every N minutes while live",
-            Vec::new(),
-        ),
-    ]
+fn sub_category_slug(cat: SubActionCategory) -> &'static str {
+    match cat {
+        SubActionCategory::Chat => "chat",
+        SubActionCategory::Moderation => "moderation",
+        SubActionCategory::ChannelPoints => "channel-points",
+        SubActionCategory::PollsPredictions => "polls",
+        SubActionCategory::Globals => "globals",
+        SubActionCategory::Logic => "logic",
+        SubActionCategory::Delay => "delay",
+        SubActionCategory::Scripts => "scripts",
+        SubActionCategory::Files => "files",
+        SubActionCategory::Twitch => "twitch",
+        SubActionCategory::YouTube => "youtube",
+        SubActionCategory::Kick => "kick",
+        SubActionCategory::Obs => "obs",
+        SubActionCategory::VTube => "vtube",
+        SubActionCategory::Discord => "discord",
+        SubActionCategory::Midi => "midi",
+        SubActionCategory::Hotkey => "hotkey",
+        SubActionCategory::Audio => "audio",
+        SubActionCategory::Tts => "tts",
+        SubActionCategory::Http => "http",
+        SubActionCategory::Server => "server",
+        SubActionCategory::Util => "util",
+    }
 }
 
-/// The seeded sub-action catalog as grid groups (one per [`SubCategory`] in first-seen
-/// order) paired with the pick each card id applies.
+fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> Rgba {
+    match cat {
+        SubActionCategory::Chat | SubActionCategory::Twitch => palette.brand,
+        SubActionCategory::Tts | SubActionCategory::Audio => palette.success,
+        SubActionCategory::Globals => palette.warning,
+        SubActionCategory::Files => palette.random,
+        SubActionCategory::YouTube => palette.platform_youtube,
+        SubActionCategory::Kick => palette.platform_kick,
+        SubActionCategory::Obs => palette.text_secondary,
+        SubActionCategory::VTube => palette.accent_teal,
+        SubActionCategory::Discord | SubActionCategory::Http | SubActionCategory::Server => {
+            palette.info
+        }
+        SubActionCategory::Midi | SubActionCategory::Moderation => palette.random,
+        SubActionCategory::ChannelPoints => palette.accent_pink_light,
+        SubActionCategory::Hotkey
+        | SubActionCategory::PollsPredictions
+        | SubActionCategory::Scripts => palette.warning,
+        SubActionCategory::Logic | SubActionCategory::Delay | SubActionCategory::Util => {
+            palette.text_muted
+        }
+    }
+}
+
+/// The registry's runners as grid groups (one per [`SubActionCategory`], runners
+/// ordered by category slug then label) paired with the `kind_id` each card id
+/// appends.
 fn build_step_groups(
+    registry: &SubActionRegistry,
     palette: &ForgePalette,
-) -> (Vec<GridPickerGroup>, HashMap<SharedString, GridPick>) {
+) -> (Vec<GridPickerGroup>, HashMap<SharedString, String>) {
+    let mut runners: Vec<&dyn SubActionRunner> = registry.all().collect();
+    runners.sort_by(|a, b| {
+        sub_category_slug(a.category())
+            .cmp(sub_category_slug(b.category()))
+            .then_with(|| a.label().cmp(b.label()))
+    });
+
     let mut groups: Vec<GridPickerGroup> = Vec::new();
-    let mut picks: HashMap<SharedString, GridPick> = HashMap::new();
-    for kind in SUB_KINDS {
-        let cat = kind.category();
-        let scope = SharedString::from(cat.slug());
-        let color = cat.color(palette);
-        let id = SharedString::from(format!("step-{}", kind.slug()));
-        picks.insert(id.clone(), GridPick::Step(kind));
+    let mut picks: HashMap<SharedString, String> = HashMap::new();
+    for runner in runners {
+        let cat = runner.category();
+        let scope = SharedString::from(sub_category_slug(cat));
+        let color = sub_category_color(cat, palette);
+        let id = SharedString::from(format!("step-{}", runner.id()));
+        picks.insert(id.clone(), runner.id().to_owned());
         let item = GridPickerItem {
             id,
-            icon: kind.glyph(),
+            icon: Icon::from_name(runner.icon_name()),
             icon_color: color,
-            name: kind.label().into(),
-            desc: kind.summary_hint().into(),
+            name: runner.label().to_string().into(),
+            desc: runner.summary().to_string().into(),
             state: GridPickerItemState::Normal,
         };
         match groups.iter_mut().find(|g| g.scope == scope) {
             Some(g) => g.items.push(item),
             None => groups.push(GridPickerGroup {
-                label: cat.label().into(),
+                label: sub_category_label(cat).into(),
                 dot_color: color,
                 scope,
                 items: vec![item],
@@ -192,132 +218,102 @@ fn build_step_groups(
     (groups, picks)
 }
 
-/// The seeded trigger catalog as grid groups: a leading "Your saved triggers" group from
-/// the custom instances (cards flagged `Added` when already linked, `Disabled` when the
-/// custom is off), then one group per platform · subgroup of default kinds — paired with
-/// the pick each card id applies.
-fn build_trigger_groups(
-    entries: &[PickerEntry],
-    detail: Option<&ActionDetail>,
-    palette: &ForgePalette,
-) -> (Vec<GridPickerGroup>, HashMap<SharedString, GridPick>) {
-    let linked: Vec<&str> = detail
-        .map(|d| d.triggers.iter().map(|t| t.name.as_str()).collect())
-        .unwrap_or_default();
-
-    let mut groups: Vec<GridPickerGroup> = Vec::new();
-    let mut picks: HashMap<SharedString, GridPick> = HashMap::new();
-
-    let mut saved: Vec<GridPickerItem> = Vec::new();
-    for entry in entries {
-        let group = platform_group_for(entry.kind_id);
-        for custom in &entry.customs {
-            let added = linked.contains(&custom.name);
-            let state = if !custom.enabled {
-                GridPickerItemState::Disabled
-            } else if added {
-                GridPickerItemState::Added
-            } else {
-                GridPickerItemState::Normal
-            };
-            let id = SharedString::from(format!("trig-custom-{}", custom.id));
-            picks.insert(
-                id.clone(),
-                GridPick::Trigger(TriggerSeed {
-                    name: custom.name.to_owned(),
-                    kind_label: entry.label.to_owned(),
-                    condition: custom.override_summary.to_owned(),
-                    glyph: group.glyph(),
-                    enabled: true,
-                }),
-            );
-            saved.push(GridPickerItem {
-                id,
-                icon: group.glyph(),
-                icon_color: group.color(palette),
-                name: custom.name.into(),
-                desc: custom.override_summary.into(),
-                state,
-            });
-        }
-    }
-    if !saved.is_empty() {
-        groups.push(GridPickerGroup {
-            label: "Your saved triggers".into(),
-            dot_color: palette.bits,
-            scope: SharedString::from("all"),
-            items: saved,
-        });
-    }
-
-    for entry in entries {
-        let group = platform_group_for(entry.kind_id);
-        let scope = SharedString::from(group.key());
-        let label = format!("{} \u{b7} {}", group.label(), entry.sub_group);
-        let id = SharedString::from(format!("trig-default-{}", entry.default_id));
-        picks.insert(
-            id.clone(),
-            GridPick::Trigger(TriggerSeed {
-                name: entry.label.to_owned(),
-                kind_label: group.label().to_owned(),
-                condition: String::new(),
-                glyph: group.glyph(),
-                enabled: true,
-            }),
-        );
-        let item = GridPickerItem {
-            id,
-            icon: group.glyph(),
-            icon_color: group.color(palette),
-            name: entry.label.into(),
-            desc: entry.desc.into(),
-            state: GridPickerItemState::Normal,
-        };
-        match groups
-            .iter_mut()
-            .find(|g| g.label.as_ref() == label.as_str())
-        {
-            Some(g) => g.items.push(item),
-            None => groups.push(GridPickerGroup {
-                label: label.into(),
-                dot_color: group.color(palette),
-                scope,
-                items: vec![item],
-            }),
-        }
-    }
-
-    (groups, picks)
-}
-
-/// Builds the config inputs for `kind`, each seeded from `seed` (an existing step's
-/// config when editing, or the kind's defaults when adding).
-fn build_sub_fields(
-    kind: SubKind,
-    seed: &BTreeMap<String, String>,
+/// Builds one edit-form input row, seeding the field from the step's stored
+/// config value.
+#[allow(clippy::too_many_arguments)]
+fn build_input_field(
+    key: &str,
+    label: &str,
+    placeholder: &'static str,
+    integer: bool,
+    gate: Option<String>,
+    config: &SubActionConfig,
     palette: ForgePalette,
     cx: &mut Context<ScreenActionsView>,
-) -> Vec<(&'static SubField, Entity<TextInput>)> {
-    kind.fields()
-        .iter()
-        .map(|spec| {
-            let value = seed.get(spec.key).cloned().unwrap_or_default();
-            let placeholder = spec.placeholder;
-            let input = cx.new(|cx| {
-                let mut input = TextInput::new(placeholder, cx).with_palette(palette);
-                if !value.is_empty() {
-                    input.set_content(value, cx);
-                }
-                input
-            });
-            (spec, input)
-        })
-        .collect()
+) -> SubFormField {
+    let seed = config
+        .get(key)
+        .map(nav::variant_to_display_str)
+        .unwrap_or_default();
+    let input = cx.new(|cx| {
+        let mut input = TextInput::new(placeholder, cx).with_palette(palette);
+        if !seed.is_empty() {
+            input.set_content(seed, cx);
+        }
+        input
+    });
+    SubFormField::Input {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        integer,
+        gate,
+        input,
+    }
 }
 
-/// Splits `s` into `(chunk, is_variable)` runs, marking `%name%` interpolation tokens
-/// (leading letter/underscore, then alphanumerics/`_`/`.`) so the caller can two-tone
-/// them.
+/// Folds one `FormField` (recursing through `Optional`) into the flat edit-form
+/// field list. Select / DynamicSelect degrade to a free-text input — the kit
+/// ships no value-picker primitive yet.
+fn push_form_field(
+    spec: &FormField,
+    gate: Option<String>,
+    config: &SubActionConfig,
+    palette: ForgePalette,
+    out: &mut Vec<SubFormField>,
+    cx: &mut Context<ScreenActionsView>,
+) {
+    match spec {
+        FormField::Text {
+            key,
+            label,
+            placeholder,
+        } => out.push(build_input_field(
+            key,
+            label,
+            placeholder,
+            false,
+            gate,
+            config,
+            palette,
+            cx,
+        )),
+        FormField::TextArea { key, label } => out.push(build_input_field(
+            key, label, "", false, gate, config, palette, cx,
+        )),
+        FormField::Integer { key, label, .. } => out.push(build_input_field(
+            key, label, "0", true, gate, config, palette, cx,
+        )),
+        FormField::Select { key, label, .. } | FormField::DynamicSelect { key, label, .. } => out
+            .push(build_input_field(
+                key, label, "", false, gate, config, palette, cx,
+            )),
+        FormField::Toggle { key, label } => {
+            let value = matches!(config.get(*key), Some(Variant::Bool(true)));
+            out.push(SubFormField::Bool {
+                key: (*key).to_owned(),
+                label: (*label).to_owned(),
+                gate,
+                value,
+            });
+        }
+        FormField::SubChain { label, .. } | FormField::CaseList { label, .. } => {
+            out.push(SubFormField::Hint {
+                label: (*label).to_owned(),
+            });
+        }
+        FormField::Optional { key, label, inner } => {
+            let value = matches!(config.get(*key), Some(Variant::Bool(true)));
+            out.push(SubFormField::Bool {
+                key: (*key).to_owned(),
+                label: (*label).to_owned(),
+                gate: gate.clone(),
+                value,
+            });
+            push_form_field(inner, Some((*key).to_owned()), config, palette, out, cx);
+        }
+    }
+}
+
 fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
     let bytes = s.as_bytes();
     let mut segs: Vec<(&str, bool)> = Vec::new();
@@ -353,8 +349,8 @@ fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
     segs
 }
 
-/// Renders a summary line with `%variable%` tokens tinted `warning` and plain text
-/// tinted `text_muted`, wrapping like the source's flowed mono row.
+/// Renders a summary line with `%variable%` tokens tinted `warning` and plain
+/// text tinted `text_muted`, wrapping like the source's flowed mono row.
 fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     if s.is_empty() {
         return div()
@@ -380,9 +376,9 @@ fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     row.into_any_element()
 }
 
-/// Full-width, centered "Add …" button closing a section (triggers / sub-actions):
-/// the deep-panel fill, an accent icon + label and a thin hairline, washing
-/// `surface_overlay` on hover.
+/// Full-width, centered "Add …" button closing a section: the deep-panel fill,
+/// an accent icon + label and a thin hairline, washing `surface_overlay` on
+/// hover.
 fn add_row_button(
     id: impl Into<ElementId>,
     glyph: Icon,
@@ -449,97 +445,100 @@ fn empty_placeholder_card(
 }
 
 impl ScreenActionsView {
+    // --- editor: current chain --------------------------------------------
+
+    /// The chain the step list currently renders — the action's top-level steps
+    /// at root, or the nested sub-chain [`Self::nav_path`] descends into.
+    pub(super) fn current_chain(&self) -> Vec<SubActionStep> {
+        match &self.detail {
+            Some(detail) => nav::resolve_chain(&detail.action.sub_actions, &self.nav_path),
+            None => Vec::new(),
+        }
+    }
+
     // --- editor: step interaction handlers --------------------------------
 
-    /// Copies `id`/`n` out of the loaded detail before touching the tree so the
-    /// summary borrow ends before the mutable group iteration begins. The tree badge
-    /// tracks the action's *top-level* chain length, so a nested edit leaves it
-    /// unchanged.
-    fn sync_selected_count(&mut self) {
-        let Some((id, n)) = self.detail.as_ref().map(|d| (d.action_id, d.steps.len())) else {
-            return;
-        };
-        for group in &mut self.groups {
-            if let Some(action) = group.actions.iter_mut().find(|a| a.id == id) {
-                action.sub_action_count = n;
-            }
-        }
-    }
-
-    /// The chain the step list currently renders — the action's top-level steps at
-    /// root, or the nested sub-chain [`Self::nav_path`] descends into. Falls back to
-    /// an empty slice when the path no longer resolves (never panics).
-    pub(super) fn current_chain(&self) -> &[EditorStep] {
-        match &self.detail {
-            Some(detail) => resolve_chain(&detail.steps, &self.nav_path).unwrap_or(&[]),
-            None => &[],
-        }
-    }
-
-    /// Mutable handle to the current chain. Clones the (small, `Copy`-framed) nav path
-    /// so the detail can be borrowed mutably alongside it.
-    pub(super) fn current_chain_mut(&mut self) -> Option<&mut Vec<EditorStep>> {
-        let path = self.nav_path.clone();
-        resolve_chain_mut(&mut self.detail.as_mut()?.steps, &path)
-    }
-
-    fn move_step(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
-        if let Some(chain) = self.current_chain_mut()
-            && from < chain.len()
-            && to < chain.len()
-            && from != to
-        {
-            let step = chain.remove(from);
-            chain.insert(to, step);
-        }
+    fn move_step_up(&mut self, i: usize, cx: &mut Context<Self>) {
         self.step_menu_open = None;
-        self.sync_case_fields(cx);
+        self.persist_chain_mutation(
+            move |chain| {
+                if i > 0 && i < chain.len() {
+                    let step = chain.remove(i);
+                    chain.insert(i - 1, step);
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 
-    fn move_step_up(&mut self, i: usize, cx: &mut Context<Self>) {
-        if i > 0 {
-            self.move_step(i, i - 1, cx);
-        }
-    }
-
     fn move_step_down(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.move_step(i, i + 1, cx);
+        self.step_menu_open = None;
+        self.persist_chain_mutation(
+            move |chain| {
+                if i + 1 < chain.len() {
+                    let step = chain.remove(i);
+                    chain.insert(i + 1, step);
+                }
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     fn move_step_top(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.move_step(i, 0, cx);
+        self.step_menu_open = None;
+        self.persist_chain_mutation(
+            move |chain| {
+                if i != 0 && i < chain.len() {
+                    let step = chain.remove(i);
+                    chain.insert(0, step);
+                }
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     fn move_step_bottom(&mut self, i: usize, cx: &mut Context<Self>) {
-        let last = self.current_chain().len();
-        if last > 0 {
-            self.move_step(i, last - 1, cx);
-        }
+        self.step_menu_open = None;
+        self.persist_chain_mutation(
+            move |chain| {
+                let len = chain.len();
+                if len > 0 && i < len - 1 {
+                    let step = chain.remove(i);
+                    chain.insert(len - 1, step);
+                }
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     fn duplicate_step(&mut self, i: usize, cx: &mut Context<Self>) {
-        if let Some(chain) = self.current_chain_mut()
-            && let Some(src) = chain.get(i)
-        {
-            let clone = src.clone();
-            chain.insert(i + 1, clone);
-        }
-        self.sync_selected_count();
         self.step_menu_open = None;
-        self.sync_case_fields(cx);
+        self.persist_chain_mutation(
+            move |chain| {
+                if i < chain.len() {
+                    let clone = chain[i].clone();
+                    chain.insert(i + 1, clone);
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 
     fn remove_step(&mut self, i: usize, cx: &mut Context<Self>) {
-        if let Some(chain) = self.current_chain_mut()
-            && i < chain.len()
-        {
-            chain.remove(i);
-        }
-        self.sync_selected_count();
         self.step_menu_open = None;
-        self.sync_case_fields(cx);
+        self.persist_chain_mutation(
+            move |chain| {
+                if i < chain.len() {
+                    chain.remove(i);
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 
@@ -557,8 +556,8 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Local, persistence-free re-run affordance: the runtime engine is not yet wired
-    /// into `forge-desktop`, so Test-run only repaints.
+    /// Local, persistence-free re-run affordance: the runtime engine is not yet
+    /// wired into `forge-desktop`, so Test-run only repaints.
     fn test_run(&mut self, cx: &mut Context<Self>) {
         cx.notify();
     }
@@ -566,21 +565,43 @@ impl ScreenActionsView {
     // --- editor: edit-sub-action side sheet -------------------------------
 
     fn open_edit_sub_action(&mut self, i: usize, cx: &mut Context<Self>) {
-        let palette = cx.palette();
-        let Some((kind, seed)) = self
-            .current_chain()
-            .get(i)
-            .map(|step| (step.kind, step.config.clone()))
+        let chain = self.current_chain();
+        let Some(step) = chain.get(i) else {
+            return;
+        };
+        let kind_id = step.kind_id.clone();
+        let Some(specs) = self
+            .sub_action_registry
+            .get(&kind_id)
+            .map(|r| r.config_fields())
         else {
             return;
         };
-        let fields = build_sub_fields(kind, &seed, palette, cx);
+        let palette = cx.palette();
+        let config = step.config.clone();
+        let mut fields: Vec<SubFormField> = Vec::new();
+        for spec in &specs {
+            push_form_field(spec, None, &config, palette, &mut fields, cx);
+        }
         self.step_menu_open = None;
         self.sub_form = Some(EditSubActionForm {
-            kind,
-            fields,
+            kind_id,
             index: i,
+            fields,
         });
+        cx.notify();
+    }
+
+    fn toggle_sub_field(&mut self, key: String, cx: &mut Context<Self>) {
+        if let Some(form) = self.sub_form.as_mut() {
+            for field in &mut form.fields {
+                if let SubFormField::Bool { key: k, value, .. } = field
+                    && *k == key
+                {
+                    *value = !*value;
+                }
+            }
+        }
         cx.notify();
     }
 
@@ -589,36 +610,78 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    /// Overlays the form's scalar fields onto the edited step's existing config,
+    /// leaving the step's kind, enabled flag, label and nested sub-chain keys
+    /// intact, then persists.
     fn submit_sub_action(&mut self, cx: &mut Context<Self>) {
-        let (kind, index, fields) = {
-            let Some(form) = self.sub_form.as_ref() else {
-                return;
-            };
-            (form.kind, form.index, form.fields.clone())
+        let Some(form) = self.sub_form.as_ref() else {
+            return;
         };
-
-        let mut config = BTreeMap::new();
-        for (spec, input) in &fields {
-            config.insert(spec.key.to_owned(), input.read(cx).content().to_owned());
+        let index = form.index;
+        let bool_vals: HashMap<String, bool> = form
+            .fields
+            .iter()
+            .filter_map(|f| match f {
+                SubFormField::Bool { key, value, .. } => Some((key.clone(), *value)),
+                _ => None,
+            })
+            .collect();
+        let gate_on = |gate: &Option<String>| {
+            gate.as_ref()
+                .map(|g| bool_vals.get(g).copied().unwrap_or(false))
+                .unwrap_or(true)
+        };
+        let mut overrides: Vec<(String, Variant)> = Vec::new();
+        for field in &form.fields {
+            match field {
+                SubFormField::Bool {
+                    key, value, gate, ..
+                } => {
+                    if gate_on(gate) {
+                        overrides.push((key.clone(), Variant::Bool(*value)));
+                    }
+                }
+                SubFormField::Input {
+                    key,
+                    integer,
+                    gate,
+                    input,
+                    ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    let text = input.read(cx).content().to_owned();
+                    if *integer {
+                        if let Ok(n) = text.trim().parse::<i64>() {
+                            overrides.push((key.clone(), Variant::Int(n)));
+                        }
+                    } else {
+                        overrides.push((key.clone(), Variant::String(text)));
+                    }
+                }
+                SubFormField::Hint { .. } => {}
+            }
         }
 
-        // Editing keeps the step's nested branches / cases intact — only its kind +
-        // scalar config are re-authored from the form.
-        if let Some(chain) = self.current_chain_mut()
-            && let Some(step) = chain.get_mut(index)
-        {
-            step.kind = kind;
-            step.config = config;
-        }
-        self.sync_selected_count();
-        self.sync_case_fields(cx);
         self.sub_form = None;
+        self.step_menu_open = None;
+        self.persist_chain_mutation(
+            move |chain| {
+                if let Some(step) = chain.get_mut(index) {
+                    for (key, value) in overrides {
+                        step.config.insert(key, value);
+                    }
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 
-    // --- editor: unified "Add" grid picker --------------------------------
+    // --- editor: unified "Add sub-action" grid picker ---------------------
 
-    fn open_grid_picker(&mut self, kind: PickerKind, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_grid_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(action_id) = self.selected else {
             return;
         };
@@ -629,48 +692,22 @@ impl ScreenActionsView {
         let ctx_name = self
             .detail
             .as_ref()
-            .map(|d| d.name.clone())
+            .map(|d| d.action.name.clone())
             .unwrap_or_else(|| "this action".to_owned());
-        let (groups, picks, config) = match kind {
-            PickerKind::Step => {
-                let (groups, picks) = build_step_groups(&palette);
-                let count = SUB_KINDS.len();
-                let config = GridPickerConfig {
-                    accent: palette.brand,
-                    header_icon: Icon::LayoutGrid,
-                    title: "Add sub-action".into(),
-                    subtitle: GridPickerSubtitle::Context {
-                        lead: "Inserting into".into(),
-                        name: ctx_name.into(),
-                        note: format!("\u{b7} {count} sub-actions").into(),
-                    },
-                    footer_hint: "Added with smart defaults \u{2014} edit inline after".into(),
-                    search_placeholder: format!("Search {count} sub-actions\u{2026}").into(),
-                    scope_cap: Some(7),
-                };
-                (groups, picks, config)
-            }
-            PickerKind::Trigger => {
-                let entries = seed_picker_entries();
-                let (groups, picks) =
-                    build_trigger_groups(&entries, self.detail.as_ref(), &palette);
-                let count = entries.len();
-                let config = GridPickerConfig {
-                    accent: palette.warning,
-                    header_icon: Icon::Bolt,
-                    title: "Add trigger".into(),
-                    subtitle: GridPickerSubtitle::Context {
-                        lead: "Fires".into(),
-                        name: ctx_name.into(),
-                        note: format!("\u{b7} {count} trigger types").into(),
-                    },
-                    footer_hint: "Pick a trigger \u{2014} configure it in the Triggers registry"
-                        .into(),
-                    search_placeholder: "Search triggers\u{2026}".into(),
-                    scope_cap: Some(6),
-                };
-                (groups, picks, config)
-            }
+        let (groups, picks) = build_step_groups(&self.sub_action_registry, &palette);
+        let count = self.sub_action_registry.all().count();
+        let config = GridPickerConfig {
+            accent: palette.brand,
+            header_icon: Icon::LayoutGrid,
+            title: "Add sub-action".into(),
+            subtitle: GridPickerSubtitle::Context {
+                lead: "Inserting into".into(),
+                name: ctx_name.into(),
+                note: format!("\u{b7} {count} sub-actions").into(),
+            },
+            footer_hint: "Added with smart defaults \u{2014} edit inline after".into(),
+            search_placeholder: format!("Search {count} sub-actions\u{2026}").into(),
+            scope_cap: Some(7),
         };
         let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_grid_picker_event);
@@ -685,8 +722,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Routes a [`GridPickerEvent`] from the grid picker: a pick resolves the card id back
-    /// to its stored [`GridPick`] and applies it; a dismiss closes the picker.
     fn on_grid_picker_event(
         &mut self,
         _picker: Entity<GridPicker>,
@@ -695,12 +730,12 @@ impl ScreenActionsView {
     ) {
         match event {
             GridPickerEvent::Picked(id) => {
-                if let Some(pick) = self
+                if let Some(kind_id) = self
                     .grid_picker
                     .as_ref()
                     .and_then(|f| f.picks.get(id).cloned())
                 {
-                    self.grid_apply_pick(pick, cx);
+                    self.grid_pick_step(kind_id, cx);
                 }
             }
             GridPickerEvent::Dismissed => self.cancel_grid_picker(cx),
@@ -712,57 +747,35 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn grid_pick_step(&mut self, kind: SubKind, cx: &mut Context<Self>) {
-        if let Some(chain) = self.current_chain_mut() {
-            chain.push(EditorStep::new(kind, kind.seed_config()));
-        }
-        self.sync_selected_count();
-        self.sync_case_fields(cx);
-        self.grid_picker = None;
-        cx.notify();
-    }
-
-    /// Links a picked trigger to the open action, guarding on the picker still
-    /// targeting the selected action, then closes the picker.
-    fn grid_pick_trigger(&mut self, trigger: SeededTrigger, cx: &mut Context<Self>) {
+    fn grid_pick_step(&mut self, kind_id: String, cx: &mut Context<Self>) {
         let same = self
             .grid_picker
             .as_ref()
             .zip(self.detail.as_ref())
-            .is_some_and(|(f, d)| f.action_id == d.action_id);
-        if same && let Some(detail) = self.detail.as_mut() {
-            detail.triggers.push(trigger);
-        }
+            .is_some_and(|(f, d)| f.action_id == d.action.id);
+        let config = self
+            .sub_action_registry
+            .get(&kind_id)
+            .map(|r| r.default_config());
         self.grid_picker = None;
         cx.notify();
-    }
-
-    // --- trigger links: unlink --------------------------------------------
-
-    /// Navigate-to-registry intent for a trigger card. The triggers registry screen is
-    /// not yet built in `forge-desktop`, so the click is inert.
-    fn trigger_card_clicked(&mut self, cx: &mut Context<Self>) {
-        cx.notify();
-    }
-
-    fn request_trigger_unlink(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.pending_trigger_unlink = Some(index);
-        cx.notify();
-    }
-
-    fn cancel_trigger_unlink(&mut self, cx: &mut Context<Self>) {
-        self.pending_trigger_unlink = None;
-        cx.notify();
-    }
-
-    fn confirm_trigger_unlink(&mut self, cx: &mut Context<Self>) {
-        if let Some(i) = self.pending_trigger_unlink.take()
-            && let Some(detail) = self.detail.as_mut()
-            && i < detail.triggers.len()
-        {
-            detail.triggers.remove(i);
+        let Some(config) = config else {
+            return;
+        };
+        if !same {
+            return;
         }
-        cx.notify();
+        self.persist_chain_mutation(
+            move |chain| {
+                chain.push(SubActionStep {
+                    kind_id,
+                    config,
+                    enabled: true,
+                    label: None,
+                });
+            },
+            cx,
+        );
     }
 
     // --- render: right editor pane ----------------------------------------
@@ -773,7 +786,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match (self.selected, self.detail.as_ref()) {
-            (Some(sel), Some(detail)) if detail.action_id == sel => {
+            (Some(sel), Some(detail)) if detail.action.id == sel => {
                 self.render_editor(detail, palette, cx)
             }
             (Some(_), _) => self.render_loading(palette),
@@ -838,7 +851,7 @@ impl ScreenActionsView {
             .flex_col()
             .gap(spacing(Spacing::Md, Density::Cozy))
             .child(self.render_editor_header(detail, palette, cx))
-            .child(self.render_triggers_section(detail, palette, cx))
+            .child(self.render_triggers_section(detail, palette))
             .child(self.render_sub_actions_section(detail, palette, cx));
 
         div()
@@ -858,7 +871,8 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (pill_color, pill_label) = if detail.enabled {
+        let action = &detail.action;
+        let (pill_color, pill_label) = if action.enabled {
             (palette.success, "Enabled")
         } else {
             (palette.text_faint, "Disabled")
@@ -890,11 +904,11 @@ impl ScreenActionsView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
-                    .child(detail.name.clone()),
+                    .child(action.name.clone()),
             )
             .child(pill);
 
-        let desc = detail
+        let desc = action
             .description
             .clone()
             .unwrap_or_else(|| "No description".to_owned());
@@ -941,71 +955,26 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    fn render_triggers_section(
-        &self,
-        detail: &ActionDetail,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    /// Placeholder triggers section: the mono count header over an em-dash empty
+    /// card. Real linked-instance cards + link/unlink land in a follow-up slice.
+    fn render_triggers_section(&self, detail: &ActionDetail, palette: &ForgePalette) -> AnyElement {
         let label = div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
-            .child(format!("TRIGGERS · {}", detail.triggers.len()));
-
-        let hint = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(icon(Icon::InfoCircle, HINT_GLYPH, palette.text_faint))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child("Click a trigger to edit it in the registry"),
-            );
-
-        let header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(label)
-            .child(hint);
-
-        let mut col = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy));
-        if detail.triggers.is_empty() {
-            col = col.child(empty_placeholder_card(
-                Icon::Bolt,
-                palette.warning,
-                "No triggers — this action will never fire on its own",
-                palette,
+            .child(format!(
+                "TRIGGERS \u{b7} {}",
+                detail.trigger_instances.len()
             ));
-        } else {
-            for (index, trigger) in detail.triggers.iter().enumerate() {
-                col = col.child(self.render_trigger_card(index, trigger, palette, cx));
-            }
-        }
-        col = col.child(add_row_button(
-            "actions-add-trigger",
-            Icon::Plus,
-            "Add trigger",
-            palette.warning,
-            palette,
-            cx.listener(|this, _: &ClickEvent, window, cx| {
-                this.open_grid_picker(PickerKind::Trigger, window, cx)
-            }),
-        ));
+
+        let body = empty_placeholder_card(Icon::Bolt, palette.text_faint, "\u{2014}", palette);
 
         div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(header)
-            .child(col)
+            .child(label)
+            .child(body)
             .into_any_element()
     }
 
@@ -1015,13 +984,11 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let current = resolve_chain(&detail.steps, &self.nav_path).unwrap_or(&[]);
+        let current = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path);
         let total = current.len();
         let at_root = self.nav_path.is_empty();
         let depth = self.nav_path.len();
 
-        // At root: the mono sub-action count. Drilled in: a breadcrumb of the nav
-        // path with the current chain's length pinned to the right edge.
         let header = if at_root {
             div().flex().items_center().child(
                 div()
@@ -1073,7 +1040,7 @@ impl ScreenActionsView {
                     palette.brand,
                     palette,
                     cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.open_grid_picker(PickerKind::Step, window, cx)
+                        this.open_grid_picker(window, cx)
                     }),
                 )),
         );
@@ -1089,7 +1056,7 @@ impl ScreenActionsView {
 
     fn render_step_block(
         &self,
-        step: &EditorStep,
+        step: &SubActionStep,
         i: usize,
         total: usize,
         depth: usize,
@@ -1097,6 +1064,12 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let is_last = i + 1 == total;
+        let (fallback_icon, fallback_title, detail_str) = sub_action_summary(step);
+        let runner = self.sub_action_registry.get(&step.kind_id);
+        let title = runner
+            .map(|r| r.label().to_owned())
+            .unwrap_or(fallback_title);
+        let glyph = Icon::from_name(runner.map(|r| r.icon_name()).unwrap_or(fallback_icon));
 
         let circle = div()
             .flex()
@@ -1129,11 +1102,11 @@ impl ScreenActionsView {
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
-            .child(step.kind.label());
+            .child(title);
 
         let card = row_card(title_el, palette)
-            .leading(icon(step.kind.glyph(), CARD_GLYPH, palette.text_secondary))
-            .meta(variable_text(&step.detail(), palette))
+            .leading(icon(glyph, CARD_GLYPH, palette.text_secondary))
+            .meta(variable_text(&detail_str, palette))
             .trailing(self.render_step_controls(i, total, palette, cx))
             .idle_background(palette.elevated)
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md));
@@ -1145,8 +1118,6 @@ impl ScreenActionsView {
             .child(left_col)
             .child(div().flex_1().min_w(px(0.0)).child(card));
 
-        // Composite / switch steps carry their branch drill-ins indented under the
-        // card body, aligned past the step-circle column.
         let block: AnyElement = match self.render_branch_affordances(step, i, depth, palette, cx) {
             Some(branches) => {
                 let indented = div()
@@ -1267,6 +1238,25 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let title = self
+            .sub_action_registry
+            .get(&form.kind_id)
+            .map(|r| r.label().to_owned())
+            .unwrap_or_else(|| form.kind_id.clone());
+        let bool_vals: HashMap<&str, bool> = form
+            .fields
+            .iter()
+            .filter_map(|f| match f {
+                SubFormField::Bool { key, value, .. } => Some((key.as_str(), *value)),
+                _ => None,
+            })
+            .collect();
+        let gate_on = |gate: &Option<String>| {
+            gate.as_ref()
+                .map(|g| bool_vals.get(g.as_str()).copied().unwrap_or(false))
+                .unwrap_or(true)
+        };
+
         let mut fields_col = div()
             .flex()
             .flex_col()
@@ -1276,7 +1266,7 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(form.kind.label()),
+                    .child(title),
             )
             .child(
                 div()
@@ -1285,29 +1275,97 @@ impl ScreenActionsView {
                     .text_color(palette.text_faint)
                     .child("CONFIGURATION"),
             );
-        if form.fields.is_empty() {
+
+        let mut rendered_any = false;
+        for field in &form.fields {
+            match field {
+                SubFormField::Input {
+                    label, gate, input, ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    rendered_any = true;
+                    fields_col = fields_col.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(spacing(Spacing::Xxs, Density::Cozy))
+                            .child(
+                                div()
+                                    .font_family(DEFAULT_MONO_FAMILY)
+                                    .text_size(FONT_XXS)
+                                    .text_color(palette.text_faint)
+                                    .child(label.clone()),
+                            )
+                            .child(input.clone()),
+                    );
+                }
+                SubFormField::Bool {
+                    key,
+                    label,
+                    gate,
+                    value,
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    rendered_any = true;
+                    let toggle_key = key.clone();
+                    fields_col = fields_col.child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(spacing(Spacing::Sm, Density::Cozy))
+                            .child(
+                                div()
+                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .text_size(FONT_XS)
+                                    .text_color(palette.text_primary)
+                                    .child(label.clone()),
+                            )
+                            .child(toggle(*value, palette).on_click(
+                                SharedString::from(format!("actions-sub-toggle-{key}")),
+                                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                    this.toggle_sub_field(toggle_key.clone(), cx)
+                                }),
+                            )),
+                    );
+                }
+                SubFormField::Hint { label } => {
+                    rendered_any = true;
+                    fields_col = fields_col.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(spacing(Spacing::Xxs, Density::Cozy))
+                            .child(
+                                div()
+                                    .font_family(DEFAULT_MONO_FAMILY)
+                                    .text_size(FONT_XXS)
+                                    .text_color(palette.text_faint)
+                                    .child(label.clone()),
+                            )
+                            .child(
+                                div()
+                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .text_size(FONT_XS)
+                                    .text_color(palette.text_faint)
+                                    .child("Authored via drill-in on the step."),
+                            ),
+                    );
+                }
+            }
+        }
+        if !rendered_any {
             fields_col = fields_col.child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child("This sub-action has no configuration."),
-            );
-        }
-        for (spec, input) in &form.fields {
-            fields_col = fields_col.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Xxs, Density::Cozy))
-                    .child(
-                        div()
-                            .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(FONT_XXS)
-                            .text_color(palette.text_faint)
-                            .child(spec.label),
-                    )
-                    .child(input.clone()),
             );
         }
 
@@ -1373,150 +1431,6 @@ impl ScreenActionsView {
             .position(OverlayPosition::Right(SUB_SHEET_W))
             .on_dismiss("actions-sub-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel_sub_action(cx));
-            })
-            .into_any_element()
-    }
-
-    // --- render: trigger-link card + picker + unlink confirm --------------
-
-    /// A trigger-link card: a leading dot + kind glyph, the name / kind / condition
-    /// title cluster, and a trailing unlink `X` that arms the two-phase confirm. The
-    /// card body carries the navigate-to-registry click (inert until that screen
-    /// exists); the `X`'s own handler runs first, so a click on it unlinks without the
-    /// inert navigate interfering.
-    fn render_trigger_card(
-        &self,
-        index: usize,
-        trigger: &SeededTrigger,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let accent = if trigger.enabled {
-            palette.brand
-        } else {
-            palette.disabled
-        };
-        let name_color = if trigger.enabled {
-            palette.text_primary
-        } else {
-            palette.text_faint
-        };
-
-        let leading = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(status_dot(accent, TRIGGER_DOT))
-            .child(icon(trigger.glyph, CARD_GLYPH, accent));
-
-        let title = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(FONT_XS)
-                    .text_color(name_color)
-                    .child(trigger.name.clone()),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(trigger.kind_label.clone()),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.bits)
-                    .child(trigger.condition.clone()),
-            );
-
-        let hover = palette.surface_overlay;
-        let unlink = div()
-            .id(SharedString::from(format!(
-                "actions-trigger-unlink-{index}"
-            )))
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(STEP_BTN)
-            .rounded(STEP_BTN_RADIUS)
-            .cursor_pointer()
-            .hover(move |s| s.bg(hover))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.request_trigger_unlink(index, cx)
-            }))
-            .child(icon(Icon::X, CARD_GLYPH, palette.random));
-
-        row_card(title, palette)
-            .leading(leading)
-            .trailing(unlink)
-            .idle_background(palette.elevated)
-            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
-            .on_click(
-                SharedString::from(format!("actions-trigger-card-{index}")),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.trigger_card_clicked(cx)),
-            )
-            .into_any_element()
-    }
-
-    fn grid_apply_pick(&mut self, pick: GridPick, cx: &mut Context<Self>) {
-        match pick {
-            GridPick::Step(kind) => self.grid_pick_step(kind, cx),
-            GridPick::Trigger(seed) => self.grid_pick_trigger(
-                SeededTrigger {
-                    name: seed.name,
-                    kind_label: seed.kind_label,
-                    condition: seed.condition,
-                    glyph: seed.glyph,
-                    enabled: seed.enabled,
-                },
-                cx,
-            ),
-        }
-    }
-
-    pub(super) fn render_trigger_unlink_confirm(
-        &self,
-        index: usize,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let name = self
-            .detail
-            .as_ref()
-            .and_then(|d| d.triggers.get(index))
-            .map(|t| t.name.clone())
-            .unwrap_or_default();
-        let card = confirm_modal(
-            "Delete trigger link?",
-            "This item will be permanently removed. This action cannot be undone.",
-            ConfirmTone::Destructive,
-            palette,
-        )
-        .item_name(name)
-        .esc_hint("to cancel")
-        .on_cancel(
-            "actions-trigger-unlink-cancel",
-            "Cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_unlink(cx)),
-        )
-        .on_confirm(
-            "actions-trigger-unlink-confirm",
-            "Delete",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_trigger_unlink(cx)),
-        );
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("actions-trigger-unlink-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_trigger_unlink(cx));
             })
             .into_any_element()
     }

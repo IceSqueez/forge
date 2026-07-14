@@ -238,7 +238,13 @@ impl AppShell {
             Screen::Settings => cx.new(SettingsView::new).into(),
             Screen::Queues => cx.new(QueuesView::new).into(),
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
-            Screen::Tts => cx.new(TtsView::new).into(),
+            Screen::Tts => {
+                let speak_state = topics.speak.clone();
+                let speak = handles.speak.clone();
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| TtsView::new(speak_state, speak, rt_handle, cx))
+                    .into()
+            }
             Screen::Server => {
                 let server = handles.server.clone();
                 let rt_handle = handles.rt_handle.clone();

@@ -31,6 +31,7 @@ mod shell;
 mod sidebar;
 mod soundboard;
 mod speak_boot;
+mod speak_state;
 mod stream_apps;
 mod titlebar;
 mod toasts;

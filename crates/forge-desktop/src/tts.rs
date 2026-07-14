@@ -2,12 +2,14 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XXS, ForgePalette,
     Spacing, StatusVariant, badge, breadcrumb, spacing, with_alpha,
 };
+use forge_speak_queue::SpeakQueueHandle;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
 };
 
 use crate::cloud_tts_engines::CloudTtsEnginesView;
 use crate::presentation::ActivePresentation;
+use crate::speak_state::SpeakState;
 use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
 use crate::tts_filters::TtsFiltersView;
@@ -94,8 +96,13 @@ pub struct TtsView {
 }
 
 impl TtsView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
-        let dashboard = cx.new(TtsDashboardView::new);
+    pub fn new(
+        speak_state: Entity<SpeakState>,
+        speak: Option<SpeakQueueHandle>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let dashboard = cx.new(|cx| TtsDashboardView::new(speak_state, speak, rt_handle, cx));
         let engines = cx.new(TtsEnginesView::new);
         let aliases = cx.new(VoiceAliasesView::new);
         let filters = cx.new(TtsFiltersView::new);

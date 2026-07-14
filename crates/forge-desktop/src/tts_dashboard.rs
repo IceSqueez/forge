@@ -3,12 +3,14 @@ use forge_components::{
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge, card,
     confirm_modal, icon, overlay, radius, slider, spacing, status_dot,
 };
+use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, Subscription, Window, div, prelude::*,
     px,
 };
 
 use crate::presentation::ActivePresentation;
+use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
 
 /// Volume slider track width — the parity source pins it at a fixed 90px, off the
 /// `Spacing` scale, so it is carried as a named literal.
@@ -25,40 +27,12 @@ const ENGINE_DOT: Pixels = px(7.0);
 const PAUSE_GLYPH: Pixels = px(13.0);
 /// Volume leading-glyph size (the source's fixed 14px icon).
 const VOLUME_GLYPH: Pixels = px(14.0);
-/// Initial session volume the dashboard seeds (72%), matching the design roster.
+/// Initial session volume the dashboard seeds (72%), matching the design roster. The
+/// volume is control-local (the `SpeakEvent` stream carries none), so it is not fed by
+/// the bridge.
 const SEED_VOLUME: f32 = 0.72;
-
-/// The utterance the queue is currently voicing. A cached read of the speak
-/// queue's now-playing slot; `forge-desktop` wires no speak queue yet, so it is
-/// seeded static and refreshed over the runtime→UI bridge (a `SpeakEvent` topic)
-/// once wired.
-struct NowSpeaking {
-    viewer_name: String,
-    engine_voice: String,
-    text: String,
-    elapsed_secs: u32,
-    total_secs: u32,
-}
-
-/// One pending utterance in the up-next queue. A cached view-model of a speak
-/// request; the live queue is fed by the runtime bridge, never owned here.
-struct QueueItem {
-    viewer_name: String,
-    engine_voice: String,
-    text: String,
-    duration_secs: u32,
-    is_high_priority: bool,
-    bits_amount: Option<u32>,
-}
-
-/// The session counters shown in the right rail. Runtime-fed once the bridge is
-/// wired; seeded representative here.
-struct SessionStats {
-    spoken: u32,
-    skipped: u32,
-    filtered: u32,
-    avg_latency_ms: Option<u32>,
-}
+/// The viewer name attributed to a test-speak request enqueued from the dashboard.
+const TEST_SPEAKER_NAME: &str = "Test";
 
 /// One configured engine's health line in the right rail. `warn` inks the caution
 /// hue (e.g. nearing a character quota); otherwise the ready hue.
@@ -72,29 +46,45 @@ struct EngineStatus {
 /// volume, test-speak), a now-speaking panel over the up-next queue, and a right
 /// rail of session counters and engine health, plus a stop-all confirm overlay.
 ///
-/// Owns its dashboard state as seeded stub state — `forge-desktop` wires no speak
-/// queue yet, so the now-speaking slot, queue, session counters and engine roster
-/// are seeded representative and the controls mutate this cached state with
-/// feedback. The real screen drives pause/resume/skip/stop/volume/test-speak
-/// through `forge-speak-queue`'s dispatch handle (`SpeakCommand::{Pause, Resume,
-/// Skip, Clear, SetVolume, Enqueue}`) and reads the live now-playing slot, queue
-/// and counters back over the runtime→UI bridge (a `SpeakEvent` topic).
+/// The now-speaking slot, up-next queue, paused flag and session counters are a cached
+/// read of the shared [`SpeakState`] topic, advanced by the boot-global `SpeakEvent`
+/// bridge; this view observes it and repaints. The controls dispatch `SpeakCommand`s
+/// through the `speak` queue handle (fire-and-forget on the tokio runtime): pause/resume
+/// toggles `Pause`/`Resume`, skip sends `Skip`, stop-all sends `Clear`, the volume slider
+/// sends `SetVolume`, and test-speak sends `Enqueue`. Volume is control-local (no event
+/// carries it). The engine roster stays seeded — no `SpeakEvent` carries an engine
+/// roster, so the live read is deferred to a later phase.
 pub struct TtsDashboardView {
-    paused: bool,
+    /// The shared, bridge-fed speak-queue cache. Read for now-speaking / queue /
+    /// counters / paused; optimistically nudged by the pause and stop-all controls
+    /// ahead of the queue's acknowledging event.
+    speak_state: Entity<SpeakState>,
+    /// The speak-queue command handle; `None` only if queue construction failed, in
+    /// which case controls no-op with a logged notice.
+    speak: Option<SpeakQueueHandle>,
+    /// The tokio runtime handle a control's fire-and-forget dispatch runs on, so the
+    /// send future has a reactor rather than gpui's foreground executor.
+    rt_handle: tokio::runtime::Handle,
+    /// Control-local master volume (0.0..=1.0); the `SpeakEvent` stream carries none.
     volume: f32,
-    now_speaking: Option<NowSpeaking>,
-    queue: Vec<QueueItem>,
-    stats: SessionStats,
+    /// Seeded engine roster — no `SpeakEvent` carries an engine roster, so the live
+    /// read lands in a later phase; the container renders a real frame meanwhile.
     engines: Vec<EngineStatus>,
     /// Two-phase stop-all gate: armed by the control strip's Stop button, rendered
     /// by the shared confirm overlay. `false` = no confirm showing.
     pending_stop_all: bool,
     test_input: Entity<TextInput>,
     _test_sub: Subscription,
+    _speak_obs: Subscription,
 }
 
 impl TtsDashboardView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        speak_state: Entity<SpeakState>,
+        speak: Option<SpeakQueueHandle>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
         let test_input =
             cx.new(|cx| TextInput::new("Type to test a voice…", cx).with_palette(palette));
@@ -106,36 +96,63 @@ impl TtsDashboardView {
                 InputEvent::Cancelled => {}
             },
         );
+        // Repaint whenever the bridge advances the shared speak-queue cache.
+        let speak_obs = cx.observe(&speak_state, |_this, _state, cx| cx.notify());
 
         Self {
-            paused: false,
+            speak_state,
+            speak,
+            rt_handle,
             volume: SEED_VOLUME,
-            now_speaking: Some(seed_now_speaking()),
-            queue: seed_queue(),
-            stats: seed_stats(),
             engines: seed_engines(),
             pending_stop_all: false,
             test_input,
             _test_sub: test_sub,
+            _speak_obs: speak_obs,
         }
     }
 
-    // --- control handlers (view-state stubs) ------------------------------
+    // --- command dispatch -------------------------------------------------
 
-    /// Toggles pause/resume of the speak queue. Real path: `SpeakCommand::Pause` /
-    /// `SpeakCommand::Resume` through the speak-queue dispatch handle.
+    /// Fire-and-forget dispatch of a `SpeakCommand` onto the tokio runtime. A missing
+    /// queue handle or a send failure logs a PII-safe notice (only the queue error is
+    /// printed, never the request payload) and drops the command — controls stay
+    /// responsive rather than blocking the foreground executor.
+    fn dispatch(&self, cmd: SpeakCommand) {
+        let Some(handle) = self.speak.clone() else {
+            eprintln!("forge-desktop: TTS command dropped — speak queue unavailable");
+            return;
+        };
+        self.rt_handle.spawn(async move {
+            if let Err(err) = handle.send(cmd).await {
+                eprintln!("forge-desktop: TTS command dispatch failed: {err}");
+            }
+        });
+    }
+
+    // --- control handlers -------------------------------------------------
+
+    /// Toggles pause/resume of the speak queue: optimistically flips the shared
+    /// paused flag ahead of the queue's acknowledgement, then dispatches the matching
+    /// `SpeakCommand::Pause` / `SpeakCommand::Resume`.
     fn toggle_pause(&mut self, cx: &mut Context<Self>) {
-        self.paused = !self.paused;
-        cx.notify();
+        let paused = self.speak_state.read(cx).paused();
+        let cmd = if paused {
+            SpeakCommand::Resume
+        } else {
+            SpeakCommand::Pause
+        };
+        self.speak_state.update(cx, |state, cx| {
+            state.set_paused(!paused);
+            cx.notify();
+        });
+        self.dispatch(cmd);
     }
 
-    /// Skips the current utterance, advancing the counter. Real path:
-    /// `SpeakCommand::Skip`; the bridge then clears the now-playing slot.
-    fn skip(&mut self, cx: &mut Context<Self>) {
-        if self.now_speaking.take().is_some() {
-            self.stats.skipped = self.stats.skipped.saturating_add(1);
-        }
-        cx.notify();
+    /// Skips the current utterance via `SpeakCommand::Skip`; the bridge clears the
+    /// now-playing slot and advances the skipped counter when the queue reports it.
+    fn skip(&mut self, _cx: &mut Context<Self>) {
+        self.dispatch(SpeakCommand::Skip);
     }
 
     /// Arms the stop-all confirm gate.
@@ -149,37 +166,34 @@ impl TtsDashboardView {
         cx.notify();
     }
 
-    /// Clears the queue and the now-playing slot. Real path: `SpeakCommand::Clear`
-    /// through the dispatch handle; the bridge reflects the emptied queue back.
+    /// Clears the queue and the now-playing slot: optimistically empties the shared
+    /// cache ahead of the queue's `Cleared` event, then dispatches
+    /// `SpeakCommand::Clear`.
     fn confirm_stop_all(&mut self, cx: &mut Context<Self>) {
         self.pending_stop_all = false;
-        self.queue.clear();
-        self.now_speaking = None;
+        self.speak_state.update(cx, |state, cx| {
+            state.clear_all();
+            cx.notify();
+        });
+        self.dispatch(SpeakCommand::Clear);
         cx.notify();
     }
 
-    /// Stores the new volume. Real path: `SpeakCommand::SetVolume`.
+    /// Stores the new volume and dispatches `SpeakCommand::SetVolume`.
     fn set_volume(&mut self, volume: f32, cx: &mut Context<Self>) {
         self.volume = volume;
+        self.dispatch(SpeakCommand::SetVolume(volume));
         cx.notify();
     }
 
-    /// Enqueues the test-speak text. Real path: `SpeakCommand::Enqueue` with a
-    /// test request; the bridge pushes the resulting queued item back. Here it
-    /// appends a cached queue item and clears the field.
+    /// Enqueues the test-speak text via `SpeakCommand::Enqueue`; the bridge pushes the
+    /// resulting queued item back onto the shared cache. Clears the field on submit.
     fn speak_test(&mut self, cx: &mut Context<Self>) {
         let text = self.test_input.read(cx).content().trim().to_owned();
         if text.is_empty() {
             return;
         }
-        self.queue.push(QueueItem {
-            viewer_name: "Test".to_owned(),
-            engine_voice: String::new(),
-            text,
-            duration_secs: 0,
-            is_high_priority: false,
-            bits_amount: None,
-        });
+        self.dispatch(SpeakCommand::Enqueue(test_speak_request(text)));
         self.test_input.update(cx, |ti, cx| ti.set_content("", cx));
         cx.notify();
     }
@@ -188,6 +202,7 @@ impl TtsDashboardView {
 
     fn control_strip(
         &self,
+        paused: bool,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -196,7 +211,7 @@ impl TtsDashboardView {
 
         // Pause/resume: a filled button inking the success hue when paused (Resume)
         // and the danger hue while running (Pause).
-        let (pause_label, pause_glyph, btn_bg) = if self.paused {
+        let (pause_label, pause_glyph, btn_bg) = if paused {
             ("Resume", Icon::PlayerPlay, palette.success)
         } else {
             ("Pause queue", Icon::PlayerPause, palette.random)
@@ -338,163 +353,15 @@ impl TtsDashboardView {
             .into_any_element()
     }
 
-    // --- now speaking -----------------------------------------------------
-
-    fn now_speaking_panel(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let header = div()
-            .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_muted)
-            .child("NOW SPEAKING");
-
-        let body = match &self.now_speaking {
-            Some(ns) => {
-                let progress = format!(
-                    "{}:{:02} / {}:{:02}",
-                    ns.elapsed_secs / 60,
-                    ns.elapsed_secs % 60,
-                    ns.total_secs / 60,
-                    ns.total_secs % 60
-                );
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(header)
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(spacing(Spacing::Xs, density))
-                            .child(
-                                div()
-                                    .font_family(DEFAULT_BODY_FAMILY)
-                                    .text_size(FONT_SM)
-                                    .text_color(palette.success)
-                                    .child(ns.viewer_name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .font_family(DEFAULT_MONO_FAMILY)
-                                    .text_size(FONT_SM)
-                                    .text_color(palette.text_muted)
-                                    .child(ns.engine_voice.clone()),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(ns.text.clone()),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_muted)
-                            .child(progress),
-                    )
-            }
-            None => div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xs, density))
-                .child(header)
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_muted)
-                        .child("—"),
-                ),
-        };
-
-        card(body, palette)
-            .split_radius(px(0.0), px(0.0))
-            .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Md, density))
-            .full_width()
-            .into_any_element()
-    }
-
-    // --- queue ------------------------------------------------------------
-
-    fn queue_section(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let count = self.queue.len();
-        let count_pill = div()
-            .px(spacing(Spacing::Xs, density))
-            .rounded(radius(Radius::Pill))
-            .bg(palette.surface_overlay)
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(count.to_string()),
-            );
-        let header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child("Up next"),
-            )
-            .child(count_pill);
-
-        let list: AnyElement = if self.queue.is_empty() {
-            div()
-                .w_full()
-                .p(spacing(Spacing::Md, density))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_muted)
-                        .child("Queue is empty"),
-                )
-                .into_any_element()
-        } else {
-            let mut col = div().w_full().flex().flex_col();
-            for (index, item) in self.queue.iter().enumerate() {
-                col = col.child(queue_item_row(index, item, palette, density));
-            }
-            col.into_any_element()
-        };
-
-        div()
-            .w_full()
-            .flex_1()
-            .min_h(px(0.0))
-            .flex()
-            .flex_col()
-            .child(header)
-            .child(
-                div()
-                    .id("tts-queue-scroll")
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .overflow_y_scroll()
-                    .child(list),
-            )
-            .into_any_element()
-    }
-
     // --- right rail -------------------------------------------------------
 
-    fn right_pane(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let latency = self
-            .stats
+    fn right_pane(
+        &self,
+        stats: &SessionStats,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
+        let latency = stats
             .avg_latency_ms
             .map(|ms| format!("{ms}ms"))
             .unwrap_or_else(|| "—".to_owned());
@@ -506,7 +373,7 @@ impl TtsDashboardView {
             .child(rail_header("SESSION", palette))
             .child(stat_row(
                 "Spoken",
-                self.stats.spoken.to_string(),
+                stats.spoken.to_string(),
                 palette.brand,
                 palette,
                 density,
@@ -514,7 +381,7 @@ impl TtsDashboardView {
             ))
             .child(stat_row(
                 "Skipped",
-                self.stats.skipped.to_string(),
+                stats.skipped.to_string(),
                 palette.warning,
                 palette,
                 density,
@@ -522,7 +389,7 @@ impl TtsDashboardView {
             ))
             .child(stat_row(
                 "Filtered",
-                self.stats.filtered.to_string(),
+                stats.filtered.to_string(),
                 palette.random,
                 palette,
                 density,
@@ -621,10 +488,17 @@ impl Render for TtsDashboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let control_strip = self.control_strip(&palette, density, cx);
-        let now_speaking = self.now_speaking_panel(&palette, density);
-        let queue_section = self.queue_section(&palette, density);
-        let right_pane = self.right_pane(&palette, density);
+        // Owned snapshots of the shared cache, cloned once so the render tree and the
+        // control listeners can borrow `cx` freely afterwards.
+        let paused = self.speak_state.read(cx).paused();
+        let now = self.speak_state.read(cx).now_speaking_snapshot();
+        let queue = self.speak_state.read(cx).queue_snapshot();
+        let stats = self.speak_state.read(cx).stats_snapshot();
+
+        let control_strip = self.control_strip(paused, &palette, density, cx);
+        let now_speaking = now_speaking_panel(now.as_ref(), &palette, density);
+        let queue_section = queue_section(&queue, &palette, density);
+        let right_pane = self.right_pane(&stats, &palette, density);
 
         let left_col = div()
             .flex_1()
@@ -660,6 +534,162 @@ impl Render for TtsDashboardView {
 }
 
 // ── view-specific fragments ───────────────────────────────────────────────
+
+/// The now-speaking panel: the utterance currently voicing, or an em-dash placeholder
+/// when the slot is empty.
+fn now_speaking_panel(
+    now: Option<&NowSpeaking>,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let header = div()
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XS)
+        .text_color(palette.text_muted)
+        .child("NOW SPEAKING");
+
+    let body = match now {
+        Some(ns) => {
+            let progress = format!(
+                "{}:{:02} / {}:{:02}",
+                ns.elapsed_secs / 60,
+                ns.elapsed_secs % 60,
+                ns.total_secs / 60,
+                ns.total_secs % 60
+            );
+            div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xs, density))
+                .child(header)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(spacing(Spacing::Xs, density))
+                        .child(
+                            div()
+                                .font_family(DEFAULT_BODY_FAMILY)
+                                .text_size(FONT_SM)
+                                .text_color(palette.success)
+                                .child(ns.viewer_name.clone()),
+                        )
+                        .child(
+                            div()
+                                .font_family(DEFAULT_MONO_FAMILY)
+                                .text_size(FONT_SM)
+                                .text_color(palette.text_muted)
+                                .child(ns.engine_voice.clone()),
+                        ),
+                )
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_SM)
+                        .text_color(palette.text_primary)
+                        .child(ns.text.clone()),
+                )
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_SM)
+                        .text_color(palette.text_muted)
+                        .child(progress),
+                )
+        }
+        None => div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(header)
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_muted)
+                    .child("—"),
+            ),
+    };
+
+    card(body, palette)
+        .split_radius(px(0.0), px(0.0))
+        .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Md, density))
+        .full_width()
+        .into_any_element()
+}
+
+/// The up-next queue: a header with a count pill over a scrolling list of pending
+/// utterances, or an "empty" line when the queue holds nothing.
+fn queue_section(queue: &[QueueItem], palette: &ForgePalette, density: Density) -> AnyElement {
+    let count = queue.len();
+    let count_pill = div()
+        .px(spacing(Spacing::Xs, density))
+        .rounded(radius(Radius::Pill))
+        .bg(palette.surface_overlay)
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(palette.text_muted)
+                .child(count.to_string()),
+        );
+    let header = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, density))
+        .py(spacing(Spacing::Xs, density))
+        .px(spacing(Spacing::Md, density))
+        .border_b(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(palette.text_primary)
+                .child("Up next"),
+        )
+        .child(count_pill);
+
+    let list: AnyElement = if queue.is_empty() {
+        div()
+            .w_full()
+            .p(spacing(Spacing::Md, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_muted)
+                    .child("Queue is empty"),
+            )
+            .into_any_element()
+    } else {
+        let mut col = div().w_full().flex().flex_col();
+        for (index, item) in queue.iter().enumerate() {
+            col = col.child(queue_item_row(index, item, palette, density));
+        }
+        col.into_any_element()
+    };
+
+    div()
+        .w_full()
+        .flex_1()
+        .min_h(px(0.0))
+        .flex()
+        .flex_col()
+        .child(header)
+        .child(
+            div()
+                .id("tts-queue-scroll")
+                .flex_1()
+                .min_h(px(0.0))
+                .overflow_y_scroll()
+                .child(list),
+        )
+        .into_any_element()
+}
 
 /// One queue row: a fixed-width mono position gutter, a viewer/voice header over
 /// the ellipsised message, and a trailing mono duration.
@@ -830,78 +860,30 @@ fn engine_card(
     .full_width()
 }
 
+/// Builds the `SpeakRequest` for a dashboard test-speak: a normal-priority utterance
+/// attributed to the local test speaker, with no alias/engine/voice override so the
+/// queue resolves a voice through its default strategy.
+fn test_speak_request(text: String) -> SpeakRequest {
+    SpeakRequest {
+        request_id: RequestId::new(),
+        viewer_id: String::new(),
+        viewer_name: TEST_SPEAKER_NAME.to_owned(),
+        text,
+        priority: Priority::Normal,
+        alias_override: None,
+        engine_override: None,
+        voice_override: None,
+        source_event_id: forge_types::EventId::new(),
+        is_reward: false,
+    }
+}
+
 // ── seeded stub state ─────────────────────────────────────────────────────
 
-/// The now-playing utterance the dashboard seeds before a speak queue is wired,
-/// mirroring the design's now-speaking sample.
-fn seed_now_speaking() -> NowSpeaking {
-    NowSpeaking {
-        viewer_name: "koval_dev".to_owned(),
-        engine_voice: "Amazon Polly · Olena".to_owned(),
-        text: "Дякую за стрім, GTNH контент топчик, продовжуй у тому ж дусі!".to_owned(),
-        elapsed_secs: 3,
-        total_secs: 8,
-    }
-}
-
-/// The representative up-next queue, mirroring the design's queue roster so the
-/// queue list, priority badge and now-speaking hand-off all render populated.
-fn seed_queue() -> Vec<QueueItem> {
-    vec![
-        QueueItem {
-            viewer_name: "olena_lv".to_owned(),
-            engine_voice: "ElevenLabs · Rachel".to_owned(),
-            text: "коли наступний стрім по фабриці?".to_owned(),
-            duration_secs: 6,
-            is_high_priority: false,
-            bits_amount: None,
-        },
-        QueueItem {
-            viewer_name: "stream_fan_kyiv".to_owned(),
-            engine_voice: "Polly · Maksym".to_owned(),
-            text: "keep going love the UA stream".to_owned(),
-            duration_secs: 4,
-            is_high_priority: true,
-            bits_amount: Some(500),
-        },
-        QueueItem {
-            viewer_name: "haash_".to_owned(),
-            engine_voice: "Piper (local) · UA-1".to_owned(),
-            text: "не забудь про aluminium bottleneck".to_owned(),
-            duration_secs: 5,
-            is_high_priority: false,
-            bits_amount: None,
-        },
-        QueueItem {
-            viewer_name: "ostap_pl".to_owned(),
-            engine_voice: "Polly · Olena".to_owned(),
-            text: "stainless steel вже відкрив?".to_owned(),
-            duration_secs: 3,
-            is_high_priority: false,
-            bits_amount: None,
-        },
-        QueueItem {
-            viewer_name: "danylo_ua".to_owned(),
-            engine_voice: "ElevenLabs · Antoni".to_owned(),
-            text: "го дотку після стріму".to_owned(),
-            duration_secs: 3,
-            is_high_priority: false,
-            bits_amount: None,
-        },
-    ]
-}
-
-/// The seeded session counters, mirroring the design's SESSION panel.
-fn seed_stats() -> SessionStats {
-    SessionStats {
-        spoken: 218,
-        skipped: 14,
-        filtered: 31,
-        avg_latency_ms: Some(340),
-    }
-}
-
-/// The seeded engine roster, mirroring the design's ENGINES panel.
+/// The seeded engine roster, mirroring the design's ENGINES panel. No `SpeakEvent`
+/// carries an engine roster, so the live read (off the TTS registry) is deferred to a
+/// later phase; the container renders a real frame with this representative roster
+/// meanwhile.
 fn seed_engines() -> Vec<EngineStatus> {
     vec![
         EngineStatus {

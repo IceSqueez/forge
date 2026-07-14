@@ -23,7 +23,9 @@ use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::shell::AppShell;
+use crate::speak_state::SpeakState;
 use crate::topics::Topics;
+use forge_speak_queue::SpeakEventStream;
 
 /// The two-phase boot state. `Ready` wraps today's shell verbatim; the two `Failed`
 /// variants are differentiated by cause so the shell routes to the matching screen.
@@ -94,6 +96,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
     let event_log = cx.new(|_| EventLog::new());
     let globals = cx.new(|_| Globals::seeded());
     let platforms = cx.new(|_| PlatformConnectivity::new());
+    let speak = cx.new(|_| SpeakState::new());
 
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
@@ -109,7 +112,11 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
             }),
         };
         match outcome {
-            Ok(handles) => {
+            Ok(mut handles) => {
+                // The speak queue's initial event subscription is not `Clone` — lift it
+                // out of the handle bundle here so the boot-global bridge below owns the
+                // sole drain (the bundle keeps `None` in its place).
+                let speak_events = handles.speak_events.take();
                 let handles = Arc::new(handles);
                 let bus = Arc::clone(&handles.bus);
                 let handles_for_shell = Arc::clone(&handles);
@@ -119,6 +126,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 let home_stats_for_viewers = home_stats.clone();
                 let event_log_for_bridge = event_log.clone();
                 let platforms_for_bridge = platforms.clone();
+                let speak_for_bridge = speak.clone();
                 let live_viewers_handle = handles.live_viewers.clone();
                 let applied = window.update(cx, |root, window, cx| {
                     // Seed the connectivity cache from each mounted builtin's live
@@ -127,7 +135,8 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();
                     });
-                    let topics = Topics::new(chat_feed, home_stats, event_log, globals, platforms);
+                    let topics =
+                        Topics::new(chat_feed, home_stats, event_log, globals, platforms, speak);
                     let shell =
                         cx.new(|cx| AppShell::new(status, topics, handles_for_shell, window, cx));
                     root.mark_ready(shell, handles);
@@ -144,6 +153,9 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                     );
                     start_uptime_clock(cx, status_for_clock);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
+                    if let Some(events) = speak_events {
+                        start_speak_bridge(cx, speak_for_bridge, events);
+                    }
                 }
             }
             Err(failure) => {
@@ -283,6 +295,35 @@ fn start_live_viewers_bridge(
             if home_stats
                 .update(cx, |stats, cx| {
                     if stats.set_live_viewers(count) {
+                        cx.notify();
+                    }
+                })
+                .is_err()
+            {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
+/// Boot-global speak-queue drain, owned by the shell for the app's lifetime. It drains
+/// the queue's sole initial `SpeakEvent` subscription (taken once out of the handle
+/// bundle at boot) and folds each event into the shared [`SpeakState`] topic — the
+/// now-speaking slot, the up-next queue, the paused flag and the session counters —
+/// repainting only on a real change so the counters keep accumulating even when the TTS
+/// dashboard isn't mounted. A closed queue or a released topic entity ends the task.
+///
+/// Note: [`SpeakEventStream::recv`] collapses a lagging broadcast receiver into the same
+/// terminal error as a closed channel, so a burst that overruns the buffer would end the
+/// drain; the queue's events are low-frequency (one per utterance) so this is unlikely,
+/// but distinguishing lag from closure is a queue-side concern.
+fn start_speak_bridge(cx: &mut AsyncApp, speak: Entity<SpeakState>, mut events: SpeakEventStream) {
+    cx.spawn(async move |cx| {
+        while let Ok(event) = events.recv().await {
+            if speak
+                .update(cx, |state, cx| {
+                    if state.apply_event(event) {
                         cx.notify();
                     }
                 })

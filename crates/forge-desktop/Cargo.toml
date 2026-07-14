@@ -23,12 +23,14 @@ forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-registry = { path = "../forge-registry" }
 forge-runtime = { path = "../forge-runtime" }
+forge-server = { path = "../forge-server" }
 forge-storage = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
 forge-types = { path = "../forge-types" }
 forge-vtube = { path = "../forge-vtube" }
 futures-util = { workspace = true }
 gpui = { workspace = true }
+open = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }

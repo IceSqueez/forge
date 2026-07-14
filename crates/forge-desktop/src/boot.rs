@@ -5,11 +5,13 @@ use forge_events::EventPublisher;
 use forge_platform_core::paths;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, Config, EventBus, QueueScheduler, SchedulerCell, ScriptRegistry,
-    register_core_sub_actions, register_core_triggers, spawn_action_engine,
+    ActionCancelRegistry, ActionEngineHandle, Config, EventBus, QueueScheduler, SchedulerCell,
+    ScriptRegistry, register_core_sub_actions, register_core_triggers, spawn_action_engine,
     spawn_live_viewer_aggregator, spawn_trigger_evaluator,
 };
-use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo};
+use forge_storage::{
+    CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
+};
 use forge_storage_sqlite::SqliteBackend;
 
 use crate::integrations::build_integrations;
@@ -135,6 +137,8 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         live_viewers.register(source);
     }
 
+    let server = build_server(&backend, &bus, &action_engine).await;
+
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
         backend,
@@ -147,5 +151,71 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         trigger_evaluator,
         live_viewers,
         builtins: integrations.builtins,
+        server,
     })
+}
+
+/// Brings up the hosted WS+HTTP server per the persisted server settings, mirroring
+/// the integrations bring-up: it binds only when the user's stored config enables the
+/// server, and performs no I/O otherwise. A disabled server, an unparseable bind, a
+/// settings-load failure or a bind failure all resolve to `None` (data-safe, boot
+/// continues) — the console then renders its Stopped state. The `ServerConfig` is
+/// assembled from the same `DataProvider` repos and bus/engine handles the runtime
+/// already holds.
+async fn build_server(
+    backend: &Arc<dyn DataProvider>,
+    bus: &Arc<EventBus>,
+    action_engine: &ActionEngineHandle,
+) -> Option<forge_server::ServerHandle> {
+    let settings = match forge_server::ServerSettings::load(backend.as_ref()).await {
+        Ok(settings) => settings,
+        Err(e) => {
+            eprintln!("forge-desktop: server settings load failed, leaving server off: {e}");
+            return None;
+        }
+    };
+    if !settings.enabled {
+        return None;
+    }
+    let ip: std::net::IpAddr = match settings.bind_address.parse() {
+        Ok(ip) => ip,
+        Err(e) => {
+            eprintln!(
+                "forge-desktop: invalid server bind address '{}': {e}",
+                settings.bind_address
+            );
+            return None;
+        }
+    };
+    let bind_addr = std::net::SocketAddr::new(ip, settings.port);
+
+    let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let credentials: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;
+    let globals: Arc<dyn GlobalsRepo> = Arc::clone(backend) as Arc<dyn GlobalsRepo>;
+    let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(backend) as Arc<dyn UserGlobalsRepo>;
+    let mut config = forge_server::ServerConfig::new(
+        settings_repo,
+        credentials,
+        Arc::clone(bus),
+        backend.action_repo(),
+        globals,
+        user_globals,
+        Arc::new(action_engine.clone()),
+    );
+    config.bind_addr = bind_addr;
+    config.auth_required_for_reads = settings.auth_required_for_reads;
+    config.lan_bind_enabled = settings.lan_bind_enabled;
+    config.http_overlay_require_token = settings.http_overlay_require_token;
+    config.overlay_cors_any_origin = settings.overlay_cors_any_origin;
+    if let Some(root) = settings.overlay_root.filter(|root| !root.is_empty()) {
+        config.overlay_root = std::path::PathBuf::from(root);
+    }
+
+    match forge_server::start_server(config).await {
+        Ok(handle) => Some(handle),
+        Err(e) => {
+            eprintln!("forge-desktop: server failed to start, leaving it off: {e}");
+            None
+        }
+    }
 }

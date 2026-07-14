@@ -36,4 +36,9 @@ pub struct RuntimeHandles {
     pub trigger_evaluator: TriggerEvaluatorHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
     pub builtins: HashMap<BuiltinId, BuiltinObject>,
+    /// The hosted WS+HTTP server, bound at boot only when the persisted server
+    /// settings enable it; `None` when disabled or when the bind failed (no I/O).
+    /// The server console polls its `snapshot()` and dispatches lifecycle verbs
+    /// through it; every other screen ignores it.
+    pub server: Option<forge_server::ServerHandle>,
 }

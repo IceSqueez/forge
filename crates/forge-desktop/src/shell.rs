@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_platform_core::BuiltinId;
 use forge_runtime::dashboard::compute_stats;
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, FocusHandle, Window, deferred,
     div, prelude::*,
@@ -239,7 +239,14 @@ impl AppShell {
             Screen::Queues => cx.new(QueuesView::new).into(),
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
             Screen::Tts => cx.new(TtsView::new).into(),
-            Screen::Server => cx.new(ServerConsoleView::new).into(),
+            Screen::Server => {
+                let server = handles.server.clone();
+                let rt_handle = handles.rt_handle.clone();
+                let credentials: Arc<dyn CredentialsRepo> =
+                    Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
+                cx.new(|cx| ServerConsoleView::new(server, rt_handle, credentials, cx))
+                    .into()
+            }
             Screen::Actions => cx.new(ScreenActionsView::new).into(),
             Screen::Triggers => cx.new(TriggersRegistryView::new).into(),
             Screen::Scripts => {

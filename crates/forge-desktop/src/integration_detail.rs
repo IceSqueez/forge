@@ -7,6 +7,7 @@ use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, QuickAction, QuickActions, SectionIcon,
 };
+use forge_runtime::ActionEngineHandle;
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Window,
@@ -47,6 +48,10 @@ pub struct IntegrationDetail {
     // real network I/O, so it must run with a tokio reactor rather than on gpui's
     // foreground executor.
     rt_handle: tokio::runtime::Handle,
+    // The action-engine write edge. A quick action carries a pre-filled SubAction
+    // template that is dispatched through this handle — the SAME path a real
+    // trigger-driven SubAction takes — so a quick action is never a side channel.
+    action_engine: ActionEngineHandle,
     icon: SectionIcon,
     display_name: String,
     version: Option<String>,
@@ -80,6 +85,7 @@ impl IntegrationDetail {
         quick: Arc<dyn QuickActions>,
         control: Option<Arc<dyn BuiltinControl>>,
         rt_handle: tokio::runtime::Handle,
+        action_engine: ActionEngineHandle,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -124,6 +130,7 @@ impl IntegrationDetail {
             quick,
             control,
             rt_handle,
+            action_engine,
             icon,
             display_name,
             version,
@@ -232,11 +239,30 @@ impl IntegrationDetail {
         if !action.enabled {
             return;
         }
-        // Real dispatch routes through the runtime's action engine as a pre-filled
-        // SubAction (and, for picker actions, opens the scene/source picker first).
-        // With no live runtime the dispatch is stubbed to a global toast.
+        // A picker action (OBS scene/source/input) needs a target chosen before its
+        // template is complete; firing the bare template would dispatch a switch with
+        // no scene/source. The gpui shell does not yet surface an OBS client to fetch
+        // and pick that target, so a picker action reports the missing selection
+        // rather than dispatching a malformed SubAction.
+        if action.picker.is_some() {
+            let label = action.label.clone();
+            cx.push_toast(ToastKind::Info, format!("{label} needs a target"));
+            return;
+        }
+        // Non-picker action: dispatch the pre-filled SubAction template through the
+        // action engine — the SAME path a trigger-driven SubAction takes, never a
+        // side channel. Real dispatch needs a tokio reactor, so it is spawned onto
+        // the runtime handle fire-and-forget; a rejected dispatch is logged
+        // PII-safely and the outcome is otherwise observed through the bus.
+        let step = action.subaction_template.clone();
+        let builtin_id = self.status.id().as_str().to_owned();
         let label = action.label.clone();
-        cx.push_toast(ToastKind::Info, format!("{label} — queued"));
+        let engine = self.action_engine.clone();
+        self.rt_handle.spawn(async move {
+            if let Err(failure) = engine.execute_quick_action(step, builtin_id, label).await {
+                eprintln!("forge-desktop: quick action dispatch failed: {failure}");
+            }
+        });
     }
 
     fn dismiss_toast(&mut self, cx: &mut Context<Self>) {

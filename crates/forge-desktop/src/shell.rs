@@ -190,6 +190,7 @@ impl AppShell {
                         let quick = obj.quick.clone();
                         let control = obj.control.clone();
                         let rt_handle = handles.rt_handle.clone();
+                        let action_engine = handles.action_engine.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 icon,
@@ -199,6 +200,7 @@ impl AppShell {
                                 quick,
                                 control,
                                 rt_handle,
+                                action_engine,
                                 connectivity,
                                 cx,
                             )
@@ -207,6 +209,7 @@ impl AppShell {
                     None => {
                         let seed = integration_seed::seed(id);
                         let rt_handle = handles.rt_handle.clone();
+                        let action_engine = handles.action_engine.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 seed.icon,
@@ -216,6 +219,7 @@ impl AppShell {
                                 seed.quick,
                                 None,
                                 rt_handle,
+                                action_engine,
                                 connectivity,
                                 cx,
                             )

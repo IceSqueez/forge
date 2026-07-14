@@ -158,7 +158,7 @@ rfd = { version = "0.17", default-features = false, features = [
   "xdg-portal",
   "wayland",
 ] }
-open = { version = "5.3" }
+open = { version = "5.4" }
 arboard = { version = "3.6", default-features = false, features = [
   "wayland-data-control",
 ] }

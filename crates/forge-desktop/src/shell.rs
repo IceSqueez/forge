@@ -34,7 +34,7 @@ use crate::soundboard::SoundboardView;
 use crate::stream_apps::StreamAppsView;
 use crate::toasts::Toasts;
 use crate::topics::Topics;
-use crate::triggers_registry::TriggersRegistryView;
+use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
 
 /// Draw priority for the deferred toast host. One above the overlay priority so a
@@ -293,7 +293,13 @@ impl AppShell {
                 })
                 .into()
             }
-            Screen::Triggers => cx.new(TriggersRegistryView::new).into(),
+            Screen::Triggers => {
+                let repo = handles.backend.trigger_instance_repo();
+                let registry = handles.trigger_registry.clone();
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| TriggersRegistryView::new(repo, registry, rt_handle, cx))
+                    .into()
+            }
             Screen::Scripts => {
                 let editor = cx.new(ScriptEditorView::new);
                 cx.subscribe(&editor, |this, _view, event: &NavRequested, cx| {

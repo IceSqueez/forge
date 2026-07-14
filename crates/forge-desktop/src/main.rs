@@ -37,7 +37,7 @@ mod stream_apps;
 mod titlebar;
 mod toasts;
 mod topics;
-mod triggers_registry;
+mod triggers_screen;
 mod tts;
 mod tts_dashboard;
 mod tts_engines;

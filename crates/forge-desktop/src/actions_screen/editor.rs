@@ -12,8 +12,10 @@ use forge_components::{
     menu_divider, menu_item, overlay, primary_button, radius, row_card, secondary_button,
     side_sheet, spacing, status_dot, toggle,
 };
-use forge_registry::{FormField, SubActionCategory, SubActionRegistry, SubActionRunner};
-use forge_types::{SubActionConfig, SubActionStep, Variant};
+use forge_registry::{
+    FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
+};
+use forge_types::{SubActionConfig, SubActionStep, TriggerInstance, Variant};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
     Window, div, px,
@@ -955,8 +957,9 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    /// Placeholder triggers section: the mono count header over an em-dash empty
-    /// card. Real linked-instance cards + link/unlink land in a follow-up slice.
+    /// Read-only triggers section: the mono count header over one card per linked
+    /// trigger instance (or an empty-state card). Link/unlink land in a follow-up
+    /// slice.
     fn render_triggers_section(&self, detail: &ActionDetail, palette: &ForgePalette) -> AnyElement {
         let label = div()
             .font_family(DEFAULT_MONO_FAMILY)
@@ -967,14 +970,98 @@ impl ScreenActionsView {
                 detail.trigger_instances.len()
             ));
 
-        let body = empty_placeholder_card(Icon::Bolt, palette.text_faint, "\u{2014}", palette);
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, Density::Cozy));
+        if detail.trigger_instances.is_empty() {
+            col = col.child(empty_placeholder_card(
+                Icon::Bolt,
+                palette.warning,
+                "No triggers linked",
+                palette,
+            ));
+        } else {
+            for instance in &detail.trigger_instances {
+                col = col.child(self.render_trigger_card(instance, palette));
+            }
+        }
 
         div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(label)
-            .child(body)
+            .child(col)
+            .into_any_element()
+    }
+
+    fn render_trigger_card(
+        &self,
+        instance: &TriggerInstance,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let descriptor = self.trigger_registry.get(&instance.kind_id);
+        let accent = if instance.enabled {
+            palette.brand
+        } else {
+            palette.disabled
+        };
+        let name_color = if instance.enabled {
+            palette.text_primary
+        } else {
+            palette.text_faint
+        };
+        let kind_label = descriptor
+            .map(|d| d.label().to_owned())
+            .unwrap_or_else(|| instance.kind_id.clone());
+        let condition = descriptor
+            .map(|d| d.condition_display(&instance.overrides))
+            .unwrap_or_default();
+        let glyph = Icon::from_name(
+            descriptor
+                .map(TriggerKindDescriptor::icon_name)
+                .unwrap_or("bolt"),
+        );
+
+        let leading = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(status_dot(accent, TRIGGER_DOT))
+            .child(icon(glyph, TRIGGER_GLYPH, accent));
+
+        let title = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(FONT_XS)
+                    .text_color(name_color)
+                    .child(instance.name.clone()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(kind_label),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.bits)
+                    .child(condition),
+            );
+
+        row_card(title, palette)
+            .leading(leading)
+            .idle_background(palette.elevated)
+            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
             .into_any_element()
     }
 

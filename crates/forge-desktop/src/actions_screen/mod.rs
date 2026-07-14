@@ -9,7 +9,7 @@ use forge_components::{
     ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, ToastKind, icon, overlay,
     search_input,
 };
-use forge_registry::SubActionRegistry;
+use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Action, ActionId, QueueId, SubActionStep};
@@ -65,6 +65,9 @@ const PILL_RADIUS: Pixels = px(8.0);
 const PILL_DOT: Pixels = px(5.0);
 /// Leading glyph size on a step card (fixed 13px, off the `FONT_*` scale).
 const CARD_GLYPH: Pixels = px(13.0);
+/// Leading status-dot diameter (7px) and kind-glyph size (13px) on a trigger card.
+const TRIGGER_DOT: Pixels = px(7.0);
+const TRIGGER_GLYPH: Pixels = px(13.0);
 /// Numbered step-circle side and its fully-rounded corner (fixed 22px / 11px).
 const STEP_CIRCLE: Pixels = px(22.0);
 const STEP_CIRCLE_RADIUS: Pixels = px(11.0);
@@ -186,6 +189,7 @@ pub struct ScreenActionsView {
     queue_repo: Arc<dyn QueueRepo>,
     actions_service: Arc<ActionsService>,
     sub_action_registry: Arc<SubActionRegistry>,
+    trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     /// True until the first `list` pull lands, so the tree shows a loading caption
     /// rather than the empty-roster caption before any row arrives.
@@ -222,6 +226,7 @@ impl ScreenActionsView {
         queue_repo: Arc<dyn QueueRepo>,
         actions_service: Arc<ActionsService>,
         sub_action_registry: Arc<SubActionRegistry>,
+        trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -234,6 +239,7 @@ impl ScreenActionsView {
             queue_repo,
             actions_service,
             sub_action_registry,
+            trigger_registry,
             rt_handle,
             loading: true,
             groups: Vec::new(),

@@ -276,6 +276,7 @@ impl AppShell {
                     handles.backend.soundboard_clips_repo(),
                 ));
                 let sub_action_registry = handles.sub_action_registry.clone();
+                let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
                 cx.new(|cx| {
                     ScreenActionsView::new(
@@ -283,6 +284,7 @@ impl AppShell {
                         queue_repo,
                         actions_service,
                         sub_action_registry,
+                        trigger_registry,
                         rt_handle,
                         cx,
                     )

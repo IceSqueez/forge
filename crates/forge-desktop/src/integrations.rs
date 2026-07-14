@@ -30,6 +30,10 @@ pub struct BuiltinObject {
     pub content: Arc<dyn BuiltinContent>,
     pub quick: Arc<dyn QuickActions>,
     pub control: Option<Arc<dyn BuiltinControl>>,
+    /// The concrete OBS client, present only for the OBS integration. The detail
+    /// screen reaches through it to enumerate scenes / sources / audio inputs when a
+    /// picker quick action needs a target; every other integration carries `None`.
+    pub obs_client: Option<Arc<forge_obs::ObsClient>>,
 }
 
 /// Everything the external-I/O bring-up hands back to the runtime bundle: the live
@@ -283,6 +287,7 @@ async fn build_twitch(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(bundle as Arc<dyn BuiltinControl>),
+        obs_client: None,
     })
 }
 
@@ -317,7 +322,8 @@ async fn build_obs(
         health: client.clone(),
         content: client.clone(),
         quick: client.clone(),
-        control: Some(client as Arc<dyn BuiltinControl>),
+        control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
+        obs_client: Some(client),
     })
 }
 
@@ -354,6 +360,7 @@ async fn build_vtube(
         content: client.clone(),
         quick: client.clone(),
         control: Some(client as Arc<dyn BuiltinControl>),
+        obs_client: None,
     })
 }
 
@@ -377,6 +384,7 @@ fn build_discord(
         content: client.clone(),
         quick: client,
         control: None,
+        obs_client: None,
     })
 }
 
@@ -401,6 +409,7 @@ fn build_midi(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) -> Optio
         content: client.clone(),
         quick: client,
         control: None,
+        obs_client: None,
     })
 }
 
@@ -419,6 +428,7 @@ async fn build_hotkey(
         content: client.clone(),
         quick: client,
         control: None,
+        obs_client: None,
     })
 }
 
@@ -554,6 +564,7 @@ async fn build_youtube(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(bundle as Arc<dyn BuiltinControl>),
+        obs_client: None,
     };
     (Some(object), Some(viewer_source))
 }
@@ -660,6 +671,7 @@ async fn build_kick(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(bundle as Arc<dyn BuiltinControl>),
+        obs_client: None,
     };
     (Some(object), Some(Box::new(viewer_source)))
 }

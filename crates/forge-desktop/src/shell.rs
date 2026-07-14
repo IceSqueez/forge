@@ -189,6 +189,7 @@ impl AppShell {
                         let content = obj.content.clone();
                         let quick = obj.quick.clone();
                         let control = obj.control.clone();
+                        let obs_client = obj.obs_client.clone();
                         let rt_handle = handles.rt_handle.clone();
                         let action_engine = handles.action_engine.clone();
                         cx.new(|cx| {
@@ -199,6 +200,7 @@ impl AppShell {
                                 content,
                                 quick,
                                 control,
+                                obs_client,
                                 rt_handle,
                                 action_engine,
                                 connectivity,
@@ -217,6 +219,7 @@ impl AppShell {
                                 seed.health,
                                 seed.content,
                                 seed.quick,
+                                None,
                                 None,
                                 rt_handle,
                                 action_engine,

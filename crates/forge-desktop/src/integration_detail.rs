@@ -1,13 +1,17 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, ToastKind,
-    breadcrumb, confirm_modal, icon, overlay, radius, spacing, with_alpha,
+    FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
+    PickerItem, PickerLabels, Radius, Spacing, breadcrumb, confirm_modal, icon, overlay, radius,
+    spacing, with_alpha,
 };
+use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, QuickAction, QuickActions, SectionIcon,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, PickerKind, QuickAction, QuickActions,
+    SectionIcon,
 };
 use forge_runtime::ActionEngineHandle;
+use forge_types::Variant;
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Window,
@@ -21,7 +25,6 @@ use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
-use crate::toasts::PushToast;
 
 /// The single generic integration detail screen. It consumes the four `Builtin*`
 /// trait outputs — status, health metrics, content sections, quick actions — and
@@ -52,6 +55,11 @@ pub struct IntegrationDetail {
     // template that is dispatched through this handle — the SAME path a real
     // trigger-driven SubAction takes — so a quick action is never a side channel.
     action_engine: ActionEngineHandle,
+    // The concrete OBS client, present only for the OBS integration. A picker quick
+    // action reaches through it to enumerate scenes / sources / audio inputs for the
+    // target list; `None` for every other integration (and the seed fallback), where
+    // the OBS-only picker actions never appear.
+    obs_source: Option<Arc<ObsClient>>,
     icon: SectionIcon,
     display_name: String,
     version: Option<String>,
@@ -66,6 +74,10 @@ pub struct IntegrationDetail {
     /// Two-phase disconnect gate: armed by the header Disconnect action, rendered
     /// by the shared confirm modal. `false` = no confirm showing.
     pending_disconnect: bool,
+    /// The open picker quick action awaiting a target: the searchable picker entity,
+    /// which action it will complete, the target kind, and (for a source pick) the
+    /// scene the sources were read from. `None` = no picker showing.
+    pending_picker: Option<PendingPicker>,
     /// Transient feedback line for a dispatched lifecycle/quick action. Without a
     /// live runtime the action is stubbed and only this toast is shown.
     toast: Option<String>,
@@ -84,6 +96,7 @@ impl IntegrationDetail {
         content: Arc<dyn BuiltinContent>,
         quick: Arc<dyn QuickActions>,
         control: Option<Arc<dyn BuiltinControl>>,
+        obs_source: Option<Arc<ObsClient>>,
         rt_handle: tokio::runtime::Handle,
         action_engine: ActionEngineHandle,
         connectivity: Entity<PlatformConnectivity>,
@@ -131,6 +144,7 @@ impl IntegrationDetail {
             control,
             rt_handle,
             action_engine,
+            obs_source,
             icon,
             display_name,
             version,
@@ -143,6 +157,7 @@ impl IntegrationDetail {
             sections,
             quick_actions,
             pending_disconnect: false,
+            pending_picker: None,
             toast: None,
             _conn_obs: conn_obs,
         }
@@ -232,7 +247,7 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    fn on_quick_action(&mut self, idx: usize, cx: &mut Context<Self>) {
+    fn on_quick_action(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(action) = self.quick_actions.get(idx) else {
             return;
         };
@@ -241,12 +256,10 @@ impl IntegrationDetail {
         }
         // A picker action (OBS scene/source/input) needs a target chosen before its
         // template is complete; firing the bare template would dispatch a switch with
-        // no scene/source. The gpui shell does not yet surface an OBS client to fetch
-        // and pick that target, so a picker action reports the missing selection
-        // rather than dispatching a malformed SubAction.
-        if action.picker.is_some() {
-            let label = action.label.clone();
-            cx.push_toast(ToastKind::Info, format!("{label} needs a target"));
+        // no scene/source. Open the picker, load the target list from OBS, and defer the
+        // dispatch until the user selects one (see `pick_target`).
+        if let Some(kind) = action.picker {
+            self.open_picker(idx, kind, window, cx);
             return;
         }
         // Non-picker action: dispatch the pre-filled SubAction template through the
@@ -263,6 +276,170 @@ impl IntegrationDetail {
                 eprintln!("forge-desktop: quick action dispatch failed: {failure}");
             }
         });
+    }
+
+    /// Opens the searchable target picker for a picker quick action and starts the
+    /// async scene/source/input fetch off the OBS client. The picker shows its loading
+    /// placeholder until [`Self::apply_picker_items`] folds the fetched rows in. With no
+    /// OBS client (seed fallback / disconnected) the load resolves immediately to an
+    /// empty list, so the picker opens showing "no matches" rather than nothing.
+    fn open_picker(
+        &mut self,
+        action_index: usize,
+        kind: PickerKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let palette = cx.palette();
+        let picker = cx.new(|cx| {
+            let mut picker = Picker::new(picker_labels(kind), Vec::new(), palette, cx);
+            picker.set_loading(true, cx);
+            picker
+        });
+        let sub = cx.subscribe(&picker, Self::on_picker_event);
+        picker.read(cx).focus(window, cx);
+
+        match self.obs_source.clone() {
+            Some(client) => self.spawn_picker_fetch(picker.clone(), client, kind, cx),
+            // No client to enumerate targets: settle into the empty state at once.
+            None => picker.update(cx, |picker, cx| picker.set_loading(false, cx)),
+        }
+
+        self.pending_picker = Some(PendingPicker {
+            picker,
+            action_index,
+            kind,
+            current_scene: None,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    /// Runs the OBS scene/source/input enumeration on the tokio runtime (it awaits real
+    /// WebSocket I/O and so cannot run on gpui's foreground executor) and hops the result
+    /// back onto the view through a oneshot channel, applying it via
+    /// [`Self::apply_picker_items`].
+    fn spawn_picker_fetch(
+        &self,
+        picker: Entity<Picker>,
+        client: Arc<ObsClient>,
+        kind: PickerKind,
+        cx: &mut Context<Self>,
+    ) {
+        let (tx, rx) =
+            tokio::sync::oneshot::channel::<Result<(Vec<PickerItem>, Option<String>), String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(fetch_picker_items(client, kind).await);
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(result) = rx.await else {
+                return;
+            };
+            let _ = this.update(cx, |detail, cx| {
+                detail.apply_picker_items(&picker, result, cx)
+            });
+        })
+        .detach();
+    }
+
+    /// Folds a resolved target fetch into the open picker: on success it loads the rows
+    /// and records the scene the sources were read from (needed to complete a source
+    /// pick); on failure it clears the loading placeholder, leaving the picker in its
+    /// empty state. A stale result (the picker was cancelled meanwhile) is ignored.
+    fn apply_picker_items(
+        &mut self,
+        picker: &Entity<Picker>,
+        result: Result<(Vec<PickerItem>, Option<String>), String>,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .pending_picker
+            .as_ref()
+            .is_none_or(|pending| pending.picker != *picker)
+        {
+            return;
+        }
+        match result {
+            Ok((items, current_scene)) => {
+                if let Some(pending) = self.pending_picker.as_mut() {
+                    pending.current_scene = current_scene;
+                }
+                picker.update(cx, |picker, cx| {
+                    picker.set_items(items, cx);
+                    picker.set_loading(false, cx);
+                });
+            }
+            Err(reason) => {
+                eprintln!("forge-desktop: obs picker load failed: {reason}");
+                picker.update(cx, |picker, cx| picker.set_loading(false, cx));
+            }
+        }
+        cx.notify();
+    }
+
+    fn on_picker_event(
+        &mut self,
+        _picker: Entity<Picker>,
+        event: &PickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            PickerEvent::Selected(id) => self.pick_target(id.to_string(), cx),
+            PickerEvent::Cancelled => self.cancel_picker(cx),
+        }
+    }
+
+    fn cancel_picker(&mut self, cx: &mut Context<Self>) {
+        self.pending_picker = None;
+        cx.notify();
+    }
+
+    /// Completes the pending picker quick action with the chosen target: injects it into
+    /// the pre-filled SubAction template's config (scene → `scene`; source → `source`,
+    /// plus the enclosing `scene`; input → `source`) and dispatches through the action
+    /// engine — the SAME path [`Self::on_quick_action`] takes for a non-picker action.
+    fn pick_target(&mut self, selected_id: String, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_picker.take() else {
+            return;
+        };
+        let Some(action) = self.quick_actions.get(pending.action_index) else {
+            cx.notify();
+            return;
+        };
+        let mut step = action.subaction_template.clone();
+        let label = action.label.clone();
+        let builtin_id = self.status.id().as_str().to_owned();
+
+        match pending.kind {
+            PickerKind::Scene => {
+                step.config
+                    .insert("scene".to_owned(), Variant::String(selected_id));
+            }
+            PickerKind::Source => {
+                if let Some(scene) = pending.current_scene {
+                    step.config
+                        .insert("scene".to_owned(), Variant::String(scene));
+                }
+                step.config
+                    .insert("source".to_owned(), Variant::String(selected_id));
+            }
+            PickerKind::Input => {
+                step.config
+                    .insert("source".to_owned(), Variant::String(selected_id));
+            }
+            PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
+                cx.notify();
+                return;
+            }
+        }
+
+        let engine = self.action_engine.clone();
+        self.rt_handle.spawn(async move {
+            if let Err(failure) = engine.execute_quick_action(step, builtin_id, label).await {
+                eprintln!("forge-desktop: quick action dispatch failed: {failure}");
+            }
+        });
+        cx.notify();
     }
 
     fn dismiss_toast(&mut self, cx: &mut Context<Self>) {
@@ -534,9 +711,9 @@ impl IntegrationDetail {
             btn = btn
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg))
-                .on_click(
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.on_quick_action(idx, cx)),
-                );
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.on_quick_action(idx, window, cx)
+                }));
         }
         btn.into_any_element()
     }
@@ -729,6 +906,15 @@ impl Render for IntegrationDetail {
         let disconnect_overlay = self
             .pending_disconnect
             .then(|| self.disconnect_overlay(&palette, cx));
+        let picker_overlay = self.pending_picker.as_ref().map(|pending| {
+            let view = cx.entity();
+            overlay(pending.picker.clone(), &palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("integration-picker-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_picker(cx));
+                })
+                .into_any_element()
+        });
         let toast = self
             .toast
             .clone()
@@ -743,6 +929,7 @@ impl Render for IntegrationDetail {
             .child(crumbs)
             .child(scroll)
             .children(disconnect_overlay)
+            .children(picker_overlay)
             .children(toast)
     }
 }
@@ -776,6 +963,98 @@ enum ControlVerb {
     Reconnect,
     Disconnect,
     RefreshToken,
+}
+
+/// The open picker quick action awaiting a target selection. Holds the searchable picker
+/// entity plus enough context to complete the deferred dispatch once a row is picked:
+/// which quick action opened it, the target kind, and — for a source pick — the scene the
+/// source list was read from (injected alongside the chosen source).
+struct PendingPicker {
+    picker: Entity<Picker>,
+    action_index: usize,
+    kind: PickerKind,
+    current_scene: Option<String>,
+    _sub: Subscription,
+}
+
+/// The already-resolved strings the OBS target picker renders for a given [`PickerKind`].
+/// Only the three OBS kinds surface a picker here; the others carry no picker quick action
+/// on this screen and fall back to a generic title.
+fn picker_labels(kind: PickerKind) -> PickerLabels {
+    let title = match kind {
+        PickerKind::Scene => "Choose a Scene",
+        PickerKind::Source => "Choose a Source",
+        PickerKind::Input => "Choose an Audio Input",
+        PickerKind::Hotkey => "Choose a Hotkey",
+        PickerKind::Expression => "Choose an Expression",
+        PickerKind::MidiPort => "Choose a MIDI Port",
+    };
+    PickerLabels {
+        title: title.into(),
+        placeholder: "Search…".into(),
+        empty: "No matches".into(),
+        loading: "Loading…".into(),
+        cancel: "Cancel".into(),
+    }
+}
+
+/// Enumerates the OBS targets for a picker kind off the live client, mapping each into a
+/// [`PickerItem`]. A source read returns the enclosing scene alongside its rows so the
+/// completed dispatch can pin the source to that scene. The three non-OBS kinds never
+/// reach this path from this screen and report an unsupported error.
+async fn fetch_picker_items(
+    client: Arc<ObsClient>,
+    kind: PickerKind,
+) -> Result<(Vec<PickerItem>, Option<String>), String> {
+    match kind {
+        PickerKind::Scene => {
+            let scenes = client.scenes().await.map_err(|e| e.to_string())?;
+            let items = scenes
+                .into_iter()
+                .map(|name| PickerItem {
+                    id: name.clone().into(),
+                    label: name.into(),
+                    sublabel: None,
+                    icon: Icon::from_name("layout"),
+                })
+                .collect();
+            Ok((items, None))
+        }
+        PickerKind::Source => {
+            let scene = client
+                .current_scene()
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "no active scene".to_owned())?;
+            let sources = client.sources(&scene).await.map_err(|e| e.to_string())?;
+            let items = sources
+                .into_iter()
+                .map(|source| PickerItem {
+                    id: source.name.clone().into(),
+                    label: source.name.into(),
+                    sublabel: Some(if source.visible { "visible" } else { "hidden" }.into()),
+                    icon: Icon::from_name("device-desktop"),
+                })
+                .collect();
+            Ok((items, Some(scene)))
+        }
+        PickerKind::Input => {
+            let inputs = client.audio_inputs().await.map_err(|e| e.to_string())?;
+            let items = inputs
+                .into_iter()
+                .map(|name| PickerItem {
+                    id: name.clone().into(),
+                    label: name.into(),
+                    sublabel: None,
+                    icon: Icon::from_name("volume"),
+                })
+                .collect();
+            Ok((items, None))
+        }
+        PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
+            Err("unsupported picker kind".to_owned())
+        }
+    }
 }
 
 fn header_action_label(action: &HeaderAction) -> &'static str {

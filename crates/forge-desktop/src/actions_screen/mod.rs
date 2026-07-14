@@ -10,6 +10,7 @@ use forge_components::{
     search_input,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Action, ActionId, QueueId, SubActionStep};
@@ -25,6 +26,7 @@ mod branch;
 mod editor;
 mod list;
 mod nav;
+mod test_trigger;
 
 /// Left tree panel width. The parity source pins it at a fixed 290px, off the
 /// `Spacing` scale, so it is carried as a literal.
@@ -191,6 +193,9 @@ pub struct ScreenActionsView {
     sub_action_registry: Arc<SubActionRegistry>,
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
+    /// The runtime event bus, used to inject a synthesized event through the
+    /// re-entrant store-then-replay path when the editor's "Test run" fires.
+    bus: Arc<EventBus>,
     /// True until the first `list` pull lands, so the tree shows a loading caption
     /// rather than the empty-roster caption before any row arrives.
     loading: bool,
@@ -221,6 +226,7 @@ pub struct ScreenActionsView {
 }
 
 impl ScreenActionsView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         action_repo: Arc<dyn ActionRepo>,
         queue_repo: Arc<dyn QueueRepo>,
@@ -228,6 +234,7 @@ impl ScreenActionsView {
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
+        bus: Arc<EventBus>,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -241,6 +248,7 @@ impl ScreenActionsView {
             sub_action_registry,
             trigger_registry,
             rt_handle,
+            bus,
             loading: true,
             groups: Vec::new(),
             filter: ActionsFilter::All,

@@ -278,6 +278,7 @@ impl AppShell {
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
+                let bus = Arc::clone(&handles.bus);
                 cx.new(|cx| {
                     ScreenActionsView::new(
                         action_repo,
@@ -286,6 +287,7 @@ impl AppShell {
                         sub_action_registry,
                         trigger_registry,
                         rt_handle,
+                        bus,
                         cx,
                     )
                 })

@@ -558,9 +558,41 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Local, persistence-free re-run affordance: the runtime engine is not yet
-    /// wired into `forge-desktop`, so Test-run only repaints.
+    /// Fires a synthetic event for the selected action's first linked trigger
+    /// through the runtime bus (store-then-replay, a single evaluation pass), then
+    /// toasts whether it matched. The injection runs on the tokio runtime; the
+    /// outcome hops back to the foreground executor as a toast.
     fn test_run(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.selected else {
+            return;
+        };
+        let service = Arc::clone(&self.actions_service);
+        let registry = Arc::clone(&self.trigger_registry);
+        let bus = Arc::clone(&self.bus);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ =
+                tx.send(super::test_trigger::run_test_trigger(&service, &registry, &bus, id).await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(true)) => {
+                let _ = this.update(cx, |_, cx| {
+                    cx.push_toast(ToastKind::Success, "Test trigger fired");
+                });
+            }
+            Ok(Ok(false)) => {
+                let _ = this.update(cx, |_, cx| {
+                    cx.push_toast(ToastKind::Warn, "Test event did not match this trigger");
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |_, cx| {
+                    cx.push_toast(ToastKind::Error, format!("Test trigger failed: {message}"));
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
         cx.notify();
     }
 

@@ -165,6 +165,16 @@ impl ServerHandle {
         Arc::clone(&self.inner.lock().await.state.overlay_root)
     }
 
+    pub async fn snapshot(&self) -> crate::snapshot::ServerSnapshot {
+        let state = self.inner.lock().await.state.clone();
+        crate::snapshot::build_server_snapshot(
+            &state.server_info,
+            &state.bus_adapter,
+            state.credentials.as_ref(),
+        )
+        .await
+    }
+
     pub fn abort(&self) {
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {

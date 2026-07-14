@@ -11,6 +11,7 @@ pub mod handle;
 pub mod protocol;
 pub mod server;
 pub mod server_info;
+pub mod snapshot;
 pub mod ws_client;
 
 #[cfg(test)]
@@ -24,4 +25,8 @@ pub use error::ServerError;
 pub use handle::ServerHandle;
 pub use server::{AppState, Server, start_server};
 pub use server_info::ServerInfo;
+pub use snapshot::{
+    BandwidthSnapshot, ConnectedAccountSnapshot, ConnectedClientSnapshot, EventFilterSnapshot,
+    ServerSnapshot,
+};
 pub use ws_client::{ClientType, WsClient, detect_from_user_agent};

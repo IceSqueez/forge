@@ -6,7 +6,7 @@
 use forge_components::{ForgePalette, TextInput, ToastKind, search_input};
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
-use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
+use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
 use gpui::{App, Context, Entity, Pixels, Rgba, Subscription, Window, div, prelude::*, px};
 use std::future::Future;
 use std::sync::Arc;
@@ -14,8 +14,13 @@ use std::sync::Arc;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
+mod config_form;
+mod create;
 mod detail;
 mod list;
+
+use config_form::ConfigField;
+use create::CreateStage;
 
 /// Leading selection stripe width down a row's edge (fixed 2px in the source).
 const STRIPE_W: Pixels = px(2.0);
@@ -160,31 +165,6 @@ struct TriggerDetail {
     used_in: Vec<(ActionId, String)>,
 }
 
-/// One row in the detail sheet's configuration editor, folded from the kind's
-/// `config_fields` over the effective (default-merged) config. `Hint` marks a key
-/// authored elsewhere (a nested sub-chain), rendered inert.
-enum ConfigField {
-    Input {
-        key: String,
-        /// Committed as `Variant::Int` (lenient parse — a non-numeric value keeps the
-        /// field's prior value) rather than `Variant::String`.
-        integer: bool,
-        /// Set on the inner member of an `Optional` group; committed only while the
-        /// gate toggle (a sibling `Bool` on this key) is on.
-        gate: Option<String>,
-        input: Entity<TextInput>,
-        _sub: Subscription,
-    },
-    Bool {
-        key: String,
-        gate: Option<String>,
-        value: bool,
-    },
-    Hint {
-        key: String,
-    },
-}
-
 /// The runtime-thread payload of a detail pull: the persisted instance plus each
 /// linking action resolved to its display name. The foreground folds it into a
 /// [`TriggerDetail`] (the config inputs need a UI context to build).
@@ -240,6 +220,9 @@ pub struct TriggersRegistryView {
     rename: Option<RenameForm>,
     pending_delete: Option<TriggerInstanceId>,
     confirm_disable: Option<TriggerInstanceId>,
+    /// The open create flow: the kind-picker grid, then the fill-in form for the
+    /// chosen kind. `None` when no instance is being created.
+    create: Option<CreateStage>,
     _search_sub: Subscription,
 }
 
@@ -273,6 +256,7 @@ impl TriggersRegistryView {
             rename: None,
             pending_delete: None,
             confirm_disable: None,
+            create: None,
             _search_sub: search_sub,
         };
         view.reload(cx);
@@ -382,6 +366,10 @@ impl Render for TriggersRegistryView {
             .rename
             .as_ref()
             .map(|form| self.render_rename_modal(form, &palette, cx));
+        let create_overlay = self
+            .create
+            .as_ref()
+            .map(|stage| self.render_create(stage, &palette, cx));
 
         div()
             .size_full()
@@ -394,6 +382,7 @@ impl Render for TriggersRegistryView {
             .children(disable_modal)
             .children(delete_modal)
             .children(rename_modal)
+            .children(create_overlay)
     }
 }
 

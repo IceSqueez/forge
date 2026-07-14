@@ -10,7 +10,7 @@ use forge_components::{
     Density, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition,
     Radius, Spacing, TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal,
     ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, overlay,
-    primary_button, secondary_button, spacing, status_dot, toggle,
+    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Rgba, SharedString, Window, div,
@@ -549,11 +549,17 @@ impl TriggersRegistryView {
             .child(self.divider(palette))
             .child(usage_chips);
 
+        let new_trigger = primary_button_with_icon(Icon::Plus, "New trigger", palette).on_click(
+            "triggers-new",
+            cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
+        );
+
         div()
             .w_full()
             .flex_none()
             .flex()
             .items_center()
+            .justify_between()
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .py(FILTER_PAD_V)
             .px(spacing(Spacing::Md, Density::Cozy))
@@ -561,6 +567,7 @@ impl TriggersRegistryView {
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(left)
+            .child(new_trigger)
             .into_any_element()
     }
 
@@ -906,16 +913,23 @@ impl TriggersRegistryView {
                 .to_owned()
         };
 
-        // Only the clear-filters affordance is a roster action; the pristine-empty
-        // state carries no call-to-action button.
-        let action: Option<AnyElement> = has_filter.then(|| {
+        // The filtered-empty state clears filters; the pristine-empty state opens the
+        // create flow.
+        let action: AnyElement = if has_filter {
             ghost_button_with_icon(Icon::X, "Clear filters", palette)
                 .on_click(
                     "triggers-empty-clear",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.clear_filters(cx)),
                 )
                 .into_any_element()
-        });
+        } else {
+            primary_button_with_icon(Icon::Plus, "Create your first trigger", palette)
+                .on_click(
+                    "triggers-empty-create",
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
+                )
+                .into_any_element()
+        };
 
         let tile = div()
             .flex_none()
@@ -953,7 +967,7 @@ impl TriggersRegistryView {
                     .text_color(palette.text_muted)
                     .child(body),
             )
-            .children(action)
+            .child(action)
             .into_any_element()
     }
 

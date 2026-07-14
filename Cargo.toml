@@ -60,7 +60,7 @@ async-trait = { version = "0.1" }
 
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
-ulid = { version = "1.2", features = ["serde"] }
+ulid = { version = "2.0", features = ["serde"] }
 
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

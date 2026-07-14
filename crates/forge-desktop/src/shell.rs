@@ -236,7 +236,14 @@ impl AppShell {
                 detail.into()
             }
             Screen::Settings => cx.new(SettingsView::new).into(),
-            Screen::Queues => cx.new(QueuesView::new).into(),
+            Screen::Queues => {
+                let queue_health = topics.queue_health.clone();
+                let scheduler = handles.scheduler.clone();
+                let bus = Arc::clone(&handles.bus);
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| QueuesView::new(queue_health, scheduler, bus, rt_handle, cx))
+                    .into()
+            }
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
             Screen::Tts => {
                 let speak_state = topics.speak.clone();

@@ -5,6 +5,7 @@ use crate::event_log::EventLog;
 use crate::globals::Globals;
 use crate::home_stats::HomeStats;
 use crate::platforms::PlatformConnectivity;
+use crate::queue_health::QueueHealth;
 use crate::speak_state::SpeakState;
 
 /// Plain grouping of the runtime→UI bridge topic entities — the observable caches
@@ -21,6 +22,7 @@ pub struct Topics {
     pub globals: Entity<Globals>,
     pub platforms: Entity<PlatformConnectivity>,
     pub speak: Entity<SpeakState>,
+    pub queue_health: Entity<QueueHealth>,
 }
 
 impl Topics {
@@ -31,6 +33,7 @@ impl Topics {
         globals: Entity<Globals>,
         platforms: Entity<PlatformConnectivity>,
         speak: Entity<SpeakState>,
+        queue_health: Entity<QueueHealth>,
     ) -> Self {
         Self {
             chat_feed,
@@ -39,6 +42,7 @@ impl Topics {
             globals,
             platforms,
             speak,
+            queue_health,
         }
     }
 }

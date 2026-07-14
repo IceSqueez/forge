@@ -20,6 +20,7 @@ use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
+use crate::queue_health::QueueHealth;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
 use crate::shell::AppShell;
@@ -97,6 +98,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
     let globals = cx.new(|_| Globals::seeded());
     let platforms = cx.new(|_| PlatformConnectivity::new());
     let speak = cx.new(|_| SpeakState::new());
+    let queue_health = cx.new(|_| QueueHealth::new());
 
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
@@ -126,6 +128,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 let home_stats_for_viewers = home_stats.clone();
                 let event_log_for_bridge = event_log.clone();
                 let platforms_for_bridge = platforms.clone();
+                let queue_health_for_bridge = queue_health.clone();
                 let speak_for_bridge = speak.clone();
                 let live_viewers_handle = handles.live_viewers.clone();
                 let applied = window.update(cx, |root, window, cx| {
@@ -135,8 +138,15 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();
                     });
-                    let topics =
-                        Topics::new(chat_feed, home_stats, event_log, globals, platforms, speak);
+                    let topics = Topics::new(
+                        chat_feed,
+                        home_stats,
+                        event_log,
+                        globals,
+                        platforms,
+                        speak,
+                        queue_health,
+                    );
                     let shell =
                         cx.new(|cx| AppShell::new(status, topics, handles_for_shell, window, cx));
                     root.mark_ready(shell, handles);
@@ -149,6 +159,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                         home_stats_for_bridge,
                         event_log_for_bridge,
                         platforms_for_bridge,
+                        queue_health_for_bridge,
                         bus,
                     );
                     start_uptime_clock(cx, status_for_clock);
@@ -173,16 +184,19 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
 /// the real bus and folds each event into the matching topic cache, from which
 /// observing views repaint: every observability row into the event feed, `action.done`
 /// and other notable kinds into the Home highlight reel + fired-today counter,
-/// `chat.message` into the chat feed, and `platform.connection.changed` into the
+/// `chat.message` into the chat feed, `platform.connection.changed` into the
 /// platform-connectivity cache (sidebar dots, footer connected/total, overview badges,
-/// BuiltinDetail alt-states). A lagging broadcast receiver drops some rows and keeps
-/// draining; a closed bus or a released topic entity ends the task.
+/// BuiltinDetail alt-states), and the scheduler's `queue.paused` / `queue.resumed`
+/// lifecycle events into the queue-health cache (the Queues console's live paused set).
+/// A lagging broadcast receiver drops some rows and keeps draining; a closed bus or a
+/// released topic entity ends the task.
 fn start_bridge(
     cx: &mut AsyncApp,
     chat_feed: Entity<ChatFeed>,
     home_stats: Entity<HomeStats>,
     event_log: Entity<EventLog>,
     platforms: Entity<PlatformConnectivity>,
+    queue_health: Entity<QueueHealth>,
     bus: Arc<EventBus>,
 ) {
     cx.spawn(async move |cx| {
@@ -243,6 +257,16 @@ fn start_bridge(
                                 cx.notify();
                             })
                             .is_err()
+                    {
+                        break;
+                    }
+                    if queue_health
+                        .update(cx, |health, cx| {
+                            if health.apply_event(&event) {
+                                cx.notify();
+                            }
+                        })
+                        .is_err()
                     {
                         break;
                     }

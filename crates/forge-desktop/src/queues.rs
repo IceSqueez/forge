@@ -1,15 +1,21 @@
+use std::sync::Arc;
+
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
     breadcrumb, field_label, icon, modal, overlay, primary_button, primary_button_with_icon,
     radius, secondary_button, spacing, toggle, with_alpha,
 };
+use forge_events::{Event, EventSource};
+use forge_runtime::{EventBus, QueueSchedulerHandle};
+use forge_types::QueueId;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
     prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
+use crate::queue_health::QueueHealth;
 
 /// Status-chip corner radius: the parity source pins the pill at a fixed 8px, one
 /// step over `Radius::Sm` (6px), so it is carried as a named off-scale literal.
@@ -41,16 +47,20 @@ const PARALLEL_CONCURRENCY: u32 = 8;
 /// modal `.width()` override hits it exactly rather than snapping to a `ModalSize`.
 const MODAL_WIDTH: Pixels = px(440.0);
 
-/// One action queue as the screen caches it. A stub view-model standing in for
-/// `forge-runtime`'s live queue slot plus its storage row: `concurrency`,
-/// `blocking`, `actions`, `desc` are the persisted shape, while `paused`,
-/// `pending`, `in_flight`, `running` and `paused_since_min` are the live counters
-/// the scheduler feeds. `forge-desktop` wires no scheduler yet, so all of these are
-/// seeded static; the real screen reads them over the runtime→UI bridge (a
-/// `QueueScheduler` health topic) and drives pause/resume/drain/save through the
-/// scheduler handle, never owning them authoritatively.
+/// One action queue as the screen caches it. A view-model standing in for
+/// `forge-runtime`'s live queue slot plus its storage row: `concurrency`, `blocking`,
+/// `actions`, `desc` are the persisted shape, while `paused`, `pending`, `in_flight`,
+/// `running` and `paused_since_min` are the live counters the scheduler feeds.
+///
+/// The roster itself (names, blocking, assigned actions) is still seeded — a storage
+/// read wired in a later phase — so `id` carries a fresh [`QueueId`] rather than a live
+/// scheduler slot's id; `pending`, `in_flight` and `running` stay seeded because no bus
+/// event attributes them per-queue. The one live-fed field is `paused`: the controls
+/// drive pause/resume/drain through the `QueueScheduler` handle, and the console reads
+/// the live paused set back over the runtime→UI bridge (the [`QueueHealth`] topic),
+/// overlaid onto each row at render time.
 struct QueueRow {
-    id: u64,
+    id: QueueId,
     name: String,
     desc: String,
     blocking: bool,
@@ -81,7 +91,7 @@ impl QueueRow {
 /// the target queue id in `editing`. Mirrors the parity source's new/edit form pair,
 /// which carries exactly a name and a blocking flag.
 struct EditQueueModal {
-    editing: Option<u64>,
+    editing: Option<QueueId>,
     name_input: Entity<TextInput>,
     blocking: bool,
     saving: bool,
@@ -94,73 +104,149 @@ struct EditQueueModal {
 /// row, a live-running panel and pause/drain/configure actions), plus a centred
 /// new/configure-queue modal overlay.
 ///
-/// Owns its queue list as seeded stub state (no queue scheduler is wired into
-/// `forge-desktop` yet); pause/resume/drain/save mutate that list and surface a
-/// feedback banner. The real screen drives the queue lifecycle through
-/// `forge-runtime`'s `QueueScheduler` via its handle, reading the live counters back
-/// over the runtime→UI bridge.
+/// Owns its queue roster as seeded state (the roster read off storage lands in a later
+/// phase), but is live-wired for the queue lifecycle: pause/resume/drain/pause-all
+/// optimistically nudge the cached rows for instant feedback and dispatch the matching
+/// [`QueueSchedulerHandle`] verb (fire-and-forget on the tokio runtime), while the live
+/// paused set streams back over the runtime→UI bridge through the observed
+/// [`QueueHealth`] topic. Create/configure still mutate the cached list only — that path
+/// persists through storage, which lands with the roster read.
 pub struct QueuesView {
     queues: Vec<QueueRow>,
-    next_id: u64,
     feedback: Option<SharedString>,
     modal: Option<EditQueueModal>,
+    /// The shared, bridge-fed live paused set, keyed by [`QueueId`]. Observed for
+    /// repaint; overlaid onto each row's paused state at render time so a pause/resume
+    /// driven from elsewhere (a queue-control sub-action) shows here too.
+    queue_health: Entity<QueueHealth>,
+    /// The queue scheduler command handle the controls dispatch through.
+    scheduler: QueueSchedulerHandle,
+    /// The event bus a drain publishes its `queue.drain_requested` marker on, mirroring
+    /// the parity source's drain (publish-then-pause).
+    bus: Arc<EventBus>,
+    /// The tokio runtime handle a control's fire-and-forget dispatch runs on, so the
+    /// scheduler round-trip has a reactor rather than gpui's foreground executor.
+    rt_handle: tokio::runtime::Handle,
+    _health_obs: Subscription,
 }
 
 impl QueuesView {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
-        let queues = seed_queues();
-        let next_id = queues.iter().map(|q| q.id).max().map_or(0, |m| m + 1);
+    pub fn new(
+        queue_health: Entity<QueueHealth>,
+        scheduler: QueueSchedulerHandle,
+        bus: Arc<EventBus>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        // Repaint whenever the bridge advances the shared live paused set.
+        let health_obs = cx.observe(&queue_health, |_this, _health, cx| cx.notify());
         Self {
-            queues,
-            next_id,
+            queues: seed_queues(),
             feedback: None,
             modal: None,
+            queue_health,
+            scheduler,
+            bus,
+            rt_handle,
+            _health_obs: health_obs,
         }
     }
 
-    // --- queue actions (view-state stubs) ---------------------------------
+    // --- command dispatch -------------------------------------------------
 
-    fn pause(&mut self, id: u64, cx: &mut Context<Self>) {
+    /// Fire-and-forget `pause`/`resume` of a queue on the tokio runtime. A send or
+    /// round-trip failure logs a PII-safe notice (only the scheduler error is printed,
+    /// which carries a queue id at most, never viewer data) and drops the command —
+    /// controls stay responsive rather than blocking the foreground executor.
+    fn dispatch_pause(&self, id: QueueId) {
+        let scheduler = self.scheduler.clone();
+        self.rt_handle.spawn(async move {
+            if let Err(err) = scheduler.pause(id).await {
+                eprintln!("forge-desktop: queue pause failed: {err}");
+            }
+        });
+    }
+
+    fn dispatch_resume(&self, id: QueueId) {
+        let scheduler = self.scheduler.clone();
+        self.rt_handle.spawn(async move {
+            if let Err(err) = scheduler.resume(id).await {
+                eprintln!("forge-desktop: queue resume failed: {err}");
+            }
+        });
+    }
+
+    /// Drain dispatch, mirroring the parity source: publish a `queue.drain_requested`
+    /// marker on the bus, then pause the slot so no new work starts while it drains.
+    fn dispatch_drain(&self, id: QueueId) {
+        let scheduler = self.scheduler.clone();
+        let bus = Arc::clone(&self.bus);
+        self.rt_handle.spawn(async move {
+            bus.publish(Event::new(
+                EventSource::Core,
+                "queue.drain_requested",
+                serde_json::json!({ "queue_id": id.to_string() }),
+            ));
+            if let Err(err) = scheduler.pause(id).await {
+                eprintln!("forge-desktop: queue drain pause failed: {err}");
+            }
+        });
+    }
+
+    /// Pauses every queue in one task, mirroring the parity source's pause-all.
+    fn dispatch_pause_all(&self, ids: Vec<QueueId>) {
+        let scheduler = self.scheduler.clone();
+        self.rt_handle.spawn(async move {
+            for id in ids {
+                if let Err(err) = scheduler.pause(id).await {
+                    eprintln!("forge-desktop: queue pause-all failed: {err}");
+                }
+            }
+        });
+    }
+
+    // --- queue actions ----------------------------------------------------
+
+    fn pause(&mut self, id: QueueId, cx: &mut Context<Self>) {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.paused = true;
             q.paused_since_min = Some(0);
         }
+        self.dispatch_pause(id);
         cx.notify();
     }
 
-    fn resume(&mut self, id: u64, cx: &mut Context<Self>) {
+    fn resume(&mut self, id: QueueId, cx: &mut Context<Self>) {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.paused = false;
             q.paused_since_min = None;
         }
+        self.dispatch_resume(id);
         cx.notify();
     }
 
-    /// Drains a queue: the parity source pauses the slot and publishes a drain
-    /// request on the bus. Here it pauses the cached row and notes the request; the
-    /// real drain publishes `queue.drain_requested` through the runtime handle.
-    fn drain(&mut self, id: u64, cx: &mut Context<Self>) {
+    /// Drains a queue: optimistically pauses the cached row and notes the request, then
+    /// dispatches the drain (publish `queue.drain_requested` + pause) through the
+    /// scheduler handle.
+    fn drain(&mut self, id: QueueId, cx: &mut Context<Self>) {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.paused = true;
             q.paused_since_min = Some(0);
-            self.feedback = Some(
-                format!(
-                    "Draining “{}”. Live draining is wired via the runtime soon.",
-                    q.name
-                )
-                .into(),
-            );
+            self.feedback = Some(format!("Draining “{}”.", q.name).into());
         }
+        self.dispatch_drain(id);
         cx.notify();
     }
 
     fn pause_all(&mut self, cx: &mut Context<Self>) {
+        let ids: Vec<QueueId> = self.queues.iter().map(|q| q.id).collect();
         for q in &mut self.queues {
             if !q.paused {
                 q.paused = true;
                 q.paused_since_min = Some(0);
             }
         }
+        self.dispatch_pause_all(ids);
         cx.notify();
     }
 
@@ -173,7 +259,7 @@ impl QueuesView {
         cx.notify();
     }
 
-    fn open_configure(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_configure(&mut self, id: QueueId, window: &mut Window, cx: &mut Context<Self>) {
         let Some(q) = self.queues.iter().find(|q| q.id == id) else {
             return;
         };
@@ -188,7 +274,7 @@ impl QueuesView {
     /// Assembles an [`EditQueueModal`], creating the child name-input entity,
     /// prefilling it on a configure and wiring its submit/cancel/change events.
     fn build_modal(
-        editing: Option<u64>,
+        editing: Option<QueueId>,
         name_seed: &str,
         blocking: bool,
         cx: &mut Context<Self>,
@@ -262,10 +348,8 @@ impl QueuesView {
                 }
             }
             None => {
-                let id = self.next_id;
-                self.next_id += 1;
                 self.queues.push(QueueRow {
-                    id,
+                    id: QueueId::new(),
                     name: name.clone(),
                     desc: String::new(),
                     blocking,
@@ -290,12 +374,18 @@ impl QueuesView {
 
     fn queue_card(
         &self,
+        index: usize,
         q: &QueueRow,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let border_color = if q.paused {
+        // Live paused set (bridge-fed) overlaid onto the row's optimistic flag: a
+        // pause/resume driven from elsewhere shows here, and a just-clicked control
+        // reads paused before its acknowledging event lands.
+        let paused = q.paused || self.queue_health.read(cx).is_paused(q.id);
+
+        let border_color = if paused {
             with_alpha(palette.warning, 0.35)
         } else {
             palette.border_regular
@@ -311,14 +401,20 @@ impl QueuesView {
             .border(BORDER_THIN)
             .border_color(border_color)
             .bg(palette.elevated)
-            .child(self.card_header(q, palette, density))
-            .child(self.card_metrics(q, palette, density))
-            .child(self.running_panel(q, palette, density))
-            .child(self.card_buttons(q, palette, density, cx))
+            .child(self.card_header(q, paused, palette, density))
+            .child(self.card_metrics(q, paused, palette, density))
+            .child(self.running_panel(q, paused, palette, density))
+            .child(self.card_buttons(index, q, paused, palette, density, cx))
             .into_any_element()
     }
 
-    fn card_header(&self, q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn card_header(
+        &self,
+        q: &QueueRow,
+        paused: bool,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
         let name = div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_SM)
@@ -330,7 +426,7 @@ impl QueuesView {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(name)
-            .child(status_badge(q.paused, palette));
+            .child(status_badge(paused, palette));
 
         let desc = div()
             .font_family(DEFAULT_BODY_FAMILY)
@@ -354,18 +450,24 @@ impl QueuesView {
             .into_any_element()
     }
 
-    fn card_metrics(&self, q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
-        let pending_value_color = if q.paused {
+    fn card_metrics(
+        &self,
+        q: &QueueRow,
+        paused: bool,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
+        let pending_value_color = if paused {
             palette.warning
         } else {
             palette.text_primary
         };
-        let pending_hint_color = if q.paused {
+        let pending_hint_color = if paused {
             palette.warning
         } else {
             palette.text_faint
         };
-        let pending_hint = if q.paused {
+        let pending_hint = if paused {
             "held"
         } else if q.in_flight > 0 {
             "in flight"
@@ -413,8 +515,14 @@ impl QueuesView {
             .into_any_element()
     }
 
-    fn running_panel(&self, q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
-        if q.paused {
+    fn running_panel(
+        &self,
+        q: &QueueRow,
+        paused: bool,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
+        if paused {
             return paused_panel(q, palette, density);
         }
         if q.running.is_empty() {
@@ -428,16 +536,18 @@ impl QueuesView {
 
     fn card_buttons(
         &self,
+        index: usize,
         q: &QueueRow,
+        paused: bool,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = q.id;
 
-        let action = if q.paused {
+        let action = if paused {
             card_button(
-                ("q-resume", id as usize),
+                ("q-resume", index),
                 Icon::PlayerPlay,
                 "Resume",
                 palette.shell,
@@ -448,7 +558,7 @@ impl QueuesView {
             )
         } else {
             card_button(
-                ("q-pause", id as usize),
+                ("q-pause", index),
                 Icon::PlayerPause,
                 "Pause",
                 palette.warning,
@@ -460,7 +570,7 @@ impl QueuesView {
         };
 
         let drain = card_button(
-            ("q-drain", id as usize),
+            ("q-drain", index),
             Icon::Eraser,
             "Drain",
             palette.text_secondary,
@@ -471,7 +581,7 @@ impl QueuesView {
         );
 
         let configure = card_button(
-            ("q-configure", id as usize),
+            ("q-configure", index),
             Icon::Settings,
             "Configure",
             palette.text_secondary,
@@ -504,7 +614,8 @@ impl QueuesView {
         let cards: Vec<AnyElement> = self
             .queues
             .iter()
-            .map(|q| self.queue_card(q, palette, density, cx))
+            .enumerate()
+            .map(|(index, q)| self.queue_card(index, q, palette, density, cx))
             .collect();
 
         let mut grid = div().w_full().flex().flex_col().gap(gap);
@@ -1034,14 +1145,16 @@ fn warning_ghost_button(
         )
 }
 
-/// The representative queue roster the screen seeds before a queue scheduler is
-/// wired — names, descriptions and states mirror the design's queue roster so every
-/// running-panel variant (serial, idle, concurrent, paused) renders. The live
-/// counters (pending/in-flight/running/paused) are runtime-fed; here they are static.
+/// The representative queue roster the screen seeds until the storage-backed roster
+/// read lands — names, descriptions and states mirror the design's queue roster so
+/// every running-panel variant (serial, idle, concurrent, paused) renders. Each row
+/// carries a fresh [`QueueId`]; the pending/in-flight/running counters are static
+/// (no bus event attributes them per-queue), while the live paused state overlays from
+/// the [`QueueHealth`] bridge once the roster carries real scheduler slot ids.
 fn seed_queues() -> Vec<QueueRow> {
     vec![
         QueueRow {
-            id: 0,
+            id: QueueId::new(),
             name: "Default".to_owned(),
             desc: "Catch-all queue for actions without explicit queue assignment".to_owned(),
             blocking: true,
@@ -1054,7 +1167,7 @@ fn seed_queues() -> Vec<QueueRow> {
             paused_since_min: None,
         },
         QueueRow {
-            id: 1,
+            id: QueueId::new(),
             name: "Alerts".to_owned(),
             desc: "Subs, raids, cheers · serialized so overlays don't overlap".to_owned(),
             blocking: true,
@@ -1067,7 +1180,7 @@ fn seed_queues() -> Vec<QueueRow> {
             paused_since_min: None,
         },
         QueueRow {
-            id: 2,
+            id: QueueId::new(),
             name: "Background".to_owned(),
             desc: "Logging, analytics, side-effect-free tasks · parallel execution".to_owned(),
             blocking: false,
@@ -1085,7 +1198,7 @@ fn seed_queues() -> Vec<QueueRow> {
             paused_since_min: None,
         },
         QueueRow {
-            id: 3,
+            id: QueueId::new(),
             name: "Moderation".to_owned(),
             desc: "Auto-bans, timeouts, message deletions · paused for review".to_owned(),
             blocking: false,
@@ -1098,7 +1211,7 @@ fn seed_queues() -> Vec<QueueRow> {
             paused_since_min: Some(14),
         },
         QueueRow {
-            id: 4,
+            id: QueueId::new(),
             name: "TTS".to_owned(),
             desc: "Text-to-speech queue, drained continuously while audio plays".to_owned(),
             blocking: true,

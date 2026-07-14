@@ -19,6 +19,7 @@ mod integration_seed;
 mod integrations;
 mod platforms;
 mod presentation;
+mod queue_health;
 mod queues;
 mod root;
 mod runtime_handles;

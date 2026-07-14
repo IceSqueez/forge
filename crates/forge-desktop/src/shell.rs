@@ -160,9 +160,14 @@ impl AppShell {
             Screen::EventFeed => cx
                 .new(|cx| EventFeedView::new(topics.event_log.clone(), cx))
                 .into(),
-            Screen::Globals => cx
-                .new(|cx| GlobalsView::new(topics.globals.clone(), cx))
-                .into(),
+            Screen::Globals => {
+                let globals = topics.globals.clone();
+                let backend: Arc<dyn GlobalsRepo> =
+                    Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| GlobalsView::new(globals, backend, rt_handle, cx))
+                    .into()
+            }
             Screen::Platforms => {
                 let platforms = cx.new(|cx| PlatformsView::new(topics.platforms.clone(), cx));
                 cx.subscribe(&platforms, |this, _view, event: &NavRequested, cx| {

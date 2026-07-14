@@ -1,22 +1,28 @@
+use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
+
 use forge_components::chip::ChipGlyph;
 use forge_components::confirm::ConfirmTone;
 use forge_components::tokens::ModalSize;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
-    TextArea, TextInput, badge, breadcrumb, chip, confirm_modal, data_table,
-    ghost_button_with_icon, hover_reveal, icon, modal, overlay, primary_button,
+    TextArea, TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal,
+    data_table, ghost_button_with_icon, hover_reveal, icon, modal, overlay, primary_button,
     primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
     with_alpha,
 };
+use forge_storage::{GlobalEntry, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
-    ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 
 /// The seven kinds in the editor's picker order — exactly the fixed `Variant`
 /// kinds (Array/Object edited as JSON). Order mirrors the design's type legend.
@@ -62,6 +68,10 @@ struct EditorState {
     value_input: Entity<TextInput>,
     value_area: Entity<TextArea>,
     error: Option<SharedString>,
+    /// True while a create/edit write is in flight; the modal stays open, its Save
+    /// control disabled, until the write resolves and either closes it or shows an
+    /// error.
+    saving: bool,
     _name_sub: Subscription,
     _value_sub: Subscription,
     _area_sub: Subscription,
@@ -138,6 +148,11 @@ struct RenameState {
 /// not the source of truth).
 pub struct GlobalsView {
     globals: Entity<Globals>,
+    backend: Arc<dyn GlobalsRepo>,
+    rt_handle: tokio::runtime::Handle,
+    /// True until the first `list` pull lands, so the table shows a loading caption
+    /// rather than the empty-filter caption before any row arrives.
+    loading: bool,
     filter: GlobalsFilter,
     search: Entity<TextInput>,
     search_query: String,
@@ -151,15 +166,23 @@ pub struct GlobalsView {
 }
 
 impl GlobalsView {
-    pub fn new(globals: Entity<Globals>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        globals: Entity<Globals>,
+        backend: Arc<dyn GlobalsRepo>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
         let search = cx.new(|cx| search_input("Search variables…", palette, cx));
 
         let globals_obs = cx.observe(&globals, |_, _, cx| cx.notify());
         let search_sub = cx.subscribe(&search, Self::on_search_event);
 
-        Self {
+        let view = Self {
             globals,
+            backend,
+            rt_handle,
+            loading: true,
             filter: GlobalsFilter::default(),
             search,
             search_query: String::new(),
@@ -168,7 +191,78 @@ impl GlobalsView {
             renaming: None,
             _globals_obs: globals_obs,
             _search_sub: search_sub,
-        }
+        };
+        view.reload(cx);
+        view
+    }
+
+    // --- async pull + reconcile -------------------------------------------
+
+    /// Pulls the full row set off the storage provider and reconciles the cached
+    /// roster with it. Every create/edit/rename/archive routes back here for a full
+    /// re-pull rather than patching a row locally, so the roster always mirrors the
+    /// persisted rows.
+    fn reload(&self, cx: &mut Context<Self>) {
+        let backend = Arc::clone(&self.backend);
+        self.spawn_reload(
+            async move { backend.list().await.map_err(|e| e.to_string()) },
+            cx,
+        );
+    }
+
+    /// Spawns `work` (a repo verb that ends by returning the fresh `list`) on the
+    /// tokio runtime, then folds the result back on the foreground executor: the new
+    /// rows on success, a PII-safe error toast on failure. A released view makes the
+    /// apply a no-op.
+    fn spawn_reload(
+        &self,
+        work: impl Future<Output = Result<Vec<GlobalEntry>, String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        Self::reload_entity(cx.entity(), self.rt_handle.clone(), work, cx);
+    }
+
+    /// The context-free reload path: usable both from a screen handler and from a
+    /// toast action closure (which only has an [`App`] and the view handle). Hops the
+    /// tokio runtime for `work`, then applies the outcome to `view`.
+    fn reload_entity(
+        view: Entity<GlobalsView>,
+        rt_handle: tokio::runtime::Handle,
+        work: impl Future<Output = Result<Vec<GlobalEntry>, String>> + Send + 'static,
+        app: &mut App,
+    ) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        rt_handle.spawn(async move {
+            let _ = tx.send(work.await);
+        });
+        app.spawn(async move |cx| match rx.await {
+            Ok(Ok(entries)) => {
+                let _ = view.update(cx, |this, cx| this.apply_entries(entries, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = view.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn apply_entries(&mut self, entries: Vec<GlobalEntry>, cx: &mut Context<Self>) {
+        let now = time::OffsetDateTime::now_utc();
+        let rows: Vec<Global> = entries.iter().map(|e| global_from_entry(e, now)).collect();
+        self.globals.update(cx, |g, cx| {
+            g.set_all(rows);
+            cx.notify();
+        });
+        self.loading = false;
+        cx.notify();
+    }
+
+    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
+        eprintln!("forge-desktop: globals operation failed: {message}");
+        self.loading = false;
+        cx.push_toast(ToastKind::Error, format!("Globals: {message}"));
+        cx.notify();
     }
 
     // --- reactions --------------------------------------------------------
@@ -199,11 +293,18 @@ impl GlobalsView {
             .entries()
             .iter()
             .any(|g| g.name == name && g.persisted);
-        self.globals.update(cx, |g, cx| {
-            g.set_persisted(name.as_ref(), next);
-            cx.notify();
-        });
-        cx.notify();
+        let backend = Arc::clone(&self.backend);
+        let key = name.to_string();
+        self.spawn_reload(
+            async move {
+                backend
+                    .set_persisted(&key, next)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                backend.list().await.map_err(|e| e.to_string())
+            },
+            cx,
+        );
     }
 
     fn request_delete(&mut self, name: SharedString, cx: &mut Context<Self>) {
@@ -216,18 +317,75 @@ impl GlobalsView {
         cx.notify();
     }
 
+    /// Soft-deletes the confirmed row: archives it (the row and its telemetry
+    /// survive, invisible to `list`), re-pulls, then raises an undo toast whose
+    /// action restores it through the same reconcile path.
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
         let Some(name) = self.pending_delete.take() else {
             return;
         };
-        // The deleted row is captured here as the undo payload; surfacing an
-        // undo-delete toast lands with the (not-yet-built) toast host — noted in
-        // UI_NOTES. For now the delete is immediate.
-        self.globals.update(cx, |g, cx| {
-            let _removed = g.delete(name.as_ref());
-            cx.notify();
-        });
         cx.notify();
+
+        let backend = Arc::clone(&self.backend);
+        let key = name.to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<GlobalEntry>, String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                backend.archive(&key).await.map_err(|e| e.to_string())?;
+                backend.list().await.map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+
+        let restore_backend = Arc::clone(&self.backend);
+        let restore_rt = self.rt_handle.clone();
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(entries)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.apply_entries(entries, cx);
+                    this.raise_undo_toast(name, restore_backend, restore_rt, cx);
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Fires the post-archive undo toast. Its action restores the named row (which
+    /// still exists, only archived) and reconciles the roster with a fresh pull.
+    fn raise_undo_toast(
+        &self,
+        name: SharedString,
+        backend: Arc<dyn GlobalsRepo>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.entity();
+        let message = format!("Deleted \u{201c}{name}\u{201d}");
+        cx.push_toast_full(
+            ToastKind::Undo,
+            message,
+            None,
+            Some(ToastAction::new("Undo", move |_window, app: &mut App| {
+                let backend = Arc::clone(&backend);
+                let rt_handle = rt_handle.clone();
+                let key = name.to_string();
+                Self::reload_entity(
+                    view.clone(),
+                    rt_handle,
+                    async move {
+                        backend.restore(&key).await.map_err(|e| e.to_string())?;
+                        backend.list().await.map_err(|e| e.to_string())
+                    },
+                    app,
+                );
+            })),
+            Duration::from_millis(6000),
+        );
     }
 
     fn export(&mut self, _cx: &mut Context<Self>) {
@@ -264,12 +422,30 @@ impl GlobalsView {
         let Some(rename) = self.renaming.take() else {
             return;
         };
-        let next = rename.input.read(cx).content().trim().to_owned();
-        self.globals.update(cx, |g, cx| {
-            g.rename(rename.original.as_ref(), &next);
-            cx.notify();
-        });
         cx.notify();
+        let old = rename.original.to_string();
+        let next = rename.input.read(cx).content().trim().to_owned();
+        if next.is_empty() || next == old {
+            return;
+        }
+        if self.globals.read(cx).contains(&next) {
+            cx.push_toast(
+                ToastKind::Error,
+                format!("Name \u{201c}{next}\u{201d} is already taken"),
+            );
+            return;
+        }
+        let backend = Arc::clone(&self.backend);
+        self.spawn_reload(
+            async move {
+                backend
+                    .rename(&old, &next)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                backend.list().await.map_err(|e| e.to_string())
+            },
+            cx,
+        );
     }
 
     fn cancel_rename(&mut self, cx: &mut Context<Self>) {
@@ -377,6 +553,7 @@ impl GlobalsView {
             value_input,
             value_area,
             error: None,
+            saving: false,
             _name_sub: name_sub,
             _value_sub: value_sub,
             _area_sub: area_sub,
@@ -437,6 +614,9 @@ impl GlobalsView {
         let Some(ed) = self.editor.as_ref() else {
             return;
         };
+        if ed.saving {
+            return;
+        }
         let name = ed.name(cx);
         let original = ed.original_name().map(str::to_owned);
         let build = ed.build_variant(cx);
@@ -459,15 +639,58 @@ impl GlobalsView {
             }
         };
         let persisted = ed.persisted;
-        self.globals.update(cx, |g, cx| {
-            match &original {
-                None => g.create(&name, variant, persisted),
-                Some(old) => g.update(old, &name, variant, persisted),
-            }
-            cx.notify();
-        });
-        self.editor = None;
+        // An edit that changes the name renames the row first (telemetry survives),
+        // then writes the value; create just writes.
+        let rename_from = match &original {
+            Some(old) if old.as_str() != name.as_str() => Some(old.clone()),
+            _ => None,
+        };
+        if let Some(ed) = self.editor.as_mut() {
+            ed.saving = true;
+            ed.error = None;
+        }
         cx.notify();
+
+        let backend = Arc::clone(&self.backend);
+        let target = name.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<GlobalEntry>, String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                if let Some(old) = rename_from {
+                    backend
+                        .rename(&old, &target)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+                backend
+                    .set(&target, variant, persisted)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                backend.list().await.map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(entries)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.apply_entries(entries, cx);
+                    this.editor = None;
+                    cx.notify();
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(ed) = this.editor.as_mut() {
+                        ed.saving = false;
+                        ed.error = Some(message.into());
+                    }
+                    cx.notify();
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
     }
 
     fn set_editor_error(&mut self, message: &'static str, cx: &mut Context<Self>) {
@@ -654,6 +877,11 @@ impl GlobalsView {
         let rows = self.visible_rows(cx);
 
         let body = if rows.is_empty() {
+            let caption = if self.loading {
+                "Loading variables…"
+            } else {
+                "No variables match this filter."
+            };
             div()
                 .w_full()
                 .flex_1()
@@ -664,7 +892,7 @@ impl GlobalsView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
-                .child("No variables match this filter.")
+                .child(caption)
                 .into_any_element()
         } else {
             let headers: Vec<SharedString> = vec![
@@ -994,12 +1222,13 @@ impl GlobalsView {
             );
         }
 
-        let saveable = self.editor_saveable(ed, cx);
+        let saveable = self.editor_saveable(ed, cx) && !ed.saving;
+        let save_label = if ed.saving { "Saving…" } else { "Save" };
         let cancel = secondary_button("Cancel", palette).on_click(
             "globals-editor-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_editor(cx)),
         );
-        let save = primary_button("Save", palette)
+        let save = primary_button(save_label, palette)
             .disabled(!saveable)
             .on_click(
                 "globals-editor-save",
@@ -1188,6 +1417,38 @@ fn value_preview(g: &Global, palette: &ForgePalette) -> impl IntoElement + use<>
         cell = cell.child(icon(Icon::ExternalLink, VALUE_ICON, palette.text_faint));
     }
     cell
+}
+
+/// Folds a persisted [`GlobalEntry`] into the screen's presentation row, formatting
+/// its timestamp against `now` into the human "last modified" caption.
+fn global_from_entry(entry: &GlobalEntry, now: time::OffsetDateTime) -> Global {
+    Global {
+        name: entry.name.clone().into(),
+        value: entry.value.clone(),
+        persisted: entry.persisted,
+        reads: entry.reads,
+        writes: entry.writes,
+        modified: format_time_ago(entry.last_modified, now).into(),
+    }
+}
+
+/// Coarse "N ago" caption for `dt` relative to `now`, clamped at zero for a
+/// future-dated (clock-skewed) row.
+fn format_time_ago(dt: time::OffsetDateTime, now: time::OffsetDateTime) -> String {
+    let secs = (now - dt).whole_seconds().max(0);
+    if secs < 60 {
+        format!("{secs}s ago")
+    } else if secs < 3600 {
+        format!("{} min ago", secs / 60)
+    } else {
+        let hours = secs / 3600;
+        let mins = (secs % 3600) / 60;
+        if mins == 0 {
+            format!("{hours}h ago")
+        } else {
+            format!("{hours}h {mins}m ago")
+        }
+    }
 }
 
 /// Lowercase kind word shown in the row pill and the editor chips.

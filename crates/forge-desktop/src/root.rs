@@ -95,7 +95,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
     let chat_feed = cx.new(|_| ChatFeed::new());
     let home_stats = cx.new(|_| HomeStats::new());
     let event_log = cx.new(|_| EventLog::new());
-    let globals = cx.new(|_| Globals::seeded());
+    let globals = cx.new(|_| Globals::empty());
     let platforms = cx.new(|_| PlatformConnectivity::new());
     let speak = cx.new(|_| SpeakState::new());
     let queue_health = cx.new(|_| QueueHealth::new());

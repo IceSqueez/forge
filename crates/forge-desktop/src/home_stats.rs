@@ -1,7 +1,7 @@
 use forge_components::ForgePalette;
 use forge_events::{Event, EventSource};
 use forge_platform_core::BuiltinId;
-use forge_runtime::LiveViewerCount;
+use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
 use gpui::{Rgba, SharedString};
 
 use crate::event_log::EventLog;
@@ -241,6 +241,29 @@ impl HomeStats {
     /// leaves it directly exercisable. Dormant until the runtime publishes the event.
     pub fn record_action_done(&mut self) {
         self.triggers_fired = Some(self.triggers_fired.unwrap_or(0) + 1);
+    }
+
+    /// Applies an async-pull dashboard snapshot from the storage repos: the action and
+    /// global counts plus the trailing-24h fired-runs total. The fired count is
+    /// overwritten (not accumulated) — the pull re-seats it to the storage-derived
+    /// baseline, off which the live bridge re-increments on each subsequent
+    /// `action.done`. Reports whether any of the three values moved so the caller only
+    /// repaints Home on a real change. Kept free of `cx` so it stays directly
+    /// exercisable.
+    pub fn set_stats(&mut self, stats: DashboardStats) -> bool {
+        let next_actions = Some(stats.actions_count);
+        let next_fired = Some(stats.triggers_fired);
+        let next_globals = Some(stats.globals_count);
+        if self.actions_count == next_actions
+            && self.triggers_fired == next_fired
+            && self.globals_count == next_globals
+        {
+            return false;
+        }
+        self.actions_count = next_actions;
+        self.triggers_fired = next_fired;
+        self.globals_count = next_globals;
+        true
     }
 
     /// Applies the latest aggregate concurrent-viewer figure from the live-viewer

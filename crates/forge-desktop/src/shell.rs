@@ -2,10 +2,14 @@ use std::sync::Arc;
 
 use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_platform_core::BuiltinId;
+use forge_runtime::dashboard::compute_stats;
+use forge_storage::{DataProvider, GlobalsRepo};
 use gpui::{
-    AnyElement, AnyView, App, AppContext, Context, Entity, FocusHandle, Window, deferred, div,
-    prelude::*,
+    AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, FocusHandle, Window, deferred,
+    div, prelude::*,
 };
+
+use crate::home_stats::HomeStats;
 
 use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, SHELL_CONTEXT};
 use crate::actions_screen::ScreenActionsView;
@@ -133,6 +137,17 @@ impl AppShell {
                 let home = cx.new(|cx| HomeView::new(topics.home_stats.clone(), cx));
                 cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                // Refresh the at-a-glance readout every time Home is mounted: once at
+                // shell construction (the initial Home screen) and again on each
+                // navigation back to Home, matching the dashboard's mount-time pull
+                // cadence. The pull is an async snapshot off the storage repos, applied
+                // back into the shared home-stats topic.
+                let home_stats = topics.home_stats.clone();
+                let backend = Arc::clone(&handles.backend);
+                cx.spawn(async move |_shell, cx| {
+                    refresh_dashboard_stats(home_stats, backend, cx).await;
                 })
                 .detach();
                 home.into()
@@ -325,6 +340,33 @@ impl AppShell {
             .with_priority(TOAST_PRIORITY)
             .into_any_element(),
         )
+    }
+}
+
+/// Async-pull refresh of the Home at-a-glance readout. Reads the action/global counts
+/// and the trailing-24h fired-runs total off the storage repos (all awaited, never
+/// blocking the foreground executor), then folds the snapshot into the shared home-stats
+/// topic and repaints Home only when a value moved. A load failure logs and leaves the
+/// prior readout in place; a released topic entity makes the apply a no-op.
+async fn refresh_dashboard_stats(
+    home_stats: Entity<HomeStats>,
+    backend: Arc<dyn DataProvider>,
+    cx: &mut AsyncApp,
+) {
+    let actions = backend.action_repo();
+    let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
+    let history = backend.history_repo();
+    match compute_stats(&*actions, &*globals, &*history).await {
+        Ok(stats) => {
+            let _ = home_stats.update(cx, |stats_topic, cx| {
+                if stats_topic.set_stats(stats) {
+                    cx.notify();
+                }
+            });
+        }
+        Err(err) => {
+            eprintln!("forge-desktop: home dashboard stats load failed: {err}");
+        }
     }
 }
 

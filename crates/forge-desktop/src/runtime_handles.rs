@@ -41,4 +41,10 @@ pub struct RuntimeHandles {
     /// The server console polls its `snapshot()` and dispatches lifecycle verbs
     /// through it; every other screen ignores it.
     pub server: Option<forge_server::ServerHandle>,
+    /// The speak-queue command handle; `None` only if construction itself failed.
+    /// Screens dispatch `SpeakCommand`s directly through this (Enqueue/Skip/Clear/...).
+    pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
+    /// The speak queue's initial event subscription. Not `Clone` — taken once by the
+    /// boot-time bridge task that feeds `SpeakEvent`s into the dashboard entity.
+    pub speak_events: Option<forge_speak_queue::SpeakEventStream>,
 }

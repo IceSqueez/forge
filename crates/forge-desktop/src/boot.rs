@@ -16,6 +16,7 @@ use forge_storage_sqlite::SqliteBackend;
 
 use crate::integrations::build_integrations;
 use crate::runtime_handles::RuntimeHandles;
+use crate::speak_boot::build_speak_queue;
 
 /// Outcome of a failed boot, differentiated by cause so the shell routes to the
 /// matching screen: a schema-version mismatch is a code/data version gap the user
@@ -138,6 +139,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     }
 
     let server = build_server(&backend, &bus, &action_engine).await;
+    let (speak, speak_events) = build_speak_queue(&bus, &backend).await;
 
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
@@ -152,6 +154,8 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         live_viewers,
         builtins: integrations.builtins,
         server,
+        speak,
+        speak_events,
     })
 }
 

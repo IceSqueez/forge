@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 async-trait = { workspace = true }
+forge-audio = { path = "../forge-audio" }
 forge-components = { path = "../forge-components" }
 forge-discord = { path = "../forge-discord" }
 forge-events = { path = "../forge-events" }
@@ -24,9 +25,23 @@ forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-registry = { path = "../forge-registry" }
 forge-runtime = { path = "../forge-runtime" }
 forge-server = { path = "../forge-server" }
+forge-speak-queue = { path = "../forge-speak-queue" }
 forge-storage = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-tts-core = { path = "../forge-tts-core" }
+forge-tts-cloud = { path = "../forge-tts-cloud", features = [
+  "azure",
+  "elevenlabs",
+  "openai",
+  "polly",
+] }
+forge-tts-espeak = { path = "../forge-tts-espeak" }
+forge-tts-nsspeech = { path = "../forge-tts-nsspeech" }
+forge-tts-piper = { path = "../forge-tts-piper" }
+forge-tts-pipeline = { path = "../forge-tts-pipeline" }
+forge-tts-sapi = { path = "../forge-tts-sapi" }
 forge-types = { path = "../forge-types" }
+forge-voice = { path = "../forge-voice" }
 forge-vtube = { path = "../forge-vtube" }
 futures-util = { workspace = true }
 gpui = { workspace = true }

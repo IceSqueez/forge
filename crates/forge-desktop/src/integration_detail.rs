@@ -5,8 +5,9 @@ use forge_components::{
 };
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-    DetailSection, HeaderAction, HealthMetric, QuickAction, QuickActions, SectionIcon,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, QuickAction, QuickActions, SectionIcon,
 };
+use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Window,
     div, prelude::*, px,
@@ -90,6 +91,25 @@ impl IntegrationDetail {
         let sections = content.sections();
         let quick_actions = quick.actions();
 
+        // View-scoped live health drain: seeded synchronously above from
+        // `metrics()`, then this per-instance `stream()` folds each delta into the
+        // grid. The task is tied to this view's lifetime — once the user navigates
+        // away and the entity is released, `this.update` returns `Err` and the loop
+        // ends. It is deliberately NOT a boot-global drain: a lagging health stream
+        // must never stall the shared runtime→UI bridge topics.
+        let mut health_stream = health.stream();
+        cx.spawn(async move |this, cx| {
+            while let Some(delta) = health_stream.next().await {
+                if this
+                    .update(cx, |detail, cx| detail.apply_health_delta(delta, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
         Self {
             status,
             health,
@@ -128,6 +148,18 @@ impl IntegrationDetail {
         self.sections = self.content.sections();
         self.quick_actions = self.quick.actions();
         cx.notify();
+    }
+
+    /// Folds a single live health delta into the cached 4-metric grid and
+    /// repaints. The grid is fixed at four cells, so an out-of-range index is
+    /// ignored (no repaint). Driven by the view-scoped health drain started on
+    /// mount.
+    fn apply_health_delta(&mut self, delta: HealthDelta, cx: &mut Context<Self>) {
+        let idx = delta.index as usize;
+        if idx < self.health_metrics.len() {
+            self.health_metrics[idx].value = delta.new_value;
+            cx.notify();
+        }
     }
 
     fn go_back(&mut self, cx: &mut Context<Self>) {

@@ -22,7 +22,7 @@ use std::time::Duration;
 impl TriggersRegistryView {
     // --- lookup + derivation ----------------------------------------------
 
-    fn find(&self, id: TriggerInstanceId) -> Option<&TriggerInstanceRow> {
+    pub(super) fn find(&self, id: TriggerInstanceId) -> Option<&TriggerInstanceRow> {
         self.instances.iter().find(|i| i.id == id)
     }
 
@@ -140,9 +140,14 @@ impl TriggersRegistryView {
 
     // --- selection + row interaction --------------------------------------
 
-    /// Highlights the row: tracks selection for the row's stripe and wash.
+    /// Selects the row (driving its stripe and wash) and opens the detail side-sheet,
+    /// spawning the async pull that populates it.
     fn select(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
+        if self.selected != Some(id) {
+            self.detail = None;
+        }
         self.selected = Some(id);
+        self.load_detail(id, cx);
         cx.notify();
     }
 
@@ -192,7 +197,7 @@ impl TriggersRegistryView {
 
     /// Toggling a used instance OFF arms the confirm dialog; enabling, or disabling an
     /// unused instance, applies immediately.
-    fn toggle_enable(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
+    pub(super) fn toggle_enable(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         let Some(instance) = self.find(id) else {
             return;
         };
@@ -221,7 +226,7 @@ impl TriggersRegistryView {
 
     // --- delete (blocked when used) ---------------------------------------
 
-    fn request_delete(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
+    pub(super) fn request_delete(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         self.pending_delete = Some(id);
         self.menu_open = None;
         cx.notify();
@@ -308,7 +313,12 @@ impl TriggersRegistryView {
 
     // --- rename ------------------------------------------------------------
 
-    fn start_rename(&mut self, id: TriggerInstanceId, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn start_rename(
+        &mut self,
+        id: TriggerInstanceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(instance) = self.find(id) else {
             return;
         };

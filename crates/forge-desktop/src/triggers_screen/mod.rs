@@ -5,8 +5,8 @@
 
 use forge_components::{ForgePalette, TextInput, ToastKind, search_input};
 use forge_registry::TriggerRegistry;
-use forge_storage::TriggerInstanceRepo;
-use forge_types::TriggerInstanceId;
+use forge_storage::{ActionRepo, TriggerInstanceRepo};
+use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
 use gpui::{App, Context, Entity, Pixels, Rgba, Subscription, Window, div, prelude::*, px};
 use std::future::Future;
 use std::sync::Arc;
@@ -14,6 +14,7 @@ use std::sync::Arc;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
+mod detail;
 mod list;
 
 /// Leading selection stripe width down a row's edge (fixed 2px in the source).
@@ -148,6 +149,50 @@ struct TriggerInstanceRow {
     override_count: usize,
 }
 
+/// The open detail side-sheet: the freshly pulled instance (source of overrides,
+/// name, enabled, kind, scope), the per-field config editing surface folded from
+/// the kind's `config_fields`, and the resolved names of the actions linking it.
+/// Every config write reconciles by a full re-pull, so this never holds a
+/// view-minted placeholder.
+struct TriggerDetail {
+    instance: TriggerInstance,
+    fields: Vec<ConfigField>,
+    used_in: Vec<(ActionId, String)>,
+}
+
+/// One row in the detail sheet's configuration editor, folded from the kind's
+/// `config_fields` over the effective (default-merged) config. `Hint` marks a key
+/// authored elsewhere (a nested sub-chain), rendered inert.
+enum ConfigField {
+    Input {
+        key: String,
+        /// Committed as `Variant::Int` (lenient parse — a non-numeric value keeps the
+        /// field's prior value) rather than `Variant::String`.
+        integer: bool,
+        /// Set on the inner member of an `Optional` group; committed only while the
+        /// gate toggle (a sibling `Bool` on this key) is on.
+        gate: Option<String>,
+        input: Entity<TextInput>,
+        _sub: Subscription,
+    },
+    Bool {
+        key: String,
+        gate: Option<String>,
+        value: bool,
+    },
+    Hint {
+        key: String,
+    },
+}
+
+/// The runtime-thread payload of a detail pull: the persisted instance plus each
+/// linking action resolved to its display name. The foreground folds it into a
+/// [`TriggerDetail`] (the config inputs need a UI context to build).
+struct TriggerDetailData {
+    instance: TriggerInstance,
+    used_in: Vec<(ActionId, String)>,
+}
+
 /// Single-select usage filter over the list. `All` shows every instance; `Used`
 /// keeps `used_in_count > 0`; `Unused` keeps `used_in_count == 0`.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -175,6 +220,7 @@ struct RenameForm {
 /// view-minted placeholder.
 pub struct TriggersRegistryView {
     repo: Arc<dyn TriggerInstanceRepo>,
+    action_repo: Arc<dyn ActionRepo>,
     registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     /// True until the first pull lands, so the list shows a loading caption rather than
@@ -182,6 +228,9 @@ pub struct TriggersRegistryView {
     loading: bool,
     instances: Vec<TriggerInstanceRow>,
     selected: Option<TriggerInstanceId>,
+    /// The open detail side-sheet for the selected instance. `None` while the async
+    /// pull is in flight (the sheet shows a loading body) or when nothing is selected.
+    detail: Option<TriggerDetail>,
     hovered: Option<TriggerInstanceId>,
     menu_open: Option<TriggerInstanceId>,
     search: String,
@@ -197,6 +246,7 @@ pub struct TriggersRegistryView {
 impl TriggersRegistryView {
     pub fn new(
         repo: Arc<dyn TriggerInstanceRepo>,
+        action_repo: Arc<dyn ActionRepo>,
         registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
@@ -207,11 +257,13 @@ impl TriggersRegistryView {
 
         let view = Self {
             repo,
+            action_repo,
             registry,
             rt_handle,
             loading: true,
             instances: Vec::new(),
             selected: None,
+            detail: None,
             hovered: None,
             menu_open: None,
             search: String::new(),
@@ -282,8 +334,14 @@ impl TriggersRegistryView {
             && !self.instances.iter().any(|r| r.id == selected)
         {
             self.selected = None;
+            self.detail = None;
         }
         self.loading = false;
+        // A roster re-pull follows every write; refresh the open sheet from the same
+        // committed state so its config, override badges and used-in list stay coherent.
+        if self.selected.is_some() && self.detail.is_some() {
+            self.reload_detail(cx);
+        }
         cx.notify();
     }
 
@@ -302,8 +360,17 @@ impl Render for TriggersRegistryView {
         let header = self.render_header(&palette);
         let filter_bar = self.render_filter_bar(&palette, cx);
         let list = self.render_list(&palette, cx);
+        let detail_pane = self
+            .selected
+            .map(|id| self.render_detail_sheet(id, &palette, cx));
 
-        let body = div().flex_1().min_h(px(0.0)).flex().flex_row().child(list);
+        let body = div()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_row()
+            .child(list)
+            .children(detail_pane);
 
         let disable_modal = self
             .confirm_disable

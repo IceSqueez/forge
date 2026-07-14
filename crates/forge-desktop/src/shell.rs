@@ -295,9 +295,10 @@ impl AppShell {
             }
             Screen::Triggers => {
                 let repo = handles.backend.trigger_instance_repo();
+                let action_repo = handles.backend.action_repo();
                 let registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| TriggersRegistryView::new(repo, registry, rt_handle, cx))
+                cx.new(|cx| TriggersRegistryView::new(repo, action_repo, registry, rt_handle, cx))
                     .into()
             }
             Screen::Scripts => {

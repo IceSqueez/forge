@@ -4,14 +4,18 @@
 
 use super::*;
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextArea, TextInput, breadcrumb, chip, confirm_modal, icon,
-    menu_button, menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon,
-    secondary_button, spacing, status_dot, toggle,
+    OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, breadcrumb,
+    chip, confirm_modal, icon, menu_button, menu_divider, menu_item, modal, overlay,
+    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle,
 };
-use gpui::{AnyElement, ClickEvent, Context, Entity, Rgba, SharedString, Window, div, px};
+use forge_types::{Action, ActionId, ExecutionMode, Queue};
+use gpui::{AnyElement, App, ClickEvent, Context, Entity, Rgba, SharedString, Window, div, px};
+use std::sync::Arc;
+use std::time::Duration;
 
 /// A left-panel notice line (loading / empty), inked `color`, padded like a group
 /// header.
@@ -49,7 +53,7 @@ fn modal_section(
 impl ScreenActionsView {
     // --- pure lookup helpers ----------------------------------------------
 
-    fn find(&self, id: ActionId) -> Option<&ActionSummary> {
+    pub(super) fn find(&self, id: ActionId) -> Option<&ActionSummary> {
         self.groups
             .iter()
             .flat_map(|g| g.actions.iter())
@@ -148,34 +152,49 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    /// Persists a new enabled state: loads the action, flips the flag, saves it, then
+    /// reconciles the tree with a full re-pull.
     fn set_enabled(&mut self, id: ActionId, enabled: bool, cx: &mut Context<Self>) {
-        for group in &mut self.groups {
-            if let Some(action) = group.actions.iter_mut().find(|a| a.id == id) {
-                action.enabled = enabled;
-            }
-        }
         self.menu_open = None;
         cx.notify();
+        let repo = Arc::clone(&self.action_repo);
+        self.spawn_reload(
+            async move {
+                let mut action = repo
+                    .get(id)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| "action not found".to_owned())?;
+                action.enabled = enabled;
+                repo.save(&action).await.map_err(|e| e.to_string())?;
+                repo.list().await.map_err(|e| e.to_string())
+            },
+            cx,
+        );
     }
 
-    /// Clones an action into its own group, right after the original, with a fresh id.
+    /// Duplicates the action into a fresh persisted row (`… (copy)`), then reconciles
+    /// the tree with a full re-pull so the copy lands with its real [`ActionId`].
     pub(super) fn duplicate(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        let new_id = self.mint_id();
-        for group in &mut self.groups {
-            if let Some(pos) = group.actions.iter().position(|a| a.id == id) {
-                let src = &group.actions[pos];
-                let clone = ActionSummary {
-                    id: new_id,
-                    name: format!("{} copy", src.name),
-                    enabled: src.enabled,
-                    sub_action_count: src.sub_action_count,
-                };
-                group.actions.insert(pos + 1, clone);
-                break;
-            }
-        }
         self.menu_open = None;
         cx.notify();
+        let repo = Arc::clone(&self.action_repo);
+        let new_id = ActionId::new();
+        self.spawn_reload(
+            async move {
+                let source = repo
+                    .get(id)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| "source action not found".to_owned())?;
+                let new_name = format!("{} (copy)", source.name);
+                repo.duplicate(id, new_id, &new_name)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                repo.list().await.map_err(|e| e.to_string())
+            },
+            cx,
+        );
     }
 
     fn start_rename(&mut self, id: ActionId, window: &mut Window, cx: &mut Context<Self>) {
@@ -218,18 +237,46 @@ impl ScreenActionsView {
         }
     }
 
+    /// Persists an inline rename: loads the action, writes the new name, saves it, then
+    /// reconciles with a full re-pull. Guards against a blank name and a case-insensitive
+    /// collision with another action (raising a toast rather than writing a duplicate).
     fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
-        let trimmed = name.trim();
-        if let Some(renaming) = self.renaming.take()
-            && !trimmed.is_empty()
-        {
-            for group in &mut self.groups {
-                if let Some(action) = group.actions.iter_mut().find(|a| a.id == renaming.id) {
-                    action.name = trimmed.to_owned();
-                }
-            }
-        }
+        let Some(renaming) = self.renaming.take() else {
+            cx.notify();
+            return;
+        };
+        let trimmed = name.trim().to_owned();
         cx.notify();
+        if trimmed.is_empty() {
+            return;
+        }
+        let id = renaming.id;
+        let taken = self
+            .groups
+            .iter()
+            .flat_map(|g| g.actions.iter())
+            .any(|a| a.id != id && a.name.eq_ignore_ascii_case(&trimmed));
+        if taken {
+            cx.push_toast(
+                ToastKind::Error,
+                format!("Name \u{201c}{trimmed}\u{201d} is already taken"),
+            );
+            return;
+        }
+        let repo = Arc::clone(&self.action_repo);
+        self.spawn_reload(
+            async move {
+                let mut action = repo
+                    .get(id)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| "action not found".to_owned())?;
+                action.name = trimmed;
+                repo.save(&action).await.map_err(|e| e.to_string())?;
+                repo.list().await.map_err(|e| e.to_string())
+            },
+            cx,
+        );
     }
 
     // --- delete (two-phase confirm) ---------------------------------------
@@ -245,19 +292,75 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    /// Soft-deletes the confirmed action: archives it (the row and its telemetry
+    /// survive, invisible to `list`), re-pulls, then raises an undo toast whose action
+    /// restores it through the same reconcile path.
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.pending_delete.take() {
-            for group in &mut self.groups {
-                group.actions.retain(|a| a.id != id);
-            }
-            if self.selected == Some(id) {
-                self.selected = None;
-                self.detail = None;
-                self.nav_path.clear();
-                self.case_fields.clear();
-            }
-        }
+        let Some(id) = self.pending_delete.take() else {
+            return;
+        };
+        let name = self.find(id).map(|a| a.name.clone()).unwrap_or_default();
         cx.notify();
+
+        let repo = Arc::clone(&self.action_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<Action>, String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                repo.archive(id).await.map_err(|e| e.to_string())?;
+                repo.list().await.map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+
+        let restore_repo = Arc::clone(&self.action_repo);
+        let restore_rt = self.rt_handle.clone();
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(actions)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.apply_actions(actions, cx);
+                    this.raise_undo_toast(id, name, restore_repo, restore_rt, cx);
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Fires the post-archive undo toast. Its action restores the archived action
+    /// (still present, only marked archived) and reconciles the tree with a fresh pull.
+    fn raise_undo_toast(
+        &self,
+        id: ActionId,
+        name: String,
+        repo: Arc<dyn ActionRepo>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.entity();
+        let message = format!("Deleted \u{201c}{name}\u{201d}");
+        cx.push_toast_full(
+            ToastKind::Undo,
+            message,
+            None,
+            Some(ToastAction::new("Undo", move |_window, app: &mut App| {
+                let repo = Arc::clone(&repo);
+                let rt_handle = rt_handle.clone();
+                Self::reload_entity(
+                    view.clone(),
+                    rt_handle,
+                    async move {
+                        repo.restore(id).await.map_err(|e| e.to_string())?;
+                        repo.list().await.map_err(|e| e.to_string())
+                    },
+                    app,
+                );
+            })),
+            Duration::from_millis(6000),
+        );
     }
 
     // --- add-action modal -------------------------------------------------
@@ -275,7 +378,7 @@ impl ScreenActionsView {
             name,
             group,
             description,
-            queue_options: vec!["Default".into(), "TTS".into(), "Alerts".into()],
+            queues: Vec::new(),
             selected_queue: 0,
             enabled: true,
             concurrent: false,
@@ -284,6 +387,38 @@ impl ScreenActionsView {
             _name_sub: name_sub,
         });
         cx.notify();
+
+        // A new action must carry a real queue, so the QUEUE picker is filled from the
+        // queue repo. Until this pull lands the section shows a loading caption and
+        // Create stays disabled.
+        let repo = Arc::clone(&self.queue_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<Queue>, String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(repo.list().await.map_err(|e| e.to_string()));
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(queues)) => {
+                let _ = this.update(cx, |this, cx| this.apply_queue_options(queues, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Fills the open add-modal's QUEUE picker with the pulled queues. A no-op if the
+    /// modal was dismissed before the pull returned.
+    fn apply_queue_options(&mut self, queues: Vec<Queue>, cx: &mut Context<Self>) {
+        if let Some(form) = self.add_modal.as_mut() {
+            form.queues = queues
+                .into_iter()
+                .map(|q| (q.id, SharedString::from(q.name)))
+                .collect();
+            form.selected_queue = 0;
+            cx.notify();
+        }
     }
 
     fn cancel_add_modal(&mut self, cx: &mut Context<Self>) {
@@ -326,9 +461,9 @@ impl ScreenActionsView {
         }
     }
 
-    /// Commits the modal into the cached tree: the new action lands in the group whose
-    /// name the form carries (a new `Other` group is minted if none matches), then the
-    /// modal closes. No-op while the name is blank.
+    /// Persists a new action built from the modal, then reconciles the tree with a full
+    /// re-pull and selects the freshly-saved row by its real [`ActionId`]. No-op while
+    /// the name is blank or before the queue picker has loaded a real queue.
     fn submit_add_modal(&mut self, cx: &mut Context<Self>) {
         let Some(form) = self.add_modal.as_ref() else {
             return;
@@ -337,38 +472,56 @@ impl ScreenActionsView {
         if name.is_empty() {
             return;
         }
+        let Some(&(queue_id, _)) = form.queues.get(form.selected_queue) else {
+            cx.push_toast(ToastKind::Error, "No queue available".to_owned());
+            return;
+        };
         let group_name = form.group.read(cx).content().trim().to_owned();
-        let enabled = form.enabled;
-        let id = self.mint_id();
-        let summary = ActionSummary {
-            id,
-            name,
-            enabled,
-            sub_action_count: 0,
-        };
-
-        let target = if group_name.is_empty() {
-            self.groups.first_mut()
+        let description = form.description.read(cx).content().trim().to_owned();
+        let execution_mode = if form.random_pick {
+            ExecutionMode::RandomPick
         } else {
-            self.groups
-                .iter_mut()
-                .find(|g| g.name.eq_ignore_ascii_case(&group_name))
+            ExecutionMode::Sequential
         };
-        match target {
-            Some(group) => group.actions.push(summary),
-            None => self.groups.push(ActionGroup {
-                name: group_name.into(),
-                category: ActionCategory::Other,
-                collapsed: false,
-                actions: vec![summary],
-            }),
-        }
-        self.selected = Some(id);
-        self.detail = self.find(id).map(build_detail);
-        self.nav_path.clear();
-        self.sync_case_fields(cx);
+        let action = Action {
+            id: ActionId::new(),
+            name,
+            group: (!group_name.is_empty()).then_some(group_name),
+            queue_id,
+            enabled: form.enabled,
+            concurrent: form.concurrent,
+            bypass_pause: form.bypass_pause,
+            execution_mode,
+            description: (!description.is_empty()).then_some(description),
+            sub_actions: Vec::new(),
+        };
+        let new_id = action.id;
         self.add_modal = None;
         cx.notify();
+
+        let repo = Arc::clone(&self.action_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<Action>, String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                repo.save(&action).await.map_err(|e| e.to_string())?;
+                repo.list().await.map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(actions)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.apply_actions(actions, cx);
+                    this.select(new_id, cx);
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
     }
 
     // --- render: page header ----------------------------------------------
@@ -469,7 +622,12 @@ impl ScreenActionsView {
         let mut col = div().flex().flex_col();
 
         if self.total_actions() == 0 {
-            col = col.child(tree_notice("No actions yet", palette.text_faint, palette));
+            let caption = if self.loading {
+                "Loading actions…"
+            } else {
+                "No actions yet"
+            };
+            col = col.child(tree_notice(caption, palette.text_faint, palette));
         } else {
             for (index, group) in self.groups.iter().enumerate() {
                 let surviving: Vec<&ActionSummary> = group
@@ -603,7 +761,7 @@ impl ScreenActionsView {
         // The select area: state icon + name, indented, filling the row's free width.
         // A rename field swallows its own clicks, so selecting is disabled mid-rename.
         let mut select_area = div()
-            .id(SharedString::from(format!("actions-row-select-{}", id.0)))
+            .id(SharedString::from(format!("actions-row-select-{id}")))
             .flex_1()
             .h_full()
             .flex()
@@ -643,7 +801,7 @@ impl ScreenActionsView {
         );
 
         div()
-            .id(SharedString::from(format!("actions-row-{}", id.0)))
+            .id(SharedString::from(format!("actions-row-{id}")))
             .w_full()
             .h(ROW_HEIGHT)
             .flex()
@@ -674,7 +832,7 @@ impl ScreenActionsView {
             .placement(MenuPlacement::BottomRight)
             .items(vec![
                 menu_item(
-                    SharedString::from(format!("actions-menu-rename-{}", id.0)),
+                    SharedString::from(format!("actions-menu-rename-{id}")),
                     "Rename…",
                     cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.start_rename(id, window, cx)
@@ -683,14 +841,14 @@ impl ScreenActionsView {
                 .icon(Icon::Pencil)
                 .into(),
                 menu_item(
-                    SharedString::from(format!("actions-menu-dup-{}", id.0)),
+                    SharedString::from(format!("actions-menu-dup-{id}")),
                     "Duplicate",
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.duplicate(id, cx)),
                 )
                 .icon(Icon::Copy)
                 .into(),
                 menu_item(
-                    SharedString::from(format!("actions-menu-toggle-{}", id.0)),
+                    SharedString::from(format!("actions-menu-toggle-{id}")),
                     toggle_label,
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.set_enabled(id, next_enabled, cx)
@@ -700,7 +858,7 @@ impl ScreenActionsView {
                 .into(),
                 menu_divider(),
                 menu_item(
-                    SharedString::from(format!("actions-menu-del-{}", id.0)),
+                    SharedString::from(format!("actions-menu-del-{id}")),
                     "Delete…",
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
                 )
@@ -709,7 +867,7 @@ impl ScreenActionsView {
                 .into(),
             ])
             .on_toggle(
-                SharedString::from(format!("actions-menu-trigger-{}", id.0)),
+                SharedString::from(format!("actions-menu-trigger-{id}")),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_menu(id, cx)),
             )
             .on_dismiss(move |_window, cx| {
@@ -727,7 +885,8 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let name_len = form.name.read(cx).content().chars().count().min(NAME_LIMIT);
-        let valid = !form.name.read(cx).content().trim().is_empty();
+        // Create needs a non-blank name and a real queue to file the action under.
+        let valid = !form.name.read(cx).content().trim().is_empty() && !form.queues.is_empty();
 
         // NAME: field + N/64 counter.
         let name_row = div()
@@ -755,25 +914,36 @@ impl ScreenActionsView {
 
         // QUEUE: inline selectable chips (the kit carries no lightweight dropdown, so
         // the queue is chosen from chips — the Globals variant-kind picker approach).
-        let mut queue_chips = div()
-            .flex()
-            .flex_wrap()
-            .gap(spacing(Spacing::Xxs, Density::Cozy));
-        for (i, name) in form.queue_options.iter().enumerate() {
-            queue_chips = queue_chips.child(
-                chip(
-                    name.clone(),
-                    ChipGlyph::Dot(palette.brand),
-                    form.selected_queue == i,
-                    palette,
-                )
-                .on_click(
-                    SharedString::from(format!("actions-queue-{i}")),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.select_queue(i, cx)),
-                ),
-            );
-        }
-        let queue_section = modal_section(palette, "QUEUE", queue_chips);
+        // Filled from the real queue repo; a loading caption stands in until it lands.
+        let queue_control: AnyElement = if form.queues.is_empty() {
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.text_faint)
+                .child("Loading queues…")
+                .into_any_element()
+        } else {
+            let mut queue_chips = div()
+                .flex()
+                .flex_wrap()
+                .gap(spacing(Spacing::Xxs, Density::Cozy));
+            for (i, (_, name)) in form.queues.iter().enumerate() {
+                queue_chips = queue_chips.child(
+                    chip(
+                        name.clone(),
+                        ChipGlyph::Dot(palette.brand),
+                        form.selected_queue == i,
+                        palette,
+                    )
+                    .on_click(
+                        SharedString::from(format!("actions-queue-{i}")),
+                        cx.listener(move |this, _: &ClickEvent, _, cx| this.select_queue(i, cx)),
+                    ),
+                );
+            }
+            queue_chips.into_any_element()
+        };
+        let queue_section = modal_section(palette, "QUEUE", queue_control);
 
         let two_col = div()
             .flex()

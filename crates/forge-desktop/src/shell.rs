@@ -265,7 +265,13 @@ impl AppShell {
                 cx.new(|cx| ServerConsoleView::new(server, rt_handle, credentials, cx))
                     .into()
             }
-            Screen::Actions => cx.new(ScreenActionsView::new).into(),
+            Screen::Actions => {
+                let action_repo = handles.backend.action_repo();
+                let queue_repo = handles.backend.queue_repo();
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| ScreenActionsView::new(action_repo, queue_repo, rt_handle, cx))
+                    .into()
+            }
             Screen::Triggers => cx.new(TriggersRegistryView::new).into(),
             Screen::Scripts => {
                 let editor = cx.new(ScriptEditorView::new);

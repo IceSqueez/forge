@@ -3,15 +3,20 @@
 //! The list pane, editor pane and branch drill-in live in the sibling submodules.
 
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 use forge_components::{
-    ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, icon, overlay,
+    ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, ToastKind, icon, overlay,
     search_input,
 };
+use forge_storage::{ActionRepo, QueueRepo};
+use forge_types::{Action, ActionId, QueueId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::future::Future;
+use std::sync::Arc;
 
 mod branch;
 mod editor;
@@ -103,12 +108,6 @@ const BRANCH_GLYPH: Pixels = px(11.0);
 /// Single-value switch-case match input width (fixed 160px in the source).
 const CASE_MATCH_W: Pixels = px(160.0);
 
-/// Local id for a seeded action. `forge-desktop` wires no actions repo yet, so the
-/// tree is seeded in-memory and ids are minted from a per-view counter rather than
-/// the runtime's persistent `ActionId`.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct ActionId(u64);
-
 /// The category a group filters under. `Other` shows only under the `All` filter —
 /// matching the design's `groupTypeMap` (chat / timers / points, everything else
 /// unmapped).
@@ -129,8 +128,9 @@ enum ActionsFilter {
     Points,
 }
 
-/// A cached action summary — the tree row's payload. The real screen reads these
-/// from the actions repo over the runtime→UI bridge; here they are seeded.
+/// A cached action summary — the tree row's payload, folded from a persisted
+/// [`Action`] on each `list` pull. The storage provider is the source of truth; the
+/// roster reconciles by a full re-pull after every write, never a local patch.
 struct ActionSummary {
     id: ActionId,
     name: String,
@@ -161,7 +161,11 @@ struct AddActionForm {
     name: Entity<TextInput>,
     group: Entity<TextInput>,
     description: Entity<TextArea>,
-    queue_options: Vec<SharedString>,
+    /// The real queues an action can be filed under, `(id, name)` pairs pulled off the
+    /// queue repo when the modal opens. Empty until that pull lands (the QUEUE section
+    /// shows a loading caption and Create stays disabled meanwhile) — a new action must
+    /// carry a real [`QueueId`], never a fabricated one.
+    queues: Vec<(QueueId, SharedString)>,
     selected_queue: usize,
     enabled: bool,
     concurrent: bool,
@@ -176,13 +180,21 @@ struct AddActionForm {
 /// and a New-action button), a fixed-width collapsible action tree on the left, and
 /// the action editor pane on the right.
 ///
-/// Owns its tree, selection and interaction state as seeded stub state — the real
-/// screen loads the tree from the actions repo over the runtime→UI bridge and drives
-/// every mutation through the runtime handle. Here the CRUD (rename / duplicate /
-/// enable / delete / add) mutates this cached state locally. The right pane renders
-/// the empty "no action selected" placeholder for every selection state; the real
-/// editor (telemetry, trigger links, sub-action chain) lands in a follow-up slice.
+/// Owns its tree, selection and interaction state. The roster is a cached read
+/// folded from [`ActionRepo::list`]: every CRUD op (create / rename / duplicate /
+/// enable / delete) writes through the repo then reconciles by a full re-pull, so the
+/// tree always holds real persisted [`ActionId`]s, never a view-minted placeholder.
+/// The right editor pane is still the seeded prototype — the real detail (real
+/// sub-action chain + linked trigger instances) lands in a follow-up slice; `select`
+/// keeps building that seeded `ActionDetail` from the real summary so the screen stays
+/// runnable.
 pub struct ScreenActionsView {
+    action_repo: Arc<dyn ActionRepo>,
+    queue_repo: Arc<dyn QueueRepo>,
+    rt_handle: tokio::runtime::Handle,
+    /// True until the first `list` pull lands, so the tree shows a loading caption
+    /// rather than the empty-roster caption before any row arrives.
+    loading: bool,
     groups: Vec<ActionGroup>,
     filter: ActionsFilter,
     search: String,
@@ -208,26 +220,26 @@ pub struct ScreenActionsView {
     /// case's single-value match owns its own edit state (mirrors every other
     /// inline field in the screen). Multi-value imported matches carry no input.
     case_fields: BTreeMap<(usize, usize), CaseField>,
-    next_id: u64,
     _search_sub: Subscription,
 }
 
 impl ScreenActionsView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        action_repo: Arc<dyn ActionRepo>,
+        queue_repo: Arc<dyn QueueRepo>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
         let search_field = cx.new(|cx| search_input("Search actions...", palette, cx));
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
 
-        let mut next_id = 0u64;
-        let mut mint = || {
-            let id = ActionId(next_id);
-            next_id += 1;
-            id
-        };
-        let groups = seed_groups(&mut mint);
-
-        Self {
-            groups,
+        let view = Self {
+            action_repo,
+            queue_repo,
+            rt_handle,
+            loading: true,
+            groups: Vec::new(),
             filter: ActionsFilter::All,
             search: String::new(),
             search_field,
@@ -244,15 +256,107 @@ impl ScreenActionsView {
             pending_trigger_unlink: None,
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
-            next_id,
             _search_sub: search_sub,
-        }
+        };
+        view.reload(cx);
+        view
     }
 
-    fn mint_id(&mut self) -> ActionId {
-        let id = ActionId(self.next_id);
-        self.next_id += 1;
-        id
+    // --- async pull + reconcile -------------------------------------------
+
+    /// Pulls the full roster off the storage provider and reconciles the cached tree
+    /// with it. Every create/rename/enable/duplicate/archive routes back here for a
+    /// full re-pull rather than patching a row locally, so the tree always mirrors the
+    /// persisted actions.
+    fn reload(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.action_repo);
+        self.spawn_reload(
+            async move { repo.list().await.map_err(|e| e.to_string()) },
+            cx,
+        );
+    }
+
+    /// Spawns `work` (a repo verb that ends by returning the fresh `list`) on the tokio
+    /// runtime, then folds the result back on the foreground executor: the new roster
+    /// on success, a PII-safe error toast on failure. A released view makes the apply a
+    /// no-op.
+    fn spawn_reload(
+        &self,
+        work: impl Future<Output = Result<Vec<Action>, String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        Self::reload_entity(cx.entity(), self.rt_handle.clone(), work, cx);
+    }
+
+    /// The context-free reload path: usable both from a screen handler and from a toast
+    /// action closure (which only has an [`App`] and the view handle). Hops the tokio
+    /// runtime for `work`, then applies the outcome to `view`.
+    fn reload_entity(
+        view: Entity<ScreenActionsView>,
+        rt_handle: tokio::runtime::Handle,
+        work: impl Future<Output = Result<Vec<Action>, String>> + Send + 'static,
+        app: &mut App,
+    ) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        rt_handle.spawn(async move {
+            let _ = tx.send(work.await);
+        });
+        app.spawn(async move |cx| match rx.await {
+            Ok(Ok(actions)) => {
+                let _ = view.update(cx, |this, cx| this.apply_actions(actions, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = view.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Reconciles the cached tree with a freshly pulled roster: rebuilds the groups,
+    /// carries over each group's collapse state by name, and keeps the current
+    /// selection in sync (refreshing the seeded detail's name/enabled, or clearing it
+    /// when the selected action no longer exists).
+    fn apply_actions(&mut self, actions: Vec<Action>, cx: &mut Context<Self>) {
+        let collapsed: HashSet<SharedString> = self
+            .groups
+            .iter()
+            .filter(|g| g.collapsed)
+            .map(|g| g.name.clone())
+            .collect();
+        let mut groups = group_actions(actions);
+        for group in &mut groups {
+            if collapsed.contains(&group.name) {
+                group.collapsed = true;
+            }
+        }
+        self.groups = groups;
+
+        if let Some(selected) = self.selected {
+            match self.find(selected).map(|s| (s.name.clone(), s.enabled)) {
+                Some((name, enabled)) => {
+                    if let Some(detail) = self.detail.as_mut() {
+                        detail.name = name;
+                        detail.enabled = enabled;
+                    }
+                }
+                None => {
+                    self.selected = None;
+                    self.detail = None;
+                    self.nav_path.clear();
+                    self.case_fields.clear();
+                }
+            }
+        }
+        self.loading = false;
+        cx.notify();
+    }
+
+    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
+        eprintln!("forge-desktop: actions operation failed: {message}");
+        self.loading = false;
+        cx.push_toast(ToastKind::Error, format!("Actions: {message}"));
+        cx.notify();
     }
 }
 
@@ -311,55 +415,56 @@ impl Render for ScreenActionsView {
     }
 }
 
-// ── seeded stub state ─────────────────────────────────────────────────────
+// ── roster grouping ────────────────────────────────────────────────────────
 
-/// The representative action tree the screen seeds before an actions repo is wired,
-/// mirroring the design's sample groups so every filter tab, both enabled states, the
-/// collapsed-group affordance and the count/menu right slot render populated.
-fn seed_groups(mint: &mut impl FnMut() -> ActionId) -> Vec<ActionGroup> {
-    let mut action = |name: &str, enabled: bool, sub: usize| ActionSummary {
-        id: mint(),
-        name: name.to_owned(),
-        enabled,
-        sub_action_count: sub,
-    };
-    vec![
-        ActionGroup {
-            name: "CHAT COMMANDS".into(),
-            category: ActionCategory::Chat,
-            collapsed: false,
-            actions: vec![
-                action("!so", true, 7),
-                action("!quote", true, 5),
-                action("!followage", true, 3),
-                action("!stats", false, 5),
-                action("!commands", true, 1),
-                action("!uptime", true, 2),
-                action("!discord", true, 1),
-            ],
-        },
-        ActionGroup {
-            name: "TIMERS".into(),
-            category: ActionCategory::Timers,
-            collapsed: false,
-            actions: vec![
-                action("SocialReminder", true, 2),
-                action("HydrateCheck", true, 1),
-                action("GoalProgress", true, 3),
-            ],
-        },
-        ActionGroup {
-            name: "CHANNEL POINTS".into(),
-            category: ActionCategory::Points,
-            collapsed: true,
-            actions: vec![
-                action("TTS Boost", true, 2),
-                action("Hydrate Me", true, 1),
-                action("PauseTimer", true, 3),
-                action("BangerMode", true, 5),
-            ],
-        },
-    ]
+/// Folds a persisted roster into the sidebar tree: buckets each action by its
+/// (uppercased) group name — an unnamed action falls under `UNGROUPED` — sorts the
+/// groups by name and each group's rows by name, and classifies each group into a
+/// filter category by name. Group ordering is the `BTreeMap` name order, so the tree
+/// is stable across re-pulls.
+fn group_actions(actions: Vec<Action>) -> Vec<ActionGroup> {
+    let mut by_name: BTreeMap<String, Vec<ActionSummary>> = BTreeMap::new();
+    for action in actions {
+        let group_name = action
+            .group
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_uppercase)
+            .unwrap_or_else(|| "UNGROUPED".to_owned());
+        let summary = ActionSummary {
+            id: action.id,
+            name: action.name,
+            enabled: action.enabled,
+            sub_action_count: action.sub_actions.len(),
+        };
+        by_name.entry(group_name).or_default().push(summary);
+    }
+    by_name
+        .into_iter()
+        .map(|(name, mut actions)| {
+            actions.sort_by_key(|a| a.name.to_lowercase());
+            let category = category_from_group_name(&name);
+            ActionGroup {
+                name: name.into(),
+                category,
+                collapsed: false,
+                actions,
+            }
+        })
+        .collect()
+}
+
+/// Classifies an (uppercased) group name into a filter category, mirroring the
+/// design's fixed `groupTypeMap` — every other name (including `UNGROUPED`) is `Other`
+/// and so shows only under the `All` filter.
+fn category_from_group_name(name: &str) -> ActionCategory {
+    match name {
+        "CHAT COMMANDS" => ActionCategory::Chat,
+        "TIMERS" => ActionCategory::Timers,
+        "CHANNEL POINTS" => ActionCategory::Points,
+        _ => ActionCategory::Other,
+    }
 }
 
 // ── editor stub state ──────────────────────────────────────────────────────

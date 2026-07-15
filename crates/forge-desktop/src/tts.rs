@@ -113,7 +113,7 @@ impl TtsView {
     ) -> Self {
         let dashboard =
             cx.new(|cx| TtsDashboardView::new(speak_state, speak.clone(), rt_handle.clone(), cx));
-        let engines = cx.new(TtsEnginesView::new);
+        let engines = cx.new(|cx| TtsEnginesView::new(tts_registry.clone(), rt_handle.clone(), cx));
         let filters = cx.new(|cx| {
             TtsFiltersView::new(
                 backend.tts_filters_repo(),

@@ -1,8 +1,11 @@
+use std::sync::{Arc, RwLock};
+
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
     InputEvent, Radius, Spacing, TextInput, card, radius, search_input, slider, spacing,
     status_dot,
 };
+use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, Subscription, Window, div,
     prelude::*, px,
@@ -24,74 +27,111 @@ const PARAM_VALUE_W: Pixels = px(42.0);
 /// Engine health-dot diameter (the source's fixed 7px dot).
 const STATUS_DOT: Pixels = px(7.0);
 
-/// One available voice of the selected engine. A cached view-model of a registered
-/// voice; the live roster is fetched from the engine over the runtime→UI bridge,
-/// never owned here.
 struct VoiceRow {
-    display_name: &'static str,
-    locale: &'static str,
-    /// `neural` or `standard`, mirroring the engine's neural-voice flag.
+    display_name: String,
+    locale: String,
     quality: &'static str,
-    /// `M`, `F` or `N`, mirroring the engine's declared voice gender.
     gender: &'static str,
 }
 
-/// One configured TTS engine. `kind` is `cloud`, `local` or `system` and drives the
-/// health-dot hue; `is_default` marks the engine new utterances fall back to.
 struct EngineEntry {
-    name: &'static str,
+    id: String,
+    name: String,
     kind: &'static str,
     is_default: bool,
     voices: Vec<VoiceRow>,
 }
 
-/// The TTS Engines section view-entity: a configured-engine rail on the left and, for
-/// the selected engine, a detail pane stacking an identity header, a credentials
-/// notice, the default voice parameters and the searchable voices grid.
-///
-/// Owns its engine roster as seeded stub state — `forge-desktop` wires no TTS
-/// registry yet, so the engines and their voices are seeded representative. The real
-/// screen reads the registered engine roster and each engine's live voice list
-/// through the TTS pipeline's engine registry over the runtime→UI bridge (the engine
-/// factory's async `list_voices`), and selecting an engine dispatches that fetch; the
-/// default voice parameters are the engine's persisted defaults. Here selection is a
-/// view-state index and the parameters are a static read-only display, matching the
-/// parity source (which exposes no parameter-edit control).
 pub struct TtsEnginesView {
+    registry: Option<Arc<RwLock<TtsRegistry>>>,
+    rt_handle: tokio::runtime::Handle,
     engines: Vec<EngineEntry>,
-    /// Index into `engines` of the engine whose detail pane is shown. Guarded against
-    /// an empty roster at render, so it never dangles.
-    selected: usize,
+    selected: Option<usize>,
+    voices_loading: bool,
     voice_search: Entity<TextInput>,
     _voice_search_sub: Subscription,
 }
 
 impl TtsEnginesView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        registry: Option<Arc<RwLock<TtsRegistry>>>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
         let voice_search = cx.new(|cx| search_input("Filter voices…", palette, cx));
         let voice_search_sub =
             cx.subscribe(&voice_search, |_this, _input, event: &InputEvent, cx| {
-                // The filter reads the field's live content at render; a keystroke just
-                // needs to trigger a repaint. Submit/cancel carry no extra behaviour.
                 if let InputEvent::Changed(_) = event {
                     cx.notify();
                 }
             });
 
         Self {
-            engines: seed_engines(),
-            selected: 0,
+            engines: load_roster(registry.as_ref()),
+            registry,
+            rt_handle,
+            selected: None,
+            voices_loading: false,
             voice_search,
             _voice_search_sub: voice_search_sub,
         }
     }
 
-    /// Selects the engine at `index`, swapping the detail pane to it. Real path: this
-    /// dispatches the engine's async voice-list fetch through the registry handle; the
-    /// bridge lands the loaded voices back on this view.
     fn select_engine(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.selected = index;
+        self.selected = Some(index);
+        if let Some(engine) = self.engines.get_mut(index) {
+            engine.voices.clear();
+        }
+        let Some(registry) = self.registry.clone() else {
+            self.voices_loading = false;
+            cx.notify();
+            return;
+        };
+        let Some(engine_id) = self.engines.get(index).map(|e| EngineId(e.id.clone())) else {
+            cx.notify();
+            return;
+        };
+        self.voices_loading = true;
+        cx.notify();
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(fetch_engine_voices(registry, engine_id).await);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.on_voices_loaded(index, result, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn on_voices_loaded(
+        &mut self,
+        index: usize,
+        result: Result<Vec<VoiceRow>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected != Some(index) {
+            return;
+        }
+        self.voices_loading = false;
+        match result {
+            Ok(voices) => {
+                if let Some(engine) = self.engines.get_mut(index) {
+                    engine.voices = voices;
+                }
+            }
+            Err(err) => {
+                let engine = self
+                    .engines
+                    .get(index)
+                    .map(|e| e.name.as_str())
+                    .unwrap_or("");
+                tracing::warn!(error = %err, engine, "failed to list engine voices");
+            }
+        }
         cx.notify();
     }
 
@@ -146,7 +186,7 @@ impl TtsEnginesView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let selected = self.selected == index;
+        let selected = self.selected == Some(index);
         let (border_color, border_w) = if selected {
             (palette.brand, px(1.0))
         } else {
@@ -163,7 +203,7 @@ impl TtsEnginesView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(engine.name),
+                    .child(engine.name.clone()),
             )
             .child(status_dot(
                 engine_status_color(engine.kind, palette),
@@ -203,7 +243,7 @@ impl TtsEnginesView {
         density: Density,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let inner: AnyElement = match self.engines.get(self.selected) {
+        let inner: AnyElement = match self.selected.and_then(|i| self.engines.get(i)) {
             Some(engine) => self.engine_detail(engine, palette, density, cx),
             None => div()
                 .size_full()
@@ -275,7 +315,7 @@ impl TtsEnginesView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(engine.name),
+                    .child(engine.name.clone()),
             );
         if engine.is_default {
             title_row = title_row.child(default_badge(palette, density));
@@ -348,29 +388,38 @@ impl TtsEnginesView {
             )
             .child(div().w(VOICE_SEARCH_W).child(self.voice_search.clone()));
 
-        let visible: Vec<&VoiceRow> = engine
-            .voices
-            .iter()
-            .filter(|v| voice_matches(v.display_name, search))
-            .collect();
-
-        let body: AnyElement = if visible.is_empty() {
+        let body: AnyElement = if self.voices_loading {
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("No voices found")
+                .child("Loading voices…")
                 .into_any_element()
         } else {
-            let mut grid = div()
-                .w_full()
-                .flex()
-                .flex_wrap()
-                .gap(spacing(Spacing::Xs, density));
-            for voice in visible {
-                grid = grid.child(voice_cell(voice, palette, density));
+            let visible: Vec<&VoiceRow> = engine
+                .voices
+                .iter()
+                .filter(|v| voice_matches(&v.display_name, search))
+                .collect();
+
+            if visible.is_empty() {
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_muted)
+                    .child("No voices found")
+                    .into_any_element()
+            } else {
+                let mut grid = div()
+                    .w_full()
+                    .flex()
+                    .flex_wrap()
+                    .gap(spacing(Spacing::Xs, density));
+                for voice in visible {
+                    grid = grid.child(voice_cell(voice, palette, density));
+                }
+                grid.into_any_element()
             }
-            grid.into_any_element()
         };
 
         div()
@@ -567,7 +616,7 @@ fn voice_cell(voice: &VoiceRow, palette: &ForgePalette, density: Density) -> imp
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
-                .child(voice.display_name),
+                .child(voice.display_name.clone()),
         )
         .child(
             div()
@@ -617,137 +666,78 @@ fn voice_matches(display_name: &str, search: &str) -> bool {
             .contains(&search.to_ascii_lowercase())
 }
 
-// ── seeded stub state ─────────────────────────────────────────────────────
+fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> {
+    let Some(registry) = registry else {
+        return Vec::new();
+    };
+    let ids = registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .engine_ids();
+    ids.into_iter()
+        .enumerate()
+        .map(|(index, id)| EngineEntry {
+            kind: engine_kind(&id.0),
+            name: engine_label(&id.0),
+            is_default: index == 0,
+            voices: Vec::new(),
+            id: id.0,
+        })
+        .collect()
+}
 
-/// The representative engine roster the section seeds before a TTS registry is
-/// wired: a mix of cloud, local and system engines so every health hue and the
-/// default marker render, each carrying its own representative voice list.
-fn seed_engines() -> Vec<EngineEntry> {
-    vec![
-        EngineEntry {
-            name: "Amazon Polly",
-            kind: "cloud",
-            is_default: true,
-            voices: vec![
-                VoiceRow {
-                    display_name: "Olena",
-                    locale: "uk-UA",
-                    quality: "neural",
-                    gender: "F",
-                },
-                VoiceRow {
-                    display_name: "Maksym",
-                    locale: "uk-UA",
-                    quality: "neural",
-                    gender: "M",
-                },
-                VoiceRow {
-                    display_name: "Tatiana",
-                    locale: "ru-RU",
-                    quality: "neural",
-                    gender: "F",
-                },
-                VoiceRow {
-                    display_name: "Mathieu",
-                    locale: "fr-FR",
-                    quality: "neural",
-                    gender: "M",
-                },
-                VoiceRow {
-                    display_name: "Joanna",
-                    locale: "en-US",
-                    quality: "neural",
-                    gender: "F",
-                },
-                VoiceRow {
-                    display_name: "Matthew",
-                    locale: "en-US",
-                    quality: "standard",
-                    gender: "M",
-                },
-            ],
+async fn fetch_engine_voices(
+    registry: Arc<RwLock<TtsRegistry>>,
+    engine_id: EngineId,
+) -> Result<Vec<VoiceRow>, String> {
+    let factory = registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&engine_id);
+    let Some(factory) = factory else {
+        return Err(format!("engine {} is not registered", engine_id.0));
+    };
+    let engine = factory.create().map_err(|e| e.to_string())?;
+    let voices = engine.list_voices().await.map_err(|e| e.to_string())?;
+    Ok(voices.into_iter().map(voice_row_from).collect())
+}
+
+fn voice_row_from(voice: TtsVoice) -> VoiceRow {
+    VoiceRow {
+        display_name: voice.name,
+        locale: voice.locale,
+        quality: if voice.is_neural {
+            "neural"
+        } else {
+            "standard"
         },
-        EngineEntry {
-            name: "ElevenLabs",
-            kind: "cloud",
-            is_default: false,
-            voices: vec![
-                VoiceRow {
-                    display_name: "Rachel",
-                    locale: "en-US",
-                    quality: "neural",
-                    gender: "F",
-                },
-                VoiceRow {
-                    display_name: "Antoni",
-                    locale: "en-US",
-                    quality: "neural",
-                    gender: "M",
-                },
-                VoiceRow {
-                    display_name: "Bella",
-                    locale: "en-US",
-                    quality: "neural",
-                    gender: "F",
-                },
-            ],
+        gender: match voice.gender {
+            VoiceGender::Male => "M",
+            VoiceGender::Female => "F",
+            VoiceGender::Neutral => "N",
         },
-        EngineEntry {
-            name: "Piper",
-            kind: "local",
-            is_default: false,
-            voices: vec![
-                VoiceRow {
-                    display_name: "UA-1",
-                    locale: "uk-UA",
-                    quality: "standard",
-                    gender: "N",
-                },
-                VoiceRow {
-                    display_name: "EN-US-1",
-                    locale: "en-US",
-                    quality: "standard",
-                    gender: "M",
-                },
-            ],
-        },
-        EngineEntry {
-            name: "eSpeak-NG",
-            kind: "local",
-            is_default: false,
-            voices: vec![
-                VoiceRow {
-                    display_name: "uk",
-                    locale: "uk-UA",
-                    quality: "standard",
-                    gender: "N",
-                },
-                VoiceRow {
-                    display_name: "en",
-                    locale: "en-US",
-                    quality: "standard",
-                    gender: "N",
-                },
-            ],
-        },
-        EngineEntry {
-            name: "Microsoft SAPI 5",
-            kind: "system",
-            is_default: false,
-            voices: vec![
-                VoiceRow {
-                    display_name: "David",
-                    locale: "en-US",
-                    quality: "standard",
-                    gender: "M",
-                },
-                VoiceRow {
-                    display_name: "Zira",
-                    locale: "en-US",
-                    quality: "standard",
-                    gender: "F",
-                },
-            ],
-        },
-    ]
+    }
+}
+
+fn engine_label(id: &str) -> String {
+    match id {
+        "piper" => "Piper",
+        "espeak-ng" => "eSpeak-NG",
+        "sapi" => "Microsoft SAPI 5",
+        "nsspeech" => "Apple AVSpeech",
+        "azure" => "Azure Speech",
+        "elevenlabs" => "ElevenLabs",
+        "openai" => "OpenAI TTS",
+        "polly" => "Amazon Polly",
+        other => return other.to_owned(),
+    }
+    .to_owned()
+}
+
+fn engine_kind(id: &str) -> &'static str {
+    match id {
+        "piper" | "espeak-ng" => "local",
+        "sapi" | "nsspeech" => "system",
+        _ => "cloud",
+    }
 }

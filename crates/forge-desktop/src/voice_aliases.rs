@@ -1,9 +1,15 @@
+use std::future::Future;
+use std::sync::Arc;
+
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge, card,
     confirm_modal, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
     search_input, secondary_button, spacing, toggle, with_alpha,
 };
+use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_storage::{AliasId, AssignmentStrategy, VoiceAlias, VoiceAliasRepo};
+use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px, relative,
@@ -29,9 +35,8 @@ const ROLE_BADGE_FS: Pixels = px(8.5);
 const ENGINE_GLYPH: Pixels = px(12.0);
 /// Row action glyph size (preview / edit / delete), matching the source's 13-14px.
 const ACTION_GLYPH: Pixels = px(14.0);
-/// Total manual aliases the section reports; the seeded rows are a live-loaded slice
-/// of this larger set, surfaced in the footer count until a real store reaches here.
-const TOTAL_ALIASES: usize = 18;
+/// Utterance a row's preview button enqueues to demonstrate the resolved voice.
+const PREVIEW_TEXT: &str = "This is a voice preview.";
 
 /// Column grow weights reproducing the source's `1.4fr 1.6fr 0.8fr 0.8fr` table grid;
 /// the trailing actions column is a fixed [`ACTIONS_W`].
@@ -40,9 +45,9 @@ const VOICE_GROW: f32 = 1.6;
 const PITCH_GROW: f32 = 0.8;
 const SPEED_GROW: f32 = 0.8;
 
-/// How a voice is chosen for viewers without a manual alias. Mirrors the domain's
-/// assignment strategy; here it is a view-state choice, persisted and hot-reloaded
-/// into the speak queue over the runtime handle once wired.
+/// How a voice is chosen for viewers without a manual alias, as the segmented banner's
+/// selection. Persisted to the alias store and hot-reloaded into the live speak queue
+/// over the queue handle when the banner changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StrategyChoice {
     DeterministicByName,
@@ -83,42 +88,17 @@ enum EngineKind {
     Cloud,
 }
 
-/// A moderator/VIP/subscriber marker shown as a coloured badge beside the viewer.
-#[derive(Debug, Clone, Copy)]
-enum Role {
-    Mod,
-    Vip,
-    Sub,
-}
-
-impl Role {
-    fn label(self) -> &'static str {
-        match self {
-            Role::Mod => "MOD",
-            Role::Vip => "VIP",
-            Role::Sub => "SUB",
-        }
-    }
-
-    fn color(self, palette: &ForgePalette) -> Rgba {
-        match self {
-            Role::Mod => palette.warning,
-            Role::Vip => palette.brand,
-            Role::Sub => palette.success,
-        }
-    }
-}
-
-/// One manual voice alias. A cached view-model of a stored alias; the live set is
-/// read from `forge-voice`'s alias store over the runtime→UI bridge, never owned
-/// here. `blocked` viewers are never spoken, so their voice fields are inapplicable.
+/// One manual voice alias, a presentation row folded from a stored [`VoiceAlias`].
+/// `blocked` viewers are never spoken, so their voice fields are inapplicable.
 struct AliasRow {
+    id: AliasId,
+    viewer_id: String,
     viewer_name: String,
-    role: Option<Role>,
     kind: EngineKind,
-    engine_id: &'static str,
-    engine_label: &'static str,
-    voice_label: &'static str,
+    engine_id: String,
+    engine_label: String,
+    voice_id: String,
+    voice_label: String,
     pitch_semitones: Option<f32>,
     rate_multiplier: Option<f32>,
     blocked: bool,
@@ -129,43 +109,41 @@ struct AliasRow {
 struct EngineOption {
     id: &'static str,
     label: &'static str,
-    kind: EngineKind,
 }
 
 const ENGINE_OPTIONS: [EngineOption; 4] = [
     EngineOption {
         id: "piper",
         label: "Piper",
-        kind: EngineKind::Local,
     },
     EngineOption {
         id: "espeak-ng",
         label: "eSpeak-NG",
-        kind: EngineKind::Local,
     },
     EngineOption {
         id: "polly",
         label: "Amazon Polly",
-        kind: EngineKind::Cloud,
     },
     EngineOption {
         id: "elevenlabs",
         label: "ElevenLabs",
-        kind: EngineKind::Cloud,
     },
 ];
 
-/// The open assign/edit dialog. `editing` is the index of the row being edited (or
+/// The open assign/edit dialog. `editing` is the id of the alias being edited (or
 /// `None` for a fresh assign). The text fields are child [`TextInput`] entities so
 /// they own their own edit state; `engine` is the selected engine id.
 struct AliasForm {
-    editing: Option<usize>,
+    editing: Option<AliasId>,
     viewer: Entity<TextInput>,
     voice: Entity<TextInput>,
     pitch: Entity<TextInput>,
     rate: Entity<TextInput>,
     engine: Option<String>,
     blocked: bool,
+    /// True while an upsert write is in flight; the modal stays open with Save
+    /// disabled until the write resolves and either closes it or clears the flag.
+    saving: bool,
     _subs: Vec<Subscription>,
 }
 
@@ -173,14 +151,20 @@ struct AliasForm {
 /// assign toolbar, and a viewer→voice alias table with per-row preview / edit /
 /// delete, plus the assign/edit modal and a delete-confirm overlay.
 ///
-/// Owns its alias roster and strategy as seeded stub state — `forge-desktop` wires no
-/// alias store yet, so the rows and the chosen strategy are seeded representative and
-/// the CRUD handlers mutate this cached state. The real screen loads the roster and
-/// strategy from `forge-voice`'s alias store over the runtime→UI bridge; assign/edit
-/// upserts and delete removes through that store's handle (and hot-reloads the live
-/// speak queue via `SpeakCommand::{SetAlias, RemoveAlias, SetStrategy}`); per-row
-/// preview enqueues a `SpeakRequest` through the speak-queue dispatch handle.
+/// The roster and the chosen strategy are pulled from the alias store on mount and
+/// after every write (write-through then full re-pull, never a local row patch).
+/// Assign/edit upserts and delete removes through the store's repo, hot-reloading the
+/// live speak queue via `SpeakCommand::{SetAlias, RemoveAlias, SetStrategy}`; per-row
+/// preview enqueues a `SpeakRequest` through the same queue handle.
 pub struct VoiceAliasesView {
+    repo: Arc<dyn VoiceAliasRepo>,
+    /// The live speak-queue handle; `None` only if queue construction failed, in which
+    /// case hot-reload and preview are skipped (persistence still happens).
+    speak: Option<SpeakQueueHandle>,
+    rt_handle: tokio::runtime::Handle,
+    /// True until the first pull lands, so the table shows a loading caption rather
+    /// than the empty caption before any row arrives.
+    loading: bool,
     strategy: StrategyChoice,
     aliases: Vec<AliasRow>,
     total_count: usize,
@@ -193,7 +177,12 @@ pub struct VoiceAliasesView {
 }
 
 impl VoiceAliasesView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        repo: Arc<dyn VoiceAliasRepo>,
+        speak: Option<SpeakQueueHandle>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
         let search = cx.new(|cx| search_input("Search viewers…", palette, cx));
         let search_sub = cx.subscribe(&search, |_this, _input, event: &InputEvent, cx| {
@@ -204,24 +193,146 @@ impl VoiceAliasesView {
             }
         });
 
-        Self {
+        let view = Self {
+            repo,
+            speak,
+            rt_handle,
+            loading: true,
             strategy: StrategyChoice::DeterministicByName,
-            aliases: seed_aliases(),
-            total_count: TOTAL_ALIASES,
+            aliases: Vec::new(),
+            total_count: 0,
             search,
             form: None,
             pending_delete: None,
             _search_sub: search_sub,
-        }
+        };
+        view.reload(cx);
+        view
     }
 
-    // --- handlers (view-state stubs) --------------------------------------
+    // --- async pull + reconcile -------------------------------------------
 
-    /// Sets the default assignment strategy. Real path: persist through the alias
-    /// store and hot-reload the speak queue with `SpeakCommand::SetStrategy`.
+    /// Pulls the full alias set and the assignment strategy off the store and
+    /// reconciles the cached roster. Runs on mount; writes re-pull the roster alone.
+    fn reload(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<
+            Result<(Vec<VoiceAlias>, AssignmentStrategy), String>,
+        >();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                let aliases = repo.list().await.map_err(|e| e.to_string())?;
+                let strategy = repo.get_strategy().await.map_err(|e| e.to_string())?;
+                Ok((aliases, strategy))
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok((aliases, strategy))) => {
+                let _ = this.update(cx, |this, cx| this.apply_loaded(aliases, strategy, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Spawns `work` (a repo verb that ends by returning the fresh `list`) on the
+    /// tokio runtime, then folds the resulting roster back on the foreground executor.
+    fn spawn_write(
+        &self,
+        work: impl Future<Output = Result<Vec<VoiceAlias>, String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(work.await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(aliases)) => {
+                let _ = this.update(cx, |this, cx| this.apply_aliases(aliases, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn apply_loaded(
+        &mut self,
+        aliases: Vec<VoiceAlias>,
+        strategy: AssignmentStrategy,
+        cx: &mut Context<Self>,
+    ) {
+        self.strategy = choice_from_strategy(&strategy);
+        self.set_roster(aliases);
+        cx.notify();
+    }
+
+    fn apply_aliases(&mut self, aliases: Vec<VoiceAlias>, cx: &mut Context<Self>) {
+        self.set_roster(aliases);
+        cx.notify();
+    }
+
+    fn set_roster(&mut self, aliases: Vec<VoiceAlias>) {
+        self.total_count = aliases.len();
+        self.aliases = aliases.into_iter().map(row_from_alias).collect();
+        self.loading = false;
+    }
+
+    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
+        eprintln!("forge-desktop: voice aliases operation failed: {message}");
+        self.loading = false;
+        cx.notify();
+    }
+
+    // --- handlers ---------------------------------------------------------
+
+    /// Persists the assignment strategy and hot-reloads the live speak queue. A
+    /// `SingleVoice` pick binds to the first catalog voice; with no engine running the
+    /// catalog is empty, so the change is skipped. Persist and hot-reload both run even
+    /// if the other errors; a missing queue handle skips only the hot-reload.
     fn set_strategy(&mut self, choice: StrategyChoice, cx: &mut Context<Self>) {
         self.strategy = choice;
         cx.notify();
+        let Some(strategy) = self.strategy_to_assignment(choice) else {
+            return;
+        };
+        let repo = Arc::clone(&self.repo);
+        let speak = self.speak.clone();
+        self.rt_handle.spawn(async move {
+            if let Err(e) = repo.set_strategy(&strategy).await {
+                eprintln!("forge-desktop: voice strategy persist failed: {e}");
+            }
+            if let Some(handle) = speak
+                && let Err(e) = handle.send(SpeakCommand::SetStrategy(strategy)).await
+            {
+                eprintln!("forge-desktop: voice strategy hot-reload failed: {e}");
+            }
+        });
+    }
+
+    /// Resolves the banner choice to a domain strategy. `SingleVoice` needs a concrete
+    /// voice; absent a dedicated picker it binds to the first live catalog voice, so it
+    /// yields `None` when no engine is running.
+    fn strategy_to_assignment(&self, choice: StrategyChoice) -> Option<AssignmentStrategy> {
+        match choice {
+            StrategyChoice::DeterministicByName => Some(AssignmentStrategy::DeterministicByName),
+            StrategyChoice::Random => Some(AssignmentStrategy::Random),
+            StrategyChoice::SingleVoice => {
+                let voices = self.speak.as_ref()?.available_voices();
+                let first = voices.first()?;
+                Some(AssignmentStrategy::Single {
+                    voice_id: first.id.clone(),
+                    engine_id: first.engine_id.clone(),
+                })
+            }
+        }
     }
 
     /// Opens an empty assign form and focuses the viewer field.
@@ -238,14 +349,15 @@ impl VoiceAliasesView {
         let Some(row) = self.aliases.get(index) else {
             return;
         };
+        let id = row.id.clone();
         let viewer = row.viewer_name.clone();
-        let engine = (!row.blocked).then(|| row.engine_id.to_owned());
-        let voice = row.voice_label.to_owned();
+        let engine = (!row.blocked).then(|| row.engine_id.clone());
+        let voice = row.voice_id.clone();
         let pitch = fmt_field(row.pitch_semitones);
         let rate = fmt_field(row.rate_multiplier);
         let blocked = row.blocked;
         let form = self.build_form(
-            Some(index),
+            Some(id),
             &viewer,
             engine,
             &voice,
@@ -278,61 +390,93 @@ impl VoiceAliasesView {
         cx.notify();
     }
 
-    /// Commits the open form into the cached roster: edit replaces the target row,
-    /// assign appends a new one. A blank viewer keeps the form open. Real path: upsert
-    /// through the alias store and hot-reload the speak queue with
-    /// `SpeakCommand::SetAlias`.
+    /// Upserts the open form through the alias store, hot-reloads the live speak queue
+    /// with `SpeakCommand::SetAlias`, then re-pulls the roster and closes the modal. A
+    /// blank viewer keeps the form open; a write error clears the saving flag to retry.
     fn save_form(&mut self, cx: &mut Context<Self>) {
         let Some(form) = self.form.as_ref() else {
             return;
         };
-        let viewer = form.viewer.read(cx).content().trim().to_owned();
-        if viewer.is_empty() {
+        if form.saving {
             return;
         }
-        let blocked = form.blocked;
-        let (engine_id, engine_label, kind) = match form.engine.as_deref() {
-            Some(id) => engine_meta(id),
-            None => ("", "", EngineKind::Cloud),
-        };
-        let voice_label = leak(form.voice.read(cx).content().trim());
-        let pitch = form.pitch.read(cx).content().trim().parse::<f32>().ok();
-        let rate = form.rate.read(cx).content().trim().parse::<f32>().ok();
-        let editing = form.editing;
-
-        let row = AliasRow {
-            viewer_name: viewer,
-            role: editing
-                .and_then(|i| self.aliases.get(i))
-                .and_then(|r| r.role),
-            kind,
-            engine_id: engine_label_id(engine_id),
-            engine_label: leak(engine_label),
-            voice_label,
-            pitch_semitones: pitch,
-            rate_multiplier: rate,
-            blocked,
-        };
-
-        match editing {
-            Some(i) if i < self.aliases.len() => self.aliases[i] = row,
-            _ => {
-                self.aliases.push(row);
-                self.total_count = self.total_count.saturating_add(1);
-            }
+        if form.viewer.read(cx).content().trim().is_empty() {
+            return;
         }
-        self.form = None;
+        let alias = form_to_alias(form, cx);
+        if let Some(form) = self.form.as_mut() {
+            form.saving = true;
+        }
         cx.notify();
+
+        let repo = Arc::clone(&self.repo);
+        let speak = self.speak.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<VoiceAlias>, String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                repo.upsert(&alias).await.map_err(|e| e.to_string())?;
+                if let Some(handle) = speak
+                    && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
+                {
+                    eprintln!("forge-desktop: voice alias hot-reload failed: {e}");
+                }
+                repo.list().await.map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(aliases)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.apply_aliases(aliases, cx);
+                    this.form = None;
+                    cx.notify();
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(form) = this.form.as_mut() {
+                        form.saving = false;
+                    }
+                    this.on_repo_error(&message, cx);
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
     }
 
-    /// Enqueues a one-off preview utterance for the alias at `index`. Blocked aliases
-    /// never speak, so preview is a no-op for them. Real path: enqueue a `SpeakRequest`
-    /// through the speak-queue dispatch handle. Here it is a view-state stub.
-    fn preview(&mut self, index: usize, cx: &mut Context<Self>) {
-        if self.aliases.get(index).is_some_and(|r| r.blocked) {
+    /// Enqueues a one-off preview utterance for the alias at `index` through the speak
+    /// queue. Blocked aliases never speak, and a missing queue handle drops the request.
+    fn preview(&self, index: usize) {
+        let Some(row) = self.aliases.get(index) else {
+            return;
+        };
+        if row.blocked {
             return;
         }
-        cx.notify();
+        let Some(handle) = self.speak.clone() else {
+            return;
+        };
+        let viewer_id = row.viewer_id.clone();
+        let viewer_name = row.viewer_name.clone();
+        self.rt_handle.spawn(async move {
+            let request = SpeakRequest {
+                request_id: RequestId::new(),
+                viewer_id,
+                viewer_name,
+                text: PREVIEW_TEXT.to_owned(),
+                priority: Priority::Normal,
+                alias_override: None,
+                engine_override: None,
+                voice_override: None,
+                source_event_id: forge_types::EventId::new(),
+                is_reward: false,
+            };
+            if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
+                eprintln!("forge-desktop: voice alias preview failed: {e}");
+            }
+        });
     }
 
     fn request_delete(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -345,23 +489,41 @@ impl VoiceAliasesView {
         cx.notify();
     }
 
-    /// Removes the armed alias from the cached roster. Real path: delete through the
-    /// alias store and hot-reload the speak queue with `SpeakCommand::RemoveAlias`.
+    /// Deletes the armed alias through the store, hot-reloads the live speak queue with
+    /// `SpeakCommand::RemoveAlias`, then re-pulls the roster.
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
-        if let Some(index) = self.pending_delete.take()
-            && index < self.aliases.len()
-        {
-            self.aliases.remove(index);
-            self.total_count = self.total_count.saturating_sub(1);
-        }
+        let Some(index) = self.pending_delete.take() else {
+            return;
+        };
+        let Some(row) = self.aliases.get(index) else {
+            cx.notify();
+            return;
+        };
+        let id = row.id.clone();
         cx.notify();
+
+        let repo = Arc::clone(&self.repo);
+        let speak = self.speak.clone();
+        self.spawn_write(
+            async move {
+                repo.delete(&id).await.map_err(|e| e.to_string())?;
+                if let Some(handle) = speak
+                    && let Err(e) = handle.send(SpeakCommand::RemoveAlias(id)).await
+                {
+                    eprintln!("forge-desktop: voice alias hot-reload (remove) failed: {e}");
+                }
+                repo.list().await.map_err(|e| e.to_string())
+            },
+            cx,
+        );
     }
 
-    /// True while the open form has a non-blank viewer — the save gate.
+    /// True while the open form has a non-blank viewer and no write is in flight — the
+    /// save gate.
     fn saveable(&self, cx: &Context<Self>) -> bool {
         self.form
             .as_ref()
-            .is_some_and(|f| !f.viewer.read(cx).content().trim().is_empty())
+            .is_some_and(|f| !f.saving && !f.viewer.read(cx).content().trim().is_empty())
     }
 
     /// Builds an [`AliasForm`], creating and prefilling its field entities and
@@ -370,7 +532,7 @@ impl VoiceAliasesView {
     #[allow(clippy::too_many_arguments)]
     fn build_form(
         &self,
-        editing: Option<usize>,
+        editing: Option<AliasId>,
         viewer: &str,
         engine: Option<String>,
         voice: &str,
@@ -412,6 +574,7 @@ impl VoiceAliasesView {
             rate,
             engine,
             blocked,
+            saving: false,
             _subs: subs,
         }
     }
@@ -533,6 +696,11 @@ impl VoiceAliasesView {
             .collect();
 
         let body: AnyElement = if visible.is_empty() {
+            let caption = if self.loading {
+                "Loading voice aliases…"
+            } else {
+                "No voice aliases configured"
+            };
             div()
                 .w_full()
                 .py(spacing(Spacing::Lg, density))
@@ -540,7 +708,7 @@ impl VoiceAliasesView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("No voice aliases configured")
+                .child(caption)
                 .into_any_element()
         } else {
             let total = visible.len();
@@ -655,10 +823,7 @@ impl VoiceAliasesView {
                     .text_color(name_color)
                     .child(row.viewer_name.clone()),
             );
-        if let Some(role) = row.role {
-            viewer_inner =
-                viewer_inner.child(role_badge(role.label(), role.color(palette), palette));
-        } else if muted {
+        if muted {
             viewer_inner = viewer_inner.child(role_badge("BLOCKED", palette.random, palette));
         }
 
@@ -719,7 +884,7 @@ impl VoiceAliasesView {
         if !muted {
             preview = preview
                 .cursor_pointer()
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.preview(index, cx)));
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.preview(index)));
         }
         let edit = div()
             .id(("va-edit", index))
@@ -1141,6 +1306,86 @@ fn text_field(
 
 // ── formatting + resolution helpers ───────────────────────────────────────
 
+/// Folds a stored [`VoiceAlias`] into a presentation row, deriving the engine's
+/// display label and locality from its id.
+fn row_from_alias(a: VoiceAlias) -> AliasRow {
+    let engine = a.engine_id.0;
+    let kind = if is_local_engine(&engine) {
+        EngineKind::Local
+    } else {
+        EngineKind::Cloud
+    };
+    let engine_label = engine_display_label(&engine);
+    let voice = a.voice_id.0;
+    AliasRow {
+        id: a.id,
+        viewer_id: a.viewer_id,
+        viewer_name: a.viewer_name,
+        kind,
+        engine_id: engine,
+        engine_label,
+        voice_id: voice.clone(),
+        voice_label: voice,
+        pitch_semitones: a.pitch_semitones,
+        rate_multiplier: a.rate_multiplier,
+        blocked: matches!(a.state, AliasState::Blocked),
+    }
+}
+
+/// Builds a [`VoiceAlias`] from the open form. Editing carries the row's id so the
+/// upsert targets it; a fresh assign mints a new id. An unparsable pitch/rate is left
+/// unset (engine default).
+fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
+    let viewer = form.viewer.read(cx).content().trim().to_owned();
+    let engine = form.engine.clone().unwrap_or_default();
+    let voice = form.voice.read(cx).content().trim().to_owned();
+    let pitch = form.pitch.read(cx).content().trim().parse::<f32>().ok();
+    let rate = form.rate.read(cx).content().trim().parse::<f32>().ok();
+    VoiceAlias {
+        id: form.editing.clone().unwrap_or_default(),
+        viewer_id: viewer.clone(),
+        viewer_name: viewer,
+        engine_id: EngineId(engine.trim().to_owned()),
+        voice_id: VoiceId(voice),
+        pitch_semitones: pitch,
+        rate_multiplier: rate,
+        state: if form.blocked {
+            AliasState::Blocked
+        } else {
+            AliasState::Active
+        },
+    }
+}
+
+/// Maps a stored strategy to the banner's selection.
+fn choice_from_strategy(strategy: &AssignmentStrategy) -> StrategyChoice {
+    match strategy {
+        AssignmentStrategy::DeterministicByName => StrategyChoice::DeterministicByName,
+        AssignmentStrategy::Random => StrategyChoice::Random,
+        AssignmentStrategy::Single { .. } => StrategyChoice::SingleVoice,
+    }
+}
+
+/// Local engines run on-device with no network round-trip; everything else is a cloud
+/// engine.
+fn is_local_engine(engine_id: &str) -> bool {
+    matches!(
+        engine_id,
+        "piper" | "espeak" | "espeak-ng" | "sapi" | "avfoundation"
+    )
+}
+
+/// Maps an engine id to its display label; an unknown id is shown verbatim.
+fn engine_display_label(engine_id: &str) -> String {
+    match engine_id {
+        "piper" => "Piper".to_owned(),
+        "espeak" | "espeak-ng" => "eSpeak-NG".to_owned(),
+        "sapi" => "SAPI 5".to_owned(),
+        "avfoundation" => "AVFoundation".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
 /// Formats a pitch value the way the source does: blocked → em dash, else a signed
 /// semitone reading (`+2 st` / `-1 st` / `0 st`).
 fn fmt_pitch(value: Option<f32>, blocked: bool) -> String {
@@ -1186,35 +1431,6 @@ fn engine_color(kind: EngineKind, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// Resolves an engine id to its display label and locality, for a row saved from the
-/// form's engine picker. Unknown ids fall back to the raw id as a cloud engine.
-fn engine_meta(id: &str) -> (&'static str, &'static str, EngineKind) {
-    ENGINE_OPTIONS
-        .iter()
-        .find(|o| o.id == id)
-        .map(|o| (o.id, o.label, o.kind))
-        .unwrap_or(("", "", EngineKind::Cloud))
-}
-
-/// Interns a known engine id to its `'static` form (for the cached row); an unknown id
-/// interns as the empty string.
-fn engine_label_id(id: &str) -> &'static str {
-    ENGINE_OPTIONS
-        .iter()
-        .find(|o| o.id == id)
-        .map(|o| o.id)
-        .unwrap_or("")
-}
-
-/// The row view-model holds `&'static str` labels (seeded); a value typed into the
-/// form must be promoted to `'static` to land in a saved row. The alias set is bounded
-/// by the viewer roster, so the one-time leak per saved edit is negligible and never
-/// grows unbounded in practice. The real store owns `String`s, so this vanishes once
-/// the roster is a bridge-loaded `Vec<String>`-backed model.
-fn leak(text: &str) -> &'static str {
-    Box::leak(text.to_owned().into_boxed_str())
-}
-
 /// Hashes a viewer name to one of the palette's accent hues, so each avatar tile keeps
 /// a stable colour across renders (the source's deterministic avatar tint).
 fn avatar_color_for(name: &str, palette: &ForgePalette) -> Rgba {
@@ -1230,80 +1446,4 @@ fn avatar_color_for(name: &str, palette: &ForgePalette) -> Rgba {
         palette.bits,
     ];
     colors[(hash as usize) % colors.len()]
-}
-
-// ── seeded stub state ─────────────────────────────────────────────────────
-
-/// The representative alias roster the section seeds before an alias store is wired,
-/// mirroring the design's sample so every role badge, engine locality and the blocked
-/// state render populated.
-fn seed_aliases() -> Vec<AliasRow> {
-    vec![
-        AliasRow {
-            viewer_name: "haash_".to_owned(),
-            role: Some(Role::Mod),
-            kind: EngineKind::Local,
-            engine_id: "piper",
-            engine_label: "Piper",
-            voice_label: "UA-1",
-            pitch_semitones: Some(2.0),
-            rate_multiplier: Some(1.0),
-            blocked: false,
-        },
-        AliasRow {
-            viewer_name: "koval_dev".to_owned(),
-            role: Some(Role::Vip),
-            kind: EngineKind::Cloud,
-            engine_id: "elevenlabs",
-            engine_label: "ElevenLabs",
-            voice_label: "Antoni",
-            pitch_semitones: Some(0.0),
-            rate_multiplier: Some(1.1),
-            blocked: false,
-        },
-        AliasRow {
-            viewer_name: "olena_lv".to_owned(),
-            role: None,
-            kind: EngineKind::Cloud,
-            engine_id: "polly",
-            engine_label: "Polly",
-            voice_label: "Olena",
-            pitch_semitones: Some(0.0),
-            rate_multiplier: Some(1.0),
-            blocked: false,
-        },
-        AliasRow {
-            viewer_name: "danylo_ua".to_owned(),
-            role: Some(Role::Sub),
-            kind: EngineKind::Cloud,
-            engine_id: "elevenlabs",
-            engine_label: "ElevenLabs",
-            voice_label: "Rachel",
-            pitch_semitones: Some(-1.0),
-            rate_multiplier: Some(0.9),
-            blocked: false,
-        },
-        AliasRow {
-            viewer_name: "spammer_xyz".to_owned(),
-            role: None,
-            kind: EngineKind::Cloud,
-            engine_id: "",
-            engine_label: "",
-            voice_label: "",
-            pitch_semitones: None,
-            rate_multiplier: None,
-            blocked: true,
-        },
-        AliasRow {
-            viewer_name: "ostap_pl".to_owned(),
-            role: None,
-            kind: EngineKind::Cloud,
-            engine_id: "polly",
-            engine_label: "Polly",
-            voice_label: "Maksym",
-            pitch_semitones: Some(0.0),
-            rate_multiplier: Some(1.2),
-            blocked: false,
-        },
-    ]
 }

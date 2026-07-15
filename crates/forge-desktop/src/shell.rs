@@ -265,8 +265,9 @@ impl AppShell {
             Screen::Tts => {
                 let speak_state = topics.speak.clone();
                 let speak = handles.speak.clone();
+                let backend = Arc::clone(&handles.backend);
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| TtsView::new(speak_state, speak, rt_handle, cx))
+                cx.new(|cx| TtsView::new(speak_state, speak, backend, rt_handle, cx))
                     .into()
             }
             Screen::Server => {

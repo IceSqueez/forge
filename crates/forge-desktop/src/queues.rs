@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::{
@@ -7,8 +8,9 @@ use forge_components::{
     radius, secondary_button, spacing, toggle, with_alpha,
 };
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, QueueSchedulerHandle};
-use forge_types::QueueId;
+use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
+use forge_storage::{ActionRepo, QueueRepo};
+use forge_types::{Queue, QueueId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
     prelude::*, px,
@@ -48,17 +50,16 @@ const PARALLEL_CONCURRENCY: u32 = 8;
 const MODAL_WIDTH: Pixels = px(440.0);
 
 /// One action queue as the screen caches it. A view-model standing in for
-/// `forge-runtime`'s live queue slot plus its storage row: `concurrency`, `blocking`,
-/// `actions`, `desc` are the persisted shape, while `paused`, `pending`, `in_flight`,
-/// `running` and `paused_since_min` are the live counters the scheduler feeds.
+/// `forge-runtime`'s live queue slot plus its storage row: `id`, `name`, `blocking` are
+/// read straight off the persisted [`Queue`] row, `concurrency` is derived from the
+/// blocking flag (not yet a persisted column), `actions` is the count of stored actions
+/// assigned to this queue, and `desc` is derived from the queue name.
 ///
-/// The roster itself (names, blocking, assigned actions) is still seeded — a storage
-/// read wired in a later phase — so `id` carries a fresh [`QueueId`] rather than a live
-/// scheduler slot's id; `pending`, `in_flight` and `running` stay seeded because no bus
-/// event attributes them per-queue. The one live-fed field is `paused`: the controls
-/// drive pause/resume/drain through the `QueueScheduler` handle, and the console reads
-/// the live paused set back over the runtime→UI bridge (the [`QueueHealth`] topic),
-/// overlaid onto each row at render time.
+/// `pending`, `in_flight` and `running` stay empty because no bus event attributes them
+/// per-queue. `paused` is seeded from the scheduler's paused set at load time and then
+/// overlaid at render with the live paused set the runtime→UI bridge streams into the
+/// [`QueueHealth`] topic, so a pause/resume driven from anywhere (a control here or a
+/// queue-control sub-action) shows on the card.
 struct QueueRow {
     id: QueueId,
     name: String,
@@ -104,17 +105,26 @@ struct EditQueueModal {
 /// row, a live-running panel and pause/drain/configure actions), plus a centred
 /// new/configure-queue modal overlay.
 ///
-/// Owns its queue roster as seeded state (the roster read off storage lands in a later
-/// phase), but is live-wired for the queue lifecycle: pause/resume/drain/pause-all
-/// optimistically nudge the cached rows for instant feedback and dispatch the matching
-/// [`QueueSchedulerHandle`] verb (fire-and-forget on the tokio runtime), while the live
-/// paused set streams back over the runtime→UI bridge through the observed
-/// [`QueueHealth`] topic. Create/configure still mutate the cached list only — that path
-/// persists through storage, which lands with the roster read.
+/// Pulls its queue roster off storage on mount and re-pulls after every create/configure
+/// (never patching a row locally), and is live-wired for the queue lifecycle:
+/// pause/resume/drain/pause-all optimistically nudge the cached rows for instant feedback
+/// and dispatch the matching [`QueueSchedulerHandle`] verb (fire-and-forget on the tokio
+/// runtime), while the live paused set streams back over the runtime→UI bridge through
+/// the observed [`QueueHealth`] topic. Create/configure persist through
+/// [`QueueRepo::save`] then register/reconfigure the live scheduler slot; a queue that
+/// storage accepts but the live registry rejects (`NotFound`) is flagged in `diverged`
+/// and carries a "not live" badge until restart.
 pub struct QueuesView {
     queues: Vec<QueueRow>,
+    /// True until the first roster pull lands, so the empty body shows a loading caption
+    /// rather than the "no queues" caption before any row arrives.
+    loading: bool,
     feedback: Option<SharedString>,
     modal: Option<EditQueueModal>,
+    /// Queues persisted but rejected by the live scheduler after a successful storage
+    /// write. Not a persisted field, so it is pruned (never rebuilt) on each re-pull;
+    /// overlaid onto each card as the "NOT LIVE · RESTART" badge.
+    diverged: HashSet<QueueId>,
     /// The shared, bridge-fed live paused set, keyed by [`QueueId`]. Observed for
     /// repaint; overlaid onto each row's paused state at render time so a pause/resume
     /// driven from elsewhere (a queue-control sub-action) shows here too.
@@ -124,6 +134,10 @@ pub struct QueuesView {
     /// The event bus a drain publishes its `queue.drain_requested` marker on, mirroring
     /// the parity source's drain (publish-then-pause).
     bus: Arc<EventBus>,
+    /// Storage handle the roster is read from and create/configure persist through.
+    queue_repo: Arc<dyn QueueRepo>,
+    /// Storage handle the per-queue assigned-action counts are derived from.
+    action_repo: Arc<dyn ActionRepo>,
     /// The tokio runtime handle a control's fire-and-forget dispatch runs on, so the
     /// scheduler round-trip has a reactor rather than gpui's foreground executor.
     rt_handle: tokio::runtime::Handle,
@@ -131,24 +145,98 @@ pub struct QueuesView {
 }
 
 impl QueuesView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         queue_health: Entity<QueueHealth>,
         scheduler: QueueSchedulerHandle,
         bus: Arc<EventBus>,
+        queue_repo: Arc<dyn QueueRepo>,
+        action_repo: Arc<dyn ActionRepo>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
         // Repaint whenever the bridge advances the shared live paused set.
         let health_obs = cx.observe(&queue_health, |_this, _health, cx| cx.notify());
-        Self {
-            queues: seed_queues(),
+        let view = Self {
+            queues: vec![],
+            loading: true,
             feedback: None,
             modal: None,
+            diverged: HashSet::new(),
             queue_health,
             scheduler,
             bus,
+            queue_repo,
+            action_repo,
             rt_handle,
             _health_obs: health_obs,
+        };
+        view.reload(cx);
+        view
+    }
+
+    // --- async pull + reconcile -------------------------------------------
+
+    /// Pulls the full roster off storage and reconciles the cached rows with it. Every
+    /// create/configure routes back here for a full re-pull rather than patching a row
+    /// locally, so the roster always mirrors the persisted rows.
+    fn reload(&self, cx: &mut Context<Self>) {
+        let queue_repo = Arc::clone(&self.queue_repo);
+        let action_repo = Arc::clone(&self.action_repo);
+        let scheduler = self.scheduler.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(load_queues(queue_repo, action_repo, scheduler).await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(rows)) => {
+                let _ = this.update(cx, |this, cx| this.apply_rows(rows, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Replaces the cached roster with a fresh pull, pruning divergence flags for ids
+    /// that no longer exist (the badge is not a persisted field, so a bare reload would
+    /// otherwise strand it).
+    fn apply_rows(&mut self, rows: Vec<QueueRow>, cx: &mut Context<Self>) {
+        self.diverged.retain(|id| rows.iter().any(|r| r.id == *id));
+        self.queues = rows;
+        self.loading = false;
+        cx.notify();
+    }
+
+    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
+        eprintln!("forge-desktop: queues operation failed: {message}");
+        self.loading = false;
+        cx.notify();
+    }
+
+    /// Records (or clears) the saved-but-not-live divergence flag for one queue after a
+    /// scheduler call. `Applied`/`AlreadyRegistered` clear it; a channel error or a
+    /// `NotFound` outcome leaves storage and the live registry out of sync until restart,
+    /// so the flag is set and the card carries the "not live" badge.
+    fn apply_membership_outcome(
+        &mut self,
+        id: QueueId,
+        outcome: Result<MembershipOutcome, String>,
+    ) {
+        match outcome {
+            Ok(MembershipOutcome::Applied) | Ok(MembershipOutcome::AlreadyRegistered) => {
+                self.diverged.remove(&id);
+            }
+            Ok(MembershipOutcome::NotFound) => {
+                eprintln!("forge-desktop: scheduler reported queue not found: {id}");
+                self.diverged.insert(id);
+            }
+            Err(err) => {
+                eprintln!("forge-desktop: scheduler membership call failed: {err}");
+                self.diverged.insert(id);
+            }
         }
     }
 
@@ -323,50 +411,74 @@ impl QueuesView {
         })
     }
 
+    /// Persists the open form then applies it to the live scheduler. Mirrors the parity
+    /// source's persist-then-apply: write the [`Queue`] row through [`QueueRepo::save`]
+    /// first, and only on a successful write register (create) or reconfigure (edit) the
+    /// live slot. The scheduler outcome sets/clears the row's divergence flag, then the
+    /// roster is fully re-pulled rather than patched. A storage-write failure keeps the
+    /// modal open with its Save control re-enabled so the user can retry.
     fn save(&mut self, cx: &mut Context<Self>) {
         if !self.modal_saveable(cx) {
             return;
         }
-        let Some(modal) = self.modal.as_ref() else {
+        let Some(modal) = self.modal.as_mut() else {
             return;
         };
         let name = modal.name_input.read(cx).content().trim().to_owned();
         let blocking = modal.blocking;
         let editing = modal.editing;
-        let concurrency = if blocking {
-            SERIAL_CONCURRENCY
-        } else {
-            PARALLEL_CONCURRENCY
+        let queue = Queue {
+            id: editing.unwrap_or_else(QueueId::new),
+            name,
+            blocking,
         };
+        let id = queue.id;
+        let is_edit = editing.is_some();
+        modal.saving = true;
+        cx.notify();
 
-        match editing {
-            Some(id) => {
-                if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
-                    q.name = name.clone();
-                    q.blocking = blocking;
-                    q.concurrency = concurrency;
-                }
+        let queue_repo = Arc::clone(&self.queue_repo);
+        let scheduler = self.scheduler.clone();
+        let (tx, rx) =
+            tokio::sync::oneshot::channel::<Result<Result<MembershipOutcome, String>, String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                queue_repo.save(&queue).await.map_err(|e| e.to_string())?;
+                let membership = if is_edit {
+                    scheduler.reconfigure(queue).await
+                } else {
+                    scheduler.register(queue).await
+                };
+                Ok::<_, String>(membership.map_err(|e| e.to_string()))
             }
-            None => {
-                self.queues.push(QueueRow {
-                    id: QueueId::new(),
-                    name: name.clone(),
-                    desc: String::new(),
-                    blocking,
-                    concurrency,
-                    paused: false,
-                    pending: 0,
-                    in_flight: 0,
-                    actions: 0,
-                    running: vec![],
-                    paused_since_min: None,
+            .await;
+            let _ = tx.send(outcome);
+        });
+
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(membership)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.apply_membership_outcome(id, membership);
+                    this.modal = None;
+                    this.reload(cx);
+                    cx.notify();
                 });
             }
-        }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_save_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
 
-        self.modal = None;
-        self.feedback =
-            Some(format!("Saved “{name}”. Queue scheduling is wired via the runtime soon.").into());
+    /// Handles a storage-write failure on save: clears the saving flag so the modal's
+    /// Save control re-enables for a retry, and logs a PII-safe notice.
+    fn on_save_error(&mut self, message: &str, cx: &mut Context<Self>) {
+        eprintln!("forge-desktop: queue save failed: {message}");
+        if let Some(modal) = self.modal.as_mut() {
+            modal.saving = false;
+        }
         cx.notify();
     }
 
@@ -384,6 +496,7 @@ impl QueuesView {
         // pause/resume driven from elsewhere shows here, and a just-clicked control
         // reads paused before its acknowledging event lands.
         let paused = q.paused || self.queue_health.read(cx).is_paused(q.id);
+        let not_live = self.diverged.contains(&q.id);
 
         let border_color = if paused {
             with_alpha(palette.warning, 0.35)
@@ -401,7 +514,7 @@ impl QueuesView {
             .border(BORDER_THIN)
             .border_color(border_color)
             .bg(palette.elevated)
-            .child(self.card_header(q, paused, palette, density))
+            .child(self.card_header(q, paused, not_live, palette, density))
             .child(self.card_metrics(q, paused, palette, density))
             .child(self.running_panel(q, paused, palette, density))
             .child(self.card_buttons(index, q, paused, palette, density, cx))
@@ -412,6 +525,7 @@ impl QueuesView {
         &self,
         q: &QueueRow,
         paused: bool,
+        not_live: bool,
         palette: &ForgePalette,
         density: Density,
     ) -> AnyElement {
@@ -421,12 +535,15 @@ impl QueuesView {
             .text_color(palette.text_primary)
             .child(q.name.clone());
 
-        let name_row = div()
+        let mut name_row = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(name)
             .child(status_badge(paused, palette));
+        if not_live {
+            name_row = name_row.child(not_live_badge(palette));
+        }
 
         let desc = div()
             .font_family(DEFAULT_BODY_FAMILY)
@@ -804,6 +921,11 @@ impl Render for QueuesView {
             .map(|message| self.feedback_banner(message, &palette, density));
 
         let body = if self.queues.is_empty() {
+            let caption = if self.loading {
+                "Loading queues…"
+            } else {
+                "No queues configured."
+            };
             div()
                 .w_full()
                 .py(spacing(Spacing::Lg, density))
@@ -812,7 +934,7 @@ impl Render for QueuesView {
                         .font_family(DEFAULT_BODY_FAMILY)
                         .text_size(FONT_SM)
                         .text_color(palette.text_muted)
-                        .child("No queues configured."),
+                        .child(caption),
                 )
                 .into_any_element()
         } else {
@@ -1145,83 +1267,87 @@ fn warning_ghost_button(
         )
 }
 
-/// The representative queue roster the screen seeds until the storage-backed roster
-/// read lands — names, descriptions and states mirror the design's queue roster so
-/// every running-panel variant (serial, idle, concurrent, paused) renders. Each row
-/// carries a fresh [`QueueId`]; the pending/in-flight/running counters are static
-/// (no bus event attributes them per-queue), while the live paused state overlays from
-/// the [`QueueHealth`] bridge once the roster carries real scheduler slot ids.
-fn seed_queues() -> Vec<QueueRow> {
-    vec![
-        QueueRow {
-            id: QueueId::new(),
-            name: "Default".to_owned(),
-            desc: "Catch-all queue for actions without explicit queue assignment".to_owned(),
-            blocking: true,
-            concurrency: 1,
-            paused: false,
-            pending: 3,
-            in_flight: 1,
-            actions: 11,
-            running: vec!["!quote".to_owned()],
-            paused_since_min: None,
-        },
-        QueueRow {
-            id: QueueId::new(),
-            name: "Alerts".to_owned(),
-            desc: "Subs, raids, cheers · serialized so overlays don't overlap".to_owned(),
-            blocking: true,
-            concurrency: 1,
-            paused: false,
-            pending: 0,
-            in_flight: 0,
-            actions: 3,
-            running: vec![],
-            paused_since_min: None,
-        },
-        QueueRow {
-            id: QueueId::new(),
-            name: "Background".to_owned(),
-            desc: "Logging, analytics, side-effect-free tasks · parallel execution".to_owned(),
-            blocking: false,
-            concurrency: 8,
-            paused: false,
-            pending: 12,
-            in_flight: 4,
-            actions: 6,
-            running: vec![
-                "log_chat".to_owned(),
-                "analytics_tick".to_owned(),
-                "cache_warm".to_owned(),
-                "cron_sweep".to_owned(),
-            ],
-            paused_since_min: None,
-        },
-        QueueRow {
-            id: QueueId::new(),
-            name: "Moderation".to_owned(),
-            desc: "Auto-bans, timeouts, message deletions · paused for review".to_owned(),
-            blocking: false,
-            concurrency: 2,
-            paused: true,
-            pending: 7,
-            in_flight: 0,
-            actions: 4,
-            running: vec![],
-            paused_since_min: Some(14),
-        },
-        QueueRow {
-            id: QueueId::new(),
-            name: "TTS".to_owned(),
-            desc: "Text-to-speech queue, drained continuously while audio plays".to_owned(),
-            blocking: true,
-            concurrency: 1,
-            paused: false,
-            pending: 5,
-            in_flight: 1,
-            actions: 2,
-            running: vec!["tts_speak".to_owned()],
-            paused_since_min: None,
-        },
-    ]
+/// Pulls the queue roster off storage and folds each persisted [`Queue`] into a
+/// [`QueueRow`]: assigned-action counts come from the action repo (rows whose
+/// `queue_id` matches), concurrency is derived from the blocking flag (not yet a
+/// persisted column), the description is derived from the queue name, and the paused
+/// flag is seeded from the scheduler's live paused set. The pending / in-flight /
+/// running counters stay empty because no bus event attributes them per-queue. Runs off
+/// the foreground thread on the tokio runtime.
+async fn load_queues(
+    queue_repo: Arc<dyn QueueRepo>,
+    action_repo: Arc<dyn ActionRepo>,
+    scheduler: QueueSchedulerHandle,
+) -> Result<Vec<QueueRow>, String> {
+    let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
+    let actions = action_repo.list().await.map_err(|e| e.to_string())?;
+    let paused_ids = scheduler.paused_queues().await.unwrap_or_default();
+
+    let rows = queues
+        .into_iter()
+        .map(|q| {
+            let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
+            let concurrency = if q.blocking {
+                SERIAL_CONCURRENCY
+            } else {
+                PARALLEL_CONCURRENCY
+            };
+            let paused = paused_ids.contains(&q.id);
+            QueueRow {
+                id: q.id,
+                desc: default_description(&q.name),
+                name: q.name,
+                blocking: q.blocking,
+                concurrency,
+                paused,
+                pending: 0,
+                in_flight: 0,
+                actions: assigned,
+                running: vec![],
+                paused_since_min: None,
+            }
+        })
+        .collect();
+
+    Ok(rows)
+}
+
+/// The card description for a queue, derived from its name — the well-known queues carry
+/// a fixed caption, any other queue renders without one. Mirrors the parity source's
+/// name-keyed description lookup.
+fn default_description(name: &str) -> String {
+    match name {
+        "Default" => "Catch-all queue for actions without explicit queue assignment",
+        "Alerts" => "Subs, raids, cheers · serialized so overlays don't overlap",
+        "Background" => "Logging, analytics, side-effect-free tasks · parallel execution",
+        "Moderation" => "Auto-bans, timeouts, message deletions · paused for review",
+        _ => "",
+    }
+    .to_owned()
+}
+
+/// The saved-but-not-live divergence chip: a warning-tinted, warning-bordered pill with
+/// an alert mark and the "NOT LIVE · RESTART" caption. Ported from the parity source's
+/// badge — a `warning`@0.12 fill, a `warning`@0.30 hairline border, an 8px radius, a 9px
+/// alert glyph and a mono caption.
+fn not_live_badge(palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .px(spacing(Spacing::Xs, Density::Cozy))
+        .rounded(BADGE_RADIUS)
+        .bg(with_alpha(palette.warning, 0.12))
+        .border(BORDER_THIN)
+        .border_color(with_alpha(palette.warning, 0.30))
+        .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.warning))
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.warning)
+                .child("NOT LIVE · RESTART"),
+        )
+        .into_any_element()
 }

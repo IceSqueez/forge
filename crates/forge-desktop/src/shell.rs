@@ -245,9 +245,21 @@ impl AppShell {
                 let queue_health = topics.queue_health.clone();
                 let scheduler = handles.scheduler.clone();
                 let bus = Arc::clone(&handles.bus);
+                let queue_repo = handles.backend.queue_repo();
+                let action_repo = handles.backend.action_repo();
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| QueuesView::new(queue_health, scheduler, bus, rt_handle, cx))
-                    .into()
+                cx.new(|cx| {
+                    QueuesView::new(
+                        queue_health,
+                        scheduler,
+                        bus,
+                        queue_repo,
+                        action_repo,
+                        rt_handle,
+                        cx,
+                    )
+                })
+                .into()
             }
             Screen::Soundboard => cx.new(SoundboardView::new).into(),
             Screen::Tts => {

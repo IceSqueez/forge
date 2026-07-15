@@ -14,11 +14,10 @@ use forge_types::QueueId;
 /// Only the paused set is bus-derivable today: the scheduler emits `queue.paused` /
 /// `queue.resumed` carrying the queue id, matching the parity source's model (which
 /// reads the same paused set off the scheduler). The per-queue pending / in-flight /
-/// running counters are not attributed on the bus and stay at their empty state, and
-/// the queue roster itself (names, blocking, assigned-action counts) is a storage read
-/// wired in a later phase. Until that roster read lands the console's seeded ids never
-/// appear in live events, so this cache stays empty; it lights up for real once the
-/// roster carries the scheduler's own queue ids.
+/// running counters are not attributed on the bus and stay at their empty state. The
+/// queue roster itself (names, blocking, assigned-action counts) is read off storage and
+/// carries the scheduler's own queue ids, so a pause/resume driven from anywhere lands on
+/// the matching card.
 pub struct QueueHealth {
     paused: HashSet<QueueId>,
 }

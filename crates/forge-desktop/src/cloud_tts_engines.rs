@@ -1,27 +1,36 @@
+use std::sync::{Arc, RwLock};
+
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
     InputEvent, Radius, Spacing, TextInput, ToastKind, card, radius, spacing,
 };
+use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
+use forge_storage::{CredentialId, CredentialsRepo};
+use forge_tts_cloud::azure::AzureEngineFactory;
+use forge_tts_cloud::credentials::{
+    AZURE_CREDENTIAL_ID, AzureCredentials, ELEVENLABS_CREDENTIAL_ID, ElevenLabsCredentials,
+    OPENAI_CREDENTIAL_ID, OpenAiCredentials, POLLY_CREDENTIAL_ID, PollyCredentials,
+};
+use forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory;
+use forge_tts_cloud::openai::OpenAiEngineFactory;
+use forge_tts_cloud::polly::PollyEngineFactory;
+use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window,
     div, prelude::*, px,
 };
 
+use crate::cloud_tts_boot;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
-/// Engine status-dot side — the parity source pins the header dot at a fixed 7px square,
-/// off the `Spacing` scale, so it is carried as a named literal.
+/// Header status-dot side — a fixed 7px square, off the `Spacing` scale.
 const STATUS_DOT: Pixels = px(7.0);
-/// Test-result dot side (the source's fixed 6px square).
+/// Test-result dot side — a fixed 6px square, off the `Spacing` scale.
 const RESULT_DOT: Pixels = px(6.0);
-/// Field-label column width (the source's fixed 120px label gutter).
+/// Field-label column width — a fixed 120px gutter, off the `Spacing` scale.
 const LABEL_W: Pixels = px(120.0);
-/// The representative Azure subscription key the section seeds so the configured-engine
-/// visual states (verified row + Configured badge) render before real credentials load.
-const AZURE_SEED_KEY: &str = "0e7f2c9a4b1d4e8fa2c6b3d5e9f10a2b";
 
-/// Which cloud engine a card, seed and handler act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CloudEngineKind {
     Azure,
@@ -31,7 +40,6 @@ enum CloudEngineKind {
 }
 
 impl CloudEngineKind {
-    /// Stable element-id fragment for the card's Save button.
     fn key(self) -> &'static str {
         match self {
             CloudEngineKind::Azure => "azure",
@@ -40,25 +48,71 @@ impl CloudEngineKind {
             CloudEngineKind::Polly => "polly",
         }
     }
+
+    fn display_name(self) -> &'static str {
+        match self {
+            CloudEngineKind::Azure => "Azure Speech",
+            CloudEngineKind::ElevenLabs => "ElevenLabs",
+            CloudEngineKind::OpenAI => "OpenAI TTS",
+            CloudEngineKind::Polly => "Amazon Polly",
+        }
+    }
+
+    fn credential_id(self) -> &'static str {
+        match self {
+            CloudEngineKind::Azure => AZURE_CREDENTIAL_ID,
+            CloudEngineKind::ElevenLabs => ELEVENLABS_CREDENTIAL_ID,
+            CloudEngineKind::OpenAI => OPENAI_CREDENTIAL_ID,
+            CloudEngineKind::Polly => POLLY_CREDENTIAL_ID,
+        }
+    }
+
+    fn engine_id(self) -> EngineId {
+        EngineId(self.key().to_owned())
+    }
 }
 
-/// A card's connection-test outcome. `Testing` is unreachable while the Test button is
-/// inert (the real engine factory + network are not wired here), but is retained so the
-/// button's label + gating mirror the source once the runtime path lands.
+/// Only constructed once the engine's required fields are non-empty.
+enum CloudCreds {
+    Azure(AzureCredentials),
+    ElevenLabs(ElevenLabsCredentials),
+    OpenAi(OpenAiCredentials),
+    Polly(PollyCredentials),
+}
+
+impl CloudCreds {
+    fn to_json(&self) -> Result<String, serde_json::Error> {
+        match self {
+            CloudCreds::Azure(c) => serde_json::to_string(c),
+            CloudCreds::ElevenLabs(c) => serde_json::to_string(c),
+            CloudCreds::OpenAi(c) => serde_json::to_string(c),
+            CloudCreds::Polly(c) => serde_json::to_string(c),
+        }
+    }
+
+    async fn test(self) -> Result<(), String> {
+        let engine = match self {
+            CloudCreds::Azure(c) => AzureEngineFactory::new(c).create(),
+            CloudCreds::ElevenLabs(c) => ElevenLabsEngineFactory::new(c).create(),
+            CloudCreds::OpenAi(c) => OpenAiEngineFactory::new(c).create(),
+            CloudCreds::Polly(c) => PollyEngineFactory::new(c).create(),
+        }
+        .map_err(|e| e.to_string())?;
+        engine
+            .test_connection()
+            .await
+            .map_err(|e| truncate_err(e.to_string()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TestStatus {
     Idle,
     Testing,
     Ok,
-    // Produced only by the runtime connection-test path (not wired here); the badge and
-    // result-row logic already read it, so it is retained rather than stubbed away.
-    #[allow(dead_code)]
     Err(String),
 }
 
-/// Azure Speech credential form. Fields are child [`TextInput`] entities owning their own
-/// edit state; `dirty` flips on any edit and `test_status`/`is_registered` are seeded here
-/// until the real credential store + registry reach this view over the bridge.
 struct AzureForm {
     api_key: Entity<TextInput>,
     region: Entity<TextInput>,
@@ -90,20 +144,13 @@ struct PollyForm {
     is_registered: bool,
 }
 
-/// The TTS Cloud-engines section view-entity: a scrollable column of four credential
-/// cards (Azure Speech, ElevenLabs, OpenAI TTS, Amazon Polly), each with secret fields,
-/// a connection-test button and a save button, plus a config-status badge and a
-/// test-result row.
-///
-/// Owns the four forms as seeded stub state — `forge-desktop` wires no credential store,
-/// engine factory or TTS registry yet, so the field contents, dirty flags and
-/// registration are seeded representative (Azure configured, the rest empty). The real
-/// screen loads persisted credentials from `forge-storage` over the runtime→UI bridge;
-/// Save persists through that store's handle and hot-registers the engine into the live
-/// `TtsRegistry`, and Test builds the engine and round-trips a probe request through the
-/// network — neither of which is reachable here, so Save only clears the dirty flag and
-/// Test is inert (it never fakes a success).
 pub struct CloudTtsEnginesView {
+    /// Shared with the running speak-queue actor; Save hot-registers into it live.
+    /// `None` only when the speak subsystem didn't build — persistence still happens.
+    registry: Option<Arc<RwLock<TtsRegistry>>>,
+    credentials: Arc<dyn CredentialsRepo>,
+    rt_handle: tokio::runtime::Handle,
+    speak: Option<SpeakQueueHandle>,
     azure: AzureForm,
     elevenlabs: ElevenLabsForm,
     openai: OpenAiForm,
@@ -112,16 +159,28 @@ pub struct CloudTtsEnginesView {
 }
 
 impl CloudTtsEnginesView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        registry: Option<Arc<RwLock<TtsRegistry>>>,
+        credentials: Arc<dyn CredentialsRepo>,
+        rt_handle: tokio::runtime::Handle,
+        speak: Option<SpeakQueueHandle>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
 
-        let azure_api = field("Subscription key", AZURE_SEED_KEY, true, palette, cx);
-        let azure_region = field("e.g. eastus", "eastus", false, palette, cx);
-        let eleven_api = field("xi-api-key", "", true, palette, cx);
-        let openai_api = field("sk-...", "", true, palette, cx);
-        let polly_access = field("AKIA...", "", false, palette, cx);
-        let polly_secret = field("secret access key", "", true, palette, cx);
-        let polly_region = field("e.g. us-east-1", "", false, palette, cx);
+        let registered = registry
+            .as_ref()
+            .map(|r| r.read().unwrap_or_else(|e| e.into_inner()).engine_ids())
+            .unwrap_or_default();
+        let is_registered = |kind: CloudEngineKind| registered.contains(&kind.engine_id());
+
+        let azure_api = field("Subscription key", true, palette, cx);
+        let azure_region = field("e.g. eastus", false, palette, cx);
+        let eleven_api = field("xi-api-key", true, palette, cx);
+        let openai_api = field("sk-...", true, palette, cx);
+        let polly_access = field("AKIA...", false, palette, cx);
+        let polly_secret = field("secret access key", true, palette, cx);
+        let polly_region = field("e.g. us-east-1", false, palette, cx);
 
         let mut subs = Vec::new();
         for (entity, kind) in [
@@ -143,24 +202,28 @@ impl CloudTtsEnginesView {
         }
 
         Self {
+            registry,
+            credentials,
+            rt_handle,
+            speak,
             azure: AzureForm {
                 api_key: azure_api,
                 region: azure_region,
                 dirty: false,
-                test_status: TestStatus::Ok,
-                is_registered: true,
+                test_status: TestStatus::Idle,
+                is_registered: is_registered(CloudEngineKind::Azure),
             },
             elevenlabs: ElevenLabsForm {
                 api_key: eleven_api,
                 dirty: false,
                 test_status: TestStatus::Idle,
-                is_registered: false,
+                is_registered: is_registered(CloudEngineKind::ElevenLabs),
             },
             openai: OpenAiForm {
                 api_key: openai_api,
                 dirty: false,
                 test_status: TestStatus::Idle,
-                is_registered: false,
+                is_registered: is_registered(CloudEngineKind::OpenAI),
             },
             polly: PollyForm {
                 access_key: polly_access,
@@ -168,13 +231,13 @@ impl CloudTtsEnginesView {
                 region: polly_region,
                 dirty: false,
                 test_status: TestStatus::Idle,
-                is_registered: false,
+                is_registered: is_registered(CloudEngineKind::Polly),
             },
             _subs: subs,
         }
     }
 
-    // --- handlers (view-state stubs) --------------------------------------
+    // --- handlers ---------------------------------------------------------
 
     fn mark_dirty(&mut self, kind: CloudEngineKind, cx: &mut Context<Self>) {
         match kind {
@@ -186,18 +249,178 @@ impl CloudTtsEnginesView {
         cx.notify();
     }
 
-    /// Optimistically clears the dirty flag. Real path: persist the credentials through
-    /// the store, hot-register the engine into the live `TtsRegistry` and refresh the
-    /// speak-queue voice catalog.
+    fn build_creds(&self, kind: CloudEngineKind, cx: &App) -> Option<CloudCreds> {
+        match kind {
+            CloudEngineKind::Azure => {
+                let api_key = self.azure.api_key.read(cx).content().to_owned();
+                let region = self.azure.region.read(cx).content().to_owned();
+                if api_key.trim().is_empty() || region.trim().is_empty() {
+                    return None;
+                }
+                Some(CloudCreds::Azure(AzureCredentials {
+                    api_key,
+                    region,
+                    base_url: None,
+                }))
+            }
+            CloudEngineKind::ElevenLabs => {
+                let api_key = self.elevenlabs.api_key.read(cx).content().to_owned();
+                if api_key.trim().is_empty() {
+                    return None;
+                }
+                Some(CloudCreds::ElevenLabs(ElevenLabsCredentials {
+                    api_key,
+                    base_url: None,
+                }))
+            }
+            CloudEngineKind::OpenAI => {
+                let api_key = self.openai.api_key.read(cx).content().to_owned();
+                if api_key.trim().is_empty() {
+                    return None;
+                }
+                Some(CloudCreds::OpenAi(OpenAiCredentials {
+                    api_key,
+                    base_url: None,
+                }))
+            }
+            CloudEngineKind::Polly => {
+                let access_key_id = self.polly.access_key.read(cx).content().to_owned();
+                let secret_access_key = self.polly.secret_key.read(cx).content().to_owned();
+                let region = self.polly.region.read(cx).content().to_owned();
+                if access_key_id.trim().is_empty()
+                    || secret_access_key.trim().is_empty()
+                    || region.trim().is_empty()
+                {
+                    return None;
+                }
+                Some(CloudCreds::Polly(PollyCredentials {
+                    access_key_id,
+                    secret_access_key,
+                    region,
+                    base_url: None,
+                }))
+            }
+        }
+    }
+
     fn save(&mut self, kind: CloudEngineKind, cx: &mut Context<Self>) {
+        let Some(creds) = self.build_creds(kind, cx) else {
+            return;
+        };
+        let json = match creds.to_json() {
+            Ok(json) => json,
+            Err(e) => {
+                cx.push_toast(
+                    ToastKind::Error,
+                    format!("Couldn't save {} credentials: {e}", kind.display_name()),
+                );
+                return;
+            }
+        };
+        let repo = Arc::clone(&self.credentials);
+        let credential_id = kind.credential_id();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = repo
+                .store(&CredentialId::new(credential_id), &json)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| this.on_saved(kind, creds, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_save_failed(kind, &message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn on_saved(&mut self, kind: CloudEngineKind, creds: CloudCreds, cx: &mut Context<Self>) {
         match kind {
             CloudEngineKind::Azure => self.azure.dirty = false,
             CloudEngineKind::ElevenLabs => self.elevenlabs.dirty = false,
             CloudEngineKind::OpenAI => self.openai.dirty = false,
             CloudEngineKind::Polly => self.polly.dirty = false,
         }
-        cx.push_toast(ToastKind::Success, "Credentials saved");
+        self.hot_register(kind, creds);
+        cx.push_toast(
+            ToastKind::Info,
+            format!("{} credentials saved", kind.display_name()),
+        );
         cx.notify();
+    }
+
+    fn on_save_failed(&mut self, kind: CloudEngineKind, message: &str, cx: &mut Context<Self>) {
+        cx.push_toast(
+            ToastKind::Error,
+            format!(
+                "Couldn't save {} credentials: {message}",
+                kind.display_name()
+            ),
+        );
+        cx.notify();
+    }
+
+    fn hot_register(&mut self, kind: CloudEngineKind, creds: CloudCreds) {
+        let Some(registry) = self.registry.as_ref() else {
+            return;
+        };
+        match creds {
+            CloudCreds::Azure(c) => cloud_tts_boot::register_azure(registry, c),
+            CloudCreds::ElevenLabs(c) => cloud_tts_boot::register_elevenlabs(registry, c),
+            CloudCreds::OpenAi(c) => cloud_tts_boot::register_openai(registry, c),
+            CloudCreds::Polly(c) => cloud_tts_boot::register_polly(registry, c),
+        };
+        match kind {
+            CloudEngineKind::Azure => self.azure.is_registered = true,
+            CloudEngineKind::ElevenLabs => self.elevenlabs.is_registered = true,
+            CloudEngineKind::OpenAI => self.openai.is_registered = true,
+            CloudEngineKind::Polly => self.polly.is_registered = true,
+        }
+        if let Some(queue) = self.speak.clone() {
+            self.rt_handle.spawn(async move {
+                if let Err(e) = queue.send(SpeakCommand::RefreshVoiceCatalog).await {
+                    eprintln!("forge-desktop: cloud engine voice-catalog refresh failed: {e}");
+                }
+            });
+        }
+    }
+
+    fn test(&mut self, kind: CloudEngineKind, cx: &mut Context<Self>) {
+        let Some(creds) = self.build_creds(kind, cx) else {
+            return;
+        };
+        self.set_test_status(kind, TestStatus::Testing);
+        cx.notify();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(creds.test().await);
+        });
+        cx.spawn(async move |this, cx| {
+            let status = match rx.await {
+                Ok(Ok(())) => TestStatus::Ok,
+                Ok(Err(e)) => TestStatus::Err(e),
+                Err(_) => return,
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.set_test_status(kind, status);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_test_status(&mut self, kind: CloudEngineKind, status: TestStatus) {
+        match kind {
+            CloudEngineKind::Azure => self.azure.test_status = status,
+            CloudEngineKind::ElevenLabs => self.elevenlabs.test_status = status,
+            CloudEngineKind::OpenAI => self.openai.test_status = status,
+            CloudEngineKind::Polly => self.polly.test_status = status,
+        }
     }
 
     // --- cards ------------------------------------------------------------
@@ -415,9 +638,6 @@ impl CloudTtsEnginesView {
                 density,
             ));
 
-        // The test-connection button cannot run without an engine factory + network, so
-        // it renders its enabled/disabled visual state but carries no click handler and
-        // never fakes a result.
         let test_label = if *test_status == TestStatus::Testing {
             "Testing…"
         } else {
@@ -428,7 +648,7 @@ impl CloudTtsEnginesView {
         } else {
             (palette.disabled, palette.disabled)
         };
-        let test_btn = div()
+        let test_base = div()
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
@@ -438,6 +658,15 @@ impl CloudTtsEnginesView {
             .text_size(FONT_SM)
             .text_color(test_fg)
             .child(test_label);
+        let test_btn: AnyElement = if can_test {
+            test_base
+                .id(SharedString::from(format!("cloud-test-{}", kind.key())))
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.test(kind, cx)))
+                .into_any_element()
+        } else {
+            test_base.into_any_element()
+        };
 
         let save_btn: AnyElement = if can_save {
             div()
@@ -528,9 +757,6 @@ impl Render for CloudTtsEnginesView {
 
 // ── view-specific fragments ───────────────────────────────────────────────
 
-/// The config-status badge: a `surface_overlay` pill with a `border_regular` outline,
-/// its mono caption inked by registration (Configured), else a failed test (Connection
-/// failed), else the muted Not-configured default.
 fn config_status_badge(
     test_status: &TestStatus,
     is_registered: bool,
@@ -562,9 +788,6 @@ fn config_status_badge(
         )
 }
 
-/// The post-test result row: a small dot plus a caption — the success hue with "Connection
-/// verified" on a passed test, the `random` hue with the error string on a failure, and
-/// nothing at all while Idle/Testing.
 fn test_result_row(
     test_status: &TestStatus,
     palette: &ForgePalette,
@@ -599,7 +822,6 @@ fn test_result_row(
     )
 }
 
-/// A form row: a fixed-width muted label beside an input that fills the remaining width.
 fn labeled_field(
     label: &'static str,
     input: Entity<TextInput>,
@@ -623,30 +845,29 @@ fn labeled_field(
         .child(div().flex_1().min_w(px(0.0)).child(input))
 }
 
-/// Builds a credential text-field entity seeded with `initial` and adopting `palette`,
-/// rendered at the source's `FONT_SM` body size. `secure` masks secret fields (API keys,
-/// secret access keys) so they never render in plaintext.
 fn field(
     placeholder: &'static str,
-    initial: &str,
     secure: bool,
     palette: ForgePalette,
     cx: &mut Context<CloudTtsEnginesView>,
 ) -> Entity<TextInput> {
-    let initial = initial.to_owned();
     cx.new(|cx| {
-        let mut input = TextInput::new(placeholder, cx)
+        TextInput::new(placeholder, cx)
             .with_palette(palette)
             .with_font_size(FONT_SM)
-            .secure(secure);
-        if !initial.is_empty() {
-            input.set_content(initial, cx);
-        }
-        input
+            .secure(secure)
     })
 }
 
-/// True when the field's trimmed content is non-empty — the save/test gate predicate.
 fn nonempty(input: &Entity<TextInput>, cx: &App) -> bool {
     !input.read(cx).content().trim().is_empty()
+}
+
+fn truncate_err(s: String) -> String {
+    const MAX: usize = 120;
+    if s.chars().count() <= MAX {
+        s
+    } else {
+        s.chars().take(MAX).collect::<String>() + "\u{2026}"
+    }
 }

@@ -66,7 +66,8 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
 
-    let (speak, speak_events, pipeline_config) = build_speak_queue(&bus, &backend).await;
+    let (speak, speak_events, pipeline_config, tts_registry) =
+        build_speak_queue(&bus, &backend).await;
     let speak_bridge = speak
         .clone()
         .map(|handle| Arc::new(SpeakBridge::new(Arc::new(handle))));
@@ -207,6 +208,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         tts_trigger_settings,
         speak_events,
         pipeline_config,
+        tts_registry,
     })
 }
 

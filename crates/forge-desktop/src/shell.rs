@@ -269,6 +269,7 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let pipeline_config = handles.pipeline_config.clone();
                 let tts_trigger_settings = handles.tts_trigger_settings.clone();
+                let tts_registry = handles.tts_registry.clone();
                 cx.new(|cx| {
                     TtsView::new(
                         speak_state,
@@ -277,6 +278,7 @@ impl AppShell {
                         rt_handle,
                         pipeline_config,
                         tts_trigger_settings,
+                        tts_registry,
                         cx,
                     )
                 })

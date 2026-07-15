@@ -21,6 +21,45 @@ pub async fn register_cloud_engines(registry: &RwLock<TtsRegistry>, creds: &dyn 
     try_register_polly(registry, creds).await;
 }
 
+pub fn register_azure(registry: &RwLock<TtsRegistry>, creds: AzureCredentials) -> EngineId {
+    let id = EngineId("azure".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(AzureEngineFactory::new(creds)));
+    id
+}
+
+pub fn register_elevenlabs(
+    registry: &RwLock<TtsRegistry>,
+    creds: ElevenLabsCredentials,
+) -> EngineId {
+    let id = EngineId("elevenlabs".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(ElevenLabsEngineFactory::new(creds)));
+    id
+}
+
+pub fn register_openai(registry: &RwLock<TtsRegistry>, creds: OpenAiCredentials) -> EngineId {
+    let id = EngineId("openai".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(OpenAiEngineFactory::new(creds)));
+    id
+}
+
+pub fn register_polly(registry: &RwLock<TtsRegistry>, creds: PollyCredentials) -> EngineId {
+    let id = EngineId("polly".into());
+    registry
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .register(id.clone(), Arc::new(PollyEngineFactory::new(creds)));
+    id
+}
+
 async fn try_register_azure(registry: &RwLock<TtsRegistry>, creds: &dyn CredentialsRepo) {
     let json = match creds.load(&CredentialId::new(AZURE_CREDENTIAL_ID)).await {
         Ok(Some(j)) => j,
@@ -37,13 +76,7 @@ async fn try_register_azure(registry: &RwLock<TtsRegistry>, creds: &dyn Credenti
             return;
         }
     };
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            EngineId("azure".into()),
-            Arc::new(AzureEngineFactory::new(azure_creds)),
-        );
+    register_azure(registry, azure_creds);
     eprintln!("forge-desktop: registered Azure TTS engine");
 }
 
@@ -66,13 +99,7 @@ async fn try_register_elevenlabs(registry: &RwLock<TtsRegistry>, creds: &dyn Cre
             return;
         }
     };
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            EngineId("elevenlabs".into()),
-            Arc::new(ElevenLabsEngineFactory::new(el_creds)),
-        );
+    register_elevenlabs(registry, el_creds);
     eprintln!("forge-desktop: registered ElevenLabs TTS engine");
 }
 
@@ -92,13 +119,7 @@ async fn try_register_openai(registry: &RwLock<TtsRegistry>, creds: &dyn Credent
             return;
         }
     };
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            EngineId("openai".into()),
-            Arc::new(OpenAiEngineFactory::new(oa_creds)),
-        );
+    register_openai(registry, oa_creds);
     eprintln!("forge-desktop: registered OpenAI TTS engine");
 }
 
@@ -118,12 +139,6 @@ async fn try_register_polly(registry: &RwLock<TtsRegistry>, creds: &dyn Credenti
             return;
         }
     };
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            EngineId("polly".into()),
-            Arc::new(PollyEngineFactory::new(polly_creds)),
-        );
+    register_polly(registry, polly_creds);
     eprintln!("forge-desktop: registered Polly TTS engine");
 }

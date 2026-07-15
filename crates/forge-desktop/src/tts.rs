@@ -1,11 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XXS, ForgePalette,
     Spacing, StatusVariant, badge, breadcrumb, spacing, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
-use forge_storage::DataProvider;
+use forge_storage::{CredentialsRepo, DataProvider};
+use forge_tts_core::TtsRegistry;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
 };
@@ -99,6 +100,7 @@ pub struct TtsView {
 }
 
 impl TtsView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         speak_state: Entity<SpeakState>,
         speak: Option<SpeakQueueHandle>,
@@ -106,6 +108,7 @@ impl TtsView {
         rt_handle: tokio::runtime::Handle,
         pipeline_config: Option<PipelineConfigHandle>,
         tts_trigger_settings: forge_runtime::TtsTriggerSettingsHandle,
+        tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         cx: &mut Context<Self>,
     ) -> Self {
         let dashboard =
@@ -128,9 +131,18 @@ impl TtsView {
                 cx,
             )
         });
-        let aliases =
-            cx.new(|cx| VoiceAliasesView::new(backend.voice_alias_repo(), speak, rt_handle, cx));
-        let cloud = cx.new(CloudTtsEnginesView::new);
+        let aliases = cx.new(|cx| {
+            VoiceAliasesView::new(
+                backend.voice_alias_repo(),
+                speak.clone(),
+                rt_handle.clone(),
+                cx,
+            )
+        });
+        let credentials: Arc<dyn CredentialsRepo> =
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
+        let cloud =
+            cx.new(|cx| CloudTtsEnginesView::new(tts_registry, credentials, rt_handle, speak, cx));
         Self {
             section: TtsSection::Dashboard,
             dashboard,

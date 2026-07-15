@@ -54,4 +54,7 @@ pub struct RuntimeHandles {
     /// The speak queue's initial event subscription. Not `Clone` — taken once by the
     /// boot-time bridge task that feeds `SpeakEvent`s into the dashboard entity.
     pub speak_events: Option<forge_speak_queue::SpeakEventStream>,
+    /// Shared with the running speak-queue actor; the Cloud Engines screen registers
+    /// credentialed engines into it live. In lockstep with `speak`.
+    pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
 }

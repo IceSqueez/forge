@@ -105,6 +105,7 @@ impl TtsView {
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         pipeline_config: Option<PipelineConfigHandle>,
+        tts_trigger_settings: forge_runtime::TtsTriggerSettingsHandle,
         cx: &mut Context<Self>,
     ) -> Self {
         let dashboard =
@@ -119,9 +120,16 @@ impl TtsView {
                 cx,
             )
         });
+        let triggers = cx.new(|cx| {
+            TtsTriggersView::new(
+                backend.tts_trigger_settings_repo(),
+                tts_trigger_settings,
+                rt_handle.clone(),
+                cx,
+            )
+        });
         let aliases =
             cx.new(|cx| VoiceAliasesView::new(backend.voice_alias_repo(), speak, rt_handle, cx));
-        let triggers = cx.new(TtsTriggersView::new);
         let cloud = cx.new(CloudTtsEnginesView::new);
         Self {
             section: TtsSection::Dashboard,

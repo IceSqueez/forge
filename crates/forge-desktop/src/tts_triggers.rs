@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ForgePalette, Icon, Radius, Spacing, badge, card, icon, radius, spacing, toggle,
+    ForgePalette, Icon, Radius, Spacing, badge, card, icon, radius, spacing, toggle, with_alpha,
 };
+use forge_runtime::TtsTriggerSettingsHandle;
+use forge_storage::{TtsTriggerSettings, TtsTriggerSettingsRepo};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, Window, div, prelude::*, px};
 
 use crate::presentation::ActivePresentation;
@@ -19,19 +23,10 @@ const PANEL_PAD_V: Pixels = px(13.0);
 /// Format / queue panel horizontal inset (the source's fixed 14px pad).
 const PANEL_PAD_H: Pixels = px(14.0);
 
-/// The TTS Triggers section view-entity: a "what gets spoken" header over three
-/// full-width rows of paired cards — a chat-command source and a channel-points
-/// source, a bits source and a sub-messages source, then a message-format panel and
-/// a queue-behavior panel.
-///
-/// Owns the seven source/format toggles as local `bool` state, seeded from the
-/// trigger-settings defaults. `forge-desktop` wires no TTS-trigger repo yet, so the
-/// role chips, cooldown meta and the minimum-bits / template / queue-limit values are
-/// static display strings and each toggle flips its cached flag. The real screen loads
-/// the settings from `forge-storage`'s trigger-settings repo over the runtime→UI
-/// bridge, and a toggle persists through that repo's handle and hot-swaps the live
-/// speak-queue trigger config.
 pub struct TtsTriggersView {
+    repo: Arc<dyn TtsTriggerSettingsRepo>,
+    settings_handle: TtsTriggerSettingsHandle,
+    rt_handle: tokio::runtime::Handle,
     command_enabled: bool,
     channel_points_enabled: bool,
     bits_enabled: bool,
@@ -39,56 +34,157 @@ pub struct TtsTriggersView {
     read_username: bool,
     speak_emotes: bool,
     bits_skip_line: bool,
+    save_error: Option<String>,
 }
 
 impl TtsTriggersView {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
-        Self {
-            command_enabled: true,
-            channel_points_enabled: true,
-            bits_enabled: true,
-            sub_messages_enabled: false,
-            read_username: true,
-            speak_emotes: false,
-            bits_skip_line: true,
+    pub fn new(
+        repo: Arc<dyn TtsTriggerSettingsRepo>,
+        settings_handle: TtsTriggerSettingsHandle,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let defaults = TtsTriggerSettings::default();
+        let view = Self {
+            repo,
+            settings_handle,
+            rt_handle,
+            command_enabled: defaults.command_enabled,
+            channel_points_enabled: defaults.channel_points_enabled,
+            bits_enabled: defaults.bits_enabled,
+            sub_messages_enabled: defaults.sub_messages_enabled,
+            read_username: defaults.read_username,
+            speak_emotes: defaults.speak_emotes,
+            bits_skip_line: defaults.bits_skip_line,
+            save_error: None,
+        };
+        view.reload(cx);
+        view
+    }
+
+    // --- async pull + persist ---------------------------------------------
+
+    fn reload(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<TtsTriggerSettings, String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(repo.get_trigger_settings().await.map_err(|e| e.to_string()));
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(settings)) => {
+                let _ = this.update(cx, |this, cx| this.apply_loaded(settings, cx));
+            }
+            Ok(Err(message)) => {
+                eprintln!("forge-desktop: tts trigger settings load failed: {message}");
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn apply_loaded(&mut self, settings: TtsTriggerSettings, cx: &mut Context<Self>) {
+        self.command_enabled = settings.command_enabled;
+        self.channel_points_enabled = settings.channel_points_enabled;
+        self.bits_enabled = settings.bits_enabled;
+        self.sub_messages_enabled = settings.sub_messages_enabled;
+        self.read_username = settings.read_username;
+        self.speak_emotes = settings.speak_emotes;
+        self.bits_skip_line = settings.bits_skip_line;
+        self.save_error = None;
+        cx.notify();
+    }
+
+    fn to_settings(&self) -> TtsTriggerSettings {
+        TtsTriggerSettings {
+            command_enabled: self.command_enabled,
+            channel_points_enabled: self.channel_points_enabled,
+            bits_enabled: self.bits_enabled,
+            sub_messages_enabled: self.sub_messages_enabled,
+            read_username: self.read_username,
+            speak_emotes: self.speak_emotes,
+            bits_skip_line: self.bits_skip_line,
         }
     }
 
-    // --- toggle handlers (view-state stubs) -------------------------------
+    fn persist(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.repo);
+        let handle = self.settings_handle.clone();
+        let settings = self.to_settings();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = match repo.set_trigger_settings(&settings).await {
+                Ok(()) => {
+                    handle.swap(settings);
+                    Ok(())
+                }
+                Err(e) => {
+                    let message = e.to_string();
+                    eprintln!("forge-desktop: tts trigger settings persist failed: {message}");
+                    Err(message)
+                }
+            };
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.save_error = None;
+                    cx.notify();
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.save_error = Some(message);
+                    cx.notify();
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    // --- toggle handlers --------------------------------------------------
 
     fn toggle_command(&mut self, cx: &mut Context<Self>) {
         self.command_enabled = !self.command_enabled;
         cx.notify();
+        self.persist(cx);
     }
 
     fn toggle_channel_points(&mut self, cx: &mut Context<Self>) {
         self.channel_points_enabled = !self.channel_points_enabled;
         cx.notify();
+        self.persist(cx);
     }
 
     fn toggle_bits(&mut self, cx: &mut Context<Self>) {
         self.bits_enabled = !self.bits_enabled;
         cx.notify();
+        self.persist(cx);
     }
 
     fn toggle_subs(&mut self, cx: &mut Context<Self>) {
         self.sub_messages_enabled = !self.sub_messages_enabled;
         cx.notify();
+        self.persist(cx);
     }
 
     fn toggle_read_username(&mut self, cx: &mut Context<Self>) {
         self.read_username = !self.read_username;
         cx.notify();
+        self.persist(cx);
     }
 
     fn toggle_speak_emotes(&mut self, cx: &mut Context<Self>) {
         self.speak_emotes = !self.speak_emotes;
         cx.notify();
+        self.persist(cx);
     }
 
     fn toggle_bits_skip_line(&mut self, cx: &mut Context<Self>) {
         self.bits_skip_line = !self.bits_skip_line;
         cx.notify();
+        self.persist(cx);
     }
 
     // --- header -----------------------------------------------------------
@@ -113,6 +209,24 @@ impl TtsTriggersView {
                     .child("Enable sources and set who can trigger them"),
             )
             .into_any_element()
+    }
+
+    fn error_banner(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
+        self.save_error.as_ref().map(|err| {
+            div()
+                .w_full()
+                .py(spacing(Spacing::Xs, density))
+                .px(spacing(Spacing::Sm, density))
+                .rounded(radius(Radius::Sm))
+                .border(BORDER_THIN)
+                .border_color(palette.random)
+                .bg(with_alpha(palette.random, 0.1))
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.random)
+                .child(err.clone())
+                .into_any_element()
+        })
     }
 
     /// A source card's header row: the leading glyph tile, a title over a subtitle,
@@ -593,6 +707,7 @@ impl Render for TtsTriggersView {
                     .flex_col()
                     .gap(spacing(Spacing::Sm, density))
                     .child(self.header_group(&palette, density))
+                    .children(self.error_banner(&palette, density))
                     .child(row1)
                     .child(row2)
                     .child(row3),

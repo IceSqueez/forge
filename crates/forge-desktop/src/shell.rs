@@ -268,8 +268,17 @@ impl AppShell {
                 let backend = Arc::clone(&handles.backend);
                 let rt_handle = handles.rt_handle.clone();
                 let pipeline_config = handles.pipeline_config.clone();
+                let tts_trigger_settings = handles.tts_trigger_settings.clone();
                 cx.new(|cx| {
-                    TtsView::new(speak_state, speak, backend, rt_handle, pipeline_config, cx)
+                    TtsView::new(
+                        speak_state,
+                        speak,
+                        backend,
+                        rt_handle,
+                        pipeline_config,
+                        tts_trigger_settings,
+                        cx,
+                    )
                 })
                 .into()
             }

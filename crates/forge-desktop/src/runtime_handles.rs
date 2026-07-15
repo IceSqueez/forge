@@ -44,6 +44,9 @@ pub struct RuntimeHandles {
     /// The speak-queue command handle; `None` only if construction itself failed.
     /// Screens dispatch `SpeakCommand`s directly through this (Enqueue/Skip/Clear/...).
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
+    /// Hot-mutable via TTS Triggers screen saves; read by the `Speak` sub-action
+    /// runner on every dispatch to gate reward/command/bits-sourced speech.
+    pub tts_trigger_settings: forge_runtime::TtsTriggerSettingsHandle,
     /// The live message-preprocessing pipeline config, in lockstep with `speak`
     /// (`None` only when the speak subsystem doesn't build). The Filters screen swaps
     /// it on save to hot-reload the running queue.

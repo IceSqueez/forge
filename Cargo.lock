@@ -2758,7 +2758,9 @@ dependencies = [
  "forge-platform-youtube",
  "forge-registry",
  "forge-runtime",
+ "forge-script",
  "forge-server",
+ "forge-soundboard",
  "forge-speak-queue",
  "forge-storage",
  "forge-storage-sqlite",
@@ -2779,6 +2781,7 @@ dependencies = [
  "serde_json",
  "time",
  "tokio",
+ "tracing",
  "ulid",
 ]
 

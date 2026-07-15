@@ -24,7 +24,9 @@ forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-registry = { path = "../forge-registry" }
 forge-runtime = { path = "../forge-runtime" }
+forge-script = { path = "../forge-script" }
 forge-server = { path = "../forge-server" }
+forge-soundboard = { path = "../forge-soundboard" }
 forge-speak-queue = { path = "../forge-speak-queue" }
 forge-storage = { path = "../forge-storage" }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }
@@ -50,6 +52,7 @@ reqwest = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 ulid = { workspace = true }
 
 [lints]

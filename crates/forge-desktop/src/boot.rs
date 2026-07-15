@@ -6,9 +6,11 @@ use forge_platform_core::paths;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Config, EventBus, QueueScheduler, SchedulerCell,
-    ScriptRegistry, register_core_sub_actions, register_core_triggers, spawn_action_engine,
-    spawn_live_viewer_aggregator, spawn_trigger_evaluator,
+    ScriptRegistry, SoundPlayer, SpeakDispatcher, TtsTriggerSettingsHandle,
+    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    spawn_action_engine, spawn_live_viewer_aggregator, spawn_trigger_evaluator,
 };
+use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
 };
@@ -17,6 +19,7 @@ use forge_storage_sqlite::SqliteBackend;
 use crate::integrations::build_integrations;
 use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::build_speak_queue;
+use crate::speak_bridge::SpeakBridge;
 
 /// Outcome of a failed boot, differentiated by cause so the shell routes to the
 /// matching screen: a schema-version mismatch is a code/data version gap the user
@@ -63,10 +66,25 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
 
-    let script_registry = Arc::new(ScriptRegistry::new());
-    if let Err(e) = script_registry.load_all(backend.as_ref()).await {
+    let (speak, speak_events, pipeline_config) = build_speak_queue(&bus, &backend).await;
+    let speak_bridge = speak
+        .clone()
+        .map(|handle| Arc::new(SpeakBridge::new(Arc::new(handle))));
+    let speak_dispatcher: Option<Arc<dyn SpeakDispatcher>> = speak_bridge
+        .clone()
+        .map(|bridge| bridge as Arc<dyn SpeakDispatcher>);
+    let speak_requester: Option<Arc<dyn forge_script::SpeakRequester>> =
+        speak_bridge.map(|bridge| bridge as Arc<dyn forge_script::SpeakRequester>);
+
+    let mut script_registry_mut = ScriptRegistry::new();
+    match speak_requester {
+        Some(requester) => script_registry_mut.set_speak_requester(requester),
+        None => eprintln!("forge-desktop: no speak dispatcher available; scripts cannot speak"),
+    }
+    if let Err(e) = script_registry_mut.load_all(backend.as_ref()).await {
         eprintln!("forge-desktop: script registry load failed at boot: {e}");
     }
+    let script_registry = Arc::new(script_registry_mut);
 
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
     let scheduler_cell = SchedulerCell::new();
@@ -86,6 +104,38 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     ) {
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
+
+    let tts_trigger_settings = {
+        let repo = backend.tts_trigger_settings_repo();
+        let loaded = repo.get_trigger_settings().await.unwrap_or_else(|e| {
+            eprintln!(
+                "forge-desktop: failed to load tts trigger settings on boot, using defaults: {e}"
+            );
+            forge_storage::TtsTriggerSettings::default()
+        });
+        TtsTriggerSettingsHandle::new(loaded)
+    };
+    match speak_dispatcher {
+        Some(dispatcher) => {
+            let sound_player = Arc::new(SoundboardPlayer::new(
+                Arc::new(CpalSinkFactory),
+                Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
+                backend.soundboard_clips_repo(),
+            ));
+            if let Err(e) = register_audio_sub_actions(
+                &mut sub_action_reg,
+                sound_player as Arc<dyn SoundPlayer>,
+                dispatcher,
+                tts_trigger_settings.clone(),
+            ) {
+                eprintln!("forge-desktop: audio sub-action runner registration failed: {e}");
+            }
+        }
+        None => eprintln!(
+            "forge-desktop: no speak dispatcher available; audio sub-action runners not registered"
+        ),
+    }
+
     let mut trigger_reg = TriggerRegistry::new();
     if let Err(e) = register_core_triggers(&mut trigger_reg) {
         eprintln!("forge-desktop: core trigger registration failed: {e}");
@@ -139,7 +189,6 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     }
 
     let server = build_server(&backend, &bus, &action_engine).await;
-    let (speak, speak_events, pipeline_config) = build_speak_queue(&bus, &backend).await;
 
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
@@ -155,6 +204,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         builtins: integrations.builtins,
         server,
         speak,
+        tts_trigger_settings,
         speak_events,
         pipeline_config,
     })

@@ -5,15 +5,8 @@ use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
 
-/// Application version, resolved from the crate at build time and inked by the kit
-/// footer (base muted, prerelease stage tag in the brand accent).
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Persistent footer rendered as its own child view-entity. It composes the kit
-/// `app_footer`, feeding it live uptime from the observed [`RuntimeStatus`] topic
-/// entity plus the connected/total readout from the observed [`PlatformConnectivity`]
-/// topic and the build version. It holds only the topic handles — never runtime
-/// state — and repaints when the bridge advances uptime or a connection changes.
 pub struct Footer {
     status: Entity<RuntimeStatus>,
     connectivity: Entity<PlatformConnectivity>,

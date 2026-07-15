@@ -1,7 +1,3 @@
-//! Actions screen — editor detail pane: header, the sub-action step chain and
-//! step controls, the edit-sub-action side sheet, the placeholder triggers
-//! section, and the unified add-sub-action grid picker.
-
 use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
@@ -23,9 +19,6 @@ use gpui::{
 };
 use std::collections::HashMap;
 
-/// The step-card leading glyph name, its title, and the mono summary line for a
-/// step whose `kind_id` the registry does not resolve — the runner's own
-/// label/icon take precedence when present.
 fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
@@ -178,9 +171,6 @@ fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// The registry's runners as grid groups (one per [`SubActionCategory`], runners
-/// ordered by category slug then label) paired with the `kind_id` each card id
-/// appends.
 fn build_step_groups(
     registry: &SubActionRegistry,
     palette: &ForgePalette,
@@ -221,8 +211,6 @@ fn build_step_groups(
     (groups, picks)
 }
 
-/// Builds one edit-form input row, seeding the field from the step's stored
-/// config value.
 #[allow(clippy::too_many_arguments)]
 fn build_input_field(
     key: &str,
@@ -254,9 +242,6 @@ fn build_input_field(
     }
 }
 
-/// Folds one `FormField` (recursing through `Optional`) into the flat edit-form
-/// field list. Select / DynamicSelect degrade to a free-text input — the kit
-/// ships no value-picker primitive yet.
 fn push_form_field(
     spec: &FormField,
     gate: Option<String>,
@@ -352,8 +337,6 @@ fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
     segs
 }
 
-/// Renders a summary line with `%variable%` tokens tinted `warning` and plain
-/// text tinted `text_muted`, wrapping like the source's flowed mono row.
 fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     if s.is_empty() {
         return div()
@@ -379,9 +362,6 @@ fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     row.into_any_element()
 }
 
-/// Full-width, centered "Add …" button closing a section: the deep-panel fill,
-/// an accent icon + label and a thin hairline, washing `surface_overlay` on
-/// hover.
 fn add_row_button(
     id: impl Into<ElementId>,
     glyph: Icon,
@@ -418,7 +398,6 @@ fn add_row_button(
         .into_any_element()
 }
 
-/// A centered, hairline-framed empty-state card for a section with no rows.
 fn empty_placeholder_card(
     glyph: Icon,
     glyph_color: Rgba,
@@ -447,8 +426,6 @@ fn empty_placeholder_card(
         .into_any_element()
 }
 
-/// The platform accent a trigger instance's card glyph inks, keyed off the
-/// `kind_id` prefix (mirroring the trigger picker's platform grouping).
 fn trigger_kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
     if kind_id.starts_with("twitch.") {
         palette.brand
@@ -469,9 +446,6 @@ fn trigger_kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// The linkable user-defined instances as one "saved triggers" grid band, paired
-/// with the [`TriggerInstanceId`] each card id links. A disabled instance renders in
-/// the [`GridPickerItemState::Disabled`] look.
 fn build_trigger_groups(
     instances: &[TriggerInstance],
     registry: &TriggerRegistry,
@@ -525,8 +499,6 @@ fn build_trigger_groups(
     (groups, picks)
 }
 
-/// Borderless trailing unlink affordance on a linked trigger card: a faint `X` that,
-/// on hover, washes its frame solid `random` and inverts its glyph to `shell`.
 fn trigger_unlink_btn(
     id: impl Into<ElementId>,
     palette: &ForgePalette,
@@ -550,18 +522,12 @@ fn trigger_unlink_btn(
 }
 
 impl ScreenActionsView {
-    // --- editor: current chain --------------------------------------------
-
-    /// The chain the step list currently renders — the action's top-level steps
-    /// at root, or the nested sub-chain [`Self::nav_path`] descends into.
     pub(super) fn current_chain(&self) -> Vec<SubActionStep> {
         match &self.detail {
             Some(detail) => nav::resolve_chain(&detail.action.sub_actions, &self.nav_path),
             None => Vec::new(),
         }
     }
-
-    // --- editor: step interaction handlers --------------------------------
 
     fn move_step_up(&mut self, i: usize, cx: &mut Context<Self>) {
         self.step_menu_open = None;
@@ -661,10 +627,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Fires a synthetic event for the selected action's first linked trigger
-    /// through the runtime bus (store-then-replay, a single evaluation pass), then
-    /// toasts whether it matched. The injection runs on the tokio runtime; the
-    /// outcome hops back to the foreground executor as a toast.
     fn test_run(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.selected else {
             return;
@@ -698,8 +660,6 @@ impl ScreenActionsView {
         .detach();
         cx.notify();
     }
-
-    // --- editor: edit-sub-action side sheet -------------------------------
 
     fn open_edit_sub_action(&mut self, i: usize, cx: &mut Context<Self>) {
         let chain = self.current_chain();
@@ -747,9 +707,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Overlays the form's scalar fields onto the edited step's existing config,
-    /// leaving the step's kind, enabled flag, label and nested sub-chain keys
-    /// intact, then persists.
     fn submit_sub_action(&mut self, cx: &mut Context<Self>) {
         let Some(form) = self.sub_form.as_ref() else {
             return;
@@ -815,8 +772,6 @@ impl ScreenActionsView {
         );
         cx.notify();
     }
-
-    // --- editor: unified "Add sub-action" grid picker ---------------------
 
     fn open_grid_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(action_id) = self.selected else {
@@ -915,12 +870,6 @@ impl ScreenActionsView {
         );
     }
 
-    // --- editor: link / unlink triggers -----------------------------------
-
-    /// Opens the unified centred grid picker over the user-defined trigger instances
-    /// not yet linked to the selected action. The linkable set is pulled off the
-    /// runtime service first; the picker opens (and focuses) once it lands. An empty
-    /// set toasts rather than opening an empty grid.
     fn open_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(action_id) = self.selected else {
             return;
@@ -953,8 +902,6 @@ impl ScreenActionsView {
         .detach();
     }
 
-    /// Builds and opens the trigger grid picker from the pulled linkable set, guarding
-    /// against the selection having moved on while the pull was in flight.
     fn apply_trigger_picker(
         &mut self,
         action_id: ActionId,
@@ -1032,9 +979,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Links `instance_id` to the selected action through the runtime service, then
-    /// re-pulls the editor detail in full so the triggers section mirrors the persisted
-    /// links rather than a locally-patched list.
     fn link_trigger(
         &mut self,
         action_id: ActionId,
@@ -1070,8 +1014,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Unlinks `instance_id` from the selected action through the runtime service, then
-    /// re-pulls the editor detail in full.
     fn unlink_trigger(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
         let Some(action_id) = self.selected else {
             return;
@@ -1098,8 +1040,6 @@ impl ScreenActionsView {
         .detach();
         cx.notify();
     }
-
-    // --- render: right editor pane ----------------------------------------
 
     pub(super) fn render_editor_pane(
         &self,
@@ -1276,9 +1216,6 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    /// Triggers section: the mono count header over one card per linked trigger
-    /// instance (each with a trailing unlink affordance), an empty-state card when
-    /// none are linked, and a closing "Add trigger" button opening the grid picker.
     fn render_triggers_section(
         &self,
         detail: &ActionDetail,
@@ -1657,8 +1594,6 @@ impl ScreenActionsView {
             .child(menu)
             .into_any_element()
     }
-
-    // --- render: edit-sub-action side sheet -------------------------------
 
     pub(super) fn render_sub_action_modal(
         &self,

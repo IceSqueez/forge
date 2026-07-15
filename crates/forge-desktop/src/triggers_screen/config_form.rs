@@ -1,8 +1,3 @@
-//! Shared configuration-editor folding for the triggers screen: the `FormField` →
-//! `ConfigField` fold (the detail side-sheet and the create-form both build their
-//! editor rows through it) and the reverse overlay of the edited field values back
-//! onto a config buffer. Each screen renders its `ConfigField` rows locally.
-
 use forge_components::{ForgePalette, InputEvent, TextInput};
 use forge_registry::FormField;
 use forge_types::{TriggerConfig, Variant};
@@ -11,17 +6,10 @@ use std::collections::HashMap;
 
 use super::TriggersRegistryView;
 
-/// One row in a config editor, folded from the kind's `config_fields` over the
-/// effective (default-merged) config. `Hint` marks a key authored elsewhere (a nested
-/// sub-chain), rendered inert.
 pub(super) enum ConfigField {
     Input {
         key: String,
-        /// Committed as `Variant::Int` (lenient parse — a non-numeric value keeps the
-        /// field's prior value) rather than `Variant::String`.
         integer: bool,
-        /// Set on the inner member of an `Optional` group; committed only while the
-        /// gate toggle (a sibling `Bool` on this key) is on.
         gate: Option<String>,
         input: Entity<TextInput>,
         _sub: Subscription,
@@ -36,8 +24,6 @@ pub(super) enum ConfigField {
     },
 }
 
-/// The submit handler a screen wires onto every config input it folds, so pressing
-/// Enter routes back to that screen's commit path.
 pub(super) type ConfigCommitHandler = fn(
     &mut TriggersRegistryView,
     Entity<TextInput>,
@@ -45,8 +31,6 @@ pub(super) type ConfigCommitHandler = fn(
     &mut Context<TriggersRegistryView>,
 );
 
-/// Renders a `Variant` as the single-line string the field editor seeds and commits.
-/// Composite values carry no inline text form.
 pub(super) fn variant_display(v: &Variant) -> String {
     match v {
         Variant::Int(n) => n.to_string(),
@@ -58,9 +42,6 @@ pub(super) fn variant_display(v: &Variant) -> String {
     }
 }
 
-/// Keeps only the buffer entries diverging from `default`, so a saved config stores a
-/// sparse diff the runtime re-merges over the current defaults rather than freezing
-/// today's defaults into the row.
 pub(super) fn sparse_overrides(default: &TriggerConfig, buffer: &TriggerConfig) -> TriggerConfig {
     buffer
         .iter()
@@ -69,10 +50,6 @@ pub(super) fn sparse_overrides(default: &TriggerConfig, buffer: &TriggerConfig) 
         .collect()
 }
 
-/// Folds one `FormField` (recursing through `Optional`) into the flat config-editor
-/// field list, seeding each input from `config` and wiring `on_committed` to every
-/// input. Select / DynamicSelect degrade to a free-text input — the kit ships no
-/// value-picker primitive yet.
 pub(super) fn fold_config_field(
     spec: &FormField,
     gate: Option<String>,
@@ -115,6 +92,7 @@ pub(super) fn fold_config_field(
             on_committed,
             cx,
         )),
+        // Select / DynamicSelect degrade to free-text: the kit ships no value-picker yet.
         FormField::Select { key, .. } | FormField::DynamicSelect { key, .. } => out.push(
             build_config_input(key, "", false, gate, config, palette, on_committed, cx),
         ),
@@ -181,9 +159,6 @@ fn build_config_input(
     }
 }
 
-/// Overlays the editor's live field values onto `buffer`, gated the same way the
-/// runtime re-merges an `Optional` group: an inner member commits only while its gate
-/// toggle is on. Integer inputs keep the buffer's prior value on a non-numeric parse.
 pub(super) fn overlay_field_values(fields: &[ConfigField], buffer: &mut TriggerConfig, cx: &App) {
     let bool_vals: HashMap<&str, bool> = fields
         .iter()

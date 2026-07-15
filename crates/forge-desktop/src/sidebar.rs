@@ -13,11 +13,6 @@ use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::screen::Screen;
 
-// Fixed sidebar chrome geometry. The nav rail is a fixed-width, density-neutral
-// chrome region, so — mirroring the kit footer's precedent — its widths, paddings,
-// item insets, glyph sizes, and indicator discs are carried as hand-tuned literals
-// rather than snapped to the density-scaled `Spacing` steps, which would alter the
-// rail's deliberate rhythm.
 const SIDEBAR_WIDTH: Pixels = px(210.0);
 const SIDEBAR_PAD_H: Pixels = px(8.0);
 const SIDEBAR_PAD_TOP: Pixels = px(12.0);
@@ -34,8 +29,6 @@ const FLAT_ITEM_MB: Pixels = px(1.0);
 const SECTION_ICON: Pixels = px(15.0);
 const FLAT_ICON: Pixels = px(13.0);
 const BRAND_DOT: Pixels = px(8.0);
-/// The brand indicator is a soft-cornered square (2px), not a disc — matching the
-/// design's rounded-square platform/app marks.
 const BRAND_DOT_RADIUS: Pixels = px(2.0);
 const STATUS_DOT: Pixels = px(5.0);
 
@@ -44,37 +37,25 @@ const SECTION_LABEL_PAD_BOTTOM: Pixels = px(6.0);
 const MINI_LABEL_PAD_TOP: Pixels = px(8.0);
 const MINI_LABEL_PAD_BOTTOM: Pixels = px(3.0);
 
-/// Navigation request emitted when a sidebar item is clicked. The root shell
-/// subscribes and drives the router; the sidebar itself never mutates the router —
-/// it only voices intent, keeping the active screen single-sourced on the root.
 pub struct NavRequested(pub Screen);
 
-/// One row in the sidebar roster. The grouping (sections, mini-labels, leaf
-/// styles) mirrors the shipping app's nav taxonomy; brand-dot colors resolve from
-/// the active palette at render time.
 enum NavEntry {
-    /// Larger heading over a group (`AUDIENCE`, `AUTOMATION`).
     SectionLabel(&'static str),
-    /// Tighter uppercase heading over a flat cluster (`PLATFORMS`, `MODULES`).
     MiniLabel(&'static str),
-    /// Same tight uppercase heading, but navigable to an overview screen when
-    /// clicked (`STREAM APPS` → the stream-apps overview).
-    MiniLabelLink { label: &'static str, screen: Screen },
-    /// Primary leaf: 15px glyph that recolors to brand when active.
+    MiniLabelLink {
+        label: &'static str,
+        screen: Screen,
+    },
     SectionLeaf {
         icon: Icon,
         label: &'static str,
         screen: Screen,
     },
-    /// Module leaf: 13px glyph, no active recolor.
     FlatIconLeaf {
         icon: Icon,
         label: &'static str,
         screen: Screen,
     },
-    /// Platform / stream-app leaf: a brand square, a label, and a live-status dot.
-    /// The dot's connected state is read from the connectivity topic at render time,
-    /// keyed by `integ`.
     FlatLink {
         dot: Rgba,
         label: &'static str,
@@ -83,11 +64,6 @@ enum NavEntry {
     },
 }
 
-/// Left navigation rail rendered as its own child view-entity. It owns
-/// only the active-screen mirror it highlights against; clicks emit
-/// [`NavRequested`] for the shell to route, and the shell pushes the confirmed
-/// screen back via [`SidebarNav::set_current`]. Palette is read from the
-/// presentation `Global`.
 pub struct SidebarNav {
     current: Screen,
     connectivity: Entity<PlatformConnectivity>,
@@ -103,7 +79,6 @@ impl SidebarNav {
     ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
-        // Repaint the connection dots when the connectivity topic advances.
         cx.observe(&connectivity, |_, _, cx| cx.notify()).detach();
         Self {
             current,
@@ -111,7 +86,6 @@ impl SidebarNav {
         }
     }
 
-    /// Confirmed active screen pushed from the root after it routes a request.
     pub fn set_current(&mut self, screen: Screen) {
         self.current = screen;
     }
@@ -120,10 +94,6 @@ impl SidebarNav {
         cx.emit(NavRequested(screen));
     }
 
-    /// Grouped roster (every row except the bottom-pinned Settings). Brand-dot
-    /// colors resolve from `palette`; each platform / stream-app leaf's live
-    /// connection dot is read from the connectivity topic at render time, keyed by
-    /// its [`Integration`].
     fn roster(palette: &ForgePalette) -> Vec<NavEntry> {
         vec![
             NavEntry::SectionLeaf {
@@ -271,9 +241,6 @@ impl SidebarNav {
             .into_any_element()
     }
 
-    /// Navigable variant of [`Self::mini_label`]: the same tight uppercase caption,
-    /// but a click voices a [`NavRequested`] toward `screen` (the section's overview)
-    /// and a hover lifts the caption ink to signal the affordance.
     fn mini_label_link(
         &self,
         text: &'static str,
@@ -300,9 +267,6 @@ impl SidebarNav {
             .into_any_element()
     }
 
-    /// Shared interactive leaf frame: rounded row, active fill vs hover fill, and a
-    /// click that emits the navigation request. `children` are the already-built
-    /// leading glyph/dot, label, and any trailing status dot.
     #[allow(clippy::too_many_arguments)]
     fn nav_frame(
         id: &'static str,
@@ -339,8 +303,6 @@ impl SidebarNav {
         row.into_any_element()
     }
 
-    /// Builds a primary leaf (Home / automation group / Settings): 15px glyph that
-    /// recolors to brand when active.
     fn section_leaf(
         &self,
         ic: Icon,

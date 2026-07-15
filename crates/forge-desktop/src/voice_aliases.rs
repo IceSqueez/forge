@@ -17,37 +17,21 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 
-/// Toolbar search-field width — the parity source pins it at a fixed 240px, off the
-/// `Spacing` scale, so it is carried as a named literal.
 const SEARCH_W: Pixels = px(240.0);
-/// Assign/edit modal width — the parity source caps its card at a fixed 440px, which
-/// no [`forge_components::ModalSize`] step reproduces, so it is pinned exactly.
 const MODAL_W: Pixels = px(440.0);
-/// Trailing actions column width (the source's fixed 90px mono column).
 const ACTIONS_W: Pixels = px(90.0);
-/// Viewer avatar tile side (the source's fixed 22px square).
 const AVATAR: Pixels = px(22.0);
-/// Corner radius of the table's outer top/bottom rounding (the source's fixed 8px).
 const TABLE_RADIUS: Pixels = px(8.0);
-/// Role-badge caption size — the source pins it at a fixed 8.5px, below `FONT_XXS`.
 const ROLE_BADGE_FS: Pixels = px(8.5);
-/// Voice-column engine glyph size (the source's fixed 12px icon).
 const ENGINE_GLYPH: Pixels = px(12.0);
-/// Row action glyph size (preview / edit / delete), matching the source's 13-14px.
 const ACTION_GLYPH: Pixels = px(14.0);
-/// Utterance a row's preview button enqueues to demonstrate the resolved voice.
 const PREVIEW_TEXT: &str = "This is a voice preview.";
 
-/// Column grow weights reproducing the source's `1.4fr 1.6fr 0.8fr 0.8fr` table grid;
-/// the trailing actions column is a fixed [`ACTIONS_W`].
 const VIEWER_GROW: f32 = 1.4;
 const VOICE_GROW: f32 = 1.6;
 const PITCH_GROW: f32 = 0.8;
 const SPEED_GROW: f32 = 0.8;
 
-/// How a voice is chosen for viewers without a manual alias, as the segmented banner's
-/// selection. Persisted to the alias store and hot-reloaded into the live speak queue
-/// over the queue handle when the banner changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StrategyChoice {
     DeterministicByName,
@@ -79,17 +63,12 @@ impl StrategyChoice {
     }
 }
 
-/// Where an engine runs — drives the voice-column glyph and its hue. `Local` engines
-/// run on-device (terminal glyph, ready hue); `Cloud` engines round-trip a service
-/// (globe glyph, info hue).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EngineKind {
     Local,
     Cloud,
 }
 
-/// One manual voice alias, a presentation row folded from a stored [`VoiceAlias`].
-/// `blocked` viewers are never spoken, so their voice fields are inapplicable.
 struct AliasRow {
     id: AliasId,
     viewer_id: String,
@@ -104,8 +83,6 @@ struct AliasRow {
     blocked: bool,
 }
 
-/// One selectable engine in the assign/edit form's engine picker. Seeded here; the
-/// real list is the registered TTS engine roster reaching this view over the bridge.
 struct EngineOption {
     id: &'static str,
     label: &'static str,
@@ -130,9 +107,6 @@ const ENGINE_OPTIONS: [EngineOption; 4] = [
     },
 ];
 
-/// The open assign/edit dialog. `editing` is the id of the alias being edited (or
-/// `None` for a fresh assign). The text fields are child [`TextInput`] entities so
-/// they own their own edit state; `engine` is the selected engine id.
 struct AliasForm {
     editing: Option<AliasId>,
     viewer: Entity<TextInput>,
@@ -141,37 +115,20 @@ struct AliasForm {
     rate: Entity<TextInput>,
     engine: Option<String>,
     blocked: bool,
-    /// True while an upsert write is in flight; the modal stays open with Save
-    /// disabled until the write resolves and either closes it or clears the flag.
     saving: bool,
     _subs: Vec<Subscription>,
 }
 
-/// The TTS Voice Aliases section view-entity: a default-strategy banner, a search +
-/// assign toolbar, and a viewer→voice alias table with per-row preview / edit /
-/// delete, plus the assign/edit modal and a delete-confirm overlay.
-///
-/// The roster and the chosen strategy are pulled from the alias store on mount and
-/// after every write (write-through then full re-pull, never a local row patch).
-/// Assign/edit upserts and delete removes through the store's repo, hot-reloading the
-/// live speak queue via `SpeakCommand::{SetAlias, RemoveAlias, SetStrategy}`; per-row
-/// preview enqueues a `SpeakRequest` through the same queue handle.
 pub struct VoiceAliasesView {
     repo: Arc<dyn VoiceAliasRepo>,
-    /// The live speak-queue handle; `None` only if queue construction failed, in which
-    /// case hot-reload and preview are skipped (persistence still happens).
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
-    /// True until the first pull lands, so the table shows a loading caption rather
-    /// than the empty caption before any row arrives.
     loading: bool,
     strategy: StrategyChoice,
     aliases: Vec<AliasRow>,
     total_count: usize,
     search: Entity<TextInput>,
     form: Option<AliasForm>,
-    /// Two-phase delete gate: the index armed by a row's delete button, resolved by
-    /// the confirm overlay. `None` = no confirm showing.
     pending_delete: Option<usize>,
     _search_sub: Subscription,
 }
@@ -186,8 +143,6 @@ impl VoiceAliasesView {
         let palette = cx.palette();
         let search = cx.new(|cx| search_input("Search viewers…", palette, cx));
         let search_sub = cx.subscribe(&search, |_this, _input, event: &InputEvent, cx| {
-            // The filter reads the field's live content at render; a keystroke just
-            // needs a repaint. Submit/cancel carry no extra behaviour here.
             if let InputEvent::Changed(_) = event {
                 cx.notify();
             }
@@ -210,10 +165,6 @@ impl VoiceAliasesView {
         view
     }
 
-    // --- async pull + reconcile -------------------------------------------
-
-    /// Pulls the full alias set and the assignment strategy off the store and
-    /// reconciles the cached roster. Runs on mount; writes re-pull the roster alone.
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let (tx, rx) = tokio::sync::oneshot::channel::<
@@ -240,8 +191,6 @@ impl VoiceAliasesView {
         .detach();
     }
 
-    /// Spawns `work` (a repo verb that ends by returning the fresh `list`) on the
-    /// tokio runtime, then folds the resulting roster back on the foreground executor.
     fn spawn_write(
         &self,
         work: impl Future<Output = Result<Vec<VoiceAlias>, String>> + Send + 'static,
@@ -291,12 +240,6 @@ impl VoiceAliasesView {
         cx.notify();
     }
 
-    // --- handlers ---------------------------------------------------------
-
-    /// Persists the assignment strategy and hot-reloads the live speak queue. A
-    /// `SingleVoice` pick binds to the first catalog voice; with no engine running the
-    /// catalog is empty, so the change is skipped. Persist and hot-reload both run even
-    /// if the other errors; a missing queue handle skips only the hot-reload.
     fn set_strategy(&mut self, choice: StrategyChoice, cx: &mut Context<Self>) {
         self.strategy = choice;
         cx.notify();
@@ -317,9 +260,6 @@ impl VoiceAliasesView {
         });
     }
 
-    /// Resolves the banner choice to a domain strategy. `SingleVoice` needs a concrete
-    /// voice; absent a dedicated picker it binds to the first live catalog voice, so it
-    /// yields `None` when no engine is running.
     fn strategy_to_assignment(&self, choice: StrategyChoice) -> Option<AssignmentStrategy> {
         match choice {
             StrategyChoice::DeterministicByName => Some(AssignmentStrategy::DeterministicByName),
@@ -335,7 +275,6 @@ impl VoiceAliasesView {
         }
     }
 
-    /// Opens an empty assign form and focuses the viewer field.
     fn open_assign(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let form = self.build_form(None, "", None, "", "", "", false, cx);
         form.viewer.read(cx).focus(window);
@@ -343,8 +282,6 @@ impl VoiceAliasesView {
         cx.notify();
     }
 
-    /// Opens an edit form prefilled from the row at `index` and focuses the viewer
-    /// field. A stale index simply opens nothing.
     fn open_edit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self.aliases.get(index) else {
             return;
@@ -390,9 +327,6 @@ impl VoiceAliasesView {
         cx.notify();
     }
 
-    /// Upserts the open form through the alias store, hot-reloads the live speak queue
-    /// with `SpeakCommand::SetAlias`, then re-pulls the roster and closes the modal. A
-    /// blank viewer keeps the form open; a write error clears the saving flag to retry.
     fn save_form(&mut self, cx: &mut Context<Self>) {
         let Some(form) = self.form.as_ref() else {
             return;
@@ -446,8 +380,6 @@ impl VoiceAliasesView {
         .detach();
     }
 
-    /// Enqueues a one-off preview utterance for the alias at `index` through the speak
-    /// queue. Blocked aliases never speak, and a missing queue handle drops the request.
     fn preview(&self, index: usize) {
         let Some(row) = self.aliases.get(index) else {
             return;
@@ -489,8 +421,6 @@ impl VoiceAliasesView {
         cx.notify();
     }
 
-    /// Deletes the armed alias through the store, hot-reloads the live speak queue with
-    /// `SpeakCommand::RemoveAlias`, then re-pulls the roster.
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
         let Some(index) = self.pending_delete.take() else {
             return;
@@ -518,17 +448,12 @@ impl VoiceAliasesView {
         );
     }
 
-    /// True while the open form has a non-blank viewer and no write is in flight — the
-    /// save gate.
     fn saveable(&self, cx: &Context<Self>) -> bool {
         self.form
             .as_ref()
             .is_some_and(|f| !f.saving && !f.viewer.read(cx).content().trim().is_empty())
     }
 
-    /// Builds an [`AliasForm`], creating and prefilling its field entities and
-    /// subscribing to their edits (viewer submit saves; any change repaints so the
-    /// save gate re-evaluates; Escape closes).
     #[allow(clippy::too_many_arguments)]
     fn build_form(
         &self,
@@ -578,8 +503,6 @@ impl VoiceAliasesView {
             _subs: subs,
         }
     }
-
-    // --- strategy banner --------------------------------------------------
 
     fn strategy_banner(
         &self,
@@ -633,8 +556,6 @@ impl VoiceAliasesView {
             .into_any_element()
     }
 
-    // --- toolbar ----------------------------------------------------------
-
     fn toolbar(
         &self,
         palette: &ForgePalette,
@@ -670,8 +591,6 @@ impl VoiceAliasesView {
             .child(right)
             .into_any_element()
     }
-
-    // --- table ------------------------------------------------------------
 
     fn table(
         &self,
@@ -780,7 +699,6 @@ impl VoiceAliasesView {
             palette.text_primary
         };
 
-        // Viewer column: avatar tile + name + role/blocked badge.
         let initial = row
             .viewer_name
             .chars()
@@ -827,7 +745,6 @@ impl VoiceAliasesView {
             viewer_inner = viewer_inner.child(role_badge("BLOCKED", palette.random, palette));
         }
 
-        // Voice column: blocked → "Never speak"; else engine glyph + "engine · voice".
         let voice_inner: AnyElement = if muted {
             div()
                 .flex()
@@ -870,7 +787,6 @@ impl VoiceAliasesView {
         let pitch_cell = mono_cell(fmt_pitch(row.pitch_semitones, muted), pitch_color);
         let speed_cell = mono_cell(fmt_rate(row.rate_multiplier, muted), speed_color);
 
-        // Actions: preview (dim + inert when blocked) · edit · delete.
         let preview_color = if muted {
             palette.surface_overlay
         } else {
@@ -938,10 +854,6 @@ impl VoiceAliasesView {
         root.into_any_element()
     }
 
-    // --- overlays ---------------------------------------------------------
-
-    /// The active overlay for this frame: the assign/edit modal takes precedence over
-    /// the delete confirm, mirroring the source's stack order.
     fn active_overlay(
         &self,
         palette: &ForgePalette,
@@ -1001,8 +913,6 @@ impl VoiceAliasesView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_form_blocked(cx)),
             ));
 
-        // A blocked viewer is never spoken, so voice configuration is inapplicable —
-        // mirror the row's "Never speak" state instead of dead engine/voice inputs.
         let config: AnyElement = if form.blocked {
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
@@ -1154,10 +1064,6 @@ impl Render for VoiceAliasesView {
     }
 }
 
-// ── view-specific fragments ───────────────────────────────────────────────
-
-/// A flex table cell that grows proportionally to `grow`, matching the source's
-/// `fr`-unit column grid. `flex_basis: 0` makes the grow weights the sole size driver.
 fn weighted(grow: f32, child: impl IntoElement) -> Div {
     let mut cell = div().min_w(px(0.0)).child(child);
     let style = cell.style();
@@ -1166,8 +1072,6 @@ fn weighted(grow: f32, child: impl IntoElement) -> Div {
     cell
 }
 
-/// The table header row: four grow-weighted mono captions plus a fixed, right-aligned
-/// actions caption.
 fn header_row(palette: &ForgePalette) -> impl IntoElement {
     let caption = |text: &'static str| {
         div()
@@ -1194,7 +1098,6 @@ fn header_row(palette: &ForgePalette) -> impl IntoElement {
         )
 }
 
-/// One mono value cell (pitch / speed), inking `color`.
 fn mono_cell(value: String, color: Rgba) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
@@ -1203,8 +1106,6 @@ fn mono_cell(value: String, color: Rgba) -> impl IntoElement {
         .child(value)
 }
 
-/// A small pill-shaped role/blocked badge: an uppercase mono caption on a
-/// `surface_overlay` tile inking `color`.
 fn role_badge(label: &str, color: Rgba, palette: &ForgePalette) -> impl IntoElement {
     badge(
         palette.surface_overlay,
@@ -1215,9 +1116,6 @@ fn role_badge(label: &str, color: Rgba, palette: &ForgePalette) -> impl IntoElem
     )
 }
 
-/// A selectable segment/chip: brand-filled with shell ink when active, otherwise a
-/// transparent, secondary-inked pill. Shared by the strategy banner and the form's
-/// engine picker.
 fn seg_button(
     id: SharedString,
     label: impl Into<SharedString>,
@@ -1256,7 +1154,6 @@ fn seg_button(
     chip
 }
 
-/// A form control block: an uppercase mono caption over `control`.
 fn labelled(
     label: &'static str,
     control: impl IntoElement,
@@ -1277,7 +1174,6 @@ fn labelled(
         .child(control)
 }
 
-/// A labelled text-input field for the assign/edit form.
 fn form_field(
     label: &'static str,
     input: Entity<TextInput>,
@@ -1287,7 +1183,6 @@ fn form_field(
     labelled(label, input, palette, density)
 }
 
-/// Builds a form text field entity seeded with `initial` and adopting `palette`.
 fn text_field(
     placeholder: &'static str,
     initial: &str,
@@ -1304,10 +1199,6 @@ fn text_field(
     })
 }
 
-// ── formatting + resolution helpers ───────────────────────────────────────
-
-/// Folds a stored [`VoiceAlias`] into a presentation row, deriving the engine's
-/// display label and locality from its id.
 fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let engine = a.engine_id.0;
     let kind = if is_local_engine(&engine) {
@@ -1332,9 +1223,6 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
     }
 }
 
-/// Builds a [`VoiceAlias`] from the open form. Editing carries the row's id so the
-/// upsert targets it; a fresh assign mints a new id. An unparsable pitch/rate is left
-/// unset (engine default).
 fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
     let viewer = form.viewer.read(cx).content().trim().to_owned();
     let engine = form.engine.clone().unwrap_or_default();
@@ -1357,7 +1245,6 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
     }
 }
 
-/// Maps a stored strategy to the banner's selection.
 fn choice_from_strategy(strategy: &AssignmentStrategy) -> StrategyChoice {
     match strategy {
         AssignmentStrategy::DeterministicByName => StrategyChoice::DeterministicByName,
@@ -1366,8 +1253,6 @@ fn choice_from_strategy(strategy: &AssignmentStrategy) -> StrategyChoice {
     }
 }
 
-/// Local engines run on-device with no network round-trip; everything else is a cloud
-/// engine.
 fn is_local_engine(engine_id: &str) -> bool {
     matches!(
         engine_id,
@@ -1375,7 +1260,6 @@ fn is_local_engine(engine_id: &str) -> bool {
     )
 }
 
-/// Maps an engine id to its display label; an unknown id is shown verbatim.
 fn engine_display_label(engine_id: &str) -> String {
     match engine_id {
         "piper" => "Piper".to_owned(),
@@ -1386,8 +1270,6 @@ fn engine_display_label(engine_id: &str) -> String {
     }
 }
 
-/// Formats a pitch value the way the source does: blocked → em dash, else a signed
-/// semitone reading (`+2 st` / `-1 st` / `0 st`).
 fn fmt_pitch(value: Option<f32>, blocked: bool) -> String {
     if blocked {
         return "—".to_owned();
@@ -1399,7 +1281,6 @@ fn fmt_pitch(value: Option<f32>, blocked: bool) -> String {
     }
 }
 
-/// Formats a rate multiplier: blocked → em dash, else a one-decimal `x` reading.
 fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
     if blocked {
         return "—".to_owned();
@@ -1409,13 +1290,10 @@ fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
         .unwrap_or_else(|| "1.0x".to_owned())
 }
 
-/// Renders an optional numeric field back into the plain text a form input prefills
-/// with (empty when unset).
 fn fmt_field(value: Option<f32>) -> String {
     value.map(|v| format!("{v}")).unwrap_or_default()
 }
 
-/// The voice-column glyph for an engine's locality.
 fn engine_glyph(kind: EngineKind) -> Icon {
     match kind {
         EngineKind::Local => Icon::Terminal,
@@ -1423,7 +1301,6 @@ fn engine_glyph(kind: EngineKind) -> Icon {
     }
 }
 
-/// The voice-column glyph hue: local engines the ready hue, cloud engines the info hue.
 fn engine_color(kind: EngineKind, palette: &ForgePalette) -> Rgba {
     match kind {
         EngineKind::Local => palette.success,
@@ -1431,8 +1308,6 @@ fn engine_color(kind: EngineKind, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// Hashes a viewer name to one of the palette's accent hues, so each avatar tile keeps
-/// a stable colour across renders (the source's deterministic avatar tint).
 fn avatar_color_for(name: &str, palette: &ForgePalette) -> Rgba {
     let hash = name.bytes().fold(0u32, |acc, b| {
         acc.wrapping_mul(31).wrapping_add(u32::from(b))

@@ -18,7 +18,6 @@ macro_rules! tabler_icons {
                 }
             }
 
-            /// Asset path served by [`IconAssets`] and handed to gpui's `svg()`.
             pub fn path(self) -> &'static str {
                 match self {
                     $(Icon::$variant => concat!("tabler/", $file)),+
@@ -175,9 +174,8 @@ impl Icon {
     }
 }
 
-/// gpui `AssetSource` serving the embedded tabler icon bytes. Register once on
-/// the `Application` via `with_assets`; gpui's `svg()` element then resolves an
-/// [`Icon::path`] string through `load`.
+/// Register once on the `Application` via `with_assets`, or `svg()` can't resolve
+/// an [`Icon::path`].
 pub struct IconAssets;
 
 impl AssetSource for IconAssets {
@@ -198,9 +196,7 @@ impl AssetSource for IconAssets {
     }
 }
 
-/// Renders a tabler glyph tinted with `color`. gpui rasterizes the SVG to an
-/// alpha mask and paints it in the element's text color, so `color` fully drives
-/// the tint regardless of the paint declared inside the SVG file.
+/// `color` fully drives the tint regardless of the paint declared inside the SVG.
 pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
     svg()
         .flex_none()
@@ -209,12 +205,8 @@ pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
         .text_color(color)
 }
 
-/// Renders a tabler glyph that inherits the ambient text color instead of
-/// carrying its own tint. Because it declares no `text_color`, a hovered ancestor
-/// that sets one (`.hover(|s| s.text_color(..))`) cascades down and re-tints the
-/// glyph — the behavior a color-following affordance (e.g. an icon-only button
-/// whose glyph brightens with its frame) needs. Use [`icon`] when the glyph must
-/// hold a fixed tint regardless of parent state.
+/// Declares no `text_color`, so a hovered ancestor's text color cascades down and
+/// re-tints the glyph. Use [`icon`] for a fixed tint.
 pub fn icon_inherit(icon: Icon, size: Pixels) -> impl IntoElement {
     svg().flex_none().size(size).path(icon.path())
 }

@@ -13,29 +13,18 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
-// Off-scale layout literals, carried as fixed-rhythm dashboard metrics exactly as
-// the Platforms overview does: paddings, tile size and glyph sizes are hand-tuned to
-// the design rather than snapped to the nearest density-scaled `Spacing` step.
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
 
-/// Glyph identity tile geometry: a 44px rounded square holding the app's line icon
-/// over a soft `surface_overlay` fill (a muted plate, unlike the brand-filled
-/// platform tile), with the glyph tinted the app's brand hue.
 const TILE_SIZE: Pixels = px(44.0);
 const TILE_RADIUS: Pixels = px(10.0);
 const TILE_GLYPH: Pixels = px(22.0);
 
-/// Card inner padding (the design's `16px 18px`).
 const CARD_PAD_V: Pixels = px(16.0);
 const CARD_PAD_H: Pixels = px(18.0);
 
-/// Trailing chevron glyph size.
 const CHEVRON_SIZE: Pixels = px(16.0);
 
-/// The two stream apps surfaced on the overview: the integration key (brand hue +
-/// router destination), display name, tile glyph and one-line description. Mirrors
-/// the design's stream-app roster.
 type AppRow = (Integration, &'static str, Icon, &'static str);
 
 const APPS: [AppRow; 2] = [
@@ -53,16 +42,6 @@ const APPS: [AppRow; 2] = [
     ),
 ];
 
-/// The Stream Apps overview screen view-entity: a breadcrumb header over a scrollable
-/// "Stream apps" section — a two-column grid of interactive app cards (glyph tile,
-/// name + live connection badge, description).
-///
-/// It owns no connectivity data: each card's connected state is read from the shared
-/// [`PlatformConnectivity`] topic (a cached runtime read, never the source of truth,
-/// keyed by [`Integration`] so it carries the stream apps alongside the chat
-/// platforms) and the view repaints when that topic notifies. Pressing a card voices
-/// a [`NavRequested`] toward that app's integration detail, which the root shell
-/// routes — the screen never mutates the router itself.
 pub struct StreamAppsView {
     connectivity: Entity<PlatformConnectivity>,
     _conn_obs: Subscription,
@@ -77,8 +56,6 @@ impl StreamAppsView {
         }
     }
 
-    /// Voices a navigation intent to the root shell. No `self` state changes, so no
-    /// `cx.notify()` — the shell owns the routing side effect.
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
         cx.emit(NavRequested(screen));
     }
@@ -169,8 +146,6 @@ impl Render for StreamAppsView {
         let palette = cx.palette();
         let density = cx.density();
 
-        // Snapshot the connected flags up front, ending the immutable borrow on the
-        // topic before the per-card `cx.listener` closures are built.
         let connectivity = self.connectivity.read(cx);
         let connected: Vec<bool> = APPS
             .iter()
@@ -245,10 +220,7 @@ impl Render for StreamAppsView {
     }
 }
 
-/// Lays the app cards into a two-column grid: each card fills half its row, and a
-/// trailing odd card is balanced by an equal-flex spacer so it keeps its half-width
-/// (mirroring the design's `repeat(2, 1fr)` grid, which gpui 0.2.2 has no native
-/// equivalent for — a flex row pair is the port).
+/// gpui 0.2.2 has no CSS-grid primitive; a flex row-pair ports the design's two-column grid.
 fn app_grid(cards: Vec<AnyElement>, density: Density) -> impl IntoElement {
     let gap = spacing(Spacing::Sm, density);
     let mut grid = div().w_full().flex().flex_col().gap(gap);

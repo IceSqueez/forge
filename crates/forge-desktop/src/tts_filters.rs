@@ -21,23 +21,14 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 
-/// Speaker name attached to a one-off preview utterance enqueued from this screen.
 const PREVIEW_SPEAKER: &str = "Preview";
 
-/// The three URL-handling modes in banner order.
 const URL_MODES: [UrlMode; 3] = [UrlMode::Speak, UrlMode::Replace, UrlMode::Suppress];
 
-/// Numbered stage-badge side — the parity source pins the pill at a fixed 20px square,
-/// off the `Spacing` scale, so it is carried as a named literal.
 const BADGE_SIZE: Pixels = px(20.0);
-/// Rule-row caption size (kind badge + summary line) — the source pins both at a fixed
-/// 8.5px mono, below `FONT_XXS`.
 const MICRO_FS: Pixels = px(8.5);
-/// Preview column width — the source pins the right column at a fixed 300px.
 const PREVIEW_W: Pixels = px(300.0);
 
-/// Selectable rule kind in the draft editor, decoupled from the parameter-carrying
-/// [`FilterRuleKind`] so the picker can be chosen before the parameters exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DraftKind {
     Literal,
@@ -71,10 +62,6 @@ impl DraftKind {
     }
 }
 
-/// The open add/edit form. `editing` is the index into the working rule list when
-/// editing an existing rule, `None` when adding. The text fields are child
-/// [`TextInput`] entities so they own their own edit state; only the rendered subset
-/// (per [`DraftKind`]) is read on submit.
 struct RuleDraft {
     editing: Option<usize>,
     kind: DraftKind,
@@ -85,42 +72,22 @@ struct RuleDraft {
     blocklist_mode: BlocklistMode,
 }
 
-/// The computed live preview: the final pipeline result plus each stage's outcome,
-/// recomputed on every edit via `forge-tts-pipeline::preview`.
 struct CachedPreview {
     stages: Vec<StageOutcome>,
     result: PipelineResult,
 }
 
-/// The TTS Filters section view-entity: a two-column layout — a scrollable message-
-/// preprocessing pipeline (numbered stage cards, an inline rule editor and a save
-/// bar) on the left, and a fixed-width live-preview column on the right.
-///
-/// The rule roster and settings are pulled from the TTS-filters store on mount and
-/// after Save (write-through then dirty-clear, never a local patch). Save validates
-/// the whole set with `build_config_strict`, persists rules + settings through the
-/// repo, then hot-swaps the live speak-queue pipeline config. The preview pane is
-/// computed on every edit via `forge-tts-pipeline::preview`; the speak-preview button
-/// enqueues a `SpeakRequest` through the speak-queue handle.
 pub struct TtsFiltersView {
     repo: Arc<dyn TtsFiltersRepo>,
-    /// The live pipeline config, hot-swapped on Save. `None` only when the speak
-    /// subsystem didn't build, in which case persistence still happens and only the
-    /// hot-swap is skipped.
     pipeline_config: Option<PipelineConfigHandle>,
-    /// The live speak-queue handle, driving the speak-preview button. `None` skips
-    /// only the preview enqueue.
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     rules: Vec<FilterRule>,
     settings: TtsPipelineSettings,
     max_length: Entity<TextInput>,
     draft: Option<RuleDraft>,
-    /// The strict-validation error surfaced by the last Save attempt; blocks persist.
     save_error: Option<String>,
     dirty: bool,
-    /// Two-phase delete gate: the index armed by a row's delete button, resolved by
-    /// the confirm overlay. `None` = no confirm showing.
     pending_delete: Option<usize>,
     preview_input: Entity<TextArea>,
     cached_preview: Option<CachedPreview>,
@@ -193,10 +160,6 @@ impl TtsFiltersView {
         view
     }
 
-    // --- async pull + reconcile -------------------------------------------
-
-    /// Pulls the full rule set and pipeline settings off the store and reconciles the
-    /// cached state. Runs on mount; Save re-pulls nothing (it already holds the set).
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let (tx, rx) = tokio::sync::oneshot::channel::<
@@ -253,9 +216,6 @@ impl TtsFiltersView {
         cx.notify();
     }
 
-    /// Recomputes the live preview from the current rules + settings and the preview
-    /// input. Empty input clears the preview. Lenient config build drops invalid regex
-    /// rules rather than failing, mirroring the boot posture.
     fn refresh_preview(&mut self, cx: &mut Context<Self>) {
         let input = self.preview_input.read(cx).content().to_owned();
         if input.is_empty() {
@@ -266,8 +226,6 @@ impl TtsFiltersView {
         let (result, stages) = forge_tts_pipeline::preview(&input, &config);
         self.cached_preview = Some(CachedPreview { stages, result });
     }
-
-    // --- pure in-memory logic (rule mutations) ----------------------------
 
     fn renumber(&mut self) {
         for (i, rule) in self.rules.iter_mut().enumerate() {
@@ -332,8 +290,6 @@ impl TtsFiltersView {
         cx.notify();
     }
 
-    /// Commits the open draft into the cached roster: editing replaces the target row,
-    /// adding appends a new one. Reads the field entities for the current kind only.
     fn submit_draft(&mut self, cx: &mut Context<Self>) {
         let Some(draft) = self.draft.as_ref() else {
             return;
@@ -467,9 +423,6 @@ impl TtsFiltersView {
         cx.notify();
     }
 
-    /// Validates the whole set with `build_config_strict` (surfacing the offending
-    /// pattern on error without touching storage), then persists rules + settings
-    /// through the repo and hot-swaps the live speak-queue pipeline config.
     fn save(&mut self, cx: &mut Context<Self>) {
         let config = match build_config_strict(&self.rules, &self.settings) {
             Ok(config) => config,
@@ -521,8 +474,6 @@ impl TtsFiltersView {
         .detach();
     }
 
-    /// Enqueues a one-off preview utterance for the current preview input through the
-    /// speak queue. Empty input or a missing queue handle drops the request.
     fn speak_preview(&self, cx: &mut Context<Self>) {
         let text = self.preview_input.read(cx).content().trim().to_owned();
         if text.is_empty() {
@@ -572,8 +523,6 @@ impl TtsFiltersView {
             blocklist_mode: BlocklistMode::Censor,
         }
     }
-
-    // --- pipeline column --------------------------------------------------
 
     fn pipeline_column(
         &self,
@@ -831,8 +780,6 @@ impl TtsFiltersView {
             palette,
             density,
         );
-        // The output stage carries no user-extensible list and no add affordance, so
-        // it is built without the shared listener path.
         let badge = div()
             .flex_none()
             .flex()
@@ -1259,8 +1206,6 @@ impl TtsFiltersView {
             .into_any_element()
     }
 
-    // --- preview column ---------------------------------------------------
-
     fn preview_column(
         &self,
         palette: &ForgePalette,
@@ -1395,8 +1340,6 @@ impl TtsFiltersView {
             .into_any_element()
     }
 
-    // --- overlay ----------------------------------------------------------
-
     fn delete_confirm(
         &self,
         index: usize,
@@ -1456,17 +1399,12 @@ impl Render for TtsFiltersView {
     }
 }
 
-// ── view-specific fragments ───────────────────────────────────────────────
-
-/// Which blocklist-mode field a segment click targets, letting one segmented-toggle
-/// helper serve both the settings default and the draft form.
 #[derive(Clone, Copy)]
 enum ModeTarget {
     Settings,
     Draft,
 }
 
-/// An uppercase mono section caption inking `text_muted`.
 fn mono_caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
@@ -1475,7 +1413,6 @@ fn mono_caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement
         .child(label)
 }
 
-/// A form control block: an uppercase mono caption over `control`.
 fn labeled(
     label: &'static str,
     control: AnyElement,
@@ -1491,9 +1428,6 @@ fn labeled(
         .into_any_element()
 }
 
-/// A selectable segment: `active_bg`-filled with shell ink when active, otherwise a
-/// transparent, secondary-inked pill. Shared by the URL mode, the kind picker and the
-/// blocklist-mode toggles (the active fill hue varies per call).
 #[allow(clippy::too_many_arguments)]
 fn seg_button(
     id: SharedString,
@@ -1529,7 +1463,6 @@ fn seg_button(
     chip
 }
 
-/// Builds a draft text-field entity seeded with `initial` and adopting `palette`.
 fn draft_field(
     placeholder: &'static str,
     initial: &str,
@@ -1620,7 +1553,6 @@ fn preview_stage_card(
     .into_any_element()
 }
 
-/// Label for a URL-handling mode in the segmented picker.
 fn url_label(mode: UrlMode) -> &'static str {
     match mode {
         UrlMode::Speak => "Speak",
@@ -1629,7 +1561,6 @@ fn url_label(mode: UrlMode) -> &'static str {
     }
 }
 
-/// Stable element-id fragment for a URL-handling mode.
 fn url_key(mode: UrlMode) -> &'static str {
     match mode {
         UrlMode::Speak => "speak",
@@ -1637,8 +1568,6 @@ fn url_key(mode: UrlMode) -> &'static str {
         UrlMode::Suppress => "suppress",
     }
 }
-
-// ── formatting + reorder helpers ──────────────────────────────────────────
 
 fn display_name(rule: &FilterRule) -> String {
     if rule.name.trim().is_empty() {
@@ -1673,9 +1602,6 @@ fn is_blocklist_kind(kind: &FilterRuleKind) -> bool {
     matches!(kind, FilterRuleKind::Blocklist { .. })
 }
 
-/// Nearest preceding rule of the same [`DraftKind`] as `rules[i]`. Reorder arrows
-/// operate within a rule's own kind group (the stage cards split the flat list per
-/// kind), not the raw array — an adjacent rule of a different kind is not the target.
 fn same_kind_prev_index(rules: &[FilterRule], i: usize) -> Option<usize> {
     let kind = DraftKind::of(&rules.get(i)?.kind);
     rules[..i]
@@ -1686,7 +1612,6 @@ fn same_kind_prev_index(rules: &[FilterRule], i: usize) -> Option<usize> {
         .map(|(j, _)| j)
 }
 
-/// Symmetric counterpart to [`same_kind_prev_index`] for "move down".
 fn same_kind_next_index(rules: &[FilterRule], i: usize) -> Option<usize> {
     let kind = DraftKind::of(&rules.get(i)?.kind);
     rules

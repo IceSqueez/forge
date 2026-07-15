@@ -10,17 +10,10 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, Window, div, prelude::
 
 use crate::presentation::ActivePresentation;
 
-/// Source/format icon-chip side — the parity source pins the leading glyph tile at a
-/// fixed 30px square, off the `Spacing` scale, so it is carried as a named literal.
 const ICON_CHIP: Pixels = px(30.0);
-/// Minimum-bits value chip vertical inset (the source's fixed 3px pad).
 const BITS_CHIP_PAD_V: Pixels = px(3.0);
-/// Minimum-bits value chip horizontal inset (the source's fixed 9px pad).
 const BITS_CHIP_PAD_H: Pixels = px(9.0);
-/// Format / queue panel vertical inset — the source pins these two cards at a fixed
-/// 13px, off the `Spacing` scale, so it is carried as a named literal.
 const PANEL_PAD_V: Pixels = px(13.0);
-/// Format / queue panel horizontal inset (the source's fixed 14px pad).
 const PANEL_PAD_H: Pixels = px(14.0);
 
 pub struct TtsTriggersView {
@@ -61,8 +54,6 @@ impl TtsTriggersView {
         view.reload(cx);
         view
     }
-
-    // --- async pull + persist ---------------------------------------------
 
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
@@ -143,8 +134,6 @@ impl TtsTriggersView {
         .detach();
     }
 
-    // --- toggle handlers --------------------------------------------------
-
     fn toggle_command(&mut self, cx: &mut Context<Self>) {
         self.command_enabled = !self.command_enabled;
         cx.notify();
@@ -187,8 +176,6 @@ impl TtsTriggersView {
         self.persist(cx);
     }
 
-    // --- header -----------------------------------------------------------
-
     fn header_group(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .flex()
@@ -229,9 +216,6 @@ impl TtsTriggersView {
         })
     }
 
-    /// A source card's header row: the leading glyph tile, a title over a subtitle,
-    /// and the trailing enable toggle. The subtitle inks the monospace family only for
-    /// the command card (its subtitle is the literal `!tts <message>` invocation).
     #[allow(clippy::too_many_arguments)]
     fn card_header(
         &self,
@@ -280,11 +264,6 @@ impl TtsTriggersView {
             .into_any_element()
     }
 
-    // --- source cards -----------------------------------------------------
-
-    /// The chat-command source card: a raw bordered container whose border inks the
-    /// brand accent while the command is enabled, falling back to the regular border
-    /// otherwise — the enable state recolors the whole card frame.
     fn trigger_card_command(
         &self,
         palette: &ForgePalette,
@@ -498,8 +477,6 @@ impl TtsTriggersView {
             density,
         );
 
-        // The disabled note only appears while sub messages are off; when enabled the
-        // card carries just its header, matching the source.
         let disabled_note = (!self.sub_messages_enabled).then(|| {
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
@@ -523,10 +500,6 @@ impl TtsTriggersView {
         .into_any_element()
     }
 
-    // --- format + queue panels --------------------------------------------
-
-    /// One label-fills / toggle-trailing settings row inside the format and queue
-    /// panels.
     fn toggle_row(
         &self,
         label: &'static str,
@@ -715,16 +688,10 @@ impl Render for TtsTriggersView {
     }
 }
 
-// ── view-specific fragments ───────────────────────────────────────────────
-
-/// Wraps a card so it takes an equal half of a two-up row (the source pins each card
-/// to fill its half of the full-width row).
 fn half(card: AnyElement) -> AnyElement {
     div().flex_1().min_w(px(0.0)).child(card).into_any_element()
 }
 
-/// The leading glyph tile shared by every source card: a fixed-square,
-/// `surface_overlay`-filled, `Radius::Sm` chip centering `glyph`.
 fn chip_30(glyph: impl IntoElement, palette: &ForgePalette) -> AnyElement {
     div()
         .flex_none()
@@ -738,12 +705,10 @@ fn chip_30(glyph: impl IntoElement, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-/// A trigger-role chip: a `surface_overlay`-filled badge inking `color`.
 fn role_chip(label: &'static str, color: Rgba, palette: &ForgePalette) -> AnyElement {
     badge(palette.surface_overlay, color, label, false, FONT_XS).into_any_element()
 }
 
-/// An uppercase monospace panel caption inking `text_muted`.
 fn panel_header(label: &'static str, palette: &ForgePalette) -> AnyElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
@@ -753,7 +718,6 @@ fn panel_header(label: &'static str, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-/// A full-width hairline standing in for the source's horizontal divider.
 fn hairline(palette: &ForgePalette) -> AnyElement {
     div()
         .w_full()
@@ -762,8 +726,6 @@ fn hairline(palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-/// One label-fills / static-value-trailing row inside the queue-behavior panel: the
-/// value renders in a `shell`-filled `Radius::Sm` mono chip.
 fn queue_value_row(
     label: &'static str,
     value: &'static str,

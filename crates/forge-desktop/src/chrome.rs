@@ -8,12 +8,6 @@ use crate::shell::AppShell;
 use crate::sidebar::SidebarNav;
 use crate::titlebar::TitleBar;
 
-/// Plain grouping of the three persistent chrome view-entities (title bar, left
-/// nav rail, footer). It is a state-less handle bundle, not a view: the root
-/// [`AppShell`] places each child in its own layout slot around the routed
-/// content. Grouping them behind one field keeps the root within its ≤5 top-level
-/// field budget while every chrome region stays a genuine child
-/// view-entity.
 pub struct Chrome {
     pub titlebar: Entity<TitleBar>,
     pub sidebar: Entity<SidebarNav>,

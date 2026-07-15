@@ -1,7 +1,3 @@
-//! Actions screen — composite/branch drill-in: nav-path descent, the drilled-in
-//! breadcrumb, branch affordances and switch-case editing, all over the stored
-//! `SubActionConfig` sub-chain form.
-
 use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
@@ -13,7 +9,6 @@ use forge_types::SubActionStep;
 use gpui::{AnyElement, App, ClickEvent, Context, ElementId, SharedString, Window, div};
 use std::collections::BTreeMap;
 
-/// Human label for a single-sub-chain branch key in the breadcrumb.
 fn branch_field_label(chain_key: &str) -> &'static str {
     match chain_key {
         "then_chain" => "Then",
@@ -24,10 +19,6 @@ fn branch_field_label(chain_key: &str) -> &'static str {
     }
 }
 
-/// A drill-in chip entering a nested sub-chain: a "label · count" caption + a
-/// chevron, framed by a 0.5px hairline with a 6px corner, washing
-/// `surface_overlay` on hover. Disabled (past the depth cap on an empty branch)
-/// it inks `disabled` and takes no click.
 fn drill_in_chip(
     id: impl Into<ElementId>,
     label: &str,
@@ -70,11 +61,6 @@ fn drill_in_chip(
 }
 
 impl ScreenActionsView {
-    // --- editor: branch drill-in + switch cases ---------------------------
-
-    /// Descends into a composite step's nested sub-chain or a switch case, pushing
-    /// a nav frame. Refuses to create new depth past the authoring cap on an empty
-    /// branch — mirrors the disabled drill-in chip so a stale click is inert.
     fn enter_branch(
         &mut self,
         step_index: usize,
@@ -100,7 +86,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Pops the nav path back to `depth` (a breadcrumb ancestor segment).
     fn breadcrumb_pop(&mut self, depth: usize, cx: &mut Context<Self>) {
         self.nav_path.truncate(depth);
         self.step_menu_open = None;
@@ -164,10 +149,6 @@ impl ScreenActionsView {
         );
     }
 
-    /// Rebuilds the per-case match inputs for every switch step in the current
-    /// chain, keyed `(step_index, case_index)`, seeded from the stored match.
-    /// Called at each edge that reshapes the current chain (nav change, detail
-    /// re-pull) so the keys stay accurate.
     pub(super) fn sync_case_fields(&mut self, cx: &mut Context<Self>) {
         let chain = self.current_chain();
         let mut specs: Vec<(usize, usize, String)> = Vec::new();
@@ -203,9 +184,6 @@ impl ScreenActionsView {
         self.case_fields = fields;
     }
 
-    /// The breadcrumb that replaces the step-count header while drilled in. Every
-    /// ancestor segment pops the nav path to its depth; the current (final)
-    /// segment is inert.
     pub(super) fn render_breadcrumb(
         &self,
         detail: &ActionDetail,
@@ -285,9 +263,6 @@ impl ScreenActionsView {
         row.into_any_element()
     }
 
-    /// The drill-in affordances under a composite / switch step: one chip per
-    /// single sub-chain (then / else / body / default) and, for a switch, a full
-    /// per-case row editor. `None` when the step declares no nested chains.
     pub(super) fn render_branch_affordances(
         &self,
         step: &SubActionStep,

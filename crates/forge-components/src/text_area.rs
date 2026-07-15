@@ -1,15 +1,3 @@
-//! Multi-line text editor entity — the wrapping, vertically-scrolling counterpart
-//! to [`crate::text_input::TextInput`]. Same styled surface (shell fill, focus-reactive
-//! border, `Radius::Md`), but Enter inserts a newline, Up/Down move the caret across
-//! visual rows, long paragraphs soft-wrap to the field width, and content taller than
-//! the fixed viewport scrolls vertically.
-//!
-//! Like [`crate::text_input::TextInput`] this is a stateful `Entity` view (holds focus +
-//! buffer + selection), NOT a stateless `RenderOnce`. The screen creates and holds
-//! `Entity<TextArea>` and reacts to edits via `cx.subscribe(&area, …)` on the shared
-//! [`InputEvent`]. Grapheme/UTF-16 helpers are shared with the single-line input through
-//! [`crate::text_edit`].
-
 use std::ops::Range;
 
 use gpui::{
@@ -33,8 +21,6 @@ use crate::tokens::{
 
 const KEY_CONTEXT: &str = "ForgeTextArea";
 
-/// Default visible height of the editable viewport (content scrolls within it). Mirrors
-/// the fixed height the retiring iced multi-line field used for long-form / JSON values.
 const DEFAULT_AREA_HEIGHT: Pixels = px(130.0);
 
 actions!(
@@ -60,11 +46,7 @@ actions!(
     ]
 );
 
-/// Installs the editing key bindings for every [`TextArea`], scoped to the area's key
-/// context so they never fire outside a focused field. The binary MUST call this once at
-/// boot — without it only literal character typing works; navigation, newline insertion
-/// and editing keys are dead. Distinct from `bind_text_input_keys`: Enter inserts a
-/// newline here (single-line inputs submit), and Up/Down move across rows.
+/// The binary MUST call this once at boot or navigation, newline and editing keys are dead.
 pub fn bind_text_area_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, Some(KEY_CONTEXT)),
@@ -91,25 +73,16 @@ pub fn bind_text_area_keys(cx: &mut App) {
     ]);
 }
 
-/// A shaped snapshot of the buffer as laid out at the last paint: one [`WrappedLine`]
-/// per hard-newline-delimited paragraph (each of which may itself soft-wrap to several
-/// visual rows). Cached so between-frame hit-testing (mouse, Up/Down) can map global byte
-/// offsets ↔ pixel positions without re-shaping.
 struct AreaLayout {
-    /// One entry per `\n`-delimited paragraph, in document order.
     lines: Vec<WrappedLine>,
-    /// `para_tops[i]` = the y of paragraph `i`'s top edge, in content space (0 = start).
     para_tops: Vec<Pixels>,
-    /// `para_byte_starts[i]` = the global byte offset where paragraph `i` begins.
     para_byte_starts: Vec<usize>,
     line_height: Pixels,
     total_height: Pixels,
 }
 
 impl AreaLayout {
-    /// The pixel position (content space, pre-scroll) of the caret for global byte
-    /// `offset`, or `None` if the layout is empty. The caller adds the viewport origin
-    /// and subtracts the scroll offset.
+    /// Content-space, pre-scroll: the caller adds the viewport origin and subtracts the scroll offset.
     fn point_for_offset(&self, offset: usize) -> Option<Point<Pixels>> {
         for i in (0..self.lines.len()).rev() {
             let start = self.para_byte_starts[i];
@@ -122,8 +95,7 @@ impl AreaLayout {
         None
     }
 
-    /// The global byte offset closest to `p` (content space, pre-scroll). Clamps into the
-    /// nearest paragraph and grapheme boundary.
+    /// `p` is in content space, pre-scroll; clamps to the nearest paragraph and grapheme boundary.
     fn offset_for_point(&self, p: Point<Pixels>) -> usize {
         for i in (0..self.lines.len()).rev() {
             if p.y >= self.para_tops[i] {
@@ -138,8 +110,7 @@ impl AreaLayout {
     }
 }
 
-/// Multi-line editor entity. Create + hold `Entity<TextArea>` on the screen; subscribe to
-/// [`InputEvent`] for edits (only `Changed` is emitted — a multi-line field has no submit).
+/// Subscribe to [`InputEvent`] for edits — only `Changed` is emitted (a text area has no submit).
 pub struct TextArea {
     focus_handle: FocusHandle,
     content: SharedString,
@@ -149,17 +120,13 @@ pub struct TextArea {
     marked_range: Option<Range<usize>>,
     last_layout: Option<AreaLayout>,
     last_bounds: Option<Bounds<Pixels>>,
-    /// Vertical scroll offset (content scrolls up as this grows).
     scroll_offset: Pixels,
     is_selecting: bool,
-    /// Goal column for Up/Down: the x the caret aims for across a run of vertical moves,
-    /// so it does not drift on ragged rows. Cleared by any horizontal move or edit.
+    /// Goal column held across a run of Up/Down moves; cleared by any horizontal move or edit.
     preferred_x: Option<Pixels>,
     palette: ForgePalette,
     density: Density,
     font_size: Pixels,
-    /// Typeface the buffer renders in. Defaults to the body family; a code buffer
-    /// switches it to the monospace family via [`TextArea::mono`].
     font_family: &'static str,
     read_only: bool,
     height: Pixels,
@@ -207,15 +174,11 @@ impl TextArea {
         self
     }
 
-    /// Overrides the fixed viewport height (default [`DEFAULT_AREA_HEIGHT`]).
     pub fn with_height(mut self, height: Pixels) -> Self {
         self.height = height;
         self
     }
 
-    /// Renders the buffer in the monospace family instead of the body family, for a
-    /// code buffer. The set family propagates through the render `div`'s text style
-    /// into the shaper, so the cached layout (and caret geometry) shape monospaced.
     pub fn mono(mut self) -> Self {
         self.font_family = DEFAULT_MONO_FAMILY;
         self
@@ -226,8 +189,6 @@ impl TextArea {
         self
     }
 
-    /// Fills the field with the palette's `elevated` surface instead of the base `shell`,
-    /// for a field on a raised panel.
     pub fn on_surface(mut self) -> Self {
         self.on_surface = true;
         self
@@ -242,9 +203,6 @@ impl TextArea {
         cx.notify();
     }
 
-    /// Resizes the viewport height after construction. An auto-growing code buffer
-    /// recomputes this from its line count on each edit so the field hugs its
-    /// content instead of scrolling within a fixed viewport.
     pub fn set_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
         self.height = height;
         cx.notify();
@@ -401,8 +359,7 @@ impl TextArea {
         if self.read_only {
             return;
         }
-        // Unlike the single-line input, newlines are preserved — pasting multi-line text
-        // is the whole point of a text area.
+        // Newlines are preserved here, unlike the single-line input.
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             self.preferred_x = None;
             self.replace_text_in_range(None, &text, window, cx);
@@ -429,8 +386,6 @@ impl TextArea {
         }
     }
 
-    /// The start (byte after the preceding `\n`, or 0) and end (byte before the next
-    /// `\n`, or `content.len()`) of the hard line the caret is on — drives Home/End.
     fn current_line_bounds(&self) -> (usize, usize) {
         let cursor = self.cursor_offset();
         let start = self.content[..cursor]
@@ -444,14 +399,12 @@ impl TextArea {
         (start, end)
     }
 
-    /// Moves (or extends the selection) one visual row up or down, holding the goal
-    /// column. Relies on the layout cached at the last paint; a no-op before first paint.
+    /// A no-op before the first paint (relies on the layout cached at the last paint).
     fn move_vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) {
         let computed = self.last_layout.as_ref().and_then(|layout| {
             let caret = layout.point_for_offset(self.cursor_offset())?;
             let goal_x = self.preferred_x.unwrap_or(caret.x);
             let lh = layout.line_height;
-            // Aim at the vertical centre of the neighbouring row.
             let target_y = if down {
                 caret.y + lh * 1.5
             } else {
@@ -654,9 +607,6 @@ impl EntityInputHandler for TextArea {
     }
 }
 
-/// Builds the decorated runs for the shaped buffer: a marked (IME-composing) range is
-/// underlined; otherwise a non-empty selection is filled with the translucent brand
-/// colour so the wrapped-line painter draws it across every visual row automatically.
 fn build_runs(
     text: &SharedString,
     base_color: Hsla,
@@ -761,7 +711,6 @@ impl Element for AreaElement {
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let mut style = Style::default();
-        // Fill the padded viewport the render `div` sizes; vertical overflow scrolls.
         style.size.width = relative(1.0).into();
         style.size.height = relative(1.0).into();
         (window.request_layout(style, [], cx), ())
@@ -791,7 +740,6 @@ impl Element for AreaElement {
             (content.clone(), style.color)
         };
 
-        // Selection colouring only applies over real content, never the placeholder.
         let selection = if content.is_empty() {
             0..0
         } else {

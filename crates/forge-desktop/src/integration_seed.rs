@@ -10,10 +10,6 @@ use forge_platform_core::{
 };
 use forge_types::SubActionStep;
 
-/// Static trait outputs for one integration, seeded so the generic detail screen
-/// renders visibly before a runtime bridge feeds live snapshots. Every field is a
-/// pre-baked value the four `Builtin*` traits return; the detail view reads them
-/// through the trait objects, exactly as it will read a live integration.
 pub struct IntegrationSeed {
     pub icon: SectionIcon,
     pub status: Arc<dyn BuiltinStatus>,
@@ -158,12 +154,6 @@ fn quick(
     }
 }
 
-/// Builds the representative seed for `id`. Twitch, OBS and Kick carry rich,
-/// distinct section shapes (subscriptions / scopes / info card; two-column lists /
-/// stats grid; hybrid banner / key-value list) so the one generic renderer is
-/// exercised across the whole `DetailSection` vocabulary. Every other integration
-/// falls back to a connected-less overview so its detail still opens with a real
-/// visual frame.
 pub fn seed(id: &BuiltinId) -> IntegrationSeed {
     match id.as_str() {
         "twitch" => twitch(),

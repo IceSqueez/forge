@@ -24,8 +24,6 @@ use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
-/// The seven kinds in the editor's picker order — exactly the fixed `Variant`
-/// kinds (Array/Object edited as JSON). Order mirrors the design's type legend.
 const EDITOR_KINDS: [VariantKind; 7] = [
     VariantKind::Int,
     VariantKind::Float,
@@ -36,29 +34,18 @@ const EDITOR_KINDS: [VariantKind; 7] = [
     VariantKind::Object,
 ];
 
-/// Max name length surfaced by the editor's `N/64` counter.
 const NAME_LIMIT: usize = 64;
 
-/// Per-row persist dot / value-icon sizes, off the density scale (fixed markers).
 const ROW_DOT: gpui::Pixels = px(6.0);
 const VALUE_ICON: gpui::Pixels = px(11.0);
-/// Row-action hover wash alpha.
 const ACTION_HOVER_ALPHA: f32 = 0.14;
 
-/// Whether the editor is minting a new variable or editing an existing one; the
-/// `Edit` arm carries the original name so a rename can target the right row and a
-/// duplicate check can exempt the row's own name.
 #[derive(Clone)]
 enum EditorMode {
     Create,
     Edit(SharedString),
 }
 
-/// In-flight variant-editor form. Text values live in child input entities (gpui's
-/// text controls are stateful entities, not values), so the form holds the name
-/// field, one single-line value field (Int/Float/String/Datetime), one multi-line
-/// JSON field (Array/Object) and the bool switch state, plus the chosen kind and
-/// persistence flag. Kept minimal + free of business rules beyond value building.
 struct EditorState {
     mode: EditorMode,
     kind: VariantKind,
@@ -68,9 +55,6 @@ struct EditorState {
     value_input: Entity<TextInput>,
     value_area: Entity<TextArea>,
     error: Option<SharedString>,
-    /// True while a create/edit write is in flight; the modal stays open, its Save
-    /// control disabled, until the write resolves and either closes it or shows an
-    /// error.
     saving: bool,
     _name_sub: Subscription,
     _value_sub: Subscription,
@@ -78,10 +62,6 @@ struct EditorState {
 }
 
 impl EditorState {
-    /// Builds the value the form currently describes, or a static reason it is
-    /// invalid. Reads the child input entities, so it takes the app context. The
-    /// seven arms cover exactly the fixed kinds; Array/Object parse the JSON field
-    /// and marshal through [`Variant::from_json`].
     fn build_variant(&self, cx: &gpui::App) -> Result<Variant, SharedString> {
         match self.kind {
             VariantKind::Int => self
@@ -132,33 +112,21 @@ impl EditorState {
     }
 }
 
-/// In-flight inline rename of a single row: the original name (the storage join key
-/// the rename targets) plus the child input entity carrying the in-progress name.
 struct RenameState {
     original: SharedString,
     input: Entity<TextInput>,
     _sub: Subscription,
 }
 
-/// The Globals screen view-entity: a breadcrumb header with variable-count readout,
-/// a search + filter + action strip, and the variables table (name / kind / value /
-/// telemetry / persistence toggle / row actions), over two centred overlays — the
-/// variant editor and the delete confirmation. Owns all per-screen UI state as
-/// fields and reads rows from an injected [`Globals`] topic (a cached read stub,
-/// not the source of truth).
 pub struct GlobalsView {
     globals: Entity<Globals>,
     backend: Arc<dyn GlobalsRepo>,
     rt_handle: tokio::runtime::Handle,
-    /// True until the first `list` pull lands, so the table shows a loading caption
-    /// rather than the empty-filter caption before any row arrives.
     loading: bool,
     filter: GlobalsFilter,
     search: Entity<TextInput>,
     search_query: String,
     editor: Option<EditorState>,
-    /// Two-phase delete gate — armed by a row's delete action, resolved by the
-    /// confirm overlay. `None` = no dialog showing.
     pending_delete: Option<SharedString>,
     renaming: Option<RenameState>,
     _globals_obs: Subscription,
@@ -196,12 +164,6 @@ impl GlobalsView {
         view
     }
 
-    // --- async pull + reconcile -------------------------------------------
-
-    /// Pulls the full row set off the storage provider and reconciles the cached
-    /// roster with it. Every create/edit/rename/archive routes back here for a full
-    /// re-pull rather than patching a row locally, so the roster always mirrors the
-    /// persisted rows.
     fn reload(&self, cx: &mut Context<Self>) {
         let backend = Arc::clone(&self.backend);
         self.spawn_reload(
@@ -210,10 +172,6 @@ impl GlobalsView {
         );
     }
 
-    /// Spawns `work` (a repo verb that ends by returning the fresh `list`) on the
-    /// tokio runtime, then folds the result back on the foreground executor: the new
-    /// rows on success, a PII-safe error toast on failure. A released view makes the
-    /// apply a no-op.
     fn spawn_reload(
         &self,
         work: impl Future<Output = Result<Vec<GlobalEntry>, String>> + Send + 'static,
@@ -222,9 +180,6 @@ impl GlobalsView {
         Self::reload_entity(cx.entity(), self.rt_handle.clone(), work, cx);
     }
 
-    /// The context-free reload path: usable both from a screen handler and from a
-    /// toast action closure (which only has an [`App`] and the view handle). Hops the
-    /// tokio runtime for `work`, then applies the outcome to `view`.
     fn reload_entity(
         view: Entity<GlobalsView>,
         rt_handle: tokio::runtime::Handle,
@@ -265,8 +220,6 @@ impl GlobalsView {
         cx.notify();
     }
 
-    // --- reactions --------------------------------------------------------
-
     fn on_search_event(
         &mut self,
         _f: Entity<TextInput>,
@@ -278,8 +231,6 @@ impl GlobalsView {
             cx.notify();
         }
     }
-
-    // --- filter / row handlers --------------------------------------------
 
     fn set_filter(&mut self, filter: GlobalsFilter, cx: &mut Context<Self>) {
         self.filter = filter;
@@ -317,9 +268,6 @@ impl GlobalsView {
         cx.notify();
     }
 
-    /// Soft-deletes the confirmed row: archives it (the row and its telemetry
-    /// survive, invisible to `list`), re-pulls, then raises an undo toast whose
-    /// action restores it through the same reconcile path.
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
         let Some(name) = self.pending_delete.take() else {
             return;
@@ -355,8 +303,6 @@ impl GlobalsView {
         .detach();
     }
 
-    /// Fires the post-archive undo toast. Its action restores the named row (which
-    /// still exists, only archived) and reconciles the roster with a fresh pull.
     fn raise_undo_toast(
         &self,
         name: SharedString,
@@ -388,13 +334,7 @@ impl GlobalsView {
         );
     }
 
-    fn export(&mut self, _cx: &mut Context<Self>) {
-        // Stub: the real Export JSON writes every row to a chosen file off the
-        // foreground thread once the file-dialog + storage-export capability reaches
-        // this screen. Nothing to mutate or repaint yet, so no `cx.notify()`.
-    }
-
-    // --- inline rename ----------------------------------------------------
+    fn export(&mut self, _cx: &mut Context<Self>) {}
 
     fn start_rename(&mut self, name: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.palette();
@@ -453,8 +393,6 @@ impl GlobalsView {
         cx.notify();
     }
 
-    // --- editor lifecycle -------------------------------------------------
-
     fn open_create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let editor = self.build_editor(EditorMode::Create, VariantKind::Int, false, None, cx);
         editor.name_input.read(cx).focus(window);
@@ -486,8 +424,6 @@ impl GlobalsView {
         cx.notify();
     }
 
-    /// Assembles an [`EditorState`], creating the child input entities, prefilling
-    /// them from `prefill` (an edit) and wiring their submit/cancel/change events.
     fn build_editor(
         &self,
         mode: EditorMode,
@@ -567,9 +503,6 @@ impl GlobalsView {
 
     fn select_kind(&mut self, kind: VariantKind, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        // Kind is fixed once a variable exists (the seven-kind invariant), so only
-        // Create picks a kind; Edit renders the chips inert. A single-line kind swap
-        // rebuilds the value field so its placeholder matches the new kind.
         let is_create = matches!(
             self.editor.as_ref().map(|e| &e.mode),
             Some(EditorMode::Create)
@@ -639,8 +572,6 @@ impl GlobalsView {
             }
         };
         let persisted = ed.persisted;
-        // An edit that changes the name renames the row first (telemetry survives),
-        // then writes the value; create just writes.
         let rename_from = match &original {
             Some(old) if old.as_str() != name.as_str() => Some(old.clone()),
             _ => None,
@@ -704,10 +635,6 @@ impl GlobalsView {
         cx.notify();
     }
 
-    // --- pure view logic --------------------------------------------------
-
-    /// Rows surviving the active filter + name search, cloned so the immutable
-    /// topic borrow ends before the per-row `cx.listener` closures are built.
     fn visible_rows(&self, cx: &Context<Self>) -> Vec<Global> {
         let query = self.search_query.trim().to_lowercase();
         self.globals
@@ -730,8 +657,6 @@ impl GlobalsView {
         }
         ed.build_variant(cx).is_ok()
     }
-
-    // --- render helpers ---------------------------------------------------
 
     fn render_header(
         &self,
@@ -1098,7 +1023,6 @@ impl GlobalsView {
         };
         let locked = matches!(ed.mode, EditorMode::Edit(_));
 
-        // NAME section: field + N/64 counter.
         let name_len = ed
             .name_input
             .read(cx)
@@ -1120,7 +1044,6 @@ impl GlobalsView {
             );
         let name_section = section(palette, "NAME", name_row);
 
-        // TYPE section: the seven kind chips (inert when locked).
         let mut chips = div()
             .flex()
             .flex_wrap()
@@ -1157,7 +1080,6 @@ impl GlobalsView {
         }
         let type_section = section(palette, "TYPE", type_children);
 
-        // PERSISTENCE section: label/description + switch.
         let persist_row = div()
             .flex()
             .items_center()
@@ -1187,7 +1109,6 @@ impl GlobalsView {
             ));
         let persist_section = section(palette, "PERSISTENCE", persist_row);
 
-        // VALUE section: per-kind control.
         let value_control = self.editor_value_control(ed, palette, cx);
         let value_section = section(palette, "VALUE", value_control);
 
@@ -1344,8 +1265,6 @@ impl Render for GlobalsView {
             .pending_delete
             .clone()
             .map(|name| self.render_delete_confirm(name, &palette, cx));
-        // The editor is read separately so its borrow does not overlap the delete
-        // overlay build; both draw in a deferred pass, so append order is fine.
         let editor_overlay = self
             .editor
             .as_ref()
@@ -1365,8 +1284,6 @@ impl Render for GlobalsView {
 }
 
 impl GlobalsView {
-    /// Thin boxing wrapper so the editor overlay and the delete overlay — distinct
-    /// concrete types — can each be an optional child without a match.
     fn render_editor_boxed(
         &self,
         ed: &EditorState,
@@ -1377,7 +1294,6 @@ impl GlobalsView {
     }
 }
 
-/// A titled editor section: a monospace uppercase label over its control.
 fn section(
     palette: &ForgePalette,
     label: &'static str,
@@ -1397,8 +1313,6 @@ fn section(
         .child(control)
 }
 
-/// The VALUE cell: the value rendered monospace, strings quoted, with a trailing
-/// external-link glyph for the complex (array/object) kinds — matching the design.
 fn value_preview(g: &Global, palette: &ForgePalette) -> impl IntoElement + use<> {
     let kind = g.kind();
     let complex = matches!(kind, VariantKind::Array | VariantKind::Object);
@@ -1419,8 +1333,6 @@ fn value_preview(g: &Global, palette: &ForgePalette) -> impl IntoElement + use<>
     cell
 }
 
-/// Folds a persisted [`GlobalEntry`] into the screen's presentation row, formatting
-/// its timestamp against `now` into the human "last modified" caption.
 fn global_from_entry(entry: &GlobalEntry, now: time::OffsetDateTime) -> Global {
     Global {
         name: entry.name.clone().into(),
@@ -1432,8 +1344,6 @@ fn global_from_entry(entry: &GlobalEntry, now: time::OffsetDateTime) -> Global {
     }
 }
 
-/// Coarse "N ago" caption for `dt` relative to `now`, clamped at zero for a
-/// future-dated (clock-skewed) row.
 fn format_time_ago(dt: time::OffsetDateTime, now: time::OffsetDateTime) -> String {
     let secs = (now - dt).whole_seconds().max(0);
     if secs < 60 {
@@ -1451,7 +1361,6 @@ fn format_time_ago(dt: time::OffsetDateTime, now: time::OffsetDateTime) -> Strin
     }
 }
 
-/// Lowercase kind word shown in the row pill and the editor chips.
 fn kind_word(kind: VariantKind) -> &'static str {
     match kind {
         VariantKind::Int => "int",
@@ -1464,7 +1373,6 @@ fn kind_word(kind: VariantKind) -> &'static str {
     }
 }
 
-/// Placeholder for the single-line value field, per kind.
 fn single_line_placeholder(kind: VariantKind) -> &'static str {
     match kind {
         VariantKind::Int => "0",
@@ -1474,8 +1382,6 @@ fn single_line_placeholder(kind: VariantKind) -> &'static str {
     }
 }
 
-/// The single-line edit seed for a value, or `None` for kinds edited elsewhere
-/// (Bool via the switch, Array/Object via the JSON field).
 fn single_line_seed(value: &Variant) -> Option<String> {
     match value {
         Variant::Int(n) => Some(n.to_string()),
@@ -1489,8 +1395,6 @@ fn single_line_seed(value: &Variant) -> Option<String> {
     }
 }
 
-/// The multi-line JSON edit seed for a complex value, or `None` for the other
-/// kinds. Renders the value as plain JSON (not the tagged `Variant` envelope).
 fn json_seed(value: &Variant) -> Option<String> {
     match value {
         Variant::Array(_) | Variant::Object(_) => {
@@ -1500,8 +1404,6 @@ fn json_seed(value: &Variant) -> Option<String> {
     }
 }
 
-/// Parses `text` as plain JSON and marshals it into a `Variant`, requiring the top
-/// level to be an array (`want_array`) or object. Returns `reason` on any failure.
 fn parse_json_variant(
     text: &str,
     want_array: bool,
@@ -1519,8 +1421,6 @@ fn parse_json_variant(
     Variant::from_json(value).map_err(|_| reason.into())
 }
 
-/// Recursively renders a `Variant` as plain JSON (the inverse of the JSON edit
-/// path), so a complex value round-trips through the editor's text field.
 fn variant_to_json(value: &Variant) -> serde_json::Value {
     match value {
         Variant::Int(n) => serde_json::Value::from(*n),

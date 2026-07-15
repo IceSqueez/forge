@@ -12,32 +12,20 @@ use gpui::{
 use crate::event_log::{EventFilter, EventItem, EventLog};
 use crate::presentation::ActivePresentation;
 
-/// Distance (px) from the bottom within which the list counts as "at bottom": a
-/// wheel that leaves the viewport this close re-arms auto-scroll.
 const AT_BOTTOM_SLACK: f32 = 40.0;
-/// Seed / clamp bounds for the resizable inspector, mirroring the shipping feed.
 const INSPECTOR_INITIAL: f32 = 300.0;
 const INSPECTOR_MIN: f32 = 220.0;
 const INSPECTOR_MAX: f32 = 540.0;
 
-/// Fixed column widths in the monospace event row.
 const TS_COL_W: Pixels = px(64.0);
 const TYPE_COL_W: Pixels = px(104.0);
-/// The live/paused status dot in the header cluster and the footer-style row.
 const STATUS_DOT: Pixels = px(6.0);
-/// Thin vertical rule separating the Pause action from Clear / Export.
 const ACTION_DIVIDER_W: Pixels = px(0.5);
 const ACTION_DIVIDER_H: Pixels = px(14.0);
-/// The colored left rail on the selected row.
 const ROW_RAIL_W: Pixels = px(2.0);
-/// Error-row wash alpha, mirroring the source's `rgba(red, 0.06)` tint.
 const ERROR_ROW_ALPHA: f32 = 0.06;
-/// Hover wash alpha on the ghost toolbar actions.
 const ACTION_HOVER_ALPHA: f32 = 0.05;
 
-/// The seven filter tabs, in display order. Each carries its label, the bucket it
-/// selects, and its glyph accent — the source + kind predicate lives on
-/// [`EventItem::matches`].
 const FILTER_TABS: [(&str, &str, EventFilter); 7] = [
     ("event-tab-all", "All", EventFilter::All),
     ("event-tab-chat", "Chat", EventFilter::Chat),
@@ -48,20 +36,12 @@ const FILTER_TABS: [(&str, &str, EventFilter); 7] = [
     ("event-tab-errors", "Errors", EventFilter::Errors),
 ];
 
-/// The Event Feed screen view-entity: a live observability stream over the
-/// [`EventLog`] topic, a filter-tab + toolbar strip (Pause / Clear / Export /
-/// auto-scroll), and a resizable inspector side-sheet for the selected event. Owns
-/// all per-screen UI state as fields and reads rows from an injected [`EventLog`]
-/// topic (a cached runtime read, never the source of truth).
 pub struct EventFeedView {
     log: Entity<EventLog>,
     active_filter: EventFilter,
-    /// Explicit row selection; when `None` the inspector falls back to the newest
-    /// row (the source's `find(id) || last` rule), so it is always populated.
+    /// `None` falls back to the newest row, keeping the inspector populated.
     selected: Option<gpui::SharedString>,
     auto_scroll: bool,
-    /// Live inspector width the resize drag feeds back; clamped to
-    /// `[INSPECTOR_MIN, INSPECTOR_MAX]`.
     inspector_width: f32,
     list_scroll: ScrollHandle,
     _log_obs: Subscription,
@@ -83,16 +63,12 @@ impl EventFeedView {
         }
     }
 
-    // --- reactions --------------------------------------------------------
-
     fn on_log_changed(&mut self, _log: Entity<EventLog>, cx: &mut Context<Self>) {
         if self.auto_scroll {
             self.list_scroll.scroll_to_bottom();
         }
         cx.notify();
     }
-
-    // --- handlers (mutate + notify) ---------------------------------------
 
     fn set_filter(&mut self, filter: EventFilter, cx: &mut Context<Self>) {
         self.active_filter = filter;
@@ -126,16 +102,9 @@ impl EventFeedView {
         cx.notify();
     }
 
-    fn export(&mut self, _cx: &mut Context<Self>) {
-        // Stub: the real export writes the buffered rows to a chosen JSON file off
-        // the foreground thread. Wired with the file-dialog + export capability;
-        // nothing to mutate or repaint yet, so no `cx.notify()`.
-    }
+    fn export(&mut self, _cx: &mut Context<Self>) {}
 
-    fn replay(&mut self, _cx: &mut Context<Self>) {
-        // Stub: the real replay re-publishes the selected event through the bus's
-        // replay path. Wired once the replay capability reaches this screen.
-    }
+    fn replay(&mut self, _cx: &mut Context<Self>) {}
 
     fn toggle_auto_scroll(&mut self, cx: &mut Context<Self>) {
         self.auto_scroll = !self.auto_scroll;
@@ -156,14 +125,10 @@ impl EventFeedView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Best-effort near-bottom read: re-arm auto-scroll at the newest row, disarm
-        // it when the user scrolls up. Mirrors the Chat screen's wheel handling.
         let remaining = self.list_scroll.max_offset().height + self.list_scroll.offset().y;
         self.auto_scroll = remaining <= px(AT_BOTTOM_SLACK);
         cx.notify();
     }
-
-    // --- render helpers ---------------------------------------------------
 
     fn render_header(
         &self,
@@ -356,9 +321,9 @@ impl EventFeedView {
                 .child(item.summary.clone()),
         );
 
-        // The colored selection rail rides its own leading strip (flush to the row's
-        // left edge) rather than a left border, so the row's bottom hairline can keep
-        // a distinct color — gpui shares one `border_color` across all sides.
+        // gpui shares one `border_color` across all sides, so the selection rail is a
+        // separate leading strip rather than a left border (keeps the row's bottom
+        // hairline a distinct color).
         let rail_strip = div().flex_none().w(ROW_RAIL_W).bg(rail);
 
         let content = div()
@@ -607,9 +572,6 @@ impl EventFeedView {
     }
 
     fn payload_block(&self, item: &EventItem, palette: &ForgePalette) -> impl IntoElement + use<> {
-        // A provisional pretty-printed envelope built from the row's decoded fields;
-        // the real inspector renders the event's full JSON payload. Key = info,
-        // string value = success, brace = muted, mirroring the design's syntax hues.
         let key = palette.info;
         let val = palette.success;
         let brace = palette.text_muted;
@@ -689,10 +651,6 @@ impl EventFeedView {
             .child(div().text_color(brace).child("}"))
     }
 
-    // --- pure view logic (kept off render) --------------------------------
-
-    /// Resolves the row the inspector shows: the explicitly selected row if it still
-    /// exists, otherwise the newest row (the source's `find(id) || last` rule).
     fn resolved_selection(&self, cx: &Context<Self>) -> Option<EventItem> {
         let log = self.log.read(cx);
         if let Some(id) = &self.selected
@@ -742,9 +700,6 @@ impl EventFeedView {
         }
     }
 
-    /// The ghost-action pill shell shared by Pause / Clear / Export / auto-scroll —
-    /// a lightweight icon+label affordance, not the heavier kit `Button`. One-off
-    /// and screen-local (noted in UI_NOTES); promote to the kit on a third caller.
     fn action_shell(id: &'static str, palette: &ForgePalette, density: Density) -> Stateful<Div> {
         let hover = with_alpha(palette.border_regular, ACTION_HOVER_ALPHA);
         div()
@@ -802,8 +757,6 @@ impl Render for EventFeedView {
     }
 }
 
-/// Per-tab match totals, computed once per render off the topic. Kept a plain struct
-/// so the counting stays testable off `render`.
 #[derive(Default)]
 struct FilterCounts {
     all: u32,
@@ -829,7 +782,6 @@ impl FilterCounts {
     }
 }
 
-/// Uppercase source tag shown in the row and inspector source badge.
 fn source_label(source: EventSource) -> &'static str {
     match source {
         EventSource::Twitch => "TWITCH",
@@ -849,7 +801,6 @@ fn source_label(source: EventSource) -> &'static str {
     }
 }
 
-/// Source-badge ink, resolved from the active theme so it re-tints on theme switch.
 fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {
     match source {
         EventSource::Twitch => palette.brand,
@@ -867,7 +818,6 @@ fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// True for the chat-message kinds every chat platform publishes.
 fn is_chat_message_kind(kind: &str) -> bool {
     matches!(
         kind,
@@ -879,8 +829,6 @@ fn is_chat_message_kind(kind: &str) -> bool {
     )
 }
 
-/// Event-type cell ink, keyed on the kind and the error flag — a failed request
-/// reads in the error hue even though its kind is not itself an error kind.
 fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
     if is_error {
         return palette.random;
@@ -899,7 +847,6 @@ fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// Result-tag cell ink, read from the same signal the tag text is built from.
 fn result_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
     if is_error {
         return palette.warning;

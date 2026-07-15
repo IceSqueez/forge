@@ -1,9 +1,3 @@
-//! Triggers registry — detail side-sheet: the async detail pull, the per-field
-//! configuration editor folded from the kind's `config_fields` (mirroring the
-//! sub-action editor's `FormField` rendering), the used-in list, and the sheet's
-//! rename / toggle / delete / use-as-template controls. Every config write
-//! reconciles by a full re-pull.
-
 use super::config_form::{fold_config_field, overlay_field_values, sparse_overrides};
 use super::*;
 use crate::presentation::ActivePresentation;
@@ -15,32 +9,20 @@ use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
 use std::collections::HashMap;
 
-/// Detail side-sheet width. The design pins the docked inspector at a fixed 420px.
 const SHEET_W: Pixels = px(420.0);
-/// Hairline width the design uses for the sheet's leading edge and the intra-card
-/// field dividers (0.5px, below the `BORDER_THIN` token).
 const HALF_BORDER: Pixels = px(0.5);
-/// Header icon tile side and corner (fixed 30px / 8px) and its centred glyph (16px).
 const TILE: Pixels = px(30.0);
 const TILE_RADIUS: Pixels = px(8.0);
 const TILE_GLYPH: Pixels = px(16.0);
-/// Leading status-dot diameter on the kind line (5px) and on a config/used-in row
-/// glyph (12px), off the `FONT_*`/`Spacing` scales.
 const KIND_DOT: Pixels = px(5.0);
 const ROW_GLYPH: Pixels = px(12.0);
-/// Off-scale detail font sizes pinned to the design: name 14, kind line 10.5, config
-/// key/value 11 / 11.5, used-in name 12.
 const NAME_FS: Pixels = px(14.0);
 const KIND_FS: Pixels = px(10.5);
 const CFG_KEY_FS: Pixels = px(11.0);
 const CFG_VAL_FS: Pixels = px(11.5);
 const USED_FS: Pixels = px(12.0);
-/// The config-key column width in a field row (fixed 110px in the design).
 const CFG_KEY_W: Pixels = px(110.0);
-/// The trailing revert-affordance slot width (fixed 22px), reserved on every row so
-/// overridden and default rows stay column-aligned.
 const REVERT_W: Pixels = px(22.0);
-/// Header / body / footer / row insets pinned to the design.
 const HEADER_PAD_V: Pixels = px(12.0);
 const HEADER_PAD_H: Pixels = px(16.0);
 const BODY_PAD_V: Pixels = px(14.0);
@@ -51,24 +33,16 @@ const USED_ROW_PAD_V: Pixels = px(7.0);
 const USED_ROW_PAD_H: Pixels = px(10.0);
 const FOOTER_PAD_V: Pixels = px(10.0);
 const FOOTER_PAD_H: Pixels = px(16.0);
-/// Empty used-in / no-fields placeholder inset.
 const PLACEHOLDER_PAD_V: Pixels = px(14.0);
 const PLACEHOLDER_PAD_H: Pixels = px(12.0);
 
 impl TriggersRegistryView {
-    // --- detail: async pull -----------------------------------------------
-
-    /// Re-pulls the open sheet's detail from the currently selected instance. A no-op
-    /// when nothing is selected.
     pub(super) fn reload_detail(&self, cx: &mut Context<Self>) {
         if let Some(id) = self.selected {
             self.load_detail(id, cx);
         }
     }
 
-    /// Pulls `id`'s fresh instance plus the names of the actions linking it off the
-    /// storage provider, then folds the detail on the foreground executor — guarding
-    /// on the selection not having moved on while the pull was in flight.
     pub(super) fn load_detail(&self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let action_repo = Arc::clone(&self.action_repo);
@@ -96,9 +70,6 @@ impl TriggersRegistryView {
         .detach();
     }
 
-    /// Folds a freshly pulled instance into the detail sheet: seeds one editable field
-    /// per `config_field` over the effective (default-merged) config, and stores the
-    /// resolved used-in list. Discards a pull whose instance is no longer selected.
     fn apply_detail(
         &mut self,
         id: TriggerInstanceId,
@@ -141,8 +112,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    // --- config: per-field edit + revert ----------------------------------
-
     fn on_config_committed(
         &mut self,
         _field: Entity<TextInput>,
@@ -167,9 +136,6 @@ impl TriggersRegistryView {
         self.commit_config(cx);
     }
 
-    /// Overlays the field values onto the effective config, diffs to a sparse override
-    /// set and persists it, then reconciles the roster and (via the roster re-pull) the
-    /// sheet by a full re-pull.
     fn commit_config(&mut self, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
@@ -196,8 +162,6 @@ impl TriggersRegistryView {
         );
     }
 
-    /// Reverts one config key to its schema default by dropping it from the persisted
-    /// overrides, then reconciles by a full re-pull.
     fn revert_config_field(&mut self, key: String, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
@@ -214,11 +178,6 @@ impl TriggersRegistryView {
         );
     }
 
-    // --- footer: use as template ------------------------------------------
-
-    /// Clones the selected instance into a new user-defined instance (fresh id, copied
-    /// kind / overrides / scope), persists it, re-pulls the roster, then selects the
-    /// clone so its detail opens.
     fn use_as_template(&mut self, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
@@ -260,11 +219,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    // --- render: detail side-sheet ----------------------------------------
-
-    /// The detail side-sheet as a docked pane sharing the body row with the list — a
-    /// fixed-width inspector that opens on selection, not a modal scrim (the list stays
-    /// live behind it, so selecting another row just swaps the sheet's contents).
     pub(super) fn render_detail_sheet(
         &self,
         id: TriggerInstanceId,
@@ -344,8 +298,6 @@ impl TriggersRegistryView {
             .bg(palette.surface_overlay)
             .child(icon(glyph, TILE_GLYPH, dot_color));
 
-        // The name reuses the roster rename verb (opens the rename modal), so a click
-        // anywhere on the name row starts an inline rename.
         let name = div()
             .id("triggers-detail-rename")
             .cursor_pointer()
@@ -739,9 +691,6 @@ impl TriggersRegistryView {
     }
 }
 
-/// Pulls `id`'s fresh instance and resolves each linking action to its display name,
-/// mirroring the count the roster computes. A missing instance yields `None` (the
-/// sheet clears); a missing action degrades to its id string.
 async fn load_detail_data(
     repo: &dyn TriggerInstanceRepo,
     action_repo: &dyn ActionRepo,

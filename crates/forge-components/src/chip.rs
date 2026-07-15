@@ -8,53 +8,29 @@ use crate::palette::ForgePalette;
 use crate::status::status_dot;
 use crate::tokens::{DEFAULT_BODY_FAMILY, Density, FONT_XS, Radius, Spacing, radius, spacing};
 
-/// Boxed click handler carried by a pressable chip. gpui passes the click event
-/// plus the window and app contexts, through which the caller reaches its entity.
 type ChipClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// Leading-affordance diameter for a chip's dot. Mirrors the source's fixed 5px
-/// disc — a chip dot is a density-neutral marker, so it sits off the `Spacing`
-/// scale as a literal, exactly like the connection dot in [`crate::status`].
 const CHIP_DOT: Pixels = px(5.0);
 
-/// The optional leading affordance a chip renders before its label.
-///
-/// `DotIcon` is the design's category-filter shape: a colored [`status_dot`]
-/// (the accent hue lives here, via a `ForgePalette` field) followed by a
-/// **monochrome** icon tinted with the chip's own text color — the icon never
-/// takes the accent. `Icon` by contrast carries its own explicit tint.
 #[derive(Clone, Copy)]
 pub enum ChipGlyph {
     None,
     Dot(Rgba),
     Icon(Icon, Rgba),
-    /// A colored status dot plus a monochrome icon (the icon inherits the
-    /// chip's text color), matching the design's category filter chips.
     DotIcon(Rgba, Icon),
 }
 
-/// A pill-shaped filter chip: an optional leading glyph plus a label, with a
-/// selected (`active`) and unselected state.
-///
-/// Selected fills with `surface_overlay` and inks its text `text_primary`;
-/// unselected is transparent with `text_secondary` text. Attach [`Chip::on_click`]
-/// to make it pressable (the source's `Some(on_press)` case); leave it off for a
-/// static chip (the `None` case).
 #[derive(IntoElement)]
 pub struct Chip {
     label: SharedString,
     glyph: ChipGlyph,
-    /// Resolved fill: `Some(surface_overlay)` when selected, `None` otherwise.
     background: Option<Rgba>,
-    /// Resolved label/monochrome-icon ink for the current state.
     text_color: Rgba,
     density: Density,
     id: Option<ElementId>,
     on_click: Option<ChipClick>,
 }
 
-/// Builds a chip in the given selected state, resolving its fill and ink from the
-/// active theme up front so the returned value carries no palette borrow.
 pub fn chip(
     label: impl Into<SharedString>,
     glyph: ChipGlyph,
@@ -83,16 +59,11 @@ pub fn chip(
 }
 
 impl Chip {
-    /// Overrides the density used to scale padding and the glyph→label gap. A
-    /// bare [`chip`] resolves these at `Density::Cozy`.
     pub fn density(mut self, density: Density) -> Self {
         self.density = density;
         self
     }
 
-    /// Makes the chip pressable. gpui needs a stable [`ElementId`] to promote the
-    /// pill to a stateful, clickable element, so the caller supplies one
-    /// alongside the handler (which mutates its own entity via the passed `cx`).
     pub fn on_click(
         mut self,
         id: impl Into<ElementId>,
@@ -151,9 +122,6 @@ impl RenderOnce for Chip {
     }
 }
 
-/// Lays a set of chips out in a single centered, evenly-gapped row — the design's
-/// filter-pill strip. Each [`Chip`] carries its own selected state and optional
-/// click handler, so the row only owns the arrangement.
 pub fn filter_chip_row(chips: Vec<Chip>, density: Density) -> impl IntoElement {
     div()
         .flex()

@@ -13,44 +13,21 @@ use crate::tokens::{
     Radius, Spacing, radius, spacing,
 };
 
-/// Gap between the alert tile and the title in the header row. Carried as a named
-/// off-scale literal (12px, one notch above `Spacing::Sm`) rather than snapped onto
-/// the scale — mirroring the off-scale literals the confirm dialog keeps.
 const HEADER_GAP: Pixels = px(12.0);
-/// Side of the square accent-tinted tile behind the alert glyph.
 const ICON_TILE: Pixels = px(36.0);
-/// Rendered size of the alert glyph centred in the tile.
 const ICON_TILE_GLYPH: Pixels = px(20.0);
-/// Alpha of the tone accent behind the alert glyph — a faint wash of the warning hue.
 const ICON_TILE_ALPHA: f32 = 0.12;
-/// Vertical gap inside the header and confirm bands, stacking a line over the line
-/// below it. An off-scale literal (8px, between `Spacing::Xs` and `Spacing::Sm`).
 const SECTION_STACK_GAP: Pixels = px(8.0);
-/// Rendered size of the leading glyph on each impact bullet.
 const BULLET_GLYPH: Pixels = px(14.0);
-/// Rendered size of the keyboard glyph leading the inline Escape hint.
 const ESC_GLYPH: Pixels = px(12.0);
-/// Gap between the keyboard glyph, the `Esc` keycap and the hint phrase.
 const ESC_GAP: Pixels = px(5.0);
-/// Gap between the cancel and confirm buttons in the footer actions cluster.
 const ACTIONS_GAP: Pixels = px(8.0);
-/// Vertical inset of the monospace phrase chip wrapped in the instruction line — a
-/// 1px off-scale literal that keeps the chip hugging its text.
 const CHIP_PAD_Y: Pixels = px(1.0);
-/// Alpha the enabled confirm button fades its warning fill to on hover.
 const ACCENT_HOVER_ALPHA: f32 = 0.92;
-/// Fixed card width. An off-scale literal (520px, between `ModalSize::Sm` 440 and
-/// `Md` 540) carried as a named constant rather than snapped onto the `ModalSize`
-/// scale — this dialog's width is pinned, not one of the shared modal envelopes.
 const CARD_WIDTH: Pixels = px(520.0);
 
-/// Boxed click handler for the confirm / cancel actions. gpui passes the click event
-/// plus the window and app contexts, through which the closure reaches this dialog's
-/// own entity to emit the resolving event.
 type ActionHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// The tone of an impact bullet, fixing its leading glyph and hue: a reassuring
-/// `Check` (green), a cautioning `Warning` (yellow), or a neutral `Info` (blue).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BulletKind {
     Check,
@@ -58,16 +35,12 @@ pub enum BulletKind {
     Info,
 }
 
-/// One line in the impact list — the cascade of what the confirmed action will
-/// affect. The `kind` fixes the glyph and hue; `text` is the caller-supplied,
-/// already-resolved description (the kit carries no localisation).
 pub struct BulletItem {
     pub kind: BulletKind,
     pub text: SharedString,
 }
 
 impl BulletItem {
-    /// Convenience constructor pairing a `kind` with its already-resolved `text`.
     pub fn new(kind: BulletKind, text: impl Into<SharedString>) -> Self {
         Self {
             kind,
@@ -76,18 +49,13 @@ impl BulletItem {
     }
 }
 
-/// The event a [`TypeToConfirm`] dialog emits once the user resolves it: they either
-/// confirmed (only reachable while the typed phrase matches the target) or cancelled.
-/// The consuming screen `cx.subscribe`s to this and dismisses the dialog / carries out
-/// the action accordingly.
+/// `Confirmed` is emitted only while the typed phrase matches the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeToConfirmEvent {
     Confirmed,
     Cancelled,
 }
 
-/// Resolves a bullet's leading glyph and hue against the active theme. Kept internal
-/// so the mapping is pinned in one place (and unit-testable in-crate).
 pub(crate) fn bullet_glyph(kind: BulletKind, palette: &ForgePalette) -> (Icon, Rgba) {
     match kind {
         BulletKind::Check => (Icon::CircleCheck, palette.success),
@@ -96,17 +64,11 @@ pub(crate) fn bullet_glyph(kind: BulletKind, palette: &ForgePalette) -> (Icon, R
     }
 }
 
-/// Whether the typed text clears the confirmation gate: an exact, case-sensitive,
-/// untrimmed match against the target phrase. Kept internal (and pure) so the enable
-/// rule is unit-testable off the render tree — the confirm button is live only when
-/// this holds.
+/// Exact, case-sensitive, untrimmed match — the confirm gate is live only when this holds.
 pub(crate) fn matches(typed: &str, target: &str) -> bool {
     typed == target
 }
 
-/// The confirmation field's border hue for a given match state: `brand` once the
-/// typed phrase matches the target, `border_input` otherwise. The field carries this
-/// as a pinned static chrome, so the border is the match signal on the input itself.
 fn match_border(matched: bool, palette: &ForgePalette) -> Rgba {
     if matched {
         palette.brand
@@ -115,31 +77,11 @@ fn match_border(matched: bool, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// Resolves a spacing token at the fixed default density. The dialog carries no
-/// per-instance density knob (its bands are chrome, sized once), so every inset snaps
-/// to the `Spacing` scale at `Cozy` — the density-neutral multiplier.
 fn sp(s: Spacing) -> Pixels {
     spacing(s, Density::Cozy)
 }
 
-/// A destructive-action confirmation dialog that gates its confirm button behind the
-/// user re-typing a target phrase exactly. It is a stateful mini-view: it owns a child
-/// [`TextInput`] plus the target phrase, recomputes whether they match on every input
-/// change, and emits [`TypeToConfirmEvent`] when the user resolves it.
-///
-/// The card lays out four bands on the shared modal shell (`elevated` fill, hairline
-/// border, `Radius::Lg`, [`modal_width`]): a header (alert tile, title, muted
-/// explanation), an impact list (a caption over the cascade of affected things), the
-/// confirm band (a `type <phrase> to confirm` instruction over the input), and a footer
-/// (an inline Escape hint pushed against the cancel + confirm buttons). The confirm
-/// button is live — filled with the warning accent — only while the typed phrase
-/// matches; otherwise it renders the dimmed, inert filled look and does not fire.
-///
-/// The card is just the surface: wrap the rendered entity in a centred
-/// [`crate::overlay`] to gain the scrim, the enter animation and scrim/Escape
-/// dismissal. The binary must have called [`crate::bind_text_input_keys`] once at boot
-/// for the input's editing keys, and should [`TypeToConfirm::focus_input`] when the
-/// dialog opens so typing lands in the field.
+/// The binary must call `bind_text_input_keys` once at boot for the input's editing keys.
 pub struct TypeToConfirm {
     input: Entity<TextInput>,
     target: SharedString,
@@ -159,11 +101,6 @@ pub struct TypeToConfirm {
 
 impl EventEmitter<TypeToConfirmEvent> for TypeToConfirm {}
 
-/// Builds a type-to-confirm dialog gated on re-typing `target`, resolving its ink from
-/// `palette`. Creates the child input and subscribes to it so the confirm gate tracks
-/// the typed text. Defaults to English confirm/cancel labels, no explanation, no
-/// caption, an empty instruction wrap, no bullets and no Escape hint; layer those on
-/// through the builder methods. Construct it inside `cx.new(|cx| type_to_confirm(...))`.
 pub fn type_to_confirm(
     target: impl Into<SharedString>,
     palette: &ForgePalette,
@@ -173,10 +110,6 @@ pub fn type_to_confirm(
     let palette = *palette;
     let matched = matches("", target.as_ref());
 
-    // The field's border is the match signal on the input itself: `brand` once the
-    // typed phrase matches, `border_input` otherwise (no focus-reactive variant). A
-    // pinned static chrome captures exactly that — set here for the empty initial
-    // state and repinned in the subscription as the match toggles.
     let input = cx.new(|cx| {
         TextInput::new("", cx)
             .with_palette(palette)
@@ -184,9 +117,6 @@ pub fn type_to_confirm(
             .static_chrome(match_border(matched, &palette), Radius::Md)
     });
 
-    // Recompute the confirm gate whenever the field changes, repin the field's match
-    // border, and translate the input's own submit / cancel keys into the dialog's
-    // resolving events so the keyboard reaches the same outcomes as the buttons.
     let sub = cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
         InputEvent::Changed(text) => {
             let now = matches(text.as_ref(), this.target.as_ref());
@@ -227,31 +157,24 @@ pub fn type_to_confirm(
 }
 
 impl TypeToConfirm {
-    /// Sets the dialog title beside the alert tile.
     #[must_use]
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = title.into();
         self
     }
 
-    /// Sets the muted explanation line under the title.
     #[must_use]
     pub fn explanation(mut self, explanation: impl Into<SharedString>) -> Self {
         self.explanation = explanation.into();
         self
     }
 
-    /// Sets the monospace caption above the impact list (e.g. "WHAT THIS MEANS"). Left
-    /// empty, the caption line is omitted.
     #[must_use]
     pub fn section_caption(mut self, caption: impl Into<SharedString>) -> Self {
         self.section_caption = caption.into();
         self
     }
 
-    /// Sets the two fragments wrapping the monospace phrase chip in the confirm
-    /// instruction — e.g. prefix "type" and suffix "to confirm" render as
-    /// `type <phrase> to confirm`. Both are caller-supplied so they can be localised.
     #[must_use]
     pub fn instruction(
         mut self,
@@ -263,55 +186,41 @@ impl TypeToConfirm {
         self
     }
 
-    /// Appends one line to the impact list.
     #[must_use]
     pub fn bullet(mut self, kind: BulletKind, text: impl Into<SharedString>) -> Self {
         self.bullets.push(BulletItem::new(kind, text));
         self
     }
 
-    /// Replaces the impact list with `bullets`.
     #[must_use]
     pub fn bullets(mut self, bullets: Vec<BulletItem>) -> Self {
         self.bullets = bullets;
         self
     }
 
-    /// Overrides the confirm button label (defaults to "Confirm").
     #[must_use]
     pub fn confirm_label(mut self, label: impl Into<SharedString>) -> Self {
         self.confirm_label = label.into();
         self
     }
 
-    /// Overrides the cancel button label (defaults to "Cancel").
     #[must_use]
     pub fn cancel_label(mut self, label: impl Into<SharedString>) -> Self {
         self.cancel_label = label.into();
         self
     }
 
-    /// Sets the trailing phrase of the inline Escape hint (e.g. "to cancel"). The
-    /// keyboard glyph and the `Esc` keycap ahead of it are structural; only the phrase
-    /// is caller-supplied so it can be localised. Left unset, the hint is omitted.
     #[must_use]
     pub fn esc_hint(mut self, phrase: impl Into<SharedString>) -> Self {
         self.esc_hint = Some(phrase.into());
         self
     }
 
-    /// Moves keyboard focus into the confirmation field. Call this when the dialog
-    /// opens so the user can type immediately.
     pub fn focus_input(&self, window: &mut Window, cx: &mut App) {
         self.input.read(cx).focus(window);
     }
 }
 
-/// The warning-accent confirm button. The button family exposes no arbitrary-hue
-/// filled constructor, so the confirm action mirrors the filled-button shape (rounded
-/// frame, `shell` ink, hover fade) driven by the `warning` accent. While disabled (the
-/// phrase does not yet match) it renders the inert `surface_overlay` fill with the
-/// `disabled` ink and does not fire.
 fn confirm_button(
     id: ElementId,
     label: SharedString,
@@ -356,8 +265,6 @@ impl Render for TypeToConfirm {
         let p = self.palette;
         let entity = cx.entity();
 
-        // Header: the warning-tinted alert tile beside the title, over the muted
-        // explanation.
         let tile = div()
             .flex_none()
             .flex()
@@ -398,8 +305,6 @@ impl Render for TypeToConfirm {
                     .child(self.explanation.clone()),
             );
 
-        // Impact list: an optional monospace caption over the cascade of affected
-        // things, on the `shell`-tinted band and divided from the header above.
         let mut risk = div()
             .w_full()
             .flex()
@@ -439,8 +344,6 @@ impl Render for TypeToConfirm {
             );
         }
 
-        // Confirm band: the `type <phrase> to confirm` instruction over the field,
-        // divided from the impact list above.
         let phrase_chip = div()
             .flex_none()
             .py(CHIP_PAD_Y)
@@ -483,8 +386,6 @@ impl Render for TypeToConfirm {
             .child(instruction)
             .child(self.input.clone());
 
-        // Footer: the inline Escape hint pushed against the cancel + confirm cluster,
-        // on the `shell`-tinted band and divided from the confirm band above.
         let esc = match &self.esc_hint {
             Some(phrase) => div()
                 .flex()
@@ -549,8 +450,6 @@ impl Render for TypeToConfirm {
                     .child(confirm),
             );
 
-        // `overflow_hidden` clips the `shell`-tinted bands to the rounded card so their
-        // fill does not square off the corners.
         div()
             .flex()
             .flex_col()

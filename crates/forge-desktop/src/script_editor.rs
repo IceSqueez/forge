@@ -13,36 +13,21 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
-/// Left file-tree pane width — the design pins it at a fixed 200px, off the
-/// `Spacing` scale, so it is carried as a literal.
 const LEFT_PANE_W: Pixels = px(200.0);
-/// Selection stripe width down a selected file row's leading edge (design 2px).
 const STRIPE_W: Pixels = px(2.0);
-/// Indent to a file row nested under its folder header (design paddingLeft 14px).
 const FILE_INDENT: Pixels = px(14.0);
-/// Right API-reference pane width — the design pins it at a fixed 220px, off the
-/// `Spacing` scale, so it is carried as a literal.
 const RIGHT_PANE_W: Pixels = px(220.0);
-/// The API-pane header pin glyph size (design 12px, off the `FONT_*` scale).
 const GLYPH_PIN: Pixels = px(12.0);
 
-/// One code line's row height in the gutter, matched to the [`TextArea`]'s line
-/// height (`FONT_XS` × 1.5 = 18px) so the numbers sit level with the buffer rows.
 const CODE_LINE_H_PX: f32 = 18.0;
 const CODE_LINE_H: Pixels = px(CODE_LINE_H_PX);
-/// The code field's own top/bottom padding (`Spacing::Xs` at Cozy density), added
-/// twice into the auto-grow height so the field hugs its content.
 const CODE_PAD_V_PX: f32 = 6.0;
-/// Line-number gutter column width and its trailing pad (design width 38 / pr 14).
 const GUTTER_W: Pixels = px(38.0);
 const GUTTER_PAD_R: Pixels = px(14.0);
 
-/// Toolbar vertical divider between the primary actions and "API docs" (design
-/// 0.5px × 16px rule).
 const DIVIDER_W: Pixels = px(0.5);
 const DIVIDER_H: Pixels = px(16.0);
 
-/// Off-`FONT_*`-scale glyph sizes pinned by the design.
 const GLYPH_RUN: Pixels = px(11.0);
 const GLYPH_TOOLBAR: Pixels = px(13.0);
 const GLYPH_STATUS: Pixels = px(12.0);
@@ -51,19 +36,11 @@ const GLYPH_FILE: Pixels = px(12.0);
 const GLYPH_TAB: Pixels = px(12.0);
 const GLYPH_ACTION: Pixels = px(12.0);
 
-/// The code field's auto-grow height for `content`: one [`CODE_LINE_H`] per line
-/// (minimum one) plus the field's own vertical padding, so the buffer never scrolls
-/// inside a fixed viewport and the sibling gutter stays aligned.
 fn code_field_height(content: &str) -> Pixels {
     let lines = content.lines().count().max(1) as f32;
     px(lines * CODE_LINE_H_PX + CODE_PAD_V_PX * 2.0)
 }
 
-/// One `.rhai` script the screen caches. A stub view-model standing in for a stored
-/// script row plus its owning-action binding: `name`/`content` are the persisted
-/// shape, `dirty` is the live unsaved-edits flag. `forge-desktop` wires no script
-/// store yet, so these are seeded locally and edits mutate this in-memory cache;
-/// the real screen reads scripts through a storage handle and persists edits back.
 struct ScriptFile {
     id: u64,
     name: String,
@@ -71,23 +48,18 @@ struct ScriptFile {
     dirty: bool,
 }
 
-/// A folder in the SCRIPTS section — one owning action, holding its `.rhai` files.
-/// Collapsible: `expanded` gates whether its files render under the header.
 struct ScriptFolder {
     name: String,
     expanded: bool,
     files: Vec<ScriptFile>,
 }
 
-/// In-flight inline rename of a file row: the target file id, the child
-/// [`TextInput`] entity carrying the edited name, and its event subscription.
 struct RenameState {
     target: u64,
     input: Entity<TextInput>,
     _sub: Subscription,
 }
 
-/// Which console tab is showing.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConsoleTab {
     Output,
@@ -95,7 +67,6 @@ enum ConsoleTab {
     TestRun,
 }
 
-/// Semantic tag leading a console output line, fixing its accent hue.
 #[derive(Clone, Copy)]
 enum LogTag {
     Run,
@@ -123,24 +94,17 @@ impl LogTag {
     }
 }
 
-/// One console output row: a faint timestamp, a colored tag and the message text.
 struct ConsoleLine {
     time: SharedString,
     tag: LogTag,
     text: SharedString,
 }
 
-/// A navigation the user asked for while the open buffer had unsaved edits, parked
-/// pending a discard-or-cancel confirmation. Selecting a different file or voicing the
-/// "Actions" crumb while dirty arms this instead of silently dropping the edits.
 enum PendingNav {
     SelectScript(u64),
     GoBack,
 }
 
-/// One labeled argument field in the run modal: the contract input's `name` and its
-/// type `label`, plus the child [`TextInput`] carrying the entered value. A stub — the
-/// real screen derives these from the script's parsed `@input` contract.
 struct RunInput {
     name: SharedString,
     label: SharedString,
@@ -148,8 +112,6 @@ struct RunInput {
     _sub: Subscription,
 }
 
-/// The open run modal: the dialog title, the per-argument input fields, and an optional
-/// validation error line. Present only while the modal is up.
 struct RunModalState {
     title: SharedString,
     script_name: String,
@@ -157,47 +119,22 @@ struct RunModalState {
     error: Option<SharedString>,
 }
 
-/// One API-reference group: a monospace uppercase header (e.g. `FORGE :: CORE`) over
-/// its function signatures. Seeded locally standing in for the runtime's rhai symbol
-/// catalog, which the real screen filters through the storage/script surface.
 struct ApiGroup {
     label: &'static str,
     fns: &'static [&'static str],
 }
 
-/// Seeded type-check status shown in the page header: `None` renders "Type-check
-/// passed" in the success hue, `Some(n)` the error count in the warning hue. Runtime
-/// type-check results replace this over the storage/script-compile path once wired.
+/// `None` = type-check passed; `Some(n)` = error count.
 type TypeCheck = Option<u32>;
 
-/// The Rhai script-editor screen view-entity (spawn SC-A: frame, toolbar, left file
-/// pane, code area and console). A three-crumb page header over an editor toolbar
-/// (Run / Debug / Format / API docs and a sandbox-status readout), then a body of a
-/// left file tree (SCRIPTS folders, SHARED files, VARIABLES IN SCOPE) beside a
-/// centre column of an editable code buffer with a line-number gutter above a
-/// tabbed console.
-///
-/// Owns its scripts, console and variables as seeded stub state — no script store,
-/// rhai runtime or persistence is wired into `forge-desktop` yet. Select / new /
-/// delete / rename and dirty-tracking mutate the cache; Run / Format / Debug append
-/// local console lines; clear empties them. The real screen reads scripts through a
-/// storage handle, drives compile/run through the runtime, and streams results back
-/// over the runtime→UI bridge.
-///
-/// Deferred kit component (the biggest kit-debt this screen surfaces): rhai syntax
-/// highlighting, an autocomplete popup and active-line / live cursor (Ln,Col)
-/// tracking. The code buffer is a plain monospace [`TextArea`] with a static gutter.
 pub struct ScriptEditorView {
     folders: Vec<ScriptFolder>,
     shared: Vec<ScriptFile>,
     variables: Vec<(SharedString, SharedString)>,
     selected: Option<u64>,
-    /// The open buffer's content as last loaded from its file, so a discard can revert
-    /// the in-memory edits back to it. Refreshed at every [`ScriptEditorView::open_file`].
     open_original: String,
     rename: Option<RenameState>,
     pending_delete: Option<u64>,
-    /// A navigation deferred behind the discard-unsaved-changes confirm.
     pending_nav: Option<PendingNav>,
     code_input: Entity<TextArea>,
     _code_sub: Subscription,
@@ -207,10 +144,8 @@ pub struct ScriptEditorView {
     problems: Vec<SharedString>,
     type_check: TypeCheck,
     api_docs_open: bool,
-    /// Live search box filtering the API-reference pane by signature.
     api_search: Entity<TextInput>,
     _api_search_sub: Subscription,
-    /// The open run modal, or `None` when it is closed.
     run_modal: Option<RunModalState>,
     next_id: u64,
 }
@@ -222,7 +157,6 @@ impl ScriptEditorView {
         let palette = cx.palette();
         let (folders, shared) = seed_scripts();
 
-        // Open the first file of the first folder (the design's format_quote.rhai).
         let selected = folders.first().and_then(|f| f.files.first()).map(|f| f.id);
         let seed_content = folders
             .first()
@@ -262,7 +196,6 @@ impl ScriptEditorView {
                 .static_chrome(palette.surface_overlay, Radius::Sm)
         });
         let api_search_sub = cx.subscribe(&api_search, |_this, _f, event: &InputEvent, cx| {
-            // Re-filter the API pane against the new query.
             if let InputEvent::Changed(_) = event {
                 cx.notify();
             }
@@ -296,8 +229,6 @@ impl ScriptEditorView {
         }
     }
 
-    // --- lookups ----------------------------------------------------------
-
     fn find_file(&self, id: u64) -> Option<&ScriptFile> {
         self.folders
             .iter()
@@ -314,7 +245,6 @@ impl ScriptEditorView {
             .find(|f| f.id == id)
     }
 
-    /// The name of the folder holding `id`, or `None` when the file is a SHARED one.
     fn folder_of(&self, id: u64) -> Option<&str> {
         self.folders
             .iter()
@@ -322,18 +252,12 @@ impl ScriptEditorView {
             .map(|folder| folder.name.as_str())
     }
 
-    // --- navigation -------------------------------------------------------
-
-    /// Whether the open buffer holds unsaved edits — the selected file's dirty flag.
     fn current_dirty(&self) -> bool {
         self.selected
             .and_then(|id| self.find_file(id))
             .is_some_and(|f| f.dirty)
     }
 
-    /// Loads `id`'s content into the code buffer, records it as the revert baseline and
-    /// regrows the field. The shared open path for select / discard-then-switch / delete
-    /// fallthrough, so every open leaves `open_original` in sync with the buffer.
     fn open_file(&mut self, id: u64, cx: &mut Context<Self>) {
         let Some(content) = self.find_file(id).map(|f| f.content.clone()) else {
             return;
@@ -347,8 +271,6 @@ impl ScriptEditorView {
         });
     }
 
-    /// Reverts the open buffer's in-memory edits back to `open_original` and clears its
-    /// dirty flag — the discard half of the unsaved-changes gate.
     fn revert_current(&mut self, cx: &mut Context<Self>) {
         let original = self.open_original.clone();
         if let Some(id) = self.selected
@@ -364,8 +286,6 @@ impl ScriptEditorView {
         });
     }
 
-    /// The "Actions" breadcrumb crumb: voices navigation back to the Actions screen,
-    /// which the shell routes. A dirty buffer arms the discard gate first.
     fn go_back(&mut self, cx: &mut Context<Self>) {
         if self.current_dirty() {
             self.pending_nav = Some(PendingNav::GoBack);
@@ -375,7 +295,6 @@ impl ScriptEditorView {
         cx.emit(NavRequested(Screen::Actions));
     }
 
-    /// Discard confirmed: drop the open edits, then perform the deferred navigation.
     fn confirm_discard(&mut self, cx: &mut Context<Self>) {
         let Some(nav) = self.pending_nav.take() else {
             return;
@@ -388,13 +307,10 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    /// Discard cancelled: keep the user on the open script with edits intact.
     fn cancel_discard(&mut self, cx: &mut Context<Self>) {
         self.pending_nav = None;
         cx.notify();
     }
-
-    // --- file tree actions ------------------------------------------------
 
     fn toggle_folder(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(folder) = self.folders.get_mut(index) {
@@ -416,8 +332,6 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    /// Writes the edited buffer back into the open file, marks it dirty and regrows
-    /// the field so the gutter stays aligned. Fired on every buffer `Changed`.
     fn on_code_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.code_input.read(cx).content().to_owned();
         let height = code_field_height(&content);
@@ -438,8 +352,6 @@ impl ScriptEditorView {
         let name = format!("script_{id}.rhai");
         let content = format!("// {name}\n\nfn main() {{\n    \n}}\n");
 
-        // Add under the folder of the current selection (or the first folder); fall
-        // back to the SHARED bucket when no folder exists.
         let target_folder = self
             .selected
             .and_then(|sel| {
@@ -493,7 +405,6 @@ impl ScriptEditorView {
         self.shared.retain(|f| f.id != id);
 
         if self.selected == Some(id) {
-            // Open the next available file so the editor never dead-ends on empty.
             let next = self
                 .folders
                 .iter()
@@ -558,11 +469,6 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    // --- toolbar actions --------------------------------------------------
-
-    /// Opens the run modal for the selected script, seeding its argument fields from a
-    /// representative `@input` contract. A stub — the real screen parses the open
-    /// script's own contract and dispatches the run through the runtime.
     fn open_run_modal(&mut self, cx: &mut Context<Self>) {
         let (script_name, title) = match self.selected.and_then(|id| self.find_file(id)) {
             Some(f) => (f.name.clone(), format!("Run {}", f.name)),
@@ -582,8 +488,6 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    /// Builds one run-modal argument field: a placeholder'd, `elevated`-filled input
-    /// whose edits clear any standing validation error.
     fn build_run_input(
         &self,
         name: &str,
@@ -615,9 +519,6 @@ impl ScriptEditorView {
         }
     }
 
-    /// Run submitted: reject any empty field with an inline error, else close the modal
-    /// and append the seeded run-result lines to the Output console. A stub — no rhai
-    /// runtime is wired, so the result is canned rather than executed.
     fn submit_run(&mut self, cx: &mut Context<Self>) {
         let Some(modal) = self.run_modal.as_ref() else {
             return;
@@ -678,8 +579,6 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    // --- console actions --------------------------------------------------
-
     fn set_console_tab(&mut self, tab: ConsoleTab, cx: &mut Context<Self>) {
         self.console_tab = tab;
         self.console_collapsed = false;
@@ -696,8 +595,6 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    // --- render: page header ---------------------------------------------
-
     fn page_header(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let mut crumbs = vec![BreadcrumbCrumb::link(
             "Actions",
@@ -708,10 +605,6 @@ impl ScriptEditorView {
             Some(file) => {
                 let folder = self.folder_of(file.id).unwrap_or("Shared").to_owned();
                 crumbs.push(BreadcrumbCrumb::leaf(folder));
-                // The design marks an unsaved buffer with a warning dot appended to
-                // the filename crumb; the breadcrumb label is plain text, so the dot
-                // inherits the crumb ink rather than the warning hue (a per-crumb
-                // colored element is a breadcrumb-kit gap).
                 let label = if file.dirty {
                     format!("{} ●", file.name)
                 } else {
@@ -765,8 +658,6 @@ impl ScriptEditorView {
 
         breadcrumb(crumbs, palette).right(right).into_any_element()
     }
-
-    // --- render: editor toolbar ------------------------------------------
 
     fn toolbar(
         &self,
@@ -866,8 +757,6 @@ impl ScriptEditorView {
                     .text_color(palette.text_faint)
                     .child("Timeout: 500ms"),
             )
-            // Live cursor tracking is part of the deferred code-editor component;
-            // the readout is a static placeholder for now.
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
@@ -891,10 +780,6 @@ impl ScriptEditorView {
             .into_any_element()
     }
 
-    /// A borderless ghost toolbar action (Debug / Format / API docs): a glyph + label
-    /// inking `text_secondary`, brightening to `text_primary` on hover. The kit ghost
-    /// button carries a border the design's toolbar buttons lack, so this is a local
-    /// fragment.
     fn toolbar_button(
         &self,
         id: &'static str,
@@ -926,8 +811,6 @@ impl ScriptEditorView {
             )
             .into_any_element()
     }
-
-    // --- render: left file pane ------------------------------------------
 
     fn left_pane(
         &self,
@@ -1013,10 +896,6 @@ impl ScriptEditorView {
             .into_any_element()
     }
 
-    /// One `.rhai` file row. `in_folder` indents it under its folder header and inks
-    /// its glyph the brand hue; a SHARED file sits flush and inks the info hue. The
-    /// selected row carries the brand stripe, an `elevated` wash and brand ink; if it
-    /// is the rename target, the label is swapped for the inline name input.
     fn file_row(
         &self,
         file: &ScriptFile,
@@ -1079,8 +958,6 @@ impl ScriptEditorView {
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
         }
 
-        // The selected row exposes rename + delete affordances (the design's file
-        // tree shows no persistent buttons; these keep the CRUD reachable).
         if selected && !renaming {
             row = row
                 .child(
@@ -1105,8 +982,6 @@ impl ScriptEditorView {
 
         row.into_any_element()
     }
-
-    // --- render: centre column (code + console) --------------------------
 
     fn code_area(
         &self,
@@ -1400,11 +1275,6 @@ impl ScriptEditorView {
         )
     }
 
-    // --- render: right API-reference pane --------------------------------
-
-    /// The 220px API-reference pane (shown only while `api_docs_open`): a header with a
-    /// pin affordance, a live search box, then the seeded `FORGE :: *` groups whose
-    /// function rows the search filters by signature. Empty match set → a muted line.
     fn right_pane(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let query = self.api_search.read(cx).content().trim().to_lowercase();
 
@@ -1481,8 +1351,6 @@ impl ScriptEditorView {
 
         pane.into_any_element()
     }
-
-    // --- render: run modal + discard confirm -----------------------------
 
     fn run_modal_overlay(
         &self,
@@ -1624,7 +1492,6 @@ impl Render for ScriptEditorView {
             .child(centre)
             .children(right);
 
-        // One overlay at a time, in priority order: run modal, then the two confirms.
         let overlay = if self.run_modal.is_some() {
             self.run_modal_overlay(&palette, cx)
         } else if self.pending_delete.is_some() {
@@ -1647,10 +1514,6 @@ impl Render for ScriptEditorView {
     }
 }
 
-// ── view-specific fragments ───────────────────────────────────────────────
-
-/// A left-pane section heading — uppercase monospace `text_muted` with a top gap
-/// separating it from the preceding section.
 fn section_label(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .pt(spacing(Spacing::Sm, Density::Cozy))
@@ -1662,7 +1525,6 @@ fn section_label(label: &'static str, palette: &ForgePalette) -> impl IntoElemen
         .child(label)
 }
 
-/// The "SCRIPTS" section header with a trailing "+" new-script affordance.
 fn scripts_header(palette: &ForgePalette, cx: &mut Context<ScriptEditorView>) -> impl IntoElement {
     div()
         .w_full()
@@ -1680,8 +1542,6 @@ fn scripts_header(palette: &ForgePalette, cx: &mut Context<ScriptEditorView>) ->
         )
 }
 
-/// One VARIABLES-IN-SCOPE row: a warning-hued `%name%` with its type right-aligned
-/// in the faint hue, both monospace.
 fn variable_row(name: SharedString, ty: SharedString, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex()
@@ -1703,7 +1563,6 @@ fn variable_row(name: SharedString, ty: SharedString, palette: &ForgePalette) ->
         )
 }
 
-/// One console output row: faint timestamp, colored `[tag]` and the message.
 fn console_row(line: &ConsoleLine, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex()
@@ -1723,13 +1582,10 @@ fn console_row(line: &ConsoleLine, palette: &ForgePalette) -> impl IntoElement {
         .child(div().child(line.text.clone()))
 }
 
-/// A muted single-line console placeholder (empty output / no problems / no test run).
 fn muted_line(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div().text_color(palette.text_faint).child(text)
 }
 
-/// One API-reference function row: a brand-filled `fn` badge over the monospace
-/// signature (design: badge shell-ink, signature `text_primary`).
 fn api_fn_row(sig: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex()
@@ -1746,8 +1602,6 @@ fn api_fn_row(sig: &'static str, palette: &ForgePalette) -> impl IntoElement {
         )
 }
 
-/// The seeded API-reference catalog — the design's five `FORGE :: *` groups and their
-/// function signatures. A stub standing in for the runtime's live rhai symbol catalog.
 fn api_catalog() -> &'static [ApiGroup] {
     &[
         ApiGroup {
@@ -1773,8 +1627,6 @@ fn api_catalog() -> &'static [ApiGroup] {
     ]
 }
 
-/// The canned run-result lines the run modal appends before a rhai runtime streams real
-/// output — the design's sample run, retargeted to the run's script `name`.
 fn seed_run_result(name: &str) -> Vec<ConsoleLine> {
     vec![
         ConsoleLine {
@@ -1800,10 +1652,6 @@ fn seed_run_result(name: &str) -> Vec<ConsoleLine> {
     ]
 }
 
-/// The representative scripts the screen seeds before a script store is wired — the
-/// design's `!quote` action folder (expanded, holding the sample `format_quote.rhai`)
-/// plus two collapsed action folders and two SHARED helper scripts. Returns
-/// `(folders, shared)`.
 fn seed_scripts() -> (Vec<ScriptFolder>, Vec<ScriptFile>) {
     let format_quote = "\
 // Pick a random quote and format with author
@@ -1908,8 +1756,6 @@ fn json_get(url) {
     (folders, shared)
 }
 
-/// The seeded console output the screen shows before a runtime streams real results
-/// — the design's sample run of `format_quote.rhai`.
 fn seed_console() -> Vec<ConsoleLine> {
     vec![
         ConsoleLine {

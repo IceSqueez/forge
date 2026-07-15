@@ -1,9 +1,3 @@
-//! "Test run" plumbing for the actions editor: synthesizes a test event for the
-//! selected action's first linked trigger and injects it through the re-entrant
-//! bus path (store-then-replay, a single evaluation pass), so the button drives
-//! the exact trigger → action pipeline a live event would — never a direct engine
-//! call.
-
 use forge_events::{Event, EventSource};
 use forge_registry::{TriggerRegistry, effective_config};
 use forge_runtime::EventBus;
@@ -11,11 +5,7 @@ use forge_runtime::actions::ActionsService;
 use forge_types::{ActionId, TriggerConfig, TriggerInstance, Variant};
 use serde_json::json;
 
-/// Loads the action's detail, synthesizes a test event for its first linked
-/// trigger (or a `test.trigger` fallback when none is linked), records it, then
-/// replays it through the bus for a single evaluation pass. Returns whether the
-/// synthesized event satisfied the trigger's own source / kind-prefix / predicate
-/// checks, so the caller can pick a matched vs. non-matched toast.
+/// `Ok(true)` if the synthesized event satisfied the trigger's source / kind-prefix / predicate checks.
 pub(super) async fn run_test_trigger(
     service: &ActionsService,
     registry: &TriggerRegistry,
@@ -50,8 +40,6 @@ pub(super) async fn run_test_trigger(
         ),
     };
     let event_id = event.id;
-    // Store-only: the synthesized event is retained for replay/observability but
-    // never broadcast, so replay_and_publish is the single evaluation pass.
     bus.record(event);
     bus.replay_and_publish(event_id)
         .await
@@ -59,10 +47,6 @@ pub(super) async fn run_test_trigger(
     Ok(matched)
 }
 
-/// Builds a synthetic event that the trigger evaluator judges with the same
-/// `matches_trigger` predicate a live event faces. `config` is the instance's
-/// effective config (descriptor defaults merged with overrides), so the synthetic
-/// chat message carries the trigger's configured phrase instead of a fixed literal.
 pub(super) fn synthesize_test_event(instance: &TriggerInstance, config: &TriggerConfig) -> Event {
     match instance.kind_id.as_str() {
         "twitch.chat.command" => {

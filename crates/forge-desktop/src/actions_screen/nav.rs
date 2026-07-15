@@ -1,19 +1,8 @@
-//! Actions screen — nested sub-chain navigation over the canonical stored form:
-//! decode/encode of the `Array`-of-`Object` chain blob, path resolution and
-//! rewrite, and switch-case operations, all reading/writing `SubActionConfig`.
-
 use forge_types::{SubActionConfig, SubActionStep, Variant};
 
-/// Authoring depth ceiling for nested sub-chains. Strictly below the runtime's
-/// own `max_nesting_depth` so it can never author a chain the runtime would
-/// reject; deliberately small to keep breadcrumbs legible. Drilling past this
-/// depth into an *empty* branch is disabled, but an already-deeper imported
-/// chain stays editable at its existing depth.
+/// Must stay strictly below the runtime's `max_nesting_depth` so the UI can never author a chain the runtime rejects.
 pub(super) const UI_MAX_NESTING_DEPTH: usize = 8;
 
-/// One drill-in frame: the parent step's index in the chain descended from, the
-/// config key on that step holding the sub-chain, and — for a switch case —
-/// which case row's chain was entered.
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct NavFrame {
     pub step_index: usize,
@@ -32,9 +21,6 @@ pub(super) fn variant_to_display_str(v: &Variant) -> String {
     }
 }
 
-/// Decodes the canonical stored chain form — `Array` of per-step `Object`s —
-/// into a step list. A non-array value, or any element lacking a `kind_id`, is
-/// dropped so malformed data degrades to an empty chain instead of panicking.
 pub(super) fn decode_chain_value(value: Option<&Variant>) -> Vec<SubActionStep> {
     let Some(steps) = value.and_then(Variant::as_array) else {
         return Vec::new();
@@ -66,8 +52,6 @@ pub(super) fn decode_chain_value(value: Option<&Variant>) -> Vec<SubActionStep> 
         .collect()
 }
 
-/// Re-encodes a step list into the canonical stored chain form the runtime
-/// decodes and storage persists.
 pub(super) fn encode_chain(steps: &[SubActionStep]) -> Variant {
     let items = steps
         .iter()
@@ -101,9 +85,6 @@ fn chain_value_at<'a>(
     }
 }
 
-/// Writes a sub-chain value back into `config` for a single frame, preserving
-/// any sibling case fields (e.g. `match`). A case index outside the current
-/// list is a no-op so stale navigation never corrupts the blob.
 fn write_chain_value(
     config: &mut SubActionConfig,
     chain_key: &str,
@@ -127,8 +108,6 @@ fn write_chain_value(
     }
 }
 
-/// Resolves a navigation path to the step list it currently points at, from the
-/// action's top-level steps. An unresolvable frame yields an empty chain.
 pub(super) fn resolve_chain(root: &[SubActionStep], path: &[NavFrame]) -> Vec<SubActionStep> {
     let mut current = root.to_vec();
     for frame in path {
@@ -144,9 +123,7 @@ pub(super) fn resolve_chain(root: &[SubActionStep], path: &[NavFrame]) -> Vec<Su
     current
 }
 
-/// Replaces the sub-chain addressed by `path` with `new_chain`, re-serializing
-/// up through every parent step's config. Returns `false` if any frame fails to
-/// resolve, leaving `root` untouched in that case.
+/// Returns `false` (leaving `root` untouched) if any frame fails to resolve.
 pub(super) fn set_chain(
     root: &mut Vec<SubActionStep>,
     path: &[NavFrame],
@@ -171,8 +148,6 @@ pub(super) fn set_chain(
     true
 }
 
-/// Number of steps in the sub-chain a drill-in frame would enter, used to gate
-/// descending past the depth cap into an empty branch.
 pub(super) fn branch_step_count(
     step: &SubActionStep,
     chain_key: &str,
@@ -184,8 +159,7 @@ pub(super) fn branch_step_count(
         .unwrap_or(0)
 }
 
-/// Reads a switch case row's single-value `match` as display text. An array
-/// (imported multi-value) returns `None` so the renderer keeps it read-only.
+/// `None` when the case `match` is a multi-value array (kept read-only).
 pub(super) fn case_match_display(step: &SubActionStep, case_index: usize) -> Option<String> {
     let case = step
         .config
@@ -200,8 +174,6 @@ pub(super) fn case_match_display(step: &SubActionStep, case_index: usize) -> Opt
     }
 }
 
-/// True when the case row's `match` is an imported multi-value array (kept
-/// read-only per the single-value authoring contract).
 pub(super) fn case_match_is_multi(step: &SubActionStep, case_index: usize) -> bool {
     step.config
         .get("cases")

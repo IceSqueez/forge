@@ -1,8 +1,3 @@
-//! Triggers registry — create flow: the "New trigger" entry point opens a centred
-//! kind-picker grid; choosing a kind opens a fill-in form (name + the kind's config
-//! fields, folded through the shared `config_form`). On submit a fresh persisted
-//! `TriggerInstance` is saved and the roster reconciles by a full re-pull.
-
 use super::config_form::{ConfigField, fold_config_field, overlay_field_values, sparse_overrides};
 use super::{TriggerInstanceRow, TriggersRegistryView, load_rows, platform_dot_color};
 use crate::presentation::ActivePresentation;
@@ -22,31 +17,24 @@ use gpui::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Config-key column width in a fill-form field row (matches the detail sheet's 110px).
 const FILL_KEY_W: gpui::Pixels = px(110.0);
 const FILL_KEY_FS: gpui::Pixels = px(11.0);
 const FILL_VAL_FS: gpui::Pixels = px(11.5);
 const FILL_ROW_PAD_V: gpui::Pixels = px(8.0);
 const FILL_ROW_PAD_H: gpui::Pixels = px(12.0);
 
-/// The open create flow: the kind-picker grid, then the fill-in form for the chosen
-/// kind.
 pub(super) enum CreateStage {
     PickKind(KindPickerForm),
     Fill(CreateFillForm),
 }
 
-/// The kind-picker phase: the held grid-picker entity plus the `card id → kind_id`
-/// map resolving a picked card back to its trigger kind.
 pub(super) struct KindPickerForm {
     picker: Entity<GridPicker>,
+    /// Card id → `kind_id`.
     picks: HashMap<SharedString, String>,
     _sub: Subscription,
 }
 
-/// The fill-in phase: the chosen kind, its name draft field and the config editor rows
-/// folded over the kind's default config. `saving` gates the submit button while the
-/// persist is in flight.
 pub(super) struct CreateFillForm {
     kind_id: String,
     kind_label: String,
@@ -57,10 +45,6 @@ pub(super) struct CreateFillForm {
 }
 
 impl TriggersRegistryView {
-    // --- entry + kind picker ----------------------------------------------
-
-    /// Opens the centred kind-picker grid — the "New trigger" entry point, also reused
-    /// by the fill form's "Back" affordance.
     pub(super) fn open_create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.palette();
         let (groups, picks) = build_kind_groups(&self.registry, &palette);
@@ -106,10 +90,6 @@ impl TriggersRegistryView {
         }
     }
 
-    // --- fill form --------------------------------------------------------
-
-    /// Transitions from the kind picker to the fill-in form: seeds one editor row per
-    /// the kind's `config_field` over its default config, plus an empty name draft.
     fn enter_fill(&mut self, kind_id: String, cx: &mut Context<Self>) {
         let palette = cx.palette();
         let descriptor = self.registry.get(&kind_id);
@@ -187,7 +167,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    /// Re-opens the kind picker, discarding the current fill-in draft.
     fn back_to_kind_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_create(window, cx);
     }
@@ -197,12 +176,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    // --- submit -----------------------------------------------------------
-
-    /// Builds a fresh user-defined instance from the fill-in draft — folding the editor
-    /// rows into a sparse override set over the kind's defaults — persists it, then
-    /// reconciles the roster by a full re-pull and selects the new row so its detail
-    /// opens. A blank name is a no-op.
     fn submit_create(&mut self, cx: &mut Context<Self>) {
         let Some(CreateStage::Fill(form)) = self.create.as_ref() else {
             return;
@@ -273,8 +246,6 @@ impl TriggersRegistryView {
         })
         .detach();
     }
-
-    // --- render -----------------------------------------------------------
 
     pub(super) fn render_create(
         &self,
@@ -472,8 +443,6 @@ impl TriggersRegistryView {
     }
 }
 
-/// The registry's trigger kinds as grid groups (one per non-empty [`TriggerCategory`],
-/// kinds ordered by label) paired with the `kind_id` each card id resolves to.
 fn build_kind_groups(
     registry: &TriggerRegistry,
     palette: &ForgePalette,
@@ -514,8 +483,6 @@ fn build_kind_groups(
     (groups, picks)
 }
 
-/// Category iteration order for the kind picker — chat first, then platform events,
-/// integrations, and core/system kinds last.
 const CATEGORY_ORDER: [TriggerCategory; 23] = [
     TriggerCategory::Chat,
     TriggerCategory::Subscriptions,
@@ -542,7 +509,6 @@ const CATEGORY_ORDER: [TriggerCategory; 23] = [
     TriggerCategory::Ungrouped,
 ];
 
-/// The picker group's display label, chip scope slug and dot ink for a category.
 fn category_meta(
     cat: TriggerCategory,
     palette: &ForgePalette,

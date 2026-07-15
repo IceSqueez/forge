@@ -3,24 +3,13 @@ use gpui::{FontWeight, IntoElement, ParentElement, Pixels, Rgba, SharedString, S
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XXS, Radius, radius};
 
-/// Chip geometry. These four values sit deliberately off the shared
-/// `Spacing`/`Radius` token scale: a status chip is a fixed, density-neutral
-/// pill, so its 1px vertical inset and 8px corner (which already fully rounds at
-/// chip height) are carried as literals rather than snapped to the nearest
-/// scale step, which would alter the shape.
+// Deliberately off the `Spacing`/`Radius` scale: a status chip is fixed, density-neutral pill geometry.
 const BADGE_PAD_V: Pixels = px(1.0);
 const BADGE_PAD_H: Pixels = px(6.0);
 const BADGE_RADIUS: Pixels = px(8.0);
 const BADGE_GAP: Pixels = px(4.0);
 const CONNECTION_DOT: Pixels = px(5.0);
 
-/// A small filled circle used as a status indicator — connection dots, health
-/// lights, presence markers.
-///
-/// The caller supplies the hue (always a `ForgePalette` field, so the dot picks
-/// up the active theme) and the diameter. The circle keeps a fixed square size
-/// even inside a flex row and is fully rounded, so any diameter renders as a
-/// clean disc.
 pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
     div()
         .flex_none()
@@ -29,8 +18,6 @@ pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
         .bg(color)
 }
 
-/// The three semantic states a status chip can express. Each maps to a fixed
-/// `ForgePalette` hue, so a chip re-tints automatically with the active theme.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatusVariant {
     Positive,
@@ -39,8 +26,7 @@ pub enum StatusVariant {
 }
 
 impl StatusVariant {
-    /// Returns `(fill, ink)` for the variant: a translucent tint of the hue for
-    /// the chip fill, and the full-strength hue for its text or dot.
+    /// Returns `(fill, ink)`: a translucent tint of the hue for the fill, the full-strength hue for text/dot.
     pub fn colors(self, palette: &ForgePalette) -> (Rgba, Rgba) {
         let ink = match self {
             StatusVariant::Positive => palette.success,
@@ -51,9 +37,6 @@ impl StatusVariant {
     }
 }
 
-/// The shared padded, rounded, filled box every chip wraps its content in. Kept
-/// free of text styling so a caller passing a multi-element row (e.g. a dot plus
-/// a caption) is not forced into the plain badge's weight and family.
 fn badge_frame(background: Rgba, content: impl IntoElement) -> impl IntoElement {
     div()
         .py(BADGE_PAD_V)
@@ -63,9 +46,6 @@ fn badge_frame(background: Rgba, content: impl IntoElement) -> impl IntoElement 
         .child(content)
 }
 
-/// A small filled label chip. The caller supplies the fill and ink colors
-/// (always `ForgePalette` fields — see [`StatusVariant::colors`]), the text, a
-/// monospace flag, and the text size. Text renders at medium weight.
 pub fn badge(
     background: Rgba,
     text_color: Rgba,
@@ -87,10 +67,6 @@ pub fn badge(
     badge_frame(background, label)
 }
 
-/// A connection-state chip: a status dot plus a caption, tinted with the success
-/// hue when connected and muted when not. The caller passes the already-localized
-/// caption (the kit carries no i18n of its own), while the chip owns the
-/// connected/disconnected color and dot logic.
 pub fn connection_status_badge(
     connected: bool,
     label: impl Into<SharedString>,
@@ -125,16 +101,9 @@ mod tests {
     use super::*;
     use crate::palette::CATPPUCCIN_MOCHA;
 
-    /// `colors` maps each variant to a distinct semantic hue and derives the
-    /// chip fill as a translucent tint of that same hue.
-    ///
-    /// Why this is not tautological: the variant→field wiring is a hand-written
-    /// match with plausible wrong alternatives (Negative could be mis-wired to
-    /// `warning`, Neutral to `text_muted`), so a field swap that ships a bug
-    /// flips these assertions. The fill contract pins the magic tint alpha and
-    /// the "fill shares the ink's hue" relationship — `fill.a` is asserted as a
-    /// literal float, not recomputed via `with_alpha` (which would only restate
-    /// the impl).
+    /// Variant→field is a hand-written match with plausible wrong wirings (Negative→`warning`,
+    /// Neutral→`text_muted`), so a field swap fails here. `fill.a` is pinned as a literal float,
+    /// not recomputed via `with_alpha` (which would only restate the impl).
     #[test]
     fn colors_map_each_variant_to_its_hue_with_a_translucent_tint_fill() {
         let p = &CATPPUCCIN_MOCHA;
@@ -147,7 +116,6 @@ mod tests {
 
             assert_eq!(ink, expected_ink, "{variant:?} ink hue");
 
-            // Fill is the same hue as the ink, only more transparent.
             assert_eq!(
                 (fill.r, fill.g, fill.b),
                 (ink.r, ink.g, ink.b),

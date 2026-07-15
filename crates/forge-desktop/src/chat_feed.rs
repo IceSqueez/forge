@@ -2,11 +2,6 @@ use forge_components::{BadgeKind, ChatBody, Platform};
 use forge_events::Event;
 use gpui::SharedString;
 
-/// One chat line held by the [`ChatFeed`] topic. Carries the source-neutral facts
-/// a row needs (author, platform, badges, typed body, timestamp) but NOT any
-/// resolved color: the username hue is derived from the active theme at render
-/// time so the row re-tints when the palette changes. `is_event` / `is_bot` are
-/// precomputed so the screen's filters stay pure and side-effect-free.
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
     pub timestamp: SharedString,
@@ -19,9 +14,7 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
-    /// True when `query` (already lowercased by the caller) is found in the author
-    /// name or the body's primary text. Drives the search dim: a non-match is faded
-    /// rather than removed.
+    /// `query` must already be lowercased by the caller.
     pub fn matches_query(&self, query: &str) -> bool {
         if query.is_empty() {
             return true;
@@ -46,44 +39,26 @@ impl ChatMessage {
     }
 }
 
-/// Topic-scoped observable entity fed by the runtime→UI bridge: the sole owner of
-/// the runtime-chat→UI edge. The bridge drains the event bus and appends each
-/// decoded chat line here, then `cx.notify()`s so the observing chat screen
-/// repaints. Holds no runtime state of its own — only the rows it has been handed.
-///
-/// Starts empty and live: the boot-global bridge drains `chat.message` events off
-/// the real bus and appends each decoded line through [`ChatFeed::push`]. Renders
-/// empty-but-live until a platform connection publishes chat.
 pub struct ChatFeed {
     messages: Vec<ChatMessage>,
 }
 
 impl ChatFeed {
-    /// An empty feed. Lines arrive live over the bridge via [`ChatFeed::push`].
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
         }
     }
 
-    /// The rows in arrival order (oldest first); the screen renders newest at the
-    /// bottom and auto-scrolls there.
+    /// In arrival order, oldest first.
     pub fn messages(&self) -> &[ChatMessage] {
         &self.messages
     }
 
-    /// Appends one line. The bridge calls this inside `feed.update(cx, …)` and
-    /// pairs it with `cx.notify()`; keeping the mutation free of `cx` leaves it
-    /// directly exercisable.
     pub fn push(&mut self, message: ChatMessage) {
         self.messages.push(message);
     }
 
-    /// Decodes a bus event into a chat line, or `None` when the event is not a
-    /// chat message. Provisional slice envelope: a `chat.message` event carrying
-    /// `{ platform, author, text }`. No platform publishes this yet, so at runtime
-    /// this returns `None` for every (timer) event — the seed is what shows. When
-    /// real chat lands, this decode is replaced by the unified-chat-row mapping.
     pub fn message_from_event(event: &Event) -> Option<ChatMessage> {
         if event.kind != "chat.message" {
             return None;
@@ -108,8 +83,6 @@ impl ChatFeed {
     }
 }
 
-/// Formats a Unix timestamp as a wall-clock `HH:MM:SS` (UTC). Best-effort for the
-/// slice — a locale/timezone-aware formatter lands with the real chat pipeline.
 fn format_clock(unix_secs: i64) -> String {
     let secs = unix_secs.rem_euclid(86_400);
     let h = secs / 3600;

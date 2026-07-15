@@ -13,18 +13,11 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 
-/// Configured-engine list rail width — the parity source pins it at a fixed 220px,
-/// off the `Spacing` scale, so it is carried as a named literal.
 const ENGINE_LIST_W: Pixels = px(220.0);
-/// Voice-filter field width (the source's fixed 90px).
 const VOICE_SEARCH_W: Pixels = px(90.0);
-/// One voice card's fixed width in the wrapped voices grid (the source's 140px).
 const VOICE_CELL_W: Pixels = px(140.0);
-/// Parameter-row label column width (the source's fixed 70px).
 const PARAM_LABEL_W: Pixels = px(70.0);
-/// Parameter-row trailing value column width (the source's fixed 42px).
 const PARAM_VALUE_W: Pixels = px(42.0);
-/// Engine health-dot diameter (the source's fixed 7px dot).
 const STATUS_DOT: Pixels = px(7.0);
 
 struct VoiceRow {
@@ -135,8 +128,6 @@ impl TtsEnginesView {
         cx.notify();
     }
 
-    // --- engine list rail -------------------------------------------------
-
     fn engine_list(
         &self,
         palette: &ForgePalette,
@@ -234,8 +225,6 @@ impl TtsEnginesView {
             .child(meta)
             .into_any_element()
     }
-
-    // --- detail pane ------------------------------------------------------
 
     fn detail_pane(
         &self,
@@ -362,8 +351,6 @@ impl TtsEnginesView {
             .into_any_element()
     }
 
-    // --- voices -----------------------------------------------------------
-
     fn voices_section(
         &self,
         engine: &EngineEntry,
@@ -457,9 +444,6 @@ impl Render for TtsEnginesView {
     }
 }
 
-// ── view-specific fragments ───────────────────────────────────────────────
-
-/// The dashed "more engines" hint pinned below the configured list.
 fn engine_list_placeholder(palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .w_full()
@@ -477,7 +461,6 @@ fn engine_list_placeholder(palette: &ForgePalette, density: Density) -> impl Int
         )
 }
 
-/// The `DEFAULT` pill marking the fallback engine in the detail header.
 fn default_badge(palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .py(spacing(Spacing::Xxs, density))
@@ -494,9 +477,6 @@ fn default_badge(palette: &ForgePalette, density: Density) -> impl IntoElement {
         )
 }
 
-/// The credentials block: a section heading over a notice card explaining that
-/// credentials are stored encrypted, with a badge stating no credentials are needed
-/// for the (local) engine.
 fn credentials_section(palette: &ForgePalette, density: Density) -> impl IntoElement {
     let no_credentials = div()
         .py(spacing(Spacing::Xxs, density))
@@ -546,9 +526,6 @@ fn credentials_section(palette: &ForgePalette, density: Density) -> impl IntoEle
         .child(notice)
 }
 
-/// The default voice parameters block: a section heading over three read-only
-/// value rows (pitch / speed / volume). The parity source exposes no edit control,
-/// so the rails are static value bars.
 fn params_section(palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
         .w_full()
@@ -565,8 +542,6 @@ fn params_section(palette: &ForgePalette, density: Density) -> impl IntoElement 
         .child(param_row("Volume", "0 dB", 1.0, palette, density))
 }
 
-/// One parameter row: a fixed-width label, a read-only value bar filling the middle,
-/// and a fixed-width trailing mono value.
 fn param_row(
     label: &'static str,
     value: &'static str,
@@ -605,7 +580,6 @@ fn param_row(
         )
 }
 
-/// One voice card: the voice name over a mono `locale · quality · gender` meta line.
 fn voice_cell(voice: &VoiceRow, palette: &ForgePalette, density: Density) -> impl IntoElement {
     let body = div()
         .flex()
@@ -638,7 +612,6 @@ fn voice_cell(voice: &VoiceRow, palette: &ForgePalette, density: Density) -> imp
     )
 }
 
-/// A detail-pane block heading — an uppercase monospace caption inking `text_muted`.
 fn section_label(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
@@ -647,8 +620,6 @@ fn section_label(label: &'static str, palette: &ForgePalette) -> impl IntoElemen
         .child(label)
 }
 
-/// The engine health-dot hue: system engines ink the info hue, local and cloud
-/// engines the ready (success) hue.
 fn engine_status_color(kind: &str, palette: &ForgePalette) -> Rgba {
     if kind == "system" {
         palette.info
@@ -657,8 +628,6 @@ fn engine_status_color(kind: &str, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// Case-insensitive substring match of a voice's display name against the filter.
-/// An empty filter matches every voice.
 fn voice_matches(display_name: &str, search: &str) -> bool {
     search.is_empty()
         || display_name

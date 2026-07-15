@@ -20,23 +20,11 @@ use crate::tts_filters::TtsFiltersView;
 use crate::tts_triggers::TtsTriggersView;
 use crate::voice_aliases::VoiceAliasesView;
 
-/// Tab-button vertical padding — the parity source pins the tab hit-target at a
-/// fixed 7px inset, off the `Spacing` scale, so it is carried as a named literal.
 const TAB_PAD_V: Pixels = px(7.0);
-/// Tab-button horizontal padding (the source's fixed 14px inset).
 const TAB_PAD_H: Pixels = px(14.0);
-/// Height of the active-tab underline indicator (the source's fixed 2px rule).
 const TAB_INDICATOR_H: Pixels = px(2.0);
-/// Number of engines the dashboard seeds; surfaced in the header's ready chip until
-/// a live TTS-engine roster reaches this screen over the runtime→UI bridge.
 const SEEDED_ENGINE_COUNT: usize = 3;
 
-/// The six horizontal tabs of the Text-to-Speech screen. The active tab lives as a
-/// field on [`TtsView`] (not in the top-level router), so navigating to TTS always
-/// opens at [`TtsSection::Dashboard`] and a tab click swaps the pane in place —
-/// mirroring the screen mockup's internal `useState('dashboard')` tab state and the
-/// Settings screen's section-nav precedent, and preserving the dashboard child
-/// entity's state across tab switches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TtsSection {
     Dashboard,
@@ -48,7 +36,6 @@ pub enum TtsSection {
 }
 
 impl TtsSection {
-    /// The six tabs in bar order.
     const ALL: [TtsSection; 6] = [
         TtsSection::Dashboard,
         TtsSection::Engines,
@@ -58,7 +45,6 @@ impl TtsSection {
         TtsSection::CloudEngines,
     ];
 
-    /// Tab label + breadcrumb leaf.
     fn label(self) -> &'static str {
         match self {
             TtsSection::Dashboard => "Dashboard",
@@ -70,7 +56,6 @@ impl TtsSection {
         }
     }
 
-    /// Stable element-id fragment for the tab button.
     fn key(self) -> &'static str {
         match self {
             TtsSection::Dashboard => "dashboard",
@@ -83,12 +68,6 @@ impl TtsSection {
     }
 }
 
-/// The Text-to-Speech screen view-entity: a breadcrumb header with an
-/// engines-ready chip, a horizontal tab bar over the six [`TtsSection`]s, and the
-/// active section's pane. Owns the active section plus the Dashboard and Engines
-/// child view-entities; the other four sections are deferred placeholders until
-/// their slices land. Holds no domain state — each child caches its own seeded stub
-/// state and drives the real runtime through a handle once wired.
 pub struct TtsView {
     section: TtsSection,
     dashboard: Entity<TtsDashboardView>,
@@ -212,8 +191,7 @@ impl TtsView {
         } else {
             palette.text_muted
         };
-        // The underline is always laid out (fixed row height); it inks the brand
-        // accent on the active tab and stays fully transparent otherwise.
+        // Always laid out to hold the row height; transparent on inactive tabs.
         let indicator = if active {
             palette.brand
         } else {
@@ -247,7 +225,6 @@ impl TtsView {
             .child(div().w_full().h(TAB_INDICATOR_H).bg(indicator))
     }
 
-    /// The active section's pane — each section renders its own child view-entity.
     fn render_content(&self) -> AnyElement {
         match self.section {
             TtsSection::Dashboard => self.dashboard.clone().into_any_element(),

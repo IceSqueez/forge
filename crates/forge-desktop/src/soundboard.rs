@@ -11,52 +11,30 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 
-/// Corner radius of a clip card's play/edit/delete affordance. The parity source
-/// pins this at a literal 5px — one step under `Radius::Sm` (6px) — so it is carried
-/// as a named off-scale literal rather than snapped onto the `Radius` scale.
 const CARD_ACTION_RADIUS: Pixels = px(5.0);
-/// Glyph size of a clip card's play/edit/delete affordance (the source's fixed 12px).
 const CARD_ACTION_GLYPH: Pixels = px(12.0);
-/// Glyph size of the empty-state music mark (the source's fixed 24px).
 const EMPTY_GLYPH: Pixels = px(24.0);
-/// Cards laid per grid row — the source packs three clip cards per row and pads the
-/// trailing row with equal-flex spacers so the last card keeps its third-width.
 const CARDS_PER_ROW: usize = 3;
-/// Upper bound of the volume range: the source lets a clip boost to 150%.
 const VOLUME_MAX: f32 = 1.5;
-/// Exact add/edit-clip modal card width — the parity source pins this at 480px
-/// (between the kit's 440/540 size steps), rendered via the modal `.width()`
-/// override rather than snapped to a `ModalSize` envelope.
 const MODAL_WIDTH: Pixels = px(480.0);
 
-/// The output devices the add-clip modal offers. Seeded here (id, display label)
-/// because `forge-desktop` holds no audio handle yet; the real list is enumerated by
-/// `forge-audio` and reaches this screen through the runtime bridge once wired.
 const DEVICES: [(&str, &str); 3] = [
     ("default", "System default"),
     ("cable", "CABLE Input (VB-Audio Virtual Cable)"),
     ("headphones", "Headphones"),
 ];
 
-/// One soundboard clip as the screen caches it. A stub view-model standing in for
-/// `forge-soundboard`'s stored clip: the real screen reads these from the soundboard
-/// clips repo through the runtime bridge, never owning them authoritatively.
 struct SoundClip {
     id: u64,
     name: String,
     file_name: String,
     hotkey: Option<String>,
     device_label: String,
-    /// Playback gain, `0.0..=VOLUME_MAX`; over `1.0` the card inks the percentage
-    /// as a warning.
+    /// Playback gain, `0.0..=VOLUME_MAX` (`1.0` = 100%).
     volume: f32,
     duration_label: String,
 }
 
-/// In-flight add/edit-clip form. Text fields live in child [`TextInput`] entities
-/// (gpui's text controls are stateful entities, not values), so the form holds the
-/// name and hotkey field entities plus the chosen file, device index, gain, a saving
-/// flag and an inline error. `editing` carries the target clip id on an edit.
 struct AddClipModal {
     editing: Option<u64>,
     file_name: Option<String>,
@@ -70,15 +48,6 @@ struct AddClipModal {
     _hotkey_sub: Subscription,
 }
 
-/// The Soundboard screen view-entity: a breadcrumb header (`Builtin / Soundboard`)
-/// with an Add-sound action, an optional feedback banner, and a scrollable grid of
-/// clip cards (name, duration/hotkey chips, device + gain, play/edit/delete), over
-/// two centred overlays — the add/edit-clip modal and the delete confirmation.
-///
-/// Owns its clip list as seeded stub state (no soundboard runtime is wired into
-/// `forge-desktop` yet); Play/Save/Delete mutate that list and surface a feedback
-/// banner. The real screen drives playback + persistence through `forge-soundboard`
-/// via the runtime handle, reading clips back over the bridge.
 pub struct SoundboardView {
     clips: Vec<SoundClip>,
     next_id: u64,
@@ -102,8 +71,6 @@ impl SoundboardView {
         }
     }
 
-    // --- clip actions -----------------------------------------------------
-
     fn play(&mut self, id: u64, cx: &mut Context<Self>) {
         let Some((name, device)) = self
             .clips
@@ -120,8 +87,6 @@ impl SoundboardView {
         cx.notify();
     }
 
-    /// Removes a clip immediately (no confirmation gate — the parity source deletes
-    /// straight through), surfacing a feedback banner.
     fn delete(&mut self, id: u64, cx: &mut Context<Self>) {
         let name = self
             .clips
@@ -134,8 +99,6 @@ impl SoundboardView {
         }
         cx.notify();
     }
-
-    // --- modal lifecycle --------------------------------------------------
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let modal = Self::build_modal(None, "", None, "", 1.0, 0, cx);
@@ -162,9 +125,6 @@ impl SoundboardView {
         cx.notify();
     }
 
-    /// Assembles an [`AddClipModal`], creating the child input entities, prefilling
-    /// them from the seeds (an edit) and wiring their submit/cancel/change events —
-    /// mirroring the variant-editor's field wiring.
     fn build_modal(
         editing: Option<u64>,
         name_seed: &str,
@@ -225,10 +185,6 @@ impl SoundboardView {
         cx.notify();
     }
 
-    /// Stub file browse: fills the file slot with a placeholder and, when the name is
-    /// still empty, seeds it from the file stem — mirroring the source's post-pick
-    /// name auto-fill. The real native file dialog (off the foreground thread) lands
-    /// with the soundboard runtime capability.
     fn browse_file(&mut self, cx: &mut Context<Self>) {
         let name_input = match self.modal.as_mut() {
             Some(modal) => {
@@ -258,8 +214,6 @@ impl SoundboardView {
         cx.notify();
     }
 
-    /// Whether the modal can be saved: a non-empty name and a chosen file, and not
-    /// mid-save. Reads the name field entity, so it takes the app context.
     fn modal_saveable(&self, cx: &Context<Self>) -> bool {
         self.modal.as_ref().is_some_and(|modal| {
             !modal.saving
@@ -321,8 +275,6 @@ impl SoundboardView {
             Some(format!("Saved “{name}”. Playback routing is wired via the runtime soon.").into());
         cx.notify();
     }
-
-    // --- render helpers ---------------------------------------------------
 
     fn clip_card(
         &self,
@@ -543,8 +495,6 @@ impl SoundboardView {
             "Add sound clip"
         };
 
-        // FILE section: the chosen file name (or a muted placeholder) beside a browse
-        // button.
         let file_set = modal_state.file_name.is_some();
         let file_label = modal_state
             .file_name
@@ -574,7 +524,6 @@ impl SoundboardView {
             )
             .child(browse);
 
-        // DEVICE section: a selectable list of the seeded output devices.
         let mut device_list = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         for (idx, (_, label)) in DEVICES.iter().enumerate() {
             let selected = modal_state.device_idx == idx;
@@ -606,7 +555,6 @@ impl SoundboardView {
             );
         }
 
-        // VOLUME section: the gain slider and its percentage readout.
         let pct = (modal_state.volume * 100.0).round() as i32;
         let pct_color = if modal_state.volume > 1.0 {
             palette.warning
@@ -781,8 +729,6 @@ impl Render for SoundboardView {
     }
 }
 
-/// A clip card's duration / hotkey chip: a bordered `surface_overlay` pill inking a
-/// monospace caption in `ink`.
 fn card_chip(
     label: impl Into<SharedString>,
     ink: gpui::Rgba,
@@ -804,8 +750,6 @@ fn card_chip(
         )
 }
 
-/// A centred single-line message filling the body region — the loading / error
-/// placeholders that stand in for the clip grid.
 fn centered_message(
     message: impl Into<SharedString>,
     ink: gpui::Rgba,
@@ -827,8 +771,6 @@ fn centered_message(
         .into_any_element()
 }
 
-/// The representative clip sample the screen seeds before a soundboard runtime is
-/// wired — names, pad keys and durations mirror the design's soundboard roster.
 fn seed_clips() -> Vec<SoundClip> {
     let clip =
         |id: u64, name: &str, hotkey: &str, device: &str, volume: f32, dur: &str| SoundClip {

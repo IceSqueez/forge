@@ -6,36 +6,22 @@ use gpui::{
 use crate::palette::ForgePalette;
 use crate::tokens::{Radius, radius};
 
-/// Boxed click handler carried by a pressable toggle. gpui passes the click event
-/// plus the window and app contexts, through which the caller reaches its entity to
-/// flip its own bool and `cx.notify()`.
 type ToggleClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-// Switch geometry. A toggle is a density-neutral control, so its dimensions sit off
-// the `Spacing` scale as fixed literals — the same convention the status/chip dots
-// follow. `THUMB_ON_OFFSET` is the thumb's left inset when on:
-// TRACK_WIDTH - THUMB_SIZE - THUMB_INSET (32 - 14 - 2), so the thumb clears the
-// track's right edge by `THUMB_INSET`, mirroring its `THUMB_INSET` gap on the left
-// when off.
+// THUMB_ON_OFFSET = TRACK_WIDTH - THUMB_SIZE - THUMB_INSET (32 - 14 - 2): when on, the
+// thumb clears the track's right edge by THUMB_INSET, mirroring its left gap when off.
 const TRACK_WIDTH: Pixels = px(32.0);
 const TRACK_HEIGHT: Pixels = px(18.0);
 const THUMB_SIZE: Pixels = px(14.0);
 const THUMB_INSET: Pixels = px(2.0);
 const THUMB_ON_OFFSET: Pixels = px(16.0);
 
-/// The track fill and thumb ink a toggle paints for its current on/off state.
 #[derive(Clone, Copy)]
 pub(crate) struct ToggleColors {
     pub(crate) track: Rgba,
     pub(crate) thumb: Rgba,
 }
 
-/// Resolves a toggle's track and thumb colors from its on/off state.
-///
-/// On: the track takes `on_track` (the accent, defaulting to `success`) and the
-/// thumb inks `shell` — a light disc riding a filled track. Off: the track takes
-/// `surface_overlay` and the thumb inks `text_faint` — a muted disc on a recessed
-/// track.
 pub(crate) fn toggle_colors(on: bool, on_track: Rgba, palette: &ForgePalette) -> ToggleColors {
     if on {
         ToggleColors {
@@ -50,24 +36,14 @@ pub(crate) fn toggle_colors(on: bool, on_track: Rgba, palette: &ForgePalette) ->
     }
 }
 
-/// A boolean switch: a pill track with a circular thumb that sits at the leading
-/// edge when off and the trailing edge when on.
-///
-/// The on/off value is caller-owned state — pass it in via [`toggle`]. Attach
-/// [`Toggle::on_click`] to make it pressable (the handler flips the caller's bool
-/// and `cx.notify()`s); leave it off for a static, read-only switch. Override the
-/// on-track accent with [`Toggle::on_color`]; it otherwise defaults to `success`.
 #[derive(IntoElement)]
 pub struct Toggle {
     on: bool,
-    /// Resolved track/thumb colors for the current `on` state.
     colors: ToggleColors,
     id: Option<ElementId>,
     on_click: Option<ToggleClick>,
 }
 
-/// Builds a switch in the given on/off state, resolving its track and thumb colors
-/// from the active theme up front so the returned value carries no palette borrow.
 pub fn toggle(on: bool, palette: &ForgePalette) -> Toggle {
     Toggle {
         on,
@@ -78,8 +54,7 @@ pub fn toggle(on: bool, palette: &ForgePalette) -> Toggle {
 }
 
 impl Toggle {
-    /// Overrides the on-track accent (the fill shown when on). The off state and the
-    /// thumb are unchanged; a bare [`toggle`] uses `success`. No effect while off.
+    /// Overrides the on-track accent; no effect while off.
     pub fn on_color(mut self, color: Rgba) -> Self {
         if self.on {
             self.colors.track = color;
@@ -87,9 +62,6 @@ impl Toggle {
         self
     }
 
-    /// Makes the switch pressable. gpui needs a stable [`ElementId`] to promote the
-    /// track to a stateful, clickable element, so the caller supplies one alongside
-    /// the handler (which mutates its own entity via the passed contexts).
     pub fn on_click(
         mut self,
         id: impl Into<ElementId>,

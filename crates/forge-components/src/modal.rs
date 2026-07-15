@@ -10,39 +10,18 @@ use crate::tokens::{
     Radius, Spacing, modal_width, radius, spacing,
 };
 
-/// Side of the square tile behind the optional header icon.
 const HEADER_TILE: Pixels = px(28.0);
-/// Rendered size of the glyph centred in the header icon tile.
 const HEADER_TILE_ICON: Pixels = px(15.0);
-/// Gap between the title and its subtitle when both show.
 const TITLE_GAP: Pixels = px(2.0);
-/// Gap between the footer actions row and the keyboard hint below it.
 const FOOTER_GAP: Pixels = px(6.0);
 
-/// Resolves a spacing token at the fixed default density. The modal carries no
-/// per-instance density knob (its bands are chrome, sized once), so every inset
-/// snaps to the `Spacing` scale at `Cozy` — the density-neutral multiplier.
 fn pad(s: Spacing) -> Pixels {
     spacing(s, Density::Cozy)
 }
 
-/// Boxed close-button handler. Mirrors the button family: gpui hands the click
-/// event plus the window and app contexts, through which the caller reaches its
-/// own entity to dismiss the modal.
 type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// A modal dialog card: a bordered, `elevated` surface of `ModalSize` width carrying
-/// a header band (optional icon tile, title, subtitle, close button over a rule), a
-/// padded body region, and an optional `shell`-tinted footer band (actions row plus
-/// an optional monospace keyboard hint).
-///
-/// Build one with [`modal`], then layer on `.subtitle`, `.header_icon`, `.size`,
-/// `.footer`, `.kbd_hint` and `.on_close`. The card is only the surface: wrap it in
-/// [`crate::overlay`] centred to gain the dimming scrim, the enter animation, and the
-/// scrim-click / Escape dismissal —
-/// `overlay(modal(...), palette).position(OverlayPosition::Center).on_dismiss(...)`.
-/// The header close button ([`Modal::on_close`]) is the in-card dismissal affordance,
-/// distinct from the scrim/Escape dismissal the overlay supplies.
+/// Only the surface — wrap in [`crate::overlay`] for the scrim, enter animation, and scrim/Escape dismissal.
 #[derive(IntoElement)]
 pub struct Modal {
     title: SharedString,
@@ -51,8 +30,6 @@ pub struct Modal {
     footer: Option<AnyElement>,
     header_icon: Option<(Icon, Rgba)>,
     size: ModalSize,
-    /// Explicit card width, overriding the [`ModalSize`] envelope when set — for a
-    /// dialog pinned to an exact px width that no size step reproduces.
     width_override: Option<Pixels>,
     kbd_hint: Option<SharedString>,
     close_id: Option<ElementId>,
@@ -67,10 +44,6 @@ pub struct Modal {
     kbd_color: Rgba,
 }
 
-/// Build a modal card titled `title` wrapping `body`, resolving every ink from
-/// `palette` up front so the built value carries no palette borrow. Defaults to
-/// [`ModalSize::Md`], header-icon-less, footer-less and with no close button; layer
-/// those on through the builder methods.
 pub fn modal(
     title: impl Into<SharedString>,
     body: impl IntoElement,
@@ -99,57 +72,42 @@ pub fn modal(
 }
 
 impl Modal {
-    /// Adds a secondary line under the title in the header band.
     #[must_use]
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
     }
 
-    /// Adds a tinted icon tile at the leading edge of the header. The `tint` is the
-    /// caller's accent for this dialog.
     #[must_use]
     pub fn header_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
         self.header_icon = Some((glyph, tint));
         self
     }
 
-    /// Sets the card width envelope (default [`ModalSize::Md`]).
     #[must_use]
     pub fn size(mut self, size: ModalSize) -> Self {
         self.size = size;
         self
     }
 
-    /// Pins the card to an exact `width`, overriding the [`ModalSize`] envelope — for
-    /// a dialog whose source width falls between the size steps. Left unset, the card
-    /// keeps its [`Modal::size`] width.
     #[must_use]
     pub fn width(mut self, width: Pixels) -> Self {
         self.width_override = Some(width);
         self
     }
 
-    /// Adds the footer band carrying the caller's actions row (typically kit
-    /// [`crate::buttons`]). Without this — and without [`Modal::kbd_hint`] — the card
-    /// ends at the body region and no footer band renders.
     #[must_use]
     pub fn footer(mut self, actions: impl IntoElement) -> Self {
         self.footer = Some(actions.into_any_element());
         self
     }
 
-    /// Adds a monospace keyboard hint under the footer actions row (e.g. the submit
-    /// chord). Shows even with no footer actions, rendering its own footer band.
     #[must_use]
     pub fn kbd_hint(mut self, hint: impl Into<SharedString>) -> Self {
         self.kbd_hint = Some(hint.into());
         self
     }
 
-    /// Makes the header close button live. gpui needs a stable [`ElementId`] to
-    /// promote it to a clickable element; the `handler` mutates the caller's entity
-    /// through the passed `cx` to dismiss the modal.
     #[must_use]
     pub fn on_close(
         mut self,
@@ -161,8 +119,6 @@ impl Modal {
         self
     }
 
-    /// Builds the header band: optional icon tile, the title/subtitle stack, and the
-    /// optional close button, over a thin `border_regular` rule.
     fn render_header(&mut self) -> AnyElement {
         let mut row = div()
             .flex()
@@ -227,8 +183,6 @@ impl Modal {
         row.into_any_element()
     }
 
-    /// Builds the footer band when there is an actions row and/or a keyboard hint to
-    /// carry: a `shell`-tinted, thin-bordered band stacking the actions over the hint.
     fn render_footer(&mut self) -> Option<AnyElement> {
         let footer = self.footer.take();
         let kbd = self.kbd_hint.take();

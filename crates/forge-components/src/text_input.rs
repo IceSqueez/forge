@@ -36,11 +36,7 @@ actions!(
     ]
 );
 
-/// Installs the editing key bindings for every [`TextInput`], scoped to the
-/// input's key context so they never fire outside a focused field. The binary
-/// MUST call this once at boot — without it, only literal character typing (which
-/// flows through the OS text-input path) works; navigation and editing keys are
-/// dead.
+/// The binary MUST call this once at boot, or navigation and editing keys are dead.
 pub fn bind_text_input_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, Some(KEY_CONTEXT)),
@@ -138,33 +134,22 @@ impl TextInput {
         self
     }
 
-    /// Masks the field: the on-screen glyphs become one bullet per grapheme cluster
-    /// while `content()` and the emitted events keep the real value. Clipboard copy/cut
-    /// of the secret is suppressed while masked. For credential fields (API keys,
-    /// secrets) that must never render in plaintext.
+    /// Masks display only — `content()` and events keep the real value; clipboard copy/cut is suppressed while masked.
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
         self
     }
 
-    /// Renders `glyph` (tinted `tint`) as a leading affordance before the text,
-    /// insetting the editable region so the caret and click-to-position math stay
-    /// aligned to the shifted text origin.
     pub fn leading_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
         self.leading_icon = Some((glyph, tint));
         self
     }
 
-    /// Fills the field with the palette's `elevated` surface instead of the base
-    /// `shell`, for a field that sits on a raised panel (e.g. a drawer).
     pub fn on_surface(mut self) -> Self {
         self.on_surface = true;
         self
     }
 
-    /// Pins the border to `border` and the corner to `corner`, dropping the
-    /// default focus-reactive border + `Radius::Md`. Used by the search variant,
-    /// whose frame is a calm static outline rather than a focus-tracking one.
     pub fn static_chrome(mut self, border: Rgba, corner: Radius) -> Self {
         self.static_chrome = Some((border, corner));
         self
@@ -179,10 +164,6 @@ impl TextInput {
         cx.notify();
     }
 
-    /// Repins (or clears) the static border/corner at runtime — the runtime twin of
-    /// the [`TextInput::static_chrome`] builder. `Some((border, corner))` pins a fixed
-    /// frame reflecting an external state (e.g. a validity signal); `None` restores the
-    /// default focus-reactive border. The caller repaints after setting it.
     pub fn set_static_chrome(&mut self, chrome: Option<(Rgba, Radius)>) {
         self.static_chrome = chrome;
     }
@@ -393,8 +374,6 @@ impl TextInput {
     }
 }
 
-/// A [`TextInput`] preconfigured as a search field: a leading search glyph tinted
-/// `text_muted` precedes the text, and the field adopts `palette`.
 pub fn search_input(
     placeholder: impl Into<SharedString>,
     palette: ForgePalette,
@@ -406,8 +385,6 @@ pub fn search_input(
         .static_chrome(palette.border_regular, Radius::Sm)
 }
 
-/// [`search_input`] for a box on a raised panel: fills with the palette's
-/// `elevated` surface rather than the base `shell`.
 pub fn search_input_on_surface(
     placeholder: impl Into<SharedString>,
     palette: ForgePalette,
@@ -869,10 +846,6 @@ impl Render for TextInput {
 mod tests {
     use super::*;
 
-    // Seed a headless TextInput with `content`, then run `f` against its private
-    // editing methods and return what `f` observes. gpui's TestAppContext backs
-    // the window with a headless TestWindow — no GPU, no paint, no network — so
-    // this is the sanctioned in-process harness, not a "real service".
     fn with_input<R>(
         cx: &mut gpui::TestAppContext,
         content: &str,
@@ -912,7 +885,7 @@ mod tests {
     fn delete_removes_the_whole_next_grapheme_cluster(cx: &mut gpui::TestAppContext) {
         for (before, after) in [("😀a", "a"), ("🇺🇦b", "b"), ("👨‍👩‍👧z", "z")] {
             let content = with_input(cx, before, |input, window, cx| {
-                input.home(&Home, window, cx); // caret to offset 0
+                input.home(&Home, window, cx);
                 input.delete(&Delete, window, cx);
                 input.content().to_string()
             });
@@ -925,7 +898,7 @@ mod tests {
         // "a😀b": grapheme starts sit at byte offsets 0, 1, 5 (total len 6). The
         // caret must never rest at 2, 3 or 4 (inside the emoji's 4 bytes).
         let stops = with_input(cx, "a😀b", |input, window, cx| {
-            input.end(&End, window, cx); // caret at len 6
+            input.end(&End, window, cx);
             let mut seen = Vec::new();
             for _ in 0..3 {
                 input.left(&Left, window, cx);
@@ -939,7 +912,7 @@ mod tests {
     #[gpui::test]
     fn cursor_right_lands_only_on_grapheme_boundaries(cx: &mut gpui::TestAppContext) {
         let stops = with_input(cx, "a😀b", |input, window, cx| {
-            input.home(&Home, window, cx); // caret at offset 0
+            input.home(&Home, window, cx);
             let mut seen = Vec::new();
             for _ in 0..3 {
                 input.right(&Right, window, cx);
@@ -955,12 +928,12 @@ mod tests {
         let (content, cursor) = with_input(cx, "helo", |input, window, cx| {
             input.home(&Home, window, cx);
             input.right(&Right, window, cx);
-            input.right(&Right, window, cx); // caret between "he" and "lo" -> offset 2
+            input.right(&Right, window, cx);
             input.replace_text_in_range(None, "l", window, cx);
             (input.content().to_string(), input.cursor_offset())
         });
         assert_eq!(content, "hello");
-        assert_eq!(cursor, 3); // caret sits just after the inserted grapheme
+        assert_eq!(cursor, 3);
     }
 
     #[gpui::test]
@@ -980,7 +953,7 @@ mod tests {
         let content = with_input(cx, "hello", |input, window, cx| {
             input.home(&Home, window, cx);
             for _ in 0..3 {
-                input.select_right(&SelectRight, window, cx); // select "hel" (0..3)
+                input.select_right(&SelectRight, window, cx);
             }
             input.backspace(&Backspace, window, cx);
             input.content().to_string()

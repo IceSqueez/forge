@@ -12,66 +12,28 @@ use gpui::{
 use crate::presentation::ActivePresentation;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
 
-/// Volume slider track width — the parity source pins it at a fixed 90px, off the
-/// `Spacing` scale, so it is carried as a named literal.
 const VOL_SLIDER_W: Pixels = px(90.0);
-/// Test-speak input width (the source's fixed 180px).
 const TEST_INPUT_W: Pixels = px(180.0);
-/// Right session/engines rail width (the source's fixed 236px).
 const RIGHT_PANE_W: Pixels = px(236.0);
-/// Queue-position gutter width (the source's fixed 14px mono column).
 const QUEUE_POS_W: Pixels = px(14.0);
-/// Engine health-dot diameter (the source's fixed 7px dot).
 const ENGINE_DOT: Pixels = px(7.0);
-/// Pause/resume button leading-glyph size (the source's fixed 13px icon).
 const PAUSE_GLYPH: Pixels = px(13.0);
-/// Volume leading-glyph size (the source's fixed 14px icon).
 const VOLUME_GLYPH: Pixels = px(14.0);
-/// Initial session volume the dashboard seeds (72%), matching the design roster. The
-/// volume is control-local (the `SpeakEvent` stream carries none), so it is not fed by
-/// the bridge.
 const SEED_VOLUME: f32 = 0.72;
-/// The viewer name attributed to a test-speak request enqueued from the dashboard.
 const TEST_SPEAKER_NAME: &str = "Test";
 
-/// One configured engine's health line in the right rail. `warn` inks the caution
-/// hue (e.g. nearing a character quota); otherwise the ready hue.
 struct EngineStatus {
     name: &'static str,
     meta: &'static str,
     warn: bool,
 }
 
-/// The TTS Dashboard section view-entity: a control strip (pause/skip/stop-all,
-/// volume, test-speak), a now-speaking panel over the up-next queue, and a right
-/// rail of session counters and engine health, plus a stop-all confirm overlay.
-///
-/// The now-speaking slot, up-next queue, paused flag and session counters are a cached
-/// read of the shared [`SpeakState`] topic, advanced by the boot-global `SpeakEvent`
-/// bridge; this view observes it and repaints. The controls dispatch `SpeakCommand`s
-/// through the `speak` queue handle (fire-and-forget on the tokio runtime): pause/resume
-/// toggles `Pause`/`Resume`, skip sends `Skip`, stop-all sends `Clear`, the volume slider
-/// sends `SetVolume`, and test-speak sends `Enqueue`. Volume is control-local (no event
-/// carries it). The engine roster stays seeded — no `SpeakEvent` carries an engine
-/// roster, so the live read is deferred to a later phase.
 pub struct TtsDashboardView {
-    /// The shared, bridge-fed speak-queue cache. Read for now-speaking / queue /
-    /// counters / paused; optimistically nudged by the pause and stop-all controls
-    /// ahead of the queue's acknowledging event.
     speak_state: Entity<SpeakState>,
-    /// The speak-queue command handle; `None` only if queue construction failed, in
-    /// which case controls no-op with a logged notice.
     speak: Option<SpeakQueueHandle>,
-    /// The tokio runtime handle a control's fire-and-forget dispatch runs on, so the
-    /// send future has a reactor rather than gpui's foreground executor.
     rt_handle: tokio::runtime::Handle,
-    /// Control-local master volume (0.0..=1.0); the `SpeakEvent` stream carries none.
     volume: f32,
-    /// Seeded engine roster — no `SpeakEvent` carries an engine roster, so the live
-    /// read lands in a later phase; the container renders a real frame meanwhile.
     engines: Vec<EngineStatus>,
-    /// Two-phase stop-all gate: armed by the control strip's Stop button, rendered
-    /// by the shared confirm overlay. `false` = no confirm showing.
     pending_stop_all: bool,
     test_input: Entity<TextInput>,
     _test_sub: Subscription,
@@ -96,7 +58,6 @@ impl TtsDashboardView {
                 InputEvent::Cancelled => {}
             },
         );
-        // Repaint whenever the bridge advances the shared speak-queue cache.
         let speak_obs = cx.observe(&speak_state, |_this, _state, cx| cx.notify());
 
         Self {
@@ -112,12 +73,6 @@ impl TtsDashboardView {
         }
     }
 
-    // --- command dispatch -------------------------------------------------
-
-    /// Fire-and-forget dispatch of a `SpeakCommand` onto the tokio runtime. A missing
-    /// queue handle or a send failure logs a PII-safe notice (only the queue error is
-    /// printed, never the request payload) and drops the command — controls stay
-    /// responsive rather than blocking the foreground executor.
     fn dispatch(&self, cmd: SpeakCommand) {
         let Some(handle) = self.speak.clone() else {
             eprintln!("forge-desktop: TTS command dropped — speak queue unavailable");
@@ -130,11 +85,6 @@ impl TtsDashboardView {
         });
     }
 
-    // --- control handlers -------------------------------------------------
-
-    /// Toggles pause/resume of the speak queue: optimistically flips the shared
-    /// paused flag ahead of the queue's acknowledgement, then dispatches the matching
-    /// `SpeakCommand::Pause` / `SpeakCommand::Resume`.
     fn toggle_pause(&mut self, cx: &mut Context<Self>) {
         let paused = self.speak_state.read(cx).paused();
         let cmd = if paused {
@@ -149,13 +99,10 @@ impl TtsDashboardView {
         self.dispatch(cmd);
     }
 
-    /// Skips the current utterance via `SpeakCommand::Skip`; the bridge clears the
-    /// now-playing slot and advances the skipped counter when the queue reports it.
     fn skip(&mut self, _cx: &mut Context<Self>) {
         self.dispatch(SpeakCommand::Skip);
     }
 
-    /// Arms the stop-all confirm gate.
     fn arm_stop_all(&mut self, cx: &mut Context<Self>) {
         self.pending_stop_all = true;
         cx.notify();
@@ -166,9 +113,6 @@ impl TtsDashboardView {
         cx.notify();
     }
 
-    /// Clears the queue and the now-playing slot: optimistically empties the shared
-    /// cache ahead of the queue's `Cleared` event, then dispatches
-    /// `SpeakCommand::Clear`.
     fn confirm_stop_all(&mut self, cx: &mut Context<Self>) {
         self.pending_stop_all = false;
         self.speak_state.update(cx, |state, cx| {
@@ -179,15 +123,12 @@ impl TtsDashboardView {
         cx.notify();
     }
 
-    /// Stores the new volume and dispatches `SpeakCommand::SetVolume`.
     fn set_volume(&mut self, volume: f32, cx: &mut Context<Self>) {
         self.volume = volume;
         self.dispatch(SpeakCommand::SetVolume(volume));
         cx.notify();
     }
 
-    /// Enqueues the test-speak text via `SpeakCommand::Enqueue`; the bridge pushes the
-    /// resulting queued item back onto the shared cache. Clears the field on submit.
     fn speak_test(&mut self, cx: &mut Context<Self>) {
         let text = self.test_input.read(cx).content().trim().to_owned();
         if text.is_empty() {
@@ -198,8 +139,6 @@ impl TtsDashboardView {
         cx.notify();
     }
 
-    // --- control strip ----------------------------------------------------
-
     fn control_strip(
         &self,
         paused: bool,
@@ -209,8 +148,6 @@ impl TtsDashboardView {
     ) -> AnyElement {
         let gap = spacing(Spacing::Xs, density);
 
-        // Pause/resume: a filled button inking the success hue when paused (Resume)
-        // and the danger hue while running (Pause).
         let (pause_label, pause_glyph, btn_bg) = if paused {
             ("Resume", Icon::PlayerPlay, palette.success)
         } else {
@@ -353,8 +290,6 @@ impl TtsDashboardView {
             .into_any_element()
     }
 
-    // --- right rail -------------------------------------------------------
-
     fn right_pane(
         &self,
         stats: &SessionStats,
@@ -448,8 +383,6 @@ impl TtsDashboardView {
             .into_any_element()
     }
 
-    // --- stop-all confirm -------------------------------------------------
-
     fn render_stop_confirm(
         &self,
         palette: &ForgePalette,
@@ -488,8 +421,6 @@ impl Render for TtsDashboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        // Owned snapshots of the shared cache, cloned once so the render tree and the
-        // control listeners can borrow `cx` freely afterwards.
         let paused = self.speak_state.read(cx).paused();
         let now = self.speak_state.read(cx).now_speaking_snapshot();
         let queue = self.speak_state.read(cx).queue_snapshot();
@@ -533,10 +464,6 @@ impl Render for TtsDashboardView {
     }
 }
 
-// ── view-specific fragments ───────────────────────────────────────────────
-
-/// The now-speaking panel: the utterance currently voicing, or an em-dash placeholder
-/// when the slot is empty.
 fn now_speaking_panel(
     now: Option<&NowSpeaking>,
     palette: &ForgePalette,
@@ -618,8 +545,6 @@ fn now_speaking_panel(
         .into_any_element()
 }
 
-/// The up-next queue: a header with a count pill over a scrolling list of pending
-/// utterances, or an "empty" line when the queue holds nothing.
 fn queue_section(queue: &[QueueItem], palette: &ForgePalette, density: Density) -> AnyElement {
     let count = queue.len();
     let count_pill = div()
@@ -691,8 +616,6 @@ fn queue_section(queue: &[QueueItem], palette: &ForgePalette, density: Density) 
         .into_any_element()
 }
 
-/// One queue row: a fixed-width mono position gutter, a viewer/voice header over
-/// the ellipsised message, and a trailing mono duration.
 fn queue_item_row(
     index: usize,
     item: &QueueItem,
@@ -771,7 +694,6 @@ fn queue_item_row(
         .into_any_element()
 }
 
-/// A right-rail block heading — an uppercase monospace caption inking `text_muted`.
 fn rail_header(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
@@ -780,8 +702,6 @@ fn rail_header(label: &'static str, palette: &ForgePalette) -> impl IntoElement 
         .child(label)
 }
 
-/// One session-counter row: a muted label and a hued value, with an optional
-/// bottom hairline separating it from the next.
 fn stat_row(
     label: &'static str,
     value: String,
@@ -819,8 +739,6 @@ fn stat_row(
     row
 }
 
-/// One engine health card: the engine name over a mono meta line, with a trailing
-/// health dot inking `status_color`.
 fn engine_card(
     name: &'static str,
     meta: &'static str,
@@ -860,9 +778,6 @@ fn engine_card(
     .full_width()
 }
 
-/// Builds the `SpeakRequest` for a dashboard test-speak: a normal-priority utterance
-/// attributed to the local test speaker, with no alias/engine/voice override so the
-/// queue resolves a voice through its default strategy.
 fn test_speak_request(text: String) -> SpeakRequest {
     SpeakRequest {
         request_id: RequestId::new(),
@@ -878,12 +793,6 @@ fn test_speak_request(text: String) -> SpeakRequest {
     }
 }
 
-// ── seeded stub state ─────────────────────────────────────────────────────
-
-/// The seeded engine roster, mirroring the design's ENGINES panel. No `SpeakEvent`
-/// carries an engine roster, so the live read (off the TTS registry) is deferred to a
-/// later phase; the container renders a real frame with this representative roster
-/// meanwhile.
 fn seed_engines() -> Vec<EngineStatus> {
     vec![
         EngineStatus {

@@ -17,35 +17,22 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
-// Off-scale layout literals. The overview grid is a fixed-rhythm dashboard whose
-// paddings, tile size and glyph sizes are hand-tuned to the design, so — mirroring
-// the Home hub precedent — they are carried as literals rather than snapped to the
-// nearest density-scaled `Spacing` step, which would alter the composition.
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
 
-/// Brand-filled identity tile geometry: a 44px rounded square holding the platform
-/// initial. The corner (~44 * 0.23) and glyph (44 * 0.5) mirror the shared tile
-/// ratio so the overview card and a later detail header would share one shape.
 const TILE_SIZE: Pixels = px(44.0);
 const TILE_RADIUS: Pixels = px(10.0);
 const TILE_GLYPH: Pixels = px(22.0);
 
-/// Card inner padding (the design's `16px 18px`).
 const CARD_PAD_V: Pixels = px(16.0);
 const CARD_PAD_H: Pixels = px(18.0);
 
-/// Trailing chevron glyph size.
 const CHEVRON_SIZE: Pixels = px(16.0);
 
-/// Feature-pill inset (the design's `2px 7px`), off the `Spacing` scale as a fixed
-/// caption-chip metric.
 const CHIP_PAD_V: Pixels = px(2.0);
 const CHIP_PAD_H: Pixels = px(7.0);
 
-/// The three streaming platforms surfaced on the overview: the integration key
-/// (brand hue + router destination), display name, tile initial, one-line
-/// description and the feature-chip row. Mirrors the design's platform roster.
+/// Fields: integration, display name, tile initial, description, feature chips.
 type PlatformRow = (
     Integration,
     &'static str,
@@ -78,8 +65,6 @@ const PLATFORMS: [PlatformRow; 3] = [
     ),
 ];
 
-/// The five integrations tracked on the connectivity overview, in display order:
-/// the three chat platforms then the two stream apps.
 const ROSTER: [Integration; 5] = [
     Integration::Twitch,
     Integration::YouTube,
@@ -88,13 +73,6 @@ const ROSTER: [Integration; 5] = [
     Integration::VTube,
 ];
 
-/// Topic-scoped observable cache backing the Platforms and Stream Apps overviews,
-/// the sidebar connection dots and the footer connected/total readout: the connected
-/// state of each integration, keyed by [`Integration`] so a single topic serves the
-/// chat platforms and the stream apps. It holds a cached read, never runtime state of
-/// its own; the runtime→UI bridge seeds it from the live `BuiltinStatus` snapshots at
-/// boot and advances each entry on a `platform.connection.changed` bus event, then
-/// `cx.notify()`s so the observing views repaint.
 pub struct PlatformConnectivity {
     connections: Vec<(Integration, bool)>,
 }
@@ -106,16 +84,12 @@ impl Default for PlatformConnectivity {
 }
 
 impl PlatformConnectivity {
-    /// An all-disconnected cache — the pre-boot state before the bridge seeds live
-    /// connection snapshots.
     pub fn new() -> Self {
         Self {
             connections: ROSTER.iter().map(|integ| (*integ, false)).collect(),
         }
     }
 
-    /// Whether `integ` is currently connected; unknown integrations read as
-    /// disconnected. Kept free of `cx` so it stays directly exercisable.
     pub fn is_connected(&self, integ: Integration) -> bool {
         self.connections
             .iter()
@@ -124,9 +98,7 @@ impl PlatformConnectivity {
             .unwrap_or(false)
     }
 
-    /// Sets `integ`'s connected flag, returning whether the value actually changed so
-    /// the caller only repaints on a real transition. An integration outside the
-    /// roster is ignored.
+    /// Returns whether the value actually changed.
     pub fn set_connected(&mut self, integ: Integration, connected: bool) -> bool {
         if let Some(entry) = self.connections.iter_mut().find(|(i, _)| *i == integ)
             && entry.1 != connected
@@ -137,20 +109,14 @@ impl PlatformConnectivity {
         false
     }
 
-    /// The number of integrations currently connected — the footer readout's numerator.
     pub fn connected_count(&self) -> usize {
         self.connections.iter().filter(|(_, ok)| *ok).count()
     }
 
-    /// The roster size — the footer readout's denominator.
     pub fn total_count(&self) -> usize {
         self.connections.len()
     }
 
-    /// Seeds every roster entry from the live `BuiltinStatus` snapshot of the matching
-    /// mounted builtin, treating an integration absent from the map (no credentials, or
-    /// bring-up failed) as disconnected. Called once at boot before the bridge takes
-    /// over live updates.
     pub fn seed_from_builtins(&mut self, builtins: &HashMap<BuiltinId, BuiltinObject>) {
         for (integ, connected) in self.connections.iter_mut() {
             *connected = builtins
@@ -161,15 +127,6 @@ impl PlatformConnectivity {
     }
 }
 
-/// The Platforms overview screen view-entity: a breadcrumb header over a scrollable
-/// "Streaming platforms" section — a two-column grid of interactive platform cards
-/// (brand-tile initial, name + live connection badge, description, feature chips).
-///
-/// It owns no connectivity data: each card's connected state is read from an
-/// injected [`PlatformConnectivity`] topic (a cached runtime read, never the source
-/// of truth) and the view repaints when that topic notifies. Pressing a card voices
-/// a [`NavRequested`] toward that platform's screen, which the root shell routes —
-/// the screen never mutates the router itself.
 pub struct PlatformsView {
     connectivity: Entity<PlatformConnectivity>,
     _conn_obs: Subscription,
@@ -184,8 +141,6 @@ impl PlatformsView {
         }
     }
 
-    /// Voices a navigation intent to the root shell. No `self` state changes, so no
-    /// `cx.notify()` — the shell owns the routing side effect.
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
         cx.emit(NavRequested(screen));
     }
@@ -291,8 +246,6 @@ impl Render for PlatformsView {
         let palette = cx.palette();
         let density = cx.density();
 
-        // Snapshot the connected flags up front, ending the immutable borrow on the
-        // topic before the per-card `cx.listener` closures are built.
         let connectivity = self.connectivity.read(cx);
         let connected: Vec<bool> = PLATFORMS
             .iter()
@@ -368,10 +321,6 @@ impl Render for PlatformsView {
     }
 }
 
-/// A single feature pill: a small `shell`-filled, `Radius::Sm` rounded chip inking
-/// `text_secondary` at `FONT_XS`. Distinct from the kit's filter [`chip`] (a
-/// pill-radius, dot-leading pressable), so it is carried locally as a one-off view
-/// fragment — matching the design's feature tags exactly.
 fn feature_chip(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .py(CHIP_PAD_V)
@@ -387,10 +336,8 @@ fn feature_chip(label: &'static str, palette: &ForgePalette) -> impl IntoElement
         )
 }
 
-/// Lays the platform cards into a two-column grid: each card fills half its row, and
-/// a trailing odd card is balanced by an equal-flex spacer so it keeps its
-/// half-width (mirroring the design's `repeat(2, 1fr)` grid, which gpui 0.2.2 has no
-/// native equivalent for — a flex row pair is the port).
+/// gpui 0.2.2 has no CSS-grid primitive; the two-column layout is emulated with flex
+/// row pairs, a trailing odd card balanced by an equal-flex spacer.
 fn platform_grid(cards: Vec<AnyElement>, density: Density) -> impl IntoElement {
     let gap = spacing(Spacing::Sm, density);
     let mut grid = div().w_full().flex().flex_col().gap(gap);

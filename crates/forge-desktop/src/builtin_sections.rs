@@ -25,14 +25,10 @@ fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
         .child(s.into())
 }
 
-/// Full-width hairline separating a card header from its rows.
 fn divider(palette: &ForgePalette) -> Div {
     div().w_full().h(BORDER_THIN).bg(palette.border_regular)
 }
 
-/// The shared card surface: `elevated` fill, thin `border_regular` hairline,
-/// `Radius::Md`, clipping its children so full-bleed footers keep the rounded
-/// corners. Sections stack their header / divider / rows inside as a flex column.
 fn card_shell(palette: &ForgePalette) -> Div {
     div()
         .w_full()
@@ -45,8 +41,6 @@ fn card_shell(palette: &ForgePalette) -> Div {
         .bg(palette.elevated)
 }
 
-/// A flex cell that grows proportionally to `grow` (the two-column lists lay out
-/// at a 10 : 13 ratio, matching the design's asymmetric split).
 fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
     let mut cell = div().min_w(px(0.0)).child(el);
     let style = cell.style();
@@ -857,10 +851,6 @@ fn health_level_color(level: &HealthLevel, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// The four-up health-metric grid: four equal cells, each an `elevated` card with
-/// an uppercase monospace caption over a value laid out per its [`HealthValue`]
-/// variant. `loading` renders placeholder dashes in place of every value (the
-/// reconnecting state).
 pub fn health_grid(
     metrics: &[HealthMetric; 4],
     loading: bool,
@@ -982,8 +972,6 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
     }
 }
 
-/// Formats a connection uptime the way the header sub-line shows it: `Hh Mm`
-/// above an hour, `Mm Ss` above a minute, else `Ss`.
 pub fn format_uptime(d: std::time::Duration) -> String {
     let total = d.as_secs();
     let hours = total / 3600;

@@ -24,11 +24,8 @@ use crate::cloud_tts_boot;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
-/// Header status-dot side — a fixed 7px square, off the `Spacing` scale.
 const STATUS_DOT: Pixels = px(7.0);
-/// Test-result dot side — a fixed 6px square, off the `Spacing` scale.
 const RESULT_DOT: Pixels = px(6.0);
-/// Field-label column width — a fixed 120px gutter, off the `Spacing` scale.
 const LABEL_W: Pixels = px(120.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +69,6 @@ impl CloudEngineKind {
     }
 }
 
-/// Only constructed once the engine's required fields are non-empty.
 enum CloudCreds {
     Azure(AzureCredentials),
     ElevenLabs(ElevenLabsCredentials),
@@ -145,8 +141,7 @@ struct PollyForm {
 }
 
 pub struct CloudTtsEnginesView {
-    /// Shared with the running speak-queue actor; Save hot-registers into it live.
-    /// `None` only when the speak subsystem didn't build — persistence still happens.
+    /// `None` only when the speak subsystem didn't build; persistence still happens without it.
     registry: Option<Arc<RwLock<TtsRegistry>>>,
     credentials: Arc<dyn CredentialsRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -236,8 +231,6 @@ impl CloudTtsEnginesView {
             _subs: subs,
         }
     }
-
-    // --- handlers ---------------------------------------------------------
 
     fn mark_dirty(&mut self, kind: CloudEngineKind, cx: &mut Context<Self>) {
         match kind {
@@ -422,8 +415,6 @@ impl CloudTtsEnginesView {
             CloudEngineKind::Polly => self.polly.test_status = status,
         }
     }
-
-    // --- cards ------------------------------------------------------------
 
     fn azure_card(
         &self,
@@ -754,8 +745,6 @@ impl Render for CloudTtsEnginesView {
             .child(column)
     }
 }
-
-// ── view-specific fragments ───────────────────────────────────────────────
 
 fn config_status_badge(
     test_status: &TestStatus,

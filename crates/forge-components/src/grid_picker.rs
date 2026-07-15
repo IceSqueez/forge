@@ -1,16 +1,3 @@
-//! Unified centred "Add" grid picker — a stateful `Entity` view (owns the query field,
-//! the active scope chip and the hovered-card id), NOT a stateless card. A screen builds
-//! one with [`GridPicker::new`] inside `cx.new(…)`, feeds it category groups + a config,
-//! wraps the held entity in a centred [`crate::overlay`] to gain the scrim + dismissal
-//! chrome, and reacts to [`GridPickerEvent`] via `cx.subscribe`.
-//!
-//! Typing in the embedded search field filters cards by a case-insensitive substring over
-//! each card's name OR description (an empty query restores the scope view). Clicking an
-//! addable card reports its id through [`GridPickerEvent::Picked`]; the close glyph and
-//! Escape in the search field report [`GridPickerEvent::Dismissed`]. The consuming screen
-//! owns the open/closed state, builds the groups from its own data, and resolves a picked
-//! id back to its action.
-
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
     Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -25,40 +12,29 @@ use crate::tokens::{
     Radius, Spacing, radius, spacing,
 };
 
-// All literals below are pinned to the design's fixed px scale, off the
-// `Spacing` / `Radius` / `FONT_*` tokens where the design diverges from them.
-/// Card envelope (design 660×600).
 const GRID_W: Pixels = px(660.0);
 const GRID_H: Pixels = px(600.0);
-/// Shared horizontal band inset — every band gutters to 16px in the design.
 const GRID_BAND_PAD_H: Pixels = px(16.0);
-/// Header icon tile: 30px side, 7px corner, 15px glyph.
 const GRID_TILE: Pixels = px(30.0);
 const GRID_TILE_RADIUS: Pixels = px(7.0);
 const GRID_TILE_ICON: Pixels = px(15.0);
-/// Header row gap and vertical pad, plus the close glyph size.
 const GRID_HEADER_GAP: Pixels = px(11.0);
 const GRID_HEADER_PAD_V: Pixels = px(13.0);
 const GRID_CLOSE_ICON: Pixels = px(15.0);
-/// Search band top/bottom pad, the leading glyph and the input font.
 const GRID_SEARCH_PAD_T: Pixels = px(11.0);
 const GRID_SEARCH_PAD_B: Pixels = px(9.0);
 const GRID_SEARCH_ICON: Pixels = px(14.0);
 const GRID_SEARCH_FS: Pixels = px(13.0);
-/// Scope-chip band vertical pad, chip pad and its leading category dot.
 const GRID_CHIPS_PAD_V: Pixels = px(9.0);
 const GRID_CHIP_PAD_V: Pixels = px(4.0);
 const GRID_CHIP_PAD_H: Pixels = px(10.0);
 const GRID_CHIP_DOT: Pixels = px(5.0);
-/// Grid body vertical pad, inter-group gap, and the group-header label / dot.
 const GRID_BODY_PAD_V: Pixels = px(13.0);
 const GRID_GROUP_GAP: Pixels = px(14.0);
 const GRID_GROUP_HEADER_MB: Pixels = px(8.0);
 const GRID_GROUP_FS: Pixels = px(9.5);
 const GRID_GROUP_DOT: Pixels = px(5.0);
-/// Card row / pair gap.
 const GRID_CARD_GAP: Pixels = px(8.0);
-/// Card padding, its leading tile (26px / 7px corner / 13px glyph) and name font.
 const GRID_CARD_PAD_V: Pixels = px(11.0);
 const GRID_CARD_PAD_H: Pixels = px(12.0);
 const GRID_CARD_TILE: Pixels = px(26.0);
@@ -66,49 +42,33 @@ const GRID_CARD_TILE_RADIUS: Pixels = px(7.0);
 const GRID_CARD_ICON: Pixels = px(13.0);
 const GRID_CARD_NAME_FS: Pixels = px(12.5);
 const GRID_CARD_ROW_MB: Pixels = px(6.0);
-/// Meta font shared by subtitle / chips / match-count / card desc (design 11px).
 const GRID_META_FS: Pixels = px(11.0);
-/// Footer vertical pad and the `Esc` kbd chip (pad 1/5, 3px corner).
 const GRID_FOOTER_PAD_V: Pixels = px(8.0);
 const GRID_KBD_PAD_V: Pixels = px(1.0);
 const GRID_KBD_PAD_H: Pixels = px(5.0);
 const GRID_KBD_RADIUS: Pixels = px(3.0);
-/// Empty-state vertical pad and its glyph.
 const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
-/// Badge font on a card's added / off state pill.
 const GRID_BADGE_FS: Pixels = px(9.0);
 
-/// A card's addability state.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GridPickerItemState {
-    /// Addable: a leading plus glyph, hover-recolours its frame, clickable.
     Normal,
-    /// Already added: an "added" badge, dimmed and inert.
     Added,
-    /// Unavailable (disabled at source): an "off" badge, dimmed and inert.
     Disabled,
 }
 
-/// One selectable card in the grid.
 pub struct GridPickerItem {
-    /// Stable id returned on pick.
     pub id: SharedString,
-    /// Leading tile glyph.
     pub icon: Icon,
-    /// Leading tile glyph ink (category / platform colour).
     pub icon_color: Rgba,
-    /// Card title.
     pub name: SharedString,
-    /// Card description line.
     pub desc: SharedString,
-    /// Addability state.
     pub state: GridPickerItemState,
 }
 
-/// A titled band of cards under one category / platform-subgroup. `scope` keys the band
-/// to its filter chip; a `scope` of `"all"` is folded under the built-in "All" chip and
-/// never mints its own chip (used for a leading always-visible band).
+/// A `scope` of `"all"` is folded under the built-in "All" chip and never mints its own
+/// chip (used for a leading always-visible band).
 pub struct GridPickerGroup {
     pub label: SharedString,
     pub dot_color: Rgba,
@@ -116,12 +76,8 @@ pub struct GridPickerGroup {
     pub items: Vec<GridPickerItem>,
 }
 
-/// The header subtitle line.
 pub enum GridPickerSubtitle {
-    /// A single faint line, e.g. "42 trigger types".
     Plain(SharedString),
-    /// A contextual line: a faint `lead`, an accent-inked target `name`, and a faint
-    /// trailing `note`, laid out `lead  name  note`.
     Context {
         lead: SharedString,
         name: SharedString,
@@ -129,9 +85,6 @@ pub enum GridPickerSubtitle {
     },
 }
 
-/// The fixed chrome + copy of a grid picker: its accent, header glyph + titles, footer
-/// hint, search placeholder, and an optional cap on how many scope chips derive from the
-/// groups.
 pub struct GridPickerConfig {
     pub accent: Rgba,
     pub header_icon: Icon,
@@ -142,19 +95,12 @@ pub struct GridPickerConfig {
     pub scope_cap: Option<usize>,
 }
 
-/// Emitted by a [`GridPicker`] to its subscriber.
 #[derive(Debug, Clone)]
 pub enum GridPickerEvent {
-    /// A card was picked; carries that item's [`GridPickerItem::id`].
     Picked(SharedString),
-    /// The picker was dismissed (close glyph or Escape in the search field).
     Dismissed,
 }
 
-/// Unified centred "Add" grid picker. Owns its embedded search field, the current query,
-/// the active scope chip and the hovered-card id; the category groups and the fixed
-/// chrome are supplied as data. Build one inside `cx.new(…)`, focus it, then wrap the held
-/// entity in a centred [`crate::overlay`].
 pub struct GridPicker {
     search: Entity<TextInput>,
     query: String,
@@ -169,9 +115,6 @@ pub struct GridPicker {
 impl EventEmitter<GridPickerEvent> for GridPicker {}
 
 impl GridPicker {
-    /// Builds a picker over `groups` with the given `config` and `palette`. Creates the
-    /// embedded search field (accent-recolouring its border while non-empty) and
-    /// subscribes to its edits so typing filters the cards and Escape reports a dismiss.
     pub fn new(
         config: GridPickerConfig,
         groups: Vec<GridPickerGroup>,
@@ -200,8 +143,8 @@ impl GridPicker {
         }
     }
 
-    /// Focuses the embedded search field so typing and Escape reach it. The caller invokes
-    /// this when the picker opens (gpui delivers key events only down the focus path).
+    /// The caller must call this when the picker opens; gpui delivers key events only down
+    /// the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &App) {
         self.search.read(cx).focus(window);
     }
@@ -267,8 +210,6 @@ impl GridPicker {
         cx.emit(GridPickerEvent::Dismissed);
     }
 
-    /// The scope filter chips derived from the groups: deduped in group order, skipping
-    /// the folded `"all"` scope, capped at [`GridPickerConfig::scope_cap`] when set.
     fn scope_chips(&self) -> Vec<(SharedString, String, Rgba)> {
         let mut seen: Vec<(SharedString, String, Rgba)> = Vec::new();
         for g in &self.groups {
@@ -700,8 +641,6 @@ impl Render for GridPicker {
         let searching = !self.query.trim().is_empty();
         let query = self.query.trim().to_lowercase();
 
-        // Scope + query filter: a live query overrides the scope; each group keeps only
-        // its surviving cards, and empty groups drop out.
         let visible: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)> = self
             .groups
             .iter()
@@ -740,8 +679,6 @@ impl Render for GridPicker {
     }
 }
 
-/// The scope-chip label for a group: the segment before the ` · ` platform / category
-/// separator (the whole label when there is none).
 fn scope_label(group_label: &str) -> String {
     group_label
         .split(" \u{b7} ")
@@ -750,9 +687,6 @@ fn scope_label(group_label: &str) -> String {
         .to_owned()
 }
 
-/// A scope filter chip: active pills fill `surface_overlay` with a `border_regular`
-/// outline; inactive ones stay transparent. An optional leading category dot leads the
-/// label.
 fn grid_scope_chip(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,

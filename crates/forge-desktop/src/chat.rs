@@ -12,38 +12,19 @@ use gpui::{
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::presentation::ActivePresentation;
 
-/// Distance (px) from the bottom within which the list counts as "at bottom": a
-/// wheel that leaves the viewport this close re-arms auto-scroll and clears the
-/// unread pill. Mirrors the source's 60px threshold.
 const AT_BOTTOM_SLACK: f32 = 60.0;
-/// The floating unread pill's lift off the bottom edge of the chat viewport.
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
-/// Fixed width of the inline search field when the filter-bar search is open.
 const SEARCH_FIELD_WIDTH: Pixels = px(220.0);
-/// The live-viewer status dot in the header cluster.
 const VIEWER_DOT: Pixels = px(6.0);
-/// Thin vertical rule separating the platform chips from the toggle chips.
 const CHIP_DIVIDER_W: Pixels = px(0.5);
 const CHIP_DIVIDER_H: Pixels = px(14.0);
 
-/// Which chat sources the list shows. `All` passes everything; `Single` keeps one
-/// platform. The kit `Platform` triplet is the whole domain, so no custom-set case
-/// is needed for the slice.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PlatformFilter {
     All,
     Single(Platform),
 }
 
-/// The Chat screen view-entity: a live message list over the chat-topic feed, a
-/// header cluster (live viewers / uptime / viewers-drawer toggle), a platform +
-/// event filter bar with inline search, and the message composer. Owns all
-/// per-screen UI state as fields and reads the chat rows from an injected
-/// [`ChatFeed`] topic (a cached runtime read, never the source of truth).
-///
-/// The viewers drawer (the right-hand panel) is a deliberate follow-up: this
-/// screen renders the toggle and tracks its open flag, but the panel itself lands
-/// in a separate slice.
 pub struct ChatView {
     feed: Entity<ChatFeed>,
     input: Entity<InputBar>,
@@ -54,12 +35,8 @@ pub struct ChatView {
     search_open: bool,
     search_query: String,
     drawer_open: bool,
-    /// True while the list should stick to the newest row; a wheel away from the
-    /// bottom clears it and starts accumulating [`ChatView::unread`].
     auto_scroll: bool,
     unread: usize,
-    /// Row count last reconciled by the feed observer, so a batch of arrivals
-    /// counts toward the unread pill exactly once.
     last_seen_len: usize,
     chat_scroll: ScrollHandle,
     _feed_obs: Subscription,
@@ -78,7 +55,6 @@ impl ChatView {
 
         let last_seen_len = feed.read(cx).messages().len();
         let chat_scroll = ScrollHandle::new();
-        // Start pinned to the newest row; the flag is applied on first layout.
         chat_scroll.scroll_to_bottom();
 
         Self {
@@ -101,8 +77,6 @@ impl ChatView {
         }
     }
 
-    // --- feed / composer / search reactions -------------------------------
-
     fn on_feed_changed(&mut self, feed: Entity<ChatFeed>, cx: &mut Context<Self>) {
         let len = feed.read(cx).messages().len();
         if self.auto_scroll {
@@ -123,9 +97,6 @@ impl ChatView {
         event: &InputBarEvent,
         cx: &mut Context<Self>,
     ) {
-        // The composer only reports intent; the caller owns clearing it. Routing
-        // the text to a platform send handle lands with the chat-send capability —
-        // for now a submit acknowledges by clearing the field.
         if let InputBarEvent::Send { .. } = event {
             self.input.update(cx, |bar, cx| bar.clear(cx));
             cx.notify();
@@ -143,8 +114,6 @@ impl ChatView {
             cx.notify();
         }
     }
-
-    // --- filter / header handlers -----------------------------------------
 
     fn set_platform_filter(&mut self, filter: PlatformFilter, cx: &mut Context<Self>) {
         self.platform_filter = filter;
@@ -175,8 +144,6 @@ impl ChatView {
     }
 
     fn open_viewer(&mut self, cx: &mut Context<Self>) {
-        // A username click surfaces the viewers drawer; per-viewer selection lands
-        // with the drawer panel slice.
         if !self.drawer_open {
             self.drawer_open = true;
             cx.notify();
@@ -197,9 +164,7 @@ impl ChatView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Best-effort near-bottom read from the scroll handle: re-arms auto-scroll
-        // when the user returns to the newest row, disarms it when they scroll up.
-        // `offset().y` is <= 0 (content scrolled up); adding it to the total
+        // `offset().y` is <= 0 (content scrolled up), so adding it to the total
         // scrollable height yields the remaining distance to the bottom edge.
         let remaining = self.chat_scroll.max_offset().height + self.chat_scroll.offset().y;
         let at_bottom = remaining <= px(AT_BOTTOM_SLACK);
@@ -211,10 +176,7 @@ impl ChatView {
         cx.notify();
     }
 
-    // --- pure view logic (kept off render for testability) ----------------
-
-    /// Whether a message survives the platform + events + hide-bots filters. Search
-    /// is NOT a survivor test — it dims non-matches rather than removing them.
+    /// Search is deliberately excluded — it dims non-matches rather than filtering them.
     fn row_visible(&self, msg: &ChatMessage) -> bool {
         let platform_ok = match self.platform_filter {
             PlatformFilter::All => true,
@@ -225,9 +187,6 @@ impl ChatView {
         platform_ok && events_ok && bots_ok
     }
 
-    /// The username hue for a source. Mirrors the kit platform-tile hues (the tile
-    /// color accessor is crate-private), so the name reads in its platform accent
-    /// and re-tints with the theme.
     fn username_color(platform: Platform, palette: &ForgePalette) -> Rgba {
         match platform {
             Platform::Twitch => palette.brand,
@@ -236,16 +195,11 @@ impl ChatView {
         }
     }
 
-    // --- render helpers ---------------------------------------------------
-
     fn render_header(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        // Live viewer count + uptime are placeholders until their runtime sources
-        // (the live-viewer aggregate and the uptime bridge) reach this screen; both
-        // render the em-dash empty state inside the real frame.
         let viewers = div()
             .flex()
             .items_center()
@@ -438,8 +392,6 @@ impl ChatView {
         let query = self.search_query.to_lowercase();
         let search_active = self.search_open && !query.is_empty();
 
-        // Snapshot the visible rows so the immutable feed borrow ends before the
-        // per-row `cx.listener` closures (which need `&mut Context`) are built.
         let visible: Vec<ChatMessage> = self
             .feed
             .read(cx)
@@ -570,8 +522,6 @@ impl Render for ChatView {
             .child(header)
             .child(filter_bar)
             .child(
-                // Body row: the chat column today, with the viewers drawer appended
-                // here in a later slice.
                 div().flex_1().flex().flex_row().overflow_hidden().child(
                     div()
                         .flex_1()

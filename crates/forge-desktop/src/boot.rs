@@ -21,9 +21,6 @@ use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::build_speak_queue;
 use crate::speak_bridge::SpeakBridge;
 
-/// Outcome of a failed boot, differentiated by cause so the shell routes to the
-/// matching screen: a schema-version mismatch is a code/data version gap the user
-/// resolves by updating; a connection/migration fault is data-safe and retryable.
 pub enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
     Retry { reason: String },
@@ -33,10 +30,7 @@ fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
 }
 
-/// Opens the real data provider (gating on schema version before any other handle is
-/// assembled), then stands up the storage- and bus-backed runtime core and returns its
-/// handles. Runs off the foreground executor on the tokio runtime, so the internal
-/// `tokio::spawn` calls in the engine/scheduler/evaluator have a runtime context.
+/// Must run within the tokio runtime: the engine/scheduler/evaluator spawn tasks internally.
 pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     let db_path = default_db_path();
     if let Some(parent) = db_path.parent()
@@ -212,13 +206,6 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     })
 }
 
-/// Brings up the hosted WS+HTTP server per the persisted server settings, mirroring
-/// the integrations bring-up: it binds only when the user's stored config enables the
-/// server, and performs no I/O otherwise. A disabled server, an unparseable bind, a
-/// settings-load failure or a bind failure all resolve to `None` (data-safe, boot
-/// continues) — the console then renders its Stopped state. The `ServerConfig` is
-/// assembled from the same `DataProvider` repos and bus/engine handles the runtime
-/// already holds.
 async fn build_server(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,

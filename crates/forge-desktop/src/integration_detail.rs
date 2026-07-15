@@ -26,39 +26,14 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
-/// The single generic integration detail screen. It consumes the four `Builtin*`
-/// trait outputs — status, health metrics, content sections, quick actions — and
-/// renders them uniformly, so no integration has any per-screen detail code: a
-/// new integration reaches this view by supplying the four traits, nothing here
-/// changes. It never switches on the integration id when rendering.
-///
-/// The view holds the live trait objects and a cached snapshot read from them: the
-/// snapshot is read synchronously on mount and re-read whenever the observed
-/// connectivity topic advances (a `platform.connection.changed` fold), so the header,
-/// alt-state, health, content and quick actions track the real `ConnectionState`.
 pub struct IntegrationDetail {
-    // Live trait surface, held so the snapshot can be re-read on a connection change.
     status: Arc<dyn BuiltinStatus>,
     health: Arc<dyn BuiltinHealth>,
     content: Arc<dyn BuiltinContent>,
     quick: Arc<dyn QuickActions>,
-    // The lifecycle-verb handle (reconnect / disconnect / refresh-token). `None`
-    // when this integration exposes no control surface (seed fallback / no
-    // credentials); a lifecycle action is then a silent no-op, matching the header
-    // buttons that still render but do nothing.
     control: Option<Arc<dyn BuiltinControl>>,
-    // The tokio runtime handle onto which a control verb is spawned: the verb does
-    // real network I/O, so it must run with a tokio reactor rather than on gpui's
-    // foreground executor.
     rt_handle: tokio::runtime::Handle,
-    // The action-engine write edge. A quick action carries a pre-filled SubAction
-    // template that is dispatched through this handle — the SAME path a real
-    // trigger-driven SubAction takes — so a quick action is never a side channel.
     action_engine: ActionEngineHandle,
-    // The concrete OBS client, present only for the OBS integration. A picker quick
-    // action reaches through it to enumerate scenes / sources / audio inputs for the
-    // target list; `None` for every other integration (and the seed fallback), where
-    // the OBS-only picker actions never appear.
     obs_source: Option<Arc<ObsClient>>,
     icon: SectionIcon,
     display_name: String,
@@ -71,17 +46,9 @@ pub struct IntegrationDetail {
     health_metrics: [HealthMetric; 4],
     sections: Vec<DetailSection>,
     quick_actions: Vec<QuickAction>,
-    /// Two-phase disconnect gate: armed by the header Disconnect action, rendered
-    /// by the shared confirm modal. `false` = no confirm showing.
     pending_disconnect: bool,
-    /// The open picker quick action awaiting a target: the searchable picker entity,
-    /// which action it will complete, the target kind, and (for a source pick) the
-    /// scene the sources were read from. `None` = no picker showing.
     pending_picker: Option<PendingPicker>,
-    /// Transient feedback line for a dispatched lifecycle/quick action. Without a
-    /// live runtime the action is stubbed and only this toast is shown.
     toast: Option<String>,
-    /// Held so the connectivity observation lives for the view's lifetime.
     _conn_obs: Subscription,
 }
 
@@ -102,8 +69,6 @@ impl IntegrationDetail {
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
-        // The connectivity fold advances on a `platform.connection.changed`; re-read
-        // this integration's live snapshot from its trait objects whenever it does.
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
 
         let display_name = status.display_name().to_owned();
@@ -117,12 +82,6 @@ impl IntegrationDetail {
         let sections = content.sections();
         let quick_actions = quick.actions();
 
-        // View-scoped live health drain: seeded synchronously above from
-        // `metrics()`, then this per-instance `stream()` folds each delta into the
-        // grid. The task is tied to this view's lifetime — once the user navigates
-        // away and the entity is released, `this.update` returns `Err` and the loop
-        // ends. It is deliberately NOT a boot-global drain: a lagging health stream
-        // must never stall the shared runtime→UI bridge topics.
         let mut health_stream = health.stream();
         cx.spawn(async move |this, cx| {
             while let Some(delta) = health_stream.next().await {
@@ -163,9 +122,6 @@ impl IntegrationDetail {
         }
     }
 
-    /// Re-reads the cached snapshot from the live trait objects and repaints. Called
-    /// when the connectivity topic advances so the header, alt-state, health, content
-    /// and quick actions reflect the integration's current `ConnectionState`.
     fn reload(&mut self, cx: &mut Context<Self>) {
         self.display_name = self.status.display_name().to_owned();
         self.version = self.status.version().map(ToOwned::to_owned);
@@ -180,10 +136,6 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    /// Folds a single live health delta into the cached 4-metric grid and
-    /// repaints. The grid is fixed at four cells, so an out-of-range index is
-    /// ignored (no repaint). Driven by the view-scoped health drain started on
-    /// mount.
     fn apply_health_delta(&mut self, delta: HealthDelta, cx: &mut Context<Self>) {
         let idx = delta.index as usize;
         if idx < self.health_metrics.len() {
@@ -198,8 +150,6 @@ impl IntegrationDetail {
 
     fn on_header_action(&mut self, action: HeaderAction, cx: &mut Context<Self>) {
         match action {
-            // Destructive: arm the two-phase confirm gate; the verb itself fires
-            // only once the modal is accepted (see `confirm_disconnect`).
             HeaderAction::Disconnect => {
                 self.pending_disconnect = true;
                 cx.notify();
@@ -213,13 +163,6 @@ impl IntegrationDetail {
         }
     }
 
-    /// Spawns a lifecycle verb onto the tokio runtime. With no `control` surface the
-    /// dispatch is a silent no-op (the header button still renders but does nothing),
-    /// matching how the integration presents an absent control. The resulting steady
-    /// connection state is not returned here: it is observed through the
-    /// `platform.connection.changed` bridge, which advances the connectivity topic and
-    /// triggers `reload`. A rejected verb is logged with the trait's coarse,
-    /// PII-safe reason and never surfaced as transport detail.
     fn dispatch_control(&self, verb: ControlVerb) {
         let Some(ctrl) = self.control.clone() else {
             return;
@@ -254,19 +197,10 @@ impl IntegrationDetail {
         if !action.enabled {
             return;
         }
-        // A picker action (OBS scene/source/input) needs a target chosen before its
-        // template is complete; firing the bare template would dispatch a switch with
-        // no scene/source. Open the picker, load the target list from OBS, and defer the
-        // dispatch until the user selects one (see `pick_target`).
         if let Some(kind) = action.picker {
             self.open_picker(idx, kind, window, cx);
             return;
         }
-        // Non-picker action: dispatch the pre-filled SubAction template through the
-        // action engine — the SAME path a trigger-driven SubAction takes, never a
-        // side channel. Real dispatch needs a tokio reactor, so it is spawned onto
-        // the runtime handle fire-and-forget; a rejected dispatch is logged
-        // PII-safely and the outcome is otherwise observed through the bus.
         let step = action.subaction_template.clone();
         let builtin_id = self.status.id().as_str().to_owned();
         let label = action.label.clone();
@@ -278,11 +212,6 @@ impl IntegrationDetail {
         });
     }
 
-    /// Opens the searchable target picker for a picker quick action and starts the
-    /// async scene/source/input fetch off the OBS client. The picker shows its loading
-    /// placeholder until [`Self::apply_picker_items`] folds the fetched rows in. With no
-    /// OBS client (seed fallback / disconnected) the load resolves immediately to an
-    /// empty list, so the picker opens showing "no matches" rather than nothing.
     fn open_picker(
         &mut self,
         action_index: usize,
@@ -301,7 +230,6 @@ impl IntegrationDetail {
 
         match self.obs_source.clone() {
             Some(client) => self.spawn_picker_fetch(picker.clone(), client, kind, cx),
-            // No client to enumerate targets: settle into the empty state at once.
             None => picker.update(cx, |picker, cx| picker.set_loading(false, cx)),
         }
 
@@ -315,10 +243,6 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    /// Runs the OBS scene/source/input enumeration on the tokio runtime (it awaits real
-    /// WebSocket I/O and so cannot run on gpui's foreground executor) and hops the result
-    /// back onto the view through a oneshot channel, applying it via
-    /// [`Self::apply_picker_items`].
     fn spawn_picker_fetch(
         &self,
         picker: Entity<Picker>,
@@ -342,10 +266,6 @@ impl IntegrationDetail {
         .detach();
     }
 
-    /// Folds a resolved target fetch into the open picker: on success it loads the rows
-    /// and records the scene the sources were read from (needed to complete a source
-    /// pick); on failure it clears the loading placeholder, leaving the picker in its
-    /// empty state. A stale result (the picker was cancelled meanwhile) is ignored.
     fn apply_picker_items(
         &mut self,
         picker: &Entity<Picker>,
@@ -394,10 +314,6 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    /// Completes the pending picker quick action with the chosen target: injects it into
-    /// the pre-filled SubAction template's config (scene → `scene`; source → `source`,
-    /// plus the enclosing `scene`; input → `source`) and dispatches through the action
-    /// engine — the SAME path [`Self::on_quick_action`] takes for a non-picker action.
     fn pick_target(&mut self, selected_id: String, cx: &mut Context<Self>) {
         let Some(pending) = self.pending_picker.take() else {
             return;
@@ -575,9 +491,6 @@ impl IntegrationDetail {
             .into_any_element()
     }
 
-    /// The quick-actions card: a bolt-led header over a divider and a row of up to
-    /// four accent-tinted action buttons. Disabled actions dim and show an `N/A`
-    /// trailing marker; enabled ones dispatch through [`Self::on_quick_action`].
     fn quick_actions_card(
         &self,
         palette: &ForgePalette,
@@ -750,11 +663,6 @@ impl IntegrationDetail {
             })
     }
 
-    /// The runtime-gated alt-state banner, selected purely from the integration's
-    /// `ConnectionState` — no per-integration branch. A live `Connected` integration
-    /// shows no banner; the transient and disconnected states each surface a strip
-    /// above the detail (reconnecting / connecting-in-flight / not-connected), while
-    /// the full detail frame stays visible beneath.
     fn state_banner(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
         let (accent, glyph, title, detail): (Rgba, Icon, &str, &str) = match self.connection {
             ConnectionState::Connected => return None,
@@ -934,8 +842,6 @@ impl Render for IntegrationDetail {
     }
 }
 
-/// Resolves the hero identity (initial letter + brand hue) from the seed icon
-/// token, falling back to the display name's first letter on an unknown token.
 fn hero_identity(icon_str: &str, display_name: &str, palette: &ForgePalette) -> (String, Rgba) {
     match icon_str {
         "brand-twitch" => ("T".to_owned(), palette.brand),
@@ -957,18 +863,12 @@ fn hero_identity(icon_str: &str, display_name: &str, palette: &ForgePalette) -> 
     }
 }
 
-/// The lifecycle verb a control dispatch runs, routing the three `BuiltinControl`
-/// methods through the single spawn site in [`IntegrationDetail::dispatch_control`].
 enum ControlVerb {
     Reconnect,
     Disconnect,
     RefreshToken,
 }
 
-/// The open picker quick action awaiting a target selection. Holds the searchable picker
-/// entity plus enough context to complete the deferred dispatch once a row is picked:
-/// which quick action opened it, the target kind, and — for a source pick — the scene the
-/// source list was read from (injected alongside the chosen source).
 struct PendingPicker {
     picker: Entity<Picker>,
     action_index: usize,
@@ -977,9 +877,6 @@ struct PendingPicker {
     _sub: Subscription,
 }
 
-/// The already-resolved strings the OBS target picker renders for a given [`PickerKind`].
-/// Only the three OBS kinds surface a picker here; the others carry no picker quick action
-/// on this screen and fall back to a generic title.
 fn picker_labels(kind: PickerKind) -> PickerLabels {
     let title = match kind {
         PickerKind::Scene => "Choose a Scene",
@@ -998,10 +895,6 @@ fn picker_labels(kind: PickerKind) -> PickerLabels {
     }
 }
 
-/// Enumerates the OBS targets for a picker kind off the live client, mapping each into a
-/// [`PickerItem`]. A source read returns the enclosing scene alongside its rows so the
-/// completed dispatch can pin the source to that scene. The three non-OBS kinds never
-/// reach this path from this screen and report an unsupported error.
 async fn fetch_picker_items(
     client: Arc<ObsClient>,
     kind: PickerKind,
@@ -1075,8 +968,6 @@ fn quick_action_accent(index: usize, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// A rounded `surface_overlay` pill inking a monospace caption — the header's
-/// version tag and the limited-capability badge share this shape.
 fn pill(label: String, text_color: Rgba, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex_none()

@@ -37,38 +37,18 @@ use crate::topics::Topics;
 use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
 
-/// Draw priority for the deferred toast host. One above the overlay priority so a
-/// transient notification floats over an open modal rather than behind it.
 const TOAST_PRIORITY: usize = 2;
 
-/// The active-screen router pair: the current [`Screen`] discriminant and the single
-/// child view-entity rendering it (erased to [`AnyView`]). Bundling the two into one
-/// field keeps [`AppShell`] within its ≤5 top-level field budget alongside the three
-/// aggregation bundles (chrome / topics / handles) and the focus handle.
 struct Router {
     screen: Screen,
     content: AnyView,
 }
 
-/// Root shell view-entity. Holds the active-screen router pair, the chrome bundle
-/// (title bar / sidebar / footer child entities), its own focus handle, the bridge-
-/// topics bundle, and the inbound runtime handle bundle — five top-level fields,
-/// within the ≤5 budget. It owns no screen-internal or domain state; the routed
-/// screen is a separate view-entity swapped on navigation, the runtime→UI topic
-/// caches live behind the `topics` bundle, and the runtime command/read handles live
-/// behind the `handles` bundle — each handed to whichever screen consumes them.
 pub struct AppShell {
     router: Router,
     chrome: Chrome,
     focus: FocusHandle,
-    /// The runtime→UI bridge topic caches (chat feed, home stats, …). Grouping them
-    /// behind one field — as [`Chrome`] groups the chrome children — keeps the root
-    /// within its ≤5-field budget while each topic persists across navigation.
     topics: Topics,
-    /// The inbound grouping of the runtime's command/read handles (including the live
-    /// `builtins` trait-object map). A shared `Arc` — the window root holds the other
-    /// clone to keep the runtime alive — from which `content_for` hands each screen the
-    /// handle(s) it consumes.
     handles: Arc<RuntimeHandles>,
 }
 
@@ -85,7 +65,6 @@ impl AppShell {
         let focus = cx.focus_handle();
         let chrome = Chrome::new(status, topics.platforms.clone(), screen.clone(), cx);
 
-        // The sidebar voices navigation intent; the root is the sole router owner.
         cx.subscribe(
             &chrome.sidebar,
             |this, _sidebar, event: &NavRequested, cx| {
@@ -94,11 +73,9 @@ impl AppShell {
         )
         .detach();
 
-        // Repaint when the presentation global (theme / density) is replaced.
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
 
-        // Repaint the toast host whenever a toast is pushed or dismissed.
         cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
 
         window.focus(&focus);
@@ -112,20 +89,6 @@ impl AppShell {
         }
     }
 
-    /// Builds the active-screen child view for `screen`, erased to [`AnyView`] so
-    /// the router holds one field across heterogeneous screen types. Home gets the
-    /// real [`HomeView`] (fed the shared home-stats topic); Chat gets the real
-    /// [`ChatView`] (fed the shared chat feed + the active palette); every other
-    /// destination still routes to the placeholder until its screen lands.
-    ///
-    /// Screens that voice navigation intent do so through [`NavRequested`]; Home is
-    /// wired here the same way the sidebar is — the shell subscribes and routes, so
-    /// the active screen stays single-sourced on this root.
-    ///
-    /// A [`Screen::BuiltinDetail`] is fed the live `Builtin*` trait objects for its id
-    /// from the runtime `handles`; an id absent from the map (no credentials, or bring-
-    /// up failed) falls back to the static [`integration_seed`] so the detail still
-    /// opens with a real visual frame.
     fn content_for(
         screen: &Screen,
         topics: &Topics,
@@ -139,11 +102,6 @@ impl AppShell {
                     this.navigate(event.0.clone(), cx);
                 })
                 .detach();
-                // Refresh the at-a-glance readout every time Home is mounted: once at
-                // shell construction (the initial Home screen) and again on each
-                // navigation back to Home, matching the dashboard's mount-time pull
-                // cadence. The pull is an async snapshot off the storage repos, applied
-                // back into the shared home-stats topic.
                 let home_stats = topics.home_stats.clone();
                 let backend = Arc::clone(&handles.backend);
                 cx.spawn(async move |_shell, cx| {
@@ -339,9 +297,6 @@ impl AppShell {
         }
     }
 
-    /// Routes to `screen`: swaps the active-screen child and pushes the confirmed
-    /// selection back into the sidebar so its highlight tracks the single source of
-    /// truth (this root's `screen`). A no-op when already there.
     fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {
         if self.router.screen == screen {
             return;
@@ -379,11 +334,6 @@ impl AppShell {
         self.navigate(Screen::Settings, cx);
     }
 
-    /// Builds the bottom-right toast host from the `Toasts` global, or `None` when the
-    /// queue is empty. Each card's dismiss and action controls capture only the toast
-    /// id and reach back into the global at click time, so this borrows the queue
-    /// immutably while it renders. The host draws in a deferred pass above ordinary
-    /// content (and any open overlay).
     fn toast_host(&self, cx: &App) -> Option<AnyElement> {
         let toasts = cx.global::<Toasts>();
         if toasts.items().is_empty() {
@@ -413,8 +363,6 @@ impl AppShell {
                     ("toast-action", id as usize),
                     action.label.clone(),
                     move |_, window, cx: &mut App| {
-                        // Taking the toast out both removes it and yields its owned
-                        // callback, which then runs against the freed context.
                         if let Some(data) = cx.global_mut::<Toasts>().take(id)
                             && let Some(action) = data.action
                         {
@@ -440,11 +388,6 @@ impl AppShell {
     }
 }
 
-/// Async-pull refresh of the Home at-a-glance readout. Reads the action/global counts
-/// and the trailing-24h fired-runs total off the storage repos (all awaited, never
-/// blocking the foreground executor), then folds the snapshot into the shared home-stats
-/// topic and repaints Home only when a value moved. A load failure logs and leaves the
-/// prior readout in place; a released topic entity makes the apply a no-op.
 async fn refresh_dashboard_stats(
     home_stats: Entity<HomeStats>,
     backend: Arc<dyn DataProvider>,
@@ -496,7 +439,6 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::go_twitch))
             .on_action(cx.listener(Self::go_settings))
             .size_full()
-            // Positioning context the bottom-right toast host anchors against.
             .relative()
             .flex()
             .flex_col()

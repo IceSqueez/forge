@@ -13,9 +13,7 @@ use crate::tokens::{
     Spacing, radius, spacing,
 };
 
-/// Bit each platform occupies in [`InputBar::targets_bitset`]. Twitch is the low
-/// bit, then YouTube, then Kick — a stable order so a persisted or asserted
-/// bitset stays meaningful across restarts.
+/// Bit order is a persistence contract: a stored bitset must decode to the same platforms across restarts.
 pub fn platform_bit(platform: Platform) -> u8 {
     match platform {
         Platform::Twitch => 1 << 0,
@@ -24,56 +22,31 @@ pub fn platform_bit(platform: Platform) -> u8 {
     }
 }
 
-/// The composer's outward reports. The caller holds the [`InputBar`] entity and
-/// `cx.subscribe`s to react.
 #[derive(Clone, Debug)]
 pub enum InputBarEvent {
-    /// A submit fired — from the send glyph or Enter in the field. Carries the
-    /// field's current text and the platforms currently toggled on. The bar does
-    /// NOT gate this on non-empty text or a selected target and does NOT clear the
-    /// field: the composer only reports intent, the caller decides what to do with
-    /// it (and calls [`InputBar::clear`] once it has consumed the text).
+    /// Not gated on non-empty text or a selected target, and does not clear the field — the caller decides and calls [`InputBar::clear`].
     Send {
         text: SharedString,
         targets: Vec<Platform>,
     },
-    /// The emoji-picker toggle flipped. The open flag is owned internally; this is
-    /// only a notification for a caller that wants to mirror the state.
+    /// The open flag is owned internally; this is only a mirror notification.
     EmojiToggled,
 }
 
-// The composer's small fixed geometry lives off the `Spacing`/`Radius`/font
-// scales — these are literal pixel values pinned to the source layout, carried as
-// consts so the render tree reads as intent, not as bare magic numbers.
-
-/// Gap between every item in the composer row (target letters, divider, field,
-/// glyphs). A literal that sits between `Spacing::Xs` (6) and `Spacing::Sm` (10).
 const COMPOSER_GAP: gpui::Pixels = px(8.0);
-/// Side of a square platform-target toggle.
 const TARGET_SIZE: gpui::Pixels = px(20.0);
-/// Corner radius of a target toggle — tighter than `Radius::Sm`.
 const TARGET_RADIUS: gpui::Pixels = px(4.0);
-/// Font size of the single-letter target glyph.
 const TARGET_LETTER_SIZE: gpui::Pixels = px(9.0);
-/// The thin vertical rule separating the target toggles from the field.
 const DIVIDER_WIDTH: gpui::Pixels = px(0.5);
 const DIVIDER_HEIGHT: gpui::Pixels = px(18.0);
-/// Message-field text size — a literal one step below `FONT_SM` (14).
 const FIELD_TEXT_SIZE: gpui::Pixels = px(13.0);
-/// Send-glyph and emoji-toggle glyph size.
 const GLYPH_SIZE: gpui::Pixels = px(15.0);
-/// Fixed height of the scrolling emoji grid.
 const EMOJI_GRID_HEIGHT: gpui::Pixels = px(120.0);
-/// Gap between emoji tiles in the wrapped grid.
 const EMOJI_GAP: gpui::Pixels = px(4.0);
-/// Vertical gap slipped between the open emoji panel and the composer below it.
 const EMOJI_PANEL_GAP: gpui::Pixels = px(8.0);
-/// Gap between an affordance hint's glyph and its label.
 const HINT_GAP: gpui::Pixels = px(4.0);
-/// Gap between the three affordance hints in the footer row.
 const HINT_ROW_GAP: gpui::Pixels = px(14.0);
 
-/// The emoji-picker palette, in the source's order.
 const EMOJIS: &[&str] = &[
     "😀",
     "😃",
@@ -147,19 +120,9 @@ const EMOJIS: &[&str] = &[
     "😑",
 ];
 
-/// The chat message composer: a per-platform send-target strip, an embedded
-/// message field, an emoji-picker toggle, and a send glyph, over a footer of
-/// affordance hints. Owns its [`TextInput`] child entity and the selected state of
-/// each target platform, and (when open) an emoji panel that appends to the field.
-///
-/// Build inside `cx.new(…)`; the caller `cx.subscribe`s for [`InputBarEvent`]. The
-/// binary must call [`crate::bind_text_input_keys`] once at boot for the field's
-/// editing keys to fire.
+/// The binary must call [`crate::bind_text_input_keys`] once at boot or the field's editing keys are dead.
 pub struct InputBar {
     field: Entity<TextInput>,
-    /// The platforms shown in the target strip, in render order, each paired with
-    /// its selected flag. The caller picks which platforms appear via
-    /// [`InputBar::with_targets`]; the selected flags are owned and toggled here.
     targets: Vec<(Platform, bool)>,
     emoji_open: bool,
     palette: ForgePalette,
@@ -171,9 +134,7 @@ pub struct InputBar {
 impl EventEmitter<InputBarEvent> for InputBar {}
 
 impl InputBar {
-    /// Builds a composer whose target strip shows all three platforms, each
-    /// selected. `placeholder` seeds the empty-field prompt. Creates the embedded
-    /// field and subscribes to it so Enter reports a submit.
+    /// The target strip defaults to all three platforms, each selected (override via [`InputBar::with_targets`]).
     pub fn new(
         placeholder: impl Into<SharedString>,
         palette: ForgePalette,
@@ -201,21 +162,16 @@ impl InputBar {
         }
     }
 
-    /// Overrides which platforms the target strip shows and their initial selected
-    /// state, in render order.
     pub fn with_targets(mut self, targets: Vec<(Platform, bool)>) -> Self {
         self.targets = targets;
         self
     }
 
-    /// Overrides the density used to scale the composer's token-based paddings.
     pub fn with_density(mut self, density: Density) -> Self {
         self.density = density;
         self
     }
 
-    /// The selected platforms, in strip order — the `targets` carried by a
-    /// [`InputBarEvent::Send`].
     pub fn selected_targets(&self) -> Vec<Platform> {
         self.targets
             .iter()
@@ -224,7 +180,6 @@ impl InputBar {
             .collect()
     }
 
-    /// The selected platforms packed into a bitset (see [`platform_bit`]).
     pub fn targets_bitset(&self) -> u8 {
         self.targets
             .iter()
@@ -232,29 +187,23 @@ impl InputBar {
             .fold(0, |acc, (platform, _)| acc | platform_bit(*platform))
     }
 
-    /// True when at least one target platform is toggled on.
     pub fn any_target_selected(&self) -> bool {
         self.targets.iter().any(|(_, active)| *active)
     }
 
-    /// The field's current text.
     pub fn content(&self, cx: &App) -> String {
         self.field.read(cx).content().to_string()
     }
 
-    /// Empties the field. The caller invokes this after it has consumed a
-    /// [`InputBarEvent::Send`]; the bar never clears itself.
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.field.update(cx, |field, cx| field.clear(cx));
         cx.notify();
     }
 
-    /// Focuses the embedded field so typing and Enter reach it.
     pub fn focus(&self, window: &mut Window, cx: &App) {
         self.field.read(cx).focus(window);
     }
 
-    /// Re-themes the composer and its embedded field.
     pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
         self.palette = palette;
         self.field
@@ -295,8 +244,6 @@ impl InputBar {
         cx.notify();
     }
 
-    /// Appends `emoji` to the end of the field (matching the source, which grows
-    /// the value regardless of caret position) and leaves the picker open.
     fn insert_emoji(&mut self, emoji: &'static str, cx: &mut Context<Self>) {
         self.field.update(cx, |field, cx| {
             let mut next = field.content().to_string();

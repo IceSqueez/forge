@@ -13,11 +13,6 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
-// Off-scale layout literals. These sit deliberately off the density-scaled
-// `Spacing` steps: the Home hub is a fixed-rhythm dashboard whose paddings, tile
-// sizes and glyph sizes are hand-tuned to the design, so — mirroring the kit
-// card/sidebar precedent — they are carried as literals rather than snapped to the
-// nearest token, which would alter the composition.
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
 
@@ -59,16 +54,6 @@ const GLANCE_ROW_PAD_V: Pixels = px(5.0);
 const DIVIDER_H: Pixels = px(1.0);
 const GLANCE_CARD_W: Pixels = px(340.0);
 
-/// The Home hub screen view-entity: a breadcrumb header over a scrollable dashboard
-/// — a brand hero with import / new-action affordances, three IA jump cards
-/// (Audience → Chat, Automation → Actions, Connections → platforms), an optional
-/// OBS stream-health card, the integration connections strip, and a recent-events +
-/// at-a-glance footer pair.
-///
-/// It owns no dashboard data: every stat is read from an injected [`HomeStats`]
-/// topic (a cached runtime read, never the source of truth) and the view repaints
-/// when that topic notifies. Navigation is voiced as [`NavRequested`] events the
-/// root shell subscribes to — the screen never mutates the router itself.
 pub struct HomeView {
     stats: Entity<HomeStats>,
     _stats_obs: Subscription,
@@ -83,13 +68,9 @@ impl HomeView {
         }
     }
 
-    /// Voices a navigation intent to the root shell. No `self` state changes, so no
-    /// `cx.notify()` — the shell owns the routing side effect.
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
         cx.emit(NavRequested(screen));
     }
-
-    // --- hero -----------------------------------------------------------------
 
     fn render_hero(
         &self,
@@ -134,10 +115,6 @@ impl HomeView {
                     .child("Open-source stream automation, forged for streamers"),
             );
 
-        // Import opens the action-import flow once the storage capability reaches
-        // this screen — a no-op placeholder in this slice. New action routes to the
-        // Automation screen, standing in for the dedicated action editor until it
-        // lands.
         let import_btn = ghost_button_with_icon(Icon::Download, "Import", palette)
             .density(density)
             .on_click("home-import", |_, _, _| {});
@@ -169,8 +146,6 @@ impl HomeView {
             .padding_xy(HERO_PAD_V, HERO_PAD_H)
             .radius(Radius::Lg)
     }
-
-    // --- jump cards -----------------------------------------------------------
 
     #[allow(clippy::too_many_arguments)]
     fn jump_card(
@@ -353,8 +328,6 @@ impl HomeView {
             .child(connections)
     }
 
-    // --- stream health --------------------------------------------------------
-
     fn health_stat(
         label: &'static str,
         value: String,
@@ -518,8 +491,6 @@ impl HomeView {
             .padding(spacing(Spacing::Sm, density))
     }
 
-    // --- connections strip ----------------------------------------------------
-
     fn connection_cell(
         &self,
         integ: Integration,
@@ -623,8 +594,6 @@ impl HomeView {
             .padding_xy(CONN_HEADER_PAD_V, CONN_HEADER_PAD_H)
             .split_radius(radius(Radius::Md), px(0.0));
 
-        // Six-column rhythm: the five integration cells plus one empty trailing slot,
-        // 1px surface-overlay hairlines showing through the gaps.
         let mut cells = div().w_full().flex().gap(CELL_GAP);
         for (integ, ok) in connections {
             cells = cells.child(self.connection_cell(integ, ok, palette, density, cx));
@@ -644,8 +613,6 @@ impl HomeView {
             .child(header_bar)
             .child(cells_card)
     }
-
-    // --- recent events + at a glance -----------------------------------------
 
     fn event_row(
         &self,
@@ -896,8 +863,6 @@ impl Render for HomeView {
         let palette = cx.palette();
         let density = cx.density();
 
-        // Snapshot every readout the tree needs up front, ending the immutable borrow
-        // on the topic before the per-element `cx.listener` closures are built.
         let stats = self.stats.read(cx);
         let viewers = stats.viewers_display();
         let actions = stats.actions_display();

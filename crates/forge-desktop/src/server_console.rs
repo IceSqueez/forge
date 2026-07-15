@@ -17,52 +17,28 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 
-/// The credential id under which the server persists its bearer token; read to
-/// display the live token in the hero card (the token is never in the snapshot).
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
-/// Newest-first cap on retained throughput samples plotted by the throughput sparkline.
 const MAX_BANDWIDTH_SAMPLES: usize = 60;
-/// Subscription chips shown inline before collapsing the remainder into a "+N more"
-/// pill — the parity source pins this at three visible chips.
 const MAX_VISIBLE_CHIPS: usize = 3;
 
-/// Liveness dot diameter in the client table (the source's fixed 6px disc).
 const CLIENT_DOT: Pixels = px(6.0);
-/// Header / footer status dot diameter (the source's fixed 7px disc).
 const STATUS_DOT: Pixels = px(7.0);
-/// Client-table leading dot column width (the source's fixed 24px cell).
 const DOT_CELL_W: Pixels = px(24.0);
-/// Client-table events/sec column width (the source's fixed 80px cell).
 const EVS_CELL_W: Pixels = px(80.0);
-/// Client-table uptime column width (the source's fixed 70px cell).
 const UPTIME_CELL_W: Pixels = px(70.0);
-/// Client-table trailing disconnect column width (the source's fixed 22px cell).
 const X_CELL_W: Pixels = px(22.0);
-/// Hero icon tile side (the source's fixed 48px square).
 const ICON_BOX: Pixels = px(48.0);
-/// Hero server glyph size (the source's fixed 20px icon).
 const SERVER_GLYPH: Pixels = px(20.0);
-/// Disconnect glyph size in a client row (the source's fixed 13px icon).
 const X_GLYPH: Pixels = px(13.0);
-/// Overlay copy / external-link glyph size (the source's fixed 11px icons).
 const LINK_GLYPH: Pixels = px(11.0);
-/// Header control glyph size — restart / stop / copy / folder-open (source's 12px).
 const CONTROL_GLYPH: Pixels = px(12.0);
-/// Panel-header glyph size — users / folder / chart (the source's fixed 14px icon).
 const HEADER_GLYPH: Pixels = px(14.0);
-/// Client count pill corner radius (the source's fixed 8px).
 const COUNT_BADGE_RADIUS: Pixels = px(8.0);
-/// Overlay kind-tag pill corner radius (the source's fixed 4px).
 const KIND_BADGE_RADIUS: Pixels = px(4.0);
-/// Client-table column grow weights reproducing the source's `FillPortion(14)` /
-/// `FillPortion(16)` split for the identity and subscriptions columns.
 const CLIENT_GROW: f32 = 14.0;
 const SUBS_GROW: f32 = 16.0;
 
-/// Lifecycle state of the hosted WS+HTTP server, driving the status dot hue and label.
-/// `Running` when the server bound at boot, `Stopped` when disabled or after a Stop,
-/// `Error` when a Restart / Stop verb was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 enum ServerStatus {
     Running,
@@ -71,24 +47,18 @@ enum ServerStatus {
     Error(String),
 }
 
-/// Which lifecycle command is mid-flight, gating the header controls into a disabled
-/// pending look and freezing the live metric fold until the verb resolves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ServerControl {
     Restarting,
     Stopping,
 }
 
-/// One event-source subscription a client holds, rendered as a source-tinted chip.
 #[derive(Debug, Clone)]
 struct OwnedSubscriptionChip {
     label: String,
     source: EventSource,
 }
 
-/// Per-client activity marker: the liveness dot hue in the client table. The poll
-/// resolves `Active` / `Idle` from throughput; `Disconnecting` has no snapshot source
-/// yet, so it is retained for the hue table but not constructed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 enum ClientLiveness {
@@ -97,8 +67,6 @@ enum ClientLiveness {
     Disconnecting,
 }
 
-/// A cached view-model of one connected WS client, mapped from a
-/// `ConnectedClientSnapshot` on each metrics poll.
 #[derive(Debug, Clone)]
 struct OwnedClientRow {
     identification: String,
@@ -109,8 +77,6 @@ struct OwnedClientRow {
     uptime_short: String,
 }
 
-/// Coarse content class of an overlay-host entry, driving its kind tag and hue,
-/// resolved from a served file's extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OwnedFileMime {
     Html,
@@ -123,8 +89,6 @@ enum OwnedFileMime {
 }
 
 impl OwnedFileMime {
-    /// Maps a served file's extension to its coarse content class; anything
-    /// unrecognized falls back to [`OwnedFileMime::Other`].
     fn from_path(path: &std::path::Path) -> Self {
         let ext = path
             .extension()
@@ -143,16 +107,12 @@ impl OwnedFileMime {
     }
 }
 
-/// An overlay-host tree entry: either a served file (with its MIME class) or a
-/// subdirectory carrying a child count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OwnedOverlayKind {
     File { mime: OwnedFileMime },
     Dir,
 }
 
-/// A cached view-model of one overlay-host entry, mapped from a throttled scan of the
-/// server's overlay root.
 #[derive(Debug, Clone)]
 struct OwnedOverlayEntry {
     name: String,
@@ -161,7 +121,6 @@ struct OwnedOverlayEntry {
     child_count: u32,
 }
 
-/// Aggregate server throughput counters shown in the stat grid and footer.
 #[derive(Debug, Clone, Default)]
 struct ServerStats {
     events_per_second: f32,
@@ -173,30 +132,9 @@ struct ServerStats {
     total_events_out: u64,
 }
 
-/// The WebSocket-server console screen view-entity: a hero credentials card, a
-/// throughput stat grid, a throughput chart, and a two-panel overlay-host +
-/// connected-clients row, over a per-screen status footer.
-///
-/// Live data comes from a Category-3 poll of `ServerHandle::snapshot()` — a
-/// per-instance `cx.spawn` loop that, once a second while this screen is mounted,
-/// hops the snapshot (plus the live bind address and, throttled, the overlay listing)
-/// off the tokio runtime through a oneshot and folds it into these cached fields.
-/// `server == None` (disabled at boot, or the bind failed) renders the Stopped state
-/// and runs no poll. Restart / Stop dispatch the real `ServerHandle` lifecycle verbs
-/// on `rt_handle`; Regenerate rotates the bearer token through the handle's auth
-/// state; Open-folder opens the overlay root through the OS shell; Copy writes the
-/// clipboard; force-disconnect removes the row locally after a two-phase confirm (the
-/// server exposes no force-disconnect capability, matching the retiring UI).
 pub struct ServerConsoleView {
-    /// The hosted server handle when it bound at boot, else `None`. Lifecycle verbs
-    /// and the metrics poll early-return when absent.
     server: Option<ServerHandle>,
-    /// The tokio runtime handle: snapshot polling and every lifecycle verb do real
-    /// network / lock / fs I/O and must run with a reactor, not on gpui's foreground
-    /// executor, so they are spawned here and hopped back through a oneshot.
     rt_handle: tokio::runtime::Handle,
-    /// The credentials repo, read to surface the live bearer token (never carried in
-    /// the snapshot) and passed to the auth state on a token regenerate.
     credentials: Arc<dyn CredentialsRepo>,
     bind_address: String,
     bearer_token: String,
@@ -210,9 +148,7 @@ pub struct ServerConsoleView {
     overlay_root: String,
     overlay_entries: Vec<OwnedOverlayEntry>,
     selected_overlay_file: Option<usize>,
-    /// Two-phase disconnect gate — armed by a row's `X`, resolved by the confirm
-    /// overlay. Holds the target client's stable `identification` (not its row index,
-    /// which can shift under a live snapshot refresh). `None` = no confirm showing.
+    /// Target client's stable `identification`, not its row index (which shifts under a live snapshot refresh).
     pending_disconnect: Option<String>,
 }
 
@@ -246,8 +182,6 @@ impl ServerConsoleView {
             selected_overlay_file: None,
             pending_disconnect: None,
         };
-        // Surface the real bearer token regardless of run state, then start the live
-        // metrics poll only when a server is actually bound.
         view.fetch_token(cx);
         if view.server.is_some() {
             view.start_poll(cx);
@@ -255,11 +189,6 @@ impl ServerConsoleView {
         view
     }
 
-    // --- live poll --------------------------------------------------------
-
-    /// Reads the persisted bearer token off the credentials repo and applies it into
-    /// the hero card. The read touches SQLite, so it hops the tokio runtime and comes
-    /// back through a oneshot; a released view makes the apply a no-op.
     fn fetch_token(&self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
         let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
@@ -282,14 +211,6 @@ impl ServerConsoleView {
         .detach();
     }
 
-    /// View-scoped Category-3 metrics poll. Once a second it hops the tokio runtime
-    /// for a fresh `snapshot()` plus the live bind address, and (on the first tick and
-    /// every fifth thereafter, mirroring the retiring cadence) a fresh overlay-root
-    /// scan, then folds the result via [`Self::apply_poll`]. The task is tied to this
-    /// view's lifetime: once the user navigates away and the entity is released,
-    /// `this.update` returns `Err` and the loop ends. Deliberately per-instance, not a
-    /// boot-global drain — a slow snapshot must never stall the shared runtime→UI bus
-    /// bridge.
     fn start_poll(&self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -335,11 +256,6 @@ impl ServerConsoleView {
         .detach();
     }
 
-    /// Folds one poll result into the cached view-model. The bind address always
-    /// tracks the live bind; the throughput / client / uptime metrics only fold while
-    /// the server is believed up and no lifecycle verb is mid-flight, so a Stopped or
-    /// restarting console freezes its last readout instead of flickering; the overlay
-    /// listing replaces the cached tree whenever a fresh scan is present.
     fn apply_poll(&mut self, poll: ServerPoll) {
         self.bind_address = poll.bind_address;
 
@@ -357,7 +273,6 @@ impl ServerConsoleView {
             self.stats = ServerStats {
                 events_per_second: snapshot.aggregate_events_per_second,
                 events_per_second_avg: snapshot.aggregate_events_per_second,
-                // Not carried by `ServerSnapshot`; the console leaves these at zero.
                 http_requests: 0,
                 bandwidth_kbps: kbps,
                 bandwidth_peak_kbps: peak_kbps,
@@ -382,8 +297,6 @@ impl ServerConsoleView {
         }
     }
 
-    // --- handlers ---------------------------------------------------------
-
     fn toggle_token_reveal(&mut self, cx: &mut Context<Self>) {
         self.token_revealed = !self.token_revealed;
         cx.notify();
@@ -401,8 +314,6 @@ impl ServerConsoleView {
         cx.write_to_clipboard(ClipboardItem::new_string(url));
     }
 
-    /// Rotates the bearer token through the running server's auth state and folds the
-    /// new token back into the hero card. A no-op when the server is not running.
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -430,9 +341,6 @@ impl ServerConsoleView {
         .detach();
     }
 
-    /// Dispatches the real server restart on the tokio runtime, gating the header
-    /// controls into their pending look until the verb resolves. A no-op when the
-    /// server is not running or another verb is already mid-flight.
     fn restart_server(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -461,9 +369,6 @@ impl ServerConsoleView {
         .detach();
     }
 
-    /// Dispatches the real server stop on the tokio runtime, gating the header controls
-    /// into their pending look until the verb resolves. A no-op when the server is not
-    /// running or another verb is already mid-flight.
     fn stop_server(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -492,9 +397,6 @@ impl ServerConsoleView {
         .detach();
     }
 
-    /// Opens the overlay-host root in the OS file manager. The path lookup and the
-    /// blocking shell-open both run off the foreground executor on the tokio runtime.
-    /// A no-op when the server is not running.
     fn open_overlay_folder(&mut self, _cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -528,16 +430,12 @@ impl ServerConsoleView {
         cx.notify();
     }
 
-    /// Removes the armed client from the cached roster. The real force-disconnect goes
-    /// through the server handle; here it only drops the local row.
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
         if let Some(id) = self.pending_disconnect.take() {
             self.connected_clients.retain(|c| c.identification != id);
         }
         cx.notify();
     }
-
-    // --- hero credentials card -------------------------------------------
 
     fn header_card(
         &self,
@@ -693,9 +591,6 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    /// Masked-token box (eye + copy affordances) beside the Regenerate control. The
-    /// reveal toggle is fully local; Copy writes the clipboard; Regenerate rotates the
-    /// token through the running server's auth state.
     fn bearer_token_row(
         &self,
         palette: &ForgePalette,
@@ -934,8 +829,6 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    // --- stat grid + throughput ------------------------------------------
-
     fn stats_grid(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let success = palette.success;
         let cell = |el: AnyElement| div().flex_1().min_w(px(0.0)).child(el);
@@ -1045,8 +938,6 @@ impl ServerConsoleView {
         .full_width()
         .into_any_element()
     }
-
-    // --- overlay-host panel ----------------------------------------------
 
     fn overlay_panel(
         &self,
@@ -1286,8 +1177,6 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    // --- connected-clients panel -----------------------------------------
-
     fn clients_panel(
         &self,
         palette: &ForgePalette,
@@ -1492,8 +1381,6 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    // --- footer + overlay ------------------------------------------------
-
     fn footer_bar(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let port = extract_port(&self.bind_address);
         let s_color = status_color(&self.server_status, palette);
@@ -1551,9 +1438,6 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    /// The armed disconnect confirm, or `None` if the pending client has vanished from
-    /// the roster since its `X` was clicked (defensive, matching the other confirm
-    /// consumers).
     fn disconnect_confirm(
         &self,
         palette: &ForgePalette,
@@ -1661,10 +1545,6 @@ impl Render for ServerConsoleView {
     }
 }
 
-// ── view-specific fragments ───────────────────────────────────────────────
-
-/// A flex table cell that grows proportionally to `grow`, reproducing the source's
-/// `FillPortion` split. `flex_basis: 0` makes the grow weight the sole size driver.
 fn weighted(grow: f32, child: impl IntoElement) -> Div {
     let mut cell = div().min_w(px(0.0)).child(child);
     let style = cell.style();
@@ -1673,12 +1553,10 @@ fn weighted(grow: f32, child: impl IntoElement) -> Div {
     cell
 }
 
-/// A full-width 1px rule inking `color` — the source's separator geometry.
 fn hline(color: Rgba) -> Div {
     div().w_full().h(px(1.0)).bg(color)
 }
 
-/// An uppercase mono caption over a credentials field, inking `text_muted`.
 fn caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
@@ -1687,7 +1565,6 @@ fn caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
         .child(label)
 }
 
-/// A client-table column caption, inking `text_faint`.
 fn col_caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
@@ -1696,9 +1573,6 @@ fn col_caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement 
         .child(label)
 }
 
-/// The subscription-chip cluster: up to [`MAX_VISIBLE_CHIPS`] source-tinted label
-/// chips, collapsing any remainder into a faint "+N more" pill; an empty set renders
-/// an em dash.
 fn chips_row(
     chips: &[OwnedSubscriptionChip],
     palette: &ForgePalette,
@@ -1738,7 +1612,6 @@ fn chips_row(
     row.into_any_element()
 }
 
-/// One subscription chip: a mono label inking `fg` on a `bg` pill.
 fn chip_pill(label: String, fg: Rgba, bg: Rgba) -> impl IntoElement {
     div()
         .flex_none()
@@ -1755,9 +1628,6 @@ fn chip_pill(label: String, fg: Rgba, bg: Rgba) -> impl IntoElement {
         )
 }
 
-// ── formatting + resolution helpers ───────────────────────────────────────
-
-/// The status-dot / label hue for the server lifecycle state.
 fn status_color(status: &ServerStatus, palette: &ForgePalette) -> Rgba {
     match status {
         ServerStatus::Running => palette.success,
@@ -1800,9 +1670,6 @@ fn extract_port(bind_address: &str) -> &str {
     bind_address.split(':').next_back().unwrap_or("8081")
 }
 
-/// Builds the browser-reachable origin for overlay URLs from the configured
-/// `host:port` bind address. Unspecified binds (`0.0.0.0` / `::`) are rendered as
-/// loopback, since those are placeholders a browser cannot open.
 fn overlay_origin(bind_address: &str) -> String {
     let port = extract_port(bind_address);
     let host = bind_address
@@ -1831,8 +1698,6 @@ fn overlay_kind_tag(kind: OwnedOverlayKind) -> &'static str {
     }
 }
 
-/// Maps an event source to its semantic palette hue, so a subscription chip re-tints
-/// with the active theme.
 fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
     match source {
         EventSource::Twitch => palette.brand,
@@ -1852,8 +1717,6 @@ fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
     }
 }
 
-/// Masks the bearer token for its default hidden state: a `fg_` prefix, a fixed bullet
-/// run and the trailing four characters — matching the design's reveal-off form.
 fn mask_token(token: &str) -> String {
     let tail: String = token
         .chars()
@@ -1866,27 +1729,17 @@ fn mask_token(token: &str) -> String {
     format!("fg_•••••{tail}")
 }
 
-// ── live poll plumbing ────────────────────────────────────────────────────
-
-/// One resolved metrics poll, assembled on the tokio runtime and hopped back to the
-/// view: a fresh server snapshot, the live bind address, and — only on the throttled
-/// scan ticks — a fresh overlay-root listing.
 struct ServerPoll {
     snapshot: ServerSnapshot,
     bind_address: String,
     overlay: Option<OverlayListing>,
 }
 
-/// A resolved overlay-root scan: the resolved root path plus its sorted entries.
 struct OverlayListing {
     root: String,
     entries: Vec<OwnedOverlayEntry>,
 }
 
-/// Enumerates the overlay-host root one level deep, resolving each entry's kind, size
-/// and (for directories) immediate child count, then sorts directories first and each
-/// group case-insensitively by name. An unreadable root yields an empty listing.
-/// Runs on the tokio runtime — `tokio::fs` needs a reactor.
 async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing {
     let root_str = root.to_string_lossy().into_owned();
     let mut read_dir = match tokio::fs::read_dir(root).await {
@@ -1949,9 +1802,6 @@ async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing {
     }
 }
 
-/// Maps one connected-client snapshot row to its cached view-model: an
-/// `address · type` identity subtitle, an Active/Idle liveness marker keyed off
-/// throughput, and its resolved subscription chips.
 fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow {
     let liveness = if client.events_per_second > 0.0 {
         ClientLiveness::Active
@@ -1968,10 +1818,6 @@ fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow 
     }
 }
 
-/// Resolves one event-filter snapshot into a source-tinted chip: a wildcard source
-/// (`"*"`) tints neutrally as `Core`, otherwise the source string is parsed back to an
-/// [`EventSource`] for its hue, and the label reproduces the `source.kind` / `source.*`
-/// / bare-kind / `*` forms.
 fn subscription_chip(filter: &EventFilterSnapshot) -> OwnedSubscriptionChip {
     let source_wildcard = filter.source == "*";
     let kind_wildcard = filter.kind == "*";
@@ -1990,7 +1836,6 @@ fn subscription_chip(filter: &EventFilterSnapshot) -> OwnedSubscriptionChip {
     OwnedSubscriptionChip { label, source }
 }
 
-/// The lowercase source token used in subscription-chip labels.
 fn event_source_label(source: EventSource) -> &'static str {
     match source {
         EventSource::Twitch => "twitch",
@@ -2010,7 +1855,6 @@ fn event_source_label(source: EventSource) -> &'static str {
     }
 }
 
-/// Compact per-client uptime: seconds, then whole minutes, then whole hours.
 fn format_short_duration_secs(seconds: i64) -> String {
     let seconds = seconds.max(0);
     if seconds < 60 {
@@ -2022,8 +1866,6 @@ fn format_short_duration_secs(seconds: i64) -> String {
     }
 }
 
-/// PII-safe rendering of a rejected server verb for the console's error state — the
-/// coarse `ServerError` Display, no bearer token or URL.
 fn err_text(err: forge_server::ServerError) -> String {
     err.to_string()
 }

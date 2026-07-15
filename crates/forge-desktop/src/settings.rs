@@ -10,25 +10,16 @@ use gpui::{
 
 use crate::presentation::{ActivePresentation, Presentation};
 
-/// GitHub releases page opened by the Version pane's "Check for updates" affordance.
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
-/// Toolchain the binary is built with, surfaced on the Diagnostics metric row.
-/// A fixed string (no compile-time rustc probe) kept in step with
-/// `rust-toolchain.toml`.
 const RUST_VERSION: &str = "1.96.0";
 
-/// Static recent-releases stub for the Version pane. A representative sample so
-/// the card renders its real frame; the live list arrives once a release-notes
-/// source reaches this screen (noted in UI_NOTES).
 const RECENT_RELEASES: [(&str, &str, &str); 3] = [
     ("v0.9.2", "Server panel, settings → websocket", "today"),
     ("v0.9.1", "OBS scene metadata, lock indicators", "3d ago"),
     ("v0.9.0", "TTS module GA, filters live preview", "1w ago"),
 ];
 
-/// The left-nav grouping of the twelve settings sections, mirroring the design's
-/// PREFERENCES / ENGINE / ABOUT columns.
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
         "PREFERENCES",
@@ -56,10 +47,6 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     ),
 ];
 
-/// One destination in the Settings screen's left section-nav. The active section
-/// lives as a field on [`SettingsView`] rather than in the top-level router, so
-/// navigating to Settings always opens at [`SettingsSection::Appearance`] and the
-/// nav swaps the pane in place — matching the design's internal section state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
     Appearance,
@@ -77,7 +64,6 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    /// Human-readable nav + breadcrumb label.
     fn label(self) -> &'static str {
         match self {
             SettingsSection::Appearance => "Appearance",
@@ -95,7 +81,6 @@ impl SettingsSection {
         }
     }
 
-    /// Nav glyph for the section.
     fn icon(self) -> Icon {
         match self {
             SettingsSection::Appearance => Icon::Photo,
@@ -113,7 +98,6 @@ impl SettingsSection {
         }
     }
 
-    /// Stable element-id fragment for the nav button.
     fn key(self) -> &'static str {
         match self {
             SettingsSection::Appearance => "appearance",
@@ -132,8 +116,6 @@ impl SettingsSection {
     }
 }
 
-/// Title + subtitle shown on a theme card. The first theme is presented as the
-/// product default; the others carry their upstream names.
 fn theme_meta(theme: ThemeId) -> (&'static str, &'static str) {
     match theme {
         ThemeId::CatppuccinMocha => ("Default", "Mocha · dark"),
@@ -142,7 +124,6 @@ fn theme_meta(theme: ThemeId) -> (&'static str, &'static str) {
     }
 }
 
-/// Label + one-line hint for a density option row.
 fn density_meta(density: Density) -> (&'static str, &'static str) {
     match density {
         Density::Compact => ("Compact", "Tighter spacing, more on screen"),
@@ -167,10 +148,6 @@ fn theme_key(theme: ThemeId) -> &'static str {
     }
 }
 
-/// The Settings screen view-entity: a breadcrumb header, a left section-nav over
-/// three groups, and the active section's pane. Carries only the active section;
-/// the theme / density it edits live in the presentation `Global` (the single
-/// source of truth), so a switch re-themes the whole app and survives navigation.
 pub struct SettingsView {
     section: SettingsSection,
 }
@@ -182,43 +159,31 @@ impl SettingsView {
         }
     }
 
-    // --- handlers ---------------------------------------------------------
-
     fn select_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
         self.section = section;
         cx.notify();
     }
 
-    /// Swaps the active theme by replacing the presentation `Global`, preserving
-    /// the current density. Replacing the global notifies its observers (the root
-    /// shell), which repaints the whole view tree in the new palette.
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
         let density = cx.density();
         cx.set_global(Presentation::new(theme, density));
         cx.notify();
     }
 
-    /// Swaps the density likewise, preserving the current theme.
     fn select_density(&mut self, density: Density, cx: &mut Context<Self>) {
         let theme = cx.theme();
         cx.set_global(Presentation::new(theme, density));
         cx.notify();
     }
 
-    /// Opens the releases page in the user's browser. A pure side effect through
-    /// the platform shell — no view state changes, so no repaint.
     fn check_for_updates(&mut self, cx: &mut Context<Self>) {
         cx.open_url(RELEASES_URL);
     }
 
-    /// Reveals the log directory in the OS file manager. Pure side effect; no
-    /// repaint.
     fn open_log_dir(&mut self, cx: &mut Context<Self>) {
         let dir = forge_platform_core::paths::data_dir().join("logs");
         cx.reveal_path(&dir);
     }
-
-    // --- header + nav -----------------------------------------------------
 
     fn render_header(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
         let saved = div()
@@ -299,8 +264,6 @@ impl SettingsView {
         )
     }
 
-    // --- pane routing -----------------------------------------------------
-
     fn render_pane(
         &self,
         palette: &ForgePalette,
@@ -324,8 +287,6 @@ impl SettingsView {
             .child(content)
     }
 
-    // --- pane: Appearance -------------------------------------------------
-
     fn appearance_pane(
         &self,
         palette: &ForgePalette,
@@ -334,7 +295,6 @@ impl SettingsView {
     ) -> AnyElement {
         let header = pane_header(Icon::LayoutGrid, "Appearance", palette);
 
-        // Theme block.
         let mut theme_grid = div().flex().flex_row().gap(spacing(Spacing::Sm, density));
         let active = cx.theme();
         for theme in ThemeId::ALL {
@@ -348,7 +308,6 @@ impl SettingsView {
             .child(field_hint("How Forge should look", palette))
             .child(theme_grid);
 
-        // Density block.
         let mut density_rows = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         let current_density = cx.density();
         for option in [Density::Compact, Density::Cozy, Density::Spacious] {
@@ -369,7 +328,6 @@ impl SettingsView {
                 .child(density_rows),
         );
 
-        // Fonts block (display-only selects — a full font scan is deferred).
         let fonts_block = section_divider(palette, density).child(
             div()
                 .flex()
@@ -412,8 +370,6 @@ impl SettingsView {
             palette.border_regular
         };
 
-        // A themed mini-app preview: a tinted sidebar of bars beside a content
-        // area, all drawn from the previewed theme's own palette.
         let bar = |height: f32, width_frac: gpui::DefiniteLength, color: Rgba| {
             div().h(px(height)).w(width_frac).rounded(px(2.0)).bg(color)
         };
@@ -590,8 +546,6 @@ impl SettingsView {
         row
     }
 
-    // --- pane: Version ----------------------------------------------------
-
     fn version_pane(
         &self,
         palette: &ForgePalette,
@@ -681,8 +635,6 @@ impl SettingsView {
             .into_any_element()
     }
 
-    // --- pane: Diagnostics ------------------------------------------------
-
     fn diagnostics_pane(
         &self,
         palette: &ForgePalette,
@@ -744,8 +696,6 @@ impl SettingsView {
             .into_any_element()
     }
 
-    // --- pane: deferred sections -----------------------------------------
-
     fn deferred_pane(
         &self,
         section: SettingsSection,
@@ -797,9 +747,6 @@ impl Render for SettingsView {
     }
 }
 
-// --- shared pane primitives ----------------------------------------------
-
-/// A pane title: the section glyph over an `FONT_LG` heading.
 fn pane_header(glyph: Icon, title: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex()
@@ -816,7 +763,6 @@ fn pane_header(glyph: Icon, title: &'static str, palette: &ForgePalette) -> impl
         )
 }
 
-/// A form-block heading (`FONT_SM`, primary ink, medium weight).
 fn field_title(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_BODY_FAMILY)
@@ -826,7 +772,6 @@ fn field_title(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
         .child(text)
 }
 
-/// A muted one-line hint below a field title.
 fn field_hint(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_BODY_FAMILY)
@@ -835,8 +780,6 @@ fn field_hint(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
         .child(text)
 }
 
-/// A column wrapper that opens with a hairline top divider + top padding, the way
-/// the design separates Appearance's stacked blocks.
 fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {
     div()
         .flex()
@@ -847,9 +790,6 @@ fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {
         .border_color(palette.border_regular)
 }
 
-/// A display-only font picker: an uppercase mono field label over a bordered box
-/// naming the active family. The real family selector lands with the font-scan
-/// capability (noted in UI_NOTES).
 fn font_field(
     label: &'static str,
     family: &'static str,
@@ -889,8 +829,6 @@ fn font_field(
         )
 }
 
-/// One release line: a fixed-width mono version tag, the summary, and a right
-/// aligned relative date.
 fn release_row(
     tag: &'static str,
     summary: &'static str,

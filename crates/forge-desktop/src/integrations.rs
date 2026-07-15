@@ -12,16 +12,8 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider};
 
-/// Connect calls that draw on a supervisor are documented to return promptly, but
-/// this cap guarantees a hung TCP/WS dial can never stall the boot handoff to Ready.
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 
-/// One integration's live trait surface, keyed by `BuiltinId`. The four getters are
-/// always present; `control` is present only for integrations that expose lifecycle
-/// verbs (reconnect / disconnect / refresh-token). P2b feeds these to `BuiltinDetail`
-/// in place of `integration_seed`'s stubs.
-// The four getters + control are read once `BuiltinDetail` is wired to the live
-// bundle (P2b); held rather than consumed field-by-field until then.
 #[allow(dead_code)]
 pub struct BuiltinObject {
     pub icon: SectionIcon,
@@ -30,16 +22,9 @@ pub struct BuiltinObject {
     pub content: Arc<dyn BuiltinContent>,
     pub quick: Arc<dyn QuickActions>,
     pub control: Option<Arc<dyn BuiltinControl>>,
-    /// The concrete OBS client, present only for the OBS integration. The detail
-    /// screen reaches through it to enumerate scenes / sources / audio inputs when a
-    /// picker quick action needs a target; every other integration carries `None`.
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
 }
 
-/// Everything the external-I/O bring-up hands back to the runtime bundle: the live
-/// `Builtin*` trait objects and the per-platform viewer sources to fold into the
-/// aggregator. Sinks and clients stay alive through the sub-action registry and the
-/// `builtins` map respectively.
 pub struct Integrations {
     pub builtins: HashMap<BuiltinId, BuiltinObject>,
     pub viewer_sources: Vec<Box<dyn LiveViewerSource>>,
@@ -60,11 +45,6 @@ impl RateLimiter for NoopRateLimiter {
     async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
-/// Constructs every external integration off the foreground executor, registering
-/// each one's sub-actions and triggers and starting its background connect. An
-/// integration with no stored credentials stays disconnected and performs no network
-/// I/O. No connect is awaited to completion here, so a platform being down cannot
-/// stall boot.
 pub async fn build_integrations(
     sub_actions: &mut SubActionRegistry,
     triggers: &mut TriggerRegistry,
@@ -139,9 +119,6 @@ fn creds_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn CredentialsRepo> {
     Arc::clone(backend) as Arc<dyn CredentialsRepo>
 }
 
-/// Republishes a platform's private event stream (chat receive + connection-state
-/// transitions) onto the global bus so subscribers see them exactly as if the
-/// platform published directly.
 fn spawn_event_bridge(bus: Arc<EventBus>, mut events: EventStream, label: &'static str) {
     tokio::spawn(async move {
         loop {
@@ -158,8 +135,6 @@ fn spawn_event_bridge(bus: Arc<EventBus>, mut events: EventStream, label: &'stat
     });
 }
 
-/// Consumes `chat.send.request` events aimed at `target` and forwards them through
-/// the platform, emitting the matching `chat.send` / `chat.send.failed` outcome.
 fn spawn_chat_send_bridge(
     bus: Arc<EventBus>,
     platform: Arc<dyn ChatPlatform>,

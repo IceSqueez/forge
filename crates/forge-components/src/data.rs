@@ -6,10 +6,8 @@ use gpui::{
 use crate::palette::ForgePalette;
 use crate::tokens::{DEFAULT_MONO_FAMILY, Density, FONT_XS, Spacing, spacing};
 
-/// A column's horizontal sizing. `Fixed` pins an exact pixel width that never
-/// grows or shrinks; `Flex(n)` claims a share of the leftover row width in
-/// proportion to `n` (so `Flex(8)` beside `Flex(7)` splits 8:7), ignoring its
-/// content's intrinsic width — the equivalent of a fill-portion column.
+/// `Flex(n)` claims a share of leftover row width proportional to `n` (`Flex(8)`
+/// beside `Flex(7)` splits 8:7), ignoring cell content's intrinsic width.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ColumnWidth {
     Fixed(Pixels),
@@ -22,10 +20,6 @@ pub(crate) struct FlexSpec {
     pub fixed: Option<Pixels>,
 }
 
-/// Resolves a column's sizing into flexbox terms: a `Fixed` column is inflexible
-/// at its pixel width (grow 0, shrink 0), while a `Flex(n)` column grows at rate
-/// `n`, may shrink, and takes a zero flex-basis so leftover space is shared
-/// purely by the grow ratio rather than biased by cell content.
 pub(crate) fn column_flex(width: ColumnWidth) -> FlexSpec {
     match width {
         ColumnWidth::Fixed(p) => FlexSpec {
@@ -41,10 +35,6 @@ pub(crate) fn column_flex(width: ColumnWidth) -> FlexSpec {
     }
 }
 
-/// One table row: the already-built cells (one per column, zipped positionally
-/// against the table's widths) plus an optional hover group. When a group name is
-/// set, the row is tagged so companion [`hover_reveal`] cells built with the same
-/// name fade in only while the pointer is over the row.
 pub struct DataRow {
     cells: Vec<AnyElement>,
     reveal_group: Option<SharedString>,
@@ -66,9 +56,8 @@ impl DataRow {
     }
 }
 
-/// A cell that stays hidden (but keeps reserving its column width) until the
-/// pointer enters the row carrying the matching `group` name, at which point it
-/// becomes visible — the row-hover reveal used for per-row action controls.
+/// Stays hidden while reserving its column width until the pointer enters a row
+/// tagged with the matching `group`, then becomes visible.
 pub fn hover_reveal(content: impl IntoElement, group: impl Into<SharedString>) -> impl IntoElement {
     div()
         .invisible()
@@ -92,12 +81,7 @@ pub struct DataTable {
     density: Density,
 }
 
-/// Start a data table: a header strip over separator-ruled rows. Header labels
-/// render monospace at `FONT_XS` in the faint ink over the `shell` fill; each row
-/// paints a `base` tint on hover; a 1px `border_regular` rule sits under the
-/// header and under every row. Padding resolves at `Density::Cozy` by default.
-/// Fills and inks resolve from `palette` up front so the built value holds no
-/// borrow.
+/// Padding resolves at `Density::Cozy` unless overridden via [`DataTable::density`].
 pub fn data_table(
     palette: &ForgePalette,
     headers: Vec<SharedString>,
@@ -119,8 +103,6 @@ pub fn data_table(
 }
 
 impl DataTable {
-    /// Overrides the density used to scale the header and row inset. A bare
-    /// [`data_table`] resolves it at `Density::Cozy`.
     pub fn density(mut self, density: Density) -> Self {
         self.density = density;
         self

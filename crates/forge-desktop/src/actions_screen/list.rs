@@ -1,7 +1,3 @@
-//! Actions screen — list pane: page header, filter chips, search, the group
-//! headers and tree rows, the row overflow menu, inline rename, the add-action
-//! modal and the delete confirm.
-
 use super::*;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
@@ -17,8 +13,6 @@ use gpui::{AnyElement, App, ClickEvent, Context, Entity, Rgba, SharedString, Win
 use std::sync::Arc;
 use std::time::Duration;
 
-/// A left-panel notice line (loading / empty), inked `color`, padded like a group
-/// header.
 fn tree_notice(label: &'static str, color: Rgba, _palette: &ForgePalette) -> impl IntoElement {
     div()
         .w_full()
@@ -30,7 +24,6 @@ fn tree_notice(label: &'static str, color: Rgba, _palette: &ForgePalette) -> imp
         .child(label)
 }
 
-/// A modal form block: an uppercase mono caption over `control`.
 fn modal_section(
     palette: &ForgePalette,
     label: &'static str,
@@ -51,8 +44,6 @@ fn modal_section(
 }
 
 impl ScreenActionsView {
-    // --- pure lookup helpers ----------------------------------------------
-
     pub(super) fn find(&self, id: ActionId) -> Option<&ActionSummary> {
         self.groups
             .iter()
@@ -64,8 +55,6 @@ impl ScreenActionsView {
         self.groups.iter().map(|g| g.actions.len()).sum()
     }
 
-    /// Whether a filter tab admits a group's category. `Other` shows only under
-    /// `All`.
     fn category_visible(filter: ActionsFilter, category: ActionCategory) -> bool {
         match filter {
             ActionsFilter::All => true,
@@ -75,9 +64,6 @@ impl ScreenActionsView {
         }
     }
 
-    /// A row survives the current filter + search. Combining both here reproduces the
-    /// source's per-action gate: a group in a hidden category yields no surviving rows
-    /// and is skipped whole.
     fn action_passes(&self, group: &ActionGroup, action: &ActionSummary) -> bool {
         if !Self::category_visible(self.filter, group.category) {
             return false;
@@ -90,8 +76,6 @@ impl ScreenActionsView {
             .to_lowercase()
             .contains(&self.search.to_lowercase())
     }
-
-    // --- interaction handlers ---------------------------------------------
 
     pub(super) fn on_search_event(
         &mut self,
@@ -153,8 +137,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Persists a new enabled state: loads the action, flips the flag, saves it, then
-    /// reconciles the tree with a full re-pull.
     fn set_enabled(&mut self, id: ActionId, enabled: bool, cx: &mut Context<Self>) {
         self.menu_open = None;
         cx.notify();
@@ -174,8 +156,6 @@ impl ScreenActionsView {
         );
     }
 
-    /// Duplicates the action into a fresh persisted row (`… (copy)`), then reconciles
-    /// the tree with a full re-pull so the copy lands with its real [`ActionId`].
     pub(super) fn duplicate(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.menu_open = None;
         cx.notify();
@@ -238,9 +218,6 @@ impl ScreenActionsView {
         }
     }
 
-    /// Persists an inline rename: loads the action, writes the new name, saves it, then
-    /// reconciles with a full re-pull. Guards against a blank name and a case-insensitive
-    /// collision with another action (raising a toast rather than writing a duplicate).
     fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
         let Some(renaming) = self.renaming.take() else {
             cx.notify();
@@ -280,8 +257,6 @@ impl ScreenActionsView {
         );
     }
 
-    // --- delete (two-phase confirm) ---------------------------------------
-
     fn request_delete(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.pending_delete = Some(id);
         self.menu_open = None;
@@ -293,9 +268,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    /// Soft-deletes the confirmed action: archives it (the row and its telemetry
-    /// survive, invisible to `list`), re-pulls, then raises an undo toast whose action
-    /// restores it through the same reconcile path.
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.pending_delete.take() else {
             return;
@@ -331,8 +303,6 @@ impl ScreenActionsView {
         .detach();
     }
 
-    /// Fires the post-archive undo toast. Its action restores the archived action
-    /// (still present, only marked archived) and reconciles the tree with a fresh pull.
     fn raise_undo_toast(
         &self,
         id: ActionId,
@@ -364,8 +334,6 @@ impl ScreenActionsView {
         );
     }
 
-    // --- add-action modal -------------------------------------------------
-
     fn open_add_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.palette();
         let name = cx.new(|cx| TextInput::new("My automation", cx).with_palette(palette));
@@ -389,9 +357,6 @@ impl ScreenActionsView {
         });
         cx.notify();
 
-        // A new action must carry a real queue, so the QUEUE picker is filled from the
-        // queue repo. Until this pull lands the section shows a loading caption and
-        // Create stays disabled.
         let repo = Arc::clone(&self.queue_repo);
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<Queue>, String>>();
         self.rt_handle.spawn(async move {
@@ -409,8 +374,6 @@ impl ScreenActionsView {
         .detach();
     }
 
-    /// Fills the open add-modal's QUEUE picker with the pulled queues. A no-op if the
-    /// modal was dismissed before the pull returned.
     fn apply_queue_options(&mut self, queues: Vec<Queue>, cx: &mut Context<Self>) {
         if let Some(form) = self.add_modal.as_mut() {
             form.queues = queues
@@ -462,9 +425,6 @@ impl ScreenActionsView {
         }
     }
 
-    /// Persists a new action built from the modal, then reconciles the tree with a full
-    /// re-pull and selects the freshly-saved row by its real [`ActionId`]. No-op while
-    /// the name is blank or before the queue picker has loaded a real queue.
     fn submit_add_modal(&mut self, cx: &mut Context<Self>) {
         let Some(form) = self.add_modal.as_ref() else {
             return;
@@ -524,8 +484,6 @@ impl ScreenActionsView {
         })
         .detach();
     }
-
-    // --- render: page header ----------------------------------------------
 
     pub(super) fn render_header(
         &self,
@@ -616,8 +574,6 @@ impl ScreenActionsView {
         .right(cluster)
         .into_any_element()
     }
-
-    // --- render: left tree ------------------------------------------------
 
     pub(super) fn render_tree(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let mut col = div().flex().flex_col();
@@ -740,8 +696,6 @@ impl ScreenActionsView {
             gpui::transparent_black().into()
         };
 
-        // The name column: an inline rename field while this row is being renamed,
-        // otherwise the (clipped, non-wrapping) name label.
         let name_el: AnyElement = match renaming {
             Some(renaming) => div()
                 .flex_1()
@@ -759,8 +713,6 @@ impl ScreenActionsView {
                 .into_any_element(),
         };
 
-        // The select area: state icon + name, indented, filling the row's free width.
-        // A rename field swallows its own clicks, so selecting is disabled mid-rename.
         let mut select_area = div()
             .id(SharedString::from(format!("actions-row-select-{id}")))
             .flex_1()
@@ -778,9 +730,6 @@ impl ScreenActionsView {
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
         }
 
-        // The right slot: the "N sub" count, swapped for the `⋮` overflow menu while
-        // the row is hovered or its menu is open, inside a fixed 46px slot so the edge
-        // never shifts.
         let show_menu = hovered || menu_open;
         let slot_inner: AnyElement = if show_menu {
             self.render_row_menu(action, menu_open, palette, cx)
@@ -877,8 +826,6 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    // --- render: add-action modal -----------------------------------------
-
     pub(super) fn render_add_modal(
         &self,
         form: &AddActionForm,
@@ -886,10 +833,8 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let name_len = form.name.read(cx).content().chars().count().min(NAME_LIMIT);
-        // Create needs a non-blank name and a real queue to file the action under.
         let valid = !form.name.read(cx).content().trim().is_empty() && !form.queues.is_empty();
 
-        // NAME: field + N/64 counter.
         let name_row = div()
             .flex()
             .items_center()
@@ -904,7 +849,6 @@ impl ScreenActionsView {
             );
         let name_section = modal_section(palette, "NAME", name_row);
 
-        // GROUP: field led by a brand dot.
         let group_field = div()
             .flex()
             .items_center()
@@ -913,9 +857,6 @@ impl ScreenActionsView {
             .child(div().flex_1().child(form.group.clone()));
         let group_section = modal_section(palette, "GROUP", group_field);
 
-        // QUEUE: inline selectable chips (the kit carries no lightweight dropdown, so
-        // the queue is chosen from chips — the Globals variant-kind picker approach).
-        // Filled from the real queue repo; a loading caption stands in until it lands.
         let queue_control: AnyElement = if form.queues.is_empty() {
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
@@ -1090,8 +1031,6 @@ impl ScreenActionsView {
             .child(toggle(on, palette).on_color(accent).on_click(id, handler))
             .into_any_element()
     }
-
-    // --- render: delete confirm -------------------------------------------
 
     pub(super) fn render_delete_confirm(
         &self,

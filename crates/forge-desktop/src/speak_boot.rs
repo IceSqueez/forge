@@ -33,9 +33,6 @@ fn find_piper_binary() -> Option<PathBuf> {
     })
 }
 
-/// Resolves the output device to open at boot: the user's persisted preference if it
-/// still exists in the current device list, else the OS default, else the first
-/// enumerated device. Returns `None` only when no output devices exist at all.
 async fn resolve_audio_output_device(backend: &Arc<dyn DataProvider>) -> Option<DeviceId> {
     let devices = match forge_audio::list_output_devices() {
         Ok(devices) => devices,
@@ -159,12 +156,6 @@ async fn load_pipeline(backend: &Arc<dyn DataProvider>) -> forge_tts_pipeline::P
     }
 }
 
-/// Brings up the speak-queue actor from persisted TTS config: the engine registry
-/// (local engines + credentialed cloud engines), the voice-alias resolver, the
-/// message-preprocessing pipeline, and the audio output sink. Mirrors the pre-cutover
-/// boot sequence's fallbacks 1:1 — an absent output device degrades to `NullSink`, an
-/// engine whose prerequisites are missing is skipped with a log line — so every
-/// failure point is data-safe and boot always proceeds.
 pub async fn build_speak_queue(
     bus: &Arc<EventBus>,
     backend: &Arc<dyn DataProvider>,

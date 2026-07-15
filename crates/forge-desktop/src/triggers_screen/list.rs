@@ -1,7 +1,3 @@
-//! Triggers registry — list surface: page header, filter bar, the column caption
-//! and rows, the row overflow menu, and the rename / disable / delete modals. Every
-//! mutating handler writes through the repo then reconciles by a full re-pull.
-
 use super::*;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
@@ -20,8 +16,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 impl TriggersRegistryView {
-    // --- lookup + derivation ----------------------------------------------
-
     pub(super) fn find(&self, id: TriggerInstanceId) -> Option<&TriggerInstanceRow> {
         self.instances.iter().find(|i| i.id == id)
     }
@@ -37,8 +31,6 @@ impl TriggersRegistryView {
         self.instances.iter().filter(|i| !i.enabled).count()
     }
 
-    /// The platforms present in the list with a non-zero instance count, in the
-    /// design's fixed order — the source list for the platform filter chips.
     fn platform_counts(&self) -> Vec<(Platform, usize)> {
         Platform::ORDER
             .into_iter()
@@ -66,8 +58,6 @@ impl TriggersRegistryView {
             .unwrap_or_else(|| kind_id.to_owned())
     }
 
-    /// An instance survives the current platform, usage and search filters. Combines
-    /// all three so the list and the empty-state gate share one predicate.
     fn passes(&self, instance: &TriggerInstanceRow) -> bool {
         if !self.platforms.is_empty()
             && !Platform::from_kind_id(&instance.kind_id)
@@ -91,8 +81,6 @@ impl TriggersRegistryView {
                 .to_lowercase()
                 .contains(&q)
     }
-
-    // --- filter handlers ---------------------------------------------------
 
     pub(super) fn on_search_event(
         &mut self,
@@ -138,10 +126,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    // --- selection + row interaction --------------------------------------
-
-    /// Selects the row (driving its stripe and wash) and opens the detail side-sheet,
-    /// spawning the async pull that populates it.
     fn select(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         if self.selected != Some(id) {
             self.detail = None;
@@ -177,9 +161,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    // --- enable / disable (confirm when used) -----------------------------
-
-    /// Persists a new enabled state, then reconciles the list with a full re-pull.
     fn persist_enabled(&mut self, id: TriggerInstanceId, enabled: bool, cx: &mut Context<Self>) {
         self.menu_open = None;
         cx.notify();
@@ -195,8 +176,6 @@ impl TriggersRegistryView {
         );
     }
 
-    /// Toggling a used instance OFF arms the confirm dialog; enabling, or disabling an
-    /// unused instance, applies immediately.
     pub(super) fn toggle_enable(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         let Some(instance) = self.find(id) else {
             return;
@@ -224,8 +203,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    // --- delete (blocked when used) ---------------------------------------
-
     pub(super) fn request_delete(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         self.pending_delete = Some(id);
         self.menu_open = None;
@@ -237,10 +214,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    /// Soft-deletes the confirmed instance when it is unused: archives it (the row and
-    /// its links survive, invisible to `list_user_defined`), re-pulls, then raises an
-    /// undo toast whose action restores it through the same reconcile path. A still-used
-    /// instance is left in place — the source blocks the affordance.
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.pending_delete.take() else {
             return;
@@ -311,8 +284,6 @@ impl TriggersRegistryView {
         );
     }
 
-    // --- rename ------------------------------------------------------------
-
     pub(super) fn start_rename(
         &mut self,
         id: TriggerInstanceId,
@@ -365,8 +336,6 @@ impl TriggersRegistryView {
         }
     }
 
-    /// Persists an inline rename: loads the instance, writes the new name, saves it,
-    /// then reconciles with a full re-pull. A blank name closes the modal with no write.
     fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
         let Some(form) = self.rename.take() else {
             cx.notify();
@@ -393,8 +362,6 @@ impl TriggersRegistryView {
             cx,
         );
     }
-
-    // --- render: page header ----------------------------------------------
 
     pub(super) fn render_header(&self, palette: &ForgePalette) -> AnyElement {
         let sep = || {
@@ -454,8 +421,6 @@ impl TriggersRegistryView {
         .right(stats)
         .into_any_element()
     }
-
-    // --- render: filter bar -----------------------------------------------
 
     fn divider(&self, palette: &ForgePalette) -> AnyElement {
         div()
@@ -571,10 +536,6 @@ impl TriggersRegistryView {
             .into_any_element()
     }
 
-    // --- render: list -----------------------------------------------------
-
-    /// Lays six cells across the shared column skeleton so the caption and every row
-    /// line up. The caller frames the skeleton with the row/caption padding.
     fn columns(
         dot: AnyElement,
         name: AnyElement,
@@ -711,7 +672,6 @@ impl TriggersRegistryView {
             palette.text_primary
         };
 
-        // Kind cell: platform glyph + ellipsised label + optional override badge.
         let mut kind = div()
             .flex()
             .items_center()
@@ -742,7 +702,6 @@ impl TriggersRegistryView {
             ));
         }
 
-        // Used-in cell: "used in N" (N green) or an italic "unused".
         let used: AnyElement = if instance.used_in_count > 0 {
             div()
                 .flex()
@@ -770,8 +729,6 @@ impl TriggersRegistryView {
                 .into_any_element()
         };
 
-        // The select region spans the first four columns; the toggle and menu are
-        // separate cells so a click on either never selects the row.
         let select_region = div()
             .id(SharedString::from(format!("triggers-row-select-{id}")))
             .flex_1()
@@ -913,8 +870,6 @@ impl TriggersRegistryView {
                 .to_owned()
         };
 
-        // The filtered-empty state clears filters; the pristine-empty state opens the
-        // create flow.
         let action: AnyElement = if has_filter {
             ghost_button_with_icon(Icon::X, "Clear filters", palette)
                 .on_click(
@@ -970,8 +925,6 @@ impl TriggersRegistryView {
             .child(action)
             .into_any_element()
     }
-
-    // --- render: modals ---------------------------------------------------
 
     pub(super) fn render_disable_confirm(
         &self,

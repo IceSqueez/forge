@@ -9,49 +9,26 @@ use crate::tokens::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, Radius, Spacing, radius, spacing,
 };
 
-/// Boxed click handler carried by a pressable button. gpui passes the click event
-/// plus the window and app contexts, through which the caller reaches its entity.
 type ButtonClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// Fixed icon→label gap for the leading-icon buttons. The source pins this at a
-/// literal 5px (one step below the `Spacing::Xs` 6px used for the trailing-icon
-/// gap), so it is carried density-neutrally as a literal rather than snapped onto
-/// the `Spacing` scale — mirroring the off-scale disc literals in [`crate::status`].
 const ICON_LABEL_GAP: Pixels = px(5.0);
 
-/// Alpha the filled variants fade their fill to on hover.
 const FILL_HOVER_ALPHA: f32 = 0.92;
-/// Alpha applied to a filled variant's fill when disabled.
 const FILL_DISABLED_ALPHA: f32 = 0.4;
-/// Alpha applied to a filled variant's ink when disabled.
 const INK_DISABLED_ALPHA: f32 = 0.5;
-/// Alpha applied to an outlined/ghost variant's ink and border when disabled.
 const OUTLINE_DISABLED_ALPHA: f32 = 0.4;
-/// Faint tint alpha behind a hovered secondary button (a wash of its border hue).
 const SECONDARY_HOVER_WASH: f32 = 0.06;
-/// Faint tint alpha behind a hovered icon button (a wash of the brand hue).
 const ICON_HOVER_WASH: f32 = 0.08;
 
-/// Which button in the family this is. Each maps to a fixed set of `ForgePalette`
-/// fields across the rest, hover and disabled states (see [`ButtonVariant::colors`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ButtonVariant {
-    /// Solid brand fill, shell ink — the page's primary affirmative action.
     Primary,
-    /// Solid `random` (pink) fill, shell ink — a destructive affirmative action.
     Destructive,
-    /// Transparent fill, thin `border_regular` outline, secondary ink.
     Secondary,
-    /// Transparent fill, thin outline, muted ink that brightens (with a lighter
-    /// border) on hover.
     Ghost,
-    /// Borderless square icon-only affordance; a faint brand wash on hover.
     Icon,
 }
 
-/// The full per-state color set a variant resolves to, so the rest, hover and
-/// disabled looks are all pinned to concrete `ForgePalette` fields up front and
-/// the built [`Button`] carries no palette borrow.
 #[derive(Clone, Copy)]
 pub(crate) struct ButtonColors {
     pub(crate) fill: Option<Rgba>,
@@ -66,11 +43,6 @@ pub(crate) struct ButtonColors {
 }
 
 impl ButtonVariant {
-    /// Resolves the variant's rest/hover/disabled fill, ink and border against the
-    /// active theme. The filled variants (Primary, Destructive) share one shape —
-    /// an opaque hue that fades on hover and dims when disabled — differing only in
-    /// which hue they carry; the outlined variants keep a transparent fill and
-    /// instead move their ink and border.
     pub(crate) fn colors(self, p: &ForgePalette) -> ButtonColors {
         match self {
             ButtonVariant::Primary => filled(p.brand, p.shell),
@@ -112,9 +84,6 @@ impl ButtonVariant {
     }
 }
 
-/// Shared color shape of the two solid variants: an opaque `hue` fill inked with
-/// `ink`, fading to `hue @ 0.92` on hover and `hue @ 0.4` / `ink @ 0.5` when
-/// disabled, with no border in any state.
 fn filled(hue: Rgba, ink: Rgba) -> ButtonColors {
     ButtonColors {
         fill: Some(hue),
@@ -129,23 +98,12 @@ fn filled(hue: Rgba, ink: Rgba) -> ButtonColors {
     }
 }
 
-/// A pressable button: an optional leading icon, an optional label and an optional
-/// trailing icon inside a rounded, `Density`-scaled frame whose fill, ink and
-/// border follow its [`ButtonVariant`] across rest, hover and disabled states.
-///
-/// Build one through a family constructor ([`primary_button`], [`ghost_button`],
-/// …), which fixes the variant, weight and glyphs and resolves colors from the
-/// active theme. Attach [`Button::on_click`] to make it fire (the caller's handler
-/// mutates its own entity via the passed `cx`); [`Button::disabled`] renders the
-/// dimmed, inert look; [`Button::density`] rescales the padding.
 #[derive(IntoElement)]
 pub struct Button {
     variant: ButtonVariant,
     label: Option<SharedString>,
     leading: Option<Icon>,
     trailing: Option<Icon>,
-    /// Label weight. Plain text buttons stay at `NORMAL`; only the icon-bearing
-    /// primary buttons raise their label to `SEMIBOLD`, mirroring the source.
     weight: FontWeight,
     colors: ButtonColors,
     density: Density,
@@ -179,31 +137,22 @@ impl Button {
         }
     }
 
-    /// Overrides the density used to scale the button's padding. A bare
-    /// constructor resolves it at `Density::Cozy`.
     pub fn density(mut self, density: Density) -> Self {
         self.density = density;
         self
     }
 
-    /// Stretches the button to fill its parent's width and left-aligns its
-    /// content, for the full-column nav rows of a sectioned screen. A bare
-    /// constructor hugs its content instead.
     pub fn full_width(mut self) -> Self {
         self.full_width = true;
         self
     }
 
-    /// Renders the button in its dimmed, inert state: disabled colors, no hover
-    /// feedback and no click handling regardless of [`Button::on_click`].
+    /// Suppresses hover feedback and click handling even when [`Button::on_click`] is set.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Makes the button fire. gpui needs a stable [`ElementId`] to promote the
-    /// frame to a stateful, clickable element, so the caller supplies one
-    /// alongside the handler (which mutates its own entity via the passed `cx`).
     pub fn on_click(
         mut self,
         id: impl Into<ElementId>,
@@ -221,18 +170,12 @@ impl RenderOnce for Button {
         let d = self.density;
         let icon_only = self.variant == ButtonVariant::Icon;
 
-        // Resolve the state the frame paints in. Disabled shortcuts the whole
-        // hover/click apparatus; enabled carries its rest colors plus the hover
-        // deltas.
         let (fill, text, border) = if self.disabled {
             (c.disabled_fill, c.disabled_text, c.disabled_border)
         } else {
             (c.fill, c.text, c.border)
         };
 
-        // The single flex gap between the icon and label. Only one glyph slot is
-        // ever occupied per constructor: a leading icon sits `ICON_LABEL_GAP` from
-        // the label, a trailing icon a `Spacing::Xs` step away.
         let gap = if self.leading.is_some() {
             ICON_LABEL_GAP
         } else if self.trailing.is_some() {
@@ -271,12 +214,6 @@ impl RenderOnce for Button {
             root = root.border(BORDER_THIN).border_color(border);
         }
 
-        // The text-button icons carry an explicit tint (the resolved state ink), so
-        // they do NOT re-tint under the frame's hover text color — matching the
-        // source, where the svg glyph keeps its color while the label brightens.
-        // The icon-only button is the exception: its source rendered a char glyph
-        // as text, which brightened on hover, so its glyph inherits the frame's ink
-        // (via `icon_inherit`) and follows the rest→hover→disabled text color.
         if let Some(leading) = self.leading {
             root = if icon_only {
                 root.child(icon_inherit(leading, glyph_size))
@@ -285,8 +222,6 @@ impl RenderOnce for Button {
             };
         }
         if let Some(label) = self.label {
-            // The label sets no color of its own so it inherits the frame's ink,
-            // letting the hover text color reach it.
             root = root.child(div().child(label));
         }
         if let Some(trailing) = self.trailing {
@@ -322,8 +257,6 @@ impl RenderOnce for Button {
     }
 }
 
-/// Solid brand button with shell ink and a `NORMAL`-weight label — the primary
-/// affirmative action.
 pub fn primary_button(label: impl Into<SharedString>, palette: &ForgePalette) -> Button {
     Button::new(
         ButtonVariant::Primary,
@@ -335,8 +268,6 @@ pub fn primary_button(label: impl Into<SharedString>, palette: &ForgePalette) ->
     )
 }
 
-/// Primary button with a leading icon. The label is raised to `SEMIBOLD` (the only
-/// buttons in the family that bold their label), the icon inked with the shell ink.
 pub fn primary_button_with_icon(
     icon: Icon,
     label: impl Into<SharedString>,
@@ -352,7 +283,6 @@ pub fn primary_button_with_icon(
     )
 }
 
-/// Primary button with a trailing icon and a `SEMIBOLD` label.
 pub fn primary_button_with_icon_right(
     label: impl Into<SharedString>,
     icon: Icon,
@@ -368,8 +298,6 @@ pub fn primary_button_with_icon_right(
     )
 }
 
-/// Solid `random`-hue (pink) button with shell ink and a `NORMAL`-weight label —
-/// a destructive affirmative action.
 pub fn destructive_button(label: impl Into<SharedString>, palette: &ForgePalette) -> Button {
     Button::new(
         ButtonVariant::Destructive,
@@ -381,8 +309,6 @@ pub fn destructive_button(label: impl Into<SharedString>, palette: &ForgePalette
     )
 }
 
-/// Outlined button: transparent fill, thin `border_regular` outline, secondary ink
-/// that brightens to primary (over a faint border wash) on hover.
 pub fn secondary_button(label: impl Into<SharedString>, palette: &ForgePalette) -> Button {
     Button::new(
         ButtonVariant::Secondary,
@@ -394,8 +320,6 @@ pub fn secondary_button(label: impl Into<SharedString>, palette: &ForgePalette) 
     )
 }
 
-/// Ghost button: transparent fill, thin outline, muted ink; on hover the ink
-/// brightens to primary and the border lightens to `border_input`.
 pub fn ghost_button(label: impl Into<SharedString>, palette: &ForgePalette) -> Button {
     Button::new(
         ButtonVariant::Ghost,
@@ -407,7 +331,6 @@ pub fn ghost_button(label: impl Into<SharedString>, palette: &ForgePalette) -> B
     )
 }
 
-/// Ghost button with a leading icon and a `NORMAL`-weight label.
 pub fn ghost_button_with_icon(
     icon: Icon,
     label: impl Into<SharedString>,
@@ -423,8 +346,6 @@ pub fn ghost_button_with_icon(
     )
 }
 
-/// Borderless square icon-only button: no fill at rest, a faint brand wash on
-/// hover. The glyph renders one step larger (`FONT_MD`) than a text button's icon.
 pub fn icon_button(icon: Icon, palette: &ForgePalette) -> Button {
     Button::new(
         ButtonVariant::Icon,

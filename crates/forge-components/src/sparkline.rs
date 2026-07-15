@@ -5,16 +5,11 @@ use gpui::{
 
 use crate::palette::with_alpha;
 
-/// Alpha applied to the line colour for the default area fill under the curve.
 const DEFAULT_FILL_ALPHA: f32 = 0.14;
-/// Stroke thickness of the plotted line, in logical pixels.
 const DEFAULT_STROKE_WIDTH: f32 = 1.5;
 
-/// A filled area line-chart over a fixed sample window. Normalises the samples
-/// min→max across the element height and plots them left→right across its width,
-/// taking the drawing area from the layout bounds so it fills whatever box the
-/// caller sizes it into. Degenerate input (empty, single sample, all-equal) renders
-/// a flat mid-height line rather than panicking.
+/// Degenerate input (empty, single sample, all-equal, non-finite) renders a flat
+/// mid-height line rather than panicking.
 #[derive(IntoElement)]
 pub struct Sparkline {
     samples: Vec<f32>,
@@ -49,10 +44,6 @@ impl Sparkline {
     }
 }
 
-/// Maps each sample onto a `0.0..=1.0` vertical fraction where `1.0` is the series
-/// maximum and `0.0` the minimum. Empty input, a collapsed range (all-equal) and
-/// non-finite samples all resolve to `0.5`, so callers get a flat mid-height line
-/// instead of a division by zero or a clipped spike.
 fn vertical_fractions(samples: &[f32]) -> Vec<f32> {
     let mut min = f32::INFINITY;
     let mut max = f32::NEG_INFINITY;

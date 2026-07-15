@@ -1,15 +1,31 @@
+use std::sync::Arc;
+
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextArea, TextInput, badge,
     card, confirm_modal, icon, overlay, primary_button, radius, secondary_button, spacing, toggle,
     with_alpha,
 };
+use forge_speak_queue::{
+    PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
+    build_config_lenient, build_config_strict,
+};
+use forge_storage::{
+    BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
+};
+use forge_tts_pipeline::{PipelineResult, StageAction, StageOutcome};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window,
     div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
+
+/// Speaker name attached to a one-off preview utterance enqueued from this screen.
+const PREVIEW_SPEAKER: &str = "Preview";
+
+/// The three URL-handling modes in banner order.
+const URL_MODES: [UrlMode; 3] = [UrlMode::Speak, UrlMode::Replace, UrlMode::Suppress];
 
 /// Numbered stage-badge side — the parity source pins the pill at a fixed 20px square,
 /// off the `Spacing` scale, so it is carried as a named literal.
@@ -19,70 +35,6 @@ const BADGE_SIZE: Pixels = px(20.0);
 const MICRO_FS: Pixels = px(8.5);
 /// Preview column width — the source pins the right column at a fixed 300px.
 const PREVIEW_W: Pixels = px(300.0);
-
-/// Whether comma-split words are censored in place or the whole message is dropped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BlocklistMode {
-    Censor,
-    Suppress,
-}
-
-/// How a message containing a URL is spoken.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum UrlMode {
-    Speak,
-    Replace,
-    Suppress,
-}
-
-impl UrlMode {
-    const ALL: [UrlMode; 3] = [UrlMode::Speak, UrlMode::Replace, UrlMode::Suppress];
-
-    fn label(self) -> &'static str {
-        match self {
-            UrlMode::Speak => "Speak",
-            UrlMode::Replace => "Replace",
-            UrlMode::Suppress => "Suppress",
-        }
-    }
-
-    fn key(self) -> &'static str {
-        match self {
-            UrlMode::Speak => "speak",
-            UrlMode::Replace => "replace",
-            UrlMode::Suppress => "suppress",
-        }
-    }
-}
-
-/// One preprocessing rule. A cached view-model of a stored rule; the live set is read
-/// from `forge-storage`'s TTS-filters repo over the runtime→UI bridge, never owned
-/// here. `position` is renumbered on every reorder for the deferred persist path.
-struct FilterRule {
-    #[allow(dead_code)]
-    id: String,
-    name: String,
-    enabled: bool,
-    position: u32,
-    kind: FilterRuleKind,
-}
-
-/// A rule's discriminated payload. Literal/Regex rewrite `pattern`→`replacement`;
-/// Blocklist matches whole words with a per-rule [`BlocklistMode`].
-enum FilterRuleKind {
-    Literal {
-        pattern: String,
-        replacement: String,
-    },
-    Regex {
-        pattern: String,
-        replacement: String,
-    },
-    Blocklist {
-        words: Vec<String>,
-        mode: BlocklistMode,
-    },
-}
 
 /// Selectable rule kind in the draft editor, decoupled from the parameter-carrying
 /// [`FilterRuleKind`] so the picker can be chosen before the parameters exist.
@@ -119,28 +71,6 @@ impl DraftKind {
     }
 }
 
-/// The fixed non-list pipeline settings: URL handling, emote stripping, the default
-/// blocklist action and an optional spoken-length cap.
-struct FilterSettings {
-    url_mode: UrlMode,
-    strip_twitch_emotes: bool,
-    strip_reward_emotes: bool,
-    blocklist_mode: BlocklistMode,
-    max_length: Option<u32>,
-}
-
-impl FilterSettings {
-    fn seed() -> Self {
-        Self {
-            url_mode: UrlMode::Replace,
-            strip_twitch_emotes: true,
-            strip_reward_emotes: false,
-            blocklist_mode: BlocklistMode::Censor,
-            max_length: Some(300),
-        }
-    }
-}
-
 /// The open add/edit form. `editing` is the index into the working rule list when
 /// editing an existing rule, `None` when adding. The text fields are child
 /// [`TextInput`] entities so they own their own edit state; only the rendered subset
@@ -155,72 +85,59 @@ struct RuleDraft {
     blocklist_mode: BlocklistMode,
 }
 
-/// A single seeded preview stage outcome, mirroring the real pipeline's per-stage
-/// result the live `forge-tts-pipeline::preview` would compute.
-enum StageStub {
-    Pass,
-    Transform(&'static str),
-}
-
-/// The seeded preview column payload rendered while the live pipeline preview is
-/// unavailable: per-stage outcome cards plus the final spoken output.
-struct PreviewStub {
-    stages: Vec<(&'static str, StageStub)>,
-    output: &'static str,
-    speak: bool,
-}
-
-impl PreviewStub {
-    fn seed() -> Self {
-        Self {
-            stages: vec![
-                (
-                    "Stage 1",
-                    StageStub::Transform("hey @koval check this out посилання POGGERS"),
-                ),
-                (
-                    "Stage 2",
-                    StageStub::Transform("hey @koval check this out посилання pog"),
-                ),
-                ("Stage 3", StageStub::Pass),
-                ("Stage 4", StageStub::Pass),
-            ],
-            output: "hey @koval check this out посилання pog",
-            speak: true,
-        }
-    }
+/// The computed live preview: the final pipeline result plus each stage's outcome,
+/// recomputed on every edit via `forge-tts-pipeline::preview`.
+struct CachedPreview {
+    stages: Vec<StageOutcome>,
+    result: PipelineResult,
 }
 
 /// The TTS Filters section view-entity: a two-column layout — a scrollable message-
 /// preprocessing pipeline (numbered stage cards, an inline rule editor and a save
 /// bar) on the left, and a fixed-width live-preview column on the right.
 ///
-/// Owns its rule roster and settings as seeded stub state — `forge-desktop` wires no
-/// TTS-filters repo yet, so the rules and settings are seeded representative and the
-/// CRUD handlers mutate this cached state. The real screen loads them from
-/// `forge-storage`'s TTS-filters repo over the runtime→UI bridge; Save persists the
-/// rules + settings through that repo's handle and hot-swaps the live speak-queue
-/// pipeline config. The preview column renders seeded static per-stage outcomes; the
-/// real screen computes them through `forge-tts-pipeline::preview` on every edit, and
-/// the speak-preview button enqueues a `SpeakRequest` through the speak-queue handle.
+/// The rule roster and settings are pulled from the TTS-filters store on mount and
+/// after Save (write-through then dirty-clear, never a local patch). Save validates
+/// the whole set with `build_config_strict`, persists rules + settings through the
+/// repo, then hot-swaps the live speak-queue pipeline config. The preview pane is
+/// computed on every edit via `forge-tts-pipeline::preview`; the speak-preview button
+/// enqueues a `SpeakRequest` through the speak-queue handle.
 pub struct TtsFiltersView {
+    repo: Arc<dyn TtsFiltersRepo>,
+    /// The live pipeline config, hot-swapped on Save. `None` only when the speak
+    /// subsystem didn't build, in which case persistence still happens and only the
+    /// hot-swap is skipped.
+    pipeline_config: Option<PipelineConfigHandle>,
+    /// The live speak-queue handle, driving the speak-preview button. `None` skips
+    /// only the preview enqueue.
+    speak: Option<SpeakQueueHandle>,
+    rt_handle: tokio::runtime::Handle,
     rules: Vec<FilterRule>,
-    settings: FilterSettings,
+    settings: TtsPipelineSettings,
     max_length: Entity<TextInput>,
     draft: Option<RuleDraft>,
+    /// The strict-validation error surfaced by the last Save attempt; blocks persist.
+    save_error: Option<String>,
     dirty: bool,
     /// Two-phase delete gate: the index armed by a row's delete button, resolved by
     /// the confirm overlay. `None` = no confirm showing.
     pending_delete: Option<usize>,
     preview_input: Entity<TextArea>,
-    preview: PreviewStub,
+    cached_preview: Option<CachedPreview>,
     _max_length_sub: Subscription,
+    _preview_sub: Subscription,
 }
 
 impl TtsFiltersView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        repo: Arc<dyn TtsFiltersRepo>,
+        pipeline_config: Option<PipelineConfigHandle>,
+        speak: Option<SpeakQueueHandle>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
-        let settings = FilterSettings::seed();
+        let settings = TtsPipelineSettings::default();
 
         let seed_len = settings
             .max_length
@@ -237,6 +154,7 @@ impl TtsFiltersView {
             if let InputEvent::Changed(s) = event {
                 this.settings.max_length = s.trim().parse::<u32>().ok();
                 this.dirty = true;
+                this.refresh_preview(cx);
                 cx.notify();
             }
         });
@@ -246,18 +164,107 @@ impl TtsFiltersView {
             input.set_content("hey @koval check this out https://example.com POGGERS", cx);
             input
         });
+        let preview_sub = cx.subscribe(&preview_input, |this, _input, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event {
+                this.refresh_preview(cx);
+                cx.notify();
+            }
+        });
 
-        Self {
-            rules: seed_rules(),
+        let mut view = Self {
+            repo,
+            pipeline_config,
+            speak,
+            rt_handle,
+            rules: Vec::new(),
             settings,
             max_length,
             draft: None,
+            save_error: None,
             dirty: false,
             pending_delete: None,
             preview_input,
-            preview: PreviewStub::seed(),
+            cached_preview: None,
             _max_length_sub: max_length_sub,
+            _preview_sub: preview_sub,
+        };
+        view.refresh_preview(cx);
+        view.reload(cx);
+        view
+    }
+
+    // --- async pull + reconcile -------------------------------------------
+
+    /// Pulls the full rule set and pipeline settings off the store and reconciles the
+    /// cached state. Runs on mount; Save re-pulls nothing (it already holds the set).
+    fn reload(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<
+            Result<(Vec<FilterRule>, TtsPipelineSettings), String>,
+        >();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                let rules = repo.list_rules().await.map_err(|e| e.to_string())?;
+                let settings = repo
+                    .get_pipeline_settings()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok((rules, settings))
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok((rules, settings))) => {
+                let _ = this.update(cx, |this, cx| this.apply_loaded(rules, settings, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn apply_loaded(
+        &mut self,
+        mut rules: Vec<FilterRule>,
+        settings: TtsPipelineSettings,
+        cx: &mut Context<Self>,
+    ) {
+        rules.sort_by_key(|r| r.position);
+        self.rules = rules;
+        self.renumber();
+        let seed = settings
+            .max_length
+            .map(|n| n.to_string())
+            .unwrap_or_default();
+        self.max_length
+            .update(cx, |input, cx| input.set_content(seed, cx));
+        self.settings = settings;
+        self.dirty = false;
+        self.save_error = None;
+        self.refresh_preview(cx);
+        cx.notify();
+    }
+
+    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
+        eprintln!("forge-desktop: tts filters operation failed: {message}");
+        cx.notify();
+    }
+
+    /// Recomputes the live preview from the current rules + settings and the preview
+    /// input. Empty input clears the preview. Lenient config build drops invalid regex
+    /// rules rather than failing, mirroring the boot posture.
+    fn refresh_preview(&mut self, cx: &mut Context<Self>) {
+        let input = self.preview_input.read(cx).content().to_owned();
+        if input.is_empty() {
+            self.cached_preview = None;
+            return;
         }
+        let config = build_config_lenient(&self.rules, &self.settings);
+        let (result, stages) = forge_tts_pipeline::preview(&input, &config);
+        self.cached_preview = Some(CachedPreview { stages, result });
     }
 
     // --- pure in-memory logic (rule mutations) ----------------------------
@@ -364,7 +371,7 @@ impl TtsFiltersView {
             _ => {
                 let position = self.rules.len() as u32;
                 self.rules.push(FilterRule {
-                    id: next_id(),
+                    id: ulid::Ulid::r#gen().to_string(),
                     name,
                     enabled: true,
                     position,
@@ -375,6 +382,7 @@ impl TtsFiltersView {
         self.renumber();
         self.draft = None;
         self.dirty = true;
+        self.refresh_preview(cx);
         cx.notify();
     }
 
@@ -382,6 +390,7 @@ impl TtsFiltersView {
         if let Some(rule) = self.rules.get_mut(index) {
             rule.enabled = !rule.enabled;
             self.dirty = true;
+            self.refresh_preview(cx);
             cx.notify();
         }
     }
@@ -391,6 +400,7 @@ impl TtsFiltersView {
             self.rules.swap(index, j);
             self.renumber();
             self.dirty = true;
+            self.refresh_preview(cx);
             cx.notify();
         }
     }
@@ -400,6 +410,7 @@ impl TtsFiltersView {
             self.rules.swap(index, j);
             self.renumber();
             self.dirty = true;
+            self.refresh_preview(cx);
             cx.notify();
         }
     }
@@ -423,6 +434,7 @@ impl TtsFiltersView {
             self.rules.remove(index);
             self.renumber();
             self.dirty = true;
+            self.refresh_preview(cx);
         }
         cx.notify();
     }
@@ -430,32 +442,112 @@ impl TtsFiltersView {
     fn set_url_mode(&mut self, mode: UrlMode, cx: &mut Context<Self>) {
         self.settings.url_mode = mode;
         self.dirty = true;
+        self.refresh_preview(cx);
         cx.notify();
     }
 
     fn toggle_strip_twitch(&mut self, cx: &mut Context<Self>) {
         self.settings.strip_twitch_emotes = !self.settings.strip_twitch_emotes;
         self.dirty = true;
+        self.refresh_preview(cx);
         cx.notify();
     }
 
     fn toggle_strip_reward(&mut self, cx: &mut Context<Self>) {
         self.settings.strip_reward_emotes = !self.settings.strip_reward_emotes;
         self.dirty = true;
+        self.refresh_preview(cx);
         cx.notify();
     }
 
     fn set_settings_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
         self.settings.blocklist_mode = mode;
         self.dirty = true;
+        self.refresh_preview(cx);
         cx.notify();
     }
 
-    /// Optimistically clears the dirty flag. Real path: persist the rules + settings
-    /// through the TTS-filters repo and hot-swap the live speak-queue pipeline config.
+    /// Validates the whole set with `build_config_strict` (surfacing the offending
+    /// pattern on error without touching storage), then persists rules + settings
+    /// through the repo and hot-swaps the live speak-queue pipeline config.
     fn save(&mut self, cx: &mut Context<Self>) {
-        self.dirty = false;
+        let config = match build_config_strict(&self.rules, &self.settings) {
+            Ok(config) => config,
+            Err(e) => {
+                self.save_error = Some(e.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        self.save_error = None;
         cx.notify();
+
+        let repo = Arc::clone(&self.repo);
+        let pipeline_config = self.pipeline_config.clone();
+        let rules = self.rules.clone();
+        let settings = self.settings.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async {
+                repo.replace_rules(&rules)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                repo.set_pipeline_settings(&settings)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if let Some(handle) = pipeline_config {
+                    handle.swap(config);
+                }
+                Ok(())
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.dirty = false;
+                    cx.notify();
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.save_error = Some(message);
+                    cx.notify();
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Enqueues a one-off preview utterance for the current preview input through the
+    /// speak queue. Empty input or a missing queue handle drops the request.
+    fn speak_preview(&self, cx: &mut Context<Self>) {
+        let text = self.preview_input.read(cx).content().trim().to_owned();
+        if text.is_empty() {
+            return;
+        }
+        let Some(handle) = self.speak.clone() else {
+            return;
+        };
+        self.rt_handle.spawn(async move {
+            let request = SpeakRequest {
+                request_id: RequestId::new(),
+                viewer_id: String::new(),
+                viewer_name: PREVIEW_SPEAKER.to_owned(),
+                text,
+                priority: Priority::Normal,
+                alias_override: None,
+                engine_override: None,
+                voice_override: None,
+                source_event_id: forge_types::EventId::new(),
+                is_reward: false,
+            };
+            if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
+                eprintln!("forge-desktop: filter preview speak failed: {e}");
+            }
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -619,11 +711,11 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mut url_seg = div().flex().flex_row().gap(spacing(Spacing::Xxs, density));
-        for mode in UrlMode::ALL {
+        for mode in URL_MODES {
             let active = self.settings.url_mode == mode;
             url_seg = url_seg.child(seg_button(
-                SharedString::from(format!("filt-url-{}", mode.key())),
-                mode.label(),
+                SharedString::from(format!("filt-url-{}", url_key(mode))),
+                url_label(mode),
                 active,
                 palette.brand,
                 palette,
@@ -1127,7 +1219,22 @@ impl TtsFiltersView {
                 .into_any_element()
         };
 
-        div()
+        let error_box = self.save_error.as_ref().map(|err| {
+            div()
+                .w_full()
+                .py(spacing(Spacing::Xs, density))
+                .px(spacing(Spacing::Sm, density))
+                .rounded(radius(Radius::Sm))
+                .border(BORDER_THIN)
+                .border_color(palette.random)
+                .bg(with_alpha(palette.random, 0.1))
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.random)
+                .child(err.clone())
+        });
+
+        let dirty_row = div()
             .w_full()
             .flex()
             .items_center()
@@ -1140,13 +1247,26 @@ impl TtsFiltersView {
                     .text_color(dirty_color)
                     .child(dirty_label),
             )
-            .child(save_btn)
+            .child(save_btn);
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .children(error_box)
+            .child(dirty_row)
             .into_any_element()
     }
 
     // --- preview column ---------------------------------------------------
 
-    fn preview_column(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn preview_column(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let gap_sm = spacing(Spacing::Xs, density);
         let gap_md = spacing(Spacing::Sm, density);
 
@@ -1157,12 +1277,37 @@ impl TtsFiltersView {
             .child(mono_caption("INPUT", palette))
             .child(self.preview_input.clone());
 
-        let mut stages = div().flex().flex_col().gap(gap_sm);
-        for (label, stub) in &self.preview.stages {
-            stages = stages.child(preview_stage_card(label, stub, palette, density));
-        }
+        let stages: AnyElement = if let Some(preview) = &self.cached_preview {
+            let mut col = div().flex().flex_col().gap(gap_sm);
+            for (i, outcome) in preview.stages.iter().enumerate() {
+                col = col.child(preview_stage_card(
+                    format!("Stage {}", i + 1),
+                    outcome,
+                    palette,
+                    density,
+                ));
+            }
+            col.into_any_element()
+        } else {
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(palette.text_muted)
+                .child("Preview will appear here.")
+                .into_any_element()
+        };
 
-        let output_border = if self.preview.speak {
+        let spoken = self
+            .cached_preview
+            .as_ref()
+            .map(|p| matches!(p.result, PipelineResult::Speak(_)))
+            .unwrap_or(false);
+        let output_text: String = match self.cached_preview.as_ref().map(|p| &p.result) {
+            Some(PipelineResult::Speak(s)) => s.clone(),
+            Some(PipelineResult::Skip { .. }) => "[message would be skipped]".to_owned(),
+            None => "\u{2014}".to_owned(),
+        };
+        let output_border = if spoken {
             palette.success
         } else {
             palette.border_regular
@@ -1184,7 +1329,7 @@ impl TtsFiltersView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(self.preview.output),
+                    .child(output_text),
             );
 
         let speak_btn = div()
@@ -1198,6 +1343,7 @@ impl TtsFiltersView {
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.speak_preview(cx)))
             .child(icon(Icon::PlayerPlay, FONT_SM, palette.shell))
             .child(
                 div()
@@ -1294,7 +1440,7 @@ impl Render for TtsFiltersView {
         let density = cx.density();
 
         let pipeline = self.pipeline_column(&palette, density, cx);
-        let preview = self.preview_column(&palette, density);
+        let preview = self.preview_column(&palette, density, cx);
         let overlay = self
             .pending_delete
             .map(|index| self.delete_confirm(index, &palette, cx));
@@ -1401,13 +1547,13 @@ fn draft_field(
 }
 
 fn preview_stage_card(
-    label: &str,
-    stub: &StageStub,
+    label: String,
+    outcome: &StageOutcome,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    let body: AnyElement = match stub {
-        StageStub::Pass => div()
+    let body: AnyElement = match &outcome.action {
+        StageAction::PassedThrough => div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
@@ -1426,11 +1572,30 @@ fn preview_stage_card(
                     .child("pass"),
             )
             .into_any_element(),
-        StageStub::Transform(out) => div()
+        StageAction::Transformed => div()
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_SM)
             .text_color(palette.text_primary)
-            .child(*out)
+            .child(outcome.output.clone())
+            .into_any_element(),
+        StageAction::Skipped { reason } => div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.random)
+                    .child("\u{d7}"),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(format!("skipped — {reason:?}")),
+            )
             .into_any_element(),
     };
 
@@ -1444,7 +1609,7 @@ fn preview_stage_card(
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(label.to_owned()),
+                    .child(label),
             )
             .child(body),
         palette,
@@ -1453,6 +1618,24 @@ fn preview_stage_card(
     .padding_xy(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
     .full_width()
     .into_any_element()
+}
+
+/// Label for a URL-handling mode in the segmented picker.
+fn url_label(mode: UrlMode) -> &'static str {
+    match mode {
+        UrlMode::Speak => "Speak",
+        UrlMode::Replace => "Replace",
+        UrlMode::Suppress => "Suppress",
+    }
+}
+
+/// Stable element-id fragment for a URL-handling mode.
+fn url_key(mode: UrlMode) -> &'static str {
+    match mode {
+        UrlMode::Speak => "speak",
+        UrlMode::Replace => "replace",
+        UrlMode::Suppress => "suppress",
+    }
 }
 
 // ── formatting + reorder helpers ──────────────────────────────────────────
@@ -1512,71 +1695,4 @@ fn same_kind_next_index(rules: &[FilterRule], i: usize) -> Option<usize> {
         .enumerate()
         .find(|(_, r)| DraftKind::of(&r.kind) == kind)
         .map(|(j, _)| i + 1 + j)
-}
-
-/// Monotonic id for a rule added in-session; the real store mints persistent ids.
-fn next_id() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    format!("seed-rule-{}", COUNTER.fetch_add(1, Ordering::Relaxed))
-}
-
-// ── seeded stub state ─────────────────────────────────────────────────────
-
-/// The representative rule roster the section seeds before a TTS-filters repo is
-/// wired, mirroring the design's sample so every kind badge and both blocklist modes
-/// render populated across the Text-replacements and Word-blocklist stage cards.
-fn seed_rules() -> Vec<FilterRule> {
-    vec![
-        FilterRule {
-            id: "seed-lit-1".to_owned(),
-            name: "Discord shorthand".to_owned(),
-            enabled: true,
-            position: 0,
-            kind: FilterRuleKind::Literal {
-                pattern: "gg".to_owned(),
-                replacement: "good game".to_owned(),
-            },
-        },
-        FilterRule {
-            id: "seed-rgx-1".to_owned(),
-            name: "URL to word".to_owned(),
-            enabled: true,
-            position: 1,
-            kind: FilterRuleKind::Regex {
-                pattern: r"https?://\S+".to_owned(),
-                replacement: "посилання".to_owned(),
-            },
-        },
-        FilterRule {
-            id: "seed-lit-2".to_owned(),
-            name: String::new(),
-            enabled: false,
-            position: 2,
-            kind: FilterRuleKind::Literal {
-                pattern: "brb".to_owned(),
-                replacement: "be right back".to_owned(),
-            },
-        },
-        FilterRule {
-            id: "seed-blk-1".to_owned(),
-            name: "Slurs".to_owned(),
-            enabled: true,
-            position: 3,
-            kind: FilterRuleKind::Blocklist {
-                words: vec!["badword".to_owned(), "anotherone".to_owned()],
-                mode: BlocklistMode::Censor,
-            },
-        },
-        FilterRule {
-            id: "seed-blk-2".to_owned(),
-            name: "Spam phrases".to_owned(),
-            enabled: true,
-            position: 4,
-            kind: FilterRuleKind::Blocklist {
-                words: vec!["buy followers".to_owned(), "free vbucks".to_owned()],
-                mode: BlocklistMode::Suppress,
-            },
-        },
-    ]
 }

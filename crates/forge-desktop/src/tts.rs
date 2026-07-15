@@ -4,7 +4,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XXS, ForgePalette,
     Spacing, StatusVariant, badge, breadcrumb, spacing, with_alpha,
 };
-use forge_speak_queue::SpeakQueueHandle;
+use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::DataProvider;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
@@ -104,14 +104,23 @@ impl TtsView {
         speak: Option<SpeakQueueHandle>,
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
+        pipeline_config: Option<PipelineConfigHandle>,
         cx: &mut Context<Self>,
     ) -> Self {
         let dashboard =
             cx.new(|cx| TtsDashboardView::new(speak_state, speak.clone(), rt_handle.clone(), cx));
         let engines = cx.new(TtsEnginesView::new);
+        let filters = cx.new(|cx| {
+            TtsFiltersView::new(
+                backend.tts_filters_repo(),
+                pipeline_config,
+                speak.clone(),
+                rt_handle.clone(),
+                cx,
+            )
+        });
         let aliases =
             cx.new(|cx| VoiceAliasesView::new(backend.voice_alias_repo(), speak, rt_handle, cx));
-        let filters = cx.new(TtsFiltersView::new);
         let triggers = cx.new(TtsTriggersView::new);
         let cloud = cx.new(CloudTtsEnginesView::new);
         Self {

@@ -171,6 +171,7 @@ pub async fn build_speak_queue(
 ) -> (
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
+    Option<PipelineConfigHandle>,
 ) {
     let mut registry = TtsRegistry::new();
     register_local_engines(&mut registry);
@@ -207,10 +208,10 @@ pub async fn build_speak_queue(
     let deps = QueueDeps {
         registry,
         resolver,
-        pipeline,
+        pipeline: pipeline.clone(),
         audio_sink,
         event_bus: Arc::clone(bus) as Arc<dyn EventPublisher>,
     };
     let (handle, stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
-    (Some(handle), Some(stream))
+    (Some(handle), Some(stream), Some(pipeline))
 }

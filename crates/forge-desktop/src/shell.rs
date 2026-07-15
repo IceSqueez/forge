@@ -267,8 +267,11 @@ impl AppShell {
                 let speak = handles.speak.clone();
                 let backend = Arc::clone(&handles.backend);
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| TtsView::new(speak_state, speak, backend, rt_handle, cx))
-                    .into()
+                let pipeline_config = handles.pipeline_config.clone();
+                cx.new(|cx| {
+                    TtsView::new(speak_state, speak, backend, rt_handle, pipeline_config, cx)
+                })
+                .into()
             }
             Screen::Server => {
                 let server = handles.server.clone();

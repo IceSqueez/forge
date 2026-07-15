@@ -139,7 +139,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     }
 
     let server = build_server(&backend, &bus, &action_engine).await;
-    let (speak, speak_events) = build_speak_queue(&bus, &backend).await;
+    let (speak, speak_events, pipeline_config) = build_speak_queue(&bus, &backend).await;
 
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
@@ -156,6 +156,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         server,
         speak,
         speak_events,
+        pipeline_config,
     })
 }
 

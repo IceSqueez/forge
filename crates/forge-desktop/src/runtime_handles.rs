@@ -44,6 +44,10 @@ pub struct RuntimeHandles {
     /// The speak-queue command handle; `None` only if construction itself failed.
     /// Screens dispatch `SpeakCommand`s directly through this (Enqueue/Skip/Clear/...).
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
+    /// The live message-preprocessing pipeline config, in lockstep with `speak`
+    /// (`None` only when the speak subsystem doesn't build). The Filters screen swaps
+    /// it on save to hot-reload the running queue.
+    pub pipeline_config: Option<forge_speak_queue::PipelineConfigHandle>,
     /// The speak queue's initial event subscription. Not `Clone` — taken once by the
     /// boot-time bridge task that feeds `SpeakEvent`s into the dashboard entity.
     pub speak_events: Option<forge_speak_queue::SpeakEventStream>,

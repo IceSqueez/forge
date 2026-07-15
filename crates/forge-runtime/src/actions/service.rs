@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_storage::{
     ActionRepo, ActionTelemetry, HistoryRepo, QueueRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo,
 };
-use forge_types::{ActionId, ClipId};
+use forge_types::{ActionId, ClipId, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
 use super::types::{ActionDetail, ActionSummary};
@@ -92,6 +93,60 @@ impl ActionsService {
 
     pub async fn load_telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
         self.actions.telemetry(id).await
+    }
+
+    /// The user-defined trigger instances not yet linked to `action_id` — the set
+    /// offered when linking a new trigger to the action. Auto-provisioned default
+    /// instances are excluded; only author-created ones are linkable here.
+    pub async fn list_linkable_triggers(
+        &self,
+        action_id: ActionId,
+    ) -> Result<Vec<TriggerInstance>, StorageError> {
+        let linked: HashSet<TriggerInstanceId> = self
+            .trigger_instances
+            .list_for_action(action_id)
+            .await?
+            .into_iter()
+            .map(|instance| instance.id)
+            .collect();
+        let available = self
+            .trigger_instances
+            .list_user_defined()
+            .await?
+            .into_iter()
+            .filter(|instance| !linked.contains(&instance.id))
+            .collect();
+        Ok(available)
+    }
+
+    /// Links `instance_id` to `action_id`, appending it after the action's existing
+    /// links (its position is the current linked count).
+    pub async fn link_trigger_instance(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+    ) -> Result<(), StorageError> {
+        let position = self
+            .trigger_instances
+            .list_for_action(action_id)
+            .await?
+            .len() as i64;
+        self.trigger_instances
+            .link_action(action_id, instance_id, position)
+            .await
+    }
+
+    /// Unlinks `instance_id` from `action_id`. The instance itself survives; only the
+    /// action↔trigger link is removed.
+    pub async fn unlink_trigger_instance(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+    ) -> Result<(), StorageError> {
+        self.trigger_instances
+            .unlink_action(action_id, instance_id)
+            .await
+            .map(|_| ())
     }
 
     pub async fn list_clip_options(&self) -> Vec<(ClipId, String)> {

@@ -13,7 +13,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{ActionRepo, QueueRepo};
-use forge_types::{Action, ActionId, QueueId, SubActionStep};
+use forge_types::{Action, ActionId, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -70,6 +70,9 @@ const CARD_GLYPH: Pixels = px(13.0);
 /// Leading status-dot diameter (7px) and kind-glyph size (13px) on a trigger card.
 const TRIGGER_DOT: Pixels = px(7.0);
 const TRIGGER_GLYPH: Pixels = px(13.0);
+/// Trailing unlink-`X` glyph size on a linked trigger card (fixed 13px, matching the
+/// parity source's row-icon affordance).
+const UNLINK_GLYPH: Pixels = px(13.0);
 /// Numbered step-circle side and its fully-rounded corner (fixed 22px / 11px).
 const STEP_CIRCLE: Pixels = px(22.0);
 const STEP_CIRCLE_RADIUS: Pixels = px(11.0);
@@ -213,6 +216,7 @@ pub struct ScreenActionsView {
     sub_form: Option<EditSubActionForm>,
     step_menu_open: Option<usize>,
     grid_picker: Option<GridPickerForm>,
+    add_trigger: Option<AddTriggerForm>,
     /// Drill-in path into the selected action's nested sub-chains. Empty = the
     /// step list renders the action's top-level chain; each frame descends one
     /// composite branch or switch case.
@@ -264,6 +268,7 @@ impl ScreenActionsView {
             sub_form: None,
             step_menu_open: None,
             grid_picker: None,
+            add_trigger: None,
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
             _search_sub: search_sub,
@@ -473,6 +478,15 @@ impl Render for ScreenActionsView {
                 })
                 .into_any_element()
         });
+        let trigger_grid = self.add_trigger.as_ref().map(|form| {
+            let view = cx.entity();
+            overlay(form.picker.clone(), &palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("actions-trigger-grid-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_trigger_picker(cx));
+                })
+                .into_any_element()
+        });
         div()
             .size_full()
             .flex()
@@ -484,6 +498,7 @@ impl Render for ScreenActionsView {
             .children(delete_modal)
             .children(sub_modal)
             .children(grid_picker)
+            .children(trigger_grid)
     }
 }
 
@@ -548,6 +563,16 @@ fn category_from_group_name(name: &str) -> ActionCategory {
 struct GridPickerForm {
     picker: Entity<GridPicker>,
     picks: HashMap<SharedString, String>,
+    action_id: ActionId,
+    _sub: Subscription,
+}
+
+/// The open "Add trigger" grid picker: the shared [`GridPicker`] entity, a lookup
+/// from each card id to the [`TriggerInstanceId`] it links, the action it targets
+/// (guarding against a stale selection), and the subscription draining its events.
+struct AddTriggerForm {
+    picker: Entity<GridPicker>,
+    picks: HashMap<SharedString, TriggerInstanceId>,
     action_id: ActionId,
     _sub: Subscription,
 }

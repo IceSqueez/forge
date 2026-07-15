@@ -8,14 +8,15 @@ use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup,
     GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, MenuPlacement, OverlayPosition,
-    Radius, SheetPosition, Spacing, TextInput, ghost_button_with_icon, icon, menu_button,
-    menu_divider, menu_item, overlay, primary_button, radius, row_card, secondary_button,
-    side_sheet, spacing, status_dot, toggle,
+    Radius, SheetPosition, Spacing, TextInput, ghost_button_with_icon, icon, icon_inherit,
+    menu_button, menu_divider, menu_item, overlay, primary_button, radius, row_card,
+    secondary_button, side_sheet, spacing, status_dot, toggle,
 };
 use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
+    TriggerRegistry,
 };
-use forge_types::{SubActionConfig, SubActionStep, TriggerInstance, Variant};
+use forge_types::{SubActionConfig, SubActionStep, TriggerInstance, TriggerInstanceId, Variant};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
     Window, div, px,
@@ -446,6 +447,108 @@ fn empty_placeholder_card(
         .into_any_element()
 }
 
+/// The platform accent a trigger instance's card glyph inks, keyed off the
+/// `kind_id` prefix (mirroring the trigger picker's platform grouping).
+fn trigger_kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
+    if kind_id.starts_with("twitch.") {
+        palette.brand
+    } else if kind_id.starts_with("youtube.") {
+        palette.platform_youtube
+    } else if kind_id.starts_with("kick.") {
+        palette.platform_kick
+    } else if kind_id.starts_with("obs.") {
+        palette.text_secondary
+    } else if kind_id.starts_with("vtube.") {
+        palette.accent_teal
+    } else if kind_id.starts_with("midi.") {
+        palette.random
+    } else if kind_id.starts_with("hotkey.") || kind_id.starts_with("script.") {
+        palette.warning
+    } else {
+        palette.info
+    }
+}
+
+/// The linkable user-defined instances as one "saved triggers" grid band, paired
+/// with the [`TriggerInstanceId`] each card id links. A disabled instance renders in
+/// the [`GridPickerItemState::Disabled`] look.
+fn build_trigger_groups(
+    instances: &[TriggerInstance],
+    registry: &TriggerRegistry,
+    palette: &ForgePalette,
+) -> (
+    Vec<GridPickerGroup>,
+    HashMap<SharedString, TriggerInstanceId>,
+) {
+    let mut items: Vec<GridPickerItem> = Vec::with_capacity(instances.len());
+    let mut picks: HashMap<SharedString, TriggerInstanceId> = HashMap::new();
+    for instance in instances {
+        let descriptor = registry.get(&instance.kind_id);
+        let color = trigger_kind_color(&instance.kind_id, palette);
+        let id = SharedString::from(format!("trigger-{}", instance.id));
+        picks.insert(id.clone(), instance.id);
+        let glyph = Icon::from_name(
+            descriptor
+                .map(TriggerKindDescriptor::icon_name)
+                .unwrap_or("bolt"),
+        );
+        let condition = descriptor
+            .map(|d| d.condition_display(&instance.overrides))
+            .unwrap_or_default();
+        let desc = if condition.is_empty() {
+            descriptor
+                .map(|d| d.label().to_owned())
+                .unwrap_or_else(|| instance.kind_id.clone())
+        } else {
+            condition
+        };
+        let state = if instance.enabled {
+            GridPickerItemState::Normal
+        } else {
+            GridPickerItemState::Disabled
+        };
+        items.push(GridPickerItem {
+            id,
+            icon: glyph,
+            icon_color: color,
+            name: instance.name.clone().into(),
+            desc: desc.into(),
+            state,
+        });
+    }
+    let groups = vec![GridPickerGroup {
+        label: "Your saved triggers".into(),
+        dot_color: palette.warning,
+        scope: SharedString::from("all"),
+        items,
+    }];
+    (groups, picks)
+}
+
+/// Borderless trailing unlink affordance on a linked trigger card: a faint `X` that,
+/// on hover, washes its frame solid `random` and inverts its glyph to `shell`.
+fn trigger_unlink_btn(
+    id: impl Into<ElementId>,
+    palette: &ForgePalette,
+    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    let solid = palette.random;
+    let on_solid = palette.shell;
+    div()
+        .id(id.into())
+        .flex()
+        .items_center()
+        .justify_center()
+        .p(spacing(Spacing::Xxs, Density::Cozy))
+        .rounded(radius(Radius::Sm))
+        .text_color(palette.text_faint)
+        .cursor_pointer()
+        .hover(move |s| s.bg(solid).text_color(on_solid))
+        .on_click(handler)
+        .child(icon_inherit(Icon::X, UNLINK_GLYPH))
+        .into_any_element()
+}
+
 impl ScreenActionsView {
     // --- editor: current chain --------------------------------------------
 
@@ -812,6 +915,190 @@ impl ScreenActionsView {
         );
     }
 
+    // --- editor: link / unlink triggers -----------------------------------
+
+    /// Opens the unified centred grid picker over the user-defined trigger instances
+    /// not yet linked to the selected action. The linkable set is pulled off the
+    /// runtime service first; the picker opens (and focuses) once it lands. An empty
+    /// set toasts rather than opening an empty grid.
+    fn open_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(action_id) = self.selected else {
+            return;
+        };
+        if self.detail.is_none() {
+            return;
+        }
+        self.step_menu_open = None;
+        let service = Arc::clone(&self.actions_service);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(
+                service
+                    .list_linkable_triggers(action_id)
+                    .await
+                    .map_err(|e| e.to_string()),
+            );
+        });
+        cx.spawn_in(window, async move |this, cx| match rx.await {
+            Ok(Ok(instances)) => {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.apply_trigger_picker(action_id, instances, window, cx)
+                });
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    /// Builds and opens the trigger grid picker from the pulled linkable set, guarding
+    /// against the selection having moved on while the pull was in flight.
+    fn apply_trigger_picker(
+        &mut self,
+        action_id: ActionId,
+        instances: Vec<TriggerInstance>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected != Some(action_id) {
+            return;
+        }
+        if instances.is_empty() {
+            cx.push_toast(
+                ToastKind::Info,
+                "No unlinked triggers available \u{2014} create one on the Triggers screen",
+            );
+            cx.notify();
+            return;
+        }
+        let palette = cx.palette();
+        let action_name = self
+            .detail
+            .as_ref()
+            .map(|d| d.action.name.clone())
+            .unwrap_or_else(|| "this action".to_owned());
+        let count = instances.len();
+        let (groups, picks) = build_trigger_groups(&instances, &self.trigger_registry, &palette);
+        let config = GridPickerConfig {
+            accent: palette.warning,
+            header_icon: Icon::Bolt,
+            title: "Add trigger".into(),
+            subtitle: GridPickerSubtitle::Context {
+                lead: "Fires".into(),
+                name: action_name.into(),
+                note: format!("\u{b7} {count} available").into(),
+            },
+            footer_hint: "Links a saved trigger \u{2014} create new ones on the Triggers screen"
+                .into(),
+            search_placeholder: "Search triggers\u{2026}".into(),
+            scope_cap: Some(6),
+        };
+        let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
+        let sub = cx.subscribe(&picker, Self::on_trigger_picker_event);
+        picker.read(cx).focus(window, cx);
+        self.add_trigger = Some(AddTriggerForm {
+            picker,
+            picks,
+            action_id,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    fn on_trigger_picker_event(
+        &mut self,
+        _picker: Entity<GridPicker>,
+        event: &GridPickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            GridPickerEvent::Picked(id) => {
+                if let Some((action_id, instance_id)) = self
+                    .add_trigger
+                    .as_ref()
+                    .and_then(|f| f.picks.get(id).copied().map(|inst| (f.action_id, inst)))
+                {
+                    self.link_trigger(action_id, instance_id, cx);
+                }
+            }
+            GridPickerEvent::Dismissed => self.cancel_trigger_picker(cx),
+        }
+    }
+
+    pub(super) fn cancel_trigger_picker(&mut self, cx: &mut Context<Self>) {
+        self.add_trigger = None;
+        cx.notify();
+    }
+
+    /// Links `instance_id` to the selected action through the runtime service, then
+    /// re-pulls the editor detail in full so the triggers section mirrors the persisted
+    /// links rather than a locally-patched list.
+    fn link_trigger(
+        &mut self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected != Some(action_id) {
+            self.add_trigger = None;
+            cx.notify();
+            return;
+        }
+        self.add_trigger = None;
+        let service = Arc::clone(&self.actions_service);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(
+                service
+                    .link_trigger_instance(action_id, instance_id)
+                    .await
+                    .map_err(|e| e.to_string()),
+            );
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| this.reload_detail(cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Unlinks `instance_id` from the selected action through the runtime service, then
+    /// re-pulls the editor detail in full.
+    fn unlink_trigger(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
+        let Some(action_id) = self.selected else {
+            return;
+        };
+        let service = Arc::clone(&self.actions_service);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(
+                service
+                    .unlink_trigger_instance(action_id, instance_id)
+                    .await
+                    .map_err(|e| e.to_string()),
+            );
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| this.reload_detail(cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+        cx.notify();
+    }
+
     // --- render: right editor pane ----------------------------------------
 
     pub(super) fn render_editor_pane(
@@ -885,7 +1172,7 @@ impl ScreenActionsView {
             .flex_col()
             .gap(spacing(Spacing::Md, Density::Cozy))
             .child(self.render_editor_header(detail, palette, cx))
-            .child(self.render_triggers_section(detail, palette))
+            .child(self.render_triggers_section(detail, palette, cx))
             .child(self.render_sub_actions_section(detail, palette, cx));
 
         div()
@@ -989,10 +1276,15 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    /// Read-only triggers section: the mono count header over one card per linked
-    /// trigger instance (or an empty-state card). Link/unlink land in a follow-up
-    /// slice.
-    fn render_triggers_section(&self, detail: &ActionDetail, palette: &ForgePalette) -> AnyElement {
+    /// Triggers section: the mono count header over one card per linked trigger
+    /// instance (each with a trailing unlink affordance), an empty-state card when
+    /// none are linked, and a closing "Add trigger" button opening the grid picker.
+    fn render_triggers_section(
+        &self,
+        detail: &ActionDetail,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let label = div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
@@ -1015,9 +1307,17 @@ impl ScreenActionsView {
             ));
         } else {
             for instance in &detail.trigger_instances {
-                col = col.child(self.render_trigger_card(instance, palette));
+                col = col.child(self.render_trigger_card(instance, palette, cx));
             }
         }
+        col = col.child(add_row_button(
+            "actions-add-trigger",
+            Icon::Plus,
+            "Add trigger",
+            palette.warning,
+            palette,
+            cx.listener(|this, _: &ClickEvent, window, cx| this.open_trigger_picker(window, cx)),
+        ));
 
         div()
             .flex()
@@ -1032,6 +1332,7 @@ impl ScreenActionsView {
         &self,
         instance: &TriggerInstance,
         palette: &ForgePalette,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let descriptor = self.trigger_registry.get(&instance.kind_id);
         let accent = if instance.enabled {
@@ -1090,8 +1391,16 @@ impl ScreenActionsView {
                     .child(condition),
             );
 
+        let instance_id = instance.id;
+        let unlink = trigger_unlink_btn(
+            SharedString::from(format!("actions-trigger-unlink-{instance_id}")),
+            palette,
+            cx.listener(move |this, _: &ClickEvent, _, cx| this.unlink_trigger(instance_id, cx)),
+        );
+
         row_card(title, palette)
             .leading(leading)
+            .trailing(unlink)
             .idle_background(palette.elevated)
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
             .into_any_element()

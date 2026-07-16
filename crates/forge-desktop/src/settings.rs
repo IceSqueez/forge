@@ -6,13 +6,14 @@ use forge_components::{
     breadcrumb, card, ghost_button_with_icon, icon, metric_card, primary_button,
     primary_button_with_icon, radius, spacing, tr, with_alpha,
 };
-use forge_storage::{DataProvider, Language, SettingsRepo};
+use forge_storage::{Language, SettingsRepo};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Rgba, SharedString, Window, div,
     prelude::*, px,
 };
 
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
+use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
@@ -170,24 +171,19 @@ fn theme_key(theme: ThemeId) -> &'static str {
 
 pub struct SettingsView {
     section: SettingsSection,
-    backend: Arc<dyn DataProvider>,
-    rt_handle: tokio::runtime::Handle,
+    handles: Arc<RuntimeHandles>,
     language: Language,
     audio: Entity<SettingsAudioView>,
 }
 
 impl SettingsView {
-    pub fn new(
-        backend: Arc<dyn DataProvider>,
-        rt_handle: tokio::runtime::Handle,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let audio =
-            cx.new(|cx| SettingsAudioView::new(Arc::clone(&backend), rt_handle.clone(), cx));
+    pub fn new(handles: Arc<RuntimeHandles>, cx: &mut Context<Self>) -> Self {
+        let audio = cx.new(|cx| {
+            SettingsAudioView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+        });
         Self {
             section: SettingsSection::Appearance,
-            backend,
-            rt_handle,
+            handles,
             language: cx.global::<ActiveLanguage>().0,
             audio,
         }
@@ -212,8 +208,8 @@ impl SettingsView {
         crate::i18n::install_language(lang);
         cx.set_global(ActiveLanguage(lang));
 
-        let backend = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.rt_handle.spawn(async move {
+        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        self.handles.rt_handle.spawn(async move {
             if let Err(e) = backend.set_language(lang).await {
                 tracing::warn!(error = %e, "failed to persist language selection");
             }
@@ -966,8 +962,8 @@ impl SettingsView {
     }
 
     fn backup_db(&self) {
-        let backend = Arc::clone(&self.backend);
-        self.rt_handle.spawn(async move {
+        let backend = Arc::clone(&self.handles.backend);
+        self.handles.rt_handle.spawn(async move {
             let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
             let path =
                 forge_platform_core::paths::data_dir().join(format!("forge-backup-{stamp}.db"));

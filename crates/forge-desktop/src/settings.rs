@@ -15,6 +15,7 @@ use gpui::{
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
+use crate::settings_scripting::SettingsScriptingView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
@@ -174,6 +175,7 @@ pub struct SettingsView {
     handles: Arc<RuntimeHandles>,
     language: Language,
     audio: Entity<SettingsAudioView>,
+    scripting: Entity<SettingsScriptingView>,
 }
 
 impl SettingsView {
@@ -181,11 +183,15 @@ impl SettingsView {
         let audio = cx.new(|cx| {
             SettingsAudioView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });
+        let scripting = cx.new(|cx| {
+            SettingsScriptingView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+        });
         Self {
             section: SettingsSection::Appearance,
             handles,
             language: cx.global::<ActiveLanguage>().0,
             audio,
+            scripting,
         }
     }
 
@@ -323,6 +329,7 @@ impl SettingsView {
             SettingsSection::Appearance => self.appearance_pane(palette, density, cx),
             SettingsSection::Language => self.language_pane(palette, density, cx),
             SettingsSection::Audio => self.audio.clone().into_any_element(),
+            SettingsSection::Scripting => self.scripting.clone().into_any_element(),
             SettingsSection::Notifications => self.notifications_pane(palette, density),
             SettingsSection::Queues => self.queues_pane(palette, density),
             SettingsSection::Storage => self.storage_pane(palette, density, cx),

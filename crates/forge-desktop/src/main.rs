@@ -30,6 +30,7 @@ mod script_editor;
 mod server_console;
 mod settings;
 mod settings_audio;
+mod settings_scripting;
 mod shell;
 mod sidebar;
 mod soundboard;

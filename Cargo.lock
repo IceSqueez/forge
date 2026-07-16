@@ -2736,7 +2736,11 @@ dependencies = [
 name = "forge-components"
 version = "0.3.0-beta.2"
 dependencies = [
+ "fluent",
  "gpui",
+ "time",
+ "tracing",
+ "unic-langid",
  "unicode-segmentation",
 ]
 

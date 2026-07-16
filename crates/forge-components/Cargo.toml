@@ -6,7 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+fluent = { workspace = true }
 gpui = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+unic-langid = { workspace = true }
 unicode-segmentation = "1.13"
 
 [dev-dependencies]

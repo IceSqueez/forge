@@ -10,6 +10,7 @@ pub mod footer;
 pub mod grid_picker;
 pub mod icons;
 pub mod input_bar;
+pub mod locale;
 pub mod menu;
 pub mod modal;
 pub mod overlay;
@@ -46,6 +47,10 @@ pub use grid_picker::{
 };
 pub use icons::{Icon, IconAssets, icon, icon_inherit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
+pub use locale::{
+    ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,
+    set_locale_id, tr_lookup,
+};
 pub use menu::{
     MenuButton, MenuEntry, MenuItem, MenuPlacement, actionable_count, menu_button, menu_divider,
     menu_header, menu_item,

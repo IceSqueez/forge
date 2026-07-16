@@ -327,6 +327,9 @@ impl SettingsView {
             SettingsSection::Appearance => self.appearance_pane(palette, density, cx),
             SettingsSection::Language => self.language_pane(palette, density, cx),
             SettingsSection::Audio => self.audio.clone().into_any_element(),
+            SettingsSection::Notifications => self.notifications_pane(palette, density),
+            SettingsSection::Queues => self.queues_pane(palette, density),
+            SettingsSection::Storage => self.storage_pane(palette, density, cx),
             SettingsSection::Version => self.version_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics_pane(palette, density, cx),
             other => self.deferred_pane(other, palette, density),
@@ -875,6 +878,106 @@ impl SettingsView {
             .into_any_element()
     }
 
+    fn notifications_pane(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .child(pane_header(
+                Icon::InfoCircle,
+                tr!("settings_notifications_section_title"),
+                palette,
+            ))
+            .child(card(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_muted)
+                    .child(tr!("settings_notifications_hint")),
+                palette,
+            ))
+            .into_any_element()
+    }
+
+    fn queues_pane(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(0);
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(info_row(
+                tr!("settings_queues_workers_label"),
+                workers.to_string(),
+                palette,
+            ))
+            .child(field_hint(tr!("settings_queues_managed_hint"), palette));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .child(pane_header(
+                Icon::Notebook,
+                tr!("settings_queues_section_title"),
+                palette,
+            ))
+            .child(card(body, palette))
+            .into_any_element()
+    }
+
+    fn storage_pane(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let db_path = forge_platform_core::paths::data_dir().join("forge.db");
+        let backup_btn = primary_button(tr!("settings_storage_backup_btn"), palette).on_click(
+            "settings-db-backup",
+            cx.listener(|this, _: &ClickEvent, _, _| this.backup_db()),
+        );
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(info_row(
+                tr!("settings_storage_db_path_label"),
+                db_path.display().to_string(),
+                palette,
+            ))
+            .child(backup_btn)
+            .child(field_hint(tr!("settings_storage_backup_hint"), palette));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .child(pane_header(
+                Icon::Folder,
+                tr!("settings_storage_section_title"),
+                palette,
+            ))
+            .child(card(body, palette))
+            .into_any_element()
+    }
+
+    fn backup_db(&self) {
+        let backend = Arc::clone(&self.backend);
+        self.rt_handle.spawn(async move {
+            let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
+            let path =
+                forge_platform_core::paths::data_dir().join(format!("forge-backup-{stamp}.db"));
+            match backend.export(&path).await {
+                Ok(()) => tracing::info!(path = %path.display(), "DB backup created"),
+                Err(e) => tracing::warn!(error = %e, "DB backup failed"),
+            }
+        });
+    }
+
     fn deferred_pane(
         &self,
         section: SettingsSection,
@@ -964,6 +1067,34 @@ fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl Int
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
         .child(text)
+}
+
+fn info_row(
+    label: impl Into<SharedString>,
+    value: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    let label: SharedString = label.into();
+    let value: SharedString = value.into();
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .py(spacing(Spacing::Xs, Density::Cozy))
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(palette.text_primary)
+                .child(label),
+        )
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(palette.text_muted)
+                .child(value),
+        )
 }
 
 fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {

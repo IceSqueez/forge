@@ -1538,6 +1538,16 @@ script_editor_discard_title = Discard unsaved changes?
 script_editor_discard_body = This script has unsaved edits. Continue and lose them, or stay to keep editing.
 script_editor_discard_confirm = Discard
 script_editor_discard_cancel = Keep editing
+script_editor_discard_esc_hint = to keep editing
+script_editor_shared = Shared
+script_editor_sandbox_label = Sandbox:
+script_editor_sandbox_enabled = enabled
+script_editor_problems_tab = Problems
+script_editor_test_run_tab = Test run
+script_editor_console_cleared = Console cleared.
+script_editor_no_problems = No problems.
+script_editor_no_test_run = No test run yet.
+script_editor_rename_placeholder = Script name
 
 ## Script Editor - run modal
 
@@ -1546,6 +1556,10 @@ script_editor_type_check_errors = { $count ->
     [one] { $count } error
    *[other] { $count } errors
 }
+script_editor_run_modal_title = Run { $name }
+script_editor_run_modal_title_generic = Run script
+script_editor_run_input_placeholder = Enter { $label } value…
+script_editor_run_input_error = Enter a value for { $name }
 
 ## Action telemetry - stat column headers
 
@@ -1693,6 +1707,7 @@ settings_audio_title = Audio
 ## Script editor - API docs panel
 
 script_editor_api_no_matches = No matches
+script_editor_api_search_placeholder = Search modules…
 
 ## Widget - layout chrome
 

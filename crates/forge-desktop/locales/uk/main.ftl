@@ -1559,6 +1559,16 @@ script_editor_discard_title = Відхилити незбережені змін
 script_editor_discard_body = У цьому скрипті є незбережені зміни. Продовжити й втратити їх або залишитися для редагування.
 script_editor_discard_confirm = Відхилити
 script_editor_discard_cancel = Продовжити редагування
+script_editor_discard_esc_hint = щоб продовжити редагування
+script_editor_shared = Спільні
+script_editor_sandbox_label = Пісочниця:
+script_editor_sandbox_enabled = увімкнено
+script_editor_problems_tab = Проблеми
+script_editor_test_run_tab = Тестовий запуск
+script_editor_console_cleared = Консоль очищено.
+script_editor_no_problems = Проблем немає.
+script_editor_no_test_run = Тестових запусків ще немає.
+script_editor_rename_placeholder = Назва скрипта
 
 ## Редактор скриптів - модальне вікно запуску
 
@@ -1569,6 +1579,10 @@ script_editor_type_check_errors = { $count ->
     [many] { $count } помилок
    *[other] { $count } помилок
 }
+script_editor_run_modal_title = Запустити { $name }
+script_editor_run_modal_title_generic = Запустити скрипт
+script_editor_run_input_placeholder = Введіть значення { $label }…
+script_editor_run_input_error = Введіть значення для { $name }
 
 ## Action telemetry - stat column headers
 
@@ -1718,6 +1732,7 @@ settings_audio_title = Аудіо
 ## Script editor - API docs panel
 
 script_editor_api_no_matches = Збігів не знайдено
+script_editor_api_search_placeholder = Пошук модулів…
 
 ## Widget - layout chrome
 

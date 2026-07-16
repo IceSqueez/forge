@@ -2,7 +2,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
     Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, icon, modal,
-    overlay, primary_button, radius, spacing, with_alpha,
+    overlay, primary_button, radius, spacing, tr, with_alpha,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
@@ -188,7 +188,7 @@ impl ScriptEditorView {
             .map_or(0, |m| m + 1);
 
         let api_search = cx.new(|cx| {
-            TextInput::new("Search modules\u{2026}", cx)
+            TextInput::new(tr!("script_editor_api_search_placeholder"), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_XS)
                 .leading_icon(Icon::Search, palette.text_faint)
@@ -433,7 +433,8 @@ impl ScriptEditorView {
         };
         let palette = cx.palette();
         let input = cx.new(|cx| {
-            let mut ti = TextInput::new("Script name", cx).with_palette(palette);
+            let mut ti =
+                TextInput::new(tr!("script_editor_rename_placeholder"), cx).with_palette(palette);
             ti.set_content(current, cx);
             ti
         });
@@ -471,8 +472,14 @@ impl ScriptEditorView {
 
     fn open_run_modal(&mut self, cx: &mut Context<Self>) {
         let (script_name, title) = match self.selected.and_then(|id| self.find_file(id)) {
-            Some(f) => (f.name.clone(), format!("Run {}", f.name)),
-            None => ("script".to_owned(), "Run script".to_owned()),
+            Some(f) => (
+                f.name.clone(),
+                tr!("script_editor_run_modal_title", name = f.name.as_str()),
+            ),
+            None => (
+                "script".to_owned(),
+                tr!("script_editor_run_modal_title_generic"),
+            ),
         };
         let palette = cx.palette();
         let mut inputs = Vec::new();
@@ -495,7 +502,7 @@ impl ScriptEditorView {
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> RunInput {
-        let placeholder = format!("Enter {label} value\u{2026}");
+        let placeholder = tr!("script_editor_run_input_placeholder", label = label);
         let input = cx.new(|cx| {
             TextInput::new(placeholder, cx)
                 .with_palette(palette)
@@ -530,7 +537,8 @@ impl ScriptEditorView {
             .map(|f| f.name.clone());
         if let Some(name) = missing {
             if let Some(modal) = self.run_modal.as_mut() {
-                modal.error = Some(format!("Enter a value for {name}").into());
+                modal.error =
+                    Some(tr!("script_editor_run_input_error", name = name.as_ref()).into());
             }
             cx.notify();
             return;
@@ -597,13 +605,16 @@ impl ScriptEditorView {
 
     fn page_header(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let mut crumbs = vec![BreadcrumbCrumb::link(
-            "Actions",
+            tr!("nav_actions"),
             "script-crumb-actions",
             cx.listener(|this, _: &ClickEvent, _, cx| this.go_back(cx)),
         )];
         match self.selected.and_then(|id| self.find_file(id)) {
             Some(file) => {
-                let folder = self.folder_of(file.id).unwrap_or("Shared").to_owned();
+                let folder = self
+                    .folder_of(file.id)
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| tr!("script_editor_shared"));
                 crumbs.push(BreadcrumbCrumb::leaf(folder));
                 let label = if file.dirty {
                     format!("{} ●", file.name)
@@ -619,9 +630,13 @@ impl ScriptEditorView {
             None => (
                 Icon::CircleCheck,
                 palette.success,
-                "Type-check passed".to_owned(),
+                tr!("script_editor_type_check_passed"),
             ),
-            Some(n) => (Icon::AlertTriangle, palette.warning, format!("{n} errors")),
+            Some(n) => (
+                Icon::AlertTriangle,
+                palette.warning,
+                tr!("script_editor_type_check_errors", count = n as i64),
+            ),
         };
         let status = div()
             .flex()
@@ -684,13 +699,13 @@ impl ScriptEditorView {
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
-                    .child("Run"),
+                    .child(tr!("script_editor_run")),
             );
 
         let debug = self.toolbar_button(
             "script-debug",
             Icon::Bolt,
-            "Debug",
+            tr!("script_editor_debug"),
             palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.debug(cx)),
@@ -698,7 +713,7 @@ impl ScriptEditorView {
         let format = self.toolbar_button(
             "script-format",
             Icon::Refresh,
-            "Format",
+            tr!("script_editor_format"),
             palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.format(cx)),
@@ -706,7 +721,7 @@ impl ScriptEditorView {
         let api = self.toolbar_button(
             "script-api-docs",
             Icon::Notebook,
-            "API docs",
+            tr!("script_editor_api_docs"),
             palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_api_docs(cx)),
@@ -736,14 +751,14 @@ impl ScriptEditorView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("Sandbox:"),
+                    .child(tr!("script_editor_sandbox_label")),
             )
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.success)
-                    .child("enabled"),
+                    .child(tr!("script_editor_sandbox_enabled")),
             );
         let right = div()
             .flex()
@@ -784,7 +799,7 @@ impl ScriptEditorView {
         &self,
         id: &'static str,
         glyph: Icon,
-        label: &'static str,
+        label: impl Into<SharedString>,
         palette: &ForgePalette,
         density: Density,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -807,7 +822,7 @@ impl ScriptEditorView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
-                    .child(label),
+                    .child(label.into()),
             )
             .into_any_element()
     }
@@ -829,10 +844,10 @@ impl ScriptEditorView {
             }
         }
 
-        let mut shared = div()
-            .flex()
-            .flex_col()
-            .child(section_label("SHARED", palette));
+        let mut shared = div().flex().flex_col().child(section_label(
+            SharedString::from(tr!("script_editor_shared").to_uppercase()),
+            palette,
+        ));
         for file in &self.shared {
             shared = shared.child(self.file_row(file, false, palette, cx));
         }
@@ -840,7 +855,7 @@ impl ScriptEditorView {
         let mut vars = div()
             .flex()
             .flex_col()
-            .child(section_label("VARIABLES IN SCOPE", palette));
+            .child(section_label(tr!("script_editor_vars_label"), palette));
         for (name, ty) in &self.variables {
             vars = vars.child(variable_row(name.clone(), ty.clone(), palette));
         }
@@ -1095,7 +1110,7 @@ impl ScriptEditorView {
                     } else {
                         palette.text_muted
                     })
-                    .child("Output"),
+                    .child(tr!("script_editor_output_header")),
             );
 
         let problems_active = self.console_tab == ConsoleTab::Problems;
@@ -1117,7 +1132,7 @@ impl ScriptEditorView {
                     } else {
                         palette.text_muted
                     })
-                    .child("Problems"),
+                    .child(tr!("script_editor_problems_tab")),
             )
             .child(badge(
                 palette.surface_overlay,
@@ -1143,7 +1158,7 @@ impl ScriptEditorView {
                     } else {
                         palette.text_muted
                     })
-                    .child("Test run"),
+                    .child(tr!("script_editor_test_run_tab")),
             );
 
         let tabs = div()
@@ -1206,7 +1221,7 @@ impl ScriptEditorView {
         match self.console_tab {
             ConsoleTab::Output => {
                 if self.console.is_empty() {
-                    body.child(muted_line("Console cleared.", palette))
+                    body.child(muted_line(tr!("script_editor_console_cleared"), palette))
                 } else {
                     let mut b = body;
                     for line in &self.console {
@@ -1217,7 +1232,7 @@ impl ScriptEditorView {
             }
             ConsoleTab::Problems => {
                 if self.problems.is_empty() {
-                    body.child(muted_line("No problems.", palette))
+                    body.child(muted_line(tr!("script_editor_no_problems"), palette))
                 } else {
                     let mut b = body;
                     for problem in &self.problems {
@@ -1233,7 +1248,9 @@ impl ScriptEditorView {
                     b
                 }
             }
-            ConsoleTab::TestRun => body.child(muted_line("No test run yet.", palette)),
+            ConsoleTab::TestRun => {
+                body.child(muted_line(tr!("script_editor_no_test_run"), palette))
+            }
         }
         .into_any_element()
     }
@@ -1245,22 +1262,23 @@ impl ScriptEditorView {
             .map(|f| f.name.clone())
             .unwrap_or_default();
 
+        let kind = tr!("widget_confirm_delete_kind_script");
         let card = confirm_modal(
-            "Delete script?",
-            "This permanently removes the script file. This cannot be undone.",
+            tr!("widget_confirm_delete_title", kind = kind.as_str()),
+            tr!("widget_confirm_delete_hint"),
             ConfirmTone::Destructive,
             palette,
         )
         .item_name(name)
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "script-delete-cancel",
-            "Cancel",
+            tr!("widget_confirm_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(
             "script-delete-confirm",
-            "Delete",
+            tr!("script_editor_delete_action"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
         );
 
@@ -1290,7 +1308,7 @@ impl ScriptEditorView {
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
-                    .child("API reference"),
+                    .child(tr!("script_editor_api_reference")),
             )
             .child(icon(Icon::Pin, GLYPH_PIN, palette.text_faint));
 
@@ -1345,7 +1363,7 @@ impl ScriptEditorView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("No matching methods."),
+                    .child(tr!("script_editor_api_no_matches")),
             );
         }
 
@@ -1394,11 +1412,13 @@ impl ScriptEditorView {
             .flex()
             .items_center()
             .justify_between()
-            .child(ghost_button("Cancel", palette).on_click(
-                "script-run-cancel",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_run(cx)),
-            ))
-            .child(primary_button("Run", palette).on_click(
+            .child(
+                ghost_button(tr!("script_editor_run_modal_cancel"), palette).on_click(
+                    "script-run-cancel",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_run(cx)),
+                ),
+            )
+            .child(primary_button(tr!("script_editor_run"), palette).on_click(
                 "script-run-submit",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.submit_run(cx)),
             ));
@@ -1430,20 +1450,20 @@ impl ScriptEditorView {
         self.pending_nav.as_ref()?;
 
         let card = confirm_modal(
-            "Discard unsaved changes?",
-            "The open script has unsaved edits. Leaving now discards them.",
+            tr!("script_editor_discard_title"),
+            tr!("script_editor_discard_body"),
             ConfirmTone::Warning,
             palette,
         )
-        .esc_hint("to keep editing")
+        .esc_hint(tr!("script_editor_discard_esc_hint"))
         .on_cancel(
             "script-discard-cancel",
-            "Keep editing",
+            tr!("script_editor_discard_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_discard(cx)),
         )
         .on_confirm(
             "script-discard-confirm",
-            "Discard",
+            tr!("script_editor_discard_confirm"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_discard(cx)),
         );
 
@@ -1514,7 +1534,7 @@ impl Render for ScriptEditorView {
     }
 }
 
-fn section_label(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .pt(spacing(Spacing::Sm, Density::Cozy))
         .pb(spacing(Spacing::Xxs, Density::Cozy))
@@ -1522,7 +1542,7 @@ fn section_label(label: &'static str, palette: &ForgePalette) -> impl IntoElemen
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
-        .child(label)
+        .child(label.into())
 }
 
 fn scripts_header(palette: &ForgePalette, cx: &mut Context<ScriptEditorView>) -> impl IntoElement {
@@ -1531,7 +1551,7 @@ fn scripts_header(palette: &ForgePalette, cx: &mut Context<ScriptEditorView>) ->
         .flex()
         .items_center()
         .justify_between()
-        .child(section_label("SCRIPTS", palette))
+        .child(section_label(tr!("script_editor_scripts_label"), palette))
         .child(
             div()
                 .id("script-new")
@@ -1582,8 +1602,8 @@ fn console_row(line: &ConsoleLine, palette: &ForgePalette) -> impl IntoElement {
         .child(div().child(line.text.clone()))
 }
 
-fn muted_line(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
-    div().text_color(palette.text_faint).child(text)
+fn muted_line(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    div().text_color(palette.text_faint).child(text.into())
 }
 
 fn api_fn_row(sig: &'static str, palette: &ForgePalette) -> impl IntoElement {

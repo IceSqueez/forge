@@ -16,6 +16,7 @@ use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
 use crate::settings_scripting::SettingsScriptingView;
+use crate::settings_websocket::SettingsWebSocketView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
@@ -176,6 +177,7 @@ pub struct SettingsView {
     language: Language,
     audio: Entity<SettingsAudioView>,
     scripting: Entity<SettingsScriptingView>,
+    websocket: Entity<SettingsWebSocketView>,
 }
 
 impl SettingsView {
@@ -186,12 +188,21 @@ impl SettingsView {
         let scripting = cx.new(|cx| {
             SettingsScriptingView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });
+        let websocket = cx.new(|cx| {
+            SettingsWebSocketView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                handles.server.clone(),
+                cx,
+            )
+        });
         Self {
             section: SettingsSection::Appearance,
             handles,
             language: cx.global::<ActiveLanguage>().0,
             audio,
             scripting,
+            websocket,
         }
     }
 
@@ -330,6 +341,7 @@ impl SettingsView {
             SettingsSection::Language => self.language_pane(palette, density, cx),
             SettingsSection::Audio => self.audio.clone().into_any_element(),
             SettingsSection::Scripting => self.scripting.clone().into_any_element(),
+            SettingsSection::WebSocket => self.websocket.clone().into_any_element(),
             SettingsSection::Notifications => self.notifications_pane(palette, density),
             SettingsSection::Queues => self.queues_pane(palette, density),
             SettingsSection::Storage => self.storage_pane(palette, density, cx),

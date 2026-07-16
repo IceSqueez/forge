@@ -104,8 +104,9 @@ impl AppShell {
                 .detach();
                 let home_stats = topics.home_stats.clone();
                 let backend = Arc::clone(&handles.backend);
+                let rt_handle = handles.rt_handle.clone();
                 cx.spawn(async move |_shell, cx| {
-                    refresh_dashboard_stats(home_stats, backend, cx).await;
+                    refresh_dashboard_stats(home_stats, backend, rt_handle, cx).await;
                 })
                 .detach();
                 home.into()
@@ -394,22 +395,28 @@ impl AppShell {
 async fn refresh_dashboard_stats(
     home_stats: Entity<HomeStats>,
     backend: Arc<dyn DataProvider>,
+    rt_handle: tokio::runtime::Handle,
     cx: &mut AsyncApp,
 ) {
     let actions = backend.action_repo();
     let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
     let history = backend.history_repo();
-    match compute_stats(&*actions, &*globals, &*history).await {
-        Ok(stats) => {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    rt_handle.spawn(async move {
+        let _ = tx.send(compute_stats(&*actions, &*globals, &*history).await);
+    });
+    match rx.await {
+        Ok(Ok(stats)) => {
             let _ = home_stats.update(cx, |stats_topic, cx| {
                 if stats_topic.set_stats(stats) {
                     cx.notify();
                 }
             });
         }
-        Err(err) => {
+        Ok(Err(err)) => {
             eprintln!("forge-desktop: home dashboard stats load failed: {err}");
         }
+        Err(_) => {}
     }
 }
 

@@ -11,7 +11,7 @@ use crate::tokens::{
 
 pub fn field_label(
     palette: &ForgePalette,
-    label: &'static str,
+    label: impl Into<SharedString>,
     control: impl IntoElement,
 ) -> impl IntoElement {
     div()
@@ -23,7 +23,7 @@ pub fn field_label(
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
-                .child(label),
+                .child(label.into()),
         )
         .child(control)
 }

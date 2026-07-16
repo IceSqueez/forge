@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
-    FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    breadcrumb, field_label, icon, modal, overlay, primary_button, primary_button_with_icon,
-    radius, secondary_button, spacing, toggle, with_alpha,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
+    breadcrumb, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
+    secondary_button, spacing, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -47,8 +47,12 @@ struct QueueRow {
 }
 
 impl QueueRow {
-    fn mode_label(&self) -> &'static str {
-        if self.blocking { "serial" } else { "parallel" }
+    fn mode_label(&self) -> SharedString {
+        if self.blocking {
+            SharedString::from(tr!("queues_metric_serial"))
+        } else {
+            SharedString::from(tr!("queues_metric_parallel"))
+        }
     }
 }
 
@@ -224,7 +228,7 @@ impl QueuesView {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.paused = true;
             q.paused_since_min = Some(0);
-            self.feedback = Some(format!("Draining “{}”.", q.name).into());
+            self.feedback = Some(tr!("queues_drain_feedback", name = q.name.as_str()).into());
         }
         self.dispatch_drain(id);
         cx.notify();
@@ -270,7 +274,8 @@ impl QueuesView {
         let palette = cx.palette();
         let name_seed = name_seed.to_owned();
         let name_input = cx.new(|cx| {
-            let mut ti = TextInput::new("Queue name (required)", cx).with_palette(palette);
+            let mut ti =
+                TextInput::new(tr!("queues_create_name_placeholder"), cx).with_palette(palette);
             ti.set_content(name_seed, cx);
             ti
         });
@@ -470,18 +475,18 @@ impl QueuesView {
             palette.text_faint
         };
         let pending_hint = if paused {
-            "held"
+            SharedString::from(tr!("queues_metric_held"))
         } else if q.in_flight > 0 {
-            "in flight"
+            SharedString::from(tr!("queues_metric_in_flight"))
         } else {
-            "idle"
+            SharedString::from(tr!("queues_metric_idle"))
         };
 
         let row = div()
             .flex()
             .flex_row()
             .child(metric_col(
-                "CONCURRENCY",
+                SharedString::from(tr!("queues_metric_concurrency")),
                 q.concurrency.to_string(),
                 q.mode_label(),
                 palette.text_primary,
@@ -490,7 +495,7 @@ impl QueuesView {
                 density,
             ))
             .child(metric_col(
-                "PENDING",
+                SharedString::from(tr!("queues_metric_pending")),
                 q.pending.to_string(),
                 pending_hint,
                 pending_value_color,
@@ -499,9 +504,9 @@ impl QueuesView {
                 density,
             ))
             .child(metric_col(
-                "ACTIONS",
+                SharedString::from(tr!("queues_metric_actions")),
                 q.actions.to_string(),
-                "assigned",
+                SharedString::from(tr!("queues_metric_assigned")),
                 palette.text_primary,
                 palette.text_faint,
                 palette,
@@ -551,7 +556,7 @@ impl QueuesView {
             card_button(
                 ("q-resume", index),
                 Icon::PlayerPlay,
-                "Resume",
+                SharedString::from(tr!("queues_resume_btn")),
                 palette.shell,
                 Some(palette.success),
                 palette,
@@ -562,7 +567,7 @@ impl QueuesView {
             card_button(
                 ("q-pause", index),
                 Icon::PlayerPause,
-                "Pause",
+                SharedString::from(tr!("queues_pause_btn")),
                 palette.warning,
                 None,
                 palette,
@@ -574,7 +579,7 @@ impl QueuesView {
         let drain = card_button(
             ("q-drain", index),
             Icon::Eraser,
-            "Drain",
+            SharedString::from(tr!("queues_drain_btn")),
             palette.text_secondary,
             None,
             palette,
@@ -585,7 +590,7 @@ impl QueuesView {
         let configure = card_button(
             ("q-configure", index),
             Icon::Settings,
-            "Configure",
+            SharedString::from(tr!("queues_configure_btn")),
             palette.text_secondary,
             None,
             palette,
@@ -643,13 +648,26 @@ impl QueuesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let title = if modal_state.editing.is_some() {
-            "Configure queue"
+            tr!("queues_edit_title")
         } else {
-            "New queue"
+            tr!("queues_create_title")
         };
 
         let blocking = modal_state.blocking;
-        let name_field = field_label(palette, "NAME", div().child(modal_state.name_input.clone()));
+        let name_field = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(SharedString::from(
+                        tr!("queues_create_name_label").to_uppercase(),
+                    )),
+            )
+            .child(div().child(modal_state.name_input.clone()));
 
         let toggle_label = div()
             .flex_1()
@@ -661,14 +679,14 @@ impl QueuesView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Serial execution"),
+                    .child(SharedString::from(tr!("queues_create_blocking_label"))),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("Run one action at a time; later actions wait their turn"),
+                    .child(SharedString::from(tr!("queues_create_blocking_desc"))),
             );
         let blocking_row = div()
             .w_full()
@@ -695,11 +713,11 @@ impl QueuesView {
 
         let saveable = self.modal_saveable(cx);
         let save_label = if modal_state.editing.is_some() {
-            "Save"
+            tr!("common_save")
         } else {
-            "Create"
+            tr!("queues_create_btn")
         };
-        let cancel = secondary_button("Cancel", palette).on_click(
+        let cancel = secondary_button(tr!("queues_create_cancel"), palette).on_click(
             "q-modal-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
         );
@@ -719,10 +737,10 @@ impl QueuesView {
 
         let card = modal(title, body, palette)
             .header_icon(Icon::Notebook, palette.brand)
-            .subtitle("How actions run in this queue")
+            .subtitle(tr!("queues_create_subtitle"))
             .width(MODAL_WIDTH)
             .footer(footer)
-            .kbd_hint("Enter to save · Esc to cancel")
+            .kbd_hint(tr!("queues_create_kbd_hint"))
             .on_close(
                 "q-modal-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
@@ -772,12 +790,12 @@ impl Render for QueuesView {
         let pause_all = warning_ghost_button(
             "q-pause-all",
             Icon::PlayerPause,
-            "Pause all",
+            SharedString::from(tr!("queues_pause_all_btn")),
             &palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.pause_all(cx)),
         );
-        let new_queue = primary_button_with_icon(Icon::Plus, "New queue", &palette)
+        let new_queue = primary_button_with_icon(Icon::Plus, tr!("queues_new_queue_btn"), &palette)
             .density(density)
             .on_click(
                 "q-new",
@@ -792,8 +810,8 @@ impl Render for QueuesView {
 
         let header = breadcrumb(
             vec![
-                BreadcrumbCrumb::leaf("Automation"),
-                BreadcrumbCrumb::leaf("Queues"),
+                BreadcrumbCrumb::leaf(tr!("queues_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("queues_breadcrumb_queues")),
             ],
             &palette,
         )
@@ -806,9 +824,9 @@ impl Render for QueuesView {
 
         let body = if self.queues.is_empty() {
             let caption = if self.loading {
-                "Loading queues…"
+                SharedString::from(tr!("queues_loading"))
             } else {
-                "No queues configured."
+                SharedString::from(tr!("queues_empty"))
             };
             div()
                 .w_full()
@@ -851,10 +869,10 @@ impl Render for QueuesView {
 }
 
 fn status_badge(paused: bool, palette: &ForgePalette) -> AnyElement {
-    let (mark, label, ink): (AnyElement, &str, gpui::Rgba) = if paused {
+    let (mark, label, ink): (AnyElement, SharedString, gpui::Rgba) = if paused {
         (
             icon(Icon::PlayerPause, BADGE_GLYPH, palette.warning).into_any_element(),
-            "PAUSED",
+            SharedString::from(tr!("queues_status_paused")),
             palette.warning,
         )
     } else {
@@ -864,7 +882,7 @@ fn status_badge(paused: bool, palette: &ForgePalette) -> AnyElement {
                 .rounded(radius(Radius::Pill))
                 .bg(palette.success)
                 .into_any_element(),
-            "RUNNING",
+            SharedString::from(tr!("queues_status_running")),
             palette.success,
         )
     };
@@ -889,9 +907,9 @@ fn status_badge(paused: bool, palette: &ForgePalette) -> AnyElement {
 
 #[allow(clippy::too_many_arguments)]
 fn metric_col(
-    caption: &'static str,
+    caption: SharedString,
     value: String,
-    hint: &'static str,
+    hint: SharedString,
     value_color: gpui::Rgba,
     hint_color: gpui::Rgba,
     palette: &ForgePalette,
@@ -941,7 +959,7 @@ fn idle_panel(palette: &ForgePalette, density: Density) -> AnyElement {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
-                .child("No actions running"),
+                .child(SharedString::from(tr!("queues_no_actions_running"))),
         )
         .into_any_element()
 }
@@ -971,7 +989,7 @@ fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
-                .child("running -"),
+                .child(SharedString::from(tr!("queues_running_label"))),
         )
         .into_any_element()
 }
@@ -985,7 +1003,10 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
         pills = pills.child(running_pill(name.clone(), palette));
     }
     if overflow > 0 {
-        pills = pills.child(running_pill(format!("+{overflow} more"), palette));
+        pills = pills.child(running_pill(
+            tr!("queues_overflow_more", count = overflow as i64),
+            palette,
+        ));
     }
 
     div()
@@ -1002,7 +1023,7 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
-                .child("RUNNING NOW"),
+                .child(SharedString::from(tr!("queues_running_now_header"))),
         )
         .child(pills)
         .into_any_element()
@@ -1024,11 +1045,14 @@ fn running_pill(label: impl Into<SharedString>, palette: &ForgePalette) -> impl 
 }
 
 fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
-    let caption = match q.paused_since_min {
-        Some(min) if min > 0 => {
-            format!("{} actions waiting - paused {} min ago", q.pending, min)
-        }
-        _ => "Queue is paused".to_owned(),
+    let caption: SharedString = match q.paused_since_min {
+        Some(min) if min > 0 => tr!(
+            "queues_paused_with_time",
+            pending = q.pending as i64,
+            mins = min
+        )
+        .into(),
+        _ => tr!("queues_paused_simple").into(),
     };
     div()
         .w_full()
@@ -1057,7 +1081,7 @@ fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
 fn card_button(
     id: impl Into<gpui::ElementId>,
     glyph: Icon,
-    label: &'static str,
+    label: SharedString,
     ink: gpui::Rgba,
     fill: Option<gpui::Rgba>,
     palette: &ForgePalette,
@@ -1100,7 +1124,7 @@ fn card_button(
 fn warning_ghost_button(
     id: &'static str,
     glyph: Icon,
-    label: &'static str,
+    label: SharedString,
     palette: &ForgePalette,
     density: Density,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -1169,13 +1193,12 @@ async fn load_queues(
 
 fn default_description(name: &str) -> String {
     match name {
-        "Default" => "Catch-all queue for actions without explicit queue assignment",
-        "Alerts" => "Subs, raids, cheers · serialized so overlays don't overlap",
-        "Background" => "Logging, analytics, side-effect-free tasks · parallel execution",
-        "Moderation" => "Auto-bans, timeouts, message deletions · paused for review",
-        _ => "",
+        "Default" => tr!("queues_desc_default"),
+        "Alerts" => tr!("queues_desc_alerts"),
+        "Background" => tr!("queues_desc_background"),
+        "Moderation" => tr!("queues_desc_moderation"),
+        _ => String::new(),
     }
-    .to_owned()
 }
 
 fn not_live_badge(palette: &ForgePalette) -> AnyElement {
@@ -1195,7 +1218,7 @@ fn not_live_badge(palette: &ForgePalette) -> AnyElement {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.warning)
-                .child("NOT LIVE · RESTART"),
+                .child(SharedString::from(tr!("queues_not_live_badge"))),
         )
         .into_any_element()
 }

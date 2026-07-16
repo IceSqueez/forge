@@ -977,6 +977,8 @@ queues_breadcrumb_queues = Queues
 queues_pause_all_btn = Pause all
 queues_new_queue_btn = New queue
 queues_empty = No queues configured.
+queues_loading = Loading queues…
+queues_drain_feedback = Draining “{ $name }”.
 queues_configure_btn = Configure
 queues_drain_btn = Drain
 queues_pause_btn = Pause
@@ -992,6 +994,8 @@ queues_create_blocking_desc = Run one action at a time; later actions wait their
 queues_create_btn = Create
 queues_create_cancel = Cancel
 queues_edit_title = Configure queue
+queues_create_subtitle = How actions run in this queue
+queues_create_kbd_hint = Enter to save · Esc to cancel
 
 ## Queues - card metrics
 

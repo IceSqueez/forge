@@ -979,6 +979,8 @@ queues_breadcrumb_queues = Черги
 queues_pause_all_btn = Пауза всіх
 queues_new_queue_btn = Нова черга
 queues_empty = Черг не налаштовано.
+queues_loading = Завантаження черг…
+queues_drain_feedback = Спустошення «{ $name }».
 queues_configure_btn = Налаштувати
 queues_drain_btn = Спустошити
 queues_pause_btn = Пауза
@@ -994,6 +996,8 @@ queues_create_blocking_desc = Виконувати по одній дії; на�
 queues_create_btn = Створити
 queues_create_cancel = Скасувати
 queues_edit_title = Налаштування черги
+queues_create_subtitle = Як дії виконуються в цій черзі
+queues_create_kbd_hint = Enter - зберегти · Esc - скасувати
 
 ## Черги - метрики картки
 

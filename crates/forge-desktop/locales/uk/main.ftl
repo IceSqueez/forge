@@ -103,14 +103,9 @@ home_glance_actions = Дії
 home_glance_fired = Спрацювань у сесії
 home_glance_globals = Глобальні змінні
 
-## Головна - лічильник дій + спрацювань (з множиною)
+## Головна - підпис поряд із великим лічильником
 
-home_card_automation_stat_label = { $count ->
-    [one] { $count } дія · { $fired } спрацювань сьогодні
-    [few] { $count } дії · { $fired } спрацювань сьогодні
-    [many] { $count } дій · { $fired } спрацювань сьогодні
-   *[other] { $count } дій · { $fired } спрацювань сьогодні
-}
+home_card_automation_stat_label = дій · { $fired } спрацювань сьогодні
 
 ## Головна - зведення активних / відключених
 
@@ -1076,6 +1071,18 @@ platforms_status_not_connected = Не підключено
 platforms_twitch_desc = Чат, підписки EventSub, нагороди каналу, біти, рейди
 platforms_youtube_desc = Живий чат, супер-чати, членство в каналі, підписники
 platforms_kick_desc = Чат, події каналу, підписники - нова стримінгова платформа
+
+## Платформи - чіпи можливостей
+
+platforms_feature_irc_chat = IRC-чат
+platforms_feature_channel_points = Нагороди каналу
+platforms_feature_bits_subs = Бітси та підписки
+platforms_feature_live_chat = Живий чат
+platforms_feature_super_chat = Супер-чат
+platforms_feature_memberships = Членства
+platforms_feature_chat = Чат
+platforms_feature_subs = Підписки
+platforms_feature_channel_events = Події каналу
 
 ## Загальна сторінка платформи
 

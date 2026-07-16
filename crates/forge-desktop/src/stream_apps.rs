@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, ForgePalette,
-    Icon, Radius, Spacing, breadcrumb, connection_status_badge, icon, radius, spacing,
+    Icon, Radius, Spacing, breadcrumb, connection_status_badge, icon, radius, spacing, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Subscription, Window, div,
@@ -25,21 +25,11 @@ const CARD_PAD_H: Pixels = px(18.0);
 
 const CHEVRON_SIZE: Pixels = px(16.0);
 
-type AppRow = (Integration, &'static str, Icon, &'static str);
+type AppRow = (Integration, &'static str, Icon);
 
 const APPS: [AppRow; 2] = [
-    (
-        Integration::Obs,
-        "OBS Studio",
-        Icon::Broadcast,
-        "Scenes, sources, recording control, replay buffers - full obs-websocket API",
-    ),
-    (
-        Integration::VTube,
-        "VTube Studio",
-        Icon::MoodSmile,
-        "Vtuber avatar control: hotkeys, expressions, item triggers",
-    ),
+    (Integration::Obs, "OBS Studio", Icon::Broadcast),
+    (Integration::VTube, "VTube Studio", Icon::MoodSmile),
 ];
 
 pub struct StreamAppsView {
@@ -66,7 +56,7 @@ impl StreamAppsView {
         integ: Integration,
         name: &'static str,
         glyph: Icon,
-        desc: &'static str,
+        desc: String,
         connected: bool,
         palette: &ForgePalette,
         density: Density,
@@ -83,9 +73,9 @@ impl StreamAppsView {
             .child(icon(glyph, TILE_GLYPH, integ.dot_color(palette)));
 
         let badge_label = if connected {
-            "Connected"
+            tr!("platforms_status_connected")
         } else {
-            "Not connected"
+            tr!("platforms_status_not_connected")
         };
         let title_row = div()
             .flex()
@@ -137,6 +127,14 @@ impl StreamAppsView {
             .child(icon(Icon::ChevronRight, CHEVRON_SIZE, palette.text_faint))
             .into_any_element()
     }
+
+    fn app_desc(integ: Integration) -> String {
+        match integ {
+            Integration::Obs => tr!("stream_apps_obs_desc"),
+            Integration::VTube => tr!("stream_apps_vtube_desc"),
+            _ => String::new(),
+        }
+    }
 }
 
 impl EventEmitter<NavRequested> for StreamAppsView {}
@@ -154,12 +152,12 @@ impl Render for StreamAppsView {
 
         let mut cards: Vec<AnyElement> = Vec::with_capacity(APPS.len());
         for (idx, entry) in APPS.iter().enumerate() {
-            let (integ, name, glyph, desc) = *entry;
+            let (integ, name, glyph) = *entry;
             cards.push(self.app_card(
                 integ,
                 name,
                 glyph,
-                desc,
+                Self::app_desc(integ),
                 connected[idx],
                 &palette,
                 density,
@@ -176,14 +174,14 @@ impl Render for StreamAppsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
-                    .child("Stream apps"),
+                    .child(tr!("stream_apps_title")),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("Local apps Forge talks to over WebSocket. Connect to control them from actions."),
+                    .child(tr!("stream_apps_subtitle")),
             );
 
         let body = div()
@@ -194,7 +192,10 @@ impl Render for StreamAppsView {
             .child(section_header)
             .child(app_grid(cards, density));
 
-        let header = breadcrumb(vec![BreadcrumbCrumb::leaf("Stream apps")], &palette);
+        let header = breadcrumb(
+            vec![BreadcrumbCrumb::leaf(tr!("stream_apps_breadcrumb"))],
+            &palette,
+        );
 
         let scroll = div()
             .id("stream-apps-scroll")

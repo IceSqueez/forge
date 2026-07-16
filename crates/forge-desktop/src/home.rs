@@ -1,7 +1,7 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, breadcrumb, card,
-    ghost_button_with_icon, icon, radius, spacing, sparkline, status_dot,
+    ghost_button_with_icon, icon, radius, spacing, sparkline, status_dot, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, Subscription,
@@ -112,18 +112,19 @@ impl HomeView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("Open-source stream automation, forged for streamers"),
+                    .child(tr!("home_hero_tagline")),
             );
 
-        let import_btn = ghost_button_with_icon(Icon::Download, "Import", palette)
+        let import_btn = ghost_button_with_icon(Icon::Download, tr!("home_hero_import"), palette)
             .density(density)
             .on_click("home-import", |_, _, _| {});
-        let new_action_btn = ghost_button_with_icon(Icon::Plus, "New action", palette)
-            .density(density)
-            .on_click(
-                "home-new-action",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::Actions, cx)),
-            );
+        let new_action_btn =
+            ghost_button_with_icon(Icon::Plus, tr!("home_hero_new_action"), palette)
+                .density(density)
+                .on_click(
+                    "home-new-action",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::Actions, cx)),
+                );
 
         let buttons = div()
             .flex()
@@ -153,11 +154,11 @@ impl HomeView {
         id: &'static str,
         glyph: Icon,
         glyph_color: Rgba,
-        section: &'static str,
-        title: &'static str,
+        section: String,
+        title: String,
         stat: String,
         stat_label: String,
-        hint: &'static str,
+        hint: String,
         warn: bool,
         target: Screen,
         palette: &ForgePalette,
@@ -277,11 +278,11 @@ impl HomeView {
             "home-jump-chat",
             Icon::MessageCircle,
             palette.brand,
-            "AUDIENCE",
-            "Chat",
+            tr!("home_card_audience_section"),
+            tr!("home_card_audience_title"),
             viewers,
-            "viewers now".to_owned(),
-            "Talk to your audience and see who's watching",
+            tr!("home_card_audience_stat_label"),
+            tr!("home_card_audience_hint"),
             false,
             Screen::Chat,
             palette,
@@ -292,11 +293,11 @@ impl HomeView {
             "home-jump-actions",
             Icon::Bolt,
             palette.warning,
-            "AUTOMATION",
-            "Actions",
+            tr!("home_card_automation_section"),
+            tr!("home_card_automation_title"),
             actions,
-            format!("actions · {fired} fired today"),
-            "Set up triggers, commands and timers",
+            tr!("home_card_automation_stat_label", fired = fired),
+            tr!("home_card_automation_hint"),
             false,
             Screen::Actions,
             palette,
@@ -307,11 +308,11 @@ impl HomeView {
             "home-jump-connections",
             Icon::Plug,
             palette.success,
-            "CONNECTIONS",
-            "Connections",
+            tr!("home_card_connections_section"),
+            tr!("home_card_connections_title"),
             format!("{connected}/{total}"),
-            "connected".to_owned(),
-            "Manage platforms, apps and modules",
+            tr!("home_card_connections_stat_label"),
+            tr!("home_card_connections_hint"),
             warn,
             Screen::Platforms,
             palette,
@@ -329,7 +330,7 @@ impl HomeView {
     }
 
     fn health_stat(
-        label: &'static str,
+        label: String,
         value: String,
         unit: Option<&'static str>,
         value_color: Rgba,
@@ -384,7 +385,7 @@ impl HomeView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.success)
-                    .child("LIVE"),
+                    .child(tr!("home_health_live")),
             );
 
         let header_left = div()
@@ -397,7 +398,7 @@ impl HomeView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Stream health"),
+                    .child(tr!("home_health_title")),
             )
             .child(live_badge);
 
@@ -412,7 +413,7 @@ impl HomeView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child("last 60s · auto-refresh"),
+                    .child(tr!("home_health_refresh_hint")),
             );
 
         let throughput = div()
@@ -425,7 +426,7 @@ impl HomeView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("THROUGHPUT · ev/s"),
+                    .child(tr!("home_health_throughput_label")),
             )
             .child(
                 div()
@@ -451,28 +452,28 @@ impl HomeView {
             .gap(spacing(Spacing::Sm, density))
             .child(throughput)
             .child(Self::health_stat(
-                "BITRATE · OBS",
+                tr!("home_health_bitrate_label"),
                 health.bitrate.to_string(),
                 Some("kbps"),
                 palette.text_primary,
                 palette,
             ))
             .child(Self::health_stat(
-                "DROPPED · OBS",
+                tr!("home_health_dropped_label"),
                 dropped_value,
                 None,
                 dropped_color,
                 palette,
             ))
             .child(Self::health_stat(
-                "FPS",
+                tr!("home_health_fps_label"),
                 health.fps.to_string(),
                 None,
                 palette.text_primary,
                 palette,
             ))
             .child(Self::health_stat(
-                "CPU",
+                tr!("home_health_cpu_label"),
                 health.cpu.to_string(),
                 Some("%"),
                 palette.text_primary,
@@ -499,10 +500,10 @@ impl HomeView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (status_text, status_color) = if connected {
-            ("connected", palette.success)
+        let (status_text, status_color): (String, Rgba) = if connected {
+            (tr!("home_conn_connected"), palette.success)
         } else {
-            ("offline", palette.text_faint)
+            (tr!("home_conn_offline"), palette.text_faint)
         };
         let dot_color = if connected {
             palette.success
@@ -566,7 +567,11 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let disconnected = total.saturating_sub(connected);
-        let summary = format!("{connected} active · {disconnected} disconnected");
+        let summary = tr!(
+            "home_connections_summary",
+            active = connected,
+            disconnected = disconnected
+        );
 
         let header = div()
             .w_full()
@@ -579,7 +584,7 @@ impl HomeView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Integrations"),
+                    .child(tr!("home_connections_title")),
             )
             .child(
                 div()
@@ -655,7 +660,7 @@ impl HomeView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child(" \u{2014} "),
+                    .child(" - "),
             )
             .child(
                 div()
@@ -719,7 +724,7 @@ impl HomeView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child("LIVE"),
+                    .child(tr!("home_health_live")),
             );
 
         let header = div()
@@ -732,7 +737,7 @@ impl HomeView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Recent events"),
+                    .child(tr!("home_events_title")),
             )
             .child(live_label);
 
@@ -741,7 +746,7 @@ impl HomeView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child("No events yet")
+                .child(tr!("home_events_empty"))
                 .into_any_element()
         } else {
             let count = recent.len();
@@ -765,7 +770,7 @@ impl HomeView {
     }
 
     fn glance_row(
-        label: &'static str,
+        label: String,
         value: String,
         value_color: Rgba,
         last: bool,
@@ -816,21 +821,21 @@ impl HomeView {
             .flex()
             .flex_col()
             .child(Self::glance_row(
-                "Actions",
+                tr!("home_glance_actions"),
                 actions,
                 palette.brand,
                 false,
                 palette,
             ))
             .child(Self::glance_row(
-                "Fired this session",
+                tr!("home_glance_fired"),
                 fired,
                 palette.success,
                 false,
                 palette,
             ))
             .child(Self::glance_row(
-                "Globals",
+                tr!("home_glance_globals"),
                 globals,
                 palette.warning,
                 true,
@@ -846,7 +851,7 @@ impl HomeView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("At a glance"),
+                    .child(tr!("home_glance_title")),
             )
             .child(rows);
 
@@ -875,7 +880,7 @@ impl Render for HomeView {
         let recent = stats.recent(5);
         let obs_health = stats.obs_health_snapshot();
 
-        let header = breadcrumb(vec![BreadcrumbCrumb::leaf("Home")], &palette);
+        let header = breadcrumb(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette);
 
         let hero = self.render_hero(&palette, density, cx);
         let jump_cards = self.render_jump_cards(

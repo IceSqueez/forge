@@ -1,14 +1,14 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
     ForgePalette, Icon, Radius, Spacing, breadcrumb, connection_status_badge, icon, radius,
-    spacing,
+    spacing, tr,
 };
 use std::collections::HashMap;
 
 use forge_platform_core::{BuiltinId, ConnectionState};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::home_stats::Integration;
@@ -32,37 +32,12 @@ const CHEVRON_SIZE: Pixels = px(16.0);
 const CHIP_PAD_V: Pixels = px(2.0);
 const CHIP_PAD_H: Pixels = px(7.0);
 
-/// Fields: integration, display name, tile initial, description, feature chips.
-type PlatformRow = (
-    Integration,
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static [&'static str],
-);
+type PlatformRow = (Integration, &'static str, &'static str);
 
 const PLATFORMS: [PlatformRow; 3] = [
-    (
-        Integration::Twitch,
-        "Twitch",
-        "T",
-        "Chat, EventSub subscriptions, channel points, bits, raids",
-        &["IRC chat", "EventSub", "Channel points", "Bits & subs"],
-    ),
-    (
-        Integration::YouTube,
-        "YouTube",
-        "Y",
-        "Live chat, super chats, channel memberships, subscribers",
-        &["Live chat", "Super chat", "Memberships"],
-    ),
-    (
-        Integration::Kick,
-        "Kick",
-        "K",
-        "Chat, channel events, subscribers - newer streaming platform",
-        &["Chat", "Subs", "Channel events"],
-    ),
+    (Integration::Twitch, "Twitch", "T"),
+    (Integration::YouTube, "YouTube", "Y"),
+    (Integration::Kick, "Kick", "K"),
 ];
 
 const ROSTER: [Integration; 5] = [
@@ -151,8 +126,8 @@ impl PlatformsView {
         integ: Integration,
         name: &'static str,
         letter: &'static str,
-        desc: &'static str,
-        features: &'static [&'static str],
+        desc: String,
+        features: Vec<SharedString>,
         connected: bool,
         palette: &ForgePalette,
         density: Density,
@@ -176,9 +151,9 @@ impl PlatformsView {
             );
 
         let badge_label = if connected {
-            "Connected"
+            tr!("platforms_status_connected")
         } else {
-            "Not connected"
+            tr!("platforms_status_not_connected")
         };
         let title_row = div()
             .flex()
@@ -237,6 +212,37 @@ impl PlatformsView {
             .child(icon(Icon::ChevronRight, CHEVRON_SIZE, palette.text_faint))
             .into_any_element()
     }
+
+    fn platform_desc(integ: Integration) -> String {
+        match integ {
+            Integration::Twitch => tr!("platforms_twitch_desc"),
+            Integration::YouTube => tr!("platforms_youtube_desc"),
+            Integration::Kick => tr!("platforms_kick_desc"),
+            _ => String::new(),
+        }
+    }
+
+    fn platform_features(integ: Integration) -> Vec<SharedString> {
+        match integ {
+            Integration::Twitch => vec![
+                tr!("platforms_feature_irc_chat").into(),
+                SharedString::from("EventSub"),
+                tr!("platforms_feature_channel_points").into(),
+                tr!("platforms_feature_bits_subs").into(),
+            ],
+            Integration::YouTube => vec![
+                tr!("platforms_feature_live_chat").into(),
+                tr!("platforms_feature_super_chat").into(),
+                tr!("platforms_feature_memberships").into(),
+            ],
+            Integration::Kick => vec![
+                tr!("platforms_feature_chat").into(),
+                tr!("platforms_feature_subs").into(),
+                tr!("platforms_feature_channel_events").into(),
+            ],
+            _ => Vec::new(),
+        }
+    }
 }
 
 impl EventEmitter<NavRequested> for PlatformsView {}
@@ -254,13 +260,13 @@ impl Render for PlatformsView {
 
         let mut cards: Vec<AnyElement> = Vec::with_capacity(PLATFORMS.len());
         for (idx, entry) in PLATFORMS.iter().enumerate() {
-            let (integ, name, letter, desc, features) = *entry;
+            let (integ, name, letter) = *entry;
             cards.push(self.platform_card(
                 integ,
                 name,
                 letter,
-                desc,
-                features,
+                Self::platform_desc(integ),
+                Self::platform_features(integ),
                 connected[idx],
                 &palette,
                 density,
@@ -277,14 +283,14 @@ impl Render for PlatformsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
-                    .child("Streaming platforms"),
+                    .child(tr!("platforms_title")),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("Connect once, Forge listens to all chats and events in one place."),
+                    .child(tr!("platforms_subtitle")),
             );
 
         let body = div()
@@ -295,7 +301,10 @@ impl Render for PlatformsView {
             .child(section_header)
             .child(platform_grid(cards, density));
 
-        let header = breadcrumb(vec![BreadcrumbCrumb::leaf("Platforms")], &palette);
+        let header = breadcrumb(
+            vec![BreadcrumbCrumb::leaf(tr!("platforms_breadcrumb"))],
+            &palette,
+        );
 
         let scroll = div()
             .id("platforms-scroll")
@@ -321,7 +330,8 @@ impl Render for PlatformsView {
     }
 }
 
-fn feature_chip(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn feature_chip(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    let label = label.into();
     div()
         .py(CHIP_PAD_V)
         .px(CHIP_PAD_H)

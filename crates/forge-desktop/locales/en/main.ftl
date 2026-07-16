@@ -103,12 +103,9 @@ home_glance_actions = Actions
 home_glance_fired = Fired this session
 home_glance_globals = Globals
 
-## Home - actions fired stat label (count + fired today)
+## Home - actions fired stat label (label beside the big count)
 
-home_card_automation_stat_label = { $count ->
-    [one] { $count } action · { $fired } fired today
-   *[other] { $count } actions · { $fired } fired today
-}
+home_card_automation_stat_label = actions · { $fired } fired today
 
 ## Home - connections active/disconnected counts
 
@@ -1073,6 +1070,18 @@ platforms_status_not_connected = Not connected
 platforms_twitch_desc = Chat, EventSub subscriptions, channel points, bits, raids
 platforms_youtube_desc = Live chat, super chats, channel memberships, subscribers
 platforms_kick_desc = Chat, channel events, subscribers - newer streaming platform
+
+## Platforms - feature chips
+
+platforms_feature_irc_chat = IRC chat
+platforms_feature_channel_points = Channel points
+platforms_feature_bits_subs = Bits & subs
+platforms_feature_live_chat = Live chat
+platforms_feature_super_chat = Super chat
+platforms_feature_memberships = Memberships
+platforms_feature_chat = Chat
+platforms_feature_subs = Subs
+platforms_feature_channel_events = Channel events
 
 ## Platform generic detail
 

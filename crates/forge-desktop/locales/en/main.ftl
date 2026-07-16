@@ -619,6 +619,11 @@ triggers_create_select_kind = Select trigger kind
 triggers_create_search_placeholder = Search kinds…
 triggers_create_no_results = No matching trigger kinds
 triggers_create_cancel = Cancel
+triggers_create_type_count = { $count } trigger types
+triggers_create_search_types = Search { $count } trigger types…
+triggers_create_footer_hint = Pick an event source - configure it next
+triggers_create_cat_server = Server
+triggers_create_cat_timer = Timer
 
 ## Triggers create form - fill form
 
@@ -632,6 +637,7 @@ triggers_create_scope_any = Any
 triggers_create_scope_custom = Custom…
 triggers_create_will_fire = Will fire on: { $scope }
 triggers_create_btn = Create
+triggers_create_kbd_hint = ENTER to create · ESC to cancel
 
 ## Settings → Scripting pane
 

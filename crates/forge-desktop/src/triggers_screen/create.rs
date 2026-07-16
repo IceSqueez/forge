@@ -6,7 +6,7 @@ use forge_components::{
     GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
     GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
     Spacing, TextInput, ghost_button_with_icon, modal, overlay, primary_button, radius,
-    secondary_button, spacing, toggle,
+    secondary_button, spacing, toggle, tr,
 };
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{PlatformScope, TriggerInstance, TriggerInstanceId};
@@ -52,10 +52,12 @@ impl TriggersRegistryView {
         let config = GridPickerConfig {
             accent: palette.brand,
             header_icon: Icon::Bolt,
-            title: "New trigger".into(),
-            subtitle: GridPickerSubtitle::Plain(format!("{count} trigger types").into()),
-            footer_hint: "Pick an event source - configure it next".into(),
-            search_placeholder: format!("Search {count} trigger types\u{2026}").into(),
+            title: tr!("triggers_new_trigger").into(),
+            subtitle: GridPickerSubtitle::Plain(
+                tr!("triggers_create_type_count", count = count as i64).into(),
+            ),
+            footer_hint: tr!("triggers_create_footer_hint").into(),
+            search_placeholder: tr!("triggers_create_search_types", count = count as i64).into(),
             scope_cap: Some(8),
         };
         let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
@@ -113,7 +115,7 @@ impl TriggersRegistryView {
         }
 
         let name_field = cx.new(|cx| {
-            TextInput::new("Instance name\u{2026}", cx)
+            TextInput::new(tr!("triggers_create_name_placeholder"), cx)
                 .with_palette(palette)
                 .static_chrome(palette.brand, Radius::Sm)
         });
@@ -284,7 +286,7 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(self.fill_section_label("NAME", palette))
+            .child(self.fill_section_label(tr!("triggers_create_section_name"), palette))
             .child(div().child(form.name_field.clone()));
 
         let config_card: AnyElement = if form.fields.is_empty() {
@@ -295,7 +297,7 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FILL_VAL_FS)
                 .text_color(palette.text_faint)
-                .child("This trigger kind has no configurable fields.")
+                .child(tr!("triggers_sheet_no_config"))
                 .into_any_element()
         } else {
             let last = form.fields.len().saturating_sub(1);
@@ -317,7 +319,7 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(self.fill_section_label("CONFIGURATION", palette))
+            .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
             .child(config_card);
 
         let body = div()
@@ -329,15 +331,18 @@ impl TriggersRegistryView {
 
         let can_create = !form.name_field.read(cx).content().trim().is_empty() && !form.saving;
 
-        let back = ghost_button_with_icon(Icon::ArrowBackUp, "Back", palette).on_click(
-            "triggers-create-back",
-            cx.listener(|this, _: &ClickEvent, window, cx| this.back_to_kind_picker(window, cx)),
-        );
-        let cancel = secondary_button("Cancel", palette).on_click(
+        let back = ghost_button_with_icon(Icon::ArrowBackUp, tr!("triggers_create_back"), palette)
+            .on_click(
+                "triggers-create-back",
+                cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.back_to_kind_picker(window, cx)
+                }),
+            );
+        let cancel = secondary_button(tr!("triggers_create_cancel"), palette).on_click(
             "triggers-create-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_create(cx)),
         );
-        let create = primary_button("Create trigger", palette)
+        let create = primary_button(tr!("triggers_create_btn"), palette)
             .disabled(!can_create)
             .on_click(
                 "triggers-create-submit",
@@ -353,16 +358,23 @@ impl TriggersRegistryView {
             .child(cancel)
             .child(create);
 
-        let card = modal(format!("New {} trigger", form.kind_label), body, palette)
-            .header_icon(glyph, dot_color)
-            .subtitle(form.kind_id.clone())
-            .size(ModalSize::Md)
-            .footer(footer)
-            .kbd_hint("ENTER to create \u{b7} ESC to cancel")
-            .on_close(
-                "triggers-create-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_create(cx)),
-            );
+        let card = modal(
+            tr!(
+                "triggers_create_new_instance",
+                kind = form.kind_label.as_str()
+            ),
+            body,
+            palette,
+        )
+        .header_icon(glyph, dot_color)
+        .subtitle(form.kind_id.clone())
+        .size(ModalSize::Md)
+        .footer(footer)
+        .kbd_hint(tr!("triggers_create_kbd_hint"))
+        .on_close(
+            "triggers-create-close",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_create(cx)),
+        );
 
         let view = cx.entity();
         overlay(card, palette)
@@ -373,12 +385,16 @@ impl TriggersRegistryView {
             .into_any_element()
     }
 
-    fn fill_section_label(&self, label: &'static str, palette: &ForgePalette) -> AnyElement {
+    fn fill_section_label(
+        &self,
+        label: impl Into<SharedString>,
+        palette: &ForgePalette,
+    ) -> AnyElement {
         div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
-            .child(label)
+            .child(label.into())
             .into_any_element()
     }
 
@@ -422,7 +438,7 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FILL_VAL_FS)
                 .text_color(palette.text_faint)
-                .child("Authored on the step")
+                .child(tr!("triggers_sheet_config_authored"))
                 .into_any_element(),
         };
 
@@ -473,7 +489,7 @@ fn build_kind_groups(
             });
         }
         groups.push(GridPickerGroup {
-            label: label.into(),
+            label,
             dot_color: color,
             scope: SharedString::from(slug),
             items,
@@ -512,30 +528,64 @@ const CATEGORY_ORDER: [TriggerCategory; 23] = [
 fn category_meta(
     cat: TriggerCategory,
     palette: &ForgePalette,
-) -> (&'static str, &'static str, gpui::Rgba) {
+) -> (SharedString, &'static str, gpui::Rgba) {
     match cat {
-        TriggerCategory::Chat => ("Chat", "chat", palette.info),
-        TriggerCategory::Subscriptions => ("Subscriptions", "subs", palette.brand),
-        TriggerCategory::Bits => ("Bits", "bits", palette.bits),
-        TriggerCategory::Raids => ("Raids", "raids", palette.brand),
-        TriggerCategory::Moderation => ("Moderation", "moderation", palette.random),
-        TriggerCategory::ChannelPoints => ("Channel Points", "points", palette.accent_pink_light),
-        TriggerCategory::Polls => ("Polls", "polls", palette.warning),
-        TriggerCategory::Predictions => ("Predictions", "predictions", palette.warning),
-        TriggerCategory::Hype => ("Hype Train", "hype", palette.brand),
-        TriggerCategory::Charity => ("Charity", "charity", palette.success),
-        TriggerCategory::Goals => ("Goals", "goals", palette.success),
-        TriggerCategory::Clips => ("Clips", "clips", palette.info),
-        TriggerCategory::Streams => ("Streams", "streams", palette.info),
-        TriggerCategory::Users => ("Users", "users", palette.info),
-        TriggerCategory::Obs => ("OBS", "obs", palette.accent_teal),
-        TriggerCategory::VTube => ("VTube Studio", "vtube", palette.accent_teal),
-        TriggerCategory::Discord => ("Discord", "discord", palette.info),
-        TriggerCategory::Midi => ("MIDI", "midi", palette.random),
-        TriggerCategory::Hotkey => ("Hotkey", "hotkey", palette.warning),
-        TriggerCategory::Core => ("Core", "core", palette.info),
-        TriggerCategory::Server => ("Server", "server", palette.info),
-        TriggerCategory::Timer => ("Timer", "timer", palette.warning),
-        TriggerCategory::Ungrouped => ("Other", "other", palette.text_muted),
+        TriggerCategory::Chat => (tr!("trigger_cat_chat").into(), "chat", palette.info),
+        TriggerCategory::Subscriptions => (
+            tr!("trigger_cat_subscriptions").into(),
+            "subs",
+            palette.brand,
+        ),
+        TriggerCategory::Bits => (tr!("trigger_cat_bits").into(), "bits", palette.bits),
+        TriggerCategory::Raids => (tr!("trigger_cat_raids").into(), "raids", palette.brand),
+        TriggerCategory::Moderation => (
+            tr!("trigger_cat_moderation").into(),
+            "moderation",
+            palette.random,
+        ),
+        TriggerCategory::ChannelPoints => (
+            tr!("trigger_cat_channel_points").into(),
+            "points",
+            palette.accent_pink_light,
+        ),
+        TriggerCategory::Polls => (tr!("trigger_cat_polls").into(), "polls", palette.warning),
+        TriggerCategory::Predictions => (
+            tr!("trigger_cat_predictions").into(),
+            "predictions",
+            palette.warning,
+        ),
+        TriggerCategory::Hype => (tr!("trigger_cat_hype").into(), "hype", palette.brand),
+        TriggerCategory::Charity => (
+            tr!("trigger_cat_charity").into(),
+            "charity",
+            palette.success,
+        ),
+        TriggerCategory::Goals => (tr!("trigger_cat_goals").into(), "goals", palette.success),
+        TriggerCategory::Clips => (tr!("trigger_cat_clips").into(), "clips", palette.info),
+        TriggerCategory::Streams => (tr!("trigger_cat_streams").into(), "streams", palette.info),
+        TriggerCategory::Users => (tr!("trigger_cat_users").into(), "users", palette.info),
+        TriggerCategory::Obs => ("OBS".into(), "obs", palette.accent_teal),
+        TriggerCategory::VTube => ("VTube Studio".into(), "vtube", palette.accent_teal),
+        TriggerCategory::Discord => ("Discord".into(), "discord", palette.info),
+        TriggerCategory::Midi => ("MIDI".into(), "midi", palette.random),
+        TriggerCategory::Hotkey => (
+            tr!("triggers_filter_hotkey").into(),
+            "hotkey",
+            palette.warning,
+        ),
+        TriggerCategory::Core => (tr!("trigger_cat_core").into(), "core", palette.info),
+        TriggerCategory::Server => (
+            tr!("triggers_create_cat_server").into(),
+            "server",
+            palette.info,
+        ),
+        TriggerCategory::Timer => (
+            tr!("triggers_create_cat_timer").into(),
+            "timer",
+            palette.warning,
+        ),
+        TriggerCategory::Ungrouped => {
+            (tr!("trigger_cat_other").into(), "other", palette.text_muted)
+        }
     }
 }

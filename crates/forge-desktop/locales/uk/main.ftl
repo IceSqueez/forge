@@ -621,6 +621,11 @@ triggers_create_select_kind = Оберіть тип тригера
 triggers_create_search_placeholder = Пошук типів…
 triggers_create_no_results = Відповідних типів тригерів немає
 triggers_create_cancel = Скасувати
+triggers_create_type_count = типів тригерів: { $count }
+triggers_create_search_types = Пошук серед { $count } типів тригерів…
+triggers_create_footer_hint = Оберіть джерело подій - налаштуйте далі
+triggers_create_cat_server = Сервер
+triggers_create_cat_timer = Таймер
 
 ## Форма створення тригера - заповнення
 
@@ -634,6 +639,7 @@ triggers_create_scope_any = Будь-яка
 triggers_create_scope_custom = Власний вибір…
 triggers_create_will_fire = Спрацює на: { $scope }
 triggers_create_btn = Створити
+triggers_create_kbd_hint = ENTER щоб створити · ESC щоб скасувати
 
 ## Налаштування → панель скриптів
 

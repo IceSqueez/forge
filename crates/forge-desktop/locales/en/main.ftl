@@ -1260,6 +1260,8 @@ chat_breadcrumb_chat = Chat
 chat_filter_all = All
 chat_filter_events = Events only
 chat_filter_hide_bots = Hide bots
+chat_viewers_unit = viewers
+chat_no_filter_matches = No messages match these filters.
 chat_send_placeholder_disconnected = Connect a platform to send...
 chat_send_placeholder_connected = Send to chat...
 chat_no_messages_title = No messages
@@ -1334,6 +1336,7 @@ event_feed_status_live = LIVE
 event_feed_status_paused = PAUSED
 event_feed_header_count = { $count } events
 event_feed_streaming_status = Streaming · WebSocket :8081
+event_feed_events_live_stream = events · live stream
 
 ## Globals - page header / filters
 

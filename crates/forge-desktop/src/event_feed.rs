@@ -1,7 +1,7 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
     FONT_XXS, ForgePalette, Icon, Radius, SheetWidth, Spacing, badge, breadcrumb, chip, icon,
-    radius, spacing, status_dot, with_alpha,
+    radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -26,15 +26,27 @@ const ROW_RAIL_W: Pixels = px(2.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
 const ACTION_HOVER_ALPHA: f32 = 0.05;
 
-const FILTER_TABS: [(&str, &str, EventFilter); 7] = [
-    ("event-tab-all", "All", EventFilter::All),
-    ("event-tab-chat", "Chat", EventFilter::Chat),
-    ("event-tab-subs", "Subs", EventFilter::Subs),
-    ("event-tab-bits", "Bits", EventFilter::Bits),
-    ("event-tab-timers", "Timers", EventFilter::Timers),
-    ("event-tab-obs", "OBS", EventFilter::Obs),
-    ("event-tab-errors", "Errors", EventFilter::Errors),
+const FILTER_TABS: [(&str, EventFilter); 7] = [
+    ("event-tab-all", EventFilter::All),
+    ("event-tab-chat", EventFilter::Chat),
+    ("event-tab-subs", EventFilter::Subs),
+    ("event-tab-bits", EventFilter::Bits),
+    ("event-tab-timers", EventFilter::Timers),
+    ("event-tab-obs", EventFilter::Obs),
+    ("event-tab-errors", EventFilter::Errors),
 ];
+
+fn filter_tab_key(filter: EventFilter) -> &'static str {
+    match filter {
+        EventFilter::All => "event_feed_filter_all",
+        EventFilter::Chat => "event_feed_filter_chat",
+        EventFilter::Subs => "event_feed_filter_subs",
+        EventFilter::Bits => "event_feed_filter_bits",
+        EventFilter::Timers => "event_feed_filter_timers",
+        EventFilter::Obs => "event_feed_filter_obs",
+        EventFilter::Errors => "event_feed_filter_errors",
+    }
+}
 
 pub struct EventFeedView {
     log: Entity<EventLog>,
@@ -137,9 +149,9 @@ impl EventFeedView {
     ) -> impl IntoElement + use<> {
         let paused = self.log.read(cx).is_paused();
         let (status_ink, status_label) = if paused {
-            (palette.warning, "PAUSED")
+            (palette.warning, tr!("event_feed_status_paused"))
         } else {
-            (palette.success, "LIVE")
+            (palette.success, tr!("event_feed_status_live"))
         };
 
         let status_badge = div()
@@ -176,7 +188,7 @@ impl EventFeedView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("events · live stream"),
+                    .child(tr!("event_feed_events_live_stream")),
             );
 
         let cluster = div()
@@ -186,7 +198,7 @@ impl EventFeedView {
             .child(status_badge)
             .child(count_readout);
 
-        breadcrumb(vec![BreadcrumbCrumb::leaf("Event feed")], palette).right(cluster)
+        breadcrumb(vec![BreadcrumbCrumb::leaf(tr!("nav_event_feed"))], palette).right(cluster)
     }
 
     fn render_toolbar(
@@ -202,9 +214,9 @@ impl EventFeedView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density));
-        for (id, name, filter) in FILTER_TABS {
+        for (id, filter) in FILTER_TABS {
             let glyph = Self::tab_glyph(filter, palette);
-            let label = format!("{name}  {}", counts.get(filter));
+            let label = tr!(filter_tab_key(filter), n = i64::from(counts.get(filter)));
             let active = self.active_filter == filter;
             chips = chips.child(
                 chip(label, glyph, active, palette)
@@ -217,9 +229,9 @@ impl EventFeedView {
         }
 
         let (pause_icon, pause_label) = if paused {
-            (Icon::PlayerPlay, "Resume")
+            (Icon::PlayerPlay, tr!("event_feed_resume"))
         } else {
-            (Icon::PlayerPause, "Pause")
+            (Icon::PlayerPause, tr!("event_feed_pause"))
         };
         let pause = Self::action_shell("event-action-pause", palette, density)
             .child(icon(pause_icon, FONT_XS, palette.text_secondary))
@@ -233,18 +245,18 @@ impl EventFeedView {
 
         let clear = Self::action_shell("event-action-clear", palette, density)
             .child(icon(Icon::Eraser, FONT_XS, palette.text_secondary))
-            .child(Self::action_label("Clear", palette))
+            .child(Self::action_label(tr!("event_feed_clear"), palette))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear(cx)));
 
         let export = Self::action_shell("event-action-export", palette, density)
             .child(icon(Icon::Download, FONT_XS, palette.text_secondary))
-            .child(Self::action_label("Export", palette))
+            .child(Self::action_label(tr!("event_feed_export"), palette))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
 
         let (scroll_ink, scroll_label) = if self.auto_scroll {
-            (palette.success, "Auto-scroll on")
+            (palette.success, tr!("event_feed_auto_scroll_on"))
         } else {
-            (palette.disabled, "Auto-scroll off")
+            (palette.disabled, tr!("event_feed_auto_scroll_off"))
         };
         let auto_scroll = Self::action_shell("event-action-autoscroll", palette, density)
             .child(status_dot(scroll_ink, STATUS_DOT))
@@ -399,9 +411,9 @@ impl EventFeedView {
 
         let empty_note = empty.then(|| {
             let label = if matches!(filter, EventFilter::All) {
-                "No events yet."
+                tr!("event_feed_no_events")
             } else {
-                "No events match this filter."
+                tr!("event_feed_no_filter_match")
             };
             div()
                 .w_full()
@@ -438,7 +450,7 @@ impl EventFeedView {
         let width = self.inspector_width.clamp(INSPECTOR_MIN, INSPECTOR_MAX);
 
         forge_components::side_sheet(px(width), content, palette)
-            .header("Event inspector")
+            .header(tr!("event_feed_inspector_title"))
             .header_icon(Icon::Pin, palette.brand)
             .on_close(
                 "event-inspector-close",
@@ -544,7 +556,7 @@ impl EventFeedView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
-                    .child("Replay this event"),
+                    .child(tr!("widget_event_replay")),
             );
 
         div()
@@ -552,18 +564,14 @@ impl EventFeedView {
             .flex_col()
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .child(summary_card)
-            .child(self.section_label("PAYLOAD", palette))
+            .child(self.section_label(tr!("widget_event_payload_header"), palette))
             .child(payload)
-            .child(self.section_label("CAUSED", palette))
+            .child(self.section_label(tr!("widget_event_caused_header"), palette))
             .child(caused)
             .child(replay)
     }
 
-    fn section_label(
-        &self,
-        text: &'static str,
-        palette: &ForgePalette,
-    ) -> impl IntoElement + use<> {
+    fn section_label(&self, text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
         div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
@@ -714,7 +722,7 @@ impl EventFeedView {
             .hover(move |s| s.bg(hover))
     }
 
-    fn action_label(text: &'static str, palette: &ForgePalette) -> impl IntoElement + use<> {
+    fn action_label(text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
         div()
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_XS)

@@ -2,7 +2,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_XS, ForgePalette, Icon, InputBar, InputBarEvent, InputEvent, Platform, Radius,
     Spacing, TextInput, breadcrumb, chat_row, chip, icon, radius, search_input, spacing,
-    status_dot,
+    status_dot, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, ScrollHandle, ScrollWheelEvent,
@@ -46,8 +46,8 @@ pub struct ChatView {
 
 impl ChatView {
     pub fn new(feed: Entity<ChatFeed>, palette: ForgePalette, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| InputBar::new("Send a message to chat…", palette, cx));
-        let search_field = cx.new(|cx| search_input("Search chat…", palette, cx));
+        let input = cx.new(|cx| InputBar::new(tr!("chat_send_placeholder_connected"), palette, cx));
+        let search_field = cx.new(|cx| search_input(tr!("chat_search_placeholder"), palette, cx));
 
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
         let input_sub = cx.subscribe(&input, Self::on_input_event);
@@ -210,7 +210,7 @@ impl ChatView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
-                    .child("- viewers"),
+                    .child(format!("- {}", tr!("chat_viewers_unit"))),
             );
 
         let separator = div()
@@ -233,9 +233,9 @@ impl ChatView {
             );
 
         let drawer_label = if self.drawer_open {
-            "Hide viewers"
+            tr!("chat_hide_viewers")
         } else {
-            "Show viewers"
+            tr!("chat_show_viewers")
         };
         let border = palette.border_regular;
         let drawer_btn = div()
@@ -269,7 +269,11 @@ impl ChatView {
             .child(uptime)
             .child(drawer_btn);
 
-        breadcrumb(vec![BreadcrumbCrumb::leaf("Chat")], palette).right(cluster)
+        breadcrumb(
+            vec![BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_chat"))],
+            palette,
+        )
+        .right(cluster)
     }
 
     fn render_filter_bar(
@@ -279,22 +283,27 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let platform_chips = [
-            ("chat-chip-all", "All", PlatformFilter::All, palette.brand),
+            (
+                "chat-chip-all",
+                tr!("chat_filter_all"),
+                PlatformFilter::All,
+                palette.brand,
+            ),
             (
                 "chat-chip-twitch",
-                "Twitch",
+                "Twitch".to_owned(),
                 PlatformFilter::Single(Platform::Twitch),
                 palette.brand,
             ),
             (
                 "chat-chip-youtube",
-                "YouTube",
+                "YouTube".to_owned(),
                 PlatformFilter::Single(Platform::YouTube),
                 palette.random,
             ),
             (
                 "chat-chip-kick",
-                "Kick",
+                "Kick".to_owned(),
                 PlatformFilter::Single(Platform::Kick),
                 palette.info,
             ),
@@ -322,16 +331,21 @@ impl ChatView {
                 .bg(palette.border_regular),
         );
         chips = chips.child(
-            chip("Events only", ChipGlyph::None, self.events_only, palette)
-                .density(density)
-                .on_click(
-                    "chat-chip-events",
-                    cx.listener(|this, _, _, cx| this.toggle_events(cx)),
-                ),
+            chip(
+                tr!("chat_filter_events"),
+                ChipGlyph::None,
+                self.events_only,
+                palette,
+            )
+            .density(density)
+            .on_click(
+                "chat-chip-events",
+                cx.listener(|this, _, _, cx| this.toggle_events(cx)),
+            ),
         );
         chips = chips.child(
             chip(
-                "Hide bots",
+                tr!("chat_filter_hide_bots"),
                 ChipGlyph::Icon(Icon::EyeOff, palette.text_faint),
                 self.hide_bots,
                 palette,
@@ -442,7 +456,7 @@ impl ChatView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child("No messages match these filters."),
+                    .child(tr!("chat_no_filter_matches")),
             )
         } else {
             None
@@ -467,9 +481,9 @@ impl ChatView {
 
         if self.unread > 0 {
             let label = if self.unread == 1 {
-                "1 new message".to_owned()
+                tr!("chat_new_message")
             } else {
-                format!("{} new messages", self.unread)
+                tr!("chat_new_messages", count = self.unread as i64)
             };
             let pill = div()
                 .id("chat-unread-pill")

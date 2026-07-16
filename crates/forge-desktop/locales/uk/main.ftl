@@ -1266,6 +1266,8 @@ chat_breadcrumb_chat = Чат
 chat_filter_all = Всі
 chat_filter_events = Лише події
 chat_filter_hide_bots = Сховати ботів
+chat_viewers_unit = глядачів
+chat_no_filter_matches = Жодне повідомлення не відповідає цим фільтрам.
 chat_send_placeholder_disconnected = Підключіть платформу для відправки...
 chat_send_placeholder_connected = Надіслати в чат...
 chat_no_messages_title = Немає повідомлень
@@ -1351,6 +1353,7 @@ event_feed_status_live = НАЖИВО
 event_feed_status_paused = ПАУЗА
 event_feed_header_count = Подій: { $count }
 event_feed_streaming_status = Стрімінг · WebSocket :8081
+event_feed_events_live_stream = подій · живий стрім
 
 ## Глобальні змінні - заголовок / фільтри
 

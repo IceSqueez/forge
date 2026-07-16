@@ -121,6 +121,9 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 let speak_for_bridge = speak.clone();
                 let live_viewers_handle = handles.live_viewers.clone();
                 let applied = window.update(cx, |root, window, cx| {
+                    // Render-thread install: the fluent bundle is thread-local and must be set
+                    // before the shell's first render resolves any translated string.
+                    crate::i18n::install_language(handles.startup_language);
                     platforms.update(cx, |connectivity, cx| {
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();

@@ -7,7 +7,7 @@ use forge_runtime::{
     ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, QueueSchedulerHandle, ScriptRegistry,
     TriggerEvaluatorHandle,
 };
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, Language};
 
 use crate::integrations::BuiltinObject;
 
@@ -15,6 +15,8 @@ use crate::integrations::BuiltinObject;
 pub struct RuntimeHandles {
     pub rt_handle: tokio::runtime::Handle,
     pub backend: Arc<dyn DataProvider>,
+    /// Resolved + persisted on the tokio side; `install_language` must run on the render thread.
+    pub startup_language: Language,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,
     pub sub_action_registry: Arc<SubActionRegistry>,

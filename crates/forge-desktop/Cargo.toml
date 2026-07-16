@@ -45,17 +45,21 @@ forge-tts-sapi = { path = "../forge-tts-sapi" }
 forge-types = { path = "../forge-types" }
 forge-voice = { path = "../forge-voice" }
 forge-vtube = { path = "../forge-vtube" }
+fluent = { workspace = true }
+fluent-langneg = { workspace = true }
 futures-util = { workspace = true }
 gpui = { workspace = true }
 open = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
+sys-locale = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 ulid = { workspace = true }
+unic-langid = { workspace = true }
 
 [lints]
 workspace = true

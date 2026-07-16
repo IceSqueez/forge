@@ -14,6 +14,7 @@ mod globals;
 mod globals_view;
 mod home;
 mod home_stats;
+mod i18n;
 mod integration_detail;
 mod integration_seed;
 mod integrations;

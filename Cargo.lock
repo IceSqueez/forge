@@ -2749,6 +2749,8 @@ name = "forge-desktop"
 version = "0.3.0-beta.2"
 dependencies = [
  "async-trait",
+ "fluent",
+ "fluent-langneg",
  "forge-audio",
  "forge-components",
  "forge-discord",
@@ -2783,12 +2785,14 @@ dependencies = [
  "open",
  "reqwest",
  "serde_json",
+ "sys-locale",
  "time",
  "tokio",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
  "ulid",
+ "unic-langid",
 ]
 
 [[package]]

@@ -57,6 +57,15 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         }
     };
 
+    let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+    let (startup_language, persist) =
+        crate::i18n::resolve_startup_language(Arc::clone(&settings_repo)).await;
+    if let Some(detected) = persist
+        && let Err(e) = settings_repo.set_language(detected).await
+    {
+        eprintln!("forge-desktop: failed to persist detected locale: {e}");
+    }
+
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
 
@@ -188,6 +197,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
         backend,
+        startup_language,
         bus,
         script_registry,
         sub_action_registry,

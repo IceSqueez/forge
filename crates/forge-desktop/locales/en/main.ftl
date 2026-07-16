@@ -560,6 +560,9 @@ triggers_stat_instances = instances
 triggers_stat_used = used
 triggers_stat_disabled = disabled
 triggers_platform_clear = clear
+triggers_platform_timer = Timer
+triggers_platform_script = Script
+triggers_platform_core = Core
 triggers_new_trigger = New trigger
 
 ## Triggers registry - list / empty states

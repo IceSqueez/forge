@@ -448,7 +448,7 @@ impl TriggersRegistryView {
             .gap(spacing(Spacing::Xxs, Density::Cozy));
         for (platform, count) in self.platform_counts() {
             let active = self.platforms.contains(&platform);
-            let label = format!("{} {}", platform.label(), count);
+            let label = format!("{} {}", platform.display(), count);
             platform_chips = platform_chips.child(
                 chip(
                     label,

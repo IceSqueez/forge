@@ -94,6 +94,18 @@ impl Platform {
         }
     }
 
+    fn display(self) -> String {
+        match self {
+            Platform::Twitch => "Twitch".to_owned(),
+            Platform::Youtube => "YouTube".to_owned(),
+            Platform::Kick => "Kick".to_owned(),
+            Platform::Obs => "OBS".to_owned(),
+            Platform::Timer => tr!("triggers_platform_timer"),
+            Platform::Script => tr!("triggers_platform_script"),
+            Platform::Core => tr!("triggers_platform_core"),
+        }
+    }
+
     fn dot(self, palette: &ForgePalette) -> Rgba {
         match self {
             Platform::Twitch => palette.brand,

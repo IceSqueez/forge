@@ -560,6 +560,9 @@ triggers_stat_instances = екземплярів
 triggers_stat_used = використовується
 triggers_stat_disabled = вимкнено
 triggers_platform_clear = скинути
+triggers_platform_timer = Таймер
+triggers_platform_script = Скрипт
+triggers_platform_core = Ядро
 triggers_new_trigger = Новий тригер
 
 ## Реєстр тригерів - список / порожні стани

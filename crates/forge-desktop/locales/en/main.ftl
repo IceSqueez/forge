@@ -1124,6 +1124,7 @@ queues_desc_moderation = Auto-bans, timeouts, message deletions · paused for re
 
 tts_dash_engine_local_ready = local · ready
 tts_dash_priority_high = HIGH
+tts_dash_priority_bits = BITS { $amount }
 
 ## TTS engines - unknown engine fallback
 

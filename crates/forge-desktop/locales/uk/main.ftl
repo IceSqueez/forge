@@ -1128,6 +1128,7 @@ queues_desc_moderation = Авто-бани, таймаути, видалення
 
 tts_dash_engine_local_ready = локальний · готовий
 tts_dash_priority_high = ВИСОК.
+tts_dash_priority_bits = БІТСИ { $amount }
 
 ## TTS рушії - запасний підпис невідомого рушія
 

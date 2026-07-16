@@ -1,12 +1,12 @@
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge, card,
-    confirm_modal, icon, overlay, radius, slider, spacing, status_dot,
+    confirm_modal, icon, overlay, radius, slider, spacing, status_dot, tr,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, Subscription, Window, div, prelude::*,
-    px,
+    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
+    prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -20,7 +20,6 @@ const ENGINE_DOT: Pixels = px(7.0);
 const PAUSE_GLYPH: Pixels = px(13.0);
 const VOLUME_GLYPH: Pixels = px(14.0);
 const SEED_VOLUME: f32 = 0.72;
-const TEST_SPEAKER_NAME: &str = "Test";
 
 struct EngineStatus {
     name: &'static str,
@@ -49,7 +48,7 @@ impl TtsDashboardView {
     ) -> Self {
         let palette = cx.palette();
         let test_input =
-            cx.new(|cx| TextInput::new("Type to test a voice…", cx).with_palette(palette));
+            cx.new(|cx| TextInput::new(tr!("tts_dash_test_placeholder"), cx).with_palette(palette));
         let test_sub = cx.subscribe(
             &test_input,
             |this, _input, event: &InputEvent, cx| match event {
@@ -134,7 +133,10 @@ impl TtsDashboardView {
         if text.is_empty() {
             return;
         }
-        self.dispatch(SpeakCommand::Enqueue(test_speak_request(text)));
+        self.dispatch(SpeakCommand::Enqueue(test_speak_request(
+            text,
+            tr!("tts_dash_test_speaker_name"),
+        )));
         self.test_input.update(cx, |ti, cx| ti.set_content("", cx));
         cx.notify();
     }
@@ -149,9 +151,13 @@ impl TtsDashboardView {
         let gap = spacing(Spacing::Xs, density);
 
         let (pause_label, pause_glyph, btn_bg) = if paused {
-            ("Resume", Icon::PlayerPlay, palette.success)
+            (
+                tr!("tts_dash_resume_btn"),
+                Icon::PlayerPlay,
+                palette.success,
+            )
         } else {
-            ("Pause queue", Icon::PlayerPause, palette.random)
+            (tr!("tts_dash_pause_btn"), Icon::PlayerPause, palette.random)
         };
         let pause_btn = div()
             .id("tts-pause")
@@ -175,14 +181,14 @@ impl TtsDashboardView {
 
         let skip_btn = self.ghost_strip_button(
             "tts-skip",
-            "Skip",
+            tr!("tts_dash_skip_btn"),
             palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.skip(cx)),
         );
         let stop_btn = self.ghost_strip_button(
             "tts-stop",
-            "Stop all",
+            tr!("tts_dash_stop_all_btn"),
             palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.arm_stop_all(cx)),
@@ -234,7 +240,7 @@ impl TtsDashboardView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.shell)
-                    .child("Speak"),
+                    .child(tr!("tts_dash_speak_btn")),
             );
         let right = div()
             .flex()
@@ -261,7 +267,7 @@ impl TtsDashboardView {
     fn ghost_strip_button(
         &self,
         id: &'static str,
-        label: &'static str,
+        label: impl Into<SharedString>,
         palette: &ForgePalette,
         density: Density,
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
@@ -285,7 +291,7 @@ impl TtsDashboardView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
-                    .child(label),
+                    .child(label.into()),
             )
             .into_any_element()
     }
@@ -305,9 +311,9 @@ impl TtsDashboardView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(rail_header("SESSION", palette))
+            .child(rail_header(tr!("tts_dash_session_header"), palette))
             .child(stat_row(
-                "Spoken",
+                tr!("tts_dash_stat_spoken"),
                 stats.spoken.to_string(),
                 palette.brand,
                 palette,
@@ -315,7 +321,7 @@ impl TtsDashboardView {
                 true,
             ))
             .child(stat_row(
-                "Skipped",
+                tr!("tts_dash_stat_skipped"),
                 stats.skipped.to_string(),
                 palette.warning,
                 palette,
@@ -323,7 +329,7 @@ impl TtsDashboardView {
                 true,
             ))
             .child(stat_row(
-                "Filtered",
+                tr!("tts_dash_stat_filtered"),
                 stats.filtered.to_string(),
                 palette.random,
                 palette,
@@ -331,7 +337,7 @@ impl TtsDashboardView {
                 true,
             ))
             .child(stat_row(
-                "Avg latency",
+                tr!("tts_dash_stat_avg_latency"),
                 latency,
                 palette.success,
                 palette,
@@ -352,7 +358,7 @@ impl TtsDashboardView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(rail_header("ENGINES", palette))
+            .child(rail_header(tr!("tts_dash_engines_header"), palette))
             .child(engines);
 
         div()
@@ -389,21 +395,20 @@ impl TtsDashboardView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let card = confirm_modal(
-            "Stop all TTS",
-            "Currently speaking message will be cut off and all queued messages \
-             dropped. Engines remain ready to handle new messages.",
+            tr!("tts_dash_stop_all_confirm_name"),
+            tr!("tts_dash_stop_all_confirm_hint"),
             ConfirmTone::Destructive,
             palette,
         )
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "tts-stop-cancel",
-            "Cancel",
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_stop_all(cx)),
         )
         .on_confirm(
             "tts-stop-confirm",
-            "Stop all",
+            tr!("tts_dash_stop_all_btn"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_stop_all(cx)),
         );
 
@@ -473,7 +478,7 @@ fn now_speaking_panel(
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
-        .child("NOW SPEAKING");
+        .child(tr!("tts_dash_now_speaking_header"));
 
     let body = match now {
         Some(ns) => {
@@ -534,7 +539,7 @@ fn now_speaking_panel(
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("-"),
+                    .child(tr!("tts_dash_no_speaking")),
             ),
     };
 
@@ -574,7 +579,7 @@ fn queue_section(queue: &[QueueItem], palette: &ForgePalette, density: Density) 
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
-                .child("Up next"),
+                .child(tr!("tts_dash_queue_header")),
         )
         .child(count_pill);
 
@@ -587,7 +592,7 @@ fn queue_section(queue: &[QueueItem], palette: &ForgePalette, density: Density) 
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("Queue is empty"),
+                    .child(tr!("tts_dash_queue_empty")),
             )
             .into_any_element()
     } else {
@@ -644,8 +649,8 @@ fn queue_item_row(
     if item.is_high_priority {
         let label = item
             .bits_amount
-            .map(|b| format!("BITS {b}"))
-            .unwrap_or_else(|| "HIGH".to_owned());
+            .map(|b| tr!("tts_dash_priority_bits", amount = b as i64))
+            .unwrap_or_else(|| tr!("tts_dash_priority_high"));
         name_row = name_row.child(badge(palette.warning, palette.shell, label, true, FONT_XS));
     }
     if !item.engine_voice.is_empty() {
@@ -694,16 +699,16 @@ fn queue_item_row(
         .into_any_element()
 }
 
-fn rail_header(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn rail_header(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
-        .child(label)
+        .child(label.into())
 }
 
 fn stat_row(
-    label: &'static str,
+    label: impl Into<SharedString>,
     value: String,
     value_color: Rgba,
     palette: &ForgePalette,
@@ -722,7 +727,7 @@ fn stat_row(
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child(label),
+                .child(label.into()),
         )
         .child(
             div()
@@ -778,11 +783,11 @@ fn engine_card(
     .full_width()
 }
 
-fn test_speak_request(text: String) -> SpeakRequest {
+fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {
     SpeakRequest {
         request_id: RequestId::new(),
         viewer_id: String::new(),
-        viewer_name: TEST_SPEAKER_NAME.to_owned(),
+        viewer_name: speaker_name,
         text,
         priority: Priority::Normal,
         alias_override: None,

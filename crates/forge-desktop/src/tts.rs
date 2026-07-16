@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XXS, ForgePalette,
-    Spacing, StatusVariant, badge, breadcrumb, spacing, with_alpha,
+    Spacing, StatusVariant, badge, breadcrumb, spacing, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider};
@@ -45,14 +45,14 @@ impl TtsSection {
         TtsSection::CloudEngines,
     ];
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            TtsSection::Dashboard => "Dashboard",
-            TtsSection::Engines => "Engines",
-            TtsSection::Aliases => "Voice aliases",
-            TtsSection::Filters => "Filters",
-            TtsSection::Triggers => "Triggers",
-            TtsSection::CloudEngines => "Cloud engines",
+            TtsSection::Dashboard => tr!("tts_tab_dashboard"),
+            TtsSection::Engines => tr!("tts_tab_engines"),
+            TtsSection::Aliases => tr!("tts_tab_aliases"),
+            TtsSection::Filters => tr!("tts_tab_filters"),
+            TtsSection::Triggers => tr!("tts_tab_triggers"),
+            TtsSection::CloudEngines => tr!("tts_tab_cloud_engines"),
         }
     }
 
@@ -143,14 +143,17 @@ impl TtsView {
         let chip = badge(
             chip_bg,
             chip_fg,
-            format!("{SEEDED_ENGINE_COUNT} engines ready"),
+            tr!(
+                "tts_header_engines_ready",
+                count = SEEDED_ENGINE_COUNT as i64
+            ),
             false,
             FONT_XXS,
         );
         breadcrumb(
             vec![
-                BreadcrumbCrumb::leaf("Builtin"),
-                BreadcrumbCrumb::leaf("TTS"),
+                BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_builtin")),
+                BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_tts")),
                 BreadcrumbCrumb::leaf(self.section.label()),
             ],
             palette,

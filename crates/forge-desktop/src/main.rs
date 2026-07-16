@@ -47,6 +47,7 @@ mod tts_triggers;
 mod voice_aliases;
 
 use forge_components::{Density, IconAssets, ThemeId, bind_text_area_keys, bind_text_input_keys};
+use forge_platform_core::paths;
 use gpui::{
     App, AppContext, Application, Bounds, SharedString, TitlebarOptions, WindowBounds,
     WindowOptions, point, px, size,
@@ -56,7 +57,43 @@ use crate::actions::register_shell_key_bindings;
 use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 
+fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let console_layer = fmt::layer().with_target(false);
+
+    let log_dir = paths::data_dir().join("logs");
+    let (file_layer, guard) = match std::fs::create_dir_all(&log_dir) {
+        Ok(()) => {
+            let appender = tracing_appender::rolling::daily(&log_dir, "forge.log");
+            let (writer, guard) = tracing_appender::non_blocking(appender);
+            let layer = fmt::layer()
+                .with_writer(writer)
+                .with_ansi(false)
+                .with_target(true);
+            (Some(layer), Some(guard))
+        }
+        Err(_) => (None, None),
+    };
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(console_layer)
+        .with(file_layer)
+        .init();
+
+    if guard.is_some() {
+        tracing::info!(path = %log_dir.display(), "file logging enabled");
+    } else {
+        tracing::warn!("file logging disabled: could not create log directory");
+    }
+    guard
+}
+
 fn main() {
+    let _log_guard = init_tracing();
+
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(err) => {

@@ -1071,6 +1071,13 @@ soundboard_modal_device_load_error = Помилка завантаження п�
 
 soundboard_player_not_init = Аудіоплеєр не ініціалізовано - перевірте Налаштування → Аудіо.
 
+## Звукова панель - зворотний зв'язок
+
+soundboard_playing_feedback = Відтворення "{ $name }" → { $device }. Живе аудіо буде під'єднано через рантайм незабаром.
+soundboard_removed_feedback = Видалено "{ $name }".
+soundboard_saved_feedback = Збережено "{ $name }". Маршрутизацію відтворення буде під'єднано через рантайм незабаром.
+soundboard_modal_kbd_hint = Enter - зберегти · Esc - скасувати
+
 ## Черги - заголовок сторінки
 
 queues_breadcrumb_automation = Автоматизація
@@ -1326,6 +1333,18 @@ server_overlay_dir_items = { $count ->
    *[other] { $count } елементів
 }
 server_disconnect_confirm_hint = Клієнта { $info } буде відключено від WebSocket-сервера. Інші клієнти не постраждають.
+server_btn_regenerate = Оновити
+server_regen_warning_title = Оновлення відключить усіх клієнтів
+server_regen_warning_body = Підключені WebSocket-клієнти мають перепідключитися з новим токеном.
+server_throughput_title = Пропускна здатність
+server_throughput_meta = останні { $seconds }с · пік { $peak } КБ/с
+server_overlay_files_title = Файли оверлею
+server_btn_open = ВІДКРИТИ
+server_clients_live = наживо
+server_footer_totals = Надіслано всього: { $sent } · Подій всього: { $events }
+server_disconnect_confirm_title = Відключити клієнта?
+server_disconnect_esc_hint = щоб скасувати
+server_btn_disconnect = Відключити
 
 ## Загальні бейджі статусу (використовуються на сторінках деталей платформ)
 

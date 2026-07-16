@@ -2,7 +2,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
     breadcrumb, field_label, ghost_button_with_icon, icon, modal, overlay, primary_button,
-    primary_button_with_icon, radius, row_card, secondary_button, slider, spacing, with_alpha,
+    primary_button_with_icon, radius, row_card, secondary_button, slider, spacing, tr, with_alpha,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
@@ -81,8 +81,12 @@ impl SoundboardView {
             return;
         };
         self.feedback = Some(
-            format!("Playing “{name}” → {device}. Live audio is wired via the runtime soon.")
-                .into(),
+            tr!(
+                "soundboard_playing_feedback",
+                name = name.as_str(),
+                device = device.as_str()
+            )
+            .into(),
         );
         cx.notify();
     }
@@ -95,7 +99,7 @@ impl SoundboardView {
             .map(|c| c.name.clone());
         self.clips.retain(|c| c.id != id);
         if let Some(name) = name {
-            self.feedback = Some(format!("Removed “{name}”.").into());
+            self.feedback = Some(tr!("soundboard_removed_feedback", name = name.as_str()).into());
         }
         cx.notify();
     }
@@ -139,12 +143,14 @@ impl SoundboardView {
         let hotkey_seed = hotkey_seed.to_owned();
 
         let name_input = cx.new(|cx| {
-            let mut ti = TextInput::new("Clip name", cx).with_palette(palette);
+            let mut ti =
+                TextInput::new(tr!("soundboard_modal_name_placeholder"), cx).with_palette(palette);
             ti.set_content(name_seed, cx);
             ti
         });
         let hotkey_input = cx.new(|cx| {
-            let mut ti = TextInput::new("e.g. Ctrl+1", cx).with_palette(palette);
+            let mut ti = TextInput::new(tr!("soundboard_modal_hotkey_placeholder"), cx)
+                .with_palette(palette);
             ti.set_content(hotkey_seed, cx);
             ti
         });
@@ -225,7 +231,7 @@ impl SoundboardView {
     fn save(&mut self, cx: &mut Context<Self>) {
         if !self.modal_saveable(cx) {
             if let Some(modal) = self.modal.as_mut() {
-                modal.error = Some("Name and file are required.".into());
+                modal.error = Some(tr!("soundboard_modal_validation_error").into());
             }
             cx.notify();
             return;
@@ -271,8 +277,7 @@ impl SoundboardView {
         }
 
         self.modal = None;
-        self.feedback =
-            Some(format!("Saved “{name}”. Playback routing is wired via the runtime soon.").into());
+        self.feedback = Some(tr!("soundboard_saved_feedback", name = name.as_str()).into());
         cx.notify();
     }
 
@@ -409,7 +414,7 @@ impl SoundboardView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let inner = if self.loading {
-            centered_message("Loading clips…", palette.text_muted, density)
+            centered_message(tr!("soundboard_loading"), palette.text_muted, density)
         } else if let Some(error) = self.error.clone() {
             centered_message(error, palette.random, density)
         } else if self.clips.is_empty() {
@@ -442,14 +447,14 @@ impl SoundboardView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("No clips yet"),
+                    .child(tr!("soundboard_empty_title")),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_faint)
-                    .child("Add a sound clip to trigger it from a pad, hotkey, or action."),
+                    .child(tr!("soundboard_empty_hint")),
             )
             .into_any_element()
     }
@@ -490,22 +495,26 @@ impl SoundboardView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let title = if modal_state.editing.is_some() {
-            "Edit sound clip"
+            tr!("soundboard_modal_title_edit")
         } else {
-            "Add sound clip"
+            tr!("soundboard_modal_title_add")
         };
 
         let file_set = modal_state.file_name.is_some();
         let file_label = modal_state
             .file_name
             .clone()
-            .unwrap_or_else(|| "No file selected".to_owned());
-        let browse = ghost_button_with_icon(Icon::FolderOpen, "Browse", palette)
-            .density(density)
-            .on_click(
-                "sb-modal-browse",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.browse_file(cx)),
-            );
+            .unwrap_or_else(|| tr!("soundboard_modal_no_file"));
+        let browse = ghost_button_with_icon(
+            Icon::FolderOpen,
+            tr!("soundboard_modal_browse_btn"),
+            palette,
+        )
+        .density(density)
+        .on_click(
+            "sb-modal-browse",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.browse_file(cx)),
+        );
         let file_row = div()
             .flex()
             .items_center()
@@ -584,19 +593,31 @@ impl SoundboardView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .child(field_label(palette, "FILE", file_row))
             .child(field_label(
                 palette,
-                "NAME",
+                tr!("soundboard_modal_section_file"),
+                file_row,
+            ))
+            .child(field_label(
+                palette,
+                tr!("soundboard_modal_section_name"),
                 div().child(modal_state.name_input.clone()),
             ))
             .child(field_label(
                 palette,
-                "HOTKEY",
+                tr!("soundboard_modal_section_hotkey"),
                 div().child(modal_state.hotkey_input.clone()),
             ))
-            .child(field_label(palette, "DEVICE", device_list))
-            .child(field_label(palette, "VOLUME", volume_row));
+            .child(field_label(
+                palette,
+                tr!("soundboard_modal_section_device"),
+                device_list,
+            ))
+            .child(field_label(
+                palette,
+                tr!("soundboard_modal_section_volume"),
+                volume_row,
+            ));
 
         if let Some(error) = modal_state.error.clone() {
             body = body.child(
@@ -622,11 +643,11 @@ impl SoundboardView {
         }
 
         let saveable = self.modal_saveable(cx);
-        let cancel = secondary_button("Cancel", palette).on_click(
+        let cancel = secondary_button(tr!("soundboard_modal_cancel_btn"), palette).on_click(
             "sb-modal-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
         );
-        let save = primary_button("Save", palette)
+        let save = primary_button(tr!("soundboard_modal_save_btn"), palette)
             .disabled(!saveable)
             .on_click(
                 "sb-modal-save",
@@ -644,7 +665,7 @@ impl SoundboardView {
             .header_icon(Icon::Music, palette.brand)
             .width(MODAL_WIDTH)
             .footer(footer)
-            .kbd_hint("Enter to save · Esc to cancel")
+            .kbd_hint(tr!("soundboard_modal_kbd_hint"))
             .on_close(
                 "sb-modal-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
@@ -691,16 +712,17 @@ impl Render for SoundboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let add_btn = primary_button_with_icon(Icon::Plus, "Add sound", &palette)
-            .density(density)
-            .on_click(
-                "sb-add",
-                cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)),
-            );
+        let add_btn =
+            primary_button_with_icon(Icon::Plus, tr!("soundboard_add_clip_btn"), &palette)
+                .density(density)
+                .on_click(
+                    "sb-add",
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)),
+                );
         let header = breadcrumb(
             vec![
-                BreadcrumbCrumb::leaf("Builtin"),
-                BreadcrumbCrumb::leaf("Soundboard"),
+                BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_builtin")),
+                BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_soundboard")),
             ],
             &palette,
         )

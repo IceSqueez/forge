@@ -1065,6 +1065,13 @@ soundboard_modal_device_load_error = Device load failed: { $error }
 
 soundboard_player_not_init = Audio player not initialised - check Settings → Audio.
 
+## Soundboard - feedback
+
+soundboard_playing_feedback = Playing "{ $name }" → { $device }. Live audio is wired via the runtime soon.
+soundboard_removed_feedback = Removed "{ $name }".
+soundboard_saved_feedback = Saved "{ $name }". Playback routing is wired via the runtime soon.
+soundboard_modal_kbd_hint = Enter to save · Esc to cancel
+
 ## Queues - page header
 
 queues_breadcrumb_automation = Automation
@@ -1316,6 +1323,18 @@ server_col_uptime = UPTIME
 server_overlay_files_empty = No overlay files found
 server_overlay_dir_items = { $count } items
 server_disconnect_confirm_hint = Client at { $info } will be disconnected from the WebSocket server. Other clients are not affected.
+server_btn_regenerate = Regenerate
+server_regen_warning_title = Regenerating disconnects all clients
+server_regen_warning_body = Connected WebSocket clients must reconnect with the new token.
+server_throughput_title = Throughput
+server_throughput_meta = last { $seconds }s · peak { $peak } KB/s
+server_overlay_files_title = Overlay Files
+server_btn_open = OPEN
+server_clients_live = live
+server_footer_totals = Total sent: { $sent } · Total events: { $events }
+server_disconnect_confirm_title = Disconnect client?
+server_disconnect_esc_hint = to cancel
+server_btn_disconnect = Disconnect
 
 ## Common status badges (shared across platform detail pages)
 

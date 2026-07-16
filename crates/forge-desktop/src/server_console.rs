@@ -2,7 +2,8 @@ use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, badge, breadcrumb, card,
-    confirm_modal, icon, metric_card, overlay, radius, spacing, sparkline, status_dot, with_alpha,
+    confirm_modal, icon, metric_card, overlay, radius, spacing, sparkline, status_dot, tr,
+    with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,8 +12,8 @@ use forge_events::EventSource;
 use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSnapshot};
 use forge_storage::{CredentialId, CredentialsRepo};
 use gpui::{
-    AnyElement, ClickEvent, ClipboardItem, Context, Div, Pixels, Rgba, Window, div, prelude::*, px,
-    relative,
+    AnyElement, ClickEvent, ClipboardItem, Context, Div, Pixels, Rgba, SharedString, Window, div,
+    prelude::*, px, relative,
 };
 
 use crate::presentation::ActivePresentation;
@@ -471,7 +472,7 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Built-in Server"),
+                    .child(tr!("server_header_title")),
             )
             .child(ws_badge)
             .child(div().flex_1())
@@ -488,7 +489,7 @@ impl ServerConsoleView {
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
-            .child("Internal HTTP + WebSocket server for overlays and remote control");
+            .child(tr!("server_header_desc"));
 
         let actions_row = div()
             .w_full()
@@ -547,16 +548,19 @@ impl ServerConsoleView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let uptime_str = if self.uptime_seconds > 0 {
-            format!("Up {}", format_server_uptime(self.uptime_seconds))
+            tr!(
+                "server_up_prefix",
+                uptime = format_server_uptime(self.uptime_seconds)
+            )
         } else {
-            "Not running".to_owned()
+            tr!("server_not_running")
         };
 
         div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(caption("BIND ADDRESS", palette))
+            .child(caption(tr!("server_bind_address"), palette))
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
@@ -585,7 +589,7 @@ impl ServerConsoleView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(caption("BEARER TOKEN", palette))
+            .child(caption(tr!("server_bearer_token"), palette))
             .child(self.bearer_token_row(palette, density, cx))
             .child(self.regen_warning(palette, density))
             .into_any_element()
@@ -669,7 +673,7 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
-                    .child("Regenerate"),
+                    .child(tr!("server_btn_regenerate")),
             )
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.regenerate_token(cx)));
 
@@ -699,7 +703,7 @@ impl ServerConsoleView {
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XXS)
                             .text_color(palette.warning)
-                            .child("Regenerating disconnects all clients"),
+                            .child(tr!("server_regen_warning_title")),
                     ),
             )
             .child(
@@ -707,7 +711,7 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child("Connected WebSocket clients must reconnect with the new token."),
+                    .child(tr!("server_regen_warning_body")),
             )
             .into_any_element()
     }
@@ -722,9 +726,9 @@ impl ServerConsoleView {
         let base = palette.success;
         let border = if busy { with_alpha(base, 0.4) } else { base };
         let label = if self.control_in_flight == Some(ServerControl::Restarting) {
-            "Restarting…"
+            tr!("server_btn_restarting")
         } else {
-            "Restart"
+            tr!("server_btn_restart")
         };
         let hover_bg = with_alpha(base, 0.08);
 
@@ -765,9 +769,9 @@ impl ServerConsoleView {
         let base = palette.random;
         let border = if busy { with_alpha(base, 0.4) } else { base };
         let label = if self.control_in_flight == Some(ServerControl::Stopping) {
-            "Stopping…"
+            tr!("server_btn_stopping")
         } else {
-            "Stop"
+            tr!("server_btn_stop")
         };
         let hover_bg = with_alpha(base, 0.08);
 
@@ -824,7 +828,7 @@ impl ServerConsoleView {
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
-                    .child("COPY"),
+                    .child(tr!("server_btn_copy")),
             )
             .into_any_element()
     }
@@ -840,9 +844,9 @@ impl ServerConsoleView {
             .gap(spacing(Spacing::Xs, density))
             .child(cell(
                 metric_card(
-                    "CLIENTS",
+                    tr!("server_stat_clients"),
                     format!("{}", self.connected_clients.len()),
-                    Some("connected"),
+                    Some(tr!("server_stat_clients_sub")),
                     Some(success),
                     palette,
                 )
@@ -850,9 +854,12 @@ impl ServerConsoleView {
             ))
             .child(cell(
                 metric_card(
-                    "EVENTS OUT",
+                    tr!("server_stat_events_out"),
                     format!("{:.1} ev/s", self.stats.events_per_second),
-                    Some(format!("avg {:.1} ev/s", self.stats.events_per_second_avg)),
+                    Some(tr!(
+                        "server_stat_events_sub",
+                        avg = format!("{:.1}", self.stats.events_per_second_avg)
+                    )),
                     None,
                     palette,
                 )
@@ -860,9 +867,9 @@ impl ServerConsoleView {
             ))
             .child(cell(
                 metric_card(
-                    "HTTP REQUESTS",
+                    tr!("server_stat_http"),
                     format!("{}", self.stats.http_requests),
-                    Some("overlays served"),
+                    Some(tr!("server_stat_http_sub")),
                     None,
                     palette,
                 )
@@ -870,9 +877,12 @@ impl ServerConsoleView {
             ))
             .child(cell(
                 metric_card(
-                    "BANDWIDTH",
+                    tr!("server_stat_bandwidth"),
                     format!("{:.0} KB/s", self.stats.bandwidth_kbps),
-                    Some(format!("peak {:.0} KB/s", self.stats.bandwidth_peak_kbps)),
+                    Some(tr!(
+                        "server_stat_bandwidth_sub",
+                        peak = format!("{:.0}", self.stats.bandwidth_peak_kbps)
+                    )),
                     Some(success),
                     palette,
                 )
@@ -905,7 +915,7 @@ impl ServerConsoleView {
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
-                            .child("Throughput"),
+                            .child(tr!("server_throughput_title")),
                     ),
             )
             .child(
@@ -913,7 +923,11 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(format!("last {sample_count}s · peak {peak:.0} KB/s")),
+                    .child(tr!(
+                        "server_throughput_meta",
+                        seconds = sample_count as i64,
+                        peak = format!("{peak:.0}")
+                    )),
             );
 
         let chart = div()
@@ -960,7 +974,7 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Overlay Files"),
+                    .child(tr!("server_overlay_files_title")),
             );
 
         let root_label = if self.overlay_root.is_empty() {
@@ -1005,7 +1019,7 @@ impl ServerConsoleView {
                         div()
                             .font_family(DEFAULT_MONO_FAMILY)
                             .text_size(FONT_XS)
-                            .child("OPEN"),
+                            .child(tr!("server_btn_open")),
                     ),
             );
 
@@ -1017,7 +1031,7 @@ impl ServerConsoleView {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
-                .child("No overlay files found")
+                .child(tr!("server_overlay_files_empty"))
                 .into_any_element()
         } else {
             let mut col = div()
@@ -1071,7 +1085,9 @@ impl ServerConsoleView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let size_label = match entry.kind {
-            OwnedOverlayKind::Dir => format!("{} items", entry.child_count),
+            OwnedOverlayKind::Dir => {
+                tr!("server_overlay_dir_items", count = entry.child_count as i64)
+            }
             OwnedOverlayKind::File { .. } => format_bytes(entry.size_bytes),
         };
         let kind_color = match entry.kind {
@@ -1210,7 +1226,7 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child("Connected Clients"),
+                    .child(tr!("server_clients_header")),
             )
             .child(div().flex_1())
             .child(
@@ -1218,7 +1234,7 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child("live"),
+                    .child(tr!("server_clients_live")),
             )
             .child(count_badge);
 
@@ -1230,19 +1246,25 @@ impl ServerConsoleView {
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Sm, density))
             .child(div().w(DOT_CELL_W).flex_none())
-            .child(weighted(CLIENT_GROW, col_caption("CLIENT", palette)))
-            .child(weighted(SUBS_GROW, col_caption("SUBSCRIPTIONS", palette)))
+            .child(weighted(
+                CLIENT_GROW,
+                col_caption(tr!("server_col_client"), palette),
+            ))
+            .child(weighted(
+                SUBS_GROW,
+                col_caption(tr!("server_col_subscriptions"), palette),
+            ))
             .child(
                 div()
                     .w(EVS_CELL_W)
                     .flex_none()
-                    .child(col_caption("EV/S", palette)),
+                    .child(col_caption(tr!("server_col_evs"), palette)),
             )
             .child(
                 div()
                     .w(UPTIME_CELL_W)
                     .flex_none()
-                    .child(col_caption("UPTIME", palette)),
+                    .child(col_caption(tr!("server_col_uptime"), palette)),
             )
             .child(div().w(X_CELL_W).flex_none());
 
@@ -1254,7 +1276,7 @@ impl ServerConsoleView {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
-                .child("No clients connected")
+                .child(tr!("server_clients_empty"))
                 .into_any_element()
         } else {
             let mut col = div().w_full().flex().flex_col();
@@ -1400,10 +1422,10 @@ impl ServerConsoleView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(format!(
-                        "Total sent: {} · Total events: {}",
-                        format_bytes(self.stats.total_bytes_sent),
-                        self.stats.total_events_out
+                    .child(tr!(
+                        "server_footer_totals",
+                        sent = format_bytes(self.stats.total_bytes_sent),
+                        events = self.stats.total_events_out as i64
                     )),
             )
             .child(
@@ -1449,23 +1471,28 @@ impl ServerConsoleView {
             .iter()
             .find(|c| &c.identification == id)?;
 
-        let message = format!(
-            "Client at {} will be disconnected from the WebSocket server. Other clients are not affected.",
-            row.client_type_label
+        let message = tr!(
+            "server_disconnect_confirm_hint",
+            info = row.client_type_label.as_str()
         );
-        let confirm = confirm_modal("Disconnect client?", message, ConfirmTone::Warning, palette)
-            .item_name(row.identification.clone())
-            .esc_hint("to cancel")
-            .on_cancel(
-                "srv-disc-cancel",
-                "Cancel",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_disconnect(cx)),
-            )
-            .on_confirm(
-                "srv-disc-confirm",
-                "Disconnect",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_disconnect(cx)),
-            );
+        let confirm = confirm_modal(
+            tr!("server_disconnect_confirm_title"),
+            message,
+            ConfirmTone::Warning,
+            palette,
+        )
+        .item_name(row.identification.clone())
+        .esc_hint(tr!("server_disconnect_esc_hint"))
+        .on_cancel(
+            "srv-disc-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_disconnect(cx)),
+        )
+        .on_confirm(
+            "srv-disc-confirm",
+            tr!("server_btn_disconnect"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_disconnect(cx)),
+        );
 
         let view = cx.entity();
         Some(
@@ -1486,8 +1513,8 @@ impl Render for ServerConsoleView {
 
         let page_header = breadcrumb(
             vec![
-                BreadcrumbCrumb::leaf("Builtin"),
-                BreadcrumbCrumb::leaf("Server"),
+                BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
+                BreadcrumbCrumb::leaf(tr!("server_breadcrumb_server")),
             ],
             &palette,
         );
@@ -1557,20 +1584,20 @@ fn hline(color: Rgba) -> Div {
     div().w_full().h(px(1.0)).bg(color)
 }
 
-fn caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
-        .child(label)
+        .child(label.into())
 }
 
-fn col_caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn col_caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)
         .text_color(palette.text_faint)
-        .child(label)
+        .child(label.into())
 }
 
 fn chips_row(
@@ -1636,11 +1663,11 @@ fn status_color(status: &ServerStatus, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn status_label(status: &ServerStatus) -> &'static str {
+fn status_label(status: &ServerStatus) -> String {
     match status {
-        ServerStatus::Running => "Running",
-        ServerStatus::Stopped => "Stopped",
-        ServerStatus::Error(_) => "Error",
+        ServerStatus::Running => tr!("server_status_running"),
+        ServerStatus::Stopped => tr!("server_status_stopped"),
+        ServerStatus::Error(_) => tr!("server_status_error"),
     }
 }
 

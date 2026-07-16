@@ -62,7 +62,7 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 
 ### TTS pipeline
 - Local engines: Piper (ONNX), eSpeak-NG, SAPI (Windows), NSpeech (macOS)
-- Cloud engines: Azure, OpenAI, ElevenLabs, Google TTS
+- Cloud engines: Azure, OpenAI, ElevenLabs, Amazon Polly
 - Voice aliases with text-replacement preprocessing filters
 - Speak queue with pause, resume, and skip controls
 

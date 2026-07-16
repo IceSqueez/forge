@@ -726,7 +726,7 @@ fn home_system_event_row<'a>(
 
     if show_desc {
         spans = spans.push(
-            text(" \u{2014} ")
+            text(" - ")
                 .size(FONT_XS)
                 .color(text_muted)
                 .wrapping(Wrapping::None),

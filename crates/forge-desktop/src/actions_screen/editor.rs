@@ -797,7 +797,7 @@ impl ScreenActionsView {
                 name: ctx_name.into(),
                 note: format!("\u{b7} {count} sub-actions").into(),
             },
-            footer_hint: "Added with smart defaults \u{2014} edit inline after".into(),
+            footer_hint: "Added with smart defaults - edit inline after".into(),
             search_placeholder: format!("Search {count} sub-actions\u{2026}").into(),
             scope_cap: Some(7),
         };
@@ -915,7 +915,7 @@ impl ScreenActionsView {
         if instances.is_empty() {
             cx.push_toast(
                 ToastKind::Info,
-                "No unlinked triggers available \u{2014} create one on the Triggers screen",
+                "No unlinked triggers available - create one on the Triggers screen",
             );
             cx.notify();
             return;
@@ -937,8 +937,7 @@ impl ScreenActionsView {
                 name: action_name.into(),
                 note: format!("\u{b7} {count} available").into(),
             },
-            footer_hint: "Links a saved trigger \u{2014} create new ones on the Triggers screen"
-                .into(),
+            footer_hint: "Links a saved trigger - create new ones on the Triggers screen".into(),
             search_placeholder: "Search triggers\u{2026}".into(),
             scope_cap: Some(6),
         };

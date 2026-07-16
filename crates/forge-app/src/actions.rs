@@ -549,7 +549,9 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
             if is_default {
                 Task::done(Message::Toast(crate::message::ToastMsg::Fired {
                     kind: forge_widgets::ToastKind::Info,
-                    message: "Default trigger \u{2014} read-only. Create a Custom instance to override values.".to_owned(),
+                    message:
+                        "Default trigger - read-only. Create a Custom instance to override values."
+                            .to_owned(),
                     duration_ms: 4000,
                     action: None,
                 }))

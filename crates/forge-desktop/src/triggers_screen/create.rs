@@ -54,7 +54,7 @@ impl TriggersRegistryView {
             header_icon: Icon::Bolt,
             title: "New trigger".into(),
             subtitle: GridPickerSubtitle::Plain(format!("{count} trigger types").into()),
-            footer_hint: "Pick an event source \u{2014} configure it next".into(),
+            footer_hint: "Pick an event source - configure it next".into(),
             search_placeholder: format!("Search {count} trigger types\u{2026}").into(),
             scope_cap: Some(8),
         };

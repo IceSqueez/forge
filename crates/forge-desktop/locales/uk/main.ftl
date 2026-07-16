@@ -1,3 +1,13 @@
+## Boot - splash and data-open failure screens
+
+boot_starting = Запуск…
+boot_upgrade_title = Потрібне оновлення
+boot_upgrade_body = Ваші дані forge використовують схему версії { $found }, новішу за версію цієї збірки { $expected }. Оновіть forge до останнього випуску, щоб відкрити їх.
+boot_upgrade_reassure = Ваші дані у безпеці й недоторкані.
+boot_retry = Повторити
+boot_failure_title = Не вдалося відкрити ваші дані
+boot_failure_reassure = Ваші дані у безпеці. Якщо це повторюється, повідомте про проблему.
+
 ## Загальні дії, спільні для всіх екранів
 
 common_cancel = Скасувати

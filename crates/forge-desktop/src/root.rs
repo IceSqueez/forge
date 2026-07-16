@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, ForgePalette, Icon,
-    Radius, Spacing, card, icon, primary_button, radius, spacing,
+    Radius, Spacing, card, icon, primary_button, radius, spacing, tr,
 };
 use forge_events::EventsError;
 use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
@@ -367,7 +367,7 @@ fn splash(palette: &ForgePalette, density: Density) -> AnyElement {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("Starting…"),
+                .child(tr!("boot_starting")),
         );
     centered(column, palette, density)
 }
@@ -389,15 +389,17 @@ fn upgrade_screen(
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
-                .child("Update required"),
+                .child(tr!("boot_upgrade_title")),
         )
         .child(
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_secondary)
-                .child(format!(
-                    "Your forge data uses schema version {found}, newer than this build's version {expected}. Update forge to the latest release to open it."
+                .child(tr!(
+                    "boot_upgrade_body",
+                    found = found as i64,
+                    expected = expected as i64
                 )),
         )
         .child(
@@ -405,7 +407,7 @@ fn upgrade_screen(
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("Your data is safe and untouched."),
+                .child(tr!("boot_upgrade_reassure")),
         );
     centered(card(body, palette), palette, density)
 }
@@ -426,10 +428,12 @@ fn retry_screen(
         .text_color(palette.text_secondary)
         .child(reason.to_owned());
 
-    let retry =
-        primary_button("Retry", palette).on_click("boot-retry", move |_, _window, cx: &mut App| {
+    let retry = primary_button(tr!("boot_retry"), palette).on_click(
+        "boot-retry",
+        move |_, _window, cx: &mut App| {
             root.update(cx, |root, cx| root.retry(cx));
-        });
+        },
+    );
 
     let body = div()
         .flex()
@@ -442,7 +446,7 @@ fn retry_screen(
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
-                .child("Couldn't open your data"),
+                .child(tr!("boot_failure_title")),
         )
         .child(detail)
         .child(
@@ -450,7 +454,7 @@ fn retry_screen(
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("Your data is safe. If this keeps happening, please report it."),
+                .child(tr!("boot_failure_reassure")),
         )
         .child(retry);
     centered(card(body, palette), palette, density)

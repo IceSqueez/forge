@@ -119,6 +119,9 @@ fn main() {
             cx.set_global(Presentation::new(ThemeId::default(), Density::default()));
             cx.set_global(crate::toasts::Toasts::new());
 
+            // Boot and failure screens render before storage resolves the saved language.
+            crate::i18n::install_os_default();
+
             bind_text_input_keys(cx);
             bind_text_area_keys(cx);
             register_shell_key_bindings(cx);

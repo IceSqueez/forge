@@ -1,3 +1,13 @@
+## Boot - splash and data-open failure screens
+
+boot_starting = Starting…
+boot_upgrade_title = Update required
+boot_upgrade_body = Your forge data uses schema version { $found }, newer than this build's version { $expected }. Update forge to the latest release to open it.
+boot_upgrade_reassure = Your data is safe and untouched.
+boot_retry = Retry
+boot_failure_title = Couldn't open your data
+boot_failure_reassure = Your data is safe. If this keeps happening, please report it.
+
 ## Common actions shared across all screens
 
 common_cancel = Cancel

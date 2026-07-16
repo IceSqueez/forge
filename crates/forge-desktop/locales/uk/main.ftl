@@ -179,7 +179,6 @@ settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Хоткеї
 settings_nav_version = Версія
 settings_nav_diagnostics = Діагностика
-settings_section_deferred = Цей розділ з'явиться в наступному етапі.
 
 ## Налаштування → панель діагностики
 
@@ -309,6 +308,7 @@ settings_hotkeys_error_load_bindings = Не вдалося завантажит�
 settings_hotkeys_error_unbind = Помилка відв'язки: { $error }
 settings_hotkeys_error_replace = Помилка заміни: { $error }
 settings_hotkeys_error_conflict_not_found = Конфліктний хоткей не знайдено в локальному кеші. Оновіть і спробуйте знову.
+settings_hotkeys_capture_prompt = Натисніть клавіші... Esc для скасування
 
 ## Дії - заголовок сторінки / хлібні крихти
 

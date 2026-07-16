@@ -30,6 +30,7 @@ mod script_editor;
 mod server_console;
 mod settings;
 mod settings_audio;
+mod settings_hotkeys;
 mod settings_scripting;
 mod settings_shortcuts;
 mod settings_websocket;

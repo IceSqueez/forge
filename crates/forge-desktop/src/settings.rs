@@ -15,6 +15,7 @@ use gpui::{
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
+use crate::settings_hotkeys::SettingsHotkeysView;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_websocket::SettingsWebSocketView;
@@ -180,6 +181,7 @@ pub struct SettingsView {
     scripting: Entity<SettingsScriptingView>,
     websocket: Entity<SettingsWebSocketView>,
     shortcuts: Entity<SettingsShortcutsView>,
+    hotkeys: Entity<SettingsHotkeysView>,
 }
 
 impl SettingsView {
@@ -201,6 +203,14 @@ impl SettingsView {
         let shortcuts = cx.new(|cx| {
             SettingsShortcutsView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });
+        let hotkeys = cx.new(|cx| {
+            SettingsHotkeysView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                handles.hotkey_client.clone(),
+                cx,
+            )
+        });
         Self {
             section: SettingsSection::Appearance,
             handles,
@@ -209,6 +219,7 @@ impl SettingsView {
             scripting,
             websocket,
             shortcuts,
+            hotkeys,
         }
     }
 
@@ -352,9 +363,9 @@ impl SettingsView {
             SettingsSection::Notifications => self.notifications_pane(palette, density),
             SettingsSection::Queues => self.queues_pane(palette, density),
             SettingsSection::Storage => self.storage_pane(palette, density, cx),
+            SettingsSection::Hotkeys => self.hotkeys.clone().into_any_element(),
             SettingsSection::Version => self.version_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics_pane(palette, density, cx),
-            other => self.deferred_pane(other, palette, density),
         };
 
         div()
@@ -998,28 +1009,6 @@ impl SettingsView {
                 Err(e) => tracing::warn!(error = %e, "DB backup failed"),
             }
         });
-    }
-
-    fn deferred_pane(
-        &self,
-        section: SettingsSection,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(section.icon(), section.label(), palette))
-            .child(card(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_section_deferred")),
-                palette,
-            ))
-            .into_any_element()
     }
 }
 

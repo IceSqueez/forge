@@ -179,7 +179,6 @@ settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Hotkeys
 settings_nav_version = Version
 settings_nav_diagnostics = Diagnostics
-settings_section_deferred = This section arrives in a later slice.
 
 ## Settings → Diagnostics pane
 
@@ -309,6 +308,7 @@ settings_hotkeys_error_load_bindings = Failed to load bindings: { $error }
 settings_hotkeys_error_unbind = Unbind failed: { $error }
 settings_hotkeys_error_replace = Replace failed: { $error }
 settings_hotkeys_error_conflict_not_found = Conflicting hotkey not found in local cache. Refresh and try again.
+settings_hotkeys_capture_prompt = Press keys... Esc to cancel
 
 ## Actions - page header / breadcrumb
 

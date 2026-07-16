@@ -1371,6 +1371,17 @@ globals_empty_desc = Змініть фільтр або пошук, або ст�
 globals_edit_action = Редагувати значення
 globals_delete_action = Видалити
 globals_deleted_toast = Видалено '{ $name }'
+globals_breadcrumb = Глобальні змінні
+globals_stat_total = усього
+globals_stat_persisted = збережено
+globals_stat_in_memory = у пам'яті
+globals_empty_caption = Немає змінних за цим фільтром.
+globals_col_modified = ЗМІНЕНО
+globals_col_reads_writes = ЧИТАНЬ · ЗАПИСІВ
+globals_col_persist = ЗБЕРІГАТИ
+globals_col_actions = ДІЇ
+globals_rename_taken = Назву '{ $name }' вже зайнято
+globals_toast_error = Глобальні змінні: { $message }
 
 ## Глобальні змінні - редактор значень
 
@@ -1387,6 +1398,16 @@ globals_editor_cancel = Скасувати
 globals_editor_save = Зберегти
 globals_editor_saving = Збереження...
 globals_editor_kbd_hint = ⌘ Enter - зберегти
+globals_editor_name_placeholder = my_variable
+globals_error_invalid_int = Некоректне ціле число
+globals_error_invalid_float = Некоректне число з рухомою комою
+globals_error_invalid_datetime = Некоректна дата й час ISO 8601 (напр. 2026-05-18T14:23:00Z)
+globals_error_invalid_json_array = Некоректний масив JSON
+globals_error_invalid_json_object = Некоректний об'єкт JSON
+globals_error_name_required = Потрібно вказати назву
+globals_error_name_taken = Глобальна змінна з такою назвою вже існує
+globals_delete_confirm_title = Видалити глобальну змінну
+globals_delete_confirm_body = Це назавжди видалить змінну та її значення.
 
 ## Редактор скриптів - сторінка / панель інструментів
 

@@ -1354,6 +1354,17 @@ globals_empty_desc = Adjust the filter or search, or create one with + New varia
 globals_edit_action = Edit value
 globals_delete_action = Delete
 globals_deleted_toast = Deleted '{ $name }'
+globals_breadcrumb = Global variables
+globals_stat_total = total
+globals_stat_persisted = persisted
+globals_stat_in_memory = in-memory
+globals_empty_caption = No variables match this filter.
+globals_col_modified = LAST MODIFIED
+globals_col_reads_writes = READS · WRITES
+globals_col_persist = PERSIST
+globals_col_actions = ACTIONS
+globals_rename_taken = Name '{ $name }' is already taken
+globals_toast_error = Globals: { $message }
 
 ## Globals - variant editor modal
 
@@ -1370,6 +1381,16 @@ globals_editor_cancel = Cancel
 globals_editor_save = Save
 globals_editor_saving = Saving...
 globals_editor_kbd_hint = ⌘ Enter to save
+globals_editor_name_placeholder = my_variable
+globals_error_invalid_int = Invalid integer
+globals_error_invalid_float = Invalid float
+globals_error_invalid_datetime = Invalid ISO 8601 datetime (e.g. 2026-05-18T14:23:00Z)
+globals_error_invalid_json_array = Invalid JSON array
+globals_error_invalid_json_object = Invalid JSON object
+globals_error_name_required = Name is required
+globals_error_name_taken = A global with this name already exists
+globals_delete_confirm_title = Delete global variable
+globals_delete_confirm_body = This permanently removes the variable and its value.
 
 ## Script Editor - page / toolbar
 

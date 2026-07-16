@@ -9,9 +9,9 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
     TextArea, TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal,
-    data_table, ghost_button_with_icon, hover_reveal, icon, modal, overlay, primary_button,
-    primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
-    with_alpha,
+    data_table, fmt_relative_time, ghost_button_with_icon, hover_reveal, icon, modal, overlay,
+    primary_button, primary_button_with_icon, radius, search_input, secondary_button, spacing,
+    status_dot, toggle, tr, with_alpha,
 };
 use forge_storage::{GlobalEntry, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
@@ -71,11 +71,13 @@ impl EditorState {
                 .trim()
                 .parse::<i64>()
                 .map(Variant::Int)
-                .map_err(|_| "Invalid integer".into()),
+                .map_err(|_| tr!("globals_error_invalid_int").into()),
             VariantKind::Float => {
                 let raw = self.value_input.read(cx).content().trim().to_owned();
-                let parsed = raw.parse::<f64>().map_err(|_| "Invalid float")?;
-                Variant::float(parsed).map_err(|_| "Invalid float".into())
+                let parsed = raw
+                    .parse::<f64>()
+                    .map_err(|_| tr!("globals_error_invalid_float"))?;
+                Variant::float(parsed).map_err(|_| tr!("globals_error_invalid_float").into())
             }
             VariantKind::Bool => Ok(Variant::Bool(self.bool_value)),
             VariantKind::String => Ok(Variant::String(
@@ -86,16 +88,16 @@ impl EditorState {
                 &time::format_description::well_known::Rfc3339,
             )
             .map(Variant::Datetime)
-            .map_err(|_| "Invalid ISO 8601 datetime (e.g. 2026-05-18T14:23:00Z)".into()),
+            .map_err(|_| tr!("globals_error_invalid_datetime").into()),
             VariantKind::Array => parse_json_variant(
                 self.value_area.read(cx).content(),
                 true,
-                "Invalid JSON array",
+                tr!("globals_error_invalid_json_array").into(),
             ),
             VariantKind::Object => parse_json_variant(
                 self.value_area.read(cx).content(),
                 false,
-                "Invalid JSON object",
+                tr!("globals_error_invalid_json_object").into(),
             ),
         }
     }
@@ -141,7 +143,7 @@ impl GlobalsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search = cx.new(|cx| search_input("Search variables…", palette, cx));
+        let search = cx.new(|cx| search_input(tr!("globals_search_placeholder"), palette, cx));
 
         let globals_obs = cx.observe(&globals, |_, _, cx| cx.notify());
         let search_sub = cx.subscribe(&search, Self::on_search_event);
@@ -203,8 +205,7 @@ impl GlobalsView {
     }
 
     fn apply_entries(&mut self, entries: Vec<GlobalEntry>, cx: &mut Context<Self>) {
-        let now = time::OffsetDateTime::now_utc();
-        let rows: Vec<Global> = entries.iter().map(|e| global_from_entry(e, now)).collect();
+        let rows: Vec<Global> = entries.iter().map(global_from_entry).collect();
         self.globals.update(cx, |g, cx| {
             g.set_all(rows);
             cx.notify();
@@ -216,7 +217,10 @@ impl GlobalsView {
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
         eprintln!("forge-desktop: globals operation failed: {message}");
         self.loading = false;
-        cx.push_toast(ToastKind::Error, format!("Globals: {message}"));
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("globals_toast_error", message = message),
+        );
         cx.notify();
     }
 
@@ -311,25 +315,28 @@ impl GlobalsView {
         cx: &mut Context<Self>,
     ) {
         let view = cx.entity();
-        let message = format!("Deleted \u{201c}{name}\u{201d}");
+        let message = tr!("globals_deleted_toast", name = name.as_ref());
         cx.push_toast_full(
             ToastKind::Undo,
             message,
             None,
-            Some(ToastAction::new("Undo", move |_window, app: &mut App| {
-                let backend = Arc::clone(&backend);
-                let rt_handle = rt_handle.clone();
-                let key = name.to_string();
-                Self::reload_entity(
-                    view.clone(),
-                    rt_handle,
-                    async move {
-                        backend.restore(&key).await.map_err(|e| e.to_string())?;
-                        backend.list().await.map_err(|e| e.to_string())
-                    },
-                    app,
-                );
-            })),
+            Some(ToastAction::new(
+                tr!("common_undo"),
+                move |_window, app: &mut App| {
+                    let backend = Arc::clone(&backend);
+                    let rt_handle = rt_handle.clone();
+                    let key = name.to_string();
+                    Self::reload_entity(
+                        view.clone(),
+                        rt_handle,
+                        async move {
+                            backend.restore(&key).await.map_err(|e| e.to_string())?;
+                            backend.list().await.map_err(|e| e.to_string())
+                        },
+                        app,
+                    );
+                },
+            )),
             Duration::from_millis(6000),
         );
     }
@@ -371,7 +378,7 @@ impl GlobalsView {
         if self.globals.read(cx).contains(&next) {
             cx.push_toast(
                 ToastKind::Error,
-                format!("Name \u{201c}{next}\u{201d} is already taken"),
+                tr!("globals_rename_taken", name = next.as_str()),
             );
             return;
         }
@@ -435,7 +442,8 @@ impl GlobalsView {
         let palette = cx.palette();
         let name_seed = prefill.map(|g| g.name.to_string()).unwrap_or_default();
         let name_input = cx.new(|cx| {
-            let mut ti = TextInput::new("my_variable", cx).with_palette(palette);
+            let mut ti =
+                TextInput::new(tr!("globals_editor_name_placeholder"), cx).with_palette(palette);
             ti.set_content(name_seed, cx);
             ti
         });
@@ -555,13 +563,13 @@ impl GlobalsView {
         let build = ed.build_variant(cx);
 
         if name.is_empty() {
-            self.set_editor_error("Name is required", cx);
+            self.set_editor_error_owned(tr!("globals_error_name_required").into(), cx);
             return;
         }
         let collides =
             self.globals.read(cx).contains(&name) && original.as_deref() != Some(name.as_str());
         if collides {
-            self.set_editor_error("A global with this name already exists", cx);
+            self.set_editor_error_owned(tr!("globals_error_name_taken").into(), cx);
             return;
         }
         let variant = match build {
@@ -624,10 +632,6 @@ impl GlobalsView {
         .detach();
     }
 
-    fn set_editor_error(&mut self, message: &'static str, cx: &mut Context<Self>) {
-        self.set_editor_error_owned(message.into(), cx);
-    }
-
     fn set_editor_error_owned(&mut self, message: SharedString, cx: &mut Context<Self>) {
         if let Some(ed) = self.editor.as_mut() {
             ed.error = Some(message);
@@ -668,7 +672,7 @@ impl GlobalsView {
         let persisted = globals.persisted_count();
         let session = globals.session_count();
 
-        let stat = |value: usize, label: &'static str, hue: Rgba| {
+        let stat = |value: usize, label: SharedString, hue: Rgba| {
             div()
                 .flex()
                 .items_center()
@@ -700,13 +704,29 @@ impl GlobalsView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(stat(total, "total", palette.text_primary))
+            .child(stat(
+                total,
+                tr!("globals_stat_total").into(),
+                palette.text_primary,
+            ))
             .child(dot())
-            .child(stat(persisted, "persisted", palette.success))
+            .child(stat(
+                persisted,
+                tr!("globals_stat_persisted").into(),
+                palette.success,
+            ))
             .child(dot())
-            .child(stat(session, "in-memory", palette.warning));
+            .child(stat(
+                session,
+                tr!("globals_stat_in_memory").into(),
+                palette.warning,
+            ));
 
-        breadcrumb(vec![BreadcrumbCrumb::leaf("Global variables")], palette).right(cluster)
+        breadcrumb(
+            vec![BreadcrumbCrumb::leaf(tr!("globals_breadcrumb"))],
+            palette,
+        )
+        .right(cluster)
     }
 
     fn render_action_bar(
@@ -718,19 +738,19 @@ impl GlobalsView {
         let chips = [
             (
                 "globals-filter-all",
-                "All",
+                tr!("globals_filter_all"),
                 GlobalsFilter::All,
                 palette.brand,
             ),
             (
                 "globals-filter-persisted",
-                "Persisted",
+                tr!("globals_filter_persisted"),
                 GlobalsFilter::Persisted,
                 palette.success,
             ),
             (
                 "globals-filter-session",
-                "Session",
+                tr!("globals_filter_session"),
                 GlobalsFilter::Session,
                 palette.warning,
             ),
@@ -760,18 +780,19 @@ impl GlobalsView {
             .child(search)
             .child(chip_row);
 
-        let export = ghost_button_with_icon(Icon::Download, "Export JSON", palette)
+        let export = ghost_button_with_icon(Icon::Download, tr!("globals_export_btn"), palette)
             .density(density)
             .on_click(
                 "globals-export",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)),
             );
-        let new_btn = primary_button_with_icon(Icon::Plus, "New variable", palette)
-            .density(density)
-            .on_click(
-                "globals-new",
-                cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
-            );
+        let new_btn =
+            primary_button_with_icon(Icon::Plus, tr!("globals_editor_title_create"), palette)
+                .density(density)
+                .on_click(
+                    "globals-new",
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
+                );
         let right = div()
             .flex()
             .items_center()
@@ -802,10 +823,10 @@ impl GlobalsView {
         let rows = self.visible_rows(cx);
 
         let body = if rows.is_empty() {
-            let caption = if self.loading {
-                "Loading variables…"
+            let caption: SharedString = if self.loading {
+                tr!("globals_loading").into()
             } else {
-                "No variables match this filter."
+                tr!("globals_empty_caption").into()
             };
             div()
                 .w_full()
@@ -822,13 +843,13 @@ impl GlobalsView {
         } else {
             let headers: Vec<SharedString> = vec![
                 "".into(),
-                "NAME".into(),
-                "TYPE".into(),
-                "VALUE".into(),
-                "LAST MODIFIED".into(),
-                "READS · WRITES".into(),
-                "PERSIST".into(),
-                "ACTIONS".into(),
+                tr!("globals_editor_section_name").into(),
+                tr!("globals_editor_section_type").into(),
+                tr!("globals_editor_section_value").into(),
+                tr!("globals_col_modified").into(),
+                tr!("globals_col_reads_writes").into(),
+                tr!("globals_col_persist").into(),
+                tr!("globals_col_actions").into(),
             ];
             let widths = vec![
                 ColumnWidth::Fixed(px(24.0)),
@@ -1018,8 +1039,8 @@ impl GlobalsView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let title = match ed.mode {
-            EditorMode::Create => "New variable",
-            EditorMode::Edit(_) => "Edit variable",
+            EditorMode::Create => tr!("globals_editor_title_create"),
+            EditorMode::Edit(_) => tr!("globals_editor_title_edit"),
         };
         let locked = matches!(ed.mode, EditorMode::Edit(_));
 
@@ -1042,7 +1063,7 @@ impl GlobalsView {
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_LIMIT}")),
             );
-        let name_section = section(palette, "NAME", name_row);
+        let name_section = section(palette, tr!("globals_editor_section_name"), name_row);
 
         let mut chips = div()
             .flex()
@@ -1075,10 +1096,10 @@ impl GlobalsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("Type is fixed once a variable exists."),
+                    .child(tr!("globals_editor_type_locked_hint")),
             );
         }
-        let type_section = section(palette, "TYPE", type_children);
+        let type_section = section(palette, tr!("globals_editor_section_type"), type_children);
 
         let persist_row = div()
             .flex()
@@ -1093,24 +1114,28 @@ impl GlobalsView {
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
-                            .child("Persist to storage"),
+                            .child(tr!("globals_editor_persist_label")),
                     )
                     .child(
                         div()
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
-                            .child("Survives restarts. Off keeps it in memory only."),
+                            .child(tr!("globals_editor_persist_desc")),
                     ),
             )
             .child(toggle(ed.persisted, palette).on_click(
                 "globals-editor-persist",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_editor_persist(cx)),
             ));
-        let persist_section = section(palette, "PERSISTENCE", persist_row);
+        let persist_section = section(
+            palette,
+            tr!("globals_editor_section_persistence"),
+            persist_row,
+        );
 
         let value_control = self.editor_value_control(ed, palette, cx);
-        let value_section = section(palette, "VALUE", value_control);
+        let value_section = section(palette, tr!("globals_editor_section_value"), value_control);
 
         let mut body = div()
             .flex()
@@ -1144,8 +1169,12 @@ impl GlobalsView {
         }
 
         let saveable = self.editor_saveable(ed, cx) && !ed.saving;
-        let save_label = if ed.saving { "Saving…" } else { "Save" };
-        let cancel = secondary_button("Cancel", palette).on_click(
+        let save_label: SharedString = if ed.saving {
+            tr!("globals_editor_saving").into()
+        } else {
+            tr!("globals_editor_save").into()
+        };
+        let cancel = secondary_button(tr!("globals_editor_cancel"), palette).on_click(
             "globals-editor-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_editor(cx)),
         );
@@ -1167,7 +1196,7 @@ impl GlobalsView {
             .header_icon(Icon::Variable, palette.warning)
             .size(ModalSize::Md)
             .footer(footer)
-            .kbd_hint("Enter to save · Esc to cancel")
+            .kbd_hint(tr!("globals_editor_kbd_hint"))
             .on_close(
                 "globals-editor-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_editor(cx)),
@@ -1225,21 +1254,21 @@ impl GlobalsView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let card = confirm_modal(
-            "Delete global variable",
-            "This permanently removes the variable and its value.",
+            tr!("globals_delete_confirm_title"),
+            tr!("globals_delete_confirm_body"),
             ConfirmTone::Destructive,
             palette,
         )
         .item_name(name)
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "globals-delete-cancel",
-            "Cancel",
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(
             "globals-delete-confirm",
-            "Delete",
+            tr!("common_delete"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
         );
 
@@ -1296,7 +1325,7 @@ impl GlobalsView {
 
 fn section(
     palette: &ForgePalette,
-    label: &'static str,
+    label: impl Into<SharedString>,
     control: impl IntoElement,
 ) -> impl IntoElement {
     div()
@@ -1308,7 +1337,7 @@ fn section(
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
-                .child(label),
+                .child(label.into()),
         )
         .child(control)
 }
@@ -1333,31 +1362,14 @@ fn value_preview(g: &Global, palette: &ForgePalette) -> impl IntoElement + use<>
     cell
 }
 
-fn global_from_entry(entry: &GlobalEntry, now: time::OffsetDateTime) -> Global {
+fn global_from_entry(entry: &GlobalEntry) -> Global {
     Global {
         name: entry.name.clone().into(),
         value: entry.value.clone(),
         persisted: entry.persisted,
         reads: entry.reads,
         writes: entry.writes,
-        modified: format_time_ago(entry.last_modified, now).into(),
-    }
-}
-
-fn format_time_ago(dt: time::OffsetDateTime, now: time::OffsetDateTime) -> String {
-    let secs = (now - dt).whole_seconds().max(0);
-    if secs < 60 {
-        format!("{secs}s ago")
-    } else if secs < 3600 {
-        format!("{} min ago", secs / 60)
-    } else {
-        let hours = secs / 3600;
-        let mins = (secs % 3600) / 60;
-        if mins == 0 {
-            format!("{hours}h ago")
-        } else {
-            format!("{hours}h {mins}m ago")
-        }
+        modified: fmt_relative_time(Some(entry.last_modified)).into(),
     }
 }
 
@@ -1407,18 +1419,18 @@ fn json_seed(value: &Variant) -> Option<String> {
 fn parse_json_variant(
     text: &str,
     want_array: bool,
-    reason: &'static str,
+    reason: SharedString,
 ) -> Result<Variant, SharedString> {
-    let value: serde_json::Value = serde_json::from_str(text).map_err(|_| reason)?;
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|_| reason.clone())?;
     let shape_ok = if want_array {
         value.is_array()
     } else {
         value.is_object()
     };
     if !shape_ok {
-        return Err(reason.into());
+        return Err(reason);
     }
-    Variant::from_json(value).map_err(|_| reason.into())
+    Variant::from_json(value).map_err(|_| reason)
 }
 
 fn variant_to_json(value: &Variant) -> serde_json::Value {

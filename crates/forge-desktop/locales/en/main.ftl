@@ -824,6 +824,10 @@ tts_filters_rule_off = OFF
 tts_filters_kind_literal = Text replace
 tts_filters_kind_regex = Regex replace
 tts_filters_kind_blocklist = Blocklist
+tts_filters_badge_text = TEXT
+tts_filters_badge_regex = REGEX
+tts_filters_badge_block = BLOCK
+tts_filters_stage_add = Add
 
 ## TTS Filters - rule draft editor
 
@@ -861,6 +865,11 @@ tts_filters_speak_preview_btn = Speak preview
 tts_filters_preview_speaker_name = Preview
 tts_filters_preview_tip = Type any message above to see how filters transform it in real time
 tts_filters_stage_n = STAGE { $n }
+tts_filters_stage_pass = pass
+tts_filters_stage_skipped = skipped
+tts_filters_preview_skipped = [message would be skipped]
+tts_filters_delete_title = Delete rule?
+tts_filters_delete_body = This rule will be removed from the preprocessing pipeline.
 
 ## TTS Triggers - header
 

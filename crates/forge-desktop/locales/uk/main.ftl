@@ -828,6 +828,10 @@ tts_filters_rule_off = ВИМК
 tts_filters_kind_literal = Заміна тексту
 tts_filters_kind_regex = Заміна regex
 tts_filters_kind_blocklist = Блок-список
+tts_filters_badge_text = ТЕКСТ
+tts_filters_badge_regex = REGEX
+tts_filters_badge_block = БЛОК
+tts_filters_stage_add = Додати
 
 ## TTS Filters - редактор правила
 
@@ -865,6 +869,11 @@ tts_filters_speak_preview_btn = Озвучити перегляд
 tts_filters_preview_speaker_name = Перегляд
 tts_filters_preview_tip = Введіть будь-яке повідомлення вище, щоб побачити, як фільтри перетворюють його в реальному часі
 tts_filters_stage_n = СТАДІЯ { $n }
+tts_filters_stage_pass = без змін
+tts_filters_stage_skipped = пропущено
+tts_filters_preview_skipped = [повідомлення буде пропущено]
+tts_filters_delete_title = Видалити правило?
+tts_filters_delete_body = Це правило буде вилучено з конвеєра попередньої обробки.
 
 ## TTS Triggers - заголовок
 

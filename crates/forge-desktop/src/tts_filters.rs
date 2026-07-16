@@ -4,7 +4,7 @@ use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextArea, TextInput, badge,
     card, confirm_modal, icon, overlay, primary_button, radius, secondary_button, spacing, toggle,
-    with_alpha,
+    tr, with_alpha,
 };
 use forge_speak_queue::{
     PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -20,8 +20,6 @@ use gpui::{
 };
 
 use crate::presentation::ActivePresentation;
-
-const PREVIEW_SPEAKER: &str = "Preview";
 
 const URL_MODES: [UrlMode; 3] = [UrlMode::Speak, UrlMode::Replace, UrlMode::Suppress];
 
@@ -45,11 +43,11 @@ impl DraftKind {
         }
     }
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            DraftKind::Literal => "Text",
-            DraftKind::Regex => "Regex",
-            DraftKind::Blocklist => "Blocklist",
+            DraftKind::Literal => tr!("tts_filters_kind_literal"),
+            DraftKind::Regex => tr!("tts_filters_kind_regex"),
+            DraftKind::Blocklist => tr!("tts_filters_kind_blocklist"),
         }
     }
 
@@ -111,7 +109,8 @@ impl TtsFiltersView {
             .map(|n| n.to_string())
             .unwrap_or_default();
         let max_length = cx.new(|cx| {
-            let mut input = TextInput::new("e.g. 300", cx).with_palette(palette);
+            let mut input =
+                TextInput::new(tr!("tts_filters_length_placeholder"), cx).with_palette(palette);
             if !seed_len.is_empty() {
                 input.set_content(seed_len, cx);
             }
@@ -127,7 +126,8 @@ impl TtsFiltersView {
         });
 
         let preview_input = cx.new(|cx| {
-            let mut input = TextArea::new("Type a test message…", cx).with_palette(palette);
+            let mut input = TextArea::new(tr!("tts_filters_preview_input_placeholder"), cx)
+                .with_palette(palette);
             input.set_content("hey @koval check this out https://example.com POGGERS", cx);
             input
         });
@@ -482,11 +482,12 @@ impl TtsFiltersView {
         let Some(handle) = self.speak.clone() else {
             return;
         };
+        let speaker_name = tr!("tts_filters_preview_speaker_name");
         self.rt_handle.spawn(async move {
             let request = SpeakRequest {
                 request_id: RequestId::new(),
                 viewer_id: String::new(),
-                viewer_name: PREVIEW_SPEAKER.to_owned(),
+                viewer_name: speaker_name,
                 text,
                 priority: Priority::Normal,
                 alias_override: None,
@@ -516,10 +517,25 @@ impl TtsFiltersView {
         RuleDraft {
             editing,
             kind,
-            name: draft_field("Rule name (optional)", name, palette, cx),
-            pattern: draft_field("Pattern", pattern, palette, cx),
-            replacement: draft_field("Replacement", replacement, palette, cx),
-            words: draft_field("word1, word2, …", words, palette, cx),
+            name: draft_field(tr!("tts_filters_draft_name_placeholder"), name, palette, cx),
+            pattern: draft_field(
+                tr!("tts_filters_draft_pattern_placeholder"),
+                pattern,
+                palette,
+                cx,
+            ),
+            replacement: draft_field(
+                tr!("tts_filters_draft_replacement_placeholder"),
+                replacement,
+                palette,
+                cx,
+            ),
+            words: draft_field(
+                tr!("tts_filters_draft_words_placeholder"),
+                words,
+                palette,
+                cx,
+            ),
             blocklist_mode: BlocklistMode::Censor,
         }
     }
@@ -536,13 +552,13 @@ impl TtsFiltersView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
-            .child(mono_caption("PIPELINE", palette))
+            .child(mono_caption(tr!("tts_filters_pipeline_header"), palette))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("Message preprocessing runs top to bottom."),
+                    .child(tr!("tts_filters_pipeline_hint")),
             );
 
         let mut col = div()
@@ -577,7 +593,7 @@ impl TtsFiltersView {
         n: u8,
         glyph: Icon,
         color: Rgba,
-        title: &'static str,
+        title: impl Into<SharedString>,
         add: bool,
         body: AnyElement,
         palette: &ForgePalette,
@@ -613,7 +629,7 @@ impl TtsFiltersView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(title),
+                    .child(title.into()),
             );
         if add {
             header = header.child(
@@ -634,7 +650,7 @@ impl TtsFiltersView {
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XS)
                             .text_color(palette.brand)
-                            .child("Add"),
+                            .child(tr!("tts_filters_stage_add")),
                     ),
             );
         }
@@ -673,9 +689,14 @@ impl TtsFiltersView {
             ));
         }
 
-        let url_block = labeled("URLS", url_seg.into_any_element(), palette, density);
+        let url_block = labeled(
+            tr!("tts_filters_url_label"),
+            url_seg.into_any_element(),
+            palette,
+            density,
+        );
         let twitch = self.toggle_row(
-            "Strip Twitch emotes",
+            tr!("tts_filters_strip_twitch"),
             self.settings.strip_twitch_emotes,
             "filt-strip-twitch",
             palette,
@@ -683,7 +704,7 @@ impl TtsFiltersView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_strip_twitch(cx)),
         );
         let reward = self.toggle_row(
-            "Strip reward emotes",
+            tr!("tts_filters_strip_reward"),
             self.settings.strip_reward_emotes,
             "filt-strip-reward",
             palette,
@@ -704,7 +725,7 @@ impl TtsFiltersView {
             1,
             Icon::Globe,
             palette.accent_teal,
-            "Emotes & URLs",
+            tr!("tts_filters_stage_emote_url_title"),
             false,
             body,
             palette,
@@ -724,7 +745,7 @@ impl TtsFiltersView {
             2,
             Icon::Repeat,
             palette.info,
-            "Text replacements",
+            tr!("tts_filters_stage_replacements_title"),
             true,
             body,
             palette,
@@ -741,7 +762,7 @@ impl TtsFiltersView {
     ) -> AnyElement {
         let rules_body = self.rules_body(is_blocklist_kind, palette, density, cx);
         let mode_row = labeled(
-            "DEFAULT ACTION",
+            tr!("tts_filters_blocklist_default_label"),
             self.blocklist_mode_toggle(
                 self.settings.blocklist_mode,
                 ModeTarget::Settings,
@@ -764,7 +785,7 @@ impl TtsFiltersView {
             3,
             Icon::AlertTriangle,
             palette.warning,
-            "Word blocklist",
+            tr!("tts_filters_stage_blocklist_title"),
             true,
             body,
             palette,
@@ -775,7 +796,7 @@ impl TtsFiltersView {
 
     fn output_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let body = labeled(
-            "MAX LENGTH",
+            tr!("tts_filters_length_label"),
             self.max_length.clone().into_any_element(),
             palette,
             density,
@@ -808,7 +829,7 @@ impl TtsFiltersView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Output length"),
+                    .child(tr!("tts_filters_stage_output_title")),
             );
         card(
             div()
@@ -843,7 +864,7 @@ impl TtsFiltersView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("No rules")
+                .child(tr!("tts_filters_no_rules"))
                 .into_any_element();
         }
 
@@ -868,9 +889,9 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (badge_label, badge_color) = match &rule.kind {
-            FilterRuleKind::Literal { .. } => ("TEXT", palette.info),
-            FilterRuleKind::Regex { .. } => ("REGEX", palette.brand),
-            FilterRuleKind::Blocklist { .. } => ("BLOCK", palette.warning),
+            FilterRuleKind::Literal { .. } => (tr!("tts_filters_badge_text"), palette.info),
+            FilterRuleKind::Regex { .. } => (tr!("tts_filters_badge_regex"), palette.brand),
+            FilterRuleKind::Blocklist { .. } => (tr!("tts_filters_badge_block"), palette.warning),
         };
         let name_color = if rule.enabled {
             palette.text_primary
@@ -992,7 +1013,7 @@ impl TtsFiltersView {
 
     fn toggle_row(
         &self,
-        label: &'static str,
+        label: impl Into<SharedString>,
         on: bool,
         id: &'static str,
         palette: &ForgePalette,
@@ -1010,7 +1031,7 @@ impl TtsFiltersView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(label),
+                    .child(label.into()),
             )
             .child(toggle(on, palette).on_click(id, handler))
             .into_any_element()
@@ -1026,13 +1047,21 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mut seg = div().flex().flex_row();
-        for (mode, label) in [
-            (BlocklistMode::Censor, "Censor"),
-            (BlocklistMode::Suppress, "Suppress"),
+        for (mode, id_part, label) in [
+            (
+                BlocklistMode::Censor,
+                "censor",
+                tr!("tts_filters_mode_censor"),
+            ),
+            (
+                BlocklistMode::Suppress,
+                "suppress",
+                tr!("tts_filters_mode_skip"),
+            ),
         ] {
             let active = current == mode;
             seg = seg.child(seg_button(
-                SharedString::from(format!("{id_prefix}-{label}")),
+                SharedString::from(format!("{id_prefix}-{id_part}")),
                 label,
                 active,
                 palette.warning,
@@ -1100,9 +1129,9 @@ impl TtsFiltersView {
         };
 
         let submit_label = if draft.editing.is_some() {
-            "Save"
+            tr!("common_save")
         } else {
-            "Add rule"
+            tr!("tts_filters_draft_add")
         };
         let actions = div()
             .flex()
@@ -1112,7 +1141,7 @@ impl TtsFiltersView {
                 "filt-draft-submit",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.submit_draft(cx)),
             ))
-            .child(secondary_button("Cancel", palette).on_click(
+            .child(secondary_button(tr!("common_cancel"), palette).on_click(
                 "filt-draft-cancel",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_draft(cx)),
             ));
@@ -1121,7 +1150,7 @@ impl TtsFiltersView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(mono_caption("RULE EDITOR", palette))
+            .child(mono_caption(tr!("tts_filters_draft_header"), palette))
             .child(kind_row)
             .child(draft.name.clone())
             .child(params)
@@ -1140,13 +1169,13 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (dirty_label, dirty_color) = if self.dirty {
-            ("Unsaved changes", palette.warning)
+            (tr!("tts_filters_unsaved"), palette.warning)
         } else {
-            ("Saved", palette.text_muted)
+            (tr!("tts_filters_saved"), palette.text_muted)
         };
 
         let save_btn: AnyElement = if self.dirty {
-            primary_button("Save", palette)
+            primary_button(tr!("common_save"), palette)
                 .on_click(
                     "filt-save",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
@@ -1162,7 +1191,7 @@ impl TtsFiltersView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
-                .child("Save")
+                .child(tr!("common_save"))
                 .into_any_element()
         };
 
@@ -1219,14 +1248,17 @@ impl TtsFiltersView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
-            .child(mono_caption("INPUT", palette))
+            .child(mono_caption(
+                tr!("tts_filters_preview_input_label"),
+                palette,
+            ))
             .child(self.preview_input.clone());
 
         let stages: AnyElement = if let Some(preview) = &self.cached_preview {
             let mut col = div().flex().flex_col().gap(gap_sm);
             for (i, outcome) in preview.stages.iter().enumerate() {
                 col = col.child(preview_stage_card(
-                    format!("Stage {}", i + 1),
+                    tr!("tts_filters_stage_n", n = (i + 1) as i64),
                     outcome,
                     palette,
                     density,
@@ -1238,7 +1270,7 @@ impl TtsFiltersView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("Preview will appear here.")
+                .child(tr!("tts_filters_preview_empty"))
                 .into_any_element()
         };
 
@@ -1249,7 +1281,7 @@ impl TtsFiltersView {
             .unwrap_or(false);
         let output_text: String = match self.cached_preview.as_ref().map(|p| &p.result) {
             Some(PipelineResult::Speak(s)) => s.clone(),
-            Some(PipelineResult::Skip { .. }) => "[message would be skipped]".to_owned(),
+            Some(PipelineResult::Skip { .. }) => tr!("tts_filters_preview_skipped"),
             None => "\u{2014}".to_owned(),
         };
         let output_border = if spoken {
@@ -1261,7 +1293,10 @@ impl TtsFiltersView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
-            .child(mono_caption("OUTPUT", palette))
+            .child(mono_caption(
+                tr!("tts_filters_preview_output_label"),
+                palette,
+            ))
             .child(
                 div()
                     .w_full()
@@ -1295,7 +1330,7 @@ impl TtsFiltersView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.shell)
-                    .child("Speak preview"),
+                    .child(tr!("tts_filters_speak_preview_btn")),
             );
 
         let tip = card(
@@ -1303,7 +1338,7 @@ impl TtsFiltersView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child("Preview shows each stage's effect on a sample message."),
+                .child(tr!("tts_filters_preview_tip")),
             palette,
         )
         .radius(Radius::Sm)
@@ -1314,7 +1349,7 @@ impl TtsFiltersView {
             .flex()
             .flex_col()
             .gap(gap_md)
-            .child(mono_caption("PREVIEW", palette))
+            .child(mono_caption(tr!("tts_filters_preview_header"), palette))
             .child(input_block)
             .child(stages)
             .child(output_block)
@@ -1349,21 +1384,21 @@ impl TtsFiltersView {
         let name = self.rules.get(index).map(display_name).unwrap_or_default();
 
         let card = confirm_modal(
-            "Delete rule?",
-            "This rule will be removed from the preprocessing pipeline.",
+            tr!("tts_filters_delete_title"),
+            tr!("tts_filters_delete_body"),
             ConfirmTone::Destructive,
             palette,
         )
         .item_name(name)
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "filt-delete-cancel",
-            "Cancel",
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(
             "filt-delete-confirm",
-            "Delete",
+            tr!("common_delete"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
         );
 
@@ -1405,16 +1440,16 @@ enum ModeTarget {
     Draft,
 }
 
-fn mono_caption(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn mono_caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
-        .child(label)
+        .child(label.into())
 }
 
 fn labeled(
-    label: &'static str,
+    label: impl Into<SharedString>,
     control: AnyElement,
     palette: &ForgePalette,
     density: Density,
@@ -1431,7 +1466,7 @@ fn labeled(
 #[allow(clippy::too_many_arguments)]
 fn seg_button(
     id: SharedString,
-    label: &'static str,
+    label: impl Into<SharedString>,
     active: bool,
     active_bg: Rgba,
     palette: &ForgePalette,
@@ -1453,7 +1488,7 @@ fn seg_button(
         .text_size(FONT_XS)
         .text_color(fg)
         .on_click(handler)
-        .child(label);
+        .child(label.into());
     if active {
         chip = chip.bg(active_bg);
     } else {
@@ -1464,7 +1499,7 @@ fn seg_button(
 }
 
 fn draft_field(
-    placeholder: &'static str,
+    placeholder: impl Into<SharedString>,
     initial: &str,
     palette: ForgePalette,
     cx: &mut Context<TtsFiltersView>,
@@ -1502,7 +1537,7 @@ fn preview_stage_card(
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("pass"),
+                    .child(tr!("tts_filters_stage_pass")),
             )
             .into_any_element(),
         StageAction::Transformed => div()
@@ -1527,7 +1562,7 @@ fn preview_stage_card(
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(format!("skipped - {reason:?}")),
+                    .child(format!("{} - {reason:?}", tr!("tts_filters_stage_skipped"))),
             )
             .into_any_element(),
     };
@@ -1553,11 +1588,11 @@ fn preview_stage_card(
     .into_any_element()
 }
 
-fn url_label(mode: UrlMode) -> &'static str {
+fn url_label(mode: UrlMode) -> String {
     match mode {
-        UrlMode::Speak => "Speak",
-        UrlMode::Replace => "Replace",
-        UrlMode::Suppress => "Suppress",
+        UrlMode::Speak => tr!("tts_filters_url_speak"),
+        UrlMode::Replace => tr!("tts_filters_url_replace"),
+        UrlMode::Suppress => tr!("tts_filters_url_suppress"),
     }
 }
 
@@ -1571,7 +1606,7 @@ fn url_key(mode: UrlMode) -> &'static str {
 
 fn display_name(rule: &FilterRule) -> String {
     if rule.name.trim().is_empty() {
-        DraftKind::of(&rule.kind).label().to_owned()
+        DraftKind::of(&rule.kind).label()
     } else {
         rule.name.clone()
     }

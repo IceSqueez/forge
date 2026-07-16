@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
-    ForgePalette, Icon, Radius, Spacing, icon, radius, spacing, status_dot, with_alpha,
+    ForgePalette, Icon, Radius, Spacing, icon, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_platform_core::{
     ActiveRow, BannerLevel, ContentList, ContentListItem, DetailSection, HealthBar, HealthLevel,
@@ -233,7 +233,7 @@ fn render_subscription_list(
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    let count = format!("{} active", items.len());
+    let count = tr!("widget_builtin_active_count", count = items.len() as i64);
     let mut rows = div().w_full().flex().flex_col();
     for item in items {
         rows = rows.child(subscription_row_elem(item, palette, density));
@@ -488,7 +488,11 @@ fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Densi
         .gap(spacing(Spacing::Sm, density))
         .child(name_el);
     if item.active {
-        row = row.child(active_badge("Active", palette, density));
+        row = row.child(active_badge(
+            &tr!("widget_builtin_active_badge"),
+            palette,
+            density,
+        ));
     } else if let Some(mode) = &item.mode_label {
         row = row.child(body(mode.clone(), FONT_XS, palette.text_faint));
     }
@@ -529,7 +533,12 @@ fn subscription_row_elem(
     let trailing: AnyElement = if let Some(err) = &item.error_label {
         body(err.clone(), FONT_XS, palette.random).into_any_element()
     } else if let Some(count) = item.event_count {
-        body(format!("{count} events"), FONT_XS, palette.text_muted).into_any_element()
+        body(
+            tr!("widget_builtin_event_count", count = count as i64),
+            FONT_XS,
+            palette.text_muted,
+        )
+        .into_any_element()
     } else {
         div().into_any_element()
     };
@@ -613,7 +622,11 @@ fn health_bar_section(bar: &HealthBar, palette: &ForgePalette, density: Density)
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xs, density))
-        .child(mono("STREAM HEALTH", FONT_XS, palette.text_muted))
+        .child(mono(
+            tr!("widget_builtin_stream_health"),
+            FONT_XS,
+            palette.text_muted,
+        ))
         .child(bar_row)
         .into_any_element()
 }
@@ -722,7 +735,11 @@ fn info_card_header(
             .rounded(px(8.0))
             .bg(palette.surface_overlay)
             .child(status_dot(palette.success, px(5.0)))
-            .child(body("LIVE", FONT_XS, palette.success));
+            .child(body(
+                tr!("widget_builtin_live_badge"),
+                FONT_XS,
+                palette.success,
+            ));
         row = row.child(badge);
     }
     row.into_any_element()

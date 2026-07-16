@@ -2,7 +2,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
     PickerItem, PickerLabels, Radius, Spacing, breadcrumb, confirm_modal, icon, overlay, radius,
-    spacing, with_alpha,
+    spacing, tr, with_alpha,
 };
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
@@ -157,7 +157,7 @@ impl IntegrationDetail {
             HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect),
             HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken),
             HeaderAction::Settings => {
-                self.toast = Some("Settings coming soon".to_owned());
+                self.toast = Some(tr!("integration_settings_coming_soon"));
                 cx.notify();
             }
         }
@@ -407,7 +407,7 @@ impl IntegrationDetail {
                 .capability_flags
                 .label
                 .clone()
-                .unwrap_or_else(|| "Limited".to_owned());
+                .unwrap_or_else(|| tr!("widget_header_capability_limited"));
             name_row = name_row.child(pill(label.to_uppercase(), palette.warning, palette));
         }
 
@@ -510,7 +510,7 @@ impl IntegrationDetail {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Quick actions"),
+                    .child(tr!("widget_quick_actions_title")),
             );
 
         let divider = div().w_full().h(BORDER_THIN).bg(palette.border_regular);
@@ -602,7 +602,7 @@ impl IntegrationDetail {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(with_alpha(palette.text_faint, 0.5))
-                    .child("N/A"),
+                    .child(tr!("integration_quick_action_na")),
             );
         }
 
@@ -637,21 +637,21 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let card = confirm_modal(
-            "Disconnect integration",
-            "Chats and events from this integration stop until you reconnect.",
+            tr!("integration_disconnect_title"),
+            tr!("builtin_disconnect_confirm_hint"),
             ConfirmTone::Warning,
             palette,
         )
         .item_name(self.display_name.clone())
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "integration-disconnect-cancel",
-            "Cancel",
+            tr!("widget_confirm_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_disconnect(cx)),
         )
         .on_confirm(
             "integration-disconnect-confirm",
-            "Disconnect",
+            tr!("widget_header_action_disconnect"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_disconnect(cx)),
         );
 
@@ -664,25 +664,25 @@ impl IntegrationDetail {
     }
 
     fn state_banner(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
-        let (accent, glyph, title, detail): (Rgba, Icon, &str, &str) = match self.connection {
+        let (accent, glyph, title, detail): (Rgba, Icon, String, String) = match self.connection {
             ConnectionState::Connected => return None,
             ConnectionState::Connecting => (
                 palette.info,
                 Icon::Refresh,
-                "Connecting…",
-                "Establishing a session with this integration.",
+                tr!("integration_state_connecting_title"),
+                tr!("integration_state_connecting_detail"),
             ),
             ConnectionState::Reconnecting => (
                 palette.warning,
                 Icon::Refresh,
-                "Reconnecting…",
-                "The session dropped; forge is re-establishing it.",
+                tr!("integration_state_reconnecting_title"),
+                tr!("integration_state_reconnecting_detail"),
             ),
             ConnectionState::Disconnected => (
                 palette.text_muted,
                 Icon::PlugConnected,
-                "Not connected",
-                "Use Reconnect above to link this integration.",
+                tr!("common_status_not_connected"),
+                tr!("integration_state_disconnected_detail"),
             ),
         };
 
@@ -697,14 +697,14 @@ impl IntegrationDetail {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(title.to_owned()),
+                    .child(title),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child(detail.to_owned()),
+                    .child(detail),
             );
 
         Some(
@@ -789,7 +789,7 @@ impl Render for IntegrationDetail {
         let crumbs = breadcrumb(
             vec![
                 BreadcrumbCrumb::link(
-                    "Platforms",
+                    tr!("platforms_breadcrumb"),
                     "integration-crumb-platforms",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.go_back(cx)),
                 ),
@@ -879,19 +879,19 @@ struct PendingPicker {
 
 fn picker_labels(kind: PickerKind) -> PickerLabels {
     let title = match kind {
-        PickerKind::Scene => "Choose a Scene",
-        PickerKind::Source => "Choose a Source",
-        PickerKind::Input => "Choose an Audio Input",
-        PickerKind::Hotkey => "Choose a Hotkey",
-        PickerKind::Expression => "Choose an Expression",
-        PickerKind::MidiPort => "Choose a MIDI Port",
+        PickerKind::Scene => tr!("builtin_picker_scene"),
+        PickerKind::Source => tr!("builtin_picker_source"),
+        PickerKind::Input => tr!("builtin_picker_audio_input"),
+        PickerKind::Hotkey => tr!("builtin_picker_hotkey"),
+        PickerKind::Expression => tr!("builtin_picker_expression"),
+        PickerKind::MidiPort => tr!("builtin_picker_midi_port"),
     };
     PickerLabels {
         title: title.into(),
-        placeholder: "Search…".into(),
-        empty: "No matches".into(),
-        loading: "Loading…".into(),
-        cancel: "Cancel".into(),
+        placeholder: tr!("widget_picker_search_placeholder").into(),
+        empty: tr!("widget_picker_no_results").into(),
+        loading: tr!("widget_picker_loading").into(),
+        cancel: tr!("common_cancel").into(),
     }
 }
 
@@ -950,12 +950,12 @@ async fn fetch_picker_items(
     }
 }
 
-fn header_action_label(action: &HeaderAction) -> &'static str {
+fn header_action_label(action: &HeaderAction) -> String {
     match action {
-        HeaderAction::Reconnect => "Reconnect",
-        HeaderAction::RefreshToken => "Refresh token",
-        HeaderAction::Disconnect => "Disconnect",
-        HeaderAction::Settings => "Settings",
+        HeaderAction::Reconnect => tr!("widget_header_action_reconnect"),
+        HeaderAction::RefreshToken => tr!("widget_header_action_refresh_token"),
+        HeaderAction::Disconnect => tr!("widget_header_action_disconnect"),
+        HeaderAction::Settings => tr!("widget_header_action_settings"),
     }
 }
 

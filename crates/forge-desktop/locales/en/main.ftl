@@ -1587,6 +1587,14 @@ builtin_quick_action_fallback = Quick Action
 builtin_obs_not_connected = OBS not connected
 builtin_obs_not_supported = Not supported for OBS
 builtin_disconnect_confirm_hint = You will be disconnected and will need to reconnect manually. Live events from this integration stop arriving until then.
+integration_disconnect_title = Disconnect integration
+integration_settings_coming_soon = Settings coming soon
+integration_quick_action_na = N/A
+integration_state_connecting_title = Connecting…
+integration_state_connecting_detail = Establishing a session with this integration.
+integration_state_reconnecting_title = Reconnecting…
+integration_state_reconnecting_detail = The session dropped; forge is re-establishing it.
+integration_state_disconnected_detail = Use Reconnect above to link this integration.
 
 ## OAuth / authentication errors
 

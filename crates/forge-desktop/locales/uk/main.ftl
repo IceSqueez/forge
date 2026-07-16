@@ -1610,6 +1610,14 @@ builtin_quick_action_fallback = Швидка дія
 builtin_obs_not_connected = OBS не підключено
 builtin_obs_not_supported = Не підтримується для OBS
 builtin_disconnect_confirm_hint = Вас буде відключено, і потрібно буде підключитися повторно вручну. Живі події від цієї інтеграції перестануть надходити до цього моменту.
+integration_disconnect_title = Відключити інтеграцію
+integration_settings_coming_soon = Налаштування зʼявляться згодом
+integration_quick_action_na = Н/Д
+integration_state_connecting_title = Підключення…
+integration_state_connecting_detail = Встановлення сеансу з цією інтеграцією.
+integration_state_reconnecting_title = Повторне підключення…
+integration_state_reconnecting_detail = Сеанс розірвано; forge відновлює його.
+integration_state_disconnected_detail = Натисніть «Підключитися» вгорі, щоб зв'язати цю інтеграцію.
 
 ## OAuth / authentication errors
 

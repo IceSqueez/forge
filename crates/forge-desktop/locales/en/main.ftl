@@ -1736,6 +1736,12 @@ widget_console_no_output = No output yet
 
 settings_audio_scanning = Scanning devices…
 settings_audio_title = Audio
+settings_audio_output_devices = OUTPUT DEVICES
+settings_audio_test_section = TEST
+settings_audio_test_tone = Play 440 Hz test tone
+settings_audio_test_playing = Playing…
+settings_audio_test_error = Test tone error: { $error }
+settings_audio_persist_error = Failed to save device selection: { $error }
 
 ## Script editor - API docs panel
 

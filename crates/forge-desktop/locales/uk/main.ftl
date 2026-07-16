@@ -1761,6 +1761,12 @@ widget_console_no_output = Вихідних даних ще немає
 
 settings_audio_scanning = Сканування пристроїв…
 settings_audio_title = Аудіо
+settings_audio_output_devices = ПРИСТРОЇ ВИВОДУ
+settings_audio_test_section = ТЕСТ
+settings_audio_test_tone = Відтворити тестовий тон 440 Гц
+settings_audio_test_playing = Відтворення…
+settings_audio_test_error = Помилка тестового тону: { $error }
+settings_audio_persist_error = Не вдалося зберегти вибір пристрою: { $error }
 
 ## Script editor - API docs panel
 

@@ -8,10 +8,12 @@ use forge_components::{
 };
 use forge_storage::{DataProvider, Language, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Rgba, SharedString, Window, div,
+    prelude::*, px,
 };
 
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
+use crate::settings_audio::SettingsAudioView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
@@ -171,6 +173,7 @@ pub struct SettingsView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     language: Language,
+    audio: Entity<SettingsAudioView>,
 }
 
 impl SettingsView {
@@ -179,11 +182,14 @@ impl SettingsView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
+        let audio =
+            cx.new(|cx| SettingsAudioView::new(Arc::clone(&backend), rt_handle.clone(), cx));
         Self {
             section: SettingsSection::Appearance,
             backend,
             rt_handle,
             language: cx.global::<ActiveLanguage>().0,
+            audio,
         }
     }
 
@@ -320,6 +326,7 @@ impl SettingsView {
         let content = match self.section {
             SettingsSection::Appearance => self.appearance_pane(palette, density, cx),
             SettingsSection::Language => self.language_pane(palette, density, cx),
+            SettingsSection::Audio => self.audio.clone().into_any_element(),
             SettingsSection::Version => self.version_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics_pane(palette, density, cx),
             other => self.deferred_pane(other, palette, density),

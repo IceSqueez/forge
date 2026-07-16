@@ -31,6 +31,7 @@ mod server_console;
 mod settings;
 mod settings_audio;
 mod settings_scripting;
+mod settings_shortcuts;
 mod settings_websocket;
 mod shell;
 mod sidebar;

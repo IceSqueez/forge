@@ -16,6 +16,7 @@ use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
 use crate::settings_scripting::SettingsScriptingView;
+use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_websocket::SettingsWebSocketView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
@@ -178,6 +179,7 @@ pub struct SettingsView {
     audio: Entity<SettingsAudioView>,
     scripting: Entity<SettingsScriptingView>,
     websocket: Entity<SettingsWebSocketView>,
+    shortcuts: Entity<SettingsShortcutsView>,
 }
 
 impl SettingsView {
@@ -196,6 +198,9 @@ impl SettingsView {
                 cx,
             )
         });
+        let shortcuts = cx.new(|cx| {
+            SettingsShortcutsView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+        });
         Self {
             section: SettingsSection::Appearance,
             handles,
@@ -203,6 +208,7 @@ impl SettingsView {
             audio,
             scripting,
             websocket,
+            shortcuts,
         }
     }
 
@@ -339,6 +345,7 @@ impl SettingsView {
         let content = match self.section {
             SettingsSection::Appearance => self.appearance_pane(palette, density, cx),
             SettingsSection::Language => self.language_pane(palette, density, cx),
+            SettingsSection::Shortcuts => self.shortcuts.clone().into_any_element(),
             SettingsSection::Audio => self.audio.clone().into_any_element(),
             SettingsSection::Scripting => self.scripting.clone().into_any_element(),
             SettingsSection::WebSocket => self.websocket.clone().into_any_element(),

@@ -1,4 +1,6 @@
-use gpui::{App, KeyBinding, actions};
+use std::collections::HashMap;
+
+use gpui::{App, KeyBinding, Keystroke, actions};
 
 pub const SHELL_CONTEXT: &str = "ForgeShell";
 
@@ -7,19 +9,181 @@ actions!(
     [GoHome, GoChat, GoActions, GoTriggers, GoTwitch, GoSettings]
 );
 
+pub struct ShortcutEntry {
+    pub id: &'static str,
+    pub default_chord: &'static str,
+    pub label_key: &'static str,
+}
+
+pub const SHORTCUTS: &[ShortcutEntry] = &[
+    ShortcutEntry {
+        id: "nav.home",
+        default_chord: "ctrl-1",
+        label_key: "settings_shortcuts_action_nav_home",
+    },
+    ShortcutEntry {
+        id: "nav.chat",
+        default_chord: "ctrl-2",
+        label_key: "settings_shortcuts_action_nav_live_chat",
+    },
+    ShortcutEntry {
+        id: "nav.actions",
+        default_chord: "ctrl-3",
+        label_key: "settings_shortcuts_action_nav_actions",
+    },
+    ShortcutEntry {
+        id: "nav.triggers",
+        default_chord: "ctrl-4",
+        label_key: "settings_shortcuts_action_nav_triggers",
+    },
+    ShortcutEntry {
+        id: "nav.twitch",
+        default_chord: "ctrl-5",
+        label_key: "settings_shortcuts_action_nav_twitch",
+    },
+    ShortcutEntry {
+        id: "nav.settings",
+        default_chord: "ctrl-6",
+        label_key: "settings_shortcuts_action_nav_settings",
+    },
+];
+
+fn is_modifier_token(token: &str) -> bool {
+    matches!(
+        token,
+        "ctrl"
+            | "alt"
+            | "shift"
+            | "cmd"
+            | "super"
+            | "win"
+            | "fn"
+            | "secondary"
+            | "control"
+            | "platform"
+            | "function"
+    )
+}
+
+fn has_strong_modifier(chord: &str) -> bool {
+    let segments: Vec<&str> = chord.split('-').collect();
+    if segments.len() < 2 {
+        return false;
+    }
+    segments[..segments.len() - 1]
+        .iter()
+        .any(|token| matches!(*token, "ctrl" | "alt" | "cmd" | "super" | "win"))
+}
+
+pub fn chord_is_bindable(chord: &str) -> bool {
+    let Some(key) = chord.rsplit('-').next() else {
+        return false;
+    };
+    if key.is_empty() || is_modifier_token(key) {
+        return false;
+    }
+    let is_f_key = key
+        .strip_prefix('f')
+        .and_then(|n| n.parse::<u8>().ok())
+        .is_some_and(|n| (1..=12).contains(&n));
+    has_strong_modifier(chord) || is_f_key
+}
+
+pub fn canonical_chord(keystroke: &Keystroke) -> Option<String> {
+    let key = keystroke.key.as_str();
+    if key.is_empty() || is_modifier_token(key) {
+        return None;
+    }
+    let modifiers = &keystroke.modifiers;
+    let ctrl = modifiers.control || modifiers.platform;
+    let mut out = String::new();
+    if modifiers.function {
+        out.push_str("fn-");
+    }
+    if ctrl {
+        out.push_str("ctrl-");
+    }
+    if modifiers.alt {
+        out.push_str("alt-");
+    }
+    if modifiers.shift {
+        out.push_str("shift-");
+    }
+    out.push_str(key);
+    Some(out)
+}
+
+pub fn effective_chord<'a>(
+    overrides: &'a HashMap<String, String>,
+    entry: &'a ShortcutEntry,
+) -> Option<&'a str> {
+    match overrides.get(entry.id) {
+        Some(stored) if chord_is_bindable(stored) => Some(stored.as_str()),
+        Some(_) => None,
+        None => Some(entry.default_chord),
+    }
+}
+
+pub fn parse_stored_overrides(raw: &str) -> HashMap<String, String> {
+    let parsed: HashMap<String, String> = match serde_json::from_str(raw) {
+        Ok(map) => map,
+        Err(e) => {
+            tracing::warn!(error = %e, "stored keyboard shortcuts unreadable; using defaults");
+            return HashMap::new();
+        }
+    };
+    parsed
+        .into_iter()
+        .filter(|(id, _)| SHORTCUTS.iter().any(|entry| entry.id == id))
+        .collect()
+}
+
+fn make_binding(entry_id: &str, chord: &str) -> Option<KeyBinding> {
+    if Keystroke::parse(chord).is_err() {
+        return None;
+    }
+    let context = Some(SHELL_CONTEXT);
+    let binding = match entry_id {
+        "nav.home" => KeyBinding::new(chord, GoHome, context),
+        "nav.chat" => KeyBinding::new(chord, GoChat, context),
+        "nav.actions" => KeyBinding::new(chord, GoActions, context),
+        "nav.triggers" => KeyBinding::new(chord, GoTriggers, context),
+        "nav.twitch" => KeyBinding::new(chord, GoTwitch, context),
+        "nav.settings" => KeyBinding::new(chord, GoSettings, context),
+        _ => return None,
+    };
+    Some(binding)
+}
+
+fn key_bindings_for(entry_id: &str, chord: &str) -> Vec<KeyBinding> {
+    let mut chords = vec![chord.to_owned()];
+    let platform_variant = chord.replacen("ctrl-", "cmd-", 1);
+    if platform_variant != chord {
+        chords.push(platform_variant);
+    }
+    chords
+        .iter()
+        .filter_map(|chord| make_binding(entry_id, chord))
+        .collect()
+}
+
+fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
+    let mut bindings = Vec::new();
+    for entry in SHORTCUTS {
+        if let Some(chord) = effective_chord(overrides, entry) {
+            bindings.extend(key_bindings_for(entry.id, chord));
+        }
+    }
+    cx.bind_keys(bindings);
+}
+
 pub fn register_shell_key_bindings(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("cmd-1", GoHome, Some(SHELL_CONTEXT)),
-        KeyBinding::new("ctrl-1", GoHome, Some(SHELL_CONTEXT)),
-        KeyBinding::new("cmd-2", GoChat, Some(SHELL_CONTEXT)),
-        KeyBinding::new("ctrl-2", GoChat, Some(SHELL_CONTEXT)),
-        KeyBinding::new("cmd-3", GoActions, Some(SHELL_CONTEXT)),
-        KeyBinding::new("ctrl-3", GoActions, Some(SHELL_CONTEXT)),
-        KeyBinding::new("cmd-4", GoTriggers, Some(SHELL_CONTEXT)),
-        KeyBinding::new("ctrl-4", GoTriggers, Some(SHELL_CONTEXT)),
-        KeyBinding::new("cmd-5", GoTwitch, Some(SHELL_CONTEXT)),
-        KeyBinding::new("ctrl-5", GoTwitch, Some(SHELL_CONTEXT)),
-        KeyBinding::new("cmd-6", GoSettings, Some(SHELL_CONTEXT)),
-        KeyBinding::new("ctrl-6", GoSettings, Some(SHELL_CONTEXT)),
-    ]);
+    bind_shell(cx, &HashMap::new());
+}
+
+pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
+    cx.clear_key_bindings();
+    forge_components::bind_text_input_keys(cx);
+    forge_components::bind_text_area_keys(cx);
+    bind_shell(cx, overrides);
 }

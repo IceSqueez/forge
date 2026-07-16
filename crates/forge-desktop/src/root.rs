@@ -120,6 +120,8 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 let queue_health_for_bridge = queue_health.clone();
                 let speak_for_bridge = speak.clone();
                 let live_viewers_handle = handles.live_viewers.clone();
+                let backend_for_shortcuts = Arc::clone(&handles.backend);
+                let rt_handle_for_shortcuts = handles.rt_handle.clone();
                 let applied = window.update(cx, |root, window, cx| {
                     // Render-thread install: the fluent bundle is thread-local and must be set
                     // before the shell's first render resolves any translated string.
@@ -157,6 +159,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                     );
                     start_uptime_clock(cx, status_for_clock);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
+                    apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
                     if let Some(events) = speak_events {
                         start_speak_bridge(cx, speak_for_bridge, events);
                     }
@@ -299,6 +302,32 @@ fn start_live_viewers_bridge(
                 break;
             }
         }
+    })
+    .detach();
+}
+
+fn apply_persisted_shortcuts(
+    cx: &mut AsyncApp,
+    backend: Arc<dyn forge_storage::DataProvider>,
+    rt_handle: tokio::runtime::Handle,
+) {
+    cx.spawn(async move |cx| {
+        let repo = backend as Arc<dyn forge_storage::SettingsRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        rt_handle.spawn(async move {
+            let raw = repo
+                .get_string(forge_storage::reserved_keys::KEYBOARD_SHORTCUTS)
+                .await;
+            let _ = tx.send(raw);
+        });
+        let Ok(Ok(Some(raw))) = rx.await else {
+            return;
+        };
+        let overrides = crate::actions::parse_stored_overrides(&raw);
+        if overrides.is_empty() {
+            return;
+        }
+        let _ = cx.update(|cx| crate::actions::reapply_key_bindings(cx, &overrides));
     })
     .detach();
 }

@@ -124,6 +124,9 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                     // Render-thread install: the fluent bundle is thread-local and must be set
                     // before the shell's first render resolves any translated string.
                     crate::i18n::install_language(handles.startup_language);
+                    cx.set_global(crate::presentation::ActiveLanguage(
+                        handles.startup_language,
+                    ));
                     platforms.update(cx, |connectivity, cx| {
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();

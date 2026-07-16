@@ -1,5 +1,10 @@
 use forge_components::{Density, ForgePalette, ThemeId};
+use forge_storage::Language;
 use gpui::{App, Global};
+
+pub struct ActiveLanguage(pub Language);
+
+impl Global for ActiveLanguage {}
 
 pub struct Presentation {
     pub theme: ThemeId,

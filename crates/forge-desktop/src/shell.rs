@@ -198,7 +198,12 @@ impl AppShell {
                 .detach();
                 detail.into()
             }
-            Screen::Settings => cx.new(SettingsView::new).into(),
+            Screen::Settings => {
+                let backend = Arc::clone(&handles.backend);
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| SettingsView::new(backend, rt_handle, cx))
+                    .into()
+            }
             Screen::Queues => {
                 let queue_health = topics.queue_health.clone();
                 let scheduler = handles.scheduler.clone();

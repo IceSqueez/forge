@@ -1,14 +1,17 @@
+use std::sync::Arc;
+
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ThemeId, badge,
     breadcrumb, card, ghost_button_with_icon, icon, metric_card, primary_button,
     primary_button_with_icon, radius, spacing, tr, with_alpha,
 };
+use forge_storage::{DataProvider, Language, SettingsRepo};
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, Window, div, prelude::*, px,
 };
 
-use crate::presentation::{ActivePresentation, Presentation};
+use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
@@ -165,12 +168,22 @@ fn theme_key(theme: ThemeId) -> &'static str {
 
 pub struct SettingsView {
     section: SettingsSection,
+    backend: Arc<dyn DataProvider>,
+    rt_handle: tokio::runtime::Handle,
+    language: Language,
 }
 
 impl SettingsView {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        backend: Arc<dyn DataProvider>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self {
             section: SettingsSection::Appearance,
+            backend,
+            rt_handle,
+            language: cx.global::<ActiveLanguage>().0,
         }
     }
 
@@ -182,6 +195,25 @@ impl SettingsView {
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
         let density = cx.density();
         cx.set_global(Presentation::new(theme, density));
+        cx.notify();
+    }
+
+    fn select_language(&mut self, lang: Language, cx: &mut Context<Self>) {
+        if self.language == lang {
+            return;
+        }
+        self.language = lang;
+        crate::i18n::install_language(lang);
+        cx.set_global(ActiveLanguage(lang));
+
+        let backend = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        self.rt_handle.spawn(async move {
+            if let Err(e) = backend.set_language(lang).await {
+                tracing::warn!(error = %e, "failed to persist language selection");
+            }
+        });
+
+        cx.refresh_windows();
         cx.notify();
     }
 
@@ -287,6 +319,7 @@ impl SettingsView {
     ) -> impl IntoElement + use<> {
         let content = match self.section {
             SettingsSection::Appearance => self.appearance_pane(palette, density, cx),
+            SettingsSection::Language => self.language_pane(palette, density, cx),
             SettingsSection::Version => self.version_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics_pane(palette, density, cx),
             other => self.deferred_pane(other, palette, density),
@@ -571,6 +604,88 @@ impl SettingsView {
                 .border(BORDER_THIN)
                 .border_color(with_alpha(palette.brand, 0.5))
                 .child(icon(Icon::CircleCheck, FONT_SM, palette.brand));
+        }
+        row
+    }
+
+    fn language_pane(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let subtitle = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_SM)
+            .text_color(palette.text_muted)
+            .child(tr!("settings_language_subtitle"));
+
+        let list = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(self.language_option_row("English", "en-US", Language::En, palette, cx))
+            .child(self.language_option_row("Українська", "uk-UA", Language::Uk, palette, cx));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .child(pane_header(
+                Icon::Globe,
+                tr!("settings_language_title"),
+                palette,
+            ))
+            .child(subtitle)
+            .child(list)
+            .into_any_element()
+    }
+
+    fn language_option_row(
+        &self,
+        native_label: &'static str,
+        bcp47: &'static str,
+        lang: Language,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let is_selected = self.language == lang;
+
+        let chip = div()
+            .px(px(8.0))
+            .py(px(3.0))
+            .rounded(radius(Radius::Sm))
+            .bg(palette.surface_overlay)
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(palette.text_primary)
+            .child(bcp47);
+
+        let mut row = div()
+            .id(SharedString::from(format!("settings-language-{lang}")))
+            .flex()
+            .items_center()
+            .justify_between()
+            .w_full()
+            .py(px(10.0))
+            .rounded(radius(Radius::Sm))
+            .cursor_pointer()
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_language(lang, cx)),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(native_label),
+            )
+            .child(chip);
+        if is_selected {
+            row = row
+                .bg(with_alpha(palette.brand, 0.12))
+                .border(BORDER_THIN)
+                .border_color(with_alpha(palette.brand, 0.5));
         }
         row
     }

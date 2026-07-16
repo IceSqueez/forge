@@ -117,6 +117,9 @@ fn main() {
             }
 
             cx.set_global(Presentation::new(ThemeId::default(), Density::default()));
+            cx.set_global(crate::presentation::ActiveLanguage(
+                forge_storage::Language::default(),
+            ));
             cx.set_global(crate::toasts::Toasts::new());
 
             // Boot and failure screens render before storage resolves the saved language.

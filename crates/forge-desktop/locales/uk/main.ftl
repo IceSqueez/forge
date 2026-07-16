@@ -888,6 +888,7 @@ tts_triggers_points_meta = без затримки · пріоритетна ч�
 tts_triggers_bits_title = Бітси / вигуки
 tts_triggers_bits_subtitle = Озвучити повідомлення вигуку
 tts_triggers_bits_min_label = Мінімум
+tts_triggers_bits_min_value = 100 бітів
 tts_triggers_bits_meta = більше = довше повідомлення
 
 ## TTS Triggers - картка підписок
@@ -971,6 +972,7 @@ tts_aliases_col_actions = ДІЇ
 ## Псевдоніми голосів - порожній стан
 
 tts_aliases_empty = Псевдонімів голосів ще немає
+tts_aliases_loading = Завантаження псевдонімів голосів…
 
 ## Псевдоніми голосів - заблокований рядок
 

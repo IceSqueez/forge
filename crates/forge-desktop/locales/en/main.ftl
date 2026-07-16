@@ -884,6 +884,7 @@ tts_triggers_points_meta = no cooldown · priority queue
 tts_triggers_bits_title = Bits / cheers
 tts_triggers_bits_subtitle = Speak cheer message
 tts_triggers_bits_min_label = Minimum
+tts_triggers_bits_min_value = 100 bits
 tts_triggers_bits_meta = louder = longer message
 
 ## TTS Triggers - sub messages card
@@ -965,6 +966,7 @@ tts_aliases_col_actions = ACTIONS
 ## Voice Aliases - empty state
 
 tts_aliases_empty = No voice aliases configured
+tts_aliases_loading = Loading voice aliases…
 
 ## Voice Aliases - blocked row
 

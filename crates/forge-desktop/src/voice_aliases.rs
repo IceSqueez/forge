@@ -5,7 +5,7 @@ use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge, card,
     confirm_modal, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
-    search_input, secondary_button, spacing, toggle, with_alpha,
+    search_input, secondary_button, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, VoiceAlias, VoiceAliasRepo};
@@ -25,7 +25,6 @@ const TABLE_RADIUS: Pixels = px(8.0);
 const ROLE_BADGE_FS: Pixels = px(8.5);
 const ENGINE_GLYPH: Pixels = px(12.0);
 const ACTION_GLYPH: Pixels = px(14.0);
-const PREVIEW_TEXT: &str = "This is a voice preview.";
 
 const VIEWER_GROW: f32 = 1.4;
 const VOICE_GROW: f32 = 1.6;
@@ -46,11 +45,11 @@ impl StrategyChoice {
         StrategyChoice::SingleVoice,
     ];
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            StrategyChoice::DeterministicByName => "Deterministic by name",
-            StrategyChoice::Random => "Random",
-            StrategyChoice::SingleVoice => "Single voice",
+            StrategyChoice::DeterministicByName => tr!("tts_aliases_strategy_deterministic"),
+            StrategyChoice::Random => tr!("tts_aliases_strategy_random"),
+            StrategyChoice::SingleVoice => tr!("tts_aliases_strategy_single"),
         }
     }
 
@@ -141,7 +140,7 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search = cx.new(|cx| search_input("Search viewers…", palette, cx));
+        let search = cx.new(|cx| search_input(tr!("tts_aliases_search_placeholder"), palette, cx));
         let search_sub = cx.subscribe(&search, |_this, _input, event: &InputEvent, cx| {
             if let InputEvent::Changed(_) = event {
                 cx.notify();
@@ -392,12 +391,13 @@ impl VoiceAliasesView {
         };
         let viewer_id = row.viewer_id.clone();
         let viewer_name = row.viewer_name.clone();
+        let text = tr!("tts_aliases_preview_text");
         self.rt_handle.spawn(async move {
             let request = SpeakRequest {
                 request_id: RequestId::new(),
                 viewer_id,
                 viewer_name,
-                text: PREVIEW_TEXT.to_owned(),
+                text,
                 priority: Priority::Normal,
                 alias_override: None,
                 engine_override: None,
@@ -467,10 +467,25 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> AliasForm {
         let palette = cx.palette();
-        let viewer = text_field("Viewer name", viewer, palette, cx);
-        let voice = text_field("Voice id", voice, palette, cx);
-        let pitch = text_field("0", pitch, palette, cx);
-        let rate = text_field("1.0", rate, palette, cx);
+        let viewer = text_field(
+            tr!("tts_aliases_form_viewer_placeholder"),
+            viewer,
+            palette,
+            cx,
+        );
+        let voice = text_field(
+            tr!("tts_aliases_form_voice_placeholder"),
+            voice,
+            palette,
+            cx,
+        );
+        let pitch = text_field(
+            tr!("tts_aliases_form_pitch_placeholder"),
+            pitch,
+            palette,
+            cx,
+        );
+        let rate = text_field(tr!("tts_aliases_form_rate_placeholder"), rate, palette, cx);
 
         let mut subs = Vec::new();
         subs.push(cx.subscribe(
@@ -539,7 +554,7 @@ impl VoiceAliasesView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child("Default assignment strategy"),
+                    .child(tr!("tts_aliases_strategy_label")),
             )
             .child(segmented);
 
@@ -566,12 +581,13 @@ impl VoiceAliasesView {
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
-            .child(format!("{} manual aliases", self.total_count));
+            .child(tr!("tts_aliases_count", count = self.total_count as i64));
 
-        let assign = primary_button_with_icon(Icon::Plus, "Assign voice", palette).on_click(
-            "va-assign",
-            cx.listener(|this, _: &ClickEvent, window, cx| this.open_assign(window, cx)),
-        );
+        let assign = primary_button_with_icon(Icon::Plus, tr!("tts_aliases_assign_btn"), palette)
+            .on_click(
+                "va-assign",
+                cx.listener(|this, _: &ClickEvent, window, cx| this.open_assign(window, cx)),
+            );
 
         let right = div()
             .flex()
@@ -616,9 +632,9 @@ impl VoiceAliasesView {
 
         let body: AnyElement = if visible.is_empty() {
             let caption = if self.loading {
-                "Loading voice aliases…"
+                tr!("tts_aliases_loading")
             } else {
-                "No voice aliases configured"
+                tr!("tts_aliases_empty")
             };
             div()
                 .w_full()
@@ -661,10 +677,10 @@ impl VoiceAliasesView {
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
-            .child(format!(
-                "Showing {} of {} manual aliases",
-                visible.len(),
-                self.total_count
+            .child(tr!(
+                "tts_aliases_footer_caption",
+                shown = visible.len() as i64,
+                total = self.total_count as i64
             ));
 
         div()
@@ -742,7 +758,11 @@ impl VoiceAliasesView {
                     .child(row.viewer_name.clone()),
             );
         if muted {
-            viewer_inner = viewer_inner.child(role_badge("BLOCKED", palette.random, palette));
+            viewer_inner = viewer_inner.child(role_badge(
+                tr!("tts_aliases_role_blocked"),
+                palette.random,
+                palette,
+            ));
         }
 
         let voice_inner: AnyElement = if muted {
@@ -756,7 +776,7 @@ impl VoiceAliasesView {
                         .font_family(DEFAULT_MONO_FAMILY)
                         .text_size(FONT_SM)
                         .text_color(palette.random)
-                        .child("Never speak"),
+                        .child(tr!("tts_aliases_never_speak")),
                 )
                 .into_any_element()
         } else {
@@ -876,12 +896,17 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let title = if form.editing.is_some() {
-            "Edit voice alias"
+            tr!("tts_aliases_form_title_edit")
         } else {
-            "Assign a voice"
+            tr!("tts_aliases_form_title_assign")
         };
 
-        let viewer_field = form_field("VIEWER", form.viewer.clone(), palette, density);
+        let viewer_field = form_field(
+            tr!("tts_aliases_form_viewer_label"),
+            form.viewer.clone(),
+            palette,
+            density,
+        );
 
         let block_row = div()
             .flex()
@@ -898,14 +923,14 @@ impl VoiceAliasesView {
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
-                            .child("Block from TTS"),
+                            .child(tr!("tts_aliases_form_block_label")),
                     )
                     .child(
                         div()
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
-                            .child("This viewer's messages are never spoken."),
+                            .child(tr!("tts_aliases_form_block_desc")),
                     ),
             )
             .child(toggle(form.blocked, palette).on_click(
@@ -918,7 +943,7 @@ impl VoiceAliasesView {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
-                .child("Never speak - voice settings do not apply.")
+                .child(tr!("tts_aliases_form_blocked_note"))
                 .into_any_element()
         } else {
             let mut chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
@@ -933,10 +958,30 @@ impl VoiceAliasesView {
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.set_form_engine(id, cx)),
                 ));
             }
-            let engine_block = labelled("ENGINE", chips, palette, density);
-            let voice_block = form_field("VOICE", form.voice.clone(), palette, density);
-            let pitch_block = form_field("PITCH (st)", form.pitch.clone(), palette, density);
-            let rate_block = form_field("RATE (x)", form.rate.clone(), palette, density);
+            let engine_block = labelled(
+                tr!("tts_aliases_form_engine_label"),
+                chips,
+                palette,
+                density,
+            );
+            let voice_block = form_field(
+                tr!("tts_aliases_form_voice_label"),
+                form.voice.clone(),
+                palette,
+                density,
+            );
+            let pitch_block = form_field(
+                tr!("tts_aliases_form_pitch_label"),
+                form.pitch.clone(),
+                palette,
+                density,
+            );
+            let rate_block = form_field(
+                tr!("tts_aliases_form_rate_label"),
+                form.rate.clone(),
+                palette,
+                density,
+            );
             div()
                 .flex()
                 .flex_col()
@@ -962,16 +1007,16 @@ impl VoiceAliasesView {
             .child(config);
 
         let save_label = if form.editing.is_some() {
-            "Save"
+            tr!("common_save")
         } else {
-            "Create"
+            tr!("tts_aliases_form_create")
         };
         let footer = div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .child(secondary_button("Cancel", palette).on_click(
+            .child(secondary_button(tr!("common_cancel"), palette).on_click(
                 "va-form-cancel",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.close_form(cx)),
             ))
@@ -1012,23 +1057,23 @@ impl VoiceAliasesView {
             .get(index)
             .map(|a| a.viewer_name.clone())
             .unwrap_or_default();
-        let message = format!("{viewer} will fall back to the default voice assignment strategy.");
+        let message = tr!("tts_aliases_delete_body", viewer = viewer.as_str());
 
         let card = confirm_modal(
-            "Delete voice alias?",
+            tr!("tts_aliases_delete_title"),
             message,
             ConfirmTone::Destructive,
             palette,
         )
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "va-delete-cancel",
-            "Cancel",
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(
             "va-delete-confirm",
-            "Delete",
+            tr!("common_delete"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
         );
 
@@ -1073,7 +1118,7 @@ fn weighted(grow: f32, child: impl IntoElement) -> Div {
 }
 
 fn header_row(palette: &ForgePalette) -> impl IntoElement {
-    let caption = |text: &'static str| {
+    let caption = |text: SharedString| {
         div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
@@ -1084,17 +1129,29 @@ fn header_row(palette: &ForgePalette) -> impl IntoElement {
         .w_full()
         .flex()
         .items_center()
-        .child(weighted(VIEWER_GROW, caption("VIEWER")))
-        .child(weighted(VOICE_GROW, caption("VOICE")))
-        .child(weighted(PITCH_GROW, caption("PITCH")))
-        .child(weighted(SPEED_GROW, caption("SPEED")))
+        .child(weighted(
+            VIEWER_GROW,
+            caption(tr!("tts_aliases_col_viewer").into()),
+        ))
+        .child(weighted(
+            VOICE_GROW,
+            caption(tr!("tts_aliases_col_voice").into()),
+        ))
+        .child(weighted(
+            PITCH_GROW,
+            caption(tr!("tts_aliases_col_pitch").into()),
+        ))
+        .child(weighted(
+            SPEED_GROW,
+            caption(tr!("tts_aliases_col_speed").into()),
+        ))
         .child(
             div()
                 .w(ACTIONS_W)
                 .flex_none()
                 .flex()
                 .justify_end()
-                .child(caption("ACTIONS")),
+                .child(caption(tr!("tts_aliases_col_actions").into())),
         )
 }
 
@@ -1106,14 +1163,12 @@ fn mono_cell(value: String, color: Rgba) -> impl IntoElement {
         .child(value)
 }
 
-fn role_badge(label: &str, color: Rgba, palette: &ForgePalette) -> impl IntoElement {
-    badge(
-        palette.surface_overlay,
-        color,
-        label.to_owned(),
-        true,
-        ROLE_BADGE_FS,
-    )
+fn role_badge(
+    label: impl Into<SharedString>,
+    color: Rgba,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    badge(palette.surface_overlay, color, label, true, ROLE_BADGE_FS)
 }
 
 fn seg_button(
@@ -1155,7 +1210,7 @@ fn seg_button(
 }
 
 fn labelled(
-    label: &'static str,
+    label: impl Into<SharedString>,
     control: impl IntoElement,
     palette: &ForgePalette,
     density: Density,
@@ -1169,13 +1224,13 @@ fn labelled(
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child(label),
+                .child(label.into()),
         )
         .child(control)
 }
 
 fn form_field(
-    label: &'static str,
+    label: impl Into<SharedString>,
     input: Entity<TextInput>,
     palette: &ForgePalette,
     density: Density,
@@ -1184,7 +1239,7 @@ fn form_field(
 }
 
 fn text_field(
-    placeholder: &'static str,
+    placeholder: impl Into<SharedString>,
     initial: &str,
     palette: ForgePalette,
     cx: &mut Context<VoiceAliasesView>,

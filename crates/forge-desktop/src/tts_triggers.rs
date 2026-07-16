@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ForgePalette, Icon, Radius, Spacing, badge, card, icon, radius, spacing, toggle, with_alpha,
+    ForgePalette, Icon, Radius, Spacing, badge, card, icon, radius, spacing, toggle, tr,
+    with_alpha,
 };
 use forge_runtime::TtsTriggerSettingsHandle;
 use forge_storage::{TtsTriggerSettings, TtsTriggerSettingsRepo};
-use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, prelude::*, px,
+};
 
 use crate::presentation::ActivePresentation;
 
@@ -186,14 +189,14 @@ impl TtsTriggersView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("WHAT GETS SPOKEN"),
+                    .child(tr!("tts_triggers_header")),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("Enable sources and set who can trigger them"),
+                    .child(tr!("tts_triggers_hint")),
             )
             .into_any_element()
     }
@@ -220,8 +223,8 @@ impl TtsTriggersView {
     fn card_header(
         &self,
         chip: AnyElement,
-        title: &'static str,
-        subtitle: &'static str,
+        title: impl Into<SharedString>,
+        subtitle: impl Into<SharedString>,
         subtitle_mono: bool,
         toggle_el: AnyElement,
         palette: &ForgePalette,
@@ -250,14 +253,14 @@ impl TtsTriggersView {
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
-                            .child(title),
+                            .child(title.into()),
                     )
                     .child(
                         div()
                             .font_family(subtitle_family)
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
-                            .child(subtitle),
+                            .child(subtitle.into()),
                     ),
             )
             .child(toggle_el)
@@ -292,8 +295,8 @@ impl TtsTriggersView {
             .into_any_element();
         let header = self.card_header(
             chip,
-            "Chat command",
-            "!tts <message>",
+            tr!("tts_triggers_cmd_title"),
+            tr!("tts_triggers_cmd_subtitle"),
             true,
             toggle_el,
             palette,
@@ -305,15 +308,27 @@ impl TtsTriggersView {
             .flex_row()
             .flex_wrap()
             .gap(spacing(Spacing::Xs, density))
-            .child(role_chip("Subscribers", palette.success, palette))
-            .child(role_chip("VIPs", palette.brand, palette))
-            .child(role_chip("Mods", palette.warning, palette));
+            .child(role_chip(
+                tr!("tts_triggers_role_subscribers"),
+                palette.success,
+                palette,
+            ))
+            .child(role_chip(
+                tr!("tts_triggers_role_vips"),
+                palette.brand,
+                palette,
+            ))
+            .child(role_chip(
+                tr!("tts_triggers_role_mods"),
+                palette.warning,
+                palette,
+            ));
 
         let meta = div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
-            .child("cooldown 8s · max 250 chars");
+            .child(tr!("tts_triggers_cmd_meta"));
 
         div()
             .w_full()
@@ -347,8 +362,8 @@ impl TtsTriggersView {
             .into_any_element();
         let header = self.card_header(
             chip,
-            "Channel point reward",
-            "\"Speak my message\" · 500 pts",
+            tr!("tts_triggers_points_title"),
+            tr!("tts_triggers_points_subtitle"),
             false,
             toggle_el,
             palette,
@@ -360,13 +375,17 @@ impl TtsTriggersView {
             .flex_row()
             .flex_wrap()
             .gap(spacing(Spacing::Xs, density))
-            .child(role_chip("Everyone", palette.text_primary, palette));
+            .child(role_chip(
+                tr!("tts_triggers_role_everyone"),
+                palette.text_primary,
+                palette,
+            ));
 
         let meta = div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
-            .child("no cooldown · priority queue");
+            .child(tr!("tts_triggers_points_meta"));
 
         card(
             div()
@@ -399,8 +418,8 @@ impl TtsTriggersView {
             .into_any_element();
         let header = self.card_header(
             chip,
-            "Bits / cheers",
-            "Speak cheer message",
+            tr!("tts_triggers_bits_title"),
+            tr!("tts_triggers_bits_subtitle"),
             false,
             toggle_el,
             palette,
@@ -416,7 +435,7 @@ impl TtsTriggersView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("Minimum"),
+                    .child(tr!("tts_triggers_bits_min_label")),
             )
             .child(
                 card(
@@ -424,7 +443,7 @@ impl TtsTriggersView {
                         .font_family(DEFAULT_MONO_FAMILY)
                         .text_size(FONT_SM)
                         .text_color(palette.warning)
-                        .child("100 bits"),
+                        .child(tr!("tts_triggers_bits_min_value")),
                     palette,
                 )
                 .background(palette.shell)
@@ -436,7 +455,7 @@ impl TtsTriggersView {
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
-            .child("louder = longer message");
+            .child(tr!("tts_triggers_bits_meta"));
 
         card(
             div()
@@ -469,8 +488,8 @@ impl TtsTriggersView {
             .into_any_element();
         let header = self.card_header(
             chip,
-            "Sub messages",
-            "Speak resub / gift messages",
+            tr!("tts_triggers_subs_title"),
+            tr!("tts_triggers_subs_subtitle"),
             false,
             toggle_el,
             palette,
@@ -482,7 +501,7 @@ impl TtsTriggersView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child("Disabled - toggle to enable")
+                .child(tr!("tts_triggers_subs_disabled"))
         });
 
         card(
@@ -502,7 +521,7 @@ impl TtsTriggersView {
 
     fn toggle_row(
         &self,
-        label: &'static str,
+        label: impl Into<SharedString>,
         on: bool,
         id: &'static str,
         palette: &ForgePalette,
@@ -520,7 +539,7 @@ impl TtsTriggersView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(label),
+                    .child(label.into()),
             )
             .child(toggle(on, palette).on_click(id, handler))
             .into_any_element()
@@ -532,10 +551,10 @@ impl TtsTriggersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let header = panel_header("MESSAGE FORMAT", palette);
+        let header = panel_header(tr!("tts_triggers_format_header"), palette);
 
         let username_row = self.toggle_row(
-            "Read username before message",
+            tr!("tts_triggers_format_read_username"),
             self.read_username,
             "tts-trig-read-username",
             palette,
@@ -547,7 +566,10 @@ impl TtsTriggersView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
-            .child(panel_header("TEMPLATE", palette))
+            .child(panel_header(
+                tr!("tts_triggers_format_template_header"),
+                palette,
+            ))
             .child(
                 card(
                     div()
@@ -565,7 +587,7 @@ impl TtsTriggersView {
             );
 
         let emotes_row = self.toggle_row(
-            "Speak emotes as words",
+            tr!("tts_triggers_format_speak_emotes"),
             self.speak_emotes,
             "tts-trig-speak-emotes",
             palette,
@@ -599,10 +621,10 @@ impl TtsTriggersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let header = panel_header("QUEUE BEHAVIOR", palette);
+        let header = panel_header(tr!("tts_triggers_queue_header"), palette);
 
         let skip_row = self.toggle_row(
-            "Bits & points skip the line",
+            tr!("tts_triggers_queue_bits_skip"),
             self.bits_skip_line,
             "tts-trig-bits-skip",
             palette,
@@ -617,10 +639,15 @@ impl TtsTriggersView {
                 .gap(spacing(Spacing::Xs, density))
                 .child(header)
                 .child(hairline(palette))
-                .child(queue_value_row("Max queue length", "20", palette, density))
+                .child(queue_value_row(
+                    tr!("tts_triggers_queue_max_length"),
+                    "20",
+                    palette,
+                    density,
+                ))
                 .child(hairline(palette))
                 .child(queue_value_row(
-                    "Per-user limit in queue",
+                    tr!("tts_triggers_queue_per_user_limit"),
                     "2",
                     palette,
                     density,
@@ -705,16 +732,16 @@ fn chip_30(glyph: impl IntoElement, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn role_chip(label: &'static str, color: Rgba, palette: &ForgePalette) -> AnyElement {
+fn role_chip(label: impl Into<SharedString>, color: Rgba, palette: &ForgePalette) -> AnyElement {
     badge(palette.surface_overlay, color, label, false, FONT_XS).into_any_element()
 }
 
-fn panel_header(label: &'static str, palette: &ForgePalette) -> AnyElement {
+fn panel_header(label: impl Into<SharedString>, palette: &ForgePalette) -> AnyElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
-        .child(label)
+        .child(label.into())
         .into_any_element()
 }
 
@@ -727,7 +754,7 @@ fn hairline(palette: &ForgePalette) -> AnyElement {
 }
 
 fn queue_value_row(
-    label: &'static str,
+    label: impl Into<SharedString>,
     value: &'static str,
     palette: &ForgePalette,
     density: Density,
@@ -743,7 +770,7 @@ fn queue_value_row(
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
-                .child(label),
+                .child(label.into()),
         )
         .child(
             card(

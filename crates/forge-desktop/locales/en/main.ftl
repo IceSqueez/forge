@@ -453,6 +453,7 @@ action_editor_branch_then = Then
 action_editor_branch_else = Else
 action_editor_branch_body = Body
 action_editor_branch_default = Default
+action_editor_branch_fallback = Branch
 action_editor_branch_case = Case
 action_editor_branch_chain = Chain
 action_editor_add_case = Add case

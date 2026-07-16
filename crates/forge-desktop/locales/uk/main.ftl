@@ -453,6 +453,7 @@ action_editor_branch_then = Якщо так
 action_editor_branch_else = Інакше
 action_editor_branch_body = Тіло
 action_editor_branch_default = За замовчуванням
+action_editor_branch_fallback = Гілка
 action_editor_branch_case = Випадок
 action_editor_branch_chain = Ланцюг
 action_editor_add_case = Додати випадок

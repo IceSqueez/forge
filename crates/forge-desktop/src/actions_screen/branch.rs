@@ -2,20 +2,20 @@ use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS, ForgePalette, Icon, InputEvent,
-    Spacing, TextInput, icon, spacing,
+    Spacing, TextInput, icon, spacing, tr,
 };
 use forge_registry::FormField;
 use forge_types::SubActionStep;
 use gpui::{AnyElement, App, ClickEvent, Context, ElementId, SharedString, Window, div};
 use std::collections::BTreeMap;
 
-fn branch_field_label(chain_key: &str) -> &'static str {
+fn branch_field_label(chain_key: &str) -> String {
     match chain_key {
-        "then_chain" => "Then",
-        "else_chain" => "Else",
-        "body" => "Body",
-        "default_chain" => "Default",
-        _ => "Branch",
+        "then_chain" => tr!("action_editor_branch_then"),
+        "else_chain" => tr!("action_editor_branch_else"),
+        "body" => tr!("action_editor_branch_body"),
+        "default_chain" => tr!("action_editor_branch_default"),
+        _ => tr!("action_editor_branch_fallback"),
     }
 }
 
@@ -168,7 +168,8 @@ impl ScreenActionsView {
         let mut fields = BTreeMap::new();
         for (si, ci, seed) in specs {
             let field = cx.new(|cx| {
-                let mut input = TextInput::new("match value", cx).with_palette(palette);
+                let mut input = TextInput::new(tr!("action_editor_case_match_placeholder"), cx)
+                    .with_palette(palette);
                 if !seed.is_empty() {
                     input.set_content(seed, cx);
                 }
@@ -190,7 +191,8 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut segments: Vec<(String, Option<usize>)> = vec![("Steps".to_owned(), Some(0))];
+        let mut segments: Vec<(String, Option<usize>)> =
+            vec![(tr!("action_editor_breadcrumb_steps"), Some(0))];
         for (depth, frame) in self.nav_path.iter().enumerate() {
             let prefix = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path[..depth]);
             let step_label = prefix
@@ -200,10 +202,10 @@ impl ScreenActionsView {
                         .get(&s.kind_id)
                         .map(|r| r.label().to_owned())
                 })
-                .unwrap_or_else(|| "Sub-action".to_owned());
+                .unwrap_or_else(|| tr!("action_editor_kind_sub_action"));
             let branch_label = match frame.case_index {
-                Some(ci) => format!("Case {}", ci + 1),
-                None => branch_field_label(&frame.chain_key).to_owned(),
+                Some(ci) => format!("{} {}", tr!("action_editor_branch_case"), ci + 1),
+                None => branch_field_label(&frame.chain_key),
             };
             let pop_target = if depth + 1 == self.nav_path.len() {
                 None
@@ -329,7 +331,7 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
-                    .child("Max nesting depth reached · cannot nest deeper here")
+                    .child(tr!("action_editor_branch_cap"))
                     .into_any_element(),
             );
         }
@@ -365,7 +367,7 @@ impl ScreenActionsView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
-                .child("multi-value match (read-only)")
+                .child(tr!("action_editor_case_multi"))
                 .into_any_element()
         } else {
             div()
@@ -382,7 +384,7 @@ impl ScreenActionsView {
         let key_owned = key.to_owned();
         let drill = drill_in_chip(
             SharedString::from(format!("actions-drill-{step_index}-case-{ci}")),
-            "Chain",
+            &tr!("action_editor_branch_chain"),
             count,
             disabled,
             palette,
@@ -453,7 +455,7 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
-                    .child("Add case"),
+                    .child(tr!("action_editor_add_case")),
             )
             .into_any_element()
     }

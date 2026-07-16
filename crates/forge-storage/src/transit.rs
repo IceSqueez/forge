@@ -50,7 +50,7 @@ pub struct ActionTransit {
     pub execution_mode: String,
     pub description: Option<String>,
     // Why: sub-actions are stored as a JSON blob in SQLite; re-parsing the polymorphic
-    // chain here would require transit types for every SubAction variant — deferred to
+    // chain here would require transit types for every SubAction variant - deferred to
     // the runtime crate that owns the type hierarchy.
     pub sub_actions: JsonValue,
     pub created_at: String,
@@ -129,7 +129,7 @@ pub enum ImportMode {
     MergeAdd,
     /// Wipe Actions, user-defined TriggerInstances, Scripts, and persisted Globals first,
     /// then insert bundle entities. Credentials, settings, user_globals, and event_log
-    /// are never touched. Calling this method IS the confirmation — UI owns the guard.
+    /// are never touched. Calling this method IS the confirmation - UI owns the guard.
     ReplaceConfirm,
 }
 

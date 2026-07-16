@@ -10,7 +10,7 @@ use crate::error::NsSpeechError;
 
 pub(crate) fn voice_catalog(engine_id: &EngineId) -> Result<Vec<TtsVoice>, NsSpeechError> {
     // SAFETY: speechVoices is a class method on AVSpeechSynthesisVoice; Apple documents it as
-    // safe to call from any thread — it reads a static OS-maintained voice registry. The returned
+    // safe to call from any thread - it reads a static OS-maintained voice registry. The returned
     // NSArray is autoreleased; we iterate inside the autoreleasepool block before it drains.
     let voices: Vec<TtsVoice> = objc2::rc::autoreleasepool(|_| {
         let raw: objc2::rc::Retained<NSArray<AVSpeechSynthesisVoice>> =

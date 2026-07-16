@@ -48,7 +48,7 @@ pub fn type_pill<'a, Msg: 'a>(palette: &'a ForgePalette, kind: VariantKind) -> E
 
 /// A single `data_table` row: its rendered cells plus an optional hover sink.
 /// When a `hover_sink` is provided, the row's whole-width hover state is
-/// written into it every time it changes — a companion [`hover_reveal`] cell
+/// written into it every time it changes - a companion [`hover_reveal`] cell
 /// reads the same `Cell` to fade its contents in on row hover.
 pub struct DataRow<'a, Msg> {
     pub cells: Vec<Element<'a, Msg>>,
@@ -286,7 +286,7 @@ pub fn data_screen_footer<'a, Msg: 'a>(
 /// Wraps a row so it paints a subtle background tint whenever the pointer is
 /// over any part of it, and (optionally) publishes that hover state into a
 /// shared `Cell` for a [`hover_reveal`] cell to consume. Hover changes only
-/// request a redraw — no `Message` round-trip — so every `data_table` row gets
+/// request a redraw - no `Message` round-trip - so every `data_table` row gets
 /// the tint for free without per-screen state.
 pub fn hover_row<'a, Msg: 'a>(
     content: Element<'a, Msg>,
@@ -302,7 +302,7 @@ pub fn hover_row<'a, Msg: 'a>(
 }
 
 /// Cell wrapper that only draws (and only accepts interaction with) its content
-/// while the shared `flag` is set — the row's [`hover_row`] flips the flag on
+/// while the shared `flag` is set - the row's [`hover_row`] flips the flag on
 /// hover, so the wrapped controls appear on row hover and hide otherwise.
 pub fn hover_reveal<'a, Msg: 'a>(
     content: Element<'a, Msg>,
@@ -537,7 +537,7 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        // Hidden until the row is hovered — layout still reserves the cell so
+        // Hidden until the row is hovered - layout still reserves the cell so
         // sibling columns never shift when the controls fade in.
         if self.flag.get() {
             self.content.as_widget().draw(

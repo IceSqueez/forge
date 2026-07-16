@@ -160,7 +160,7 @@ impl VTubeClient {
         let request_id = req.request_id.clone();
         let payload = serde_json::to_string(&req).map_err(VTubeError::Json)?;
         let (respond_to, rx) = tokio::sync::oneshot::channel();
-        // Lock is held only for the synchronous .send() — not across any .await.
+        // Lock is held only for the synchronous .send() - not across any .await.
         {
             let tx = self.req_tx.lock().await;
             tx.send(PendingRequest {

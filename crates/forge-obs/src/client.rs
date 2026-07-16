@@ -393,10 +393,10 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 publisher.publish(crate::events::make_connection_connected());
 
                 // obs-websocket has no periodic Stats *event* (verified against obws 0.15.0
-                // and the protocol spec — General category is ExitStarted/VendorEvent/
+                // and the protocol spec - General category is ExitStarted/VendorEvent/
                 // CustomEvent only; GetStats is request/response-only). CPU/FPS/Dropped are
                 // therefore sourced by polling `general().stats()` on a timer, independent
-                // of `required_event_subscriptions()` — no EventSubscription bitflag is
+                // of `required_event_subscriptions()` - no EventSubscription bitflag is
                 // touched, so there is no double-subscribe/overlap risk (OQ-OBS-1).
                 let stats_handle = spawn_stats_poll(
                     Arc::clone(&inner),
@@ -645,7 +645,7 @@ async fn snapshot_catalog(
 /// Seeds a single Status-shaped health metric (index 0 = Stream, index 1 = Recording) from a
 /// cold-connect `GetStreamStatus`/`GetRecordStatus` response. Only broadcasts a delta when the
 /// value actually differs from the persisted snapshot (e.g. a reconnect where the previous
-/// session's last-known state already matches reality) — mirrors `apply_health_update`'s
+/// session's last-known state already matches reality) - mirrors `apply_health_update`'s
 /// change-gating so a cold connect never emits a spurious duplicate delta.
 fn seed_health_status(
     health_state: &RwLock<HealthSnapshot>,
@@ -680,8 +680,8 @@ fn seed_health_status(
 const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Periodically polls `GetStats` and feeds the CPU/FPS (index 2) and Dropped-frames (index 3)
-/// health metrics. obs-websocket has no push event for these — see the OQ-OBS-1 resolution
-/// note above `spawn_stats_poll`'s call site — so this poll loop is the only source for them.
+/// health metrics. obs-websocket has no push event for these - see the OQ-OBS-1 resolution
+/// note above `spawn_stats_poll`'s call site - so this poll loop is the only source for them.
 /// The returned handle MUST be `.abort()`-ed on every connection-loss/shutdown exit path;
 /// dropping a `JoinHandle` does not cancel the underlying task.
 fn spawn_stats_poll(

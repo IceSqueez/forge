@@ -75,7 +75,7 @@ impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     // Source/filter-name extraction and kind discrimination are covered in `filter_removed`.
-    // Here we cover only the extra `obs.filter.is_enabled` Bool this descriptor adds —
+    // Here we cover only the extra `obs.filter.is_enabled` Bool this descriptor adds -
     // crucially that `false` is PRESERVED, not dropped as if the field were absent.
     use super::*;
     use serde_json::json;

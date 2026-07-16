@@ -135,7 +135,7 @@ async fn set_on_archived_global_updates_row_without_resurrecting_it() {
     // DO UPDATE, which never touches archived_at. A caller re-`set`ting an
     // archived name writes into the still-hidden row: the new value lands but
     // stays invisible to get()/list() until an explicit restore(). Documents the
-    // observed footgun — a silent write to a soft-deleted global.
+    // observed footgun - a silent write to a soft-deleted global.
     let repo = setup().await;
     repo.set("dup", Variant::Int(1), true).await.expect("set 1");
     repo.archive("dup").await.expect("archive");
@@ -147,7 +147,7 @@ async fn set_on_archived_global_updates_row_without_resurrecting_it() {
     assert_eq!(
         repo.get("dup").await.expect("get"),
         None,
-        "set() on an archived name does NOT resurrect it — still hidden"
+        "set() on an archived name does NOT resurrect it - still hidden"
     );
     let archived = repo.list_archived().await.expect("list_archived");
     let entry = archived
@@ -165,7 +165,7 @@ async fn set_on_archived_global_updates_row_without_resurrecting_it() {
 async fn incr_on_archived_numeric_global_reports_not_found() {
     // EDGE: incr()'s UPDATE and its fallback type_tag SELECT both filter
     // archived_at IS NULL, so an archived numeric global is indistinguishable
-    // from an absent one — NotFound, never a mutation of the hidden row.
+    // from an absent one - NotFound, never a mutation of the hidden row.
     let repo = setup().await;
     repo.set("n", Variant::Int(10), false).await.expect("set");
     repo.archive("n").await.expect("archive");

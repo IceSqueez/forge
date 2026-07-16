@@ -23,7 +23,7 @@ fn map_err(e: obws::error::Error) -> ObsError {
 
 /// One-shot connection check used by the "Test connection" button on the OBS
 /// disconnected panel. Connects, fetches version + scene list, returns a
-/// summary. Drops the connection on completion — does not promote it to a
+/// summary. Drops the connection on completion - does not promote it to a
 /// long-lived session.
 pub async fn test_connect(
     host: &str,

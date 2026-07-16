@@ -32,7 +32,7 @@ const APPS: [AppRow; 2] = [
         Integration::Obs,
         "OBS Studio",
         Icon::Broadcast,
-        "Scenes, sources, recording control, replay buffers — full obs-websocket API",
+        "Scenes, sources, recording control, replay buffers - full obs-websocket API",
     ),
     (
         Integration::VTube,

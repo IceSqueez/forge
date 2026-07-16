@@ -37,7 +37,7 @@ impl ConfirmTone {
     }
 }
 
-/// The card is only the surface — wrap it in a centred [`crate::overlay`] for the scrim, animation and Escape/scrim dismissal.
+/// The card is only the surface - wrap it in a centred [`crate::overlay`] for the scrim, animation and Escape/scrim dismissal.
 #[derive(IntoElement)]
 pub struct ConfirmModal {
     title: SharedString,

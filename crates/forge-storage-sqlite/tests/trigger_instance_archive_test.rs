@@ -245,7 +245,7 @@ async fn delete_is_blocked_by_link_from_archived_action() {
 #[tokio::test]
 async fn actions_using_excludes_archived_actions() {
     // actions_using() joins on live actions only (a.archived_at IS NULL), so an
-    // archived action drops out of the usage list — contrast with delete()'s
+    // archived action drops out of the usage list - contrast with delete()'s
     // unfiltered probe above.
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();

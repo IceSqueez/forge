@@ -104,7 +104,7 @@ fn kind_color(kind: ToastKind, palette: &ForgePalette) -> Color {
         ToastKind::Success => palette.success,
         ToastKind::Warn => palette.warning,
         ToastKind::Error => palette.random,
-        // Design's toast.jsx uses `var(--mute)` for the undo accent — a
+        // Design's toast.jsx uses `var(--mute)` for the undo accent - a
         // deliberately muted/neutral color (undo is a low-urgency, reversible
         // action), NOT the brand accent used elsewhere for primary emphasis.
         ToastKind::Undo => palette.text_muted,

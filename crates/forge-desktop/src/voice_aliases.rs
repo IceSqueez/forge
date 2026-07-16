@@ -918,7 +918,7 @@ impl VoiceAliasesView {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
-                .child("Never speak — voice settings do not apply.")
+                .child("Never speak - voice settings do not apply.")
                 .into_any_element()
         } else {
             let mut chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
@@ -1272,7 +1272,7 @@ fn engine_display_label(engine_id: &str) -> String {
 
 fn fmt_pitch(value: Option<f32>, blocked: bool) -> String {
     if blocked {
-        return "—".to_owned();
+        return "-".to_owned();
     }
     match value {
         Some(p) if p >= 0.0 => format!("+{p:.0} st"),
@@ -1283,7 +1283,7 @@ fn fmt_pitch(value: Option<f32>, blocked: bool) -> String {
 
 fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
     if blocked {
-        return "—".to_owned();
+        return "-".to_owned();
     }
     value
         .map(|r| format!("{r:.1}x"))

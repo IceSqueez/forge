@@ -88,7 +88,7 @@ impl OrderRecordingSink {
 #[async_trait]
 impl AudioSink for OrderRecordingSink {
     async fn play(&self, buf: PcmBuffer) -> Result<(), AudioError> {
-        // Encode the sample_rate as a proxy for "which request" — real tests
+        // Encode the sample_rate as a proxy for "which request" - real tests
         // use a simpler check (first Finished event wins).
         let _ = buf;
         self.notify.notify_one();
@@ -235,7 +235,7 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
     )
     .await;
 
-    // Both IDs must be different — sanity check.
+    // Both IDs must be different - sanity check.
     assert_ne!(normal_id, high_id);
 
     // If we captured a first_started_id with a non-empty id (post-synthesis),

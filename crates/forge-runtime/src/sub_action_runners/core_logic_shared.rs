@@ -9,8 +9,8 @@ pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubAction
     decode_steps(config.get(key))
 }
 
-/// Walks the canonical stored chain form — `Variant::Array` of per-step
-/// `Variant::Object`s — into a step list. Anything that is not an array, and any
+/// Walks the canonical stored chain form - `Variant::Array` of per-step
+/// `Variant::Object`s - into a step list. Anything that is not an array, and any
 /// element lacking a `kind_id`, is dropped so a missing or partially-authored
 /// branch degrades to a no-op instead of failing the action.
 pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {

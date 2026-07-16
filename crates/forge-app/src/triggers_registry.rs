@@ -383,7 +383,7 @@ pub fn update(
             // still referenced by an action never opens the confirm at all.
             // The row `X` / sheet footer button are also dimmed+inert in that
             // case (proactive gate, 4156dae), so this branch is normally
-            // unreachable from the UI — the toast here is defense-in-depth
+            // unreachable from the UI - the toast here is defense-in-depth
             // reactive feedback, same copy as the `DeleteResult(Err)` path
             // below, for any dispatch path that bypasses the disabled button.
             let can_delete = state
@@ -1324,7 +1324,7 @@ fn instance_row<'a>(
 
     let row_id = row.id;
     // A still-referenced instance can't be deleted (FK), so its Delete item is
-    // disabled — same gate as the sheet footer's `can_delete`.
+    // disabled - same gate as the sheet footer's `can_delete`.
     let can_delete = row.used_in_count == 0;
     let menu_items: Vec<MenuItem<Message>> = vec![
         MenuItem::Item {
@@ -1632,7 +1632,7 @@ fn config_section_view<'a>(
     let editing = config_edit.filter(|c| c.instance_id == row.id);
 
     if let Some(edit) = editing {
-        // EDIT MODE — every field type is rendered by the shared render_field.
+        // EDIT MODE - every field type is rendered by the shared render_field.
         let buffers = FieldBuffers {
             text: &edit.text_buffer,
             overrides: &edit.overrides_buffer,
@@ -1683,7 +1683,7 @@ fn config_section_view<'a>(
         )
         .into()
     } else {
-        // READ MODE — calm summary; clicking a value opens the edit session.
+        // READ MODE - calm summary; clicking a value opens the edit session.
         let effective = effective_config(&default_cfg, &row.overrides);
         let field_rows: Vec<Element<'a, Message>> = fields
             .iter()
@@ -1709,7 +1709,7 @@ fn config_section_view<'a>(
                             .into()
                     }
                 } else {
-                    text("—")
+                    text("-")
                         .size(FONT_XS)
                         .color(p.text_faint)
                         .font(mono)
@@ -1741,7 +1741,7 @@ fn config_section_view<'a>(
             .collect();
 
         // Frame the field list in an inset crust-toned card with hairline
-        // dividers between rows (iced rules render solid — a dashed stroke is
+        // dividers between rows (iced rules render solid - a dashed stroke is
         // not expressible at the pinned version, so this reads as a calm
         // hairline rather than the mockup's dashed divider).
         let field_divider = move |_: &iced::Theme| rule::Style {
@@ -2116,7 +2116,7 @@ fn confirm_disable_dialog<'a>(
         count = cd.action_count as i64
     );
 
-    // Disabling is reversible-but-disruptive, not destructive — warning-yellow
+    // Disabling is reversible-but-disruptive, not destructive - warning-yellow
     // tone with an alert-triangle tile, mirroring the M6 confirm modal's
     // Warning tone rather than the red delete flow.
     let accent = p.warning;

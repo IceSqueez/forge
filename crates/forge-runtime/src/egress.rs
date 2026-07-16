@@ -85,7 +85,7 @@ impl EgressClient {
     /// Validates the URL against the SSRF denylist, sends it, and follows
     /// redirects manually so every hop is re-validated against the same
     /// classifier. The host's resolved IPs are re-checked post-resolution before
-    /// each request leaves — a literal IP or any DNS result inside private space
+    /// each request leaves - a literal IP or any DNS result inside private space
     /// is rejected unless `allow_local` is set.
     pub async fn send(&self, req: EgressRequest) -> Result<EgressResponse, EgressError> {
         let _permit = self
@@ -254,7 +254,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     // wiremock binds an in-process HTTP server on 127.0.0.1 (a mock backend on
-    // loopback — never a real external service). Every SSRF-reject case asserts
+    // loopback - never a real external service). Every SSRF-reject case asserts
     // the request never left the runtime by checking the mock recorded zero hits.
 
     // `EgressResponse` has no Debug derive, so `Result::unwrap_err` is unavailable
@@ -293,7 +293,7 @@ mod tests {
         let err = expect_err(client.send(request(server.uri(), false)).await);
 
         assert!(matches!(err, EgressError::BlockedAddress));
-        // Load-bearing: the denylist fired BEFORE any byte left — the loopback
+        // Load-bearing: the denylist fired BEFORE any byte left - the loopback
         // mock saw nothing.
         assert!(server.received_requests().await.unwrap().is_empty());
     }
@@ -381,7 +381,7 @@ mod tests {
     async fn redirect_to_disallowed_scheme_is_revalidated_per_hop() {
         // The first hop (loopback wiremock, allow_local) passes; the 302 target is
         // a non-http scheme. If per-hop revalidation were skipped the client would
-        // try to follow blindly — instead the scheme guard must reject the new URL.
+        // try to follow blindly - instead the scheme guard must reject the new URL.
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(

@@ -25,7 +25,7 @@ pub(crate) fn variant_to_dynamic(v: Variant) -> rhai::Dynamic {
 /// Converts a [`rhai::Dynamic`] to a [`Variant`].
 ///
 /// Supports `Int`, `Float`, `Bool`, and `String`. Rhai `Array` and `Map` are
-/// not supported — callers that need collection round-trips must handle
+/// not supported - callers that need collection round-trips must handle
 /// those branches explicitly. Returns `Err` for unrecognised types.
 pub(crate) fn dynamic_to_variant(d: rhai::Dynamic) -> Result<Variant, String> {
     if d.is::<i64>() {

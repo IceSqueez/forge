@@ -62,7 +62,7 @@ fn negotiate_os_locale() -> Option<Language> {
     }
 }
 
-/// Second tuple element is `Some` only on first run (no persisted setting) — caller must
+/// Second tuple element is `Some` only on first run (no persisted setting) - caller must
 /// persist it via `SettingsRepo::set_language` to pin the negotiated OS locale.
 pub async fn resolve_startup_language(
     settings: Arc<dyn SettingsRepo>,
@@ -86,7 +86,7 @@ pub async fn resolve_startup_language(
     }
 }
 
-/// Must run on the render thread — the installed bundle is thread-local.
+/// Must run on the render thread - the installed bundle is thread-local.
 pub fn install_language(lang: Language) {
     let bundle = build_bundle(lang);
     forge_components::install_bundle(bundle);

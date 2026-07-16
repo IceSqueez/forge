@@ -169,7 +169,7 @@ mod tests {
         assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
-    /// Empty filter (no `source_name` configured) matches any source — the default.
+    /// Empty filter (no `source_name` configured) matches any source - the default.
     #[test]
     fn empty_filter_matches_any_source() {
         let cfg = BTreeMap::new();

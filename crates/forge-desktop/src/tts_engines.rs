@@ -490,7 +490,7 @@ fn credentials_section(palette: &ForgePalette, density: Density) -> impl IntoEle
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.success)
-                .child("LOCAL — no credentials"),
+                .child("LOCAL - no credentials"),
         );
 
     let notice_row = div()

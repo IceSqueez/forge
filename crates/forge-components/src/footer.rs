@@ -120,7 +120,7 @@ mod tests {
     // The contract that matters: split on the FIRST `-`, not the last and not
     // on `.`. A clean release yields no stage tag (drives the footer's muted-only
     // rendering); a prerelease yields the stage tag verbatim (drives brand-accent
-    // coloring). The multi-dash case (`rc-1`) is the load-bearing one — a
+    // coloring). The multi-dash case (`rc-1`) is the load-bearing one - a
     // `rsplit_once('-')` mis-impl would yield `("1.0.0-rc", Some("1"))` and fail.
     #[test]
     fn split_version_stage_cuts_base_from_stage_on_first_dash() {

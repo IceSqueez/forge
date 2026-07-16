@@ -124,7 +124,7 @@ async fn play_missing_file_emits_playback_failed_and_returns_err() {
 }
 
 /// Regression: play() when sink factory returns DeviceNotFound must emit
-/// PlaybackFailed and return Err — covers audio device disconnect before playback.
+/// PlaybackFailed and return Err - covers audio device disconnect before playback.
 #[tokio::test]
 async fn play_device_not_found_emits_playback_failed_and_returns_err() {
     let clip_id = ClipId::new();

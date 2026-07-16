@@ -86,7 +86,7 @@ impl ThemeId {
         ThemeId::Latte,
     ];
 
-    /// Persisted identifier — must stay stable across releases.
+    /// Persisted identifier - must stay stable across releases.
     pub fn storage_key(self) -> &'static str {
         match self {
             ThemeId::CatppuccinMocha => "catppuccin_mocha",

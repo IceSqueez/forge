@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn density_round_trips_through_display_and_from_str() {
-        // Cozy is the product default — display strings are the persisted format.
+        // Cozy is the product default - display strings are the persisted format.
         assert_eq!(Density::default(), Density::Cozy);
         for density in [Density::Compact, Density::Cozy, Density::Spacious] {
             let s = density.to_string();

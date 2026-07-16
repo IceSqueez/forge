@@ -11,13 +11,13 @@ thread_local! {
     /// Tracks keys already warned about in this thread to emit each warning once.
     static WARNED_KEYS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 
-    // "en" | "uk" — set alongside BUNDLE so formatters read the same locale.
+    // "en" | "uk" - set alongside BUNDLE so formatters read the same locale.
     static LOCALE_ID: RefCell<&'static str> = const { RefCell::new("en") };
 }
 
 /// Replaces the active bundle for this thread. Subsequent `tr!` calls on this thread see the new
 /// bundle. Other threads keep their previous bundle (caller is responsible for re-installing
-/// per-thread if those threads also render UI — for iced's single-threaded render loop this is
+/// per-thread if those threads also render UI - for iced's single-threaded render loop this is
 /// called once on the main thread).
 pub fn install_bundle(bundle: Rc<FluentBundle<FluentResource>>) {
     BUNDLE.with(|cell| {
@@ -47,7 +47,7 @@ fn active_locale() -> &'static str {
 pub fn fmt_feed_time(ts: &OffsetDateTime) -> String {
     let pattern = tr_lookup("fmt_feed_time_pattern", None);
     if pattern == "fmt_feed_time_pattern" {
-        // Neutral fallback — locale key missing; gracefully degrade.
+        // Neutral fallback - locale key missing; gracefully degrade.
         return format!(
             "{:02}:{:02}:{:02}.{:03}",
             ts.hour(),
@@ -65,7 +65,7 @@ pub fn fmt_feed_time(ts: &OffsetDateTime) -> String {
 
 /// Formats `ts` as a short date suitable for display contexts such as "first seen" labels.
 ///
-/// en: "Jun 10, 2026"; uk: "10 черв. 2026" — month abbreviation from locale resources.
+/// en: "Jun 10, 2026"; uk: "10 черв. 2026" - month abbreviation from locale resources.
 pub fn fmt_short_date(ts: &OffsetDateTime) -> String {
     let locale = active_locale();
     let month_key = format!("fmt_month_abbr_{:02}", ts.month() as u8);
@@ -79,7 +79,7 @@ pub fn fmt_short_date(ts: &OffsetDateTime) -> String {
 /// Formats a number with locale-aware grouping and decimal separators for display.
 ///
 /// en: `1,234.5`; uk: `1 234,5` (space grouping, comma decimal per CLDR).
-/// Editable numeric inputs must NOT use this — only read-only display.
+/// Editable numeric inputs must NOT use this - only read-only display.
 pub fn fmt_number(value: f64, decimal_places: usize) -> String {
     let locale = active_locale();
     let (group_sep, decimal_sep) = match locale {
@@ -147,7 +147,7 @@ fn group_integer(n: u64, sep: &str) -> String {
 }
 
 /// Missing key → returns the raw key string (debug builds also emit `tracing::warn!` once per
-/// key). Dotted keys (`common.cancel`) auto-map to Fluent underscore IDs (`common_cancel`) —
+/// key). Dotted keys (`common.cancel`) auto-map to Fluent underscore IDs (`common_cancel`) -
 /// Fluent reserves `.` for attribute access.
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
     let fluent_id: std::borrow::Cow<'_, str> = if key.contains('.') {
@@ -225,8 +225,8 @@ impl<'a> ArgsBuilder<'a> {
 /// Translates a Fluent message key using the active thread-local bundle.
 ///
 /// Two forms:
-/// - `tr!("key")` — simple lookup with no arguments.
-/// - `tr!("key", arg_name = value, ...)` — lookup with named Fluent arguments.
+/// - `tr!("key")` - simple lookup with no arguments.
+/// - `tr!("key", arg_name = value, ...)` - lookup with named Fluent arguments.
 #[macro_export]
 macro_rules! tr {
     ($key:expr) => {
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn fmt_feed_time_without_bundle_falls_back_to_24h_clock() {
-        // No bundle installed on this thread — must degrade, not panic or echo the key.
+        // No bundle installed on this thread - must degrade, not panic or echo the key.
         assert_eq!(fmt_feed_time(&ts(8, 5, 9, 42)), "08:05:09.042");
     }
 

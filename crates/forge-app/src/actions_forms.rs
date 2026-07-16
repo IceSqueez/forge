@@ -140,7 +140,7 @@ impl AddSubActionForm {
     }
 
     /// Fills the buffers from a persisted step keyed by config entry, independent
-    /// of `kind_id` — every value is mapped without per-kind branching.
+    /// of `kind_id` - every value is mapped without per-kind branching.
     pub fn populate_from_step(&mut self, step: &SubActionStep) {
         self.selected_kind_id = Some(step.kind_id.clone());
         self.step = SubActionFormStep::FillForm;
@@ -186,7 +186,7 @@ pub enum AddSubActionMsg {
 
 #[derive(Debug, Clone)]
 pub enum RemoveSubActionMsg {
-    /// Arms the shared destructive-confirm gate — no longer removes directly.
+    /// Arms the shared destructive-confirm gate - no longer removes directly.
     Requested(ActionId, usize),
     /// Confirmed via the modal: performs the removal previously done by `Requested`.
     ConfirmAccepted(ActionId, usize),

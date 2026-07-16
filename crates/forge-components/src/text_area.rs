@@ -110,7 +110,7 @@ impl AreaLayout {
     }
 }
 
-/// Subscribe to [`InputEvent`] for edits — only `Changed` is emitted (a text area has no submit).
+/// Subscribe to [`InputEvent`] for edits - only `Changed` is emitted (a text area has no submit).
 pub struct TextArea {
     focus_handle: FocusHandle,
     content: SharedString,
@@ -967,7 +967,7 @@ mod tests {
 
     // Seed a headless TextArea with `content`, then run `f` against its private editing
     // methods and return what `f` observes. gpui's TestAppContext backs the window with a
-    // headless TestWindow (NoopTextSystem, no GPU, no paint scheduling, no network) — the
+    // headless TestWindow (NoopTextSystem, no GPU, no paint scheduling, no network) - the
     // sanctioned in-process harness. Tests that exercise caret geometry (Up/Down) must
     // instead force a paint first (see `with_painted_area`), because `move_vertical` reads
     // the layout cached at the last paint and is a no-op before it.
@@ -1022,7 +1022,7 @@ mod tests {
     #[gpui::test]
     fn down_holds_the_goal_column_across_a_shorter_intervening_line(cx: &mut gpui::TestAppContext) {
         // The bug-prone case. Caret starts at column 6 of a long line; the middle line is
-        // one char, so Down must clamp there, THEN the next Down must return to column 6 —
+        // one char, so Down must clamp there, THEN the next Down must return to column 6 -
         // proving the goal column survived the clamp. A naive impl that overwrites the goal
         // column with the clamped x would land at column 1 on the third line (offset 13),
         // not column 6 (offset 18).

@@ -876,7 +876,7 @@ fn health_metric_card(
     density: Density,
 ) -> AnyElement {
     let value_col: AnyElement = if loading {
-        body("—", FONT_SM, palette.text_faint).into_any_element()
+        body("-", FONT_SM, palette.text_faint).into_any_element()
     } else {
         health_value_col(&metric.value, palette, density)
     };

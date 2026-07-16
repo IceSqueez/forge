@@ -290,7 +290,7 @@ fn dispatch_event(app: &mut App, event: &Arc<Event>) -> Task<Message> {
     // Reactive connectivity: push per-platform connection state into the indicator
     // map. A legacy/bespoke emit with the same kind but missing `platform_id` or a
     // non-canonical `state` (e.g. Kick's transient pre-Phase-2 event) deserializes to
-    // `None` and is skipped — never panics, never inserts a bogus entry.
+    // `None` and is skipped - never panics, never inserts a bogus entry.
     if event.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND {
         let platform_id = event
             .payload
@@ -1424,7 +1424,7 @@ mod tests {
         // Drive LoadRequested (the single task the navigate returned):
         let _ = update(&mut app, Message::Actions(ActionsMsg::LoadRequested));
 
-        // Detail is intact — ActionSelected was not in the batch and never cleared it.
+        // Detail is intact - ActionSelected was not in the batch and never cleared it.
         assert!(app.ui.actions.detail.is_some());
         assert_eq!(app.ui.actions.detail.as_ref().unwrap().action.id, id);
     }
@@ -1466,7 +1466,7 @@ mod tests {
             &mut app,
             Message::TriggersRegistry(TriggersRegistryMsg::NavigateToAction(id)),
         );
-        // Screen unchanged synchronously — task has not been run:
+        // Screen unchanged synchronously - task has not been run:
         assert_eq!(
             app.screen,
             Screen::Home,

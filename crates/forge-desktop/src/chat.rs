@@ -176,7 +176,7 @@ impl ChatView {
         cx.notify();
     }
 
-    /// Search is deliberately excluded — it dims non-matches rather than filtering them.
+    /// Search is deliberately excluded - it dims non-matches rather than filtering them.
     fn row_visible(&self, msg: &ChatMessage) -> bool {
         let platform_ok = match self.platform_filter {
             PlatformFilter::All => true,
@@ -210,7 +210,7 @@ impl ChatView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
-                    .child("— viewers"),
+                    .child("- viewers"),
             );
 
         let separator = div()
@@ -229,7 +229,7 @@ impl ChatView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("—"),
+                    .child("-"),
             );
 
         let drawer_label = if self.drawer_open {

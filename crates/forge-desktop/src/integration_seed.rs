@@ -504,9 +504,9 @@ fn generic(id: &BuiltinId, display_name: &str, icon: &str) -> IntegrationSeed {
     };
     let metrics = [
         status_metric("Status", "Not connected", false, None),
-        text_metric("Activity", "—", None),
-        text_metric("Session", "—", None),
-        text_metric("Detail", "—", None),
+        text_metric("Activity", "-", None),
+        text_metric("Session", "-", None),
+        text_metric("Detail", "-", None),
     ];
     let overview = DetailSection::ActiveItemList {
         title: "Overview".to_owned(),
@@ -528,7 +528,7 @@ fn generic(id: &BuiltinId, display_name: &str, icon: &str) -> IntegrationSeed {
             },
             InfoField {
                 label: "Since".to_owned(),
-                value: "—".to_owned(),
+                value: "-".to_owned(),
                 monospace_value: true,
             },
         ],

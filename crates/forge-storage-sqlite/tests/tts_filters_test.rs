@@ -132,7 +132,7 @@ async fn set_pipeline_settings_is_idempotent_upsert_not_insert() {
     };
     r.set_pipeline_settings(&s2).await.expect("set 2");
 
-    // Only one row must exist — the upsert must not blow the CHECK(id = 1) constraint.
+    // Only one row must exist - the upsert must not blow the CHECK(id = 1) constraint.
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tts_pipeline_settings")
         .fetch_one(&pool)
         .await
@@ -182,7 +182,7 @@ async fn pipeline_settings_url_and_blocklist_mode_round_trip() {
 async fn pipeline_settings_max_length_none_and_some_round_trip() {
     let r = repo().await;
 
-    // None — unlimited
+    // None - unlimited
     let s_none = TtsPipelineSettings {
         max_length: None,
         ..TtsPipelineSettings::default()
@@ -193,7 +193,7 @@ async fn pipeline_settings_max_length_none_and_some_round_trip() {
         None
     );
 
-    // Some(0) — edge: zero-length truncation
+    // Some(0) - edge: zero-length truncation
     let s_zero = TtsPipelineSettings {
         max_length: Some(0),
         ..TtsPipelineSettings::default()
@@ -204,7 +204,7 @@ async fn pipeline_settings_max_length_none_and_some_round_trip() {
         Some(0)
     );
 
-    // Some(u32::MAX) — upper boundary
+    // Some(u32::MAX) - upper boundary
     let s_max = TtsPipelineSettings {
         max_length: Some(u32::MAX),
         ..TtsPipelineSettings::default()
@@ -242,7 +242,7 @@ async fn pipeline_settings_strip_flags_all_combinations_round_trip() {
 }
 
 // ---------------------------------------------------------------------------
-// round-trip: rules — happy path
+// round-trip: rules - happy path
 // ---------------------------------------------------------------------------
 
 /// A mixed set of all three kinds (literal + regex + blocklist), stored in arbitrary
@@ -272,7 +272,7 @@ async fn replace_rules_mixed_set_returns_ordered_by_position() {
     assert_eq!(got[1].id, "r1");
     assert_eq!(got[2].id, "r2");
 
-    // full field fidelity — check round-tripped objects match originals
+    // full field fidelity - check round-tripped objects match originals
     assert_eq!(got[0], literal_rule("r0", 0));
     assert_eq!(got[1], blocklist_rule("r1", 1, BlocklistMode::Censor));
     assert_eq!(got[2], regex_rule("r2", 2));
@@ -332,10 +332,10 @@ async fn replace_rules_is_atomic_rollback_on_conflict() {
         .await
         .expect("seed");
 
-    // Attempt to replace with a set containing a duplicate id — SQLite PRIMARY KEY
+    // Attempt to replace with a set containing a duplicate id - SQLite PRIMARY KEY
     // violation mid-transaction triggers a rollback.
     let dup = vec![literal_rule("dup", 0), literal_rule("dup", 1)];
-    let _ = r.replace_rules(&dup).await; // may error or not depending on db — either way:
+    let _ = r.replace_rules(&dup).await; // may error or not depending on db - either way:
 
     // Re-read and verify. If it succeeded, "dup" is there (2 rules). If it failed,
     // the original "stable" must still be intact (not partially wiped).
@@ -349,7 +349,7 @@ async fn replace_rules_is_atomic_rollback_on_conflict() {
 }
 
 // ---------------------------------------------------------------------------
-// Kind fidelity — each FilterRuleKind variant survives params JSON round-trip
+// Kind fidelity - each FilterRuleKind variant survives params JSON round-trip
 // ---------------------------------------------------------------------------
 
 /// All three FilterRuleKind variants round-trip correctly through the params JSON column.
@@ -374,7 +374,7 @@ async fn filter_rule_kinds_params_json_round_trip() {
             name: "Regex".to_owned(),
             enabled: false,
             position: 1,
-            // Store the raw pattern string verbatim — must NOT be compiled/normalised.
+            // Store the raw pattern string verbatim - must NOT be compiled/normalised.
             kind: FilterRuleKind::Regex {
                 pattern: r"(?i)\b(lol|lmao)\b".to_owned(),
                 replacement: "[laugh]".to_owned(),
@@ -415,7 +415,7 @@ async fn filter_rule_kinds_params_json_round_trip() {
     }
 }
 
-/// Regex variant: the source pattern string must be stored verbatim — not compiled,
+/// Regex variant: the source pattern string must be stored verbatim - not compiled,
 /// not normalised, not stripped of flags.
 #[tokio::test]
 async fn regex_rule_pattern_stored_verbatim_not_compiled() {
@@ -450,8 +450,8 @@ async fn blocklist_words_vec_order_and_unicode_survive() {
     let r = repo().await;
     let words: Vec<String> = vec![
         "kappa".to_owned(),
-        "Pog\u{1F600}".to_owned(), // emoji in word list — edge case
-        "".to_owned(),             // empty string entry — legal per the type
+        "Pog\u{1F600}".to_owned(), // emoji in word list - edge case
+        "".to_owned(),             // empty string entry - legal per the type
     ];
 
     r.replace_rules(&[FilterRule {
@@ -568,7 +568,7 @@ async fn disabled_rule_enabled_field_round_trips_correctly() {
 }
 
 // ---------------------------------------------------------------------------
-// DataProvider integration — tts_filters_repo accessor reachable
+// DataProvider integration - tts_filters_repo accessor reachable
 // ---------------------------------------------------------------------------
 
 /// `DataProvider::tts_filters_repo()` returns a repo that can perform a full

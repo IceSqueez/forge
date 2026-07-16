@@ -169,11 +169,11 @@ impl SubActionRunner for StartPollRunner {
             },
             FormField::TextArea {
                 key: "choices",
-                label: "Choices (one per line or comma-separated, 2–5)",
+                label: "Choices (one per line or comma-separated, 2-5)",
             },
             FormField::Integer {
                 key: "duration_seconds",
-                label: "Duration (seconds, 15–1800)",
+                label: "Duration (seconds, 15-1800)",
                 min: MIN_DURATION_SECS,
                 max: MAX_DURATION_SECS,
             },

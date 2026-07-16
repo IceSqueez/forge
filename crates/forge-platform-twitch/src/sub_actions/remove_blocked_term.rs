@@ -140,7 +140,7 @@ impl SubActionRunner for RemoveBlockedTermRunner {
 
 // DELETE /helix/moderation/blocked_terms
 // broadcaster_id = moderator_id = self (broadcaster manages their own channel's blocked terms)
-// `id` query param is the blocked-term UUID — NOT the blocked text itself.
+// `id` query param is the blocked-term UUID - NOT the blocked text itself.
 // Returns 204 No Content on success.
 async fn delete_blocked_term(
     transport: &Arc<dyn HelixTransport>,

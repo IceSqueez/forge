@@ -105,7 +105,7 @@ mod tests {
 
     /// Each transition descriptor must fire on exactly its own kind and reject the
     /// other two. `video_ended` is a distinct moment (stinger playback complete) from
-    /// `ended` (cut point) — mixing them would fire stinger-end actions early.
+    /// `ended` (cut point) - mixing them would fire stinger-end actions early.
     #[test]
     fn each_transition_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Forge is in alpha development. Only the latest released alpha/beta/rc/stable version is supported with security fixes. Older alpha versions are not patched — please upgrade.
+Forge is in alpha development. Only the latest released alpha/beta/rc/stable version is supported with security fixes. Older alpha versions are not patched - please upgrade.
 
 | Version              | Supported |
 |:---------------------|:----------|
@@ -15,7 +15,7 @@ Forge is in alpha development. Only the latest released alpha/beta/rc/stable ver
 
 Instead, report privately via one of:
 
-- **Email:** icesqueez@gmail.com — use subject prefix `[FORGE SECURITY]`.
+- **Email:** icesqueez@gmail.com - use subject prefix `[FORGE SECURITY]`.
 - **GitHub Security Advisories:** open a private advisory at <https://github.com/IceSqueez/forge/security/advisories/new>.
 
 We aim to acknowledge reports within 72 hours and provide a fix or a public disclosure timeline within 14 days for high-severity issues. Please include:
@@ -37,8 +37,8 @@ In scope:
 
 Out of scope:
 
-- Third-party platforms (Twitch, YouTube, OBS, etc.) — report to those projects directly.
-- User-installed rhai scripts or downloaded soundboard files — Forge does not vet user-supplied content.
+- Third-party platforms (Twitch, YouTube, OBS, etc.) - report to those projects directly.
+- User-installed rhai scripts or downloaded soundboard files - Forge does not vet user-supplied content.
 
 ## Recognition
 

@@ -626,7 +626,7 @@ impl CloudEngineKind {
         }
     }
 
-    /// The `EngineId` this kind registers into the live `TtsRegistry` under —
+    /// The `EngineId` this kind registers into the live `TtsRegistry` under -
     /// shared between boot registration and the hot-register path so both agree.
     pub fn engine_id(self) -> EngineId {
         let id = match self {

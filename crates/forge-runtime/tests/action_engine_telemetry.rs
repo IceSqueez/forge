@@ -7,7 +7,7 @@
 //!   * Success → one row, `ExecutionStatus::Success`.
 //!   * Failed  → one row, `ExecutionStatus::Error`.
 //!   * Cancelled → NO row (the deliberate skip), yet history is still saved.
-//!   * A telemetry write error is swallowed — the engine survives and keeps
+//!   * A telemetry write error is swallowed - the engine survives and keeps
 //!     processing later jobs.
 //!
 //! Both collaborators are in-memory spies (no SQLite/services/network); the
@@ -433,7 +433,7 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
 async fn telemetry_write_error_is_swallowed_and_engine_keeps_running() {
     // The engine must warn-and-continue on a record_execution error. Proof: after
     // a first run whose telemetry write errors, a second dispatched run is still
-    // processed — the engine loop survived the swallowed error.
+    // processed - the engine loop survived the swallowed error.
     let repo = Arc::new(SpyActionRepo::failing_record());
     let action = action_with(vec![]);
     let id = action.id;

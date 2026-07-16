@@ -38,4 +38,4 @@ Closes #
 
 ## Notes for reviewer
 
-<!-- Anything reviewers should know — tricky edge cases, design alternatives you considered, follow-up work, etc. -->
+<!-- Anything reviewers should know - tricky edge cases, design alternatives you considered, follow-up work, etc. -->

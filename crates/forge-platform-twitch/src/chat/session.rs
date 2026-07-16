@@ -752,7 +752,7 @@ impl ChatSession {
             .to_owned();
 
         // The channel.chat.message_delete event carries no deleted text and no
-        // moderator identity — Twitch does not include those fields in this topic.
+        // moderator identity - Twitch does not include those fields in this topic.
         info!(target_user_login = %target_user_login, message_id = %message_id, "chat message deleted");
 
         let forge_payload = serde_json::json!({
@@ -787,7 +787,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        // The channel.chat.clear event carries no moderator identity — Twitch
+        // The channel.chat.clear event carries no moderator identity - Twitch
         // does not include that field in this topic.
         info!(broadcaster_login = %broadcaster_login, "chat cleared");
 

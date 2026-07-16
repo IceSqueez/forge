@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringTitlecaseRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Titlecase"
+        "String - Titlecase"
     }
 
     fn summary(&self) -> &str {

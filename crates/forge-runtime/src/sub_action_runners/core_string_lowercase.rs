@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringLowercaseRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Lowercase"
+        "String - Lowercase"
     }
 
     fn summary(&self) -> &str {

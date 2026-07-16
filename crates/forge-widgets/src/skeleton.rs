@@ -9,7 +9,7 @@ use crate::tokens::{Radius, Spacing, radius, spf};
 pub const SKELETON_LINE_HEIGHT: f32 = 14.0;
 
 /// Static muted placeholder block shown while real content loads. No shimmer or
-/// motion — the animated variant is deferred to a future motion-token pass.
+/// motion - the animated variant is deferred to a future motion-token pass.
 pub fn skeleton<'a, Msg: 'a>(
     width: Length,
     height: f32,

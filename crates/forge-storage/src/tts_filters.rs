@@ -29,7 +29,7 @@ pub enum UrlMode {
 
 /// Kind-specific parameters for a single filter rule.
 ///
-/// The `Regex` variant stores the SOURCE pattern only — compiled form is never
+/// The `Regex` variant stores the SOURCE pattern only - compiled form is never
 /// persisted; the TTS domain re-compiles at load time and rejects invalid patterns.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -53,7 +53,7 @@ pub enum FilterRuleKind {
 
 /// A single user-authored filter rule.
 ///
-/// `position` is dense 0..n; gaps are a load-time repair in the TTS domain — the
+/// `position` is dense 0..n; gaps are a load-time repair in the TTS domain - the
 /// storage layer stores whatever value the caller provides.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FilterRule {

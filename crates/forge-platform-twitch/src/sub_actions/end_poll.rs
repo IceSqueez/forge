@@ -37,7 +37,7 @@ impl EndPollRunner {
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        // PATCH /helix/polls — broadcaster_id is a query param; id and status go in the body.
+        // PATCH /helix/polls - broadcaster_id is a query param; id and status go in the body.
         // status must be uppercase: "TERMINATED" stops immediately, "ARCHIVED" ends and hides.
         // Requires channel:manage:polls scope.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/polls")

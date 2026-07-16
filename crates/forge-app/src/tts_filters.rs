@@ -115,7 +115,7 @@ impl RuleDraft {
 
 /// Finds the nearest preceding rule of the same `DraftKind` as `rules[i]`, scanning
 /// backward. Reorder arrows operate within a rule's own kind group (the visual grouping
-/// splits the flat `rules` list into per-kind stage cards), not the raw array — an
+/// splits the flat `rules` list into per-kind stage cards), not the raw array - an
 /// adjacent-in-array rule of a different kind is not what "move up" should target.
 fn same_kind_prev_index(rules: &[FilterRule], i: usize) -> Option<usize> {
     let kind = DraftKind::of(&rules.get(i)?.kind);
@@ -158,7 +158,7 @@ pub struct TtsFiltersState {
     save_error: Option<String>,
     dirty: bool,
     cached_preview: Option<CachedPreview>,
-    /// Two-phase delete gate — armed by a row's delete control, rendered by
+    /// Two-phase delete gate - armed by a row's delete control, rendered by
     /// the shared `confirm_modal`. `None` = no confirm dialog showing.
     pending_delete: Option<usize>,
 }
@@ -264,7 +264,7 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
             Task::none()
         }
         TtsFiltersMsg::DeleteRule(i) => {
-            // Arms the confirm gate only (TT-03-F4 — was a bare
+            // Arms the confirm gate only (TT-03-F4 - was a bare
             // immediate-execute site).
             if i < state.rules.len() {
                 state.pending_delete = Some(i);
@@ -488,7 +488,7 @@ pub fn update(state: &mut TtsFiltersState, rt: &RuntimeView, msg: TtsFiltersMsg)
 
 /// Renders the shared destructive-confirm modal while a rule delete is
 /// armed. Returns `None` (silent no-render) if the pending index has fallen
-/// out of range since the row's delete control was clicked — same defensive
+/// out of range since the row's delete control was clicked - same defensive
 /// convention as the other `confirm_modal` consumers.
 fn pending_delete_modal<'a>(
     state: &'a TtsFiltersState,
@@ -547,7 +547,7 @@ fn pipeline_column_view<'a>(
 
     // Four numbered stage cards, in the real pipeline's execution order
     // (EmoteStripper+UrlSanitizer merged visually into card 1, since neither is a
-    // user-extensible rule list — see `forge_tts_pipeline::process`'s five fixed
+    // user-extensible rule list - see `forge_tts_pipeline::process`'s five fixed
     // stages). This is a rendering-only regroup: the underlying model is still one
     // `Vec<FilterRule>` tagged by `FilterRuleKind`, `TtsPipelineSettings`, and the
     // pipeline crate's five `StageName` variants, all unchanged.
@@ -654,7 +654,7 @@ fn stage_card<'a>(
 }
 
 /// Renders the subset of `state.rules` matching `keep`, positioned as its own group
-/// (first/last computed within the group, not the flat array) — reused by the two
+/// (first/last computed within the group, not the flat array) - reused by the two
 /// rule-list stage cards (Text replacements, Word blocklist).
 fn filtered_rules_body<'a>(
     state: &'a TtsFiltersState,
@@ -1429,7 +1429,7 @@ fn preview_stage_card<'a>(
             .into(),
         StageAction::Skipped { reason } => row![
             text("\u{d7}").size(FONT_SM).color(p.random),
-            text(format!(" skipped — {:?}", reason))
+            text(format!(" skipped - {:?}", reason))
                 .size(FONT_SM)
                 .color(p.text_primary),
         ]
@@ -1685,7 +1685,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // Draft submit — append
+    // Draft submit - append
     // -------------------------------------------------------------------------
 
     #[test]
@@ -1843,12 +1843,12 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // Save validation — sync branch only
+    // Save validation - sync branch only
     // -------------------------------------------------------------------------
 
     #[test]
     fn save_with_invalid_regex_sets_save_error() {
-        // Why: build_config_strict rejects before any persist call — the early-return
+        // Why: build_config_strict rejects before any persist call - the early-return
         // path is the only observable behaviour testable without a real repo.
         let rt = test_rt();
         let mut state = state_with(vec![make_regex(

@@ -35,7 +35,7 @@ impl BuiltinControl for VTubeClient {
             *g = None;
         }
 
-        // Fresh request channel — the previous req_rx is gone with the old supervisor.
+        // Fresh request channel - the previous req_rx is gone with the old supervisor.
         let (new_req_tx, new_req_rx) = tokio::sync::mpsc::unbounded_channel();
         {
             let mut tx_slot = self.req_tx.lock().await;

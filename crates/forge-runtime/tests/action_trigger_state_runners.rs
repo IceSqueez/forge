@@ -3,7 +3,7 @@
 //! `core.trigger.{enable,disable,toggle}`). Each runner reads a persisted entity
 //! and writes back a flipped/forced `enabled` flag.
 //!
-//! Storage is HashMap-backed `ActionRepo` / `TriggerInstanceRepo` mocks — no
+//! Storage is HashMap-backed `ActionRepo` / `TriggerInstanceRepo` mocks - no
 //! SQLite, no services, no network. The mocks mirror the real backend's
 //! load-bearing semantics: a `set_enabled` against an absent id is a no-op `Ok`
 //! (the SQLite `UPDATE ... WHERE id = ?` affects zero rows), and writes can be
@@ -414,7 +414,7 @@ async fn action_runners_fail_and_persist_nothing_for_unknown_id() {
 #[tokio::test]
 async fn trigger_toggle_fails_and_persists_nothing_for_unknown_id() {
     // Toggle reads the current state first, so an absent instance is a hard
-    // Failed before any write — unlike enable/disable, which never read.
+    // Failed before any write - unlike enable/disable, which never read.
     let repo = Arc::new(MockTriggerInstanceRepo::new());
     let missing = TriggerInstanceId::new();
 

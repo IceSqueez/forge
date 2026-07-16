@@ -106,7 +106,7 @@ impl KickAuthFlow {
     }
 
     /// Consumes the pending driver, waits for the loopback callback, exchanges the code for a
-    /// Kick access token (PKCE — no `client_secret`), then resolves `user_id` + `username` from
+    /// Kick access token (PKCE - no `client_secret`), then resolves `user_id` + `username` from
     /// the authenticated-user endpoint.
     pub async fn wait_for_authorization(
         &mut self,
@@ -358,7 +358,7 @@ mod tests {
         assert!(url.contains("scope="));
         assert!(
             !url.to_lowercase().contains("client_secret"),
-            "client_secret must not appear in authorize URL — public client PKCE"
+            "client_secret must not appear in authorize URL - public client PKCE"
         );
     }
 

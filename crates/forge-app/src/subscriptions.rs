@@ -343,11 +343,11 @@ pub fn subscription(app: &App) -> Subscription<Message> {
         Subscription::none()
     };
 
-    // Home's throughput sparkline (`HM-07-F11`): mirrors `ServerMetricsRecipe` above —
+    // Home's throughput sparkline (`HM-07-F11`): mirrors `ServerMetricsRecipe` above -
     // own 1s ticker, samples a live counter, emits into the screen's own Msg. The rate
     // source is `EventBus::stats().total_published` (a cheap atomic read, already
     // exposed on the bus for observability) rather than counting `Message::EventArrived`
-    // arrivals in `update` — that would require wall-clock bucketing inline in the pure
+    // arrivals in `update` - that would require wall-clock bucketing inline in the pure
     // update fn, which this codebase avoids (see `Instant` subtraction footguns).
     struct EventRateRecipe(Arc<EventBus>);
 

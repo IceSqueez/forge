@@ -86,7 +86,7 @@ mod tests {
         let allowed = [
             "8.8.8.8",
             "1.1.1.1",
-            // RFC 5737 TEST-NET-1 / TEST-NET-2 — public for classification, never routes
+            // RFC 5737 TEST-NET-1 / TEST-NET-2 - public for classification, never routes
             "192.0.2.1",
             "198.51.100.1",
             // public IPv6
@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn cgnat_boundary_distinguishes_100_64_from_public_100_63() {
-        // RFC-6598 is 100.64.0.0/10 → 100.64–100.127. The low edge 100.64 is in
+        // RFC-6598 is 100.64.0.0/10 → 100.64-100.127. The low edge 100.64 is in
         // range; 100.63 sits just below it and must read as public. This pins the
         // `& 0xC0 == 64` mask against an off-by-one widening to all of 100.0.0.0/8.
         assert!(is_private_or_special(ip("100.64.0.0")));
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn rfc1918_172_boundary_excludes_neighbouring_public_blocks() {
-        // 172.16.0.0/12 → 172.16–172.31. Guards the `o[1] & 0xF0 == 16` mask.
+        // 172.16.0.0/12 → 172.16-172.31. Guards the `o[1] & 0xF0 == 16` mask.
         assert!(is_private_or_special(ip("172.16.0.0")));
         assert!(is_private_or_special(ip("172.31.255.255")));
         assert!(!is_private_or_special(ip("172.15.255.255")));

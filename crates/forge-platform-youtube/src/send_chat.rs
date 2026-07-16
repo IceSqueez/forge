@@ -46,7 +46,7 @@ impl YoutubeSendChat {
     /// Charges quota and issues `DELETE /liveChat/messages?id={message_id}`.
     ///
     /// The caller supplies the raw message resource id (not a live-chat id); no
-    /// active broadcast is required — the resource id is self-contained.
+    /// active broadcast is required - the resource id is self-contained.
     pub async fn delete(&self, message_id: &str) -> Result<(), PlatformError> {
         {
             let today = today_pacific();
@@ -104,7 +104,7 @@ impl YoutubeSendChat {
             .live_chat_id
             .get()
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "send chat — no active YouTube broadcast".to_owned(),
+                feature: "send chat - no active YouTube broadcast".to_owned(),
             })?;
 
         {

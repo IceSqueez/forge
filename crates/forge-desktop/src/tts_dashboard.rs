@@ -75,7 +75,7 @@ impl TtsDashboardView {
 
     fn dispatch(&self, cmd: SpeakCommand) {
         let Some(handle) = self.speak.clone() else {
-            eprintln!("forge-desktop: TTS command dropped — speak queue unavailable");
+            eprintln!("forge-desktop: TTS command dropped - speak queue unavailable");
             return;
         };
         self.rt_handle.spawn(async move {
@@ -299,7 +299,7 @@ impl TtsDashboardView {
         let latency = stats
             .avg_latency_ms
             .map(|ms| format!("{ms}ms"))
-            .unwrap_or_else(|| "—".to_owned());
+            .unwrap_or_else(|| "-".to_owned());
 
         let stats_col = div()
             .flex()
@@ -534,7 +534,7 @@ fn now_speaking_panel(
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("—"),
+                    .child("-"),
             ),
     };
 

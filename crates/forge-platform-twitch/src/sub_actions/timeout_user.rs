@@ -112,7 +112,7 @@ impl SubActionRunner for TimeoutUserRunner {
             },
             FormField::Integer {
                 key: "duration_seconds",
-                label: "Duration (seconds, 1–1209600)",
+                label: "Duration (seconds, 1-1209600)",
                 min: MIN_DURATION_SECONDS,
                 max: MAX_DURATION_SECONDS,
             },

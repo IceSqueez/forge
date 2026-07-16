@@ -339,7 +339,7 @@ async fn run_quick_action_loop(
             }
             None => {
                 warn!(
-                    "unknown sub-action kind_id: {} — skipping step",
+                    "unknown sub-action kind_id: {} - skipping step",
                     req.step.kind_id
                 );
                 (skipped_telemetry(0, &req.step.kind_id), None)

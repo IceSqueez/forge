@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringSplitRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Split"
+        "String - Split"
     }
 
     fn summary(&self) -> &str {

@@ -195,7 +195,7 @@ async fn density_corrupt_stored_value_falls_back_to_cozy() {
         .set_string(forge_storage::reserved_keys::DENSITY, "ultra-wide")
         .await
         .expect("inject corrupt density");
-    // Unlike language(), a corrupt density must not error — the UI boots anyway.
+    // Unlike language(), a corrupt density must not error - the UI boots anyway.
     assert_eq!(backend.density().await.expect("get density"), Density::Cozy);
 }
 

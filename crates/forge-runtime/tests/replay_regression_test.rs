@@ -5,7 +5,7 @@
 //! - Downstream pipeline events driven by a replayed trigger have IDs that are
 //!   entirely distinct from the original run's IDs.
 //! - The causation chain of downstream replay events is rooted at the replayed
-//!   root event — not at the original event that was replayed.
+//!   root event - not at the original event that was replayed.
 //! - Replay-of-a-replay: replaying the result of a previous replay still produces
 //!   a root event with `replay: true` and a fresh `EventId`.
 
@@ -264,7 +264,7 @@ async fn replay_causation_chain_is_rooted_at_replayed_event() {
     assert_eq!(
         replay_action_start.caused_by,
         Some(replayed_root_id),
-        "action.start must be caused_by the replayed root event — this anchors the whole chain"
+        "action.start must be caused_by the replayed root event - this anchors the whole chain"
     );
     assert_ne!(
         replay_action_start.caused_by,

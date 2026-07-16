@@ -31,7 +31,7 @@ pub enum ServerError {
     LanBindNotEnabled { addr: String },
 
     #[error(
-        "refusing to bind to {addr}: bearer token missing — generate one before exposing the server"
+        "refusing to bind to {addr}: bearer token missing - generate one before exposing the server"
     )]
     NoTokenForLanBind { addr: String },
 }

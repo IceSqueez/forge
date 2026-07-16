@@ -1,7 +1,7 @@
 //! End-to-end wiring for `core.action.cancel`. The runner reaches a *live*
 //! `ActionEngine` through the shared `ActionCancelRegistry` the engine registers
-//! every in-flight run into. These tests prove the feature's whole point — the
-//! runner aborts a run that is actually executing — and the RAII `CancelGuard`
+//! every in-flight run into. These tests prove the feature's whole point - the
+//! runner aborts a run that is actually executing - and the RAII `CancelGuard`
 //! cleanup on the engine's normal exit path.
 //!
 //! Registry-internal semantics (per-execution keying, count returns) live in

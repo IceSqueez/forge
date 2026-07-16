@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringSubstringRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Substring"
+        "String - Substring"
     }
 
     fn summary(&self) -> &str {
@@ -222,7 +222,7 @@ mod tests {
 
     #[tokio::test]
     async fn substring_out_of_range_or_inverted_bounds_fail_without_panic() {
-        // (start > len), (end > len), (start > end) — each rejected, no slice emitted.
+        // (start > len), (end > len), (start > end) - each rejected, no slice emitted.
         for (start, end) in [(6, 7), (0, 9), (3, 1)] {
             let (tel, stack) = run(&cfg("hello", start, end)).await;
             assert!(

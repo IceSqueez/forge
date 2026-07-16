@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringConcatRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Concat"
+        "String - Concat"
     }
 
     fn summary(&self) -> &str {

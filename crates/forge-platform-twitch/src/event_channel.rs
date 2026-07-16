@@ -9,7 +9,7 @@ const CHANNEL_CAPACITY: usize = 256;
 /// Twitch chat sessions and the Helix transport publish their events here;
 /// [`TwitchPlatform::events`](crate::TwitchPlatform::events) hands the receiving
 /// half to the runtime, which bridges it onto the global bus. The platform never
-/// reaches into the runtime — it owns the channel and exposes only the stream.
+/// reaches into the runtime - it owns the channel and exposes only the stream.
 pub(crate) struct PlatformEventChannel {
     sender: broadcast::Sender<Event>,
 }

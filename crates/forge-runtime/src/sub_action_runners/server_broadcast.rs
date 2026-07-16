@@ -107,7 +107,7 @@ impl SubActionRunner for ServerBroadcastRunner {
             let payload = config_payload(config);
             // BusAdapter (forge-server) delivers every bus event to WS clients whose subscription
             // filter matches. Overlays subscribe with { "source": "Server", "type": "broadcast.*" }
-            // or a wildcard source filter — no forge-server change required.
+            // or a wildcard source filter - no forge-server change required.
             self.publisher.publish(Event::caused_by(
                 EventSource::Server,
                 format!("broadcast.{event_name}"),
@@ -213,7 +213,7 @@ mod tests {
     async fn broadcast_publishes_prefixed_event_from_server_source() {
         // Load-bearing overlay round-trip contract: forge-server's BusAdapter forwards bus
         // events to clients whose EventFilter matches. Overlays subscribe on
-        // source == Server and kind "broadcast.*". Pin BOTH exactly — if the kind drops the
+        // source == Server and kind "broadcast.*". Pin BOTH exactly - if the kind drops the
         // "broadcast." prefix, drops the name, or the source stops being Server, overlays
         // silently stop receiving broadcasts.
         let (recorder, outcome, _) = run(

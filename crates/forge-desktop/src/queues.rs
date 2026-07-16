@@ -971,7 +971,7 @@ fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
-                .child("running —"),
+                .child("running -"),
         )
         .into_any_element()
 }
@@ -1026,7 +1026,7 @@ fn running_pill(label: impl Into<SharedString>, palette: &ForgePalette) -> impl 
 fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
     let caption = match q.paused_since_min {
         Some(min) if min > 0 => {
-            format!("{} actions waiting — paused {} min ago", q.pending, min)
+            format!("{} actions waiting - paused {} min ago", q.pending, min)
         }
         _ => "Queue is paused".to_owned(),
     };

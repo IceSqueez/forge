@@ -38,7 +38,7 @@ impl StartPredictionRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        // Outcomes must be objects with a "title" key — Twitch rejects a flat string array.
+        // Outcomes must be objects with a "title" key - Twitch rejects a flat string array.
         let outcomes: Vec<serde_json::Value> = cfg
             .outcomes
             .iter()
@@ -155,11 +155,11 @@ impl SubActionRunner for StartPredictionRunner {
             },
             FormField::TextArea {
                 key: "outcomes",
-                label: "Outcomes (one per line or comma-separated, 2–10)",
+                label: "Outcomes (one per line or comma-separated, 2-10)",
             },
             FormField::Integer {
                 key: "prediction_window_seconds",
-                label: "Prediction Window (seconds, 30–1800)",
+                label: "Prediction Window (seconds, 30-1800)",
                 min: MIN_WINDOW_SECS,
                 max: MAX_WINDOW_SECS,
             },

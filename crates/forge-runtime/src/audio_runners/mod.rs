@@ -340,7 +340,7 @@ mod tests {
         );
     }
 
-    /// `alias_switch` is a single-map (viewer_id only, no viewer_name) — the
+    /// `alias_switch` is a single-map (viewer_id only, no viewer_name) - the
     /// contrast with `alias_set` is load-bearing.
     #[tokio::test]
     async fn alias_switch_maps_alias_name_to_viewer_id_with_engine_and_voice() {
@@ -383,7 +383,7 @@ mod tests {
     }
 
     /// With keep_current = false the runner must stop the in-flight item FIRST,
-    /// then clear pending — the order is the contract.
+    /// then clear pending - the order is the contract.
     #[tokio::test]
     async fn queue_clear_without_keep_current_stops_then_clears_in_order() {
         let disp = RecordingDispatcher::ok();
@@ -525,7 +525,7 @@ mod tests {
         config(&[("clip_id", Variant::String(clip_id.to_owned()))])
     }
 
-    /// Stop forwards to `stop(clip_id)` with the interpolated/resolved id — not
+    /// Stop forwards to `stop(clip_id)` with the interpolated/resolved id - not
     /// `stop_all`, not a different clip. Pins both the method and the id payload.
     #[tokio::test]
     async fn stop_sound_forwards_resolved_clip_id_to_player_stop() {

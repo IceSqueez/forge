@@ -230,7 +230,7 @@ pub fn tabler_icon<'a, Msg: 'a>(icon: Icon, size: f32, color: Color) -> Element<
         .into()
 }
 
-/// [`tabler_icon`] that recolors when hovered — for glyphs sitting on a button
+/// [`tabler_icon`] that recolors when hovered - for glyphs sitting on a button
 /// whose hover state fills a solid background (e.g. a destructive `X` that must
 /// stay legible once its button turns solid red).
 pub fn tabler_icon_hover<'a, Msg: 'a>(

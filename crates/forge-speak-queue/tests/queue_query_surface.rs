@@ -93,7 +93,7 @@ async fn engines_returns_each_engine_once_despite_multiple_voices() {
     let (handle, _stream) = spawn_standard();
     wait_until_catalog_populated(&handle, 2_000).await;
 
-    // `alpha` owns two voices but must appear exactly once — `engines()` de-duplicates.
+    // `alpha` owns two voices but must appear exactly once - `engines()` de-duplicates.
     let mut engines: Vec<String> = handle.engines().into_iter().map(|e| e.0).collect();
     engines.sort();
     assert_eq!(engines, vec!["alpha".to_string(), "beta".to_string()]);

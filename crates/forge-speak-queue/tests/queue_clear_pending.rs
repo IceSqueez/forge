@@ -25,7 +25,7 @@ use tokio::sync::Notify;
 use common::{assert_no_event, make_deps, recording_sink, request, voice, wait_for};
 
 /// Engine whose `synthesize` blocks on a gate, pinning one item in-flight until the
-/// test releases it — `list_voices` stays unblocked so the catalog still builds.
+/// test releases it - `list_voices` stays unblocked so the catalog still builds.
 struct GatedEngine {
     gate: Arc<Notify>,
 }
@@ -142,7 +142,7 @@ async fn clear_abandons_the_in_flight_item() {
     // Cleared is Clear's processed barrier; it clears active_request_id.
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Cleared), 2_000).await;
 
-    // Release synthesis; the synth result must be discarded — no playback, no Finished.
+    // Release synthesis; the synth result must be discarded - no playback, no Finished.
     gate.notify_one();
     assert_no_event(
         &mut stream,

@@ -455,7 +455,7 @@ mod tests {
                 keyboard::Modifiers::ALT,
                 Some("Alt+F5"),
             ),
-            // Bindability is enforced later — a bare digit still canonicalizes.
+            // Bindability is enforced later - a bare digit still canonicalizes.
             (
                 keyboard::Key::Character("5".into()),
                 keyboard::Modifiers::empty(),

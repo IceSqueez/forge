@@ -126,7 +126,7 @@ mod tests {
 
         let stack = RewardRedeemedDescriptor.build_arg_stack(&event);
 
-        // redemption_id is the top-level id, NOT reward.id — guards the path swap.
+        // redemption_id is the top-level id, NOT reward.id - guards the path swap.
         assert_eq!(
             stack.get("redemption_id"),
             Some(&Variant::String("rdm-1".to_owned()))
@@ -139,7 +139,7 @@ mod tests {
             stack.get("reward_title"),
             Some(&Variant::String("Hydrate".to_owned()))
         );
-        // user_id comes from redeemer.user_id (u64), NOT reward.id — guards swap.
+        // user_id comes from redeemer.user_id (u64), NOT reward.id - guards swap.
         assert_eq!(
             stack.get("user_id"),
             Some(&Variant::String("123".to_owned()))
@@ -170,7 +170,7 @@ mod tests {
 
         assert_eq!(stack.get("user_id"), Some(&Variant::String(String::new())));
         assert_eq!(stack.get("username"), Some(&Variant::String(String::new())));
-        // Sibling reward fields stay populated — guards over-broad nested guard.
+        // Sibling reward fields stay populated - guards over-broad nested guard.
         assert_eq!(
             stack.get("reward_id"),
             Some(&Variant::String("rwd-9".to_owned()))

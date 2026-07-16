@@ -1,6 +1,6 @@
 [package]
 name = "forge-app"
-description = "Forge — streaming automation toolkit with event-driven actions across Twitch/YouTube/Kick + multi-engine TTS"
+description = "Forge - streaming automation toolkit with event-driven actions across Twitch/YouTube/Kick + multi-engine TTS"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

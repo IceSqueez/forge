@@ -116,7 +116,7 @@ fn resolve_user_fn_hover<'a>(
     user_functions.iter().find(|f| f.name == fn_name)
 }
 
-/// Dots after `)` are not triggered — `foo().` does not open completion by default.
+/// Dots after `)` are not triggered - `foo().` does not open completion by default.
 pub fn should_trigger_autocomplete(
     line_text: &str,
     cursor_col: usize,

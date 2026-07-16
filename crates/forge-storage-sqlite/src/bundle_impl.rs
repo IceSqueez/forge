@@ -22,7 +22,7 @@ fn epoch_ms_now() -> i64 {
 
 /// Scans a sub_actions JSON blob for `kind_id == "core.script.run_named"` entries and
 /// returns the `"name"` config values found. Non-string values and absent keys are silently
-/// ignored — the bundle still exports without the reference.
+/// ignored - the bundle still exports without the reference.
 fn extract_script_names_from_sub_actions(sub_actions: &JsonValue) -> Vec<String> {
     let Some(arr) = sub_actions.as_array() else {
         return Vec::new();
@@ -286,7 +286,7 @@ impl BundleRepo for SqliteBundleRepo {
                         body,
                         enabled: enabled != 0,
                         contract,
-                        // Trusting the stored hash — the DB recomputes on every save, so the
+                        // Trusting the stored hash - the DB recomputes on every save, so the
                         // stored value is always authoritative for the current body.
                         body_hash,
                         created_at: ms_to_iso(created_ms),
@@ -454,7 +454,7 @@ async fn import_merge(
 }
 
 // ---------------------------------------------------------------------------
-// Insert helpers (used by ReplaceConfirm — no collision check needed)
+// Insert helpers (used by ReplaceConfirm - no collision check needed)
 // ---------------------------------------------------------------------------
 
 async fn insert_actions(
@@ -608,7 +608,7 @@ async fn insert_globals(
 }
 
 // ---------------------------------------------------------------------------
-// Merge helpers (used by MergeAdd — skip on identity collision)
+// Merge helpers (used by MergeAdd - skip on identity collision)
 // ---------------------------------------------------------------------------
 
 async fn merge_actions(
@@ -817,7 +817,7 @@ static GLOBAL_ACCESS_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"forge::globals::(get|set|incr|del)\s*\(\s*"([^"]+)""#).expect("static regex")
 });
 
-/// Matches rhai `run_named("name")` calls (with or without `forge::scripts::` prefix) —
+/// Matches rhai `run_named("name")` calls (with or without `forge::scripts::` prefix) -
 /// used to discover transitive script-to-script invocations during export traversal.
 fn extract_script_names_from_body_text(body: &str) -> Vec<String> {
     RUN_NAMED_RE

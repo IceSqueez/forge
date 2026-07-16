@@ -32,7 +32,7 @@ impl Default for RequestId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
     Normal,
-    /// Bits/sub/channel-point rewards — head-of-normal-queue but behind other High.
+    /// Bits/sub/channel-point rewards - head-of-normal-queue but behind other High.
     High,
 }
 
@@ -176,7 +176,7 @@ impl Default for QueueConfig {
 }
 
 pub struct QueueDeps {
-    // std::sync::RwLock here, not tokio — guard never crosses await.
+    // std::sync::RwLock here, not tokio - guard never crosses await.
     pub registry: Arc<std::sync::RwLock<TtsRegistry>>,
     pub resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     pub pipeline: PipelineConfigHandle,

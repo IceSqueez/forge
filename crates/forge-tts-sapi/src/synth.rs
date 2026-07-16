@@ -85,7 +85,7 @@ pub(crate) fn capture_pcm(
 
     // SAFETY: Speak takes a null-terminated UTF-16 string, which text_utf16 provides.
     // The Vec remains alive for the duration of this call. SPF_DEFAULT means synchronous
-    // synthesis — Speak blocks until all audio is written to sp_stream.
+    // synthesis - Speak blocks until all audio is written to sp_stream.
     unsafe { voice.Speak(pcwstr, speak_flags.0 as u32, None) }
         .map_err(|e| crate::error::SapiError::Speak(e.code().0))?;
 

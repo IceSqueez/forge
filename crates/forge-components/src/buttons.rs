@@ -381,7 +381,7 @@ mod tests {
             (Some(got), Some((hue, alpha))) => {
                 assert!(
                     same_rgb(got, hue),
-                    "{label}: hue rgb mismatch — got ({},{},{}), want ({},{},{})",
+                    "{label}: hue rgb mismatch - got ({},{},{}), want ({},{},{})",
                     got.r,
                     got.g,
                     got.b,
@@ -391,11 +391,11 @@ mod tests {
                 );
                 assert!(
                     (got.a - alpha).abs() < EPS,
-                    "{label}: alpha mismatch — got {}, want {alpha}",
+                    "{label}: alpha mismatch - got {}, want {alpha}",
                     got.a,
                 );
             }
-            _ => panic!("{label}: presence mismatch — got {actual:?}, want {expected:?}"),
+            _ => panic!("{label}: presence mismatch - got {actual:?}, want {expected:?}"),
         }
     }
 
@@ -564,7 +564,7 @@ mod tests {
                 let (nb, b) = fields[j];
                 assert!(
                     !same_rgb(a, b),
-                    "{na} and {nb} share a hue — a mis-wire between them would pass unnoticed",
+                    "{na} and {nb} share a hue - a mis-wire between them would pass unnoticed",
                 );
             }
         }

@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn rate_maps_multiplier_with_clamping_at_quad_speed() {
-        // (input, expected) — covers identity (1.0→0.5), half (0.5→0.25), double
+        // (input, expected) - covers identity (1.0→0.5), half (0.5→0.25), double
         // (2.0→1.0 = max), upper-clamp (4.0→1.0), and lower-bound (0.25→0.125, still
         // above clamp floor).
         for (input, expected) in [

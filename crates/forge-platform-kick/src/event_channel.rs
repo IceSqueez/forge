@@ -37,7 +37,7 @@ mod tests {
 
     use super::*;
 
-    // Why: this is the RFC-094 owned-stream contract — a subscriber taps the SAME
+    // Why: this is the RFC-094 owned-stream contract - a subscriber taps the SAME
     // sender the platform publishes to. If `subscribe()` ever created a fresh channel
     // instead of tapping `self.sender`, the published event would never arrive.
     #[tokio::test]

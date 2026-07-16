@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn encode_content_utf8_returns_raw_utf8_bytes() {
-        // Empty encoding string aliases utf8 — both must yield identical bytes.
+        // Empty encoding string aliases utf8 - both must yield identical bytes.
         let expected = "héllo".as_bytes().to_vec();
         assert_eq!(encode_content("héllo", "utf8").unwrap(), expected);
         assert_eq!(encode_content("héllo", "").unwrap(), expected);

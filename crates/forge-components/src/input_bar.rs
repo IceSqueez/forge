@@ -24,7 +24,7 @@ pub fn platform_bit(platform: Platform) -> u8 {
 
 #[derive(Clone, Debug)]
 pub enum InputBarEvent {
-    /// Not gated on non-empty text or a selected target, and does not clear the field — the caller decides and calls [`InputBar::clear`].
+    /// Not gated on non-empty text or a selected target, and does not clear the field - the caller decides and calls [`InputBar::clear`].
     Send {
         text: SharedString,
         targets: Vec<Platform>,
@@ -461,7 +461,7 @@ mod tests {
 
     // Seed a headless InputBar carrying `targets` and run `f` against it. gpui's
     // TestAppContext backs the window with a headless TestWindow (no GPU, no
-    // paint, no network) — the sanctioned in-process harness the other component
+    // paint, no network) - the sanctioned in-process harness the other component
     // suites use, not a "real service".
     #[allow(clippy::unwrap_used)]
     fn with_bar<R>(
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn platform_bit_assigns_a_distinct_stable_bit_per_platform() {
-        // Why: the bit a platform occupies is a persistence contract — a stored
+        // Why: the bit a platform occupies is a persistence contract - a stored
         // targets bitset must decode to the same platforms after a restart, so
         // the Twitch=low-bit / YouTube / Kick order is load-bearing, not
         // incidental. Pinning the exact bit also guarantees the three are
@@ -611,7 +611,7 @@ mod tests {
     fn toggling_a_target_flips_it_in_the_bitset_and_round_trips(cx: &mut gpui::TestAppContext) {
         // Start all-on (0b111). Toggling YouTube (index 1) off must clear only
         // its bit -> 0b101 and drop only YouTube from the selection; toggling it
-        // again must restore 0b111 — a clean round-trip proving toggle mutates
+        // again must restore 0b111 - a clean round-trip proving toggle mutates
         // exactly one entry with no leakage into its neighbours.
         let (after_off, selected_off, after_on) = with_bar(
             cx,

@@ -2,7 +2,7 @@
 //! body are lifted into the enclosing chain's flat `telemetry` list as NESTED rows,
 //! each carrying a `parentIndex.arm/…/localIndex.kindId` path locator in `kind`.
 //!
-//! These pin the actual regression — per-step debugging telemetry silently losing
+//! These pin the actual regression - per-step debugging telemetry silently losing
 //! the rows produced inside composite bodies. The existing `core_logic_flow_control`
 //! suite asserts only `signal` + `arg_stack`; NONE of it inspects `ChainRun.telemetry`,
 //! so the whole nesting scheme (`retag`, `TelemetrySink`, `is_nested`, the arm tags)
@@ -148,8 +148,8 @@ fn top_level(tel: &[SubActionTelemetry]) -> Vec<&SubActionTelemetry> {
 #[tokio::test]
 async fn branch_body_step_is_path_tagged_and_marked_nested_for_the_taken_arm() {
     // The single composite sits at top-level index 0, so its body step's locator
-    // is `0.<arm>/0.core.args.set`. The arm string is the runner's own choice —
-    // "then" vs "else" — which is exactly what regressed when nested rows vanished.
+    // is `0.<arm>/0.core.args.set`. The arm string is the runner's own choice -
+    // "then" vs "else" - which is exactly what regressed when nested rows vanished.
     let eng = engine();
     for (condition, arm) in [("1 == 1", "then"), ("1 == 2", "else")] {
         let cfg = if_cfg(
@@ -252,7 +252,7 @@ async fn deeply_nested_step_accumulates_the_full_parent_path_across_composites()
     // if(then) -> loop -> args.set. The loop row is folded once by the if
     // (`0.then/0.core.logic.loop`). The args.set row is ALREADY nested from the
     // loop's own retag (`0.body#0/0.core.args.set`), so the if must PREPEND its
-    // path rather than re-fold the local index — the deepest locator threads
+    // path rather than re-fold the local index - the deepest locator threads
     // every enclosing arm.
     let eng = engine();
     let inner_loop = chain_step(

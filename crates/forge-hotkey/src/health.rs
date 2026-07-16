@@ -137,12 +137,12 @@ fn portal_health_value(portal_available: Option<bool>) -> HealthValue {
             detail: None,
         },
         Some(false) => HealthValue::Status {
-            label: "Portal unavailable — evdev fallback".to_owned(),
+            label: "Portal unavailable - evdev fallback".to_owned(),
             active: false,
             detail: None,
         },
         None => HealthValue::Status {
-            label: "Permission denied — add user to 'input' group".to_owned(),
+            label: "Permission denied - add user to 'input' group".to_owned(),
             active: false,
             detail: None,
         },

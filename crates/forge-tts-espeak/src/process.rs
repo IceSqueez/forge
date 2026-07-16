@@ -27,7 +27,7 @@ pub fn rate_wpm_from_multiplier(rate_multiplier: f32) -> u32 {
     (175.0_f32 * rate_multiplier).round().clamp(50.0, 450.0) as u32
 }
 
-/// Maps semitone shift to the 0–99 range used by eSpeak-NG's `-p` flag.
+/// Maps semitone shift to the 0-99 range used by eSpeak-NG's `-p` flag.
 ///
 /// The neutral value is 50. Returns 50 for 0.0 semitones, in which case the
 /// caller should omit the `-p` flag entirely.

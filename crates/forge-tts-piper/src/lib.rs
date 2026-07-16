@@ -28,7 +28,7 @@ pub struct PiperEngine {
 }
 
 impl PiperEngine {
-    /// `piper_binary` — path to the `piper` executable on disk.
+    /// `piper_binary` - path to the `piper` executable on disk.
     ///
     /// Caller is responsible for locating the binary (bundled asset or PATH lookup).
     /// Returns `TtsError::EngineUnavailable` if the binary is absent.

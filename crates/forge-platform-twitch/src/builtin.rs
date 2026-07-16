@@ -36,7 +36,7 @@ const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Twitch's documented Helix budget (per client-id): 800 requests / 60s. This
 /// bundle owns a dedicated bucket sized to match it purely to bound the viewer
-/// poll's own request rate — it is NOT the same bucket instance the sub-action
+/// poll's own request rate - it is NOT the same bucket instance the sub-action
 /// and chat-send transports draw on (those are wired up in the app crate at
 /// boot), so it cannot report true cross-transport budget usage. See the
 /// "API Calls" health metric below for the consequence.
@@ -44,7 +44,7 @@ const HELIX_BUDGET_CAPACITY: u32 = 800;
 const HELIX_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
 /// Latest outcome of the periodic viewer-count poll. `Unknown` before the
-/// first poll completes (drives the `—` placeholder); `Offline` when Helix
+/// first poll completes (drives the `-` placeholder); `Offline` when Helix
 /// reports no active stream for the broadcaster; `Live` carries the last
 /// observed `viewer_count`.
 #[derive(Debug, Clone, Copy, Default)]
@@ -185,7 +185,7 @@ impl TwitchIntegrationBundle {
 
     /// Periodically polls `GET /helix/streams` for the broadcaster's current
     /// viewer count and bridges the result onto `health_tx` (index 2, matching
-    /// the "Viewers" row in `metrics()`). Runs for the bundle's lifetime —
+    /// the "Viewers" row in `metrics()`). Runs for the bundle's lifetime -
     /// independent of the chat/IRC connection state, since viewer count is a
     /// property of the stream, not the chat session. A failed poll (network,
     /// rate limit, expired credentials) is skipped silently and retried on the

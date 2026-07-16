@@ -22,7 +22,7 @@ pub struct TtsDashState {
     pub now_speaking: Option<NowSpeakingData>,
     pub queue: Vec<QueueItemData>,
     pub stats: SessionStats,
-    /// Two-phase Stop-all gate — armed by the control strip's Stop button,
+    /// Two-phase Stop-all gate - armed by the control strip's Stop button,
     /// rendered by the shared `confirm_modal`. `false` = no confirm showing.
     pub pending_stop_all: bool,
 }
@@ -174,7 +174,7 @@ pub fn update(state: &mut TtsDashState, rt: &RuntimeView, msg: TtsDashMsg) -> Ta
             send_command(handle, SpeakCommand::Skip)
         }
         TtsDashMsg::StopAll => {
-            // Arms the confirm gate only (TT-01-F4 — was a bare
+            // Arms the confirm gate only (TT-01-F4 - was a bare
             // immediate-execute site with no confirm at all).
             state.pending_stop_all = true;
             Task::none()
@@ -692,7 +692,7 @@ fn right_pane_view<'a>(
         .stats
         .avg_latency_ms
         .map(|ms| format!("{ms}ms"))
-        .unwrap_or_else(|| "—".to_string());
+        .unwrap_or_else(|| "-".to_string());
 
     let stats_col = column![
         session_header,

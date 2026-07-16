@@ -61,7 +61,7 @@ impl UpdateRewardRunner {
 
 // An Optional value-field stores its value under the inner key directly; the paired gate
 // Bool lives under the same key when OFF. A present well-typed value means "include in body";
-// a Bool/absent value means "skip". The gate is a UI affordance only — ignored on read.
+// a Bool/absent value means "skip". The gate is a UI affordance only - ignored on read.
 fn read_opt_str(config: &SubActionConfig, key: &str) -> Option<String> {
     match config.get(key) {
         Some(Variant::String(s)) => Some(s.clone()),

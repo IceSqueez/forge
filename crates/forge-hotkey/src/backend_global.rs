@@ -31,7 +31,7 @@ pub(crate) struct GlobalHotkeyBackend {
 // documented as safe to invoke from any thread, and `WM_HOTKEY` is delivered to
 // the message queue of the thread that owns the HWND. The backend is created on
 // the iced main thread (which runs the Windows message pump for hotkey events)
-// and is then shared as `Arc<dyn HotkeyBackend>` — callers only invoke
+// and is then shared as `Arc<dyn HotkeyBackend>` - callers only invoke
 // register/unregister; the HWND itself is never dereferenced outside the
 // crate's internal `Drop`.
 unsafe impl Send for GlobalHotkeyBackend {}

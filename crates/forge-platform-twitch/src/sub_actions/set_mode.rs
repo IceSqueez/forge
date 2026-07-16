@@ -52,7 +52,7 @@ impl SetModeRunner {
 
         // Build partial PATCH body: only include fields that differ from unchanged.
         // Twitch applies only the provided keys; omitted keys are left as-is.
-        // If all modes are unchanged, skip the network call — PATCH with an empty
+        // If all modes are unchanged, skip the network call - PATCH with an empty
         // body is a no-op but wastes a rate-limit token.
         let mut body = serde_json::Map::new();
 

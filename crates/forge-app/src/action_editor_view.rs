@@ -446,7 +446,7 @@ fn empty_placeholder_card<'a>(
 /// delete/unlink affordance is currently armed
 /// (`app.ui.actions.pending_delete`). Returns `None` when nothing is pending,
 /// or when the pending target has already vanished from the currently-loaded
-/// state (e.g. a stale index after a concurrent reload) — a silent no-render
+/// state (e.g. a stale index after a concurrent reload) - a silent no-render
 /// rather than a panic, mirroring the Triggers Registry precedent.
 pub(crate) fn pending_delete_modal<'a>(
     app: &'a App,

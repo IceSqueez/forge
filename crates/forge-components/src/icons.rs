@@ -220,8 +220,8 @@ mod tests {
 
     // Why: `from_name` is the only hand-written lookup in this file (the rest is
     // macro-generated). The load-bearing contracts are (1) documented aliases
-    // collapse several distinct strings onto one variant — dropping an alias arm
-    // silently reroutes that string to the fallback — and (2) any unrecognised
+    // collapse several distinct strings onto one variant - dropping an alias arm
+    // silently reroutes that string to the fallback - and (2) any unrecognised
     // name degrades to `InfoCircle` rather than panicking; the compiler forces a
     // `_` arm to exist but not which variant it yields, so this pins the choice.
     #[test]

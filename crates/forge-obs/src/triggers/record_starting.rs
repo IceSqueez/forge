@@ -101,7 +101,7 @@ mod tests {
     use serde_json::json;
 
     /// The six lifecycle kinds the omnibus descriptor treats as status transitions.
-    /// `recording.file_changed` is deliberately NOT here — it is a file-split event,
+    /// `recording.file_changed` is deliberately NOT here - it is a file-split event,
     /// not a state transition.
     const ALL_LIFECYCLE_KINDS: [&str; 6] = [
         "recording.starting",

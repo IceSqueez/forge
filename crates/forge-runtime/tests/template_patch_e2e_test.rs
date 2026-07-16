@@ -416,7 +416,7 @@ async fn linked_action_executes_via_join_table_only() {
 
     let instance = custom_instance("go");
     dp.trigger_instance_repo().save(&instance).await.unwrap();
-    // link_action intentionally NOT called — join table has no row.
+    // link_action intentionally NOT called - join table has no row.
 
     let (sub_reg, trig_reg) = build_core_registries(
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,

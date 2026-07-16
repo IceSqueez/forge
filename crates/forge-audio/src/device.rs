@@ -11,7 +11,7 @@ const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
 
 static DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
 
-/// Opaque stable handle for an output device. Backend-defined string under the hood —
+/// Opaque stable handle for an output device. Backend-defined string under the hood -
 /// callers must not parse it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(pub String);
@@ -34,7 +34,7 @@ pub struct DeviceInfo {
 }
 
 /// Enumerate output devices via the default cpal host. Returns an empty Vec on hosts
-/// with no audio support. Results cached for 5s — cpal enumeration is expensive
+/// with no audio support. Results cached for 5s - cpal enumeration is expensive
 /// on Linux (PipeWire round-trip) and gets called repeatedly by the audio device
 /// picker subscription.
 pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {

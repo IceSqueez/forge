@@ -515,14 +515,14 @@ impl EventFeedView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
-                    .child("—"),
+                    .child("-"),
             )
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.success)
-                    .child("—"),
+                    .child("-"),
             );
 
         let replay = div()

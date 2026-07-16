@@ -35,7 +35,7 @@ impl GuestStarEndSessionRunner {
 
         // Verified against dev.twitch.tv (2026-06-13, BETA): DELETE
         // /helix/guest_star/session. Only broadcaster_id and session_id are required
-        // in the query; moderator_id is NOT sent — only the broadcaster can end their
+        // in the query; moderator_id is NOT sent - only the broadcaster can end their
         // own session. Scope: channel:manage:guest_star.
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/session")
             .query("broadcaster_id", user_id)

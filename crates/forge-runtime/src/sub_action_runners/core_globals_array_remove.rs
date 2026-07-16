@@ -254,7 +254,7 @@ mod tests {
         c
     }
 
-    /// [1, 2, 1, 3, 1] — the value `1` appears three times so first-only and
+    /// [1, 2, 1, 3, 1] - the value `1` appears three times so first-only and
     /// remove-all produce distinguishable results.
     fn seeded() -> Arc<MapGlobals> {
         Arc::new(MapGlobals::with([(

@@ -67,7 +67,7 @@ pub struct GlobalsState {
     pub storage_display: String,
     pub save_display: String,
     pub editor: Option<VariantEditorForm>,
-    /// Two-phase delete gate — armed by the row delete control, rendered by
+    /// Two-phase delete gate - armed by the row delete control, rendered by
     /// the shared `confirm_modal`. `None` = no confirm dialog showing.
     pub pending_delete: Option<String>,
     /// Inline rename buffer: `(original_name, in-progress name)`. `original_name`
@@ -238,7 +238,7 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
         }
 
         GlobalsMsg::DeleteRequested(name) => {
-            // Arms the confirm gate only — the row delete control no longer
+            // Arms the confirm gate only - the row delete control no longer
             // deletes directly (DT-06-F13/OV-04-F15: was fully wired but
             // unreachable AND unconfirmed).
             state.pending_delete = Some(name);
@@ -252,7 +252,7 @@ pub fn update(state: &mut GlobalsState, rt: &RuntimeView, msg: GlobalsMsg) -> ic
 
         GlobalsMsg::DeleteConfirmAccepted(name) => {
             state.pending_delete = None;
-            // Capture the full entry BEFORE deleting — this is the undo
+            // Capture the full entry BEFORE deleting - this is the undo
             // payload (name/value/persisted), not just a reload trigger.
             let Some(entry) = state.entries.iter().find(|e| e.name == name).cloned() else {
                 return iced::Task::none();
@@ -745,7 +745,7 @@ fn build_entry_row<'a>(
     // The ACTIONS column reveals on row hover: `data_table` wraps each row in a
     // `hover_row` that writes its hover state into `hover_flag`; `hover_reveal`
     // reads the same flag and only draws the (full-colour) `row_actions` while
-    // the row is hovered — matching the design's opacity fade-in.
+    // the row is hovered - matching the design's opacity fade-in.
     let hover_flag = std::rc::Rc::new(std::cell::Cell::new(false));
     let actions = row_actions(
         vec![

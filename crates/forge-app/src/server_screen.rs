@@ -127,7 +127,7 @@ pub struct ServerScreenState {
     pub overlay_root: String,
     pub overlay_entries: Vec<OwnedOverlayEntry>,
     pub selected_overlay_file: Option<usize>,
-    /// Two-phase disconnect gate — armed by the row `X` control, rendered by
+    /// Two-phase disconnect gate - armed by the row `X` control, rendered by
     /// the shared `confirm_modal`. Holds the target client's `identification`
     /// (not its row index, which can shift under a live snapshot refresh).
     /// `None` = no confirm dialog showing.
@@ -233,7 +233,7 @@ pub fn update(
             Task::none()
         }
         ServerScreenMsg::DisconnectClient(idx) => {
-            // Arms the confirm gate only — the row `X` no longer disconnects
+            // Arms the confirm gate only - the row `X` no longer disconnects
             // directly (SY-03-F10: no modal shell rendered at all today).
             // Captures the client's stable `identification`, not its row
             // index, which can shift under a live `ServerInfoArrived` refresh
@@ -249,7 +249,7 @@ pub fn update(
         }
         ServerScreenMsg::DisconnectConfirmAccepted => {
             // The real force-disconnect backend capability does not exist yet
-            // (tracked separately as a SERVER-2 item) — this only removes the
+            // (tracked separately as a SERVER-2 item) - this only removes the
             // row from local UI state, same as the pre-confirm behavior.
             if let Some(id) = state.pending_disconnect.take() {
                 state.connected_clients.retain(|c| c.identification != id);
@@ -370,7 +370,7 @@ fn chips_row<'a>(
     let text_faint = palette.text_faint;
 
     if chips.is_empty() {
-        return text("—")
+        return text("-")
             .font(font(FontRole::Monospace))
             .size(FONT_XS)
             .color(text_faint)
@@ -1174,7 +1174,7 @@ fn overlay_panel<'a>(
     );
 
     let root_label = if state.overlay_root.is_empty() {
-        "—".to_string()
+        "-".to_string()
     } else {
         state.overlay_root.clone()
     };
@@ -1299,7 +1299,7 @@ fn footer_bar<'a>(state: &'a ServerScreenState, palette: &'a ForgePalette) -> El
 
 /// Renders the shared destructive-confirm modal while a disconnect is armed.
 /// Returns `None` (silent no-render) if the pending client has vanished from
-/// `connected_clients` since the row `X` was clicked — same defensive
+/// `connected_clients` since the row `X` was clicked - same defensive
 /// convention as the other `confirm_modal` consumers.
 fn pending_disconnect_modal<'a>(
     state: &'a ServerScreenState,

@@ -650,8 +650,8 @@ fn conflict_overlay<'a>(
 
 fn portal_status_label(available: Option<bool>) -> String {
     match available {
-        Some(true) => "Portal (Wayland GlobalShortcuts) — active".to_owned(),
-        Some(false) => "Evdev / X11 fallback — active".to_owned(),
+        Some(true) => "Portal (Wayland GlobalShortcuts) - active".to_owned(),
+        Some(false) => "Evdev / X11 fallback - active".to_owned(),
         None => "N/A (Windows / macOS native)".to_owned(),
     }
 }
@@ -1058,7 +1058,7 @@ mod tests {
     // prior persisted `hotkey.global.pressed` row before DELETE (delete is
     // FK-blocked while an action still references it), and must touch ONLY rows
     // whose `combo` override equals the target. Boot re-registration is out of
-    // scope here (needs a HotkeyClient/OS mock) — this exercises the storage
+    // scope here (needs a HotkeyClient/OS mock) - this exercises the storage
     // effect the fix relies on directly.
 
     async fn mem_backend() -> Arc<dyn DataProvider> {

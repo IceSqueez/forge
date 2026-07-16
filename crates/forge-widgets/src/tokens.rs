@@ -13,7 +13,7 @@ thread_local! {
     static LEAKED_FAMILY_NAMES: RefCell<HashMap<String, &'static str>> = RefCell::new(HashMap::new());
 }
 
-/// Replaces the active density for this thread. Per-thread, like the locale bundle — iced's
+/// Replaces the active density for this thread. Per-thread, like the locale bundle - iced's
 /// view loop runs on the main thread, so installing once there covers every token call site.
 pub fn install_density(density: Density) {
     ACTIVE_DENSITY.with(|cell| cell.set(density));
@@ -68,7 +68,7 @@ pub enum Density {
 /// Closest-anchor mapping to the design scale (`theme.css` `--sp-xs/sm/md/lg` = 6/10/16/24),
 /// applied project-wide when porting a design padding: `Xs` ↔ `--sp-xs` (+2px at Cozy),
 /// `Sm` ↔ `--sp-sm` (+2px at Cozy), `Md` ↔ `--sp-md` (exact), `Lg` ↔ `--sp-lg` (exact);
-/// `None`/`Xxs` have no design anchor. Base values stay as-is on purpose — the Density
+/// `None`/`Xxs` have no design anchor. Base values stay as-is on purpose - the Density
 /// multiplier system scales them, so exact per-value parity with the static design is
 /// impossible by construction; pick the anchor above instead of a literal px port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

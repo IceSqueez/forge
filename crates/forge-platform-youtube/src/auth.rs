@@ -482,7 +482,7 @@ mod tests {
     }
 
     /// Fires a single HTTP GET against the loopback driver's redirect URI on a
-    /// background task — simulates the browser delivering the OAuth callback.
+    /// background task - simulates the browser delivering the OAuth callback.
     async fn spawn_callback(redirect_uri: &str, state: &str, code: &str) {
         let url = format!("{redirect_uri}?code={code}&state={state}");
         tokio::spawn(async move {

@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringTrimRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Trim Whitespace"
+        "String - Trim Whitespace"
     }
 
     fn summary(&self) -> &str {

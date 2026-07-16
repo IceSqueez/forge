@@ -16,7 +16,7 @@ impl SubActionRunner for CoreTimeNowRunner {
     }
 
     fn label(&self) -> &str {
-        "Time — Get Current Time"
+        "Time - Get Current Time"
     }
 
     fn summary(&self) -> &str {

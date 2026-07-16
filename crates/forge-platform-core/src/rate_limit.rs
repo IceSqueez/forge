@@ -25,7 +25,7 @@ pub trait RateLimiter: Send + Sync {
 ///
 /// Tokens refill continuously at `capacity / refill_per`. The whole-token
 /// arithmetic and the cooldown deadline live behind a `std::sync::Mutex`
-/// because the critical section is fully synchronous — there is no `.await`
+/// because the critical section is fully synchronous - there is no `.await`
 /// between locking and dropping the guard, so a tokio mutex would only add
 /// overhead and an await-holding-lock hazard.
 pub struct TokenBucketRateLimiter {
@@ -157,7 +157,7 @@ mod tests {
     }
 
     /// A request weighing more than the whole budget can never be funded, even
-    /// on an untouched full bucket — it must short-circuit to Exhausted rather
+    /// on an untouched full bucket - it must short-circuit to Exhausted rather
     /// than throttle forever.
     #[tokio::test]
     async fn acquire_weight_above_capacity_is_exhausted_on_full_bucket() {
@@ -244,7 +244,7 @@ mod tests {
             RateLimitOutcome::Granted
         ));
         // Bucket is empty and the rate is zero, so wait_for collapses to ZERO
-        // (no finite ETA) — but the request is still not granted.
+        // (no finite ETA) - but the request is still not granted.
         match rl.acquire(1).await.unwrap() {
             RateLimitOutcome::Throttled { wait_for } => {
                 assert_eq!(wait_for, Duration::ZERO);

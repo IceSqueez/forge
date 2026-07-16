@@ -704,7 +704,7 @@ mod tests {
         state.overrides.insert("nav.home".to_owned(), String::new());
         assert_eq!(effective_chord(&state, home), None);
 
-        // A stored chord without a strong modifier must never become live —
+        // A stored chord without a strong modifier must never become live -
         // an always-on listener would eat plain typing.
         state
             .overrides

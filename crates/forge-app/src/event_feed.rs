@@ -350,8 +350,8 @@ fn is_error_event(event: &Event) -> bool {
     event.kind.contains("error") || event.kind.contains("fail")
 }
 
-/// Colour for the event-type cell, keyed on the event kind and — for
-/// `action.done` — the real `outcome` field, so a failed action reads red even
+/// Colour for the event-type cell, keyed on the event kind and - for
+/// `action.done` - the real `outcome` field, so a failed action reads red even
 /// though its kind is not an error kind.
 fn type_color(event: &Event, palette: &ForgePalette) -> Color {
     if is_error_event(event) {
@@ -486,7 +486,7 @@ pub fn update(
             }))
         }
         EventFeedMsg::ExportResult(Err(e)) => {
-            // "export cancelled" is the user dismissing the save-file dialog —
+            // "export cancelled" is the user dismissing the save-file dialog -
             // not a failure worth a toast, same convention as other
             // cancel-is-not-an-error dialog flows in this codebase.
             if e == "export cancelled" {

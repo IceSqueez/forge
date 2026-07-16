@@ -56,7 +56,7 @@ pub(crate) fn validate_automod_config(
 
 /// POST /helix/moderation/automod/message to allow or deny a held AutoMod message.
 ///
-/// `user_id` is the MODERATOR's own id (self), not the sender's id — the Twitch API
+/// `user_id` is the MODERATOR's own id (self), not the sender's id - the Twitch API
 /// uses it to verify the caller has moderator rights on the channel.
 /// `action` must be uppercase "ALLOW" or "DENY" (lowercase is rejected by Twitch).
 /// All three fields go in the JSON body, not as query params.

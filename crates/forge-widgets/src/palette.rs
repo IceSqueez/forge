@@ -287,7 +287,7 @@ mod tests {
         }
 
         // border_input and surface_overlay anchor to --surf-2.
-        // Why: Mocha surface_overlay is excluded — its design-source token is
+        // Why: Mocha surface_overlay is excluded - its design-source token is
         // still an open decision; asserting it would pin a guess.
         for (name, p, surf2) in [
             ("tokyo-night", TOKYO_NIGHT, (0x3b, 0x42, 0x61)),

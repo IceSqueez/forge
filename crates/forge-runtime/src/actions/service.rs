@@ -95,7 +95,7 @@ impl ActionsService {
         self.actions.telemetry(id).await
     }
 
-    /// The user-defined trigger instances not yet linked to `action_id` — the set
+    /// The user-defined trigger instances not yet linked to `action_id` - the set
     /// offered when linking a new trigger to the action. Auto-provisioned default
     /// instances are excluded; only author-created ones are linkable here.
     pub async fn list_linkable_triggers(

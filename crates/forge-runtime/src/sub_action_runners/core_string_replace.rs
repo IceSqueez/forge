@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringReplaceRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Replace"
+        "String - Replace"
     }
 
     fn summary(&self) -> &str {

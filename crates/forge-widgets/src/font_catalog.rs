@@ -6,7 +6,7 @@ pub struct FontFamily {
     pub monospaced: bool,
 }
 
-/// Parses every installed font file (easily >100 ms) — run off the render thread.
+/// Parses every installed font file (easily >100 ms) - run off the render thread.
 pub fn enumerate_font_families() -> Vec<FontFamily> {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -14,7 +14,7 @@ pub fn enumerate_font_families() -> Vec<FontFamily> {
         db.load_font_data(bytes.into_owned());
     }
 
-    // A family counts as monospaced when any of its faces carries the flag —
+    // A family counts as monospaced when any of its faces carries the flag -
     // italic and variable faces are often left unflagged in font metadata.
     let mut families: BTreeMap<String, bool> = BTreeMap::new();
     for face in db.faces() {

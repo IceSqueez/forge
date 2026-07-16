@@ -6,7 +6,7 @@
 //! `kind_id`), so it is safe to re-run against rows seeded after the schema is
 //! in place. Each test applies the full schema, seeds legacy rows, then runs
 //! the REAL migration SQL (loaded verbatim from the file, never a copy) so the
-//! production statements — not a reimplementation — are under test.
+//! production statements - not a reimplementation - are under test.
 
 use forge_storage_sqlite::{apply_migrations, connect};
 use sqlx::SqlitePool;

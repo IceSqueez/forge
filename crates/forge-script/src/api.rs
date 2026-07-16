@@ -65,7 +65,7 @@ impl ForgeApi {
         Arc::clone(&self.error_count)
     }
 
-    /// Optional builder — wires the TTS hook so `forge::tts::*` rhai functions become
+    /// Optional builder - wires the TTS hook so `forge::tts::*` rhai functions become
     /// active. Without this, the `tts` sub-module is registered but empty.
     pub fn with_speak_requester(mut self, requester: Arc<dyn SpeakRequester>) -> Self {
         self.speak = Some(requester);
@@ -794,7 +794,7 @@ mod tests {
 
     #[tokio::test]
     async fn error_count_reflects_only_forge_error_calls() {
-        // The shared counter tracks `forge::error` calls and nothing else — log and
+        // The shared counter tracks `forge::error` calls and nothing else - log and
         // warn must leave it untouched, and repeated errors accumulate.
         let dp = open_dp().await;
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));

@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringFormatRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Format Template"
+        "String - Format Template"
     }
 
     fn summary(&self) -> &str {

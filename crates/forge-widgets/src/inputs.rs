@@ -75,7 +75,7 @@ pub fn text_input_field<'a, Msg: 'a + Clone>(
 }
 
 /// Like [`text_input_field`] but also emits `on_submit` when the user presses
-/// Enter — used where an edit is buffered and committed explicitly.
+/// Enter - used where an edit is buffered and committed explicitly.
 pub fn text_input_field_submit<'a, Msg: 'a + Clone>(
     placeholder: impl Into<Cow<'a, str>>,
     value: &'a str,
@@ -158,7 +158,7 @@ fn text_editor_style(palette: ForgePalette, status: text_editor::Status) -> text
     }
 }
 
-/// Multi-line counterpart to [`text_input_field`] — a ~130px resizable area for
+/// Multi-line counterpart to [`text_input_field`] - a ~130px resizable area for
 /// long-form or JSON-shaped values. Wraps the stateful `text_editor`: the caller
 /// holds a `text_editor::Content` and forwards each `text_editor::Action` back
 /// through `on_action`.

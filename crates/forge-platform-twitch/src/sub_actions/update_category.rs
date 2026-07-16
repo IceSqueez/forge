@@ -187,7 +187,7 @@ mod tests {
                 .query
                 .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
         );
-        // Body carries game_id ONLY — category_name is display-only and must not leak.
+        // Body carries game_id ONLY - category_name is display-only and must not leak.
         let body = request.body.unwrap();
         assert_eq!(body, serde_json::json!({ "game_id": "509658" }));
         assert!(body.get("category_name").is_none());

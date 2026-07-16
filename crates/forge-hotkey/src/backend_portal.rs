@@ -188,7 +188,7 @@ async fn run_portal_task(
                 }
             }
             Some(()) = restart_rx.recv() => {
-                tracing::info!("portal daemon restarted — recreating session");
+                tracing::info!("portal daemon restarted - recreating session");
                 let conn_clone = conn.clone();
                 let app_name_clone = app_name.clone();
                 let activated_tx_clone = activated_tx.clone();

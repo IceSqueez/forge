@@ -256,7 +256,7 @@ async fn event_log_flush_task(
             _ = shutdown.notified() => {
                 while let Ok(ev) = recv.try_recv() {
                     if let Err(e) = repo.insert(&ev).await {
-                        // Event remains in ring until evicted; persistence is lossy on error — no retry.
+                        // Event remains in ring until evicted; persistence is lossy on error - no retry.
                         tracing::warn!(error = %e, "event_log drain insert failed");
                     }
                 }
@@ -266,7 +266,7 @@ async fn event_log_flush_task(
                 match result {
                     Ok(ev) => {
                         if let Err(e) = repo.insert(&ev).await {
-                            // Event remains in ring until evicted; persistence is lossy on error — no retry.
+                            // Event remains in ring until evicted; persistence is lossy on error - no retry.
                             tracing::warn!(error = %e, "event_log insert failed; event not persisted");
                         }
                     }
@@ -435,7 +435,7 @@ mod tests {
     #[tokio::test]
     async fn record_then_replay_delivers_event_exactly_once() {
         // Regression guard for the test-run double-fire: record (store-only) plus
-        // replay_and_publish must reach a subscriber exactly ONCE — the single
+        // replay_and_publish must reach a subscriber exactly ONCE - the single
         // replayed broadcast. A revert of `record` to `publish` delivers twice.
         let bus = null_bus();
         let mut rx = bus.subscribe().into_receiver();

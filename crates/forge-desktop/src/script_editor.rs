@@ -567,7 +567,7 @@ impl ScriptEditorView {
         self.console.push(ConsoleLine {
             time: "--:--:--".into(),
             tag: LogTag::Info,
-            text: "debug session unavailable (stub — no runtime wired)".into(),
+            text: "debug session unavailable (stub - no runtime wired)".into(),
         });
         self.console_tab = ConsoleTab::Output;
         self.console_collapsed = false;
@@ -612,7 +612,7 @@ impl ScriptEditorView {
                 };
                 crumbs.push(BreadcrumbCrumb::leaf(label));
             }
-            None => crumbs.push(BreadcrumbCrumb::leaf("—")),
+            None => crumbs.push(BreadcrumbCrumb::leaf("-")),
         }
 
         let (status_icon, status_color, status_text): (Icon, Rgba, String) = match self.type_check {
@@ -1642,7 +1642,7 @@ fn seed_run_result(name: &str) -> Vec<ConsoleLine> {
         ConsoleLine {
             time: "--:--:--".into(),
             tag: LogTag::Ok,
-            text: "returned: \"The cake is a lie.\" — GLaDOS".into(),
+            text: "returned: \"The cake is a lie.\" - GLaDOS".into(),
         },
         ConsoleLine {
             time: "--:--:--".into(),
@@ -1671,7 +1671,7 @@ fn format_quote(lines, idx) {
     let author = parts[1].trim();
 
     forge::log(`quote #${idx} by ${author}`);
-    return `\"${quote}\" — ${author}`;
+    return `\"${quote}\" - ${author}`;
 }
 ";
 
@@ -1685,7 +1685,7 @@ fn shoutout(user) {
     let remind = "\
 // Post a periodic social reminder
 fn remind() {
-    forge::chat::send(\"Follow on socials — links in panels!\");
+    forge::chat::send(\"Follow on socials - links in panels!\");
 }
 ";
 
@@ -1771,7 +1771,7 @@ fn seed_console() -> Vec<ConsoleLine> {
         ConsoleLine {
             time: "14:23:14".into(),
             tag: LogTag::Ok,
-            text: "returned: \"The cake is a lie.\" — GLaDOS".into(),
+            text: "returned: \"The cake is a lie.\" - GLaDOS".into(),
         },
         ConsoleLine {
             time: "14:23:14".into(),

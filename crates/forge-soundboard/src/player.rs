@@ -390,7 +390,7 @@ mod tests {
     }
 
     /// Writes the exact `samples` as a mono 16-bit PCM wav. 16-bit PCM is
-    /// lossless, so `forge_audio::decode_file` hands them back verbatim — letting
+    /// lossless, so `forge_audio::decode_file` hands them back verbatim - letting
     /// the scaling assertions compare against known inputs rather than magnitudes.
     fn wav_with_samples(samples: &[i16]) -> tempfile::NamedTempFile {
         let wav_bytes = write_wav(22_050, 1, samples);
@@ -496,7 +496,7 @@ mod tests {
     /// Master gain defaults to unity: a play before any `set_master_volume`
     /// produces the SAME buffer as an explicit master of 1.0. Guards against a
     /// non-1.0 default silently attenuating every clip. (Compares two plays so
-    /// the decode round-trip cancels — exact equality is valid here.)
+    /// the decode round-trip cancels - exact equality is valid here.)
     #[tokio::test]
     async fn master_volume_defaults_to_unity() {
         let samples = vec![0, 100, -100, 12_000, -12_000];
@@ -536,7 +536,7 @@ mod tests {
         assert_proportional(&baseline, &out, 4.0);
     }
 
-    /// A negative master gain clamps to 0.0 — silence, never sign inversion.
+    /// A negative master gain clamps to 0.0 - silence, never sign inversion.
     #[tokio::test]
     async fn master_volume_clamps_negative_gain_to_silence() {
         let samples = vec![12_000, -12_000, 5_000];
@@ -548,7 +548,7 @@ mod tests {
     }
 
     /// Stopping an unregistered clip and stop_all on an empty registry succeed
-    /// without effect (documented contract) and without panicking — guards the
+    /// without effect (documented contract) and without panicking - guards the
     /// `remove(..).unwrap_or_default()` / `PoisonError::into_inner` paths against
     /// an accidental `.unwrap()`.
     #[tokio::test]

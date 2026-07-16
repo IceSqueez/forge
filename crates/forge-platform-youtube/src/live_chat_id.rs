@@ -3,7 +3,7 @@ use std::sync::Arc;
 /// Shared handle to the currently-active live chat id discovered by the poller.
 ///
 /// `None` when no broadcast is active or the poller has not yet resolved one.
-/// Uses `std::sync::Mutex` because the critical section is a single clone — never
+/// Uses `std::sync::Mutex` because the critical section is a single clone - never
 /// held across an `await`.
 #[derive(Debug, Clone, Default)]
 pub struct LiveChatIdHandle {

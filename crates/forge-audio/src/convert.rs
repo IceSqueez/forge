@@ -1,6 +1,6 @@
 //! PCM format conversion: sample-rate resampling and channel count remixing.
 //!
-//! Uses rubato's `Async` polynomial resampler (Septic degree) — processes the entire
+//! Uses rubato's `Async` polynomial resampler (Septic degree) - processes the entire
 //! input as a single fixed-size chunk (no streaming latency) and is fast enough for
 //! pre-rendered soundboard clips. Quality difference vs sinc-based is inaudible at >=44.1 kHz.
 //! Reference: <https://docs.rs/rubato/3.0/>

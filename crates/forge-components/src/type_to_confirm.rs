@@ -64,7 +64,7 @@ pub(crate) fn bullet_glyph(kind: BulletKind, palette: &ForgePalette) -> (Icon, R
     }
 }
 
-/// Exact, case-sensitive, untrimmed match — the confirm gate is live only when this holds.
+/// Exact, case-sensitive, untrimmed match - the confirm gate is live only when this holds.
 pub(crate) fn matches(typed: &str, target: &str) -> bool {
     typed == target
 }
@@ -481,7 +481,7 @@ mod tests {
     fn matches_holds_only_on_an_exact_case_sensitive_untrimmed_pair() {
         // The confirm gate is an exact, case-sensitive, untrimmed compare. Every
         // `false` row would flip to `true` under a naive `.trim()` or case-folding
-        // implementation — that divergence is the signal these rows pin.
+        // implementation - that divergence is the signal these rows pin.
         for (typed, target, expected) in [
             ("delete my-channel", "delete my-channel", true), // exact match clears the gate
             ("delete my-channe", "delete my-channel", false), // a different string does not
@@ -511,7 +511,7 @@ mod tests {
     fn bullet_glyph_pairs_each_kind_with_its_tone_glyph_and_hue() {
         let p = CATPPUCCIN_MOCHA;
         // Guard: the three tone hues are distinct, so asserting the per-kind hue below
-        // has teeth — a swapped arm resolves to a different, detectable colour.
+        // has teeth - a swapped arm resolves to a different, detectable colour.
         assert!(!same_rgba(p.success, p.warning));
         assert!(!same_rgba(p.warning, p.info));
         assert!(!same_rgba(p.success, p.info));

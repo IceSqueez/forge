@@ -248,7 +248,7 @@ impl YoutubeChatPoller {
 
     /// Resolves the active broadcast in one `liveBroadcasts.list` call, returning
     /// its `liveChatId` (for polling), its resource `id` (the video id used by
-    /// `videos.update`), and its current `snippet.title` — same request, no extra
+    /// `videos.update`), and its current `snippet.title` - same request, no extra
     /// quota.
     async fn fetch_live_chat_id(
         &self,
@@ -1851,7 +1851,7 @@ mod tests {
     }
 
     /// Quota seeded so only two `BROADCAST_COST` charges succeed and every
-    /// `CHAT_POLL_COST` charge is denied — yielding back-to-back resolutions.
+    /// `CHAT_POLL_COST` charge is denied - yielding back-to-back resolutions.
     fn quota_for_two_resolutions() -> Arc<tokio::sync::Mutex<QuotaState>> {
         Arc::new(tokio::sync::Mutex::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 2 * BROADCAST_COST,
@@ -1917,7 +1917,7 @@ mod tests {
     /// live-chat handle reaches `until_live_chat_id` (proving every queued
     /// broadcast resolution has run), then cancels and drains title_changed
     /// events. The handle reaching the final session's id is the deterministic
-    /// completion signal — no wall-clock guesswork.
+    /// completion signal - no wall-clock guesswork.
     async fn run_until_resolution_and_drain_titles(
         poller: YoutubeChatPoller,
         live: LiveChatIdHandle,
@@ -2037,7 +2037,7 @@ mod tests {
         // the timer, letting the third (live) resolution run without wall time.
         let server = MockServer::start().await;
         // Resolution 1: live "Title A". Resolution 2: offline (no broadcast).
-        // Resolution 3+: live "Title B". Order matters — wiremock matches the
+        // Resolution 3+: live "Title B". Order matters - wiremock matches the
         // first non-exhausted mount in registration order.
         Mock::given(method("GET"))
             .and(path("/liveBroadcasts"))

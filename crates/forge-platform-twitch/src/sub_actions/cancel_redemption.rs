@@ -71,7 +71,7 @@ impl SubActionRunner for CancelRedemptionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        // "CANCELED" — American spelling, single L, as documented by Twitch API.
+        // "CANCELED" - American spelling, single L, as documented by Twitch API.
         execute_redemption_runner(
             &self.transport,
             &self.identity,

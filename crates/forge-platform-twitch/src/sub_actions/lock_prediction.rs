@@ -54,7 +54,7 @@ pub(crate) fn validate_prediction_config(
     }
 }
 
-/// PATCH /helix/predictions — broadcaster_id is a query param; id and status go in the body.
+/// PATCH /helix/predictions - broadcaster_id is a query param; id and status go in the body.
 /// Status values are uppercase: "LOCKED", "RESOLVED", "CANCELED" (American single-L).
 /// winning_outcome_id is only sent for RESOLVED; lock and cancel pass None.
 /// Requires channel:manage:predictions scope.

@@ -456,7 +456,7 @@ pub fn remove_sub_action_update(
             Task::none()
         }
         // `Requested` (arm) and `ConfirmDismissed` are intercepted in
-        // `actions::update` before reaching this fn — they only mutate
+        // `actions::update` before reaching this fn - they only mutate
         // `ActionsState.pending_delete`, which this fn has no access to.
         RemoveSubActionMsg::Requested(..) | RemoveSubActionMsg::ConfirmDismissed => Task::none(),
     }

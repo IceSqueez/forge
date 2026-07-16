@@ -30,7 +30,7 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// A `ChainExecutor` that runs nothing — the signal/wait runners never launch a
+/// A `ChainExecutor` that runs nothing - the signal/wait runners never launch a
 /// child chain, so its only job is to satisfy the `RunContext` field.
 struct NoopExec;
 
@@ -224,7 +224,7 @@ async fn wait_until_returns_immediately_when_the_condition_already_holds() {
 
 #[tokio::test(start_paused = true)]
 async fn wait_until_times_out_with_success_and_a_timed_out_flag() {
-    // A never-true condition must end as Success with wait.timed_out=true — a
+    // A never-true condition must end as Success with wait.timed_out=true - a
     // timeout is a normal terminal state, NOT a Failed outcome. The paused clock
     // auto-advances over the poll sleep so the test does not wait in real time.
     let stack = ArgStack::new();

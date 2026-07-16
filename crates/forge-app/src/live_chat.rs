@@ -16,7 +16,7 @@ use crate::Message;
 use crate::message::{LiveChatMsg, ToastMsg};
 use crate::runtime_view::RuntimeView;
 
-/// Human-readable platform name for toast copy — the crate-local
+/// Human-readable platform name for toast copy - the crate-local
 /// `platform_id_to_key` returns the lowercase wire key (`"twitch"`), not
 /// display casing.
 fn platform_display_name(id: PlatformId) -> &'static str {
@@ -67,7 +67,7 @@ fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
     }
 }
 
-/// The drawer's "Timeout 10 min" affordance — the `twitch.moderation.timeout_user`
+/// The drawer's "Timeout 10 min" affordance - the `twitch.moderation.timeout_user`
 /// runner resolves the login to a user id itself, so the drawer passes the username.
 const DRAWER_TIMEOUT_SECONDS: i64 = 600;
 
@@ -103,7 +103,7 @@ fn build_ban_step(login: &str) -> SubActionStep {
     }
 }
 
-/// A blocked viewer needs no engine/voice — the resolver honours `AliasState::Blocked`
+/// A blocked viewer needs no engine/voice - the resolver honours `AliasState::Blocked`
 /// before any voice assignment, so both are left empty (mirrors the alias form's
 /// blocked path). A fresh `AliasId` means repeated blocks append rather than update,
 /// same as the alias-form "Assign" flow.
@@ -854,7 +854,7 @@ mod tests {
         let mut state = LiveChatState::new();
         state.input_buffer = "hello chat".to_owned();
         state.connected_platforms = vec![PlatformId::Twitch];
-        // Empty send_targets means "every connected platform" — here just Twitch.
+        // Empty send_targets means "every connected platform" - here just Twitch.
         let _ = update(&mut state, &rt, LiveChatMsg::SendPressed);
         assert!(state.input_buffer.is_empty());
         assert_eq!(state.pending_sends.len(), 1);
@@ -900,7 +900,7 @@ mod tests {
         // Cross-crate contract: twitch.moderation.timeout_user reads exactly
         // "target_user_login" (non-empty String) and "duration_seconds" (Int,
         // rejected outside 1..=1_209_600). A key rename or an out-of-range
-        // DRAWER_TIMEOUT_SECONDS here silently breaks dispatch — the runner
+        // DRAWER_TIMEOUT_SECONDS here silently breaks dispatch - the runner
         // returns a validation error the user never asked for.
         let step = build_timeout_step("baddie");
         assert_eq!(step.kind_id, "twitch.moderation.timeout_user");

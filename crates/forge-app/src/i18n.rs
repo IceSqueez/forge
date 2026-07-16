@@ -41,7 +41,7 @@ fn build_bundle(lang: Language) -> Rc<FluentBundle<FluentResource>> {
 
 /// Detects the OS locale on first run and maps it to a supported `Language`.
 ///
-/// Returns `None` if the OS locale does not negotiate to Ukrainian — in that case the caller
+/// Returns `None` if the OS locale does not negotiate to Ukrainian - in that case the caller
 /// should persist and use `Language::En`.
 fn negotiate_os_locale() -> Option<Language> {
     let os_locale = sys_locale::get_locale()?;
@@ -69,7 +69,7 @@ fn negotiate_os_locale() -> Option<Language> {
 }
 
 /// Returns `(language_to_use, language_to_persist)`. The second element is `Some` only on first
-/// run (no persisted setting yet) — caller must follow up with `SettingsRepo::set_language` to
+/// run (no persisted setting yet) - caller must follow up with `SettingsRepo::set_language` to
 /// pin the negotiated OS locale.
 pub async fn resolve_startup_language(
     settings: Arc<dyn SettingsRepo>,
@@ -95,7 +95,7 @@ pub async fn resolve_startup_language(
 
 /// Builds the `FluentBundle` for `lang` and installs it into the `forge-widgets` thread-local.
 ///
-/// Must be called on the main/render thread — the thread-local is per-thread and iced's view
+/// Must be called on the main/render thread - the thread-local is per-thread and iced's view
 /// loop runs on the main thread.
 pub fn install_language(lang: Language) {
     let bundle = build_bundle(lang);
@@ -138,7 +138,7 @@ mod tests {
         let missing_in_en: Vec<_> = uk.difference(&en).collect();
         assert!(
             missing_in_uk.is_empty() && missing_in_en.is_empty(),
-            "locale key drift — missing in uk: {missing_in_uk:?}; missing in en: {missing_in_en:?}"
+            "locale key drift - missing in uk: {missing_in_uk:?}; missing in en: {missing_in_en:?}"
         );
     }
 

@@ -60,7 +60,7 @@ impl TwitchCredentialsManager {
         Ok(cred.access_token)
     }
 
-    /// Public-client `grant_type=refresh_token` POST — no `client_secret`.
+    /// Public-client `grant_type=refresh_token` POST - no `client_secret`.
     /// Persists the rotated refresh token Twitch returns and invalidates the
     /// old one; the prior token is kept only when the response omits a new one.
     /// A 400/401 means the refresh token itself is rejected → re-auth.
@@ -188,7 +188,7 @@ mod tests {
     use crate::credentials::{StoredCredential, TWITCH_CREDENTIAL_ID};
 
     // ---------------------------------------------------------------------------
-    // In-memory CredentialsRepo — same pattern as Kick harness.
+    // In-memory CredentialsRepo - same pattern as Kick harness.
     // ---------------------------------------------------------------------------
 
     struct InMemRepo(Mutex<HashMap<String, String>>);
@@ -299,13 +299,13 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------------
-    // get_valid_access_token: fresh credential — no network call.
+    // get_valid_access_token: fresh credential - no network call.
     // ---------------------------------------------------------------------------
 
     #[tokio::test]
     async fn get_valid_access_token_returns_stored_token_without_refresh_when_far_from_expiry() {
         let server = MockServer::start().await;
-        // Expires 1 hour from now — well beyond the 5-minute buffer.
+        // Expires 1 hour from now - well beyond the 5-minute buffer.
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
         let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
 

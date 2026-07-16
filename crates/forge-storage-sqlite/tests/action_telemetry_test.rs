@@ -5,7 +5,7 @@
 //! stored status string) and read back through the REAL `telemetry()` query.
 //! Driving both halves is deliberate: the swap-impl guard for the error path is
 //! that `ExecutionStatus::Error` must map to the exact `'err'` the telemetry SQL
-//! filters on — otherwise `errors_7d` would silently stay 0.
+//! filters on - otherwise `errors_7d` would silently stay 0.
 
 use forge_storage::{DataProvider, ExecutionStatus};
 use forge_storage_sqlite::SqliteBackend;
@@ -205,7 +205,7 @@ async fn prune_executions_before_removes_older_rows_and_telemetry_excludes_them(
     backend.action_repo().save(&action).await.expect("save");
 
     let now = OffsetDateTime::now_utc();
-    // 8 days old — beyond the execution-retention floor; its 999ms must vanish.
+    // 8 days old - beyond the execution-retention floor; its 999ms must vanish.
     backend
         .action_repo()
         .record_execution(

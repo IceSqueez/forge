@@ -964,7 +964,7 @@ impl ServerConsoleView {
             );
 
         let root_label = if self.overlay_root.is_empty() {
-            "—".to_owned()
+            "-".to_owned()
         } else {
             self.overlay_root.clone()
         };
@@ -1583,7 +1583,7 @@ fn chips_row(
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
-            .child("—")
+            .child("-")
             .into_any_element();
     }
 

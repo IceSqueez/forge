@@ -14,7 +14,7 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 const KIND_ID: &str = "twitch.channel_points.create_reward";
 const MAX_TITLE_CHARS: usize = 45;
 const MAX_PROMPT_CHARS: usize = 200;
-// Matches the format Twitch accepts: "#RRGGBB" — exactly 7 chars, '#' + 6 hex digits.
+// Matches the format Twitch accepts: "#RRGGBB" - exactly 7 chars, '#' + 6 hex digits.
 const HEX_COLOR_LEN: usize = 7;
 
 pub struct CreateRewardRunner {

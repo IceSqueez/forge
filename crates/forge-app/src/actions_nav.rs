@@ -14,8 +14,8 @@ use crate::runtime_view::RuntimeView;
 pub const UI_MAX_NESTING_DEPTH: usize = 8;
 
 /// One drill-in step: the index of the parent step in the chain we descended
-/// from, the config key on that step that holds the sub-chain, and — for a
-/// switch case — which case row's chain we entered.
+/// from, the config key on that step that holds the sub-chain, and - for a
+/// switch case - which case row's chain we entered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NavFrame {
     pub step_index: usize,
@@ -33,7 +33,7 @@ impl NavFrame {
     }
 }
 
-/// Decodes the canonical stored chain form — `Array` of per-step `Object`s — into
+/// Decodes the canonical stored chain form - `Array` of per-step `Object`s - into
 /// a step list. Mirrors the runtime decode: a non-array value, or any element
 /// lacking a `kind_id`, is dropped so malformed or partially-authored data
 /// degrades to an empty chain instead of panicking.
@@ -132,7 +132,7 @@ fn write_chain_value(
 
 /// Resolves a navigation path to the step list it currently points at, starting
 /// from the action's own top-level steps. An unresolvable frame (missing step or
-/// malformed blob) yields an empty chain — never a panic.
+/// malformed blob) yields an empty chain - never a panic.
 pub fn resolve_chain(root: &[SubActionStep], path: &[NavFrame]) -> Vec<SubActionStep> {
     let mut current = root.to_vec();
     for frame in path {

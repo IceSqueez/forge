@@ -46,7 +46,7 @@ pub trait ActionRepo: Send + Sync {
     /// Errors with [`StorageError::NotFound`] if `source_id` does not exist.
     ///
     /// The default impl composes `get`/`save` and copies only the `Action`
-    /// row itself — it does **not** carry over trigger-instance links, since
+    /// row itself - it does **not** carry over trigger-instance links, since
     /// this trait has no visibility into `action_trigger_instances`. A real
     /// backend should override this with a single transaction that also
     /// re-points every linked trigger instance to `new_id`, so the duplicate
@@ -69,7 +69,7 @@ pub trait ActionRepo: Send + Sync {
     }
 
     /// Marks `id` archived: invisible to `get`, `list`, and `list_by_group` until
-    /// [`Self::restore`] is called. The row and its telemetry survive untouched — this
+    /// [`Self::restore`] is called. The row and its telemetry survive untouched - this
     /// is a soft delete, not [`Self::delete`]. Returns `false` when `id` does not
     /// exist or is already archived.
     ///
@@ -89,7 +89,7 @@ pub trait ActionRepo: Send + Sync {
         Err(StorageError::NotReady)
     }
 
-    /// Returns archived actions only — the mirror of `list`, which excludes them.
+    /// Returns archived actions only - the mirror of `list`, which excludes them.
     ///
     /// The default impl reports no archived entries, consistent with a backend that
     /// does not support archiving.

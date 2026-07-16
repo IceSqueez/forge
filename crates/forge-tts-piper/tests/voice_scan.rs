@@ -1,7 +1,7 @@
 //! Regression: PiperEngine voice scanner reads onnx + sidecar JSON correctly.
 //!
 //! Uses a synthetic voices directory with hand-crafted .onnx stubs and
-//! .onnx.json sidecars. No real Piper binary is required — the scanner only
+//! .onnx.json sidecars. No real Piper binary is required - the scanner only
 //! reads the filesystem.
 
 #![cfg(unix)]

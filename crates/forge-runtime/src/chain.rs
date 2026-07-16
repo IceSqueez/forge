@@ -129,7 +129,7 @@ impl ChainEngine {
                 }
                 None => {
                     warn!(
-                        "unknown sub-action kind_id: {} — skipping step",
+                        "unknown sub-action kind_id: {} - skipping step",
                         step.kind_id
                     );
                     (skipped_telemetry(index, &step.kind_id), None)
@@ -237,7 +237,7 @@ impl ChainEngine {
                         }
                         None => {
                             warn!(
-                                "unknown sub-action kind_id: {} — skipping step",
+                                "unknown sub-action kind_id: {} - skipping step",
                                 step.kind_id
                             );
                             (skipped_telemetry(index, &step.kind_id), None)

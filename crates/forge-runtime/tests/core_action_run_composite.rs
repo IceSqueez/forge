@@ -3,9 +3,9 @@
 //! sub-actions one nesting level down via `ChainExecutor::run_child_chain`.
 //!
 //! Two collaborators are mocked, both in-memory, no SQLite/services/network:
-//!   * `MockActionRepo` — a HashMap-backed `ActionRepo` returning a programmable
+//!   * `MockActionRepo` - a HashMap-backed `ActionRepo` returning a programmable
 //!     target (or `None`, or a forced `Err`).
-//!   * `MockChainExecutor` — records the `run_child_chain` call (which steps,
+//!   * `MockChainExecutor` - records the `run_child_chain` call (which steps,
 //!     which arg-stack snapshot, how many calls) and returns a programmable
 //!     `ChildChainOutcome` signal or `Err(RegistryError::DepthExceeded)`.
 //!

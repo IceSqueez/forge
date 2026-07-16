@@ -169,7 +169,7 @@ async fn run_loop(
     }
 
     // Subscribe frame sent; Pusher confirms via pusher_internal:subscription_succeeded.
-    // Treat the WS being open + subscribe sent as Connected — subscription_succeeded is
+    // Treat the WS being open + subscribe sent as Connected - subscription_succeeded is
     // a Pusher internal frame we silently ignore, so there is no better signal.
     let _ = state_tx.send(ConnectionState::Connected);
 
@@ -210,7 +210,7 @@ async fn run_loop(
         }
     }
 
-    // Broken out of 'session — enter the reconnect loop.
+    // Broken out of 'session - enter the reconnect loop.
     let _ = state_tx.send(ConnectionState::Reconnecting);
     attempt += 1;
     reconnect::wait(attempt.saturating_sub(1)).await;
@@ -248,7 +248,7 @@ async fn run_loop(
             warn!(error = %e, "subscribe failed on reconnect");
         }
 
-        // WS re-established and subscribe sent after backoff — treat as Connected again.
+        // WS re-established and subscribe sent after backoff - treat as Connected again.
         let _ = state_tx.send(ConnectionState::Connected);
         ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
         attempt = 0;
@@ -288,7 +288,7 @@ async fn run_loop(
             }
         }
 
-        // Dropped out of inner 'session — still in the outer reconnect loop.
+        // Dropped out of inner 'session - still in the outer reconnect loop.
         let _ = state_tx.send(ConnectionState::Reconnecting);
         reconnect::wait(attempt).await;
         attempt += 1;

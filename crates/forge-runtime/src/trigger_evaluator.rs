@@ -108,7 +108,7 @@ impl TriggerEvaluator {
                     Some(d) => d,
                     None => {
                         warn!(
-                            "unknown trigger kind_id: {} — trigger will never fire",
+                            "unknown trigger kind_id: {} - trigger will never fire",
                             instance.kind_id
                         );
                         continue;

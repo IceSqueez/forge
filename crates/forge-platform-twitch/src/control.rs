@@ -43,7 +43,7 @@ impl BuiltinControl for TwitchIntegrationBundle {
             .map_err(|_| ControlFailure::Transport)?
             .ok_or(ControlFailure::NotConnected)?;
 
-        // No stored refresh token means renewal is impossible — surface the
+        // No stored refresh token means renewal is impossible - surface the
         // re-auth prompt rather than pretending the token was renewed.
         let refresh_token = stored.refresh_token.ok_or(ControlFailure::Unauthorized)?;
 

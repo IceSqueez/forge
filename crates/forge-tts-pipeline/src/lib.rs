@@ -76,7 +76,7 @@ pub enum ReplacementRule {
         pattern: String,
         replacement: String,
     },
-    /// The `regex` crate guarantees linear-time matching with no backtracking — no ReDoS risk.
+    /// The `regex` crate guarantees linear-time matching with no backtracking - no ReDoS risk.
     Regex {
         compiled: regex::Regex,
         replacement: String,
@@ -102,7 +102,7 @@ pub enum PipelineError {
 /// Full, validated configuration for one pipeline run.
 ///
 /// Constructed once per settings-save; reused across messages.
-/// Holds pre-compiled `Regex` objects — construction is fallible.
+/// Holds pre-compiled `Regex` objects - construction is fallible.
 #[derive(Debug, Clone)]
 pub struct PipelineConfig {
     pub emote_sources: EmoteSources,
@@ -173,7 +173,7 @@ fn is_emoji_char(c: char) -> bool {
 }
 
 /// Removes whitespace-delimited emote-code tokens (e.g. `LUL`, `Pog`) present in
-/// `tokens` from `text`. Word-token match only — emote codes are not a unicode
+/// `tokens` from `text`. Word-token match only - emote codes are not a unicode
 /// range, so this never touches ordinary punctuation or non-emote unicode.
 ///
 /// Exposed so callers needing origin-specific gating (e.g. only stripping for
@@ -197,7 +197,7 @@ fn stage_emote_stripper(text: &str, config: &PipelineConfig) -> String {
     // runs ahead of `process` (via `strip_emote_tokens` directly, gated on
     // `is_reward && strip_reward_emotes`) are observably distinct: with this flag
     // off, `emote_tokens` populated alone must NOT cause every message to be
-    // stripped — only reward-sourced ones, and only through the pre-pass.
+    // stripped - only reward-sourced ones, and only through the pre-pass.
     let stripped = if config.emote_sources.twitch {
         strip_emote_tokens(text, &config.emote_tokens)
     } else {
@@ -353,7 +353,7 @@ fn run_stage(stage: StageName, text: &str, config: &PipelineConfig) -> StageOut 
     }
 }
 
-/// Pure function — no I/O, no allocation beyond string manipulation.
+/// Pure function - no I/O, no allocation beyond string manipulation.
 /// Never panics. Config must be pre-validated via `PipelineConfig::new`.
 pub fn process(text: &str, config: &PipelineConfig) -> PipelineResult {
     let stages = [

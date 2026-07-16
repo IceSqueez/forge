@@ -682,7 +682,7 @@ fn polly_card<'a>(
     )
 }
 
-/// Whether `kind`'s `EngineId` is a member of the live `TtsRegistry` right now —
+/// Whether `kind`'s `EngineId` is a member of the live `TtsRegistry` right now -
 /// the config-status badge's single source of truth, independent of whether the
 /// form fields happen to be populated in this session.
 fn is_registered(rt: &RuntimeView, kind: CloudEngineKind) -> bool {
@@ -1160,7 +1160,7 @@ mod tests {
             CloudEngineKind::Azure.engine_id(),
             CloudEngineKind::OpenAI.engine_id(),
         ];
-        // The badge derives from live registry membership per kind — not from
+        // The badge derives from live registry membership per kind - not from
         // whether the form fields happen to be populated. Only the two
         // registered kinds report configured; the absent two do not.
         for (kind, expected) in [

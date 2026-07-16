@@ -134,7 +134,7 @@ impl TextInput {
         self
     }
 
-    /// Masks display only — `content()` and events keep the real value; clipboard copy/cut is suppressed while masked.
+    /// Masks display only - `content()` and events keep the real value; clipboard copy/cut is suppressed while masked.
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
         self
@@ -983,7 +983,7 @@ mod tests {
 
     #[gpui::test]
     fn read_only_input_rejects_every_edit_path(cx: &mut gpui::TestAppContext) {
-        // Why: read_only is a hard invariant — no edit action nor the IME replace
+        // Why: read_only is a hard invariant - no edit action nor the IME replace
         // path may mutate the buffer.
         let window = cx.add_window(|_window, cx| TextInput::new("", cx).read_only(true));
         let content = window
@@ -1002,7 +1002,7 @@ mod tests {
     #[gpui::test]
     fn utf16_offsets_map_across_the_astral_plane(cx: &mut gpui::TestAppContext) {
         // "a😀b": 😀 is 4 UTF-8 bytes but 2 UTF-16 code units (a surrogate pair).
-        // The IME coordinate mapping must count surrogate pairs, not chars — a
+        // The IME coordinate mapping must count surrogate pairs, not chars - a
         // char-count impl would report byte 5 as utf16 2 instead of 3.
         with_input(cx, "a😀b", |input, _window, _cx| {
             for (byte, utf16) in [(0usize, 0usize), (1, 1), (5, 3), (6, 4)] {

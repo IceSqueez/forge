@@ -79,7 +79,7 @@ impl YoutubeModeration {
             .get(channel_id)
             .cloned()
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "unban — ban id unknown for this channel (ban not issued in this session)"
+                feature: "unban - ban id unknown for this channel (ban not issued in this session)"
                     .to_owned(),
             })?;
 
@@ -116,7 +116,7 @@ impl YoutubeModeration {
             .live_chat_id
             .get()
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "moderation — no active YouTube broadcast".to_owned(),
+                feature: "moderation - no active YouTube broadcast".to_owned(),
             })?;
 
         {
@@ -190,7 +190,7 @@ impl YoutubeModeration {
             .live_chat_id
             .get()
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "moderation — no active YouTube broadcast".to_owned(),
+                feature: "moderation - no active YouTube broadcast".to_owned(),
             })?;
 
         let url = format!("{}/liveChat/moderators", self.api_base);
@@ -257,7 +257,7 @@ impl YoutubeModeration {
                 .map(str::to_owned);
             if page_token.is_none() {
                 return Err(PlatformError::Unsupported {
-                    feature: "remove moderator — target channel is not a moderator of this chat"
+                    feature: "remove moderator - target channel is not a moderator of this chat"
                         .to_owned(),
                 });
             }
@@ -273,7 +273,7 @@ impl YoutubeModeration {
             .live_chat_id
             .get()
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "moderation — no active YouTube broadcast".to_owned(),
+                feature: "moderation - no active YouTube broadcast".to_owned(),
             })?;
 
         {
@@ -463,7 +463,7 @@ mod tests {
     async fn unban_without_a_recorded_ban_fails_unsupported_and_sends_no_request() {
         let server = MockServer::start().await;
         // A DELETE handler is mounted so that, were unban to call out, the test
-        // would observe the request — proving the no-request guarantee.
+        // would observe the request - proving the no-request guarantee.
         Mock::given(method("DELETE"))
             .and(path("/liveChat/bans"))
             .respond_with(ResponseTemplate::new(204))

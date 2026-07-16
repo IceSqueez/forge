@@ -25,7 +25,7 @@ pub enum VoiceGender {
 /// Voice metadata returned by `TtsEngine::list_voices`.
 ///
 /// `sample_rate_hint` is the engine's preferred output rate in Hz; callers
-/// must not assume the actual PCM rate matches — use `PcmBuffer::sample_rate`.
+/// must not assume the actual PCM rate matches - use `PcmBuffer::sample_rate`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsVoice {
     pub id: VoiceId,

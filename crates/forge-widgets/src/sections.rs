@@ -246,10 +246,10 @@ fn counter_badge_inline<'a, Msg: 'a>(count: u32, palette: &ForgePalette) -> Elem
 /// Emphasis of an empty-state call-to-action button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EmptyCta {
-    /// Low-emphasis outline button — the default for secondary escape hatches
+    /// Low-emphasis outline button - the default for secondary escape hatches
     /// (e.g. "Clear filters" on a no-results state).
     Ghost,
-    /// Filled brand button — the primary create action on a genuinely-empty
+    /// Filled brand button - the primary create action on a genuinely-empty
     /// screen whose whole purpose is to drive that first creation.
     Primary,
 }

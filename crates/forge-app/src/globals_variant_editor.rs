@@ -182,7 +182,7 @@ impl VariantEditorForm {
 }
 
 /// Returns a static reason when `form`'s current name would collide with a
-/// *different* existing global — Create with an already-used name, or an Edit
+/// *different* existing global - Create with an already-used name, or an Edit
 /// that renames into a name still held by another entry. Renaming a global
 /// back to its own current name (or leaving it unchanged) is not a collision.
 fn duplicate_name_error(
@@ -259,7 +259,7 @@ pub fn update_variant_editor(
 
         VariantEditorMsg::KindSelected(kind) => {
             if let Some(f) = editor.as_mut() {
-                // Variant kind is fixed per Invariant #1 once a global exists —
+                // Variant kind is fixed per Invariant #1 once a global exists -
                 // only Create may pick a kind; Edit ignores the message.
                 if matches!(f.mode, EditorMode::Create) {
                     f.kind = kind;
@@ -398,7 +398,7 @@ pub fn variant_editor_modal_view<'a>(
 
     // Edit mode surfaces a Modified/reads/writes meta strip beside the modal's
     // shared icon-tile (rendered as the modal subtitle). Values come from the
-    // stored entry — the in-flight form does not carry telemetry.
+    // stored entry - the in-flight form does not carry telemetry.
     let meta_subtitle: Option<std::borrow::Cow<'_, str>> = match &form.mode {
         EditorMode::Edit(original) => existing.iter().find(|e| e.name == *original).map(|e| {
             std::borrow::Cow::Owned(format!(
@@ -444,7 +444,7 @@ pub fn variant_editor_modal_view<'a>(
         VariantKind::Array,
         VariantKind::Object,
     ];
-    // Variant kind is immutable once a global exists (Invariant #1) — Edit
+    // Variant kind is immutable once a global exists (Invariant #1) - Edit
     // renders the chips inert (Noop) instead of wiring KindSelected.
     let kind_locked = matches!(form.mode, EditorMode::Edit(_));
     let chips_row = kinds

@@ -2,7 +2,7 @@
 //!
 //! Invariant: with per_user_limit=N a single viewer may have at most N items
 //! pending simultaneously. The (N+1)-th request must be rejected with a
-//! `SpeakEvent::Rejected` event — not silently dropped and not panicked.
+//! `SpeakEvent::Rejected` event - not silently dropped and not panicked.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -181,7 +181,7 @@ async fn sixth_request_rejected_when_limit_is_five() {
 
 #[tokio::test]
 async fn different_viewers_are_tracked_independently() {
-    // Each viewer has their own counter — viewer B's count must not
+    // Each viewer has their own counter - viewer B's count must not
     // interfere with viewer A's limit.
     let config = QueueConfig {
         per_user_limit: 2,
@@ -192,7 +192,7 @@ async fn different_viewers_are_tracked_independently() {
     handle.send(SpeakCommand::Pause).await.unwrap();
     collect_events(&mut stream, 1, 500).await;
 
-    // Enqueue 2 for each viewer — no rejections expected.
+    // Enqueue 2 for each viewer - no rejections expected.
     for viewer in ["viewer-a", "viewer-b"] {
         for i in 0..2 {
             handle

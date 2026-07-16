@@ -17,7 +17,7 @@ const DEDUP_WINDOW: usize = 500;
 /// `EventSource` maps to a known chat platform. Maintains a per-source sliding
 /// dedup window of 500 `platform_msg_id` values; duplicate ids within the same
 /// source are silently dropped. Lag on the underlying broadcast channel is logged
-/// at WARN and skipped — rows are never yielded for lagged events.
+/// at WARN and skipped - rows are never yielded for lagged events.
 pub fn chat_stream(bus: Arc<EventBus>) -> impl Stream<Item = UnifiedChatRow> + Send + 'static {
     let receiver = bus.subscribe().into_receiver();
     stream::unfold(

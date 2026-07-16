@@ -6,7 +6,7 @@ use crate::pcm::PcmBuffer;
 
 /// Output target for synthesized or decoded audio.
 ///
-/// Implementations must NOT block — `play` returns once playback is queued/started,
+/// Implementations must NOT block - `play` returns once playback is queued/started,
 /// not once it completes. Lifecycle events flow over the bus instead (see RFC-038).
 #[async_trait]
 pub trait AudioSink: Send + Sync {

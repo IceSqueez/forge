@@ -18,7 +18,7 @@ pub enum ObsError {
     #[error("raw payload serialization: {0}")]
     Payload(#[from] serde_json::Error),
 
-    #[error("request failed: {request_type} — {message}")]
+    #[error("request failed: {request_type} - {message}")]
     Request {
         request_type: String,
         message: String,

@@ -20,7 +20,7 @@ const LEVEL_OPTIONS: &[&str] = &[UNCHANGED, "0", "1", "2", "3", "4"];
 const OVERALL_KEY: &str = "overall_level";
 
 // The eight per-category filters Twitch accepts. When PUTting individual
-// levels, ALL eight must be present in the body — Twitch rejects a partial set.
+// levels, ALL eight must be present in the body - Twitch rejects a partial set.
 const CATEGORY_KEYS: &[&str] = &[
     "aggression",
     "bullying",
@@ -65,7 +65,7 @@ impl UpdateAutomodSettingsRunner {
         }
 
         // Twitch forbids mixing overall_level with the per-category fields. When
-        // the user sets overall_level we send ONLY that — overall wins and any
+        // the user sets overall_level we send ONLY that - overall wins and any
         // individual selects are intentionally ignored.
         let body = if let Some(level) = overall {
             serde_json::json!({ OVERALL_KEY: level })
@@ -272,7 +272,7 @@ mod tests {
     }
 
     /// Config with every select at "unchanged", then the given overrides applied
-    /// on top — mirrors how the UI hands the runner a full nine-key map.
+    /// on top - mirrors how the UI hands the runner a full nine-key map.
     fn config_with(overrides: &[(&str, &str)]) -> SubActionConfig {
         let r = UpdateAutomodSettingsRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)))
@@ -310,7 +310,7 @@ mod tests {
         );
     }
 
-    // ── Branch 2: overall mode — single PUT, overall_level number, no categories ─
+    // ── Branch 2: overall mode - single PUT, overall_level number, no categories ─
 
     #[tokio::test]
     async fn overall_level_sends_single_put_with_numeric_overall_and_no_categories() {
@@ -326,7 +326,7 @@ mod tests {
         assert_eq!(
             transport.call_count(),
             1,
-            "overall mode is a single PUT — no GET merge"
+            "overall mode is a single PUT - no GET merge"
         );
         let req = transport.request(0);
         assert_eq!(req.method, HelixMethod::Put);
@@ -344,7 +344,7 @@ mod tests {
     async fn overall_level_wins_over_individual_categories() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = runner(Arc::clone(&transport));
-        // Both overall AND an individual category set — overall must win and the
+        // Both overall AND an individual category set - overall must win and the
         // category keys must be absent from the body entirely.
         let config = config_with(&[("overall_level", "4"), ("swearing", "1")]);
         let stack = ArgStack::new();
@@ -368,7 +368,7 @@ mod tests {
         }
     }
 
-    // ── Branch 3: individual mode — GET then PUT, merge overrides over current ──
+    // ── Branch 3: individual mode - GET then PUT, merge overrides over current ──
 
     #[tokio::test]
     async fn individual_mode_merges_overrides_over_fetched_current_levels() {
@@ -439,7 +439,7 @@ mod tests {
         );
     }
 
-    // ── Branch 4: individual mode where the GET fails — no PUT issued ──────────
+    // ── Branch 4: individual mode where the GET fails - no PUT issued ──────────
 
     #[tokio::test]
     async fn individual_mode_get_failure_fails_without_issuing_put() {

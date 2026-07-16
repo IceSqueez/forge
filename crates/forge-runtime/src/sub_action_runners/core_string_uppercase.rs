@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringUppercaseRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Uppercase"
+        "String - Uppercase"
     }
 
     fn summary(&self) -> &str {

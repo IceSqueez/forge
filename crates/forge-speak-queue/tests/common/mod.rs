@@ -1,6 +1,6 @@
 //! Shared multi-engine harness for the speak-queue control/query surface tests.
 //!
-//! Fakes only — no real synthesis engine, audio device, or network. A `FakeEngine`
+//! Fakes only - no real synthesis engine, audio device, or network. A `FakeEngine`
 //! returns silent PCM; a `RecordingSink` counts playbacks; an `Arc<Notify>` gate is
 //! available for tests that need an item to stay in-flight deterministically.
 
@@ -208,7 +208,7 @@ where
 }
 
 /// Returns `(voice_id, engine_id)` from the first `Started` event carrying a
-/// non-empty voice id — i.e. the post-synthesis event that reports what the actor
+/// non-empty voice id - i.e. the post-synthesis event that reports what the actor
 /// actually resolved (the pre-synthesis `Started` ships empty ids).
 pub async fn wait_for_resolved_voice(
     stream: &mut SpeakEventStream,

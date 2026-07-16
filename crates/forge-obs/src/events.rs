@@ -464,8 +464,8 @@ pub(crate) fn apply_health_update(
     }
 }
 
-/// Applies a polled `GetStats` response (obs-websocket has no periodic Stats *event* — see
-/// OQ-OBS-1 resolution in `INTEGRATIONS_NOTES.md` — so this is fed by a periodic
+/// Applies a polled `GetStats` response (obs-websocket has no periodic Stats *event* - see
+/// OQ-OBS-1 resolution in `INTEGRATIONS_NOTES.md` - so this is fed by a periodic
 /// `client.general().stats()` poll, not the event-subscription pipeline) to the CPU/FPS
 /// (index 2) and Dropped-frames (index 3) health metrics. Only emits a delta when the
 /// rendered value actually changed, mirroring `apply_health_update`'s change-gating.
@@ -510,7 +510,7 @@ pub(crate) fn apply_stats_update(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // obws::events::Event is #[non_exhaustive] — variants cannot be constructed outside
+    // obws::events::Event is #[non_exhaustive] - variants cannot be constructed outside
     // the defining crate, so map_obs_event / apply_catalog_update / apply_health_update
     // can't be unit-tested. The payload-builder helpers make_scene_changed_event and
     // make_record_event are tested here directly.

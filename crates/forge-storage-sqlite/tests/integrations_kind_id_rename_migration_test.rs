@@ -8,7 +8,7 @@
 //! 0018/0019 pattern, each test applies the full schema, seeds rows carrying
 //! the OLD `kind_id` literals (no constraint forbids them post-migration), then
 //! runs the REAL migration SQL loaded verbatim from the file so the production
-//! statements — not a reimplementation — are under test.
+//! statements - not a reimplementation - are under test.
 
 use forge_storage_sqlite::{apply_migrations, connect};
 use sqlx::SqlitePool;
@@ -115,7 +115,7 @@ async fn fk_linked_default_row_survives_migration_and_keeps_its_action_link() {
     // THE regression for 7cef527: a default (user_defined=0) trigger with an
     // action attached via action_trigger_instances. The pre-fix migration
     // DELETEd default rows, which the ON DELETE RESTRICT FK aborts with
-    // SQLITE_CONSTRAINT_FOREIGNKEY (1811) — the whole migration fails and the
+    // SQLITE_CONSTRAINT_FOREIGNKEY (1811) - the whole migration fails and the
     // database never opens. The in-place UPDATE never deletes the referenced
     // row, so the link survives. This test fails against the DELETE migration
     // (run_migration panics on the FK abort) and passes against the UPDATE.

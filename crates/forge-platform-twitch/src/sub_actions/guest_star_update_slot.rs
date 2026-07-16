@@ -169,10 +169,10 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
             },
             FormField::Optional {
                 key: "volume",
-                label: "Volume (0–100)",
+                label: "Volume (0-100)",
                 inner: Box::new(FormField::Integer {
                     key: "volume",
-                    label: "Volume (0–100)",
+                    label: "Volume (0-100)",
                     min: VOLUME_MIN,
                     max: VOLUME_MAX,
                 }),
@@ -374,7 +374,7 @@ mod tests {
     }
 
     // #3 No-op short-circuit: nothing opted in (both unchanged, volume unset).
-    // Success WITHOUT any Helix call — the runner must not spend a rate token on
+    // Success WITHOUT any Helix call - the runner must not spend a rate token on
     // an empty PATCH.
     #[tokio::test]
     async fn no_opted_fields_succeeds_without_helix_call() {
@@ -400,7 +400,7 @@ mod tests {
     }
 
     // #4 Optional volume gate: a Bool at the volume key is the "toggled-on but no
-    // value" gate marker — it must be OMITTED. Only a real Int includes volume.
+    // value" gate marker - it must be OMITTED. Only a real Int includes volume.
     // (Paired with #2 this is the high-value Optional-marshaling guard.)
     #[tokio::test]
     async fn volume_gate_bool_is_omitted_only_int_is_sent() {
@@ -486,7 +486,7 @@ mod tests {
             "boundary volume 100 is valid"
         );
 
-        // Reject cases — one rejection contract per row.
+        // Reject cases - one rejection contract per row.
         for (label, config) in [
             ("empty session_id", cfg("", "1", &[])),
             ("empty slot_id", cfg("s", "", &[])),

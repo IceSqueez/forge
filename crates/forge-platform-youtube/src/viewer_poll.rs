@@ -153,7 +153,7 @@ impl YoutubeViewerPoll {
 
 /// Pulls `items[0].liveStreamingDetails.concurrentViewers` (an unsigned count
 /// serialized as a string) from a `videos.list` body. Absent for a non-live,
-/// ended, or hidden-count broadcast — never coerced to zero.
+/// ended, or hidden-count broadcast - never coerced to zero.
 fn extract_concurrent_viewers(body: &serde_json::Value) -> Option<u64> {
     body.get("items")?
         .as_array()?

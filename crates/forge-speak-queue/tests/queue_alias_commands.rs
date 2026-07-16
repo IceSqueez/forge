@@ -96,7 +96,7 @@ async fn switch_alias_repoints_existing_viewer_alias() {
 async fn switch_alias_is_noop_when_viewer_has_no_alias() {
     let (sink, _plays) = recording_sink();
     // `Single` strategy pins every alias-less viewer to alpha-1. If SwitchAlias wrongly
-    // created an alias for v2, resolution would flip to beta-1 — so alpha-1 proves no-op.
+    // created an alias for v2, resolution would flip to beta-1 - so alpha-1 proves no-op.
     let deps = make_deps(
         standard_registry(),
         sink,

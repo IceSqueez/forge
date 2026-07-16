@@ -51,7 +51,7 @@ impl SubActionRunner for TimeoutUserRunner {
     }
 
     fn summary(&self) -> &str {
-        "Temporarily bans a user from the Kick channel. Duration 1–10080 minutes. Requires moderation:ban scope."
+        "Temporarily bans a user from the Kick channel. Duration 1-10080 minutes. Requires moderation:ban scope."
     }
 
     fn search_text(&self) -> &str {
@@ -98,7 +98,7 @@ impl SubActionRunner for TimeoutUserRunner {
         match config.get("duration_minutes") {
             Some(Variant::Int(n)) if (1..=10080).contains(n) => Ok(()),
             _ => Err(RegistryError::UnknownKindId(format!(
-                "{KIND_ID}: 'duration_minutes' must be an integer 1–10080"
+                "{KIND_ID}: 'duration_minutes' must be an integer 1-10080"
             ))),
         }
     }

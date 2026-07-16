@@ -128,7 +128,7 @@ async fn run_health_task(
                     Some(()) => {
                         api_timestamps.push_back(tokio::time::Instant::now());
                         // Skip pruning when the cutoff predates the monotonic clock
-                        // epoch (Windows early in process life) — subtracting would
+                        // epoch (Windows early in process life) - subtracting would
                         // underflow and nothing can be older than the process itself.
                         if let Some(cutoff) = tokio::time::Instant::now()
                             .checked_sub(Duration::from_secs(60))

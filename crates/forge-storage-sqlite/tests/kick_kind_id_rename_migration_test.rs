@@ -6,7 +6,7 @@
 //! `kind_id`), so it is safe to re-run against rows seeded after the schema is
 //! in place. Each test applies the full schema, seeds legacy rows, then runs
 //! the REAL migration SQL (loaded verbatim from the file, never a copy) so the
-//! production statements — not a reimplementation — are under test.
+//! production statements - not a reimplementation - are under test.
 
 use forge_storage_sqlite::{apply_migrations, connect};
 use sqlx::SqlitePool;
@@ -89,7 +89,7 @@ async fn default_row_with_old_kick_id_is_renamed_in_place() {
     assert_eq!(
         kind_id_of(&pool, "def-chat").await.as_deref(),
         Some("kick.chat.message"),
-        "default (user_defined=0) row must be renamed in place — deleting it would abort the migration via the action_trigger_instances ON DELETE RESTRICT FK"
+        "default (user_defined=0) row must be renamed in place - deleting it would abort the migration via the action_trigger_instances ON DELETE RESTRICT FK"
     );
 }
 
@@ -98,7 +98,7 @@ async fn fk_linked_default_row_survives_migration_and_keeps_its_action_link() {
     // THE regression for 7cef527: a default (user_defined=0) trigger with an
     // action attached via action_trigger_instances. The pre-fix migration
     // DELETEd default rows, which the ON DELETE RESTRICT FK aborts with
-    // SQLITE_CONSTRAINT_FOREIGNKEY (1811) — the whole migration fails and the
+    // SQLITE_CONSTRAINT_FOREIGNKEY (1811) - the whole migration fails and the
     // database never opens. The in-place UPDATE never deletes the referenced
     // row, so the link survives. This test fails against the DELETE migration
     // (run_migration panics on the FK abort) and passes against the UPDATE.

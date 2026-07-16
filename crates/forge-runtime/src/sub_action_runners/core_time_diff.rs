@@ -33,7 +33,7 @@ impl SubActionRunner for CoreTimeDiffRunner {
     }
 
     fn label(&self) -> &str {
-        "Time — Time Difference"
+        "Time - Time Difference"
     }
 
     fn summary(&self) -> &str {

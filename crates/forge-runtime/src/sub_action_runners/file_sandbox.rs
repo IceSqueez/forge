@@ -121,7 +121,7 @@ mod tests {
             ("a*b*c", "axyc", false), // missing middle literal
             ("*mid*", "xxmidyy", true),
             ("*mid*", "xxxyy", false),
-            // `?` is NOT a wildcard — treated literally
+            // `?` is NOT a wildcard - treated literally
             ("f?le", "f?le", true),
             ("f?le", "file", false),
         ];

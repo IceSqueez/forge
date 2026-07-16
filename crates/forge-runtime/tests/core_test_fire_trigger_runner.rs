@@ -1,7 +1,7 @@
 //! Wiring tests for the `core.test.fire_trigger` sub-action runner. The runner
 //! looks up a trigger instance, finds the actions bound to it
 //! (`actions_using`), and dispatches each through the live `QueueScheduler`
-//! reached via a `SchedulerCell` filled at boot — seeding every dispatch's
+//! reached via a `SchedulerCell` filled at boot - seeding every dispatch's
 //! `ArgStack` from the config's `override_outputs` object.
 //!
 //! These tests drive a real in-process scheduler + action engine over an
@@ -109,7 +109,7 @@ async fn harness(queue: Queue) -> Harness {
 
 /// An action whose single step writes the interpolated `%out_key%` arg into the
 /// global named `set_global`. Reading that global back after the chain runs
-/// proves the action's execution context — i.e. the synthetic outputs the runner
+/// proves the action's execution context - i.e. the synthetic outputs the runner
 /// dispatched.
 fn action(id: ActionId, queue_id: QueueId, enabled: bool, set_global: &str) -> Action {
     let mut config = BTreeMap::new();
@@ -160,7 +160,7 @@ async fn run_outcome(runner: &dyn SubActionRunner, config: &SubActionConfig) -> 
     telemetry.outcome
 }
 
-/// Bounded poll for the `action.done` of a specific action id — proof the chain
+/// Bounded poll for the `action.done` of a specific action id - proof the chain
 /// ran to completion. Returns early as soon as the event lands.
 async fn await_action_done(
     sub: &mut EventSubscription,
@@ -345,7 +345,7 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
     // A blocking queue makes dispatch order observable: a trap action exists but
     // is NOT linked to the instance. After firing we push a barrier action and
     // await its completion. Because the blocking queue is strict FIFO, the trap
-    // would have run before the barrier had the runner wrongly dispatched it — so
+    // would have run before the barrier had the runner wrongly dispatched it - so
     // a missing trap global after the barrier proves nothing was fired.
     let q_id = QueueId::new();
     let h = harness(blocking(q_id)).await;

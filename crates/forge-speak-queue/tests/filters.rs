@@ -1,6 +1,6 @@
 /// Integration tests for `forge_speak_queue::filters`.
 ///
-/// Each test exercises observable behaviour — either the `PipelineResult` produced
+/// Each test exercises observable behaviour - either the `PipelineResult` produced
 /// by `forge_tts_pipeline::process(text, &config)` or the `FilterMappingError`
 /// variant/fields returned by `build_config_strict`. No tautological struct-field
 /// assertions; no derive/literal re-checks.
@@ -143,7 +143,7 @@ mod filters {
     }
 
     // -------------------------------------------------------------------------
-    // Invalid regex — strict posture
+    // Invalid regex - strict posture
     // -------------------------------------------------------------------------
 
     #[test]
@@ -205,7 +205,7 @@ mod filters {
     }
 
     // -------------------------------------------------------------------------
-    // Invalid regex — lenient posture
+    // Invalid regex - lenient posture
     // -------------------------------------------------------------------------
 
     #[test]
@@ -274,7 +274,7 @@ mod filters {
     #[test]
     fn multiple_blocklist_rules_last_mode_wins() {
         // Two blocklist rules: first is Censor, second is Suppress.
-        // "Last mode wins" rule — final result must be a Skip, not a censor.
+        // "Last mode wins" rule - final result must be a Skip, not a censor.
         let rules = [
             blocklist_rule("bl1", &["word1"], StorageBlocklistMode::Censor),
             blocklist_rule("bl2", &["word2"], StorageBlocklistMode::Suppress),
@@ -401,12 +401,12 @@ mod filters {
         settings.max_length = Some(5);
         let config = build_config_strict(&[], &settings).unwrap();
         let result = process("hello", &config);
-        // Exactly at the limit — no ellipsis, no truncation.
+        // Exactly at the limit - no ellipsis, no truncation.
         assert_eq!(result, PipelineResult::Speak("hello".into()));
     }
 
     // -------------------------------------------------------------------------
-    // PipelineConfigHandle — hot-reload semantics
+    // PipelineConfigHandle - hot-reload semantics
     // -------------------------------------------------------------------------
 
     #[test]
@@ -416,7 +416,7 @@ mod filters {
         let config = build_config_strict(&[], &settings).unwrap();
         let handle = PipelineConfigHandle::new(config);
         let loaded = handle.load();
-        // Use the loaded config to drive process() — observable via truncation.
+        // Use the loaded config to drive process() - observable via truncation.
         let result = process("hello world!", &loaded);
         match result {
             PipelineResult::Speak(s) => {

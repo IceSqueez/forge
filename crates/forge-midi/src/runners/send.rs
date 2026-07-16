@@ -99,7 +99,7 @@ impl SubActionRunner for MidiSendRunner {
             },
             FormField::Integer {
                 key: "channel",
-                label: "Channel (0–15)",
+                label: "Channel (0-15)",
                 min: 0,
                 max: 15,
             },
@@ -170,7 +170,7 @@ impl SubActionRunner for MidiSendRunner {
                             ctx.index,
                             started_at,
                             start,
-                            "midi.send: 'note' must be 0–127",
+                            "midi.send: 'note' must be 0-127",
                         );
                     }
                 };
@@ -181,7 +181,7 @@ impl SubActionRunner for MidiSendRunner {
                             ctx.index,
                             started_at,
                             start,
-                            "midi.send: 'velocity' must be 0–127",
+                            "midi.send: 'velocity' must be 0-127",
                         );
                     }
                 };
@@ -199,7 +199,7 @@ impl SubActionRunner for MidiSendRunner {
                             ctx.index,
                             started_at,
                             start,
-                            "midi.send: 'note' must be 0–127",
+                            "midi.send: 'note' must be 0-127",
                         );
                     }
                 };
@@ -218,7 +218,7 @@ impl SubActionRunner for MidiSendRunner {
                             ctx.index,
                             started_at,
                             start,
-                            "midi.send: 'controller' must be 0–127",
+                            "midi.send: 'controller' must be 0-127",
                         );
                     }
                 };
@@ -229,7 +229,7 @@ impl SubActionRunner for MidiSendRunner {
                             ctx.index,
                             started_at,
                             start,
-                            "midi.send: 'value' must be 0–127",
+                            "midi.send: 'value' must be 0-127",
                         );
                     }
                 };
@@ -311,7 +311,7 @@ fn extract_raw_bytes(config: &SubActionConfig) -> Result<Vec<u8>, String> {
             for v in arr {
                 match v {
                     Variant::Int(n) if *n >= 0 && *n <= 255 => bytes.push(*n as u8),
-                    _ => return Err("midi.send: raw_bytes must be Array of Int 0–255".to_owned()),
+                    _ => return Err("midi.send: raw_bytes must be Array of Int 0-255".to_owned()),
                 }
             }
             Ok(bytes)

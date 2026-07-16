@@ -44,7 +44,7 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Integer {
             key: "min_level",
-            label: "Minimum level (1–5)",
+            label: "Minimum level (1-5)",
             min: 1,
             max: 5,
         }]

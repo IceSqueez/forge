@@ -1,7 +1,7 @@
 //! The scheduler's queue registry is seeded at spawn and kept live thereafter
 //! through register/deregister/reconfigure commands. Dropping a slot's `sender`
 //! closes its task channel; the spawned runner then drains its buffered tasks
-//! and exits when `recv()` returns `None` — this is the membership-change drain
+//! and exits when `recv()` returns `None` - this is the membership-change drain
 //! guarantee, not a leak.
 
 use std::collections::HashMap;
@@ -951,7 +951,7 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
-        // Spawn with NO initial queues — q_id is unregistered.
+        // Spawn with NO initial queues - q_id is unregistered.
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
         let mut sub = bus.subscribe();
 
@@ -1122,7 +1122,7 @@ mod tests {
 
         sched.pause(q_id).await.unwrap();
 
-        // Rename only — blocking stays false.
+        // Rename only - blocking stays false.
         let renamed = Queue {
             id: q_id,
             name: "renamed".to_string(),
@@ -1352,7 +1352,7 @@ mod tests {
             .map(str::to_owned)
     }
 
-    /// Bounded poll for the `action.start` of a specific action — i.e. proof
+    /// Bounded poll for the `action.start` of a specific action - i.e. proof
     /// that the action has acquired its slot and is in-flight.
     async fn await_action_start(
         sub: &mut EventSubscription,
@@ -1499,7 +1499,7 @@ mod tests {
 
     #[tokio::test]
     async fn clear_with_keep_current_false_aborts_in_flight_action() {
-        // REGRESSION (currently FAILING — reproduces a bug, do not weaken):
+        // REGRESSION (currently FAILING - reproduces a bug, do not weaken):
         // `clear(keep_current = false)` calls `InflightTracker::abort_all`, but the
         // tracker only owns the dispatch-SEND future (`ActionEngineHandle::dispatch`
         // returns once the request is enqueued on the engine's mpsc). The real

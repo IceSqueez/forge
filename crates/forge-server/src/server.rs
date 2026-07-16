@@ -553,7 +553,7 @@ mod tests {
     // Regression: `stop` takes `shutdown_tx` + `join` out under the guard and
     // releases it before the drain await. A second `stop` finds `shutdown_tx`
     // already `None` and must return `Ok` without re-draining a taken join or
-    // panicking — the idempotency the accessor-freeze fix relies on.
+    // panicking - the idempotency the accessor-freeze fix relies on.
     #[tokio::test]
     async fn stop_is_idempotent_on_repeated_calls() {
         let (handle, _addr) = make_server(false, MemCreds::new()).await;

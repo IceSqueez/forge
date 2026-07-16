@@ -75,13 +75,13 @@ pub struct ScriptEditorState {
     pub run_modal: Option<RunModalForm>,
     pub loading: bool,
     pub api_docs_search: String,
-    /// Two-phase delete gate (mirrors Globals/Triggers/Actions) — the shared
+    /// Two-phase delete gate (mirrors Globals/Triggers/Actions) - the shared
     /// `confirm_modal` is the only render site; `DeleteRequested` only arms
     /// this, `DeleteConfirmAccepted` does the real delete.
     pub pending_delete: Option<ScriptId>,
     /// Inline rename buffer: `(id, in-progress name)`. Mirrors Actions'
     /// `renaming_action` shape (the reference implementation `InlineRename`
-    /// will later extract from) — self-contained here per M2 scope, not
+    /// will later extract from) - self-contained here per M2 scope, not
     /// blocked on the M7 shared-widget extraction.
     pub renaming_script: Option<(ScriptId, String)>,
     /// Deferred-navigation gate: armed when a navigation entry point fires
@@ -154,7 +154,7 @@ fn parse_input_to_variant(field: &RunModalInputField) -> Result<Variant, String>
         },
         VariantKind::String => Ok(Variant::String(field.raw_value.clone())),
         other => Err(format!(
-            "`{}`: {other:?} inputs not supported in this run modal — edit the script's contract or pass via ArgStack",
+            "`{}`: {other:?} inputs not supported in this run modal - edit the script's contract or pass via ArgStack",
             field.name
         )),
     }
@@ -174,7 +174,7 @@ async fn load_script_list(repo: Arc<dyn ScriptRepo>) -> Result<Vec<ScriptListEnt
 
 /// Appends `forge::log/warn/error` output from the open script's run to the console
 /// panel live. Bridged off the shared bus stream (`Message::EventArrived` →
-/// `dispatch_event`), the same path `event_feed`/`home` consume — so no dedicated
+/// `dispatch_event`), the same path `event_feed`/`home` consume - so no dedicated
 /// subscription or extra `Message` variant is needed. Events tagged with a different
 /// (or absent) `script_id` are ignored so one script's logs never bleed into another's.
 pub fn on_event(state: &mut ScriptEditorState, event: &forge_events::Event) -> iced::Task<Message> {
@@ -242,7 +242,7 @@ pub fn update(
         }
         ScriptEditorMsg::ScriptSelected(id) => {
             // Nav guard: a dirty open script must not be overwritten by
-            // selecting another (row click) — nor by the auto-select-first
+            // selecting another (row click) - nor by the auto-select-first
             // that navigate-away-and-back cascades through here via
             // LoadRequested. Arm the discard gate instead.
             if state.is_dirty() {
@@ -408,7 +408,7 @@ pub fn update(
             // comments) BEFORE persisting. Compiling here closes the 3-way
             // split where storage would hold a broken body the live registry
             // rejects on reload while the editor believed it was clean.
-            // `validate_syntax` is a fast raw compile — safe to run inline.
+            // `validate_syntax` is a fast raw compile - safe to run inline.
             if let Err(e) = validate_syntax(&body) {
                 let ts = now_timestamp();
                 state.console_lines.push(ConsoleLine {
@@ -676,7 +676,7 @@ pub fn update(
             }))
         }
         ScriptEditorMsg::DeleteRequested(id) => {
-            // Arms the confirm gate only (mirrors Globals' DeleteRequested) —
+            // Arms the confirm gate only (mirrors Globals' DeleteRequested) -
             // the row delete control no longer deletes directly
             // (SC-13-F26: correct `update` body existed with zero reachable
             // view producer AND no confirm gate).

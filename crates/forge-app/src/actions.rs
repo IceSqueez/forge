@@ -29,7 +29,7 @@ pub use crate::actions_trigger_kinds::{
 /// state (there is no stacking of confirms).
 #[derive(Debug, Clone)]
 pub enum PendingDelete {
-    /// Deleting the whole action — cascades its sub-actions and trigger
+    /// Deleting the whole action - cascades its sub-actions and trigger
     /// links. `cascade` is populated by a follow-up detail load so the
     /// modal's hint is never fabricated; `None` while that load is in flight.
     Action {
@@ -852,7 +852,7 @@ pub fn update(state: &mut ActionsState, rt: &RuntimeView, msg: ActionsMsg) -> Ta
 
 /// Seeds the case-match buffer with each switch case's persisted single-value
 /// `match` for the chain currently in view, so the per-row inputs render against
-/// owned `'a` state. Multi-value (imported) matches are skipped — they render
+/// owned `'a` state. Multi-value (imported) matches are skipped - they render
 /// read-only and must never be clobbered by a single-value edit. Existing buffer
 /// entries (in-flight edits) are preserved.
 fn seed_case_buffer(state: &mut ActionsState) {

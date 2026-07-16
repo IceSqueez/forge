@@ -25,7 +25,7 @@ fn url_replace_config() -> PipelineConfig {
 #[test]
 fn url_replaced_before_regex_rules_can_see_original_url() {
     // UrlSanitizer runs before TextReplacements.
-    // A regex rule matching "https" never sees the raw URL — it's already "link".
+    // A regex rule matching "https" never sees the raw URL - it's already "link".
     let config = PipelineConfig {
         url_mode: UrlMode::Replace {
             substitute: "link".into(),
@@ -41,7 +41,7 @@ fn url_replaced_before_regex_rules_can_see_original_url() {
         PipelineResult::Speak(text) => {
             assert!(
                 !text.contains("SHOULD_NOT_APPEAR"),
-                "regex ran before URL sanitizer — stage order broken"
+                "regex ran before URL sanitizer - stage order broken"
             );
             assert!(text.contains("link"), "URL should have been substituted");
         }

@@ -185,7 +185,7 @@ mod tests {
             wall_time_ms: cfg.condition_wall_time_ms,
         });
 
-        // (expr, expected, fast_path_resolves) — the third column documents intent;
+        // (expr, expected, fast_path_resolves) - the third column documents intent;
         // the assertion holds regardless of which path the gate actually took.
         let rows: &[(&str, bool, bool)] = &[
             // --- fast-path-resolved: literal OP literal, same primitive kind ---

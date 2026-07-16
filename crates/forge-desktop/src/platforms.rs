@@ -60,7 +60,7 @@ const PLATFORMS: [PlatformRow; 3] = [
         Integration::Kick,
         "Kick",
         "K",
-        "Chat, channel events, subscribers — newer streaming platform",
+        "Chat, channel events, subscribers - newer streaming platform",
         &["Chat", "Subs", "Channel events"],
     ),
 ];

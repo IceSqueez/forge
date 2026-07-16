@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn display_text_renders_mentions_and_diverges_from_body_text() {
         // Contract: display_text keeps Text verbatim, renders Mention as
-        // "@username", and drops Emote/Link. This is where mentions surface —
+        // "@username", and drops Emote/Link. This is where mentions surface -
         // body_text deliberately omits them. The mixed case pins that divergence.
         let cases = [
             (

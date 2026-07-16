@@ -19,7 +19,7 @@ pub enum TagListInputMessage {
     RemoveTag(usize),
 }
 
-/// Caller owns `tags`; widget never mutates state — handle messages externally.
+/// Caller owns `tags`; widget never mutates state - handle messages externally.
 pub fn tag_list_input<'a, Msg: Clone + 'a>(
     state: &'a TagListInputState,
     tags: &'a [String],

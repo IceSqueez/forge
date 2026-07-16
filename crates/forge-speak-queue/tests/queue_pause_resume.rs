@@ -222,7 +222,7 @@ async fn voicegate_pause_independent_from_manual_pause() {
         "must not synthesize while VoiceGate active"
     );
 
-    // VoiceGate deactivated — queue should drain.
+    // VoiceGate deactivated - queue should drain.
     handle
         .send(SpeakCommand::VoiceGateDeactivated)
         .await

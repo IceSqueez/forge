@@ -106,7 +106,7 @@ impl DeleteRewardRunner {
         };
 
         // DELETE /helix/channel_points/custom_rewards sends both broadcaster_id and
-        // the reward id as query params — no request body (204 on success).
+        // the reward id as query params - no request body (204 on success).
         let request =
             HelixRequest::new(HelixMethod::Delete, "/helix/channel_points/custom_rewards")
                 .query("broadcaster_id", user_id)

@@ -16,7 +16,7 @@ impl SubActionRunner for CoreTimeParseRunner {
     }
 
     fn label(&self) -> &str {
-        "Time — Parse Time String"
+        "Time - Parse Time String"
     }
 
     fn summary(&self) -> &str {
@@ -201,7 +201,7 @@ mod tests {
             .get("time.parsed")
             .and_then(|v| v.as_datetime())
             .unwrap();
-        // 12:00 at +02:00 is 10:00 UTC — offset honoured, not dropped.
+        // 12:00 at +02:00 is 10:00 UTC - offset honoured, not dropped.
         assert_eq!(
             dt.unix_timestamp(),
             utc(2024, Month::January, 15, 10, 0, 0).unix_timestamp()

@@ -594,7 +594,7 @@ fn alias_form_modal<'a>(
         },
     );
 
-    // A blocked viewer is never spoken, so voice configuration is inapplicable — mirror
+    // A blocked viewer is never spoken, so voice configuration is inapplicable - mirror
     // the list row's "Never speak" state instead of offering dead engine/voice inputs.
     let config_section: Element<'a, Message> = if form.blocked {
         text(forge_widgets::tr!("tts_aliases_form_blocked_note"))
@@ -1201,7 +1201,7 @@ fn alias_row<'a>(
     };
 
     let pitch_str = if muted {
-        "—".to_string()
+        "-".to_string()
     } else {
         alias
             .pitch_semitones
@@ -1216,7 +1216,7 @@ fn alias_row<'a>(
     };
 
     let speed_str = if muted {
-        "—".to_string()
+        "-".to_string()
     } else {
         alias
             .rate_multiplier

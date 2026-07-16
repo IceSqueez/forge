@@ -37,7 +37,7 @@ impl SubActionRunner for CoreTimeFormatRunner {
     }
 
     fn label(&self) -> &str {
-        "Time — Format Datetime"
+        "Time - Format Datetime"
     }
 
     fn summary(&self) -> &str {

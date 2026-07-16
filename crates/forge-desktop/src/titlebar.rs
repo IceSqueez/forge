@@ -60,14 +60,14 @@ impl Render for TitleBar {
                 div()
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child("—"),
+                    .child("-"),
             )
-            // Active-profile slot: no profile source wired yet — placeholder in the real frame.
+            // Active-profile slot: no profile source wired yet - placeholder in the real frame.
             .child(
                 div()
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("—"),
+                    .child("-"),
             );
 
         div()

@@ -37,7 +37,7 @@ impl RunAdRunner {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        // broadcaster_id goes in the JSON body, not as a query param — this is
+        // broadcaster_id goes in the JSON body, not as a query param - this is
         // how the Twitch Helix /channels/commercial endpoint is specified.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channels/commercial")
             .body(serde_json::json!({ "broadcaster_id": user_id, "length": duration }));
@@ -226,7 +226,7 @@ mod tests {
                 false,
             ),
             // Proves the String convention is enforced: an integer 90 is NOT a valid
-            // duration even though "90" is — the form stores Select values as strings.
+            // duration even though "90" is - the form stores Select values as strings.
             ("variant int", cfg(Variant::Int(90)), false),
             ("empty string", cfg(Variant::String(String::new())), false),
             ("missing key", BTreeMap::new(), false),

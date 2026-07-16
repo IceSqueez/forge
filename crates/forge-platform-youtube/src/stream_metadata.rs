@@ -74,7 +74,7 @@ impl YoutubeStreamMetadata {
             self.active_broadcast_id
                 .get()
                 .ok_or_else(|| PlatformError::Unsupported {
-                    feature: "stream metadata — no active YouTube broadcast".to_owned(),
+                    feature: "stream metadata - no active YouTube broadcast".to_owned(),
                 })?;
 
         let url = format!("{}/videos", self.api_base);
@@ -111,7 +111,7 @@ impl YoutubeStreamMetadata {
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "stream metadata — active broadcast video not found".to_owned(),
+                feature: "stream metadata - active broadcast video not found".to_owned(),
             })?;
 
         let mut snippet = item

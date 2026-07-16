@@ -140,7 +140,7 @@ mod tests {
     use super::*;
 
     // ---------------------------------------------------------------------------
-    // Minimal in-memory CredentialsRepo — mirrors the Kick harness pattern.
+    // Minimal in-memory CredentialsRepo - mirrors the Kick harness pattern.
     // ---------------------------------------------------------------------------
 
     struct InMemRepo(Mutex<HashMap<String, String>>);

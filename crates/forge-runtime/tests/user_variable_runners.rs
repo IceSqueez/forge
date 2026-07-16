@@ -1,7 +1,7 @@
 //! Integration tests for the per-user variable sub-action runners
 //! (`core.users.get_var` / `core.users.set_var` / `core.users.increment_var`).
 //!
-//! Storage is an in-memory `UserGlobalsRepo` mock — no SQLite, no services, no network.
+//! Storage is an in-memory `UserGlobalsRepo` mock - no SQLite, no services, no network.
 //! The load-bearing edge under test is broadcaster-id resolution: a sub-action runner has
 //! no channel identity, so absent a `%broadcaster_id%` arg every variable shares the
 //! single-broadcaster `"local"` namespace.

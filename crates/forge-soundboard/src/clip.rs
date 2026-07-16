@@ -4,7 +4,7 @@ use forge_types::{ClipId, OutputDevice};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-/// Volume scalar in `0.0..=1.5` range. Above 1.0 is post-gain — clipping is the
+/// Volume scalar in `0.0..=1.5` range. Above 1.0 is post-gain - clipping is the
 /// caller's responsibility. The newtype prevents accidental swapping with raw
 /// percentages.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]

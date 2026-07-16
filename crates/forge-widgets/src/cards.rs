@@ -29,7 +29,7 @@ fn card_style(
 ///
 /// Built via [`card`]. Renders as a bordered container by default and switches
 /// to a hover-reactive button once [`Card::on_press`] is set. The child is
-/// placed verbatim — no forced column wrapper — so callers own their layout.
+/// placed verbatim - no forced column wrapper - so callers own their layout.
 pub struct Card<'a, Msg> {
     child: Element<'a, Msg>,
     padding: Padding,
@@ -97,7 +97,7 @@ impl<'a, Msg: 'a> Card<'a, Msg> {
     }
 
     /// Split the corner radius: `top` rounds the header edge, `bottom` the body
-    /// edge — used to butt a header bar flush against the panel below it. Pass
+    /// edge - used to butt a header bar flush against the panel below it. Pass
     /// `0.0` for a square edge (feed the token via [`radius`] for rounded ones).
     #[must_use]
     pub fn split_radius(mut self, top: f32, bottom: f32) -> Self {
@@ -178,8 +178,8 @@ impl<'a, Msg: Clone + 'a> From<Card<'a, Msg>> for Element<'a, Msg> {
 /// Shared list-row surface: a `leading` visual (status dot or icon), a
 /// `title` + optional `meta` line, and an optional `trailing` control cluster
 /// (toggle, badge, or a [`crate::row_actions`] / [`crate::menu_button`]
-/// overflow menu). Standardizes the row scaffolding — spacing, padding, the
-/// selected accent border, and the whole-row hover/press affordance — so list
+/// overflow menu). Standardizes the row scaffolding - spacing, padding, the
+/// selected accent border, and the whole-row hover/press affordance - so list
 /// screens stop hand-rolling it.
 ///
 /// Built via [`row_card`]. Interactive rows ([`RowCard::on_press`]) hover to a

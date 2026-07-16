@@ -86,7 +86,7 @@ fn block_matched_by_viewer_id_not_name() {
         SynthesisDefaults::default(),
     );
 
-    // Same viewer_name but different viewer_id — must NOT be blocked.
+    // Same viewer_name but different viewer_id - must NOT be blocked.
     match resolver.resolve("uid-other", "BlockedViewer", &catalog) {
         ResolveResult::Speak { .. } => {}
         ResolveResult::Skip { reason } => {

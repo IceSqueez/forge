@@ -1527,7 +1527,7 @@ fn preview_stage_card(
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(format!("skipped — {reason:?}")),
+                    .child(format!("skipped - {reason:?}")),
             )
             .into_any_element(),
     };

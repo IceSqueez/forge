@@ -55,7 +55,7 @@ pub struct QueuesState {
     pub edit_queue_form: Option<EditQueueForm>,
     // Queues persisted but rejected by the live scheduler after a successful DB write.
     // Keyed by queue id and re-applied after every LoadRequested reload because the
-    // live/storage split is not a persisted field — a reload alone would erase it.
+    // live/storage split is not a persisted field - a reload alone would erase it.
     pub diverged: std::collections::HashSet<QueueId>,
 }
 
@@ -208,7 +208,7 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
             let repo = rt.backend.queue_repo();
             let scheduler = rt.scheduler.clone();
             // Persist-then-apply (RFC-090 Boundary 3): write to storage first, and only on a
-            // successful write call the live scheduler. The two phases ride two messages —
+            // successful write call the live scheduler. The two phases ride two messages -
             // the save outcome, then (on Ok) the register outcome carrying the queue id.
             Task::perform(
                 async move {
@@ -272,7 +272,7 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
             let repo = rt.backend.queue_repo();
             let scheduler = rt.scheduler.clone();
             // Persist-then-apply (RFC-090 Boundary 3): write first, then reconfigure the live
-            // slot only on a successful write — same two-message shape as create.
+            // slot only on a successful write - same two-message shape as create.
             Task::perform(
                 async move {
                     repo.save(&queue).await.map_err(|e| e.to_string())?;
@@ -327,7 +327,7 @@ pub fn update(state: &mut QueuesState, rt: &RuntimeView, msg: QueuesMsg) -> Task
 }
 
 /// Register a freshly-saved queue with the live scheduler. `None` = no scheduler handle
-/// (runtime not up — the normal early-boot case; the queue is picked up next boot, NOT a
+/// (runtime not up - the normal early-boot case; the queue is picked up next boot, NOT a
 /// divergence). `Some(result)` carries the scheduler's outcome for the caller to judge.
 async fn register_outcome(
     scheduler: Option<forge_runtime::QueueSchedulerHandle>,
@@ -362,7 +362,7 @@ async fn reconfigure_outcome(
 }
 
 /// Record (or clear) the saved-but-not-live divergence badge for one queue after a scheduler
-/// call. `AlreadyRegistered` is an idempotent success — no badge. A channel error or a
+/// call. `AlreadyRegistered` is an idempotent success - no badge. A channel error or a
 /// `NotFound` outcome leaves storage and the live registry out of sync until restart → badge.
 fn apply_membership_outcome(
     state: &mut QueuesState,
@@ -1752,7 +1752,7 @@ mod tests {
         let rt = test_rt();
         let id = QueueId::new();
         let mut state = QueuesState::new();
-        // No pre-existing badge — verify it isn't spuriously inserted either.
+        // No pre-existing badge - verify it isn't spuriously inserted either.
         let _ = update(
             &mut state,
             &rt,

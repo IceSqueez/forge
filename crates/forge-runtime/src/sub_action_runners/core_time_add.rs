@@ -49,7 +49,7 @@ impl SubActionRunner for CoreTimeAddRunner {
     }
 
     fn label(&self) -> &str {
-        "Time — Date/Time Arithmetic"
+        "Time - Date/Time Arithmetic"
     }
 
     fn summary(&self) -> &str {

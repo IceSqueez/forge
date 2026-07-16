@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// boundary (sub-buffer audio already handed to the driver still drains, a
 /// low-tens-of-ms tail) and the playback thread tears the stream down within one
 /// poll interval. A handle returned by a sink that does not implement
-/// cancellation (the `AudioSink::play_stoppable` default) carries no flags —
+/// cancellation (the `AudioSink::play_stoppable` default) carries no flags -
 /// `stop` is then a no-op and the clip runs to completion.
 #[derive(Clone, Default)]
 pub struct PlaybackHandle {

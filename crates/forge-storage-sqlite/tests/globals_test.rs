@@ -378,7 +378,7 @@ async fn export_all_round_trips_via_json_envelope() {
 #[tokio::test]
 async fn set_stores_the_configured_persisted_flag() {
     // Guards the DT-05-F12 headline: whatever `persisted` the caller passes to
-    // set() is the value the row carries — a runner passing the WRONG flag
+    // set() is the value the row carries - a runner passing the WRONG flag
     // (the original bug) surfaces here. Insert path, both directions.
     let repo = setup().await;
     for (name, flag) in [("kept", true), ("ephemeral", false)] {

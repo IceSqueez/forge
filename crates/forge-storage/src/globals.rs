@@ -47,7 +47,7 @@ pub trait GlobalsRepo: Send + Sync {
     /// Use this for metadata-only edits (e.g. a UI persist toggle) instead of `set()`,
     /// which always bumps `writes` even when the value itself is unchanged. Backends
     /// without a direct column update inherit this default, which re-`set()`s the
-    /// current value and so still bumps `writes` — a real backend should override for
+    /// current value and so still bumps `writes` - a real backend should override for
     /// true metadata-only semantics.
     async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
         let Some(entry) = self.list().await?.into_iter().find(|e| e.name == name) else {
@@ -58,7 +58,7 @@ pub trait GlobalsRepo: Send + Sync {
     }
 
     /// Renames `old_name` to `new_name`, preserving the row's value, `persisted`
-    /// flag, and `reads`/`writes`/`created_at` telemetry — only the name (the
+    /// flag, and `reads`/`writes`/`created_at` telemetry - only the name (the
     /// join key scripts and sub-actions reference) changes.
     ///
     /// Rejects with [`StorageError::NameCollision`] when `new_name` already
@@ -95,7 +95,7 @@ pub trait GlobalsRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
     /// Marks `name` archived: invisible to `get`, `list`, `persisted`, and `incr` until
-    /// [`Self::restore`] is called. The row and its telemetry survive untouched — this
+    /// [`Self::restore`] is called. The row and its telemetry survive untouched - this
     /// is a soft delete, not [`Self::delete`]. Returns `false` when `name` does not
     /// exist or is already archived.
     ///
@@ -115,7 +115,7 @@ pub trait GlobalsRepo: Send + Sync {
         Err(StorageError::NotReady)
     }
 
-    /// Returns archived globals only — the mirror of `list`, which excludes them.
+    /// Returns archived globals only - the mirror of `list`, which excludes them.
     ///
     /// The default impl reports no archived entries, consistent with a backend that
     /// does not support archiving.
@@ -123,7 +123,7 @@ pub trait GlobalsRepo: Send + Sync {
         Ok(Vec::new())
     }
 
-    /// Sums the footprint of ALL globals, persisted and session-scoped alike — the
+    /// Sums the footprint of ALL globals, persisted and session-scoped alike - the
     /// Data screen's total storage-used figure, not a disk-durable-only figure.
     async fn storage_bytes(&self) -> Result<u64, StorageError>;
 
@@ -139,7 +139,7 @@ pub trait GlobalsRepo: Send + Sync {
 
     /// Returns all globals in transit shape for export, sorted by name.
     ///
-    /// Does not increment `reads` counters — this is an inspection operation,
+    /// Does not increment `reads` counters - this is an inspection operation,
     /// not a runtime get. Backends with a more efficient bulk path may override.
     async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
         let mut entries = self.list().await?;

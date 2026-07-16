@@ -289,8 +289,8 @@ mod tests {
         );
     }
 
-    // SHARED: both ids interpolate from their distinct templates — reward_id from
-    // %reward.id%, id from %redemption.id% — not passed through verbatim.
+    // SHARED: both ids interpolate from their distinct templates - reward_id from
+    // %reward.id%, id from %redemption.id% - not passed through verbatim.
     #[tokio::test]
     async fn both_ids_interpolate_from_their_own_templates() {
         let (transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));

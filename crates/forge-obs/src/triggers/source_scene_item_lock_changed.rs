@@ -140,8 +140,8 @@ mod tests {
         );
     }
 
-    // An `is_locked: false` payload (unlock) must map to `Variant::Bool(false)` — not be
-    // dropped or coerced — so actions can distinguish unlock from lock.
+    // An `is_locked: false` payload (unlock) must map to `Variant::Bool(false)` - not be
+    // dropped or coerced - so actions can distinguish unlock from lock.
     #[test]
     fn build_arg_stack_preserves_false_locked_flag() {
         let event = lock_event(json!({ "scene": "Main", "source": "Cam", "is_locked": false }));

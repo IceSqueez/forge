@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Regex Match"
+        "String - Regex Match"
     }
 
     fn summary(&self) -> &str {

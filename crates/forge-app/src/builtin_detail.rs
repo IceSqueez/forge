@@ -45,7 +45,7 @@ pub struct BuiltinDetailState {
     pub health_metrics: [HealthMetric; 4],
     pub pending_picker: Option<PendingPicker>,
     pub quick_action_toast: Option<String>,
-    /// Two-phase disconnect gate — armed by the header's Disconnect action,
+    /// Two-phase disconnect gate - armed by the header's Disconnect action,
     /// rendered by the shared `confirm_modal`. `false` = no confirm showing.
     pub pending_disconnect: bool,
     display_name: String,
@@ -112,9 +112,9 @@ pub fn on_event(state: Option<&mut BuiltinDetailState>, event: &Event) -> Task<M
         .unwrap_or(quick_action_fallback.as_str());
     let outcome = event.payload["outcome"].as_str().unwrap_or("done");
     state.quick_action_toast = Some(if outcome == "success" {
-        format!("{label} — done")
+        format!("{label} - done")
     } else {
-        format!("{label} — {outcome}")
+        format!("{label} - {outcome}")
     });
     Task::none()
 }
@@ -136,7 +136,7 @@ pub fn update(
             Task::none()
         }
         BuiltinDetailMsg::HeaderActionClicked(HeaderAction::Disconnect) => {
-            // Arms the confirm gate only (PL-03-F6 — was a bare
+            // Arms the confirm gate only (PL-03-F6 - was a bare
             // immediate-execute site). The actual disconnect body moved to
             // `DisconnectConfirmAccepted`.
             state.pending_disconnect = true;
@@ -486,7 +486,7 @@ pub fn view<'a>(state: &'a BuiltinDetailState, palette: &'a ForgePalette) -> Ele
 }
 
 /// Renders the shared destructive-confirm modal while a disconnect is armed.
-/// Sits on top of the picker/toast overlays — a blocking confirm dialog
+/// Sits on top of the picker/toast overlays - a blocking confirm dialog
 /// always dominates.
 fn pending_disconnect_modal<'a>(
     state: &'a BuiltinDetailState,
@@ -911,7 +911,7 @@ mod tests {
     #[test]
     fn dismiss_toast_clears_toast() {
         let mut state = make_state();
-        state.quick_action_toast = Some("Switch Scene — done".to_owned());
+        state.quick_action_toast = Some("Switch Scene - done".to_owned());
         let mut state_opt = Some(state);
         let app = App::default();
         let _ = update(&mut state_opt, &app.rt, BuiltinDetailMsg::DismissToast);
@@ -983,7 +983,7 @@ mod tests {
             &mut state_opt,
             &app.rt,
             BuiltinDetailMsg::PickerItemsLoaded(Err(
-                "Not supported for OBS — VTube only".to_owned()
+                "Not supported for OBS - VTube only".to_owned()
             )),
         );
         let pending = state_opt.as_ref().unwrap().pending_picker.as_ref().unwrap();

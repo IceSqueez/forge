@@ -44,7 +44,7 @@ impl GetCurrentGoalRunner {
             .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
 
         let Some(first) = resp["data"].as_array().and_then(|arr| arr.first()) else {
-            // Empty data array means no active goal — not an error.
+            // Empty data array means no active goal - not an error.
             return Ok(None);
         };
 
@@ -164,7 +164,7 @@ impl SubActionRunner for GetCurrentGoalRunner {
                     Some(output_stack),
                 )
             }
-            // goal.exists=false on empty data — absence of an active goal is not an error.
+            // goal.exists=false on empty data - absence of an active goal is not an error.
             Ok(None) => {
                 let output_stack = ctx
                     .arg_stack

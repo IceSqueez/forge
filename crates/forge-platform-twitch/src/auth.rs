@@ -26,11 +26,11 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "channel:read:goals",
     // Follow events
     "moderator:read:followers",
-    // Moderation — read
+    // Moderation - read
     "moderation:read",
     "moderator:read:suspicious_users",
     "moderator:read:automod_settings",
-    // Moderation — manage
+    // Moderation - manage
     "channel:moderate",
     "moderator:manage:announcements",
     "moderator:manage:automod",
@@ -159,7 +159,7 @@ impl TwitchAuthFlow {
     }
 
     /// Consumes the pending driver, waits for the loopback callback, exchanges
-    /// the code for a Twitch access token (PKCE — no `client_secret`), validates
+    /// the code for a Twitch access token (PKCE - no `client_secret`), validates
     /// against Helix, and resolves the broadcaster's profile.
     pub async fn wait_for_authorization(
         &mut self,

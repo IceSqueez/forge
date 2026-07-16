@@ -19,7 +19,7 @@ impl ConditionEvaluator {
     }
 
     /// Accepts only a genuine boolean result; any other type is a typed error,
-    /// never truthiness-coerced — truthiness across the seven Variant kinds is
+    /// never truthiness-coerced - truthiness across the seven Variant kinds is
     /// ambiguous and would silently mask authoring mistakes.
     pub fn eval(&self, expr: &str) -> Result<bool, ScriptError> {
         let mut inner = rhai::Engine::new_raw();

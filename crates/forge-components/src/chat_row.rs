@@ -509,7 +509,7 @@ mod tests {
         let p = CATPPUCCIN_MOCHA;
 
         // Guard: the distinct palette fields the badge map draws from are pairwise
-        // distinct, so each per-kind hue row below has teeth — a mis-wire to a
+        // distinct, so each per-kind hue row below has teeth - a mis-wire to a
         // neighbouring field (VIP onto `warning`, Subscriber onto `success`, ...)
         // resolves to a detectably different colour rather than a silent alias.
         // `brand` (Vip/Bot/Turbo) and `bits` (Bits/BitsLeader) are intentionally
@@ -534,7 +534,7 @@ mod tests {
         }
 
         // Captions are deliberate abbreviations (OWN not OWNER, PRIME not PREMIUM,
-        // HYPE not HYPE TRAIN) — a future "tidy-up" that expands them is the
+        // HYPE not HYPE TRAIN) - a future "tidy-up" that expands them is the
         // regression this row pins.
         for (kind, hue, label) in [
             (BadgeKind::Moderator, p.success, "MOD"),

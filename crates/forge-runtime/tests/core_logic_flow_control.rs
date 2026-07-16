@@ -1,12 +1,12 @@
 //! Flow-control composite runners (`if_then_else`, `loop`, `switch_case`) driven
-//! end-to-end through the real `ChainEngine`. Driving through the engine — rather
-//! than hand-constructing `ChainSignal`s — is deliberate: it exercises the actual
+//! end-to-end through the real `ChainEngine`. Driving through the engine - rather
+//! than hand-constructing `ChainSignal`s - is deliberate: it exercises the actual
 //! `ControlCell` round-trip, so the absorption matrix below reflects how signals
 //! really flow at runtime.
 //!
 //! The load-bearing contracts under test:
 //!   * inline sub-chains (stored as `Variant::Array(Variant::Object)`) are decoded
-//!     AND executed — the regression for commit 8ea1fd9, where they silently never
+//!     AND executed - the regression for commit 8ea1fd9, where they silently never
 //!     ran;
 //!   * a `loop` ABSORBS `Break`/`Continue`; `if`/`switch` are TRANSPARENT and
 //!     re-propagate `Break`/`Continue`/`Stop` to the enclosing control cell;
@@ -43,7 +43,7 @@ impl EventPublisher for NullPublisher {
 }
 
 /// Test double that always fails, so the loop's "child error propagates to the
-/// action-root" path can be exercised — no production logic runner fails on demand.
+/// action-root" path can be exercised - no production logic runner fails on demand.
 struct AlwaysFailRunner;
 
 #[async_trait]
@@ -202,7 +202,7 @@ fn s(value: &str) -> Variant {
 #[tokio::test]
 async fn if_then_else_runs_the_taken_branchs_inline_chain() {
     // REGRESSION: a branch chain is stored as Array(Object). It must be decoded
-    // AND executed — before the decode fix the body silently never ran, so the
+    // AND executed - before the decode fix the body silently never ran, so the
     // args.set effect (`marker`) stayed unset. We assert the effect actually lands
     // on both the then and else branch.
     let eng = engine();

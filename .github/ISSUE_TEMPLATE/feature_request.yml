@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting a feature! Forge aims to stay focused — please help us understand the use case before we discuss design.
+        Thanks for suggesting a feature! Forge aims to stay focused - please help us understand the use case before we discuss design.
   - type: textarea
     id: problem
     attributes:

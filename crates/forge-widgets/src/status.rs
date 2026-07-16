@@ -18,7 +18,7 @@ pub enum StatusVariant {
 }
 
 impl StatusVariant {
-    /// `(background, foreground)` — the tinted fill and the text/dot hue.
+    /// `(background, foreground)` - the tinted fill and the text/dot hue.
     pub fn colors(self, palette: &ForgePalette) -> (Color, Color) {
         let fg = match self {
             StatusVariant::Positive => palette.success,

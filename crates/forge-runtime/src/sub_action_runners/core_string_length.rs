@@ -16,7 +16,7 @@ impl SubActionRunner for CoreStringLengthRunner {
     }
 
     fn label(&self) -> &str {
-        "String — Length"
+        "String - Length"
     }
 
     fn summary(&self) -> &str {

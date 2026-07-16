@@ -2,7 +2,7 @@
 //! clear). Each runner reaches the live `QueueScheduler` through a
 //! `SchedulerCell` filled at boot. These tests exercise that boot-cell path with
 //! a real in-process scheduler and assert the *effect* (paused state flipped,
-//! queue.cleared emitted) — not just that a command was accepted.
+//! queue.cleared emitted) - not just that a command was accepted.
 //!
 //! Scheduler-internal clear semantics (pending discard, keep_current abort,
 //! pause carry-forward) are covered by `queue_scheduler`'s own tests; these

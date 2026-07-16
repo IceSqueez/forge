@@ -112,7 +112,7 @@ mod tests {
 
     /// Each lifecycle descriptor must fire on exactly its own kind and reject every
     /// sibling streaming kind. The 1:1 kind→descriptor mapping is the load-bearing
-    /// contract — a descriptor that matched a sibling would mis-fire user actions.
+    /// contract - a descriptor that matched a sibling would mis-fire user actions.
     #[test]
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [

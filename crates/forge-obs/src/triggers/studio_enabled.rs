@@ -89,7 +89,7 @@ mod tests {
     }
 
     /// Each studio descriptor must fire on exactly its own kind and reject its
-    /// sibling — a descriptor that matched the wrong kind would mis-fire actions
+    /// sibling - a descriptor that matched the wrong kind would mis-fire actions
     /// (run "studio enabled" handlers when studio mode was turned off).
     #[test]
     fn each_studio_descriptor_matches_only_its_own_kind() {

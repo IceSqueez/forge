@@ -482,7 +482,7 @@ pub fn json_viewer<'a, Msg: 'a>(
         .into()
 }
 
-/// `loading = true` renders a disabled, muted, spinner-iconed button — the
+/// `loading = true` renders a disabled, muted, spinner-iconed button - the
 /// busy-guard so a double-click on Replay cannot fire two concurrent replays
 /// (the button simply has no `on_press` attached while a replay is in flight).
 pub fn replay_button<'a, Msg: Clone + 'a>(
@@ -566,7 +566,7 @@ pub struct EventInspectorParams<'a, Msg> {
     /// `(summary, kind, on_click)`. `on_click` walks one hop up the causation chain.
     pub caused_event: Option<(&'a str, &'a str, Msg)>,
     pub on_replay: Msg,
-    /// Busy-guard: `true` while a replay is in flight — renders the Replay
+    /// Busy-guard: `true` while a replay is in flight - renders the Replay
     /// button disabled/spinner so a double-click cannot fire a second replay.
     pub replay_loading: bool,
 }

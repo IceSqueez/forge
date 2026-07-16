@@ -482,7 +482,7 @@ impl TtsTriggersView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child("Disabled — toggle to enable")
+                .child("Disabled - toggle to enable")
         });
 
         card(

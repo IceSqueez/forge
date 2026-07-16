@@ -24,7 +24,7 @@ pub struct VoiceDescriptor {
 ///
 /// Every method except `speak` has a default impl: controls are no-ops returning
 /// `Ok`, queries return empty/zero. Only the forge-app bridge wires them to a live
-/// queue — any other impl (test doubles included) is inert without overriding them.
+/// queue - any other impl (test doubles included) is inert without overriding them.
 #[async_trait]
 pub trait SpeakDispatcher: Send + Sync {
     /// Enqueue a speak request with an optional raw voice-ID override string.

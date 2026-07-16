@@ -109,7 +109,7 @@ impl UrlOpenPort for SystemUrlOpenPort {
 #[allow(clippy::unwrap_used)]
 pub(crate) mod test_ports {
     //! Recording / programmable mock ports for runner tests. These NEVER touch a
-    //! real clipboard, notification daemon, or browser — they record every call
+    //! real clipboard, notification daemon, or browser - they record every call
     //! and return a pre-programmed outcome, so the security gate and field
     //! marshaling can be asserted without OS side effects.
 
@@ -264,7 +264,7 @@ pub(crate) mod test_ports {
         }
     }
 
-    /// Sink that drops events — RunContext requires a publisher but these runners
+    /// Sink that drops events - RunContext requires a publisher but these runners
     /// emit none.
     pub(crate) struct NullPublisher;
 

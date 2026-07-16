@@ -69,7 +69,7 @@ impl KickCredentialsManager {
         Ok(creds.access_token)
     }
 
-    /// Public-client form POST — no `client_secret`. Returns
+    /// Public-client form POST - no `client_secret`. Returns
     /// `Err(PlatformError::ReauthRequired)` on 400 or 401 from the upstream.
     pub async fn refresh(&self, refresh_token: &str) -> Result<KickCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
@@ -370,7 +370,7 @@ mod tests {
         let body = std::str::from_utf8(&reqs[0].body).unwrap();
         assert!(
             !body.contains("client_secret"),
-            "client_secret must not appear in form body — public client flow"
+            "client_secret must not appear in form body - public client flow"
         );
     }
 

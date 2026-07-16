@@ -1,6 +1,6 @@
 # forge
 
-Event-driven stream automation with multi-engine TTS — a single Rust desktop app for Linux, Windows, and macOS.
+Event-driven stream automation with multi-engine TTS - a single Rust desktop app for Linux, Windows, and macOS.
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
 [![Rust 1.96.0+](https://img.shields.io/badge/rust-1.96.0%2B-orange)](https://www.rust-lang.org/)
@@ -33,32 +33,32 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 
 ### Actions & automation
 - Action editor with trigger configuration and nested sub-action chain authoring
-- **Nested flow control:** if/then/else branches, loops (count / foreach-array / while), switch/case, break/continue, stop chain, delay (fixed duration or wait-until-condition) — each flow-control step contains its own sub-chain authored via drill-in
+- **Nested flow control:** if/then/else branches, loops (count / foreach-array / while), switch/case, break/continue, stop chain, delay (fixed duration or wait-until-condition) - each flow-control step contains its own sub-chain authored via drill-in
 - **Built-in sub-action library grouped by area:**
-  - **Action & trigger control** — run another action, cancel action, enable/disable/toggle action or trigger instance
-  - **Globals & variables** — set, get, increment, decrement, toggle (bool), array append/remove on named globals; per-user get/set/increment; local execution-scoped args
-  - **Strings** — concat, substring, replace, case conversion, trim, split, regex match, format template
-  - **Math & random** — expression evaluation; random int, float, bool, and weighted pick
-  - **Date & time** — get current time, format, diff, arithmetic, parse
-  - **File (sandboxed)** — read, write/append, delete, list directory
-  - **HTTP** — GET, POST, PUT, PATCH, DELETE with headers, query params, body, and JSON/text response parsing
-  - **Queue control** — pause, resume, clear action queue
-  - **Desktop** — OS notification, clipboard read/write, open URL in browser
-  - **TTS** — speak text, stop, pause/resume/skip/clear queue, set/switch voice alias
-  - **Soundboard** — play clip, stop clip, stop all, set master volume
-  - **Script** — run inline rhai snippet, run named script, emit custom event to bus
-  - **Server** — broadcast event payload to connected overlay clients
+  - **Action & trigger control** - run another action, cancel action, enable/disable/toggle action or trigger instance
+  - **Globals & variables** - set, get, increment, decrement, toggle (bool), array append/remove on named globals; per-user get/set/increment; local execution-scoped args
+  - **Strings** - concat, substring, replace, case conversion, trim, split, regex match, format template
+  - **Math & random** - expression evaluation; random int, float, bool, and weighted pick
+  - **Date & time** - get current time, format, diff, arithmetic, parse
+  - **File (sandboxed)** - read, write/append, delete, list directory
+  - **HTTP** - GET, POST, PUT, PATCH, DELETE with headers, query params, body, and JSON/text response parsing
+  - **Queue control** - pause, resume, clear action queue
+  - **Desktop** - OS notification, clipboard read/write, open URL in browser
+  - **TTS** - speak text, stop, pause/resume/skip/clear queue, set/switch voice alias
+  - **Soundboard** - play clip, stop clip, stop all, set master volume
+  - **Script** - run inline rhai snippet, run named script, emit custom event to bus
+  - **Server** - broadcast event payload to connected overlay clients
 - Platform sub-actions (Twitch, YouTube, Kick, OBS, VTube, Discord, MIDI) selectable in the same editor
 - Command parser for chat-triggered actions
 - Queue scheduling: Sequential or RandomPick execution
 
 ### Integrations
-- **OBS WebSocket v5** — switch scene, source visibility, input mute, start/stop stream/record; scene-changed trigger
-- **VTube Studio** — model load/move, expression set, parameter set/reset
-- **Discord** — post text, embed, edit message
-- **MIDI** — note-on/off triggers, CC triggers
-- **System hotkeys** — global key-combination triggers
-- **Soundboard** — clip grid with per-clip output device and volume; `PlaySound` sub-action
+- **OBS WebSocket v5** - switch scene, source visibility, input mute, start/stop stream/record; scene-changed trigger
+- **VTube Studio** - model load/move, expression set, parameter set/reset
+- **Discord** - post text, embed, edit message
+- **MIDI** - note-on/off triggers, CC triggers
+- **System hotkeys** - global key-combination triggers
+- **Soundboard** - clip grid with per-clip output device and volume; `PlaySound` sub-action
 
 ### TTS pipeline
 - Local engines: Piper (ONNX), eSpeak-NG, SAPI (Windows), NSpeech (macOS)
@@ -72,7 +72,7 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 - SQLite backend with AES-GCM encrypted credentials; 7-day event log
 
 ### Overlay server
-- WebSocket server at `/ws/v1/` — 14+ methods, bearer-token auth, per-client subscriptions
+- WebSocket server at `/ws/v1/` - 14+ methods, bearer-token auth, per-client subscriptions
 - HTTP overlay host with path-traversal sandbox and configurable CORS
 - Live server screen: connected-client list, bandwidth metrics, lifecycle controls
 
@@ -85,13 +85,13 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 
 Binary releases for Linux, Windows, and macOS are on [GitHub Releases](https://github.com/IceSqueez/forge/releases).
 
-- **Linux:** AppImage, `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE) — x86_64
+- **Linux:** AppImage, `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE) - x86_64
 - **Windows:** portable `.exe` + MSI installer
 - **macOS:** universal `.dmg` (Apple Silicon + Intel)
 
 ## Building from source
 
-**Requires Rust 1.96.0 or later** — [install via rustup](https://rustup.rs/).
+**Requires Rust 1.96.0 or later** - [install via rustup](https://rustup.rs/).
 
 Linux also needs: `sudo apt-get install build-essential pkg-config libssl-dev` (Debian/Ubuntu).
 

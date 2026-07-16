@@ -279,7 +279,7 @@ fn field_label<'a, Message: 'a>(label: &str, p: ForgePalette) -> Element<'a, Mes
 }
 
 /// Applies one field-edit to the paired text/override buffers; keeps the
-/// displayed text and the typed `Variant` in sync (integer parse is lenient —
+/// displayed text and the typed `Variant` in sync (integer parse is lenient -
 /// invalid input stays visible without dropping the prior numeric value).
 pub fn apply_field_edit(
     text_buffer: &mut BTreeMap<String, String>,
@@ -418,7 +418,7 @@ mod tests {
         // invariant end-to-end, not a restatement of the filter predicate.
         type Config = BTreeMap<String, Variant>;
         let cases: Vec<(&str, Config, Config)> = vec![
-            // Revert-to-default — the whole point of the fix: a buffer entry that
+            // Revert-to-default - the whole point of the fix: a buffer entry that
             // re-states today's default MUST be pruned, so a later default change
             // is not masked by a frozen snapshot of the old value.
             (
@@ -440,7 +440,7 @@ mod tests {
                 BTreeMap::from([("extra".to_owned(), Variant::Bool(true))]),
             ),
             // The exact bug the fix closes: a full snapshot of the defaults must
-            // collapse to empty — no full snapshots are ever stored again.
+            // collapse to empty - no full snapshots are ever stored again.
             (
                 "buffer identical to full default collapses to empty",
                 default(),

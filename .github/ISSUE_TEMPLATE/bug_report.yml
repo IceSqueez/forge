@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug! Please fill in as much detail as you can — it helps us reproduce and fix the issue faster.
+        Thanks for taking the time to report a bug! Please fill in as much detail as you can - it helps us reproduce and fix the issue faster.
   - type: input
     id: version
     attributes:

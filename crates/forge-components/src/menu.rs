@@ -102,7 +102,7 @@ pub fn menu_header(label: impl Into<SharedString>) -> MenuItem {
     MenuItem::Header(label.into())
 }
 
-/// Counts only enabled `Item` rows — dividers, headers and disabled rows don't count.
+/// Counts only enabled `Item` rows - dividers, headers and disabled rows don't count.
 pub fn actionable_count(items: &[MenuItem]) -> usize {
     items
         .iter()

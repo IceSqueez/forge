@@ -39,7 +39,7 @@ pub trait TriggerInstanceRepo: Send + Sync {
 
     /// Marks `id` archived: invisible to `get`, `list_all`, `list_user_defined`, and
     /// `list_for_action` until [`Self::restore`] is called. The row and its links in
-    /// `action_trigger_instances` survive untouched — this is a soft delete, not
+    /// `action_trigger_instances` survive untouched - this is a soft delete, not
     /// [`Self::delete`]. Returns `false` when `id` does not exist or is already
     /// archived.
     ///
@@ -59,7 +59,7 @@ pub trait TriggerInstanceRepo: Send + Sync {
         Err(StorageError::NotReady)
     }
 
-    /// Returns archived trigger instances only — the mirror of `list_all`, which
+    /// Returns archived trigger instances only - the mirror of `list_all`, which
     /// excludes them.
     ///
     /// The default impl reports no archived entries, consistent with a backend that

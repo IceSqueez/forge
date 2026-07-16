@@ -6,7 +6,7 @@ use forge_types::Variant;
 ///
 /// For each key in `overrides`, the patch value wins outright. Keys absent
 /// from `overrides` fall through to their value in `default`. Nested
-/// `Variant::Object` / `Variant::Array` values are NOT deep-merged — the
+/// `Variant::Object` / `Variant::Array` values are NOT deep-merged - the
 /// override replaces the whole sub-tree (consistent with RFC-047 §3).
 pub fn effective_config(
     default: &BTreeMap<String, Variant>,

@@ -45,7 +45,7 @@ pub struct VoiceAlias {
 /// How a voice is chosen for viewers without a manual alias.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AssignmentStrategy {
-    /// `sha256(viewer_name) % eligible_voices.len()` — stable, deterministic per username.
+    /// `sha256(viewer_name) % eligible_voices.len()` - stable, deterministic per username.
     #[default]
     DeterministicByName,
     /// Random pick from eligible voices each message.

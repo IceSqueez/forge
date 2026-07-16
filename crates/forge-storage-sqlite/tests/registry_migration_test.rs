@@ -75,7 +75,7 @@ async fn migration_is_idempotent_on_second_call() {
 
     registry_migration::migrate_registry_format(&pool)
         .await
-        .expect("second migrate — must not error");
+        .expect("second migrate - must not error");
 
     let (sub_actions_json, version): (String, i64) =
         sqlx::query_as("SELECT sub_actions, format_version FROM actions WHERE id = ?")

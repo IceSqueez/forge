@@ -112,7 +112,7 @@ fn enumerate_voice_tokens(
         unsafe { CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_INPROC_SERVER) }
             .map_err(|e| SapiError::ComInit(e.code().0))?;
 
-    // SAFETY: SetId selects SPCAT_VOICES — the HKLM voice registry key. false = do not create.
+    // SAFETY: SetId selects SPCAT_VOICES - the HKLM voice registry key. false = do not create.
     unsafe { category.SetId(SPCAT_VOICES, false) }.map_err(|e| SapiError::ComInit(e.code().0))?;
 
     // SAFETY: EnumTokens queries installed SAPI voices. Null PCWSTR = no attribute filter.

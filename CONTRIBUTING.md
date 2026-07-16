@@ -10,7 +10,7 @@ All contributors and maintainers are expected to follow the [Contributor Covenan
 
 ### Prerequisites
 
-- Rust 1.96.0 stable toolchain (managed via `rust-toolchain.toml` — rustup installs it automatically when you build).
+- Rust 1.96.0 stable toolchain (managed via `rust-toolchain.toml` - rustup installs it automatically when you build).
 - Standard build tools (gcc/clang, pkg-config).
 - Linux/Wayland (Hyprland tested), Windows 10+, or macOS 12+.
 
@@ -27,7 +27,7 @@ cargo run -p forge-app
 
 ### Branch from the active release
 
-Forge uses release-prefixed branches (`release/alpha.N`, `release/beta.N`, `release/1.0`). Feature work targets the current alpha/beta branch — check the README "Status" section for which branch is active.
+Forge uses release-prefixed branches (`release/alpha.N`, `release/beta.N`, `release/1.0`). Feature work targets the current alpha/beta branch - check the README "Status" section for which branch is active.
 
 ### Commit conventions
 
@@ -54,7 +54,7 @@ A commit that fails any of these will be rejected during review.
 
 ### General
 
-- Forge is in pre-1.0 development. Breaking changes are welcome — no backward-compat shims, no `_unused` parameters, no deprecated re-exports.
+- Forge is in pre-1.0 development. Breaking changes are welcome - no backward-compat shims, no `_unused` parameters, no deprecated re-exports.
 - Comments are sparing. Public items get `///` rustdoc ONLY when the contract is non-obvious (panics, lifetimes, invariants). Avoid tautologies like `/// Creates a new X` above `fn new()`.
 - No `TODO`, `FIXME`, `XXX`, or `unimplemented!()` outside explicitly-stubbed crates. Production discipline applies to every commit.
 
@@ -76,7 +76,7 @@ A commit that fails any of these will be rejected during review.
 2. Make granular commits per the conventions above.
 3. Run the full pre-commit gate.
 4. Open a PR against the same release branch, using the PR template.
-5. CI will run the gate on Linux/Windows/macOS — all three must pass.
+5. CI will run the gate on Linux/Windows/macOS - all three must pass.
 6. Address review feedback by adding new commits (no force-push during review).
 7. Maintainer will squash-merge or rebase-merge once approved.
 

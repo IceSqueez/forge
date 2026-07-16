@@ -324,8 +324,8 @@ mod tests {
             ("Start", Some("obs.start.recording"), "zzz", false),
             // Absent sublabel with a non-matching label returns false without panicking.
             ("Start", None, "stop", false),
-            // The hit sits mid-string ("connect" inside "Reconnect"), pinning substring —
-            // not starts_with — semantics.
+            // The hit sits mid-string ("connect" inside "Reconnect"), pinning substring -
+            // not starts_with - semantics.
             ("Reconnect", None, "connect", true),
         ];
 

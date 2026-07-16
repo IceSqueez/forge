@@ -398,7 +398,7 @@ mod tests {
     async fn persisted_low_op_limit_aborts_runaway_script_at_that_limit() {
         // Guards the CORE-3 regression: runners must build the engine from the
         // PERSISTED op-limit, not EngineConfig::default() (100_000). A low
-        // persisted limit must actually abort a runaway loop at THAT value —
+        // persisted limit must actually abort a runaway loop at THAT value -
         // the `ops: 500` pattern fails if the default budget leaks back in.
         let dp = open_test_dp().await;
         dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, "500")

@@ -40,7 +40,7 @@ pub(crate) fn blocked_term_config_fields() -> Vec<FormField> {
     vec![FormField::Text {
         key: "text",
         label: "Term to block",
-        placeholder: "word or phrase (2–500 characters)",
+        placeholder: "word or phrase (2-500 characters)",
     }]
 }
 
@@ -354,7 +354,7 @@ mod tests {
         let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
         assert!(
             runner.validate_config(&cfg(&"я".repeat(500))).is_ok(),
-            "500 Cyrillic chars (1000 bytes) must validate — char count, not byte count"
+            "500 Cyrillic chars (1000 bytes) must validate - char count, not byte count"
         );
         assert!(
             runner.validate_config(&cfg(&"я".repeat(501))).is_err(),

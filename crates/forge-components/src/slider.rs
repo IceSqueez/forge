@@ -55,7 +55,7 @@ pub fn slider(value: f32, min: f32, max: f32, palette: &ForgePalette) -> Slider 
     }
 }
 
-/// Drag-payload preview gpui renders at the cursor; deliberately paints nothing — the
+/// Drag-payload preview gpui renders at the cursor; deliberately paints nothing - the
 /// moving thumb is the only feedback.
 struct DragGhost;
 

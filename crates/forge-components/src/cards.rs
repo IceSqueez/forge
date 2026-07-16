@@ -204,7 +204,7 @@ const TRANSPARENT: Rgba = Rgba {
     a: 0.0,
 };
 
-// Idle paints transparent so selecting swaps only color, never geometry — the row
+// Idle paints transparent so selecting swaps only color, never geometry - the row
 // never shifts as it selects.
 const ROW_BORDER: Pixels = px(2.0);
 
@@ -425,9 +425,9 @@ mod tests {
             (None, None) => {}
             (Some(got), Some(w)) => assert!(
                 same_rgba(got, w),
-                "{label}: border hue mismatch — got {got:?}, want {w:?}",
+                "{label}: border hue mismatch - got {got:?}, want {w:?}",
             ),
-            _ => panic!("{label}: border presence mismatch — got {actual:?}, want {want:?}"),
+            _ => panic!("{label}: border presence mismatch - got {actual:?}, want {want:?}"),
         }
     }
 
@@ -438,7 +438,7 @@ mod tests {
     // The load-bearing contract of a default row-card: which `ForgePalette` field
     // each interaction state fills with, and that ONLY the selected state draws the
     // accent border. Fills are compared channel-wise so a mis-wire to a neighbouring
-    // field (hover→elevated, selected→surface_overlay) fails — see the distinct-hue
+    // field (hover→elevated, selected→surface_overlay) fails - see the distinct-hue
     // guard below, which pins that these three fields really are different.
     #[test]
     fn resolve_maps_each_state_to_its_keyed_fill_and_border() {
@@ -452,7 +452,7 @@ mod tests {
             let (fill, border) = c.resolve(state);
             assert!(
                 same_rgba(fill, want_fill),
-                "{state:?}: fill mismatch — got {fill:?}, want {want_fill:?}",
+                "{state:?}: fill mismatch - got {fill:?}, want {want_fill:?}",
             );
             assert_border(border, want_border, &format!("{state:?}"));
         }

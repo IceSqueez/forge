@@ -19,7 +19,7 @@ impl MathEvaluator {
     }
 
     /// Returns `Variant::Int` or `Variant::Float`. NaN and infinite results
-    /// are rejected — the caller must not assume any special-float semantics
+    /// are rejected - the caller must not assume any special-float semantics
     /// survive into ArgStack or downstream sub-actions.
     pub fn eval(&self, expr: &str) -> Result<Variant, ScriptError> {
         let mut inner = rhai::Engine::new_raw();
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn eval_treats_percent_tokens_literally_without_re_interpolating() {
         // `%var%` placeholders are interpolated by the caller BEFORE this point.
-        // The evaluator must parse the raw text — `%kills%` is a syntax error,
+        // The evaluator must parse the raw text - `%kills%` is a syntax error,
         // not a second interpolation pass.
         assert!(eval("%kills%").is_err());
     }

@@ -21,7 +21,7 @@ fn pad(s: Spacing) -> Pixels {
 
 type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// Only the surface — wrap in [`crate::overlay`] for the scrim, enter animation, and scrim/Escape dismissal.
+/// Only the surface - wrap in [`crate::overlay`] for the scrim, enter animation, and scrim/Escape dismissal.
 #[derive(IntoElement)]
 pub struct Modal {
     title: SharedString,

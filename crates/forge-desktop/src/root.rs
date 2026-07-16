@@ -105,7 +105,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
         };
         match outcome {
             Ok(mut handles) => {
-                // Not `Clone` — take the sole subscription out so the bridge below owns
+                // Not `Clone` - take the sole subscription out so the bridge below owns
                 // the only drain.
                 let speak_events = handles.speak_events.take();
                 let handles = Arc::new(handles);

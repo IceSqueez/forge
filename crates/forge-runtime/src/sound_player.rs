@@ -14,7 +14,7 @@ pub enum SoundPlayerError {
 ///
 /// Every method except `play` has a default impl: `stop`/`stop_all` are no-ops
 /// returning `Ok`, `set_master_volume` discards the value. A non-bridge impl
-/// (the runner test doubles) stays correct without wiring playback state — only
+/// (the runner test doubles) stays correct without wiring playback state - only
 /// `forge_soundboard::SoundboardPlayer` overrides them against a live registry.
 #[async_trait]
 pub trait SoundPlayer: Send + Sync {

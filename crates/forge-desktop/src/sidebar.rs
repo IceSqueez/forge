@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, icon, icon_inherit, radius, status_dot,
+    Radius, icon, icon_inherit, radius, status_dot, tr,
 };
 use forge_platform_core::BuiltinId;
 use gpui::{
@@ -39,26 +39,47 @@ const MINI_LABEL_PAD_BOTTOM: Pixels = px(3.0);
 
 pub struct NavRequested(pub Screen);
 
+#[derive(Clone, Copy)]
+enum NavText {
+    Key(&'static str),
+    Brand(&'static str),
+}
+
+impl NavText {
+    fn id(self) -> &'static str {
+        match self {
+            NavText::Key(s) | NavText::Brand(s) => s,
+        }
+    }
+
+    fn resolve(self) -> SharedString {
+        match self {
+            NavText::Key(key) => tr!(key).into(),
+            NavText::Brand(name) => SharedString::from(name),
+        }
+    }
+}
+
 enum NavEntry {
-    SectionLabel(&'static str),
-    MiniLabel(&'static str),
+    SectionLabel(NavText),
+    MiniLabel(NavText),
     MiniLabelLink {
-        label: &'static str,
+        label: NavText,
         screen: Screen,
     },
     SectionLeaf {
         icon: Icon,
-        label: &'static str,
+        label: NavText,
         screen: Screen,
     },
     FlatIconLeaf {
         icon: Icon,
-        label: &'static str,
+        label: NavText,
         screen: Screen,
     },
     FlatLink {
         dot: Rgba,
-        label: &'static str,
+        label: NavText,
         screen: Screen,
         integ: Integration,
     },
@@ -98,116 +119,116 @@ impl SidebarNav {
         vec![
             NavEntry::SectionLeaf {
                 icon: Icon::Home,
-                label: "Home",
+                label: NavText::Key("nav_item_home"),
                 screen: Screen::Home,
             },
-            NavEntry::SectionLabel("Audience"),
+            NavEntry::SectionLabel(NavText::Key("nav_section_audience")),
             NavEntry::SectionLeaf {
                 icon: Icon::MessageCircle,
-                label: "Chat",
+                label: NavText::Key("nav_item_chat"),
                 screen: Screen::Chat,
             },
-            NavEntry::SectionLabel("Automation"),
+            NavEntry::SectionLabel(NavText::Key("nav_section_automation")),
             NavEntry::SectionLeaf {
                 icon: Icon::Bolt,
-                label: "Actions",
+                label: NavText::Key("nav_item_actions"),
                 screen: Screen::Actions,
             },
             NavEntry::SectionLeaf {
                 icon: Icon::TargetArrow,
-                label: "Triggers",
+                label: NavText::Key("nav_item_triggers"),
                 screen: Screen::Triggers,
             },
             NavEntry::SectionLeaf {
                 icon: Icon::Notebook,
-                label: "Queues",
+                label: NavText::Key("nav_item_queues"),
                 screen: Screen::Queues,
             },
             NavEntry::SectionLeaf {
                 icon: Icon::Activity,
-                label: "Event feed",
+                label: NavText::Key("nav_item_event_feed"),
                 screen: Screen::EventFeed,
             },
             NavEntry::SectionLeaf {
                 icon: Icon::Variable,
-                label: "Globals",
+                label: NavText::Key("nav_item_globals"),
                 screen: Screen::Globals,
             },
             NavEntry::SectionLeaf {
                 icon: Icon::FileCode,
-                label: "Scripts",
+                label: NavText::Key("nav_script_editor"),
                 screen: Screen::Scripts,
             },
-            NavEntry::MiniLabel("Platforms"),
+            NavEntry::MiniLabel(NavText::Key("nav_item_platforms")),
             NavEntry::FlatLink {
                 dot: palette.brand,
-                label: "Twitch",
+                label: NavText::Brand("Twitch"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("twitch")),
                 integ: Integration::Twitch,
             },
             NavEntry::FlatLink {
                 dot: palette.random,
-                label: "YouTube",
+                label: NavText::Brand("YouTube"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("youtube")),
                 integ: Integration::YouTube,
             },
             NavEntry::FlatLink {
                 dot: palette.info,
-                label: "Kick",
+                label: NavText::Brand("Kick"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("kick")),
                 integ: Integration::Kick,
             },
             NavEntry::MiniLabelLink {
-                label: "Stream apps",
+                label: NavText::Key("nav_item_stream_apps"),
                 screen: Screen::StreamApps,
             },
             NavEntry::FlatLink {
                 dot: palette.success,
-                label: "OBS Studio",
+                label: NavText::Brand("OBS Studio"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("obs")),
                 integ: Integration::Obs,
             },
             NavEntry::FlatLink {
                 dot: palette.warning,
-                label: "VTube Studio",
+                label: NavText::Brand("VTube Studio"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("vtube")),
                 integ: Integration::VTube,
             },
-            NavEntry::MiniLabel("Modules"),
+            NavEntry::MiniLabel(NavText::Key("nav_section_modules")),
             NavEntry::FlatIconLeaf {
                 icon: Icon::Volume,
-                label: "Text-to-Speech",
+                label: NavText::Key("nav_item_tts"),
                 screen: Screen::Tts,
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Music,
-                label: "Soundboard",
+                label: NavText::Key("nav_item_soundboard"),
                 screen: Screen::Soundboard,
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::PlugConnected,
-                label: "MIDI",
+                label: NavText::Brand("MIDI"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("midi")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Keyboard,
-                label: "Hotkeys",
+                label: NavText::Key("nav_item_hotkey"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("hotkey")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Send,
-                label: "Discord",
+                label: NavText::Brand("Discord"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("discord")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Server,
-                label: "WebSocket server",
+                label: NavText::Key("nav_item_ws_server"),
                 screen: Screen::Server,
             },
         ]
     }
 
-    fn text_label(label: &'static str) -> AnyElement {
+    fn text_label(label: SharedString) -> AnyElement {
         div()
             .flex_1()
             .font_family(DEFAULT_BODY_FAMILY)
@@ -216,7 +237,7 @@ impl SidebarNav {
             .into_any_element()
     }
 
-    fn section_label(text: &'static str, palette: &ForgePalette) -> AnyElement {
+    fn section_label(text: NavText, palette: &ForgePalette) -> AnyElement {
         div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
@@ -224,11 +245,11 @@ impl SidebarNav {
             .pt(SECTION_LABEL_PAD_TOP)
             .pb(SECTION_LABEL_PAD_BOTTOM)
             .px(ITEM_PAD_H)
-            .child(SharedString::from(text.to_uppercase()))
+            .child(SharedString::from(text.resolve().to_uppercase()))
             .into_any_element()
     }
 
-    fn mini_label(text: &'static str, palette: &ForgePalette) -> AnyElement {
+    fn mini_label(text: NavText, palette: &ForgePalette) -> AnyElement {
         div()
             .font_family(DEFAULT_MONO_FAMILY)
             .font_weight(FontWeight::MEDIUM)
@@ -237,20 +258,20 @@ impl SidebarNav {
             .pt(MINI_LABEL_PAD_TOP)
             .pb(MINI_LABEL_PAD_BOTTOM)
             .px(ITEM_PAD_H)
-            .child(SharedString::from(text.to_uppercase()))
+            .child(SharedString::from(text.resolve().to_uppercase()))
             .into_any_element()
     }
 
     fn mini_label_link(
         &self,
-        text: &'static str,
+        text: NavText,
         screen: Screen,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let hover_ink = palette.text_muted;
         div()
-            .id(text)
+            .id(text.id())
             .font_family(DEFAULT_MONO_FAMILY)
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
@@ -263,7 +284,7 @@ impl SidebarNav {
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.request(screen.clone(), cx)),
             )
-            .child(SharedString::from(text.to_uppercase()))
+            .child(SharedString::from(text.resolve().to_uppercase()))
             .into_any_element()
     }
 
@@ -306,7 +327,7 @@ impl SidebarNav {
     fn section_leaf(
         &self,
         ic: Icon,
-        label: &'static str,
+        label: NavText,
         screen: Screen,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -324,13 +345,13 @@ impl SidebarNav {
             )
         };
         Self::nav_frame(
-            label,
+            label.id(),
             screen,
             active,
             SECTION_ITEM_PAD_V,
             SECTION_ITEM_MB,
             fg,
-            vec![glyph, Self::text_label(label)],
+            vec![glyph, Self::text_label(label.resolve())],
             palette,
             cx,
         )
@@ -365,7 +386,7 @@ impl SidebarNav {
                     palette.text_secondary
                 };
                 Self::nav_frame(
-                    label,
+                    label.id(),
                     screen,
                     active,
                     FLAT_ITEM_PAD_V,
@@ -373,7 +394,7 @@ impl SidebarNav {
                     fg,
                     vec![
                         icon_inherit(ic, FLAT_ICON).into_any_element(),
-                        Self::text_label(label),
+                        Self::text_label(label.resolve()),
                     ],
                     palette,
                     cx,
@@ -404,7 +425,7 @@ impl SidebarNav {
                     palette.text_extreme_faint
                 };
                 Self::nav_frame(
-                    label,
+                    label.id(),
                     screen,
                     active,
                     FLAT_ITEM_PAD_V,
@@ -412,7 +433,7 @@ impl SidebarNav {
                     fg,
                     vec![
                         square,
-                        Self::text_label(label),
+                        Self::text_label(label.resolve()),
                         status_dot(status_color, STATUS_DOT).into_any_element(),
                     ],
                     palette,
@@ -432,8 +453,13 @@ impl Render for SidebarNav {
             items.push(self.render_entry(entry, &palette, cx));
         }
 
-        let settings =
-            self.section_leaf(Icon::Settings, "Settings", Screen::Settings, &palette, cx);
+        let settings = self.section_leaf(
+            Icon::Settings,
+            NavText::Key("nav_item_settings"),
+            Screen::Settings,
+            &palette,
+            cx,
+        );
 
         div()
             .flex()

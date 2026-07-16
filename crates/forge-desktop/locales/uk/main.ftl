@@ -25,6 +25,7 @@ nav_server = Сервер
 
 nav_section_audience = АУДИТОРІЯ
 nav_section_automation = АВТОМАТИЗАЦІЯ
+nav_section_modules = Модулі
 
 ## Навігація — підписи пунктів бічної панелі
 

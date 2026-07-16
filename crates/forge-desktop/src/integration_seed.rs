@@ -10,6 +10,8 @@ use forge_platform_core::{
 };
 use forge_types::SubActionStep;
 
+use forge_components::tr;
+
 pub struct IntegrationSeed {
     pub icon: SectionIcon,
     pub status: Arc<dyn BuiltinStatus>,
@@ -89,9 +91,9 @@ impl QuickActions for SnapshotQuickActions {
     }
 }
 
-fn text_metric(label: &str, primary: &str, secondary: Option<&str>) -> HealthMetric {
+fn text_metric(label: impl Into<String>, primary: &str, secondary: Option<&str>) -> HealthMetric {
     HealthMetric {
-        label: label.to_owned(),
+        label: label.into(),
         value: HealthValue::Text {
             primary: primary.to_owned(),
             secondary: secondary.map(ToOwned::to_owned),
@@ -99,20 +101,30 @@ fn text_metric(label: &str, primary: &str, secondary: Option<&str>) -> HealthMet
     }
 }
 
-fn status_metric(label: &str, val: &str, active: bool, detail: Option<&str>) -> HealthMetric {
+fn status_metric(
+    label: impl Into<String>,
+    val: impl Into<String>,
+    active: bool,
+    detail: Option<&str>,
+) -> HealthMetric {
     HealthMetric {
-        label: label.to_owned(),
+        label: label.into(),
         value: HealthValue::Status {
-            label: val.to_owned(),
+            label: val.into(),
             active,
             detail: detail.map(ToOwned::to_owned),
         },
     }
 }
 
-fn ratio_metric(label: &str, used: u64, total: u64, reset_hint: Option<&str>) -> HealthMetric {
+fn ratio_metric(
+    label: impl Into<String>,
+    used: u64,
+    total: u64,
+    reset_hint: Option<&str>,
+) -> HealthMetric {
     HealthMetric {
-        label: label.to_owned(),
+        label: label.into(),
         value: HealthValue::Ratio {
             used,
             total,
@@ -134,14 +146,14 @@ fn list_item(icon: &str, name: &str, active: bool, active_label: Option<&str>) -
 }
 
 fn quick(
-    label: &str,
+    label: impl Into<String>,
     icon: &str,
     kind_id: &str,
     picker: Option<PickerKind>,
     enabled: bool,
 ) -> QuickAction {
     QuickAction {
-        label: label.to_owned(),
+        label: label.into(),
         icon: SectionIcon::new(icon),
         enabled,
         subaction_template: SubActionStep {
@@ -203,13 +215,18 @@ fn twitch() -> IntegrationSeed {
         ],
     };
     let metrics = [
-        status_metric("Chat", "Connected", true, Some("tmi.twitch.tv")),
-        text_metric("Messages", "1,204", Some("peak 42/s")),
-        ratio_metric("EventSub", 12, 12, None),
-        ratio_metric("API budget", 642, 800, Some("resets 60s")),
+        status_metric(
+            tr!("iseed_metric_chat"),
+            "Connected",
+            true,
+            Some("tmi.twitch.tv"),
+        ),
+        text_metric(tr!("iseed_metric_messages"), "1,204", Some("peak 42/s")),
+        ratio_metric(tr!("iseed_metric_eventsub"), 12, 12, None),
+        ratio_metric(tr!("iseed_metric_api_budget"), 642, 800, Some("resets 60s")),
     ];
     let subs = DetailSection::SubscriptionList {
-        title: "EventSub subscriptions".to_owned(),
+        title: tr!("iseed_section_eventsub_subs"),
         icon: SectionIcon::new("rss"),
         items: vec![
             SubscriptionRow {
@@ -242,12 +259,12 @@ fn twitch() -> IntegrationSeed {
             },
         ],
         footer: Some(ListFooter {
-            cta_label: Some("Manage subscriptions".to_owned()),
+            cta_label: Some(tr!("iseed_cta_manage_subscriptions")),
             trailing_label: Some("4 topics".to_owned()),
         }),
     };
     let scopes = DetailSection::ScopesList {
-        title: "OAuth scopes".to_owned(),
+        title: tr!("iseed_section_oauth_scopes"),
         scopes: vec![
             "chat:read".to_owned(),
             "chat:edit".to_owned(),
@@ -261,26 +278,26 @@ fn twitch() -> IntegrationSeed {
         }),
     };
     let live = DetailSection::InfoCard {
-        title: "Live broadcast".to_owned(),
+        title: tr!("iseed_section_live_broadcast"),
         live: true,
         fields: vec![
             InfoField {
-                label: "Viewers".to_owned(),
+                label: tr!("iseed_field_viewers"),
                 value: "1,204".to_owned(),
                 monospace_value: false,
             },
             InfoField {
-                label: "Category".to_owned(),
+                label: tr!("iseed_field_category"),
                 value: "Just Chatting".to_owned(),
                 monospace_value: false,
             },
             InfoField {
-                label: "Uptime".to_owned(),
+                label: tr!("iseed_field_uptime"),
                 value: "2h 14m".to_owned(),
                 monospace_value: false,
             },
             InfoField {
-                label: "Latency".to_owned(),
+                label: tr!("iseed_field_latency"),
                 value: "2.1s".to_owned(),
                 monospace_value: true,
             },
@@ -292,17 +309,29 @@ fn twitch() -> IntegrationSeed {
         }),
     };
     let actions = vec![
-        quick("Run ad", "bolt", "twitch.ads.run", None, true),
-        quick("Create clip", "video", "twitch.clips.create", None, true),
         quick(
-            "Commercial",
+            tr!("iseed_action_run_ad"),
+            "bolt",
+            "twitch.ads.run",
+            None,
+            true,
+        ),
+        quick(
+            tr!("iseed_action_create_clip"),
+            "video",
+            "twitch.clips.create",
+            None,
+            true,
+        ),
+        quick(
+            tr!("iseed_action_commercial"),
             "broadcast",
             "twitch.ads.commercial",
             None,
             true,
         ),
         quick(
-            "Shoutout",
+            tr!("iseed_action_shoutout"),
             "speakerphone",
             "twitch.chat.shoutout",
             None,
@@ -333,13 +362,23 @@ fn obs() -> IntegrationSeed {
         header_actions: vec![HeaderAction::Reconnect, HeaderAction::Disconnect],
     };
     let metrics = [
-        status_metric("WebSocket", "Connected", true, Some("v5.5.4")),
-        text_metric("Scenes", "6", None),
-        status_metric("Streaming", "Live", true, Some("6000 kb/s")),
-        text_metric("Dropped", "0.2%", Some("stable")),
+        status_metric(
+            tr!("iseed_metric_websocket"),
+            "Connected",
+            true,
+            Some("v5.5.4"),
+        ),
+        text_metric(tr!("iseed_scenes"), "6", None),
+        status_metric(
+            tr!("iseed_metric_streaming"),
+            "Live",
+            true,
+            Some("6000 kb/s"),
+        ),
+        text_metric(tr!("iseed_dropped"), "0.2%", Some("stable")),
     ];
     let scenes = ContentList {
-        title: "Scenes".to_owned(),
+        title: tr!("iseed_scenes"),
         icon: SectionIcon::new("layout"),
         count_label: Some("4".to_owned()),
         items: vec![
@@ -351,7 +390,7 @@ fn obs() -> IntegrationSeed {
         footer: None,
     };
     let sources = ContentList {
-        title: "Sources".to_owned(),
+        title: tr!("iseed_sources"),
         icon: SectionIcon::new("device-desktop"),
         count_label: Some("4".to_owned()),
         items: vec![
@@ -363,21 +402,21 @@ fn obs() -> IntegrationSeed {
         footer: None,
     };
     let stats = DetailSection::StatsGrid {
-        title: "Stream stats".to_owned(),
+        title: tr!("iseed_section_stream_stats"),
         icon: SectionIcon::new("activity"),
         columns: vec![
             StatColumn {
-                label: "Bitrate".to_owned(),
+                label: tr!("iseed_stat_bitrate"),
                 value: "6000".to_owned(),
                 subtitle: "kb/s".to_owned(),
             },
             StatColumn {
-                label: "FPS".to_owned(),
+                label: tr!("iseed_stat_fps"),
                 value: "60".to_owned(),
                 subtitle: "target 60".to_owned(),
             },
             StatColumn {
-                label: "Dropped".to_owned(),
+                label: tr!("iseed_dropped"),
                 value: "0.2%".to_owned(),
                 subtitle: "stable".to_owned(),
             },
@@ -385,22 +424,28 @@ fn obs() -> IntegrationSeed {
     };
     let actions = vec![
         quick(
-            "Switch scene",
+            tr!("iseed_action_switch_scene"),
             "arrows-shuffle",
             "obs.scenes.switch_current",
             Some(PickerKind::Scene),
             true,
         ),
         quick(
-            "Toggle source",
+            tr!("iseed_action_toggle_source"),
             "eye",
             "obs.sources.toggle",
             Some(PickerKind::Source),
             true,
         ),
-        quick("Record", "record", "obs.record.start", None, true),
         quick(
-            "Toggle mute",
+            tr!("iseed_action_record"),
+            "record",
+            "obs.record.start",
+            None,
+            true,
+        ),
+        quick(
+            tr!("iseed_action_toggle_mute"),
             "volume",
             "obs.audio.toggle_mute",
             Some(PickerKind::Input),
@@ -432,25 +477,29 @@ fn kick() -> IntegrationSeed {
         connection: ConnectionState::Connected,
         capability_flags: CapabilityFlags {
             limited: true,
-            label: Some("Hybrid transport".to_owned()),
+            label: Some(tr!("iseed_kick_capability")),
         },
         header_actions: vec![HeaderAction::Reconnect, HeaderAction::Disconnect],
     };
     let metrics = [
-        status_metric("Chat", "Connected", true, Some("pusher ws")),
-        text_metric("Messages", "312", None),
-        text_metric("Channel", "streamer", None),
-        text_metric("Mode", "read via ws", None),
+        status_metric(
+            tr!("iseed_metric_chat"),
+            "Connected",
+            true,
+            Some("pusher ws"),
+        ),
+        text_metric(tr!("iseed_metric_messages"), "312", None),
+        text_metric(tr!("iseed_channel"), "streamer", None),
+        text_metric(tr!("iseed_metric_mode"), "read via ws", None),
     ];
     let banner = DetailSection::WarningBanner {
         level: BannerLevel::Info,
-        title: "Hybrid chat transport".to_owned(),
-        body: "Chat receive rides the community Pusher WebSocket; writes use the official API."
-            .to_owned(),
+        title: tr!("iseed_kick_banner_title"),
+        body: tr!("iseed_kick_banner_body"),
         cta: None,
     };
     let channel = DetailSection::KeyValueList {
-        title: "Channel".to_owned(),
+        title: tr!("iseed_channel"),
         icon: SectionIcon::new("user"),
         items: vec![
             KeyValueRow {
@@ -474,10 +523,34 @@ fn kick() -> IntegrationSeed {
         ],
     };
     let actions = vec![
-        quick("Send message", "message", "kick.chat.send", None, true),
-        quick("Clear chat", "trash", "kick.chat.clear", None, true),
-        quick("Slow mode", "clock", "kick.chat.slow_mode", None, true),
-        quick("Ban user", "ban", "kick.mod.ban", None, false),
+        quick(
+            tr!("iseed_action_send_message"),
+            "message",
+            "kick.chat.send",
+            None,
+            true,
+        ),
+        quick(
+            tr!("iseed_action_clear_chat"),
+            "trash",
+            "kick.chat.clear",
+            None,
+            true,
+        ),
+        quick(
+            tr!("iseed_action_slow_mode"),
+            "clock",
+            "kick.chat.slow_mode",
+            None,
+            true,
+        ),
+        quick(
+            tr!("iseed_action_ban_user"),
+            "ban",
+            "kick.mod.ban",
+            None,
+            false,
+        ),
     ];
     assemble(
         "brand-kick",
@@ -503,31 +576,36 @@ fn generic(id: &BuiltinId, display_name: &str, icon: &str) -> IntegrationSeed {
         header_actions: vec![HeaderAction::Reconnect],
     };
     let metrics = [
-        status_metric("Status", "Not connected", false, None),
-        text_metric("Activity", "-", None),
-        text_metric("Session", "-", None),
-        text_metric("Detail", "-", None),
+        status_metric(
+            tr!("iseed_status"),
+            tr!("common_status_not_connected"),
+            false,
+            None,
+        ),
+        text_metric(tr!("iseed_metric_activity"), "-", None),
+        text_metric(tr!("iseed_metric_session"), "-", None),
+        text_metric(tr!("iseed_metric_detail"), "-", None),
     ];
     let overview = DetailSection::ActiveItemList {
-        title: "Overview".to_owned(),
+        title: tr!("iseed_section_overview"),
         icon: SectionIcon::new("info-circle"),
         items: vec![ActiveRow {
-            name: "Connect to see live status".to_owned(),
+            name: tr!("iseed_generic_connect_hint"),
             active: false,
             mode_label: Some("idle".to_owned()),
         }],
     };
     let details = DetailSection::InfoCard {
-        title: "Details".to_owned(),
+        title: tr!("iseed_section_details"),
         live: false,
         fields: vec![
             InfoField {
-                label: "Status".to_owned(),
-                value: "Not connected".to_owned(),
+                label: tr!("iseed_status"),
+                value: tr!("common_status_not_connected"),
                 monospace_value: false,
             },
             InfoField {
-                label: "Since".to_owned(),
+                label: tr!("iseed_field_since"),
                 value: "-".to_owned(),
                 monospace_value: true,
             },

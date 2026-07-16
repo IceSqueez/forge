@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_events::EventPublisher;
+use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyConfig};
 use forge_platform_core::paths;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
@@ -15,11 +16,14 @@ use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
 };
 use forge_storage_sqlite::SqliteBackend;
+use forge_types::Variant;
 
 use crate::integrations::build_integrations;
 use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::build_speak_queue;
 use crate::speak_bridge::SpeakBridge;
+
+const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
 
 pub enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
@@ -28,6 +32,45 @@ pub enum BootFailure {
 
 fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
+}
+
+async fn load_hotkey_and_register(
+    backend: &Arc<dyn DataProvider>,
+    bus: &Arc<EventBus>,
+) -> Arc<HotkeyClient> {
+    let publisher: Arc<dyn EventPublisher> = Arc::clone(bus) as Arc<dyn EventPublisher>;
+    let client = HotkeyClient::new(HotkeyConfig::default(), publisher).await;
+    reregister_persisted_hotkeys(&client, backend).await;
+    client
+}
+
+async fn reregister_persisted_hotkeys(client: &Arc<HotkeyClient>, backend: &Arc<dyn DataProvider>) {
+    let instances = match backend.trigger_instance_repo().list_all().await {
+        Ok(instances) => instances,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load persisted hotkey bindings at boot");
+            return;
+        }
+    };
+
+    for instance in instances {
+        if instance.kind_id != HOTKEY_PRESSED_KIND {
+            continue;
+        }
+        let Some(Variant::String(combo_str)) = instance.overrides.get("combo") else {
+            continue;
+        };
+        let combo = match HotkeyCombo::parse(combo_str) {
+            Ok(combo) => combo,
+            Err(e) => {
+                tracing::warn!(combo = %combo_str, error = %e, "persisted hotkey combo failed to parse");
+                continue;
+            }
+        };
+        if let Err(e) = client.register(combo).await {
+            tracing::warn!(combo = %combo_str, error = %e, "failed to re-register hotkey at boot");
+        }
+    }
 }
 
 /// Must run within the tokio runtime: the engine/scheduler/evaluator spawn tasks internally.
@@ -68,6 +111,8 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
 
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
+
+    let hotkey_client = Some(load_hotkey_and_register(&backend, &bus).await);
 
     let (speak, speak_events, pipeline_config, tts_registry) =
         build_speak_queue(&bus, &backend).await;
@@ -213,6 +258,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         speak_events,
         pipeline_config,
         tts_registry,
+        hotkey_client,
     })
 }
 

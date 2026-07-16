@@ -209,3 +209,80 @@ macro_rules! tr {
         $crate::locale::tr_lookup($key, Some(&args))
     }};
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::{Date, Month, Time};
+
+    // These tests deliberately never call `install_bundle`, so the thread-local
+    // BUNDLE stays `None` on every worker thread. That keeps `tr_lookup` on its
+    // documented miss path (returns the key verbatim) and makes the formatters
+    // that delegate to it deterministic regardless of test execution order.
+
+    fn utc(year: i32, month: Month, day: u8, h: u8, m: u8, s: u8, milli: u16) -> OffsetDateTime {
+        let date = Date::from_calendar_date(year, month, day).unwrap_or(Date::MIN);
+        let time = Time::from_hms_milli(h, m, s, milli).unwrap_or(Time::MIDNIGHT);
+        OffsetDateTime::new_utc(date, time)
+    }
+
+    #[test]
+    fn tr_lookup_returns_key_verbatim_when_no_bundle_installed() {
+        // Miss path returns the ORIGINAL key, not the dotted->underscore
+        // Fluent id it would have looked up. The dotted case pins that.
+        for key in ["some_missing_key", "nav.home", "a.b.c", "plain_key"] {
+            assert_eq!(tr_lookup(key, None), key);
+        }
+    }
+
+    #[test]
+    fn fmt_number_groups_and_separates_per_locale() {
+        // (locale, value, decimal_places, expected)
+        let cases = [
+            ("en", 0.0, 0, "0"),
+            ("en", 999.0, 0, "999"),
+            ("en", 1000.0, 0, "1,000"),
+            ("en", 1_234_567.0, 0, "1,234,567"),
+            ("en", 1234.5, 2, "1,234.50"),
+            ("en", -1234.5, 1, "-1,234.5"),
+            ("uk", 1_234_567.0, 0, "1 234 567"),
+            ("uk", 1234.5, 1, "1 234,5"),
+        ];
+        for (locale, value, dp, expected) in cases {
+            set_locale_id(locale);
+            assert_eq!(
+                fmt_number(value, dp),
+                expected,
+                "fmt_number({value}, {dp}) in {locale}"
+            );
+        }
+    }
+
+    #[test]
+    fn fmt_short_date_orders_components_per_locale() {
+        // Why: with no bundle the month resolves to its raw key for BOTH
+        // locales, so the only difference under test is the locale-specific
+        // component ORDER and punctuation - which is the branching logic here.
+        let date = utc(2026, Month::March, 15, 0, 0, 0, 0);
+
+        set_locale_id("en");
+        assert_eq!(fmt_short_date(&date), "fmt_month_abbr_03 15, 2026");
+
+        set_locale_id("uk");
+        assert_eq!(fmt_short_date(&date), "15 fmt_month_abbr_03 2026");
+    }
+
+    #[test]
+    fn fmt_feed_time_falls_back_to_zero_padded_pattern_without_bundle() {
+        // No bundle -> pattern key is unresolved -> hardcoded HH:MM:SS.mmm
+        // fallback. Single-digit components must be zero-padded.
+        let ts = utc(2026, Month::March, 15, 4, 5, 9, 7);
+        assert_eq!(fmt_feed_time(&ts), "04:05:09.007");
+    }
+
+    #[test]
+    fn fmt_relative_time_none_maps_to_the_never_key() {
+        // The `None` input short-circuits before any wall-clock subtraction.
+        assert_eq!(fmt_relative_time(None), "fmt_relative_never");
+    }
+}

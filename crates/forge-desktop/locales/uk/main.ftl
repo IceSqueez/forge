@@ -533,6 +533,12 @@ triggers_filter_all = Всі
 triggers_usage_all = Всі
 triggers_usage_used = Використовуються
 triggers_usage_unused = Не використовуються
+triggers_toast_error = Тригери: { $message }
+triggers_stat_instances = екземплярів
+triggers_stat_used = використовується
+triggers_stat_disabled = вимкнено
+triggers_platform_clear = скинути
+triggers_new_trigger = Новий тригер
 
 ## Реєстр тригерів - список / порожні стани
 
@@ -549,6 +555,16 @@ triggers_col_name = НАЗВА
 triggers_col_kind = ТИП
 triggers_col_used = ВИКОРИСТАННЯ
 triggers_col_on = УВІМК
+triggers_override_badge =
+    { $count ->
+        [one] { $count } перевизначення
+        [few] { $count } перевизначення
+        [many] { $count } перевизначень
+       *[other] { $count } перевизначень
+    }
+triggers_used_in_prefix = використовується в
+triggers_row_unused = не використовується
+triggers_empty_create_first = Створити перший тригер
 
 ## Реєстр тригерів - меню рядка
 
@@ -572,6 +588,11 @@ triggers_sheet_delete_btn = Видалити
 triggers_sheet_any_platform = Будь-яка платформа
 triggers_sheet_will_fire_on = Спрацює на: { $platform }
 triggers_sheet_will_fire_on_scope = Спрацює на: { $scope }
+triggers_detail_loading = Завантаження тригера…
+triggers_sheet_config_authored = Задається на кроці
+triggers_sheet_section_used_in_count = ВИКОРИСТОВУЄТЬСЯ В ({ $count })
+triggers_sheet_used_in_empty_title = Ще не пов'язано з жодною дією.
+triggers_sheet_used_in_empty_hint = Відкрийте дію та додайте цей тригер з вибору.
 
 ## Реєстр тригерів - діалог підтвердження вимкнення
 
@@ -579,6 +600,20 @@ triggers_confirm_disable_title = Вимкнути цей тригер?
 triggers_confirm_disable_body = Вимкнення цього тригера призупинить його для { $count } дій. Продовжити?
 triggers_confirm_disable_dismiss = Скасувати
 triggers_confirm_disable_accept = Все одно вимкнути
+
+## Реєстр тригерів - діалог підтвердження видалення
+
+triggers_confirm_delete_title = Видалити тригер?
+triggers_confirm_delete_body = Це назавжди видалить екземпляр тригера.
+
+## Реєстр тригерів - діалог перейменування
+
+triggers_rename_title = Перейменувати тригер
+triggers_rename_kbd_hint = ENTER щоб зберегти · ESC щоб скасувати
+
+## Реєстр тригерів - сповіщення про скасування видалення
+
+triggers_toast_deleted = Видалено '{ $name }'
 
 ## Форма створення тригера - вибір типу
 

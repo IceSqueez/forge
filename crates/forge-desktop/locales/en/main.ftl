@@ -533,6 +533,12 @@ triggers_filter_all = All
 triggers_usage_all = All
 triggers_usage_used = Used
 triggers_usage_unused = Unused
+triggers_toast_error = Triggers: { $message }
+triggers_stat_instances = instances
+triggers_stat_used = used
+triggers_stat_disabled = disabled
+triggers_platform_clear = clear
+triggers_new_trigger = New trigger
 
 ## Triggers registry - list / empty states
 
@@ -549,6 +555,14 @@ triggers_col_name = NAME
 triggers_col_kind = KIND
 triggers_col_used = USED IN
 triggers_col_on = ON
+triggers_override_badge =
+    { $count ->
+        [one] { $count } override
+       *[other] { $count } overrides
+    }
+triggers_used_in_prefix = used in
+triggers_row_unused = unused
+triggers_empty_create_first = Create your first trigger
 
 ## Triggers registry - row overflow menu
 
@@ -572,6 +586,11 @@ triggers_sheet_delete_btn = Delete
 triggers_sheet_any_platform = Any platform
 triggers_sheet_will_fire_on = Will fire on: { $platform }
 triggers_sheet_will_fire_on_scope = Will fire on: { $scope }
+triggers_detail_loading = Loading trigger…
+triggers_sheet_config_authored = Authored on the step
+triggers_sheet_section_used_in_count = USED IN ({ $count })
+triggers_sheet_used_in_empty_title = Not linked to any action yet.
+triggers_sheet_used_in_empty_hint = Open an action and add this trigger from the picker.
 
 ## Triggers registry - confirm-disable dialog
 
@@ -579,6 +598,20 @@ triggers_confirm_disable_title = Disable this trigger?
 triggers_confirm_disable_body = Disabling this trigger will pause it for { $count } action(s). Continue?
 triggers_confirm_disable_dismiss = Cancel
 triggers_confirm_disable_accept = Disable anyway
+
+## Triggers registry - confirm-delete dialog
+
+triggers_confirm_delete_title = Delete trigger?
+triggers_confirm_delete_body = This deletes the trigger instance permanently.
+
+## Triggers registry - rename dialog
+
+triggers_rename_title = Rename trigger
+triggers_rename_kbd_hint = ENTER to save · ESC to cancel
+
+## Triggers registry - delete undo toast
+
+triggers_toast_deleted = Deleted '{ $name }'
 
 ## Triggers create form - kind picker
 

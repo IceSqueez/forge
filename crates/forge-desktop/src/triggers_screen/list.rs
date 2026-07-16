@@ -6,7 +6,7 @@ use forge_components::{
     Density, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition,
     Radius, Spacing, TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal,
     ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, overlay,
-    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle,
+    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Rgba, SharedString, Window, div,
@@ -262,24 +262,27 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) {
         let view = cx.entity();
-        let message = format!("Deleted \u{201c}{name}\u{201d}");
+        let message = tr!("triggers_toast_deleted", name = name.as_str());
         cx.push_toast_full(
             ToastKind::Undo,
             message,
             None,
-            Some(ToastAction::new("Undo", move |_window, app: &mut App| {
-                let repo = Arc::clone(&repo);
-                let rt_handle = rt_handle.clone();
-                Self::reload_entity(
-                    view.clone(),
-                    rt_handle,
-                    async move {
-                        repo.restore(id).await.map_err(|e| e.to_string())?;
-                        load_rows(&*repo).await
-                    },
-                    app,
-                );
-            })),
+            Some(ToastAction::new(
+                tr!("common_undo"),
+                move |_window, app: &mut App| {
+                    let repo = Arc::clone(&repo);
+                    let rt_handle = rt_handle.clone();
+                    Self::reload_entity(
+                        view.clone(),
+                        rt_handle,
+                        async move {
+                            repo.restore(id).await.map_err(|e| e.to_string())?;
+                            load_rows(&*repo).await
+                        },
+                        app,
+                    );
+                },
+            )),
             Duration::from_millis(6000),
         );
     }
@@ -371,7 +374,7 @@ impl TriggersRegistryView {
                 .text_color(palette.text_faint)
                 .child("\u{b7}")
         };
-        let stat = |value: String, value_color: Rgba, label: &'static str| {
+        let stat = |value: String, value_color: Rgba, label: SharedString| {
             div()
                 .flex()
                 .items_center()
@@ -400,21 +403,25 @@ impl TriggersRegistryView {
             .child(stat(
                 self.instances.len().to_string(),
                 palette.text_primary,
-                "instances",
+                tr!("triggers_stat_instances").into(),
             ))
             .child(sep())
-            .child(stat(self.used_count().to_string(), palette.success, "used"))
+            .child(stat(
+                self.used_count().to_string(),
+                palette.success,
+                tr!("triggers_stat_used").into(),
+            ))
             .child(sep())
             .child(stat(
                 self.disabled_count().to_string(),
                 palette.warning,
-                "disabled",
+                tr!("triggers_stat_disabled").into(),
             ));
 
         breadcrumb(
             vec![
-                BreadcrumbCrumb::leaf("Automation"),
-                BreadcrumbCrumb::leaf("Triggers"),
+                BreadcrumbCrumb::leaf(tr!("triggers_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("triggers_breadcrumb_triggers")),
             ],
             palette,
         )
@@ -466,7 +473,7 @@ impl TriggersRegistryView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("clear")
+                    .child(tr!("triggers_platform_clear"))
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear_platforms(cx))),
             );
         }
@@ -477,7 +484,7 @@ impl TriggersRegistryView {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 chip(
-                    "Used",
+                    tr!("triggers_usage_used"),
                     ChipGlyph::Dot(palette.success),
                     self.usage_filter == UsageFilter::Used,
                     palette,
@@ -491,7 +498,7 @@ impl TriggersRegistryView {
             )
             .child(
                 chip(
-                    "Unused",
+                    tr!("triggers_usage_unused"),
                     ChipGlyph::Dot(palette.text_faint),
                     self.usage_filter == UsageFilter::Unused,
                     palette,
@@ -514,10 +521,11 @@ impl TriggersRegistryView {
             .child(self.divider(palette))
             .child(usage_chips);
 
-        let new_trigger = primary_button_with_icon(Icon::Plus, "New trigger", palette).on_click(
-            "triggers-new",
-            cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
-        );
+        let new_trigger =
+            primary_button_with_icon(Icon::Plus, tr!("triggers_new_trigger"), palette).on_click(
+                "triggers-new",
+                cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
+            );
 
         div()
             .w_full()
@@ -584,22 +592,22 @@ impl TriggersRegistryView {
             )
     }
 
-    fn caption_cell(&self, palette: &ForgePalette, label: &'static str) -> AnyElement {
+    fn caption_cell(&self, palette: &ForgePalette, label: impl Into<SharedString>) -> AnyElement {
         div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
-            .child(label)
+            .child(label.into())
             .into_any_element()
     }
 
     fn render_caption(&self, palette: &ForgePalette) -> AnyElement {
         let cols = Self::columns(
             div().into_any_element(),
-            self.caption_cell(palette, "NAME"),
-            self.caption_cell(palette, "KIND"),
-            self.caption_cell(palette, "USED IN"),
-            self.caption_cell(palette, "ON"),
+            self.caption_cell(palette, tr!("triggers_col_name")),
+            self.caption_cell(palette, tr!("triggers_col_kind")),
+            self.caption_cell(palette, tr!("triggers_col_used")),
+            self.caption_cell(palette, tr!("triggers_col_on")),
             div().into_any_element(),
         );
         div()
@@ -688,11 +696,10 @@ impl TriggersRegistryView {
                     .child(kind_label),
             );
         if instance.override_count > 0 {
-            let label = if instance.override_count == 1 {
-                "1 override".to_owned()
-            } else {
-                format!("{} overrides", instance.override_count)
-            };
+            let label = tr!(
+                "triggers_override_badge",
+                count = instance.override_count as i64
+            );
             kind = kind.child(badge(
                 palette.surface_overlay,
                 palette.bits,
@@ -710,7 +717,7 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(USED_FS)
                 .text_color(palette.text_primary)
-                .child("used in")
+                .child(tr!("triggers_used_in_prefix"))
                 .child(
                     div()
                         .font_family(DEFAULT_BODY_FAMILY)
@@ -725,7 +732,7 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(USED_FS)
                 .text_color(palette.text_faint)
-                .child("unused")
+                .child(tr!("triggers_row_unused"))
                 .into_any_element()
         };
 
@@ -822,7 +829,7 @@ impl TriggersRegistryView {
             .items(vec![
                 menu_item(
                     SharedString::from(format!("triggers-menu-rename-{id}")),
-                    "Rename\u{2026}",
+                    tr!("triggers_menu_rename"),
                     cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.start_rename(id, window, cx)
                     }),
@@ -832,7 +839,7 @@ impl TriggersRegistryView {
                 menu_divider(),
                 menu_item(
                     SharedString::from(format!("triggers-menu-delete-{id}")),
-                    "Delete\u{2026}",
+                    tr!("triggers_menu_delete"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
                 )
                 .icon(Icon::Eraser)
@@ -858,27 +865,25 @@ impl TriggersRegistryView {
             (Icon::Bolt, palette.warning)
         };
         let title = if has_filter {
-            "No matches"
+            tr!("triggers_no_results_title")
         } else {
-            "No custom trigger instances yet"
+            tr!("triggers_empty_title")
         };
         let body = if has_filter {
-            "Try a different filter combination.".to_owned()
+            tr!("triggers_no_results_hint")
         } else {
-            "Triggers are named, reusable configurations of an event source. \
-             Multiple actions can share one trigger."
-                .to_owned()
+            tr!("triggers_empty_hint")
         };
 
         let action: AnyElement = if has_filter {
-            ghost_button_with_icon(Icon::X, "Clear filters", palette)
+            ghost_button_with_icon(Icon::X, tr!("triggers_clear_filters"), palette)
                 .on_click(
                     "triggers-empty-clear",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.clear_filters(cx)),
                 )
                 .into_any_element()
         } else {
-            primary_button_with_icon(Icon::Plus, "Create your first trigger", palette)
+            primary_button_with_icon(Icon::Plus, tr!("triggers_empty_create_first"), palette)
                 .on_click(
                     "triggers-empty-create",
                     cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
@@ -932,29 +937,22 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (name, count) = self
-            .find(id)
-            .map(|i| (i.name.clone(), i.used_in_count))
-            .unwrap_or_default();
-        let plural = if count == 1 { "action" } else { "actions" };
+        let count = self.find(id).map(|i| i.used_in_count).unwrap_or_default();
         let card = confirm_modal(
-            format!("Disable {name}?"),
-            format!(
-                "Disabling this trigger will pause it for {count} {plural}. \
-                 They won't fire until the trigger is re-enabled."
-            ),
+            tr!("triggers_confirm_disable_title"),
+            tr!("triggers_confirm_disable_body", count = count as i64),
             ConfirmTone::Warning,
             palette,
         )
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "triggers-disable-cancel",
-            "Cancel",
+            tr!("triggers_confirm_disable_dismiss"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_disable(cx)),
         )
         .on_confirm(
             "triggers-disable-confirm",
-            "Disable anyway",
+            tr!("triggers_confirm_disable_accept"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_disable_now(cx)),
         );
 
@@ -978,27 +976,26 @@ impl TriggersRegistryView {
             .map(|i| (i.name.clone(), i.used_in_count))
             .unwrap_or_default();
         let message = if used_in > 0 {
-            let plural = if used_in == 1 { "action" } else { "actions" };
-            format!("This trigger is used by {used_in} {plural}. Remove it from them first.")
+            tr!("triggers_delete_reference_block")
         } else {
-            "This deletes the trigger instance permanently.".to_owned()
+            tr!("triggers_confirm_delete_body")
         };
         let card = confirm_modal(
-            "Delete trigger?",
+            tr!("triggers_confirm_delete_title"),
             message,
             ConfirmTone::Destructive,
             palette,
         )
         .item_name(name)
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "triggers-delete-cancel",
-            "Cancel",
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(
             "triggers-delete-confirm",
-            "Delete",
+            tr!("common_delete"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
         );
 
@@ -1028,21 +1025,23 @@ impl TriggersRegistryView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("NAME"),
+                    .child(tr!("triggers_create_section_name")),
             )
             .child(div().child(form.field.clone()));
 
-        let cancel = secondary_button("Cancel", palette).on_click(
+        let cancel = secondary_button(tr!("common_cancel"), palette).on_click(
             "triggers-rename-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.rename = None;
                 cx.notify();
             }),
         );
-        let save = primary_button("Save", palette).disabled(!valid).on_click(
-            "triggers-rename-save",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.submit_rename(cx)),
-        );
+        let save = primary_button(tr!("common_save"), palette)
+            .disabled(!valid)
+            .on_click(
+                "triggers-rename-save",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_rename(cx)),
+            );
         let footer = div()
             .w_full()
             .flex()
@@ -1052,10 +1051,10 @@ impl TriggersRegistryView {
             .child(cancel)
             .child(save);
 
-        let card = modal("Rename trigger", body, palette)
+        let card = modal(tr!("triggers_rename_title"), body, palette)
             .size(ModalSize::Sm)
             .footer(footer)
-            .kbd_hint("ENTER to save \u{b7} ESC to cancel")
+            .kbd_hint(tr!("triggers_rename_kbd_hint"))
             .on_close(
                 "triggers-rename-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| {

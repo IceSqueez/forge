@@ -1,4 +1,4 @@
-use forge_components::{ForgePalette, TextInput, ToastKind, search_input};
+use forge_components::{ForgePalette, TextInput, ToastKind, search_input, tr};
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
@@ -177,7 +177,8 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search_field = cx.new(|cx| search_input("Search instances\u{2026}", palette, cx));
+        let search_field =
+            cx.new(|cx| search_input(tr!("triggers_search_placeholder"), palette, cx));
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
 
         let view = Self {
@@ -258,7 +259,10 @@ impl TriggersRegistryView {
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
         eprintln!("forge-desktop: triggers operation failed: {message}");
         self.loading = false;
-        cx.push_toast(ToastKind::Error, format!("Triggers: {message}"));
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("triggers_toast_error", message = message),
+        );
         cx.notify();
     }
 }

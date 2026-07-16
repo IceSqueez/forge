@@ -3,7 +3,7 @@ use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, Icon, InputEvent, Radius, Spacing,
-    TextInput, ghost_button_with_icon, icon, radius, spacing, status_dot, toggle,
+    TextInput, ghost_button_with_icon, icon, radius, spacing, status_dot, toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -186,7 +186,7 @@ impl TriggersRegistryView {
         let new_id = TriggerInstanceId::new();
         let instance = TriggerInstance {
             id: new_id,
-            name: format!("{} copy", src.name),
+            name: tr!("triggers_template_copy_name", name = src.name.as_str()),
             user_defined: true,
             ..src
         };
@@ -255,7 +255,7 @@ impl TriggersRegistryView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(CFG_VAL_FS)
                     .text_color(palette.text_muted)
-                    .child("Loading trigger\u{2026}"),
+                    .child(tr!("triggers_detail_loading")),
             )
             .into_any_element()
     }
@@ -415,14 +415,17 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XXS)
                 .text_color(palette.bits)
-                .child(format!("{override_count} overridden"))
+                .child(tr!(
+                    "triggers_sheet_config_overridden",
+                    count = override_count as i64
+                ))
                 .into_any_element()
         } else {
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
-                .child("all defaults")
+                .child(tr!("triggers_sheet_config_all_defaults"))
                 .into_any_element()
         };
 
@@ -434,7 +437,7 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
-                .child("This trigger kind has no configurable fields.")
+                .child(tr!("triggers_sheet_no_config"))
                 .into_any_element()
         } else {
             let overridden: HashMap<&str, bool> = detail
@@ -463,7 +466,11 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .pb(spacing(Spacing::Md, Density::Cozy))
-            .child(self.section_label("CONFIGURATION", Some(right), palette))
+            .child(self.section_label(
+                tr!("triggers_sheet_section_configuration"),
+                Some(right),
+                palette,
+            ))
             .child(framed)
             .into_any_element()
     }
@@ -515,7 +522,7 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
-                .child("Authored on the step")
+                .child(tr!("triggers_sheet_config_authored"))
                 .into_any_element(),
         };
 
@@ -561,9 +568,9 @@ impl TriggersRegistryView {
     fn render_used_in_section(&self, detail: &TriggerDetail, palette: &ForgePalette) -> AnyElement {
         let count = detail.used_in.len();
         let label = if count > 0 {
-            format!("USED IN ({count})")
+            tr!("triggers_sheet_section_used_in_count", count = count as i64)
         } else {
-            "USED IN".to_owned()
+            tr!("triggers_sheet_section_used_in")
         };
 
         let inner: AnyElement = if detail.used_in.is_empty() {
@@ -582,8 +589,8 @@ impl TriggersRegistryView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
-                .child("Not linked to any action yet.")
-                .child("Open an action and add this trigger from the picker.")
+                .child(tr!("triggers_sheet_used_in_empty_title"))
+                .child(tr!("triggers_sheet_used_in_empty_hint"))
                 .into_any_element()
         } else {
             let mut col = div().flex().flex_col().gap(px(3.0));
@@ -632,10 +639,11 @@ impl TriggersRegistryView {
         let used_count = self.find(id).map(|r| r.used_in_count).unwrap_or(0);
         let can_delete = used_count == 0;
 
-        let template = ghost_button_with_icon(Icon::Copy, "Use as template", palette).on_click(
-            "triggers-detail-template",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.use_as_template(cx)),
-        );
+        let template = ghost_button_with_icon(Icon::Copy, tr!("triggers_menu_template"), palette)
+            .on_click(
+                "triggers-detail-template",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.use_as_template(cx)),
+            );
 
         let delete_color = if can_delete {
             palette.random
@@ -657,7 +665,7 @@ impl TriggersRegistryView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(CFG_VAL_FS)
                     .text_color(delete_color)
-                    .child("Delete"),
+                    .child(tr!("triggers_sheet_delete_btn")),
             );
         let delete: AnyElement = if can_delete {
             delete_base

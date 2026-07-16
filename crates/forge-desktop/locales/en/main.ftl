@@ -341,15 +341,20 @@ actions_sub_modal_add_title = Add step
 actions_sub_modal_edit_title = Edit step
 actions_sub_select_kind = Choose a step type
 actions_sub_no_config = This step has no settings.
+sub_cat_chat = Chat
+sub_cat_moderation = Moderation
+sub_cat_channel_points = Channel Points
 sub_cat_polls_predictions = Polls & predictions
 sub_cat_globals = Globals
 sub_cat_logic = Logic
 sub_cat_delay = Delay
 sub_cat_scripts = Scripts
 sub_cat_files = Files
+sub_cat_hotkey = Hotkey
 sub_cat_audio = Audio
 sub_cat_tts = Text-to-speech
 sub_cat_http = HTTP
+sub_cat_server = Server
 sub_cat_util = Utilities
 actions_sub_chip_send_chat = Send chat
 actions_sub_chip_set_global = Set global
@@ -442,6 +447,7 @@ action_editor_add_trigger = Add trigger
 action_editor_add_step = Add step
 action_editor_branch_modal_hint = Edit this branch from the step list below
 action_editor_branch_empty = No steps yet · click Add step to start
+action_editor_no_steps = This action has no steps yet
 action_editor_breadcrumb_steps = Steps
 action_editor_branch_then = Then
 action_editor_branch_else = Else
@@ -461,6 +467,8 @@ action_editor_section_triggers_count = TRIGGERS · { $count }
 action_editor_triggers_hint = Click a trigger to edit it in the registry
 action_editor_section_sub_actions = SUB-ACTIONS · { $count }
 action_editor_section_sub_actions_label = SUB-ACTIONS
+action_editor_sub_actions_count = { $count } sub-actions
+action_editor_config_label = CONFIGURATION
 action_editor_sub_count = { $count } sub
 action_editor_enabled = Enabled
 action_editor_disabled = Disabled
@@ -472,6 +480,26 @@ action_editor_step_menu_duplicate = Duplicate
 action_editor_step_menu_move_top = Move to top
 action_editor_step_menu_move_bottom = Move to bottom
 action_editor_step_menu_delete = Delete step
+
+## Action editor - test run
+
+action_editor_test_fired = Test trigger fired
+action_editor_test_no_match = Test event did not match this trigger
+action_editor_test_failed = Test trigger failed: { $error }
+
+## Action editor - sub-action / trigger pickers
+
+action_editor_this_action = this action
+action_editor_saved_triggers = Your saved triggers
+action_editor_picker_add_sub_title = Add sub-action
+action_editor_picker_inserting_into = Inserting into
+action_editor_picker_sub_count = · { $count } sub-actions
+action_editor_picker_footer_hint = Added with smart defaults - edit inline after
+action_editor_picker_search = Search { $count } sub-actions…
+action_editor_picker_fires = Fires
+action_editor_picker_available_count = · { $count } available
+action_editor_trigger_picker_footer_hint = Links a saved trigger - create new ones on the Triggers screen
+action_editor_no_unlinked_triggers = No unlinked triggers available - create one on the Triggers screen
 
 ## Action editor - sub-action card titles
 

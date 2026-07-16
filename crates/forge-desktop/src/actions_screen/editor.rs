@@ -6,7 +6,7 @@ use forge_components::{
     GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, MenuPlacement, OverlayPosition,
     Radius, SheetPosition, Spacing, TextInput, ghost_button_with_icon, icon, icon_inherit,
     menu_button, menu_divider, menu_item, overlay, primary_button, radius, row_card,
-    secondary_button, side_sheet, spacing, status_dot, toggle,
+    secondary_button, side_sheet, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -36,7 +36,7 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             let message = step.config.get("message").map(as_str).unwrap_or("");
             (
                 "send",
-                "Send chat message".to_owned(),
+                tr!("action_editor_kind_send_chat"),
                 format!("\u{2192} {target}: \"{message}\""),
             )
         }
@@ -45,37 +45,41 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             let value = step.config.get("value").map(as_str).unwrap_or("");
             (
                 "variable",
-                "Set global".to_owned(),
+                tr!("action_editor_kind_set_global"),
                 format!("{name} = \"{value}\""),
             )
         }
         "core.logic.wait" => {
             let ms = step.config.get("ms").map(as_i64).unwrap_or(0);
-            ("clock", "Delay".to_owned(), format!("{ms} ms"))
+            ("clock", tr!("action_editor_kind_delay"), format!("{ms} ms"))
         }
         "core.log.write" => {
             let level = step.config.get("level").map(as_str).unwrap_or("info");
             let message = step.config.get("message").map(as_str).unwrap_or("");
             (
                 "info-circle",
-                "Write log".to_owned(),
+                tr!("action_editor_kind_log"),
                 format!("[{level}] \"{message}\""),
             )
         }
         "soundboard.sound.play" => {
             let clip_id = step.config.get("clip_id").map(as_str).unwrap_or("");
-            ("music", "Play sound".to_owned(), clip_id.to_owned())
+            (
+                "music",
+                tr!("action_editor_kind_play_sound"),
+                clip_id.to_owned(),
+            )
         }
         "tts.speak.text" => {
             let text = step.config.get("text").map(as_str).unwrap_or("");
-            ("volume", "Speak (TTS)".to_owned(), text.to_owned())
+            ("volume", tr!("action_editor_kind_speak"), text.to_owned())
         }
         "core.file.read" => {
             let path = step.config.get("path").map(as_str).unwrap_or("");
             let var = step.config.get("target_var").map(as_str).unwrap_or("");
             (
                 "file",
-                "Read file".to_owned(),
+                tr!("action_editor_kind_read_file"),
                 format!("{path} \u{2192} %{var}%"),
             )
         }
@@ -85,38 +89,42 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             let var = step.config.get("target_var").map(as_str).unwrap_or("");
             (
                 "dice",
-                "Random number".to_owned(),
+                tr!("action_editor_kind_random_int"),
                 format!("[{min}..{max}] \u{2192} %{var}%"),
             )
         }
-        _ => ("bolt", "Run sub-action".to_owned(), step.kind_id.clone()),
+        _ => (
+            "bolt",
+            tr!("action_editor_kind_sub_action"),
+            step.kind_id.clone(),
+        ),
     }
 }
 
-fn sub_category_label(cat: SubActionCategory) -> &'static str {
+fn sub_category_label(cat: SubActionCategory) -> String {
     match cat {
-        SubActionCategory::Chat => "Chat",
-        SubActionCategory::Moderation => "Moderation",
-        SubActionCategory::ChannelPoints => "Channel Points",
-        SubActionCategory::PollsPredictions => "Polls & Predictions",
-        SubActionCategory::Globals => "Globals",
-        SubActionCategory::Logic => "Logic",
-        SubActionCategory::Delay => "Delay",
-        SubActionCategory::Scripts => "Scripts",
-        SubActionCategory::Files => "Files",
-        SubActionCategory::Twitch => "Twitch",
-        SubActionCategory::YouTube => "YouTube",
-        SubActionCategory::Kick => "Kick",
-        SubActionCategory::Obs => "OBS",
-        SubActionCategory::VTube => "VTube Studio",
-        SubActionCategory::Discord => "Discord",
-        SubActionCategory::Midi => "MIDI",
-        SubActionCategory::Hotkey => "Hotkey",
-        SubActionCategory::Audio => "Audio",
-        SubActionCategory::Tts => "Text-to-speech",
-        SubActionCategory::Http => "HTTP",
-        SubActionCategory::Server => "Server",
-        SubActionCategory::Util => "Utilities",
+        SubActionCategory::Chat => tr!("sub_cat_chat"),
+        SubActionCategory::Moderation => tr!("sub_cat_moderation"),
+        SubActionCategory::ChannelPoints => tr!("sub_cat_channel_points"),
+        SubActionCategory::PollsPredictions => tr!("sub_cat_polls_predictions"),
+        SubActionCategory::Globals => tr!("sub_cat_globals"),
+        SubActionCategory::Logic => tr!("sub_cat_logic"),
+        SubActionCategory::Delay => tr!("sub_cat_delay"),
+        SubActionCategory::Scripts => tr!("sub_cat_scripts"),
+        SubActionCategory::Files => tr!("sub_cat_files"),
+        SubActionCategory::Twitch => "Twitch".to_owned(),
+        SubActionCategory::YouTube => "YouTube".to_owned(),
+        SubActionCategory::Kick => "Kick".to_owned(),
+        SubActionCategory::Obs => "OBS".to_owned(),
+        SubActionCategory::VTube => "VTube Studio".to_owned(),
+        SubActionCategory::Discord => "Discord".to_owned(),
+        SubActionCategory::Midi => "MIDI".to_owned(),
+        SubActionCategory::Hotkey => tr!("sub_cat_hotkey"),
+        SubActionCategory::Audio => tr!("sub_cat_audio"),
+        SubActionCategory::Tts => tr!("sub_cat_tts"),
+        SubActionCategory::Http => tr!("sub_cat_http"),
+        SubActionCategory::Server => tr!("sub_cat_server"),
+        SubActionCategory::Util => tr!("sub_cat_util"),
     }
 }
 
@@ -365,11 +373,12 @@ fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
 fn add_row_button(
     id: impl Into<ElementId>,
     glyph: Icon,
-    label: &'static str,
+    label: impl Into<SharedString>,
     accent: Rgba,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
+    let label = label.into();
     let hover = palette.surface_overlay;
     div()
         .id(id.into())
@@ -401,9 +410,10 @@ fn add_row_button(
 fn empty_placeholder_card(
     glyph: Icon,
     glyph_color: Rgba,
-    label: &'static str,
+    label: impl Into<SharedString>,
     palette: &ForgePalette,
 ) -> AnyElement {
+    let label = label.into();
     div()
         .w_full()
         .flex()
@@ -491,7 +501,7 @@ fn build_trigger_groups(
         });
     }
     let groups = vec![GridPickerGroup {
-        label: "Your saved triggers".into(),
+        label: tr!("action_editor_saved_triggers").into(),
         dot_color: palette.warning,
         scope: SharedString::from("all"),
         items,
@@ -642,17 +652,20 @@ impl ScreenActionsView {
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(true)) => {
                 let _ = this.update(cx, |_, cx| {
-                    cx.push_toast(ToastKind::Success, "Test trigger fired");
+                    cx.push_toast(ToastKind::Success, tr!("action_editor_test_fired"));
                 });
             }
             Ok(Ok(false)) => {
                 let _ = this.update(cx, |_, cx| {
-                    cx.push_toast(ToastKind::Warn, "Test event did not match this trigger");
+                    cx.push_toast(ToastKind::Warn, tr!("action_editor_test_no_match"));
                 });
             }
             Ok(Err(message)) => {
                 let _ = this.update(cx, |_, cx| {
-                    cx.push_toast(ToastKind::Error, format!("Test trigger failed: {message}"));
+                    cx.push_toast(
+                        ToastKind::Error,
+                        tr!("action_editor_test_failed", error = message.as_str()),
+                    );
                 });
             }
             Err(_) => {}
@@ -785,20 +798,20 @@ impl ScreenActionsView {
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
-            .unwrap_or_else(|| "this action".to_owned());
+            .unwrap_or_else(|| tr!("action_editor_this_action"));
         let (groups, picks) = build_step_groups(&self.sub_action_registry, &palette);
         let count = self.sub_action_registry.all().count();
         let config = GridPickerConfig {
             accent: palette.brand,
             header_icon: Icon::LayoutGrid,
-            title: "Add sub-action".into(),
+            title: tr!("action_editor_picker_add_sub_title").into(),
             subtitle: GridPickerSubtitle::Context {
-                lead: "Inserting into".into(),
+                lead: tr!("action_editor_picker_inserting_into").into(),
                 name: ctx_name.into(),
-                note: format!("\u{b7} {count} sub-actions").into(),
+                note: tr!("action_editor_picker_sub_count", count = count as i64).into(),
             },
-            footer_hint: "Added with smart defaults - edit inline after".into(),
-            search_placeholder: format!("Search {count} sub-actions\u{2026}").into(),
+            footer_hint: tr!("action_editor_picker_footer_hint").into(),
+            search_placeholder: tr!("action_editor_picker_search", count = count as i64).into(),
             scope_cap: Some(7),
         };
         let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
@@ -913,10 +926,7 @@ impl ScreenActionsView {
             return;
         }
         if instances.is_empty() {
-            cx.push_toast(
-                ToastKind::Info,
-                "No unlinked triggers available - create one on the Triggers screen",
-            );
+            cx.push_toast(ToastKind::Info, tr!("action_editor_no_unlinked_triggers"));
             cx.notify();
             return;
         }
@@ -925,20 +935,20 @@ impl ScreenActionsView {
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
-            .unwrap_or_else(|| "this action".to_owned());
+            .unwrap_or_else(|| tr!("action_editor_this_action"));
         let count = instances.len();
         let (groups, picks) = build_trigger_groups(&instances, &self.trigger_registry, &palette);
         let config = GridPickerConfig {
             accent: palette.warning,
             header_icon: Icon::Bolt,
-            title: "Add trigger".into(),
+            title: tr!("action_editor_add_trigger").into(),
             subtitle: GridPickerSubtitle::Context {
-                lead: "Fires".into(),
+                lead: tr!("action_editor_picker_fires").into(),
                 name: action_name.into(),
-                note: format!("\u{b7} {count} available").into(),
+                note: tr!("action_editor_picker_available_count", count = count as i64).into(),
             },
-            footer_hint: "Links a saved trigger - create new ones on the Triggers screen".into(),
-            search_placeholder: "Search triggers\u{2026}".into(),
+            footer_hint: tr!("action_editor_trigger_picker_footer_hint").into(),
+            search_placeholder: tr!("triggers_search_placeholder").into(),
             scope_cap: Some(6),
         };
         let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
@@ -1066,14 +1076,14 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
-                    .child("No action selected"),
+                    .child(tr!("actions_detail_empty_title")),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("Select an action from the list to view its details."),
+                    .child(tr!("actions_detail_empty_hint")),
             );
 
         div()
@@ -1096,7 +1106,7 @@ impl ScreenActionsView {
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
-            .child("Loading action…")
+            .child(tr!("action_editor_loading"))
             .into_any_element()
     }
 
@@ -1133,9 +1143,9 @@ impl ScreenActionsView {
     ) -> AnyElement {
         let action = &detail.action;
         let (pill_color, pill_label) = if action.enabled {
-            (palette.success, "Enabled")
+            (palette.success, tr!("action_editor_enabled"))
         } else {
-            (palette.text_faint, "Disabled")
+            (palette.text_faint, tr!("action_editor_disabled"))
         };
         let pill = div()
             .flex()
@@ -1171,7 +1181,7 @@ impl ScreenActionsView {
         let desc = action
             .description
             .clone()
-            .unwrap_or_else(|| "No description".to_owned());
+            .unwrap_or_else(|| tr!("action_editor_no_description"));
         let desc_line = div()
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_XS)
@@ -1190,20 +1200,22 @@ impl ScreenActionsView {
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(
-                ghost_button_with_icon(Icon::PlayerPlay, "Test run", palette).on_click(
-                    "actions-editor-test",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.test_run(cx)),
-                ),
+                ghost_button_with_icon(Icon::PlayerPlay, tr!("action_editor_test_run"), palette)
+                    .on_click(
+                        "actions-editor-test",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.test_run(cx)),
+                    ),
             )
             .child(
-                ghost_button_with_icon(Icon::Copy, "Duplicate", palette).on_click(
-                    "actions-editor-dup",
-                    cx.listener(|this, _: &ClickEvent, _, cx| {
-                        if let Some(id) = this.selected {
-                            this.duplicate(id, cx);
-                        }
-                    }),
-                ),
+                ghost_button_with_icon(Icon::Copy, tr!("action_editor_duplicate"), palette)
+                    .on_click(
+                        "actions-editor-dup",
+                        cx.listener(|this, _: &ClickEvent, _, cx| {
+                            if let Some(id) = this.selected {
+                                this.duplicate(id, cx);
+                            }
+                        }),
+                    ),
             );
 
         div()
@@ -1225,9 +1237,9 @@ impl ScreenActionsView {
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
-            .child(format!(
-                "TRIGGERS \u{b7} {}",
-                detail.trigger_instances.len()
+            .child(tr!(
+                "action_editor_section_triggers_count",
+                count = detail.trigger_instances.len() as i64
             ));
 
         let mut col = div()
@@ -1238,7 +1250,7 @@ impl ScreenActionsView {
             col = col.child(empty_placeholder_card(
                 Icon::Bolt,
                 palette.warning,
-                "No triggers linked",
+                tr!("action_editor_no_triggers"),
                 palette,
             ));
         } else {
@@ -1249,7 +1261,7 @@ impl ScreenActionsView {
         col = col.child(add_row_button(
             "actions-add-trigger",
             Icon::Plus,
-            "Add trigger",
+            tr!("action_editor_add_trigger"),
             palette.warning,
             palette,
             cx.listener(|this, _: &ClickEvent, window, cx| this.open_trigger_picker(window, cx)),
@@ -1359,7 +1371,7 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(format!("{total} sub-actions")),
+                    .child(tr!("action_editor_sub_actions_count", count = total as i64)),
             )
         } else {
             div()
@@ -1379,9 +1391,9 @@ impl ScreenActionsView {
         let mut steps_col = div().flex().flex_col();
         if current.is_empty() {
             let empty_label = if at_root {
-                "This action has no steps yet"
+                tr!("action_editor_no_steps")
             } else {
-                "No steps yet · click Add step to start"
+                tr!("action_editor_branch_empty")
             };
             steps_col = steps_col.child(empty_placeholder_card(
                 Icon::Plus,
@@ -1400,7 +1412,7 @@ impl ScreenActionsView {
                 .child(add_row_button(
                     "actions-add-step",
                     Icon::Plus,
-                    "Add step",
+                    tr!("action_editor_add_step"),
                     palette.brand,
                     palette,
                     cx.listener(|this, _: &ClickEvent, window, cx| {
@@ -1535,7 +1547,7 @@ impl ScreenActionsView {
             .items(vec![
                 menu_item(
                     SharedString::from(format!("actions-step-edit-{i}")),
-                    "Edit…",
+                    tr!("action_editor_step_menu_edit"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.open_edit_sub_action(i, cx)
                     }),
@@ -1544,7 +1556,7 @@ impl ScreenActionsView {
                 .into(),
                 menu_item(
                     SharedString::from(format!("actions-step-dup-{i}")),
-                    "Duplicate",
+                    tr!("action_editor_step_menu_duplicate"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.duplicate_step(i, cx)),
                 )
                 .icon(Icon::Copy)
@@ -1552,7 +1564,7 @@ impl ScreenActionsView {
                 menu_divider(),
                 menu_item(
                     SharedString::from(format!("actions-step-top-{i}")),
-                    "Move to top",
+                    tr!("action_editor_step_menu_move_top"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.move_step_top(i, cx)),
                 )
                 .icon(Icon::ArrowBarUp)
@@ -1560,7 +1572,7 @@ impl ScreenActionsView {
                 .into(),
                 menu_item(
                     SharedString::from(format!("actions-step-bottom-{i}")),
-                    "Move to bottom",
+                    tr!("action_editor_step_menu_move_bottom"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.move_step_bottom(i, cx)),
                 )
                 .icon(Icon::ArrowBarDown)
@@ -1569,7 +1581,7 @@ impl ScreenActionsView {
                 menu_divider(),
                 menu_item(
                     SharedString::from(format!("actions-step-del-{i}")),
-                    "Delete",
+                    tr!("action_editor_step_menu_delete"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_step(i, cx)),
                 )
                 .icon(Icon::Eraser)
@@ -1635,7 +1647,7 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("CONFIGURATION"),
+                    .child(tr!("action_editor_config_label")),
             );
 
         let mut rendered_any = false;
@@ -1715,7 +1727,7 @@ impl ScreenActionsView {
                                     .font_family(DEFAULT_BODY_FAMILY)
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_faint)
-                                    .child("Authored via drill-in on the step."),
+                                    .child(tr!("action_editor_branch_modal_hint")),
                             ),
                     );
                 }
@@ -1727,7 +1739,7 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("This sub-action has no configuration."),
+                    .child(tr!("actions_sub_no_config")),
             );
         }
 
@@ -1740,11 +1752,11 @@ impl ScreenActionsView {
             .px(spacing(Spacing::Md, Density::Cozy))
             .child(fields_col);
 
-        let cancel = secondary_button("Cancel", palette).on_click(
+        let cancel = secondary_button(tr!("common_cancel"), palette).on_click(
             "actions-sub-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
         );
-        let save = primary_button("Save", palette).on_click(
+        let save = primary_button(tr!("common_save"), palette).on_click(
             "actions-sub-submit",
             cx.listener(|this, _: &ClickEvent, _, cx| this.submit_sub_action(cx)),
         );
@@ -1769,7 +1781,7 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child("ESC to cancel"),
+                    .child(tr!("actions_esc_hint")),
             )
             .child(buttons);
 
@@ -1782,7 +1794,7 @@ impl ScreenActionsView {
 
         let sheet = side_sheet(SUB_SHEET_W, content, palette)
             .position(SheetPosition::Right)
-            .header("Edit sub-action")
+            .header(tr!("actions_sub_modal_edit_title"))
             .on_close(
                 "actions-sub-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),

@@ -341,15 +341,20 @@ actions_sub_modal_add_title = Додати крок
 actions_sub_modal_edit_title = Редагувати крок
 actions_sub_select_kind = Оберіть тип кроку
 actions_sub_no_config = Цей крок не має налаштувань.
+sub_cat_chat = Чат
+sub_cat_moderation = Модерація
+sub_cat_channel_points = Бали каналу
 sub_cat_polls_predictions = Опитування та прогнози
 sub_cat_globals = Глобальні змінні
 sub_cat_logic = Логіка
 sub_cat_delay = Затримка
 sub_cat_scripts = Скрипти
 sub_cat_files = Файли
+sub_cat_hotkey = Гарячі клавіші
 sub_cat_audio = Аудіо
 sub_cat_tts = Синтез мовлення
 sub_cat_http = HTTP
+sub_cat_server = Сервер
 sub_cat_util = Утиліти
 actions_sub_chip_send_chat = Чат-повідомлення
 actions_sub_chip_set_global = Глобальна змінна
@@ -442,6 +447,7 @@ action_editor_add_trigger = Додати тригер
 action_editor_add_step = Додати крок
 action_editor_branch_modal_hint = Редагуйте цю гілку у списку кроків нижче
 action_editor_branch_empty = Кроків ще немає · натисніть «Додати крок», щоб почати
+action_editor_no_steps = Ця дія ще не має кроків
 action_editor_breadcrumb_steps = Кроки
 action_editor_branch_then = Якщо так
 action_editor_branch_else = Інакше
@@ -461,6 +467,8 @@ action_editor_section_triggers_count = ТРИГЕРИ · { $count }
 action_editor_triggers_hint = Клацніть тригер, щоб редагувати його в реєстрі
 action_editor_section_sub_actions = ПІДПУНКТИ · { $count }
 action_editor_section_sub_actions_label = ПІДПУНКТИ
+action_editor_sub_actions_count = { $count } підпунктів
+action_editor_config_label = КОНФІГУРАЦІЯ
 action_editor_sub_count = { $count } кр.
 action_editor_enabled = Увімкнено
 action_editor_disabled = Вимкнено
@@ -472,6 +480,26 @@ action_editor_step_menu_duplicate = Дублювати
 action_editor_step_menu_move_top = Перемістити вгору
 action_editor_step_menu_move_bottom = Перемістити вниз
 action_editor_step_menu_delete = Видалити крок
+
+## Редактор дій - тестовий запуск
+
+action_editor_test_fired = Тестовий тригер спрацював
+action_editor_test_no_match = Тестова подія не збіглася з цим тригером
+action_editor_test_failed = Не вдалося запустити тестовий тригер: { $error }
+
+## Редактор дій - вибір підпункту / тригера
+
+action_editor_this_action = цю дію
+action_editor_saved_triggers = Ваші збережені тригери
+action_editor_picker_add_sub_title = Додати підпункт
+action_editor_picker_inserting_into = Вставлення у
+action_editor_picker_sub_count = · { $count } підпунктів
+action_editor_picker_footer_hint = Додається з розумними типовими значеннями - редагуйте на місці
+action_editor_picker_search = Пошук серед { $count } підпунктів…
+action_editor_picker_fires = Запускає
+action_editor_picker_available_count = · { $count } доступно
+action_editor_trigger_picker_footer_hint = Прив'язує збережений тригер - нові створюйте на екрані тригерів
+action_editor_no_unlinked_triggers = Немає доступних неприв'язаних тригерів - створіть один на екрані тригерів
 
 ## Редактор дій - назви типів кроків
 

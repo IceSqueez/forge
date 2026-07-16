@@ -639,6 +639,18 @@ actions_group_placeholder = Приклади
 actions_description_placeholder = Відтворює звук, показує сповіщення…
 actions_log_message_placeholder = Дію розпочато
 actions_speak_text_placeholder = Текст для озвучення…
+actions_rename_placeholder = Назва
+
+## Actions - list states, toasts, delete confirm
+
+actions_tree_loading = Завантаження дій…
+actions_loading_queues = Завантаження черг…
+actions_no_queue = Немає доступної черги
+actions_toast_error = Дії: { $message }
+actions_rename_taken = Назву '{ $name }' вже зайнято
+actions_deleted_toast = Видалено '{ $name }'
+actions_delete_title = Видалити дію?
+actions_delete_body = Це видалить дію та всі її піддії й тригери.
 
 ## Triggers registry - error messages
 

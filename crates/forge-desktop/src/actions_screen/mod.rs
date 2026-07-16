@@ -2,7 +2,7 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
     ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, ToastKind, icon, overlay,
-    search_input,
+    search_input, tr,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
@@ -159,7 +159,8 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search_field = cx.new(|cx| search_input("Search actions...", palette, cx));
+        let search_field =
+            cx.new(|cx| search_input(tr!("actions_search_placeholder"), palette, cx));
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
 
         let view = Self {
@@ -264,7 +265,10 @@ impl ScreenActionsView {
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
         eprintln!("forge-desktop: actions operation failed: {message}");
         self.loading = false;
-        cx.push_toast(ToastKind::Error, format!("Actions: {message}"));
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("actions_toast_error", message = message),
+        );
         cx.notify();
     }
 

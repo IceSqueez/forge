@@ -639,6 +639,18 @@ actions_group_placeholder = Examples
 actions_description_placeholder = Plays a sound, shows overlay alert…
 actions_log_message_placeholder = Action started
 actions_speak_text_placeholder = Text to speak…
+actions_rename_placeholder = Name
+
+## Actions - list states, toasts, delete confirm
+
+actions_tree_loading = Loading actions…
+actions_loading_queues = Loading queues…
+actions_no_queue = No queue available
+actions_toast_error = Actions: { $message }
+actions_rename_taken = Name '{ $name }' is already taken
+actions_deleted_toast = Deleted '{ $name }'
+actions_delete_title = Delete action?
+actions_delete_body = This will remove the action and all of its sub-actions and triggers.
 
 ## Triggers registry - error messages
 

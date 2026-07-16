@@ -6,14 +6,14 @@ use forge_components::{
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, ModalSize,
     OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, breadcrumb,
     chip, confirm_modal, icon, menu_button, menu_divider, menu_item, modal, overlay,
-    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle,
+    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, ExecutionMode, Queue};
 use gpui::{AnyElement, App, ClickEvent, Context, Entity, Rgba, SharedString, Window, div, px};
 use std::sync::Arc;
 use std::time::Duration;
 
-fn tree_notice(label: &'static str, color: Rgba, _palette: &ForgePalette) -> impl IntoElement {
+fn tree_notice(label: SharedString, color: Rgba, _palette: &ForgePalette) -> impl IntoElement {
     div()
         .w_full()
         .px(TREE_GUTTER)
@@ -26,7 +26,7 @@ fn tree_notice(label: &'static str, color: Rgba, _palette: &ForgePalette) -> imp
 
 fn modal_section(
     palette: &ForgePalette,
-    label: &'static str,
+    label: impl Into<SharedString>,
     control: impl IntoElement,
 ) -> impl IntoElement {
     div()
@@ -38,7 +38,7 @@ fn modal_section(
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
-                .child(label),
+                .child(label.into()),
         )
         .child(control)
 }
@@ -185,7 +185,7 @@ impl ScreenActionsView {
         let palette = cx.palette();
         let seed = action.name.clone();
         let field = cx.new(|cx| {
-            let mut input = TextInput::new("Name", cx)
+            let mut input = TextInput::new(tr!("actions_rename_placeholder"), cx)
                 .with_palette(palette)
                 .static_chrome(palette.brand, Radius::Sm);
             input.set_content(seed, cx);
@@ -237,7 +237,7 @@ impl ScreenActionsView {
         if taken {
             cx.push_toast(
                 ToastKind::Error,
-                format!("Name \u{201c}{trimmed}\u{201d} is already taken"),
+                tr!("actions_rename_taken", name = trimmed.as_str()),
             );
             return;
         }
@@ -312,34 +312,39 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         let view = cx.entity();
-        let message = format!("Deleted \u{201c}{name}\u{201d}");
+        let message = tr!("actions_deleted_toast", name = name.as_str());
         cx.push_toast_full(
             ToastKind::Undo,
             message,
             None,
-            Some(ToastAction::new("Undo", move |_window, app: &mut App| {
-                let repo = Arc::clone(&repo);
-                let rt_handle = rt_handle.clone();
-                Self::reload_entity(
-                    view.clone(),
-                    rt_handle,
-                    async move {
-                        repo.restore(id).await.map_err(|e| e.to_string())?;
-                        repo.list().await.map_err(|e| e.to_string())
-                    },
-                    app,
-                );
-            })),
+            Some(ToastAction::new(
+                tr!("common_undo"),
+                move |_window, app: &mut App| {
+                    let repo = Arc::clone(&repo);
+                    let rt_handle = rt_handle.clone();
+                    Self::reload_entity(
+                        view.clone(),
+                        rt_handle,
+                        async move {
+                            repo.restore(id).await.map_err(|e| e.to_string())?;
+                            repo.list().await.map_err(|e| e.to_string())
+                        },
+                        app,
+                    );
+                },
+            )),
             Duration::from_millis(6000),
         );
     }
 
     fn open_add_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let name = cx.new(|cx| TextInput::new("My automation", cx).with_palette(palette));
-        let group = cx.new(|cx| TextInput::new("Examples", cx).with_palette(palette));
+        let name =
+            cx.new(|cx| TextInput::new(tr!("actions_name_placeholder"), cx).with_palette(palette));
+        let group =
+            cx.new(|cx| TextInput::new(tr!("actions_group_placeholder"), cx).with_palette(palette));
         let description = cx.new(|cx| {
-            TextArea::new("Plays a sound, shows overlay alert…", cx).with_palette(palette)
+            TextArea::new(tr!("actions_description_placeholder"), cx).with_palette(palette)
         });
         name.read(cx).focus(window);
         let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
@@ -434,7 +439,7 @@ impl ScreenActionsView {
             return;
         }
         let Some(&(queue_id, _)) = form.queues.get(form.selected_queue) else {
-            cx.push_toast(ToastKind::Error, "No queue available".to_owned());
+            cx.push_toast(ToastKind::Error, tr!("actions_no_queue"));
             return;
         };
         let group_name = form.group.read(cx).content().trim().to_owned();
@@ -496,7 +501,7 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 chip(
-                    "All",
+                    tr!("actions_filter_all"),
                     ChipGlyph::Dot(palette.brand),
                     self.filter == ActionsFilter::All,
                     palette,
@@ -508,7 +513,7 @@ impl ScreenActionsView {
             )
             .child(
                 chip(
-                    "Chat",
+                    tr!("actions_filter_chat"),
                     ChipGlyph::DotIcon(palette.info, Icon::MessageCircle),
                     self.filter == ActionsFilter::Chat,
                     palette,
@@ -520,7 +525,7 @@ impl ScreenActionsView {
             )
             .child(
                 chip(
-                    "Timers",
+                    tr!("actions_filter_timers"),
                     ChipGlyph::DotIcon(palette.warning, Icon::Clock),
                     self.filter == ActionsFilter::Timers,
                     palette,
@@ -532,7 +537,7 @@ impl ScreenActionsView {
             )
             .child(
                 chip(
-                    "Points",
+                    tr!("actions_filter_points"),
                     ChipGlyph::DotIcon(palette.accent_pink_light, Icon::Star),
                     self.filter == ActionsFilter::Points,
                     palette,
@@ -550,10 +555,12 @@ impl ScreenActionsView {
 
         let search = div().w(SEARCH_W).child(self.search_field.clone());
 
-        let new_btn = primary_button_with_icon(Icon::Plus, "New action", palette).on_click(
-            "actions-new",
-            cx.listener(|this, _: &ClickEvent, window, cx| this.open_add_modal(window, cx)),
-        );
+        let new_btn =
+            primary_button_with_icon(Icon::Plus, tr!("actions_modal_new_action_title"), palette)
+                .on_click(
+                    "actions-new",
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_add_modal(window, cx)),
+                );
 
         let cluster = div()
             .flex()
@@ -566,8 +573,8 @@ impl ScreenActionsView {
 
         breadcrumb(
             vec![
-                BreadcrumbCrumb::leaf("Automation"),
-                BreadcrumbCrumb::leaf("Actions"),
+                BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_actions")),
             ],
             palette,
         )
@@ -580,11 +587,15 @@ impl ScreenActionsView {
 
         if self.total_actions() == 0 {
             let caption = if self.loading {
-                "Loading actions…"
+                tr!("actions_tree_loading")
             } else {
-                "No actions yet"
+                tr!("actions_empty")
             };
-            col = col.child(tree_notice(caption, palette.text_faint, palette));
+            col = col.child(tree_notice(
+                SharedString::from(caption),
+                palette.text_faint,
+                palette,
+            ));
         } else {
             for (index, group) in self.groups.iter().enumerate() {
                 let surviving: Vec<&ActionSummary> = group
@@ -738,7 +749,10 @@ impl ScreenActionsView {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
-                .child(format!("{} sub", action.sub_action_count))
+                .child(tr!(
+                    "action_editor_sub_count",
+                    count = action.sub_action_count as i64
+                ))
                 .into_any_element()
         };
         let right_slot = div().pr(ROW_GUTTER).child(
@@ -774,7 +788,11 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = action.id;
-        let toggle_label = if action.enabled { "Disable" } else { "Enable" };
+        let toggle_label = if action.enabled {
+            tr!("actions_menu_disable")
+        } else {
+            tr!("actions_menu_enable")
+        };
         let next_enabled = !action.enabled;
         let view = cx.entity();
 
@@ -783,7 +801,7 @@ impl ScreenActionsView {
             .items(vec![
                 menu_item(
                     SharedString::from(format!("actions-menu-rename-{id}")),
-                    "Rename…",
+                    tr!("actions_menu_rename"),
                     cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.start_rename(id, window, cx)
                     }),
@@ -792,7 +810,7 @@ impl ScreenActionsView {
                 .into(),
                 menu_item(
                     SharedString::from(format!("actions-menu-dup-{id}")),
-                    "Duplicate",
+                    tr!("actions_menu_duplicate"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.duplicate(id, cx)),
                 )
                 .icon(Icon::Copy)
@@ -809,7 +827,7 @@ impl ScreenActionsView {
                 menu_divider(),
                 menu_item(
                     SharedString::from(format!("actions-menu-del-{id}")),
-                    "Delete…",
+                    tr!("actions_menu_delete"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
                 )
                 .icon(Icon::Eraser)
@@ -847,7 +865,7 @@ impl ScreenActionsView {
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_LIMIT}")),
             );
-        let name_section = modal_section(palette, "NAME", name_row);
+        let name_section = modal_section(palette, tr!("actions_modal_section_name"), name_row);
 
         let group_field = div()
             .flex()
@@ -855,14 +873,14 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(status_dot(palette.brand, GROUP_DOT))
             .child(div().flex_1().child(form.group.clone()));
-        let group_section = modal_section(palette, "GROUP", group_field);
+        let group_section = modal_section(palette, tr!("actions_modal_section_group"), group_field);
 
         let queue_control: AnyElement = if form.queues.is_empty() {
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
-                .child("Loading queues…")
+                .child(SharedString::from(tr!("actions_loading_queues")))
                 .into_any_element()
         } else {
             let mut queue_chips = div()
@@ -885,7 +903,8 @@ impl ScreenActionsView {
             }
             queue_chips.into_any_element()
         };
-        let queue_section = modal_section(palette, "QUEUE", queue_control);
+        let queue_section =
+            modal_section(palette, tr!("actions_modal_section_queue"), queue_control);
 
         let two_col = div()
             .flex()
@@ -895,7 +914,7 @@ impl ScreenActionsView {
 
         let desc_section = modal_section(
             palette,
-            "DESCRIPTION",
+            tr!("actions_modal_section_description"),
             div().child(form.description.clone()),
         );
 
@@ -903,11 +922,11 @@ impl ScreenActionsView {
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
-            .child("BEHAVIOR");
+            .child(SharedString::from(tr!("actions_modal_section_behavior")));
 
         let enabled = self.modal_toggle_row(
-            "Enabled",
-            "Action runs when a trigger fires.",
+            tr!("actions_modal_enabled_label"),
+            tr!("actions_modal_enabled_desc"),
             form.enabled,
             palette.success,
             "actions-modal-enabled",
@@ -915,8 +934,8 @@ impl ScreenActionsView {
             palette,
         );
         let concurrent = self.modal_toggle_row(
-            "Concurrent execution",
-            "Allow parallel runs in this queue.",
+            tr!("actions_modal_concurrent_label"),
+            tr!("actions_modal_concurrent_desc"),
             form.concurrent,
             palette.info,
             "actions-modal-concurrent",
@@ -924,8 +943,8 @@ impl ScreenActionsView {
             palette,
         );
         let bypass = self.modal_toggle_row(
-            "Bypass queue pause",
-            "Always run even if queue is paused.",
+            tr!("actions_modal_bypass_label"),
+            tr!("actions_modal_bypass_desc"),
             form.bypass_pause,
             palette.warning,
             "actions-modal-bypass",
@@ -933,8 +952,8 @@ impl ScreenActionsView {
             palette,
         );
         let random = self.modal_toggle_row(
-            "Random pick",
-            "Run ONE random sub-action per trigger instead of all.",
+            tr!("actions_modal_random_pick_label"),
+            tr!("actions_modal_random_pick_desc"),
             form.random_pick,
             palette.random,
             "actions-modal-random",
@@ -955,11 +974,11 @@ impl ScreenActionsView {
             .child(bypass)
             .child(random);
 
-        let cancel = secondary_button("Cancel", palette).on_click(
+        let cancel = secondary_button(tr!("actions_modal_cancel_btn"), palette).on_click(
             "actions-modal-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_add_modal(cx)),
         );
-        let create = primary_button("Create action", palette)
+        let create = primary_button(tr!("actions_modal_create_btn"), palette)
             .disabled(!valid)
             .on_click(
                 "actions-modal-create",
@@ -974,10 +993,10 @@ impl ScreenActionsView {
             .child(cancel)
             .child(create);
 
-        let card = modal("New action", body, palette)
+        let card = modal(tr!("actions_modal_new_action_title"), body, palette)
             .size(ModalSize::Md)
             .footer(footer)
-            .kbd_hint("ESC to cancel")
+            .kbd_hint(tr!("actions_esc_hint"))
             .on_close(
                 "actions-modal-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_add_modal(cx)),
@@ -995,8 +1014,8 @@ impl ScreenActionsView {
     #[allow(clippy::too_many_arguments)]
     fn modal_toggle_row(
         &self,
-        label: &'static str,
-        description: &'static str,
+        label: impl Into<SharedString>,
+        description: impl Into<SharedString>,
         on: bool,
         accent: Rgba,
         id: &'static str,
@@ -1018,14 +1037,14 @@ impl ScreenActionsView {
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
-                            .child(label),
+                            .child(label.into()),
                     )
                     .child(
                         div()
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
-                            .child(description),
+                            .child(description.into()),
                     ),
             )
             .child(toggle(on, palette).on_color(accent).on_click(id, handler))
@@ -1040,21 +1059,21 @@ impl ScreenActionsView {
     ) -> AnyElement {
         let name = self.find(id).map(|a| a.name.clone()).unwrap_or_default();
         let card = confirm_modal(
-            "Delete action?",
-            "This will remove the action and all of its sub-actions and triggers.",
+            tr!("actions_delete_title"),
+            tr!("actions_delete_body"),
             ConfirmTone::Destructive,
             palette,
         )
         .item_name(name)
-        .esc_hint("to cancel")
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "actions-delete-cancel",
-            "Cancel",
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(
             "actions-delete-confirm",
-            "Delete",
+            tr!("common_delete"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
         );
 

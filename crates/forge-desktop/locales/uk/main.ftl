@@ -147,6 +147,13 @@ settings_appearance_font_reset = Скинути до типового
 settings_appearance_font_missing = «{ $family }» не встановлено - доки він не з'явиться, діє типовий
 settings_appearance_font_show_all = Показати всі шрифти
 settings_appearance_font_preview = Жебракують філософи при ґанку церкви в Гадячі · 0123456789
+settings_appearance_theme_hint = Який вигляд матиме Forge
+settings_appearance_font_interface = ІНТЕРФЕЙС
+settings_appearance_font_monospace = МОНОШИРИННИЙ
+settings_theme_default = Стандартна
+settings_theme_desc_dark = темна
+settings_theme_desc_storm = Шторм
+settings_theme_desc_light_mode = Світлий режим
 
 ## Налаштування → панель мови
 
@@ -161,6 +168,7 @@ settings_nav_group_engine = РУШІЙ
 settings_nav_group_about = ПРО ПРОГРАМУ
 settings_nav_appearance = Зовнішній вигляд
 settings_nav_language = Мова
+settings_nav_language_region = Мова та регіон
 settings_nav_shortcuts = Скорочення
 settings_nav_notifications = Сповіщення
 settings_nav_audio = Аудіо
@@ -171,10 +179,14 @@ settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Хоткеї
 settings_nav_version = Версія
 settings_nav_diagnostics = Діагностика
+settings_section_deferred = Цей розділ з'явиться в наступному етапі.
 
 ## Налаштування → панель діагностики
 
 settings_about_build_label = Збірка
+settings_about_rust_label = Rust
+settings_about_os_label = ОС
+settings_diagnostics_log_dir_hint = Журнали середовища виконання пишуться в цю теку.
 settings_diagnostics_section_title = Журнали та діагностика
 settings_diagnostics_log_dir = Тека журналів: { $path }
 settings_diagnostics_log_dir_label = Тека журналів
@@ -184,7 +196,7 @@ settings_diagnostics_log_level_hint = Рівень журналювання: к�
 ## Налаштування → панель версії
 
 settings_version_title = Версія та оновлення
-settings_version_tagline = Відкритий код · MIT OR Apache-2.0 · iced 0.14 + Rhai 1.25
+settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
 settings_version_recent_releases = ОСТАННІ РЕЛІЗИ
 settings_version_changelog_empty = Історія релізів поки відсутня.

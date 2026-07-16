@@ -2,7 +2,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ThemeId, badge,
     breadcrumb, card, ghost_button_with_icon, icon, metric_card, primary_button,
-    primary_button_with_icon, radius, spacing, with_alpha,
+    primary_button_with_icon, radius, spacing, tr, with_alpha,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, Window, div, prelude::*, px,
@@ -22,7 +22,7 @@ const RECENT_RELEASES: [(&str, &str, &str); 3] = [
 
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
-        "PREFERENCES",
+        "settings_nav_group_preferences",
         &[
             SettingsSection::Appearance,
             SettingsSection::Language,
@@ -31,7 +31,7 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
         ],
     ),
     (
-        "ENGINE",
+        "settings_nav_group_engine",
         &[
             SettingsSection::Audio,
             SettingsSection::Scripting,
@@ -42,7 +42,7 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
         ],
     ),
     (
-        "ABOUT",
+        "settings_nav_group_about",
         &[SettingsSection::Version, SettingsSection::Diagnostics],
     ),
 ];
@@ -64,20 +64,20 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            SettingsSection::Appearance => "Appearance",
-            SettingsSection::Language => "Language & region",
-            SettingsSection::Shortcuts => "Shortcuts",
-            SettingsSection::Notifications => "Notifications",
-            SettingsSection::Audio => "Audio",
-            SettingsSection::Scripting => "Scripting (Rhai)",
-            SettingsSection::Queues => "Queues & threading",
-            SettingsSection::Storage => "Storage & backups",
-            SettingsSection::WebSocket => "WebSocket server",
-            SettingsSection::Hotkeys => "Hotkeys",
-            SettingsSection::Version => "Version & updates",
-            SettingsSection::Diagnostics => "Logs & diagnostics",
+            SettingsSection::Appearance => tr!("settings_nav_appearance"),
+            SettingsSection::Language => tr!("settings_nav_language_region"),
+            SettingsSection::Shortcuts => tr!("settings_nav_shortcuts"),
+            SettingsSection::Notifications => tr!("settings_nav_notifications"),
+            SettingsSection::Audio => tr!("settings_nav_audio"),
+            SettingsSection::Scripting => tr!("settings_scripting_title"),
+            SettingsSection::Queues => tr!("settings_queues_section_title"),
+            SettingsSection::Storage => tr!("settings_storage_section_title"),
+            SettingsSection::WebSocket => tr!("settings_ws_title"),
+            SettingsSection::Hotkeys => tr!("settings_nav_hotkeys"),
+            SettingsSection::Version => tr!("settings_version_title"),
+            SettingsSection::Diagnostics => tr!("settings_diagnostics_section_title"),
         }
     }
 
@@ -116,19 +116,34 @@ impl SettingsSection {
     }
 }
 
-fn theme_meta(theme: ThemeId) -> (&'static str, &'static str) {
+fn theme_meta(theme: ThemeId) -> (String, String) {
     match theme {
-        ThemeId::CatppuccinMocha => ("Default", "Mocha · dark"),
-        ThemeId::TokyoNight => ("Tokyo Night", "Storm"),
-        ThemeId::Latte => ("Catppuccin Latte", "Light mode"),
+        ThemeId::CatppuccinMocha => (
+            tr!("settings_theme_default"),
+            format!("Mocha · {}", tr!("settings_theme_desc_dark")),
+        ),
+        ThemeId::TokyoNight => ("Tokyo Night".to_owned(), tr!("settings_theme_desc_storm")),
+        ThemeId::Latte => (
+            "Catppuccin Latte".to_owned(),
+            tr!("settings_theme_desc_light_mode"),
+        ),
     }
 }
 
-fn density_meta(density: Density) -> (&'static str, &'static str) {
+fn density_meta(density: Density) -> (String, String) {
     match density {
-        Density::Compact => ("Compact", "Tighter spacing, more on screen"),
-        Density::Cozy => ("Cozy", "Balanced spacing (default)"),
-        Density::Spacious => ("Spacious", "Roomier spacing across panels"),
+        Density::Compact => (
+            tr!("settings_appearance_density_compact"),
+            tr!("settings_appearance_density_compact_hint"),
+        ),
+        Density::Cozy => (
+            tr!("settings_appearance_density_cozy"),
+            tr!("settings_appearance_density_cozy_hint"),
+        ),
+        Density::Spacious => (
+            tr!("settings_appearance_density_spacious"),
+            tr!("settings_appearance_density_spacious_hint"),
+        ),
     }
 }
 
@@ -196,11 +211,11 @@ impl SettingsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.success)
-                    .child("All changes saved"),
+                    .child(tr!("settings_ws_all_saved")),
             );
         breadcrumb(
             vec![
-                BreadcrumbCrumb::leaf("Settings"),
+                BreadcrumbCrumb::leaf(tr!("settings_page_title")),
                 BreadcrumbCrumb::leaf(self.section.label()),
             ],
             palette,
@@ -224,7 +239,7 @@ impl SettingsView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(group),
+                    .child(tr!(group)),
             );
             for &section in sections {
                 list = list.child(self.nav_button(section, palette, density, cx));
@@ -293,7 +308,7 @@ impl SettingsView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let header = pane_header(Icon::LayoutGrid, "Appearance", palette);
+        let header = pane_header(Icon::LayoutGrid, tr!("settings_appearance_title"), palette);
 
         let mut theme_grid = div().flex().flex_row().gap(spacing(Spacing::Sm, density));
         let active = cx.theme();
@@ -304,8 +319,8 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(field_title("Theme", palette))
-            .child(field_hint("How Forge should look", palette))
+            .child(field_title(tr!("settings_appearance_theme_label"), palette))
+            .child(field_hint(tr!("settings_appearance_theme_hint"), palette))
             .child(theme_grid);
 
         let mut density_rows = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
@@ -323,8 +338,14 @@ impl SettingsView {
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xs, density))
-                .child(field_title("UI density", palette))
-                .child(field_hint("Adjust spacing across panels", palette))
+                .child(field_title(
+                    tr!("settings_appearance_density_label"),
+                    palette,
+                ))
+                .child(field_hint(
+                    tr!("settings_appearance_density_subtitle"),
+                    palette,
+                ))
                 .child(density_rows),
         );
 
@@ -333,14 +354,22 @@ impl SettingsView {
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Sm, density))
-                .child(field_title("Fonts", palette))
+                .child(field_title(tr!("settings_appearance_fonts_label"), palette))
                 .child(
                     div()
                         .flex()
                         .flex_row()
                         .gap(spacing(Spacing::Sm, density))
-                        .child(font_field("INTERFACE", DEFAULT_BODY_FAMILY, palette))
-                        .child(font_field("MONOSPACE", DEFAULT_MONO_FAMILY, palette)),
+                        .child(font_field(
+                            tr!("settings_appearance_font_interface"),
+                            DEFAULT_BODY_FAMILY,
+                            palette,
+                        ))
+                        .child(font_field(
+                            tr!("settings_appearance_font_monospace"),
+                            DEFAULT_MONO_FAMILY,
+                            palette,
+                        )),
                 ),
         );
 
@@ -460,7 +489,7 @@ impl SettingsView {
             footer = footer.child(badge(
                 palette.surface_overlay,
                 palette.brand,
-                "ACTIVE",
+                tr!("settings_theme_active"),
                 true,
                 FONT_XXS,
             ));
@@ -599,12 +628,17 @@ impl SettingsView {
                         .font_family(DEFAULT_BODY_FAMILY)
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
-                        .child("Open-source · MIT OR Apache-2.0"),
+                        .child(tr!("settings_version_license")),
                 ),
             )
             .child(div().flex_1())
             .child(
-                ghost_button_with_icon(Icon::Refresh, "Check for updates", palette).on_click(
+                ghost_button_with_icon(
+                    Icon::Refresh,
+                    tr!("settings_version_check_updates"),
+                    palette,
+                )
+                .on_click(
                     "settings-check-updates",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.check_for_updates(cx)),
                 ),
@@ -619,7 +653,7 @@ impl SettingsView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child("RECENT RELEASES"),
+                    .child(tr!("settings_version_recent_releases")),
             );
         for (tag, summary, when) in RECENT_RELEASES {
             releases = releases.child(release_row(tag, summary, when, palette, density));
@@ -629,7 +663,11 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .child(pane_header(Icon::InfoCircle, "Version & updates", palette))
+            .child(pane_header(
+                Icon::InfoCircle,
+                tr!("settings_version_title"),
+                palette,
+            ))
             .child(card(identity, palette))
             .child(card(releases, palette))
             .into_any_element()
@@ -645,7 +683,7 @@ impl SettingsView {
         let log_dir = forge_platform_core::paths::data_dir().join("logs");
         let log_display = log_dir.display().to_string();
 
-        let metric = |label: &'static str, value: String| {
+        let metric = |label: String, value: String| {
             div()
                 .flex_1()
                 .child(metric_card(label, value, None::<&str>, None, palette))
@@ -654,9 +692,18 @@ impl SettingsView {
             .flex()
             .flex_row()
             .gap(spacing(Spacing::Sm, density))
-            .child(metric("Build", version.to_owned()))
-            .child(metric("Rust", RUST_VERSION.to_owned()))
-            .child(metric("OS", std::env::consts::OS.to_owned()));
+            .child(metric(
+                tr!("settings_about_build_label"),
+                version.to_owned(),
+            ))
+            .child(metric(
+                tr!("settings_about_rust_label"),
+                RUST_VERSION.to_owned(),
+            ))
+            .child(metric(
+                tr!("settings_about_os_label"),
+                std::env::consts::OS.to_owned(),
+            ));
 
         let path_box = div()
             .w_full()
@@ -670,7 +717,7 @@ impl SettingsView {
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(log_display);
-        let open_btn = primary_button("Open log directory", palette).on_click(
+        let open_btn = primary_button(tr!("settings_diagnostics_open_log_dir"), palette).on_click(
             "settings-open-logs",
             cx.listener(|this, _: &ClickEvent, _, cx| this.open_log_dir(cx)),
         );
@@ -679,10 +726,16 @@ impl SettingsView {
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xs, density))
-                .child(field_title("Log directory", palette))
+                .child(field_title(
+                    tr!("settings_diagnostics_log_dir_label"),
+                    palette,
+                ))
                 .child(path_box)
                 .child(open_btn)
-                .child(field_hint("Runtime logs stream to this folder.", palette)),
+                .child(field_hint(
+                    tr!("settings_diagnostics_log_dir_hint"),
+                    palette,
+                )),
             palette,
         );
 
@@ -690,7 +743,11 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .child(pane_header(Icon::Activity, "Logs & diagnostics", palette))
+            .child(pane_header(
+                Icon::Activity,
+                tr!("settings_diagnostics_section_title"),
+                palette,
+            ))
             .child(metrics)
             .child(logs_card)
             .into_any_element()
@@ -712,7 +769,7 @@ impl SettingsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("This section arrives in a later slice."),
+                    .child(tr!("settings_section_deferred")),
                 palette,
             ))
             .into_any_element()
@@ -747,7 +804,12 @@ impl Render for SettingsView {
     }
 }
 
-fn pane_header(glyph: Icon, title: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn pane_header(
+    glyph: Icon,
+    title: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    let title: SharedString = title.into();
     div()
         .flex()
         .items_center()
@@ -763,7 +825,8 @@ fn pane_header(glyph: Icon, title: &'static str, palette: &ForgePalette) -> impl
         )
 }
 
-fn field_title(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    let text: SharedString = text.into();
     div()
         .font_family(DEFAULT_BODY_FAMILY)
         .font_weight(FontWeight::MEDIUM)
@@ -772,7 +835,8 @@ fn field_title(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
         .child(text)
 }
 
-fn field_hint(text: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    let text: SharedString = text.into();
     div()
         .font_family(DEFAULT_BODY_FAMILY)
         .text_size(FONT_XS)
@@ -791,10 +855,11 @@ fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {
 }
 
 fn font_field(
-    label: &'static str,
+    label: impl Into<SharedString>,
     family: &'static str,
     palette: &ForgePalette,
 ) -> impl IntoElement {
+    let label: SharedString = label.into();
     div()
         .flex_1()
         .flex()

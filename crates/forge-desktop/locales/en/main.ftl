@@ -147,6 +147,13 @@ settings_appearance_font_reset = Reset to default
 settings_appearance_font_missing = "{ $family }" is not installed - the default is used until it returns
 settings_appearance_font_show_all = Show all fonts
 settings_appearance_font_preview = The quick brown fox jumps over the lazy dog · 0123456789
+settings_appearance_theme_hint = How Forge should look
+settings_appearance_font_interface = INTERFACE
+settings_appearance_font_monospace = MONOSPACE
+settings_theme_default = Default
+settings_theme_desc_dark = dark
+settings_theme_desc_storm = Storm
+settings_theme_desc_light_mode = Light mode
 
 ## Settings → Language pane
 
@@ -161,6 +168,7 @@ settings_nav_group_engine = ENGINE
 settings_nav_group_about = ABOUT
 settings_nav_appearance = Appearance
 settings_nav_language = Language
+settings_nav_language_region = Language & region
 settings_nav_shortcuts = Shortcuts
 settings_nav_notifications = Notifications
 settings_nav_audio = Audio
@@ -171,10 +179,14 @@ settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Hotkeys
 settings_nav_version = Version
 settings_nav_diagnostics = Diagnostics
+settings_section_deferred = This section arrives in a later slice.
 
 ## Settings → Diagnostics pane
 
 settings_about_build_label = Build
+settings_about_rust_label = Rust
+settings_about_os_label = OS
+settings_diagnostics_log_dir_hint = Runtime logs stream to this folder.
 settings_diagnostics_section_title = Logs & diagnostics
 settings_diagnostics_log_dir = Log directory: { $path }
 settings_diagnostics_log_dir_label = Log directory
@@ -184,7 +196,7 @@ settings_diagnostics_log_level_hint = Log level: controlled via RUST_LOG env var
 ## Settings → Version pane
 
 settings_version_title = Version & updates
-settings_version_tagline = Open-source · MIT OR Apache-2.0 · iced 0.14 + Rhai 1.25
+settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
 settings_version_recent_releases = RECENT RELEASES
 settings_version_changelog_empty = No release history yet.

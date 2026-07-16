@@ -783,6 +783,12 @@ tts_header_engines_ready = Готово рушіїв: { $count }
 
 tts_engines_local_meta = локальний TTS-рушій
 tts_engines_default_badge = ТИПОВИЙ
+tts_engines_detail_voice_count = { $count ->
+    [one] { $count } голос
+    [few] { $count } голоси
+    [many] { $count } голосів
+   *[other] { $count } голосів
+}
 
 ## TTS Engines - секції
 

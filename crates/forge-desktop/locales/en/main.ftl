@@ -781,6 +781,10 @@ tts_header_engines_ready = { $count } engines ready
 
 tts_engines_local_meta = local TTS engine
 tts_engines_default_badge = DEFAULT
+tts_engines_detail_voice_count = { $count ->
+    [one] { $count } voice
+   *[other] { $count } voices
+}
 
 ## TTS Engines - sections
 

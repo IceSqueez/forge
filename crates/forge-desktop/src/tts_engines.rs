@@ -3,12 +3,12 @@ use std::sync::{Arc, RwLock};
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
     InputEvent, Radius, Spacing, TextInput, card, radius, search_input, slider, spacing,
-    status_dot,
+    status_dot, tr,
 };
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -52,7 +52,8 @@ impl TtsEnginesView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let voice_search = cx.new(|cx| search_input("Filter voices…", palette, cx));
+        let voice_search =
+            cx.new(|cx| search_input(tr!("tts_engines_voices_filter_placeholder"), palette, cx));
         let voice_search_sub =
             cx.subscribe(&voice_search, |_this, _input, event: &InputEvent, cx| {
                 if let InputEvent::Changed(_) = event {
@@ -145,7 +146,11 @@ impl TtsEnginesView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child(format!("CONFIGURED · {}", self.engines.len())),
+                    .child(format!(
+                        "{} · {}",
+                        tr!("tts_engines_header_prefix"),
+                        self.engines.len()
+                    )),
             );
 
         let mut col = div()
@@ -244,7 +249,7 @@ impl TtsEnginesView {
                         .font_family(DEFAULT_BODY_FAMILY)
                         .text_size(FONT_SM)
                         .text_color(palette.text_muted)
-                        .child("Select an engine to configure"),
+                        .child(tr!("tts_engines_select_hint")),
                 )
                 .into_any_element(),
         };
@@ -314,7 +319,11 @@ impl TtsEnginesView {
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
-            .child(format!("{} · {voice_count} voices", engine.kind));
+            .child(format!(
+                "{} · {}",
+                engine.kind,
+                tr!("tts_engines_detail_voice_count", count = voice_count as i64)
+            ));
 
         let identity = div()
             .flex_1()
@@ -334,7 +343,7 @@ impl TtsEnginesView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(status_color)
-                    .child("Ready"),
+                    .child(tr!("tts_engines_status_ready")),
             );
 
         div()
@@ -371,7 +380,11 @@ impl TtsEnginesView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child(format!("AVAILABLE VOICES · {}", engine.voices.len())),
+                    .child(format!(
+                        "{} · {}",
+                        tr!("tts_engines_voices_header_prefix"),
+                        engine.voices.len()
+                    )),
             )
             .child(div().w(VOICE_SEARCH_W).child(self.voice_search.clone()));
 
@@ -380,7 +393,7 @@ impl TtsEnginesView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("Loading voices…")
+                .child(tr!("tts_engines_voices_loading"))
                 .into_any_element()
         } else {
             let visible: Vec<&VoiceRow> = engine
@@ -394,7 +407,7 @@ impl TtsEnginesView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
-                    .child("No voices found")
+                    .child(tr!("tts_engines_voices_empty"))
                     .into_any_element()
             } else {
                 let mut grid = div()
@@ -457,7 +470,7 @@ fn engine_list_placeholder(palette: &ForgePalette, density: Density) -> impl Int
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("+ More engines in future releases"),
+                .child(tr!("tts_engines_more_placeholder")),
         )
 }
 
@@ -473,7 +486,7 @@ fn default_badge(palette: &ForgePalette, density: Density) -> impl IntoElement {
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_XS)
                 .text_color(palette.brand)
-                .child("DEFAULT"),
+                .child(tr!("tts_engines_default_badge")),
         )
 }
 
@@ -490,7 +503,7 @@ fn credentials_section(palette: &ForgePalette, density: Density) -> impl IntoEle
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(palette.success)
-                .child("LOCAL - no credentials"),
+                .child(tr!("tts_engines_no_credentials")),
         );
 
     let notice_row = div()
@@ -503,7 +516,7 @@ fn credentials_section(palette: &ForgePalette, density: Density) -> impl IntoEle
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
-                .child("Credentials stored encrypted in the local database, never in config files"),
+                .child(tr!("tts_engines_credentials_notice")),
         )
         .child(no_credentials);
 
@@ -522,7 +535,7 @@ fn credentials_section(palette: &ForgePalette, density: Density) -> impl IntoEle
         .px(spacing(Spacing::Md, density))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
-        .child(section_label("ENGINE", palette))
+        .child(section_label(tr!("tts_engines_section_engine"), palette))
         .child(notice)
 }
 
@@ -536,19 +549,38 @@ fn params_section(palette: &ForgePalette, density: Density) -> impl IntoElement 
         .px(spacing(Spacing::Md, density))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
-        .child(section_label("DEFAULT VOICE PARAMETERS", palette))
-        .child(param_row("Pitch", "0 st", 0.5, palette, density))
-        .child(param_row("Speed", "1.0x", 0.5, palette, density))
-        .child(param_row("Volume", "0 dB", 1.0, palette, density))
+        .child(section_label(tr!("tts_engines_section_params"), palette))
+        .child(param_row(
+            tr!("tts_engines_param_pitch"),
+            "0 st",
+            0.5,
+            palette,
+            density,
+        ))
+        .child(param_row(
+            tr!("tts_engines_param_speed"),
+            "1.0x",
+            0.5,
+            palette,
+            density,
+        ))
+        .child(param_row(
+            tr!("tts_engines_param_volume"),
+            "0 dB",
+            1.0,
+            palette,
+            density,
+        ))
 }
 
 fn param_row(
-    label: &'static str,
+    label: impl Into<SharedString>,
     value: &'static str,
     fraction: f32,
     palette: &ForgePalette,
     density: Density,
 ) -> impl IntoElement {
+    let label: SharedString = label.into();
     div()
         .w_full()
         .flex()
@@ -612,7 +644,8 @@ fn voice_cell(voice: &VoiceRow, palette: &ForgePalette, density: Density) -> imp
     )
 }
 
-fn section_label(label: &'static str, palette: &ForgePalette) -> impl IntoElement {
+fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    let label: SharedString = label.into();
     div()
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)

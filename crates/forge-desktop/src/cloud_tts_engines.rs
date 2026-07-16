@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    InputEvent, Radius, Spacing, TextInput, ToastKind, card, radius, spacing,
+    InputEvent, Radius, Spacing, TextInput, ToastKind, card, radius, spacing, tr,
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::{CredentialId, CredentialsRepo};
@@ -169,7 +169,12 @@ impl CloudTtsEnginesView {
             .unwrap_or_default();
         let is_registered = |kind: CloudEngineKind| registered.contains(&kind.engine_id());
 
-        let azure_api = field("Subscription key", true, palette, cx);
+        let azure_api = field(
+            tr!("tts_cloud_field_placeholder_subscription_key"),
+            true,
+            palette,
+            cx,
+        );
         let azure_region = field("e.g. eastus", false, palette, cx);
         let eleven_api = field("xi-api-key", true, palette, cx);
         let openai_api = field("sk-...", true, palette, cx);
@@ -305,7 +310,11 @@ impl CloudTtsEnginesView {
             Err(e) => {
                 cx.push_toast(
                     ToastKind::Error,
-                    format!("Couldn't save {} credentials: {e}", kind.display_name()),
+                    tr!(
+                        "tts_cloud_save_failed_toast",
+                        name = kind.display_name(),
+                        error = e.to_string()
+                    ),
                 );
                 return;
             }
@@ -342,7 +351,7 @@ impl CloudTtsEnginesView {
         self.hot_register(kind, creds);
         cx.push_toast(
             ToastKind::Info,
-            format!("{} credentials saved", kind.display_name()),
+            tr!("tts_cloud_saved_toast", name = kind.display_name()),
         );
         cx.notify();
     }
@@ -350,9 +359,10 @@ impl CloudTtsEnginesView {
     fn on_save_failed(&mut self, kind: CloudEngineKind, message: &str, cx: &mut Context<Self>) {
         cx.push_toast(
             ToastKind::Error,
-            format!(
-                "Couldn't save {} credentials: {message}",
-                kind.display_name()
+            tr!(
+                "tts_cloud_save_failed_toast",
+                name = kind.display_name(),
+                error = message
             ),
         );
         cx.notify();
@@ -432,13 +442,13 @@ impl CloudTtsEnginesView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(labeled_field(
-                "API Key",
+                tr!("tts_cloud_field_api_key"),
                 self.azure.api_key.clone(),
                 palette,
                 density,
             ))
             .child(labeled_field(
-                "Region",
+                tr!("tts_cloud_field_region"),
                 self.azure.region.clone(),
                 palette,
                 density,
@@ -475,7 +485,7 @@ impl CloudTtsEnginesView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(labeled_field(
-                "API Key",
+                tr!("tts_cloud_field_api_key"),
                 self.elevenlabs.api_key.clone(),
                 palette,
                 density,
@@ -512,7 +522,7 @@ impl CloudTtsEnginesView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(labeled_field(
-                "API Key",
+                tr!("tts_cloud_field_api_key"),
                 self.openai.api_key.clone(),
                 palette,
                 density,
@@ -552,19 +562,19 @@ impl CloudTtsEnginesView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(labeled_field(
-                "Access key ID",
+                tr!("tts_cloud_field_access_key_id"),
                 self.polly.access_key.clone(),
                 palette,
                 density,
             ))
             .child(labeled_field(
-                "Secret key",
+                tr!("tts_cloud_field_secret_key"),
                 self.polly.secret_key.clone(),
                 palette,
                 density,
             ))
             .child(labeled_field(
-                "Region",
+                tr!("tts_cloud_field_region"),
                 self.polly.region.clone(),
                 palette,
                 density,
@@ -630,9 +640,9 @@ impl CloudTtsEnginesView {
             ));
 
         let test_label = if *test_status == TestStatus::Testing {
-            "Testing…"
+            tr!("tts_cloud_testing_btn")
         } else {
-            "Test connection"
+            tr!("tts_cloud_test_connection_btn")
         };
         let (test_border, test_fg) = if can_test {
             (palette.border_regular, palette.text_muted)
@@ -671,7 +681,7 @@ impl CloudTtsEnginesView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
-                .child("Save credentials")
+                .child(tr!("tts_cloud_save_credentials_btn"))
                 .into_any_element()
         } else {
             div()
@@ -684,7 +694,7 @@ impl CloudTtsEnginesView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(palette.disabled)
-                .child("Save credentials")
+                .child(tr!("tts_cloud_save_credentials_btn"))
                 .into_any_element()
         };
 
@@ -724,7 +734,7 @@ impl Render for CloudTtsEnginesView {
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
-            .child("CLOUD ENGINES · 4");
+            .child(tr!("tts_cloud_header"));
 
         let column = div()
             .flex()
@@ -753,11 +763,11 @@ fn config_status_badge(
     density: Density,
 ) -> impl IntoElement {
     let (label, color) = if is_registered {
-        ("CONFIGURED", palette.success)
+        (tr!("tts_cloud_configured"), palette.success)
     } else if matches!(test_status, TestStatus::Err(_)) {
-        ("CONNECTION FAILED", palette.random)
+        (tr!("tts_cloud_connection_failed"), palette.random)
     } else {
-        ("NOT CONFIGURED", palette.text_muted)
+        (tr!("tts_cloud_not_configured"), palette.text_muted)
     };
 
     div()
@@ -783,7 +793,7 @@ fn test_result_row(
     density: Density,
 ) -> Option<AnyElement> {
     let (color, message): (Rgba, String) = match test_status {
-        TestStatus::Ok => (palette.success, "Connection verified".to_owned()),
+        TestStatus::Ok => (palette.success, tr!("tts_cloud_connection_verified")),
         TestStatus::Err(error) => (palette.random, error.clone()),
         _ => return None,
     };
@@ -812,11 +822,12 @@ fn test_result_row(
 }
 
 fn labeled_field(
-    label: &'static str,
+    label: impl Into<SharedString>,
     input: Entity<TextInput>,
     palette: &ForgePalette,
     density: Density,
 ) -> impl IntoElement {
+    let label: SharedString = label.into();
     div()
         .w_full()
         .flex()
@@ -835,7 +846,7 @@ fn labeled_field(
 }
 
 fn field(
-    placeholder: &'static str,
+    placeholder: impl Into<SharedString>,
     secure: bool,
     palette: ForgePalette,
     cx: &mut Context<CloudTtsEnginesView>,

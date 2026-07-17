@@ -109,6 +109,10 @@ fn main() {
     };
     let rt_handle = rt.handle().clone();
 
+    // Keeps the main thread inside the runtime context for the whole app lifetime, so the
+    // sqlx pool dropped during window-close teardown finds a Tokio context instead of panicking.
+    let _rt_guard = rt.enter();
+
     // Owned for the whole of run() to keep the runtime's tasks and time driver alive.
     Application::new()
         .with_assets(IconAssets)

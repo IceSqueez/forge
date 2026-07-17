@@ -7,7 +7,7 @@ use forge_platform_core::{
     connection_state_changed_event,
 };
 use futures::future::BoxFuture;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
@@ -37,6 +37,9 @@ pub struct YoutubePlatform {
     // coarse owned flag instead of a live transport state. Shared with the poller-exit
     // task; the lock is never held across an `.await`.
     state: Arc<Mutex<ConnectionState>>,
+    // Outlives any single poller run, so a receiver taken once at construction
+    // (e.g. by `YoutubeIntegrationBundle`) keeps observing state across every reconnect.
+    state_tx: watch::Sender<ConnectionState>,
     // Lock never held across an `.await`.
     cancel: Mutex<Option<CancellationToken>>,
 }
@@ -54,6 +57,7 @@ impl YoutubePlatform {
             live_chat_id.clone(),
             Arc::clone(&quota),
         );
+        let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
             auth_flow: youtube_auth_flow(),
             capabilities: youtube_capabilities(),
@@ -65,12 +69,17 @@ impl YoutubePlatform {
             active_broadcast_id,
             quota,
             state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
+            state_tx,
             cancel: Mutex::new(None),
         }
     }
 
     pub fn active_broadcast_id(&self) -> ActiveBroadcastIdHandle {
         self.active_broadcast_id.clone()
+    }
+
+    pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
+        self.state_tx.subscribe()
     }
 }
 
@@ -98,7 +107,12 @@ impl ChatPlatform for YoutubePlatform {
             previous.cancel();
         }
 
-        publish_transition(&self.state, &self.events, ConnectionState::Connecting);
+        publish_transition(
+            &self.state,
+            &self.state_tx,
+            &self.events,
+            ConnectionState::Connecting,
+        );
 
         let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
         let forward_events = Arc::clone(&self.events);
@@ -119,17 +133,28 @@ impl ChatPlatform for YoutubePlatform {
         );
 
         let exit_state = Arc::clone(&self.state);
+        let exit_state_tx = self.state_tx.clone();
         let exit_events = Arc::clone(&self.events);
         let poller_cancel = cancel.clone();
         tokio::spawn(async move {
             if let Err(err) = poller.run(poller_cancel).await {
                 tracing::warn!(error = %err, "youtube chat poller exited");
             }
-            publish_transition(&exit_state, &exit_events, ConnectionState::Disconnected);
+            publish_transition(
+                &exit_state,
+                &exit_state_tx,
+                &exit_events,
+                ConnectionState::Disconnected,
+            );
         });
 
         *self.cancel.lock().unwrap_or_else(|p| p.into_inner()) = Some(cancel);
-        publish_transition(&self.state, &self.events, ConnectionState::Connected);
+        publish_transition(
+            &self.state,
+            &self.state_tx,
+            &self.events,
+            ConnectionState::Connected,
+        );
         Ok(())
     }
 
@@ -138,7 +163,12 @@ impl ChatPlatform for YoutubePlatform {
         if let Some(cancel) = cancel {
             cancel.cancel();
         }
-        publish_transition(&self.state, &self.events, ConnectionState::Disconnected);
+        publish_transition(
+            &self.state,
+            &self.state_tx,
+            &self.events,
+            ConnectionState::Disconnected,
+        );
         Ok(())
     }
 
@@ -184,6 +214,7 @@ fn token_source(manager: Arc<YoutubeCredentialsManager>) -> TokenSource {
 
 fn publish_transition(
     state: &Mutex<ConnectionState>,
+    state_tx: &watch::Sender<ConnectionState>,
     events: &PlatformEventChannel,
     new: ConnectionState,
 ) {
@@ -197,6 +228,7 @@ fn publish_transition(
         }
     };
     if changed {
+        let _ = state_tx.send(new);
         events.publish(connection_state_changed_event(PLATFORM_ID, new));
     }
 }

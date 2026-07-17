@@ -63,6 +63,7 @@ pub struct YoutubeIntegrationBundle {
     credentials_manager: Arc<YoutubeCredentialsManager>,
     quota: Arc<tokio::sync::Mutex<QuotaState>>,
     viewer_report_tx: watch::Sender<ViewerReport>,
+    state_rx: watch::Receiver<ConnectionState>,
 }
 
 impl YoutubeIntegrationBundle {
@@ -74,6 +75,7 @@ impl YoutubeIntegrationBundle {
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
+        let state_rx = platform.state_receiver();
 
         let token_source = {
             let manager = Arc::clone(&credentials_manager);
@@ -101,7 +103,9 @@ impl YoutubeIntegrationBundle {
             credentials_manager,
             quota,
             viewer_report_tx,
+            state_rx,
         });
+        Self::spawn_health_bridge(&bundle);
         (bundle, health_tx)
     }
 
@@ -111,6 +115,23 @@ impl YoutubeIntegrationBundle {
 
     fn current_state(&self) -> ConnectionState {
         self.platform.connection_state()
+    }
+
+    fn spawn_health_bridge(bundle: &Arc<Self>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let bundle = Arc::clone(bundle);
+        let mut state_rx = bundle.state_rx.clone();
+        handle.spawn(async move {
+            while state_rx.changed().await.is_ok() {
+                let delta = HealthDelta {
+                    index: 0,
+                    new_value: chat_poller_health_value(*state_rx.borrow()),
+                };
+                let _ = bundle.health_tx.send(delta);
+            }
+        });
     }
 
     pub(crate) fn credentials_manager(&self) -> &Arc<YoutubeCredentialsManager> {
@@ -140,6 +161,20 @@ impl YoutubeIntegrationBundle {
             label: "Quota".to_owned(),
             value,
         }
+    }
+}
+
+fn chat_poller_health_value(state: ConnectionState) -> HealthValue {
+    let (label, active) = match state {
+        ConnectionState::Connected => ("Connected".to_owned(), true),
+        ConnectionState::Connecting => ("Connecting".to_owned(), false),
+        ConnectionState::Reconnecting => ("Reconnecting".to_owned(), false),
+        ConnectionState::Disconnected => ("Disconnected".to_owned(), false),
+    };
+    HealthValue::Status {
+        label,
+        active,
+        detail: Some("liveChatMessages.list".to_owned()),
     }
 }
 
@@ -186,22 +221,10 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
 
 impl BuiltinHealth for YoutubeIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let state = self.current_state();
-        let (poll_label, poll_active) = match state {
-            ConnectionState::Connected => ("Connected".to_owned(), true),
-            ConnectionState::Connecting => ("Connecting".to_owned(), false),
-            ConnectionState::Reconnecting => ("Reconnecting".to_owned(), false),
-            ConnectionState::Disconnected => ("Disconnected".to_owned(), false),
-        };
-
         [
             HealthMetric {
                 label: "Chat poller".to_owned(),
-                value: HealthValue::Status {
-                    label: poll_label,
-                    active: poll_active,
-                    detail: Some("liveChatMessages.list".to_owned()),
-                },
+                value: chat_poller_health_value(self.current_state()),
             },
             HealthMetric {
                 label: "Channel".to_owned(),

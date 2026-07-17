@@ -5,7 +5,7 @@ use gpui::{
 
 use crate::palette::ForgePalette;
 
-const RESIZE_VISUAL_W: Pixels = px(2.0);
+const RESIZE_VISUAL_W: Pixels = px(1.0);
 const RESIZE_HIT_W: Pixels = px(8.0);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

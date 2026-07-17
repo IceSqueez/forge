@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use crate::boot::{BootFailure, build_runtime};
-use crate::chat_feed::ChatFeed;
+use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::event_log::EventLog;
 use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
@@ -122,6 +122,9 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 let live_viewers_handle = handles.live_viewers.clone();
                 let backend_for_shortcuts = Arc::clone(&handles.backend);
                 let rt_handle_for_shortcuts = handles.rt_handle.clone();
+                let chat_feed_for_history = chat_feed.clone();
+                let backend_for_history = Arc::clone(&handles.backend);
+                let rt_handle_for_history = handles.rt_handle.clone();
                 let applied = window.update(cx, |root, window, cx| {
                     // Render-thread install: the fluent bundle is thread-local and must be set
                     // before the shell's first render resolves any translated string.
@@ -149,6 +152,13 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                     cx.notify();
                 });
                 if applied.is_ok() {
+                    seed_chat_history(
+                        cx,
+                        chat_feed_for_history,
+                        backend_for_history,
+                        rt_handle_for_history,
+                    )
+                    .await;
                     start_bridge(
                         cx,
                         chat_feed_for_bridge,
@@ -175,6 +185,39 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
         }
     })
     .detach();
+}
+
+const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
+
+async fn seed_chat_history(
+    cx: &mut AsyncApp,
+    chat_feed: Entity<ChatFeed>,
+    backend: Arc<dyn forge_storage::DataProvider>,
+    rt_handle: tokio::runtime::Handle,
+) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    rt_handle.spawn(async move {
+        let settings = Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+        let limit = forge_storage::chat_history_display_limit(settings.as_ref())
+            .await
+            .unwrap_or(DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT);
+        let rows = backend
+            .chat_history_repo()
+            .list_recent(limit as usize)
+            .await
+            .unwrap_or_default();
+        let _ = tx.send(rows);
+    });
+    let Ok(mut rows) = rx.await else {
+        return;
+    };
+    // Repo yields newest-first; the feed is oldest-first.
+    rows.reverse();
+    let messages: Vec<ChatMessage> = rows.iter().map(ChatMessage::from_row).collect();
+    chat_feed.update(cx, |feed, cx| {
+        feed.seed(messages);
+        cx.notify();
+    });
 }
 
 fn start_bridge(

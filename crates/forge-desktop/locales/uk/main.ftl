@@ -1681,6 +1681,15 @@ widget_chat_raiding_with = рейдить з
 widget_chat_viewers = { $viewers } глядачів
 widget_chat_triggered = Спрацювало: { $action }
 
+## Live chat - event descriptors
+
+chat_event_subscribed = підписався (Рівень { $tier })
+chat_event_raided = рейдить з
+chat_event_viewers = { $viewers } глядачів
+chat_event_super_chat = надіслав Super Chat ({ $amount } { $currency })
+chat_event_new_member = став учасником
+chat_event_member_milestone = ювілей участі
+
 ## Widget - builtin header actions
 
 widget_header_action_reconnect = Підключитися

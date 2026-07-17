@@ -118,12 +118,14 @@ impl AppShell {
             Screen::Chat => {
                 let palette = cx.palette();
                 let rt_handle = handles.rt_handle.clone();
+                let viewer_repo = handles.backend.viewer_repo();
                 cx.new(|cx| {
                     ChatView::new(
                         topics.chat_feed.clone(),
                         topics.home_stats.clone(),
                         topics.status.clone(),
                         rt_handle,
+                        viewer_repo,
                         palette,
                         cx,
                     )

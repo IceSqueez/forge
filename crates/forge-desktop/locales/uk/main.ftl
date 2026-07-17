@@ -1485,7 +1485,9 @@ chat_drawer_ban = Заблокувати в каналі
 chat_stat_watch_time = ЧАС ПЕРЕГЛЯДУ
 chat_stat_messages = ПОВІДОМЛЕННЯ
 chat_stat_sub = ПІДПИСКА
+chat_stat_sub_yes = Так
 chat_stat_follow = ФОЛОУ
+chat_drawer_action_pending = Дії над глядачем скоро будуть доступні
 
 ## Стрічка подій - заголовок / фільтри
 

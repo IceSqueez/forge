@@ -35,7 +35,9 @@ pub use buttons::{
     primary_button_with_icon, primary_button_with_icon_right, secondary_button,
 };
 pub use cards::{Card, RowCard, card, field_label, metric_card, row_card, stat_row};
-pub use chat_row::{BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, chat_row};
+pub use chat_row::{
+    BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, badge_color, badge_label, chat_row,
+};
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use data::{ColumnWidth, DataRow, DataTable, data_table, hover_reveal};

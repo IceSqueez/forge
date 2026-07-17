@@ -1464,7 +1464,9 @@ chat_drawer_ban = Ban from channel
 chat_stat_watch_time = WATCH TIME
 chat_stat_messages = MESSAGES
 chat_stat_sub = SUB
+chat_stat_sub_yes = Yes
 chat_stat_follow = FOLLOW
+chat_drawer_action_pending = Viewer actions are coming soon
 
 ## Event Feed - page header / filters
 

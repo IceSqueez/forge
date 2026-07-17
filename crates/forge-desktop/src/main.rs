@@ -3,6 +3,7 @@ mod actions_screen;
 mod boot;
 mod builtin_sections;
 mod chat;
+mod chat_drawer;
 mod chat_feed;
 mod chrome;
 mod cloud_tts_boot;

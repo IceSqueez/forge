@@ -78,7 +78,7 @@ pub enum BadgeKind {
     BitsLeader,
 }
 
-pub(crate) fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
+pub fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
     match kind {
         BadgeKind::Broadcaster => palette.warning,
         BadgeKind::Moderator => palette.success,
@@ -95,7 +95,7 @@ pub(crate) fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub(crate) fn badge_label(kind: BadgeKind) -> &'static str {
+pub fn badge_label(kind: BadgeKind) -> &'static str {
     match kind {
         BadgeKind::Broadcaster => "OWNER",
         BadgeKind::Moderator => "MOD",

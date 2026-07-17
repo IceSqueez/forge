@@ -1,5 +1,5 @@
 name: Setup Rust with cache
-description: Install toolchain from rust-toolchain.toml. Cache is shared across dev workflows via shared-key=dev-<os> so pr/nightly/manual reuse each other's target/debug/ rather than rebuilding cold. On Linux runners, installs libasound2-dev (required by cpal via alsa-sys).
+description: Install toolchain from rust-toolchain.toml. Cache is shared across dev workflows via shared-key=dev-<os> so pr/nightly/manual reuse each other's target/debug/ rather than rebuilding cold. On Linux runners, installs the gpui + cpal system libraries needed to build and link forge-desktop.
 
 inputs:
   shared-key:
@@ -19,7 +19,9 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y libasound2-dev
+        sudo apt-get install -y \
+          libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev libx11-dev \
+          libasound2-dev libdbus-1-dev pkg-config
 
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1

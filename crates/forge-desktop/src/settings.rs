@@ -18,6 +18,7 @@ use crate::settings_audio::SettingsAudioView;
 use crate::settings_hotkeys::SettingsHotkeysView;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
+use crate::settings_storage::SettingsStorageView;
 use crate::settings_websocket::SettingsWebSocketView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
@@ -182,6 +183,7 @@ pub struct SettingsView {
     websocket: Entity<SettingsWebSocketView>,
     shortcuts: Entity<SettingsShortcutsView>,
     hotkeys: Entity<SettingsHotkeysView>,
+    storage: Entity<SettingsStorageView>,
 }
 
 impl SettingsView {
@@ -211,6 +213,9 @@ impl SettingsView {
                 cx,
             )
         });
+        let storage = cx.new(|cx| {
+            SettingsStorageView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+        });
         Self {
             section: SettingsSection::Appearance,
             handles,
@@ -220,6 +225,7 @@ impl SettingsView {
             websocket,
             shortcuts,
             hotkeys,
+            storage,
         }
     }
 
@@ -362,7 +368,7 @@ impl SettingsView {
             SettingsSection::WebSocket => self.websocket.clone().into_any_element(),
             SettingsSection::Notifications => self.notifications_pane(palette, density),
             SettingsSection::Queues => self.queues_pane(palette, density),
-            SettingsSection::Storage => self.storage_pane(palette, density, cx),
+            SettingsSection::Storage => self.storage.clone().into_any_element(),
             SettingsSection::Hotkeys => self.hotkeys.clone().into_any_element(),
             SettingsSection::Version => self.version_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics_pane(palette, density, cx),
@@ -959,56 +965,6 @@ impl SettingsView {
             ))
             .child(card(body, palette))
             .into_any_element()
-    }
-
-    fn storage_pane(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let db_path = forge_platform_core::paths::data_dir().join("forge.db");
-        let backup_btn = primary_button(tr!("settings_storage_backup_btn"), palette).on_click(
-            "settings-db-backup",
-            cx.listener(|this, _: &ClickEvent, _, _| this.backup_db()),
-        );
-
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(info_row(
-                tr!("settings_storage_db_path_label"),
-                db_path.display().to_string(),
-                palette,
-            ))
-            .child(backup_btn)
-            .child(field_hint(tr!("settings_storage_backup_hint"), palette));
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::Folder,
-                tr!("settings_storage_section_title"),
-                palette,
-            ))
-            .child(card(body, palette))
-            .into_any_element()
-    }
-
-    fn backup_db(&self) {
-        let backend = Arc::clone(&self.handles.backend);
-        self.handles.rt_handle.spawn(async move {
-            let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
-            let path =
-                forge_platform_core::paths::data_dir().join(format!("forge-backup-{stamp}.db"));
-            match backend.export(&path).await {
-                Ok(()) => tracing::info!(path = %path.display(), "DB backup created"),
-                Err(e) => tracing::warn!(error = %e, "DB backup failed"),
-            }
-        });
     }
 }
 

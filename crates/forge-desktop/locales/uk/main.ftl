@@ -209,6 +209,10 @@ settings_storage_db_path = База даних: { $path }
 settings_storage_db_path_label = База даних
 settings_storage_backup_btn = Резервна копія зараз
 settings_storage_backup_hint = Створює копію бази з міткою часу в теці даних.
+settings_storage_keep_limit_label = Ліміт зберігання історії чату
+settings_storage_keep_limit_hint = Скільки повідомлень чату зберігати в базі даних.
+settings_storage_display_limit_label = Показувати при відкритті чату
+settings_storage_display_limit_hint = Скільки останніх повідомлень завантажувати під час відкриття чату.
 
 ## Налаштування → панель черг
 

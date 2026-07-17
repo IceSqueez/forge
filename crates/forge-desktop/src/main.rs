@@ -34,6 +34,7 @@ mod settings_audio;
 mod settings_hotkeys;
 mod settings_scripting;
 mod settings_shortcuts;
+mod settings_storage;
 mod settings_websocket;
 mod shell;
 mod sidebar;

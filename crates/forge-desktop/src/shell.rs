@@ -97,7 +97,10 @@ impl AppShell {
     ) -> AnyView {
         match screen {
             Screen::Home => {
-                let home = cx.new(|cx| HomeView::new(topics.home_stats.clone(), cx));
+                let home_backend = Arc::clone(&handles.backend);
+                let home_rt = handles.rt_handle.clone();
+                let home = cx
+                    .new(|cx| HomeView::new(topics.home_stats.clone(), home_backend, home_rt, cx));
                 cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
                 })
@@ -116,9 +119,11 @@ impl AppShell {
                 cx.new(|cx| ChatView::new(topics.chat_feed.clone(), palette, cx))
                     .into()
             }
-            Screen::EventFeed => cx
-                .new(|cx| EventFeedView::new(topics.event_log.clone(), cx))
-                .into(),
+            Screen::EventFeed => {
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| EventFeedView::new(topics.event_log.clone(), rt_handle, cx))
+                    .into()
+            }
             Screen::Globals => {
                 let globals = topics.globals.clone();
                 let backend: Arc<dyn GlobalsRepo> =
@@ -223,7 +228,10 @@ impl AppShell {
                 })
                 .into()
             }
-            Screen::Soundboard => cx.new(SoundboardView::new).into(),
+            Screen::Soundboard => {
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| SoundboardView::new(rt_handle, cx)).into()
+            }
             Screen::Tts => {
                 let speak_state = topics.speak.clone();
                 let speak = handles.speak.clone();
@@ -392,7 +400,7 @@ impl AppShell {
     }
 }
 
-async fn refresh_dashboard_stats(
+pub(crate) async fn refresh_dashboard_stats(
     home_stats: Entity<HomeStats>,
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,

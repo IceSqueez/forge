@@ -1,7 +1,9 @@
+use std::path::PathBuf;
+
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, Radius, SheetWidth, Spacing, badge, breadcrumb, chip, icon,
-    radius, spacing, status_dot, tr, with_alpha,
+    FONT_XXS, ForgePalette, Icon, Radius, SheetWidth, Spacing, ToastKind, badge, breadcrumb, chip,
+    icon, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -11,6 +13,7 @@ use gpui::{
 
 use crate::event_log::{EventFilter, EventItem, EventLog};
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 
 const AT_BOTTOM_SLACK: f32 = 40.0;
 const INSPECTOR_INITIAL: f32 = 300.0;
@@ -25,6 +28,8 @@ const ACTION_DIVIDER_H: Pixels = px(14.0);
 const ROW_RAIL_W: Pixels = px(2.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
 const ACTION_HOVER_ALPHA: f32 = 0.05;
+
+const EXPORT_CANCELLED: &str = "export cancelled";
 
 const FILTER_TABS: [(&str, EventFilter); 7] = [
     ("event-tab-all", EventFilter::All),
@@ -56,11 +61,16 @@ pub struct EventFeedView {
     auto_scroll: bool,
     inspector_width: f32,
     list_scroll: ScrollHandle,
+    rt_handle: tokio::runtime::Handle,
     _log_obs: Subscription,
 }
 
 impl EventFeedView {
-    pub fn new(log: Entity<EventLog>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        log: Entity<EventLog>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let log_obs = cx.observe(&log, Self::on_log_changed);
         let list_scroll = ScrollHandle::new();
         list_scroll.scroll_to_bottom();
@@ -71,6 +81,7 @@ impl EventFeedView {
             auto_scroll: true,
             inspector_width: INSPECTOR_INITIAL,
             list_scroll,
+            rt_handle,
             _log_obs: log_obs,
         }
     }
@@ -114,7 +125,54 @@ impl EventFeedView {
         cx.notify();
     }
 
-    fn export(&mut self, _cx: &mut Context<Self>) {}
+    fn export(&mut self, cx: &mut Context<Self>) {
+        let events: Vec<EventItem> = self.log.read(cx).items().to_vec();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<PathBuf, String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = async move {
+                let Some(handle) = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_file_name("forge-events.json")
+                    .save_file()
+                    .await
+                else {
+                    return Err(EXPORT_CANCELLED.to_owned());
+                };
+                let path = handle.path().to_path_buf();
+                let json = serde_json::to_string_pretty(&events).map_err(|e| e.to_string())?;
+                tokio::fs::write(&path, json)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(path)
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(path)) => {
+                let path_str = path.display().to_string();
+                let _ = this.update(cx, |_this, cx| {
+                    cx.push_toast(
+                        ToastKind::Success,
+                        tr!("event_feed_export_success", path = path_str.as_str()),
+                    );
+                });
+            }
+            Ok(Err(e)) => {
+                if e == EXPORT_CANCELLED {
+                    return;
+                }
+                let _ = this.update(cx, |_this, cx| {
+                    cx.push_toast(
+                        ToastKind::Error,
+                        tr!("event_feed_export_failed", error = e.as_str()),
+                    );
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
 
     fn replay(&mut self, _cx: &mut Context<Self>) {}
 

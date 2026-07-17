@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
-    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, breadcrumb, card,
-    ghost_button_with_icon, icon, radius, spacing, sparkline, status_dot, tr,
+    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind,
+    breadcrumb, card, ghost_button_with_icon, icon, radius, spacing, sparkline, status_dot, tr,
 };
+use forge_storage::DataProvider;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, Subscription,
     Window, div, prelude::*, px,
@@ -11,7 +14,11 @@ use gpui::{
 use crate::home_stats::{HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
+use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
+use crate::toasts::PushToast;
+
+const IMPORT_CANCELLED: &str = "import cancelled";
 
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
@@ -56,20 +63,64 @@ const GLANCE_CARD_W: Pixels = px(340.0);
 
 pub struct HomeView {
     stats: Entity<HomeStats>,
+    backend: Arc<dyn DataProvider>,
+    rt_handle: tokio::runtime::Handle,
     _stats_obs: Subscription,
 }
 
 impl HomeView {
-    pub fn new(stats: Entity<HomeStats>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        stats: Entity<HomeStats>,
+        backend: Arc<dyn DataProvider>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let stats_obs = cx.observe(&stats, |_, _, cx| cx.notify());
         Self {
             stats,
+            backend,
+            rt_handle,
             _stats_obs: stats_obs,
         }
     }
 
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
         cx.emit(NavRequested(screen));
+    }
+
+    fn request_import(&mut self, cx: &mut Context<Self>) {
+        let dp = Arc::clone(&self.backend);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(import_action(dp).await);
+        });
+        let stats = self.stats.clone();
+        let backend = Arc::clone(&self.backend);
+        let rt_handle = self.rt_handle.clone();
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(name)) => {
+                let _ = this.update(cx, |_this, cx| {
+                    cx.push_toast(
+                        ToastKind::Success,
+                        tr!("home_import_success", name = name.as_str()),
+                    );
+                });
+                refresh_dashboard_stats(stats, backend, rt_handle, cx).await;
+            }
+            Ok(Err(e)) => {
+                if e == IMPORT_CANCELLED {
+                    return;
+                }
+                let _ = this.update(cx, |_this, cx| {
+                    cx.push_toast(
+                        ToastKind::Error,
+                        tr!("home_import_failed", error = e.as_str()),
+                    );
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
     }
 
     fn render_hero(
@@ -117,7 +168,10 @@ impl HomeView {
 
         let import_btn = ghost_button_with_icon(Icon::Download, tr!("home_hero_import"), palette)
             .density(density)
-            .on_click("home-import", |_, _, _| {});
+            .on_click(
+                "home-import",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.request_import(cx)),
+            );
         let new_action_btn =
             ghost_button_with_icon(Icon::Plus, tr!("home_hero_new_action"), palette)
                 .density(density)
@@ -859,6 +913,45 @@ impl HomeView {
             .full_width()
             .padding(spacing(Spacing::Sm, density))
     }
+}
+
+async fn import_action(dp: Arc<dyn DataProvider>) -> Result<String, String> {
+    let Some(handle) = rfd::AsyncFileDialog::new()
+        .add_filter("JSON", &["json"])
+        .pick_file()
+        .await
+    else {
+        return Err(IMPORT_CANCELLED.to_owned());
+    };
+    let path = handle.path().to_path_buf();
+    let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
+    let mut action: forge_types::Action =
+        serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+
+    action.id = forge_types::ActionId::new();
+
+    let queue_repo = dp.queue_repo();
+    let queue_present = queue_repo
+        .get(action.queue_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .is_some();
+    if !queue_present {
+        let fallback = queue_repo
+            .list()
+            .await
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no queue available to import into".to_owned())?;
+        action.queue_id = fallback.id;
+    }
+
+    dp.action_repo()
+        .save(&action)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(action.name)
 }
 
 impl EventEmitter<NavRequested> for HomeView {}

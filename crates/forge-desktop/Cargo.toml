@@ -52,6 +52,7 @@ gpui = { workspace = true }
 open = { workspace = true }
 reqwest = { workspace = true }
 rfd = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 sys-locale = { workspace = true }
 time = { workspace = true }

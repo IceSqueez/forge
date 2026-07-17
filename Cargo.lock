@@ -2787,6 +2787,7 @@ dependencies = [
  "open",
  "reqwest",
  "rfd",
+ "serde",
  "serde_json",
  "sys-locale",
  "time",

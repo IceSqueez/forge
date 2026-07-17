@@ -13,7 +13,9 @@ use forge_components::{
     primary_button, primary_button_with_icon, radius, search_input, secondary_button, spacing,
     status_dot, toggle, tr, with_alpha,
 };
-use forge_storage::{GlobalEntry, GlobalsRepo};
+use std::path::PathBuf;
+
+use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
     App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString,
@@ -35,6 +37,8 @@ const EDITOR_KINDS: [VariantKind; 7] = [
 ];
 
 const NAME_LIMIT: usize = 64;
+
+const EXPORT_CANCELLED: &str = "export cancelled";
 
 const ROW_DOT: gpui::Pixels = px(6.0);
 const VALUE_ICON: gpui::Pixels = px(11.0);
@@ -341,7 +345,26 @@ impl GlobalsView {
         );
     }
 
-    fn export(&mut self, _cx: &mut Context<Self>) {}
+    fn export(&mut self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.backend);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<PathBuf, String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(export_globals_to_chosen_file(repo).await);
+        });
+        cx.spawn(async move |_this, _cx| match rx.await {
+            Ok(Ok(path)) => {
+                eprintln!("forge-desktop: globals exported to {}", path.display());
+            }
+            Ok(Err(reason)) => {
+                if reason == EXPORT_CANCELLED {
+                    return;
+                }
+                eprintln!("forge-desktop: globals export failed: {reason}");
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
 
     fn start_rename(&mut self, name: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.palette();
@@ -1360,6 +1383,29 @@ fn value_preview(g: &Global, palette: &ForgePalette) -> impl IntoElement + use<>
         cell = cell.child(icon(Icon::ExternalLink, VALUE_ICON, palette.text_faint));
     }
     cell
+}
+
+async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<PathBuf, String> {
+    let entries = repo.export_all().await.map_err(|e| e.to_string())?;
+    let envelope = GlobalsExport::new(entries);
+    let json = serde_json::to_string_pretty(&envelope).map_err(|e| e.to_string())?;
+    let default_name = format!(
+        "forge-globals-{}.json",
+        time::OffsetDateTime::now_utc().unix_timestamp()
+    );
+    let Some(handle) = rfd::AsyncFileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_file_name(&default_name)
+        .save_file()
+        .await
+    else {
+        return Err(EXPORT_CANCELLED.to_owned());
+    };
+    let path = handle.path().to_path_buf();
+    tokio::fs::write(&path, json)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(path)
 }
 
 fn global_from_entry(entry: &GlobalEntry) -> Global {

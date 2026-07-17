@@ -1,5 +1,6 @@
 use forge_events::{Event, EventSource};
 use gpui::SharedString;
+use serde::Serialize;
 
 const RING_CAP: usize = 500;
 
@@ -26,7 +27,7 @@ fn is_chat_message_kind(kind: &str) -> bool {
     )
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct EventItem {
     pub id: SharedString,
     pub timestamp: SharedString,

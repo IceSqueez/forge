@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
@@ -55,10 +57,11 @@ pub struct SoundboardView {
     error: Option<SharedString>,
     feedback: Option<SharedString>,
     modal: Option<AddClipModal>,
+    rt_handle: tokio::runtime::Handle,
 }
 
 impl SoundboardView {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
+    pub fn new(rt_handle: tokio::runtime::Handle, _cx: &mut Context<Self>) -> Self {
         let clips = seed_clips();
         let next_id = clips.iter().map(|c| c.id).max().map_or(0, |m| m + 1);
         Self {
@@ -68,6 +71,7 @@ impl SoundboardView {
             error: None,
             feedback: None,
             modal: None,
+            rt_handle,
         }
     }
 
@@ -192,16 +196,44 @@ impl SoundboardView {
     }
 
     fn browse_file(&mut self, cx: &mut Context<Self>) {
-        let name_input = match self.modal.as_mut() {
-            Some(modal) => {
-                modal.file_name = Some("new-clip.wav".to_owned());
-                modal.error = None;
-                modal.name_input.clone()
+        if self.modal.is_none() {
+            return;
+        }
+        let filter_name = tr!("soundboard_file_filter_audio");
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<PathBuf>>();
+        self.rt_handle.spawn(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .add_filter(filter_name, &["mp3", "wav", "ogg", "flac", "aac", "m4a"])
+                .pick_file()
+                .await
+                .map(|handle| handle.path().to_path_buf());
+            let _ = tx.send(picked);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Some(path)) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_picked_file(path, cx));
             }
-            None => return,
+        })
+        .detach();
+    }
+
+    fn apply_picked_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let Some(modal) = self.modal.as_mut() else {
+            return;
         };
-        if name_input.read(cx).content().trim().is_empty() {
-            name_input.update(cx, |ti, cx| ti.set_content("new-clip", cx));
+        let file_name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| path.to_string_lossy().into_owned());
+        modal.file_name = Some(file_name);
+        modal.error = None;
+        let name_input = modal.name_input.clone();
+        if name_input.read(cx).content().trim().is_empty()
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            let stem = stem.to_owned();
+            name_input.update(cx, |ti, cx| ti.set_content(stem, cx));
         }
         cx.notify();
     }

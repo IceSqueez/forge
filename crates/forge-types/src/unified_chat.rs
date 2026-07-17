@@ -41,6 +41,25 @@ impl ChatPayload {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatModerationPayload {
+    pub action: ChatModerationAction,
+}
+
+impl ChatModerationPayload {
+    /// Reserved payload key for the moderation envelope. Call sites must use this
+    /// constant rather than the bare string to avoid silent drift.
+    pub const KEY: &'static str = "_chat_mod";
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatModerationAction {
+    DeleteMessage { message_id: String },
+    RemoveUser { user_name: String, timeout: bool },
+    ClearChat,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatSource {

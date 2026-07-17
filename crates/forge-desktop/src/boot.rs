@@ -9,8 +9,8 @@ use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Config, EventBus, QueueScheduler, SchedulerCell,
     ScriptRegistry, SoundPlayer, SpeakDispatcher, TtsTriggerSettingsHandle,
     register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_live_viewer_aggregator,
-    spawn_trigger_evaluator,
+    spawn_action_engine, spawn_chat_history_persistence, spawn_chat_moderation_persistence,
+    spawn_live_viewer_aggregator, spawn_trigger_evaluator,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_storage::{
@@ -117,6 +117,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         backend.chat_history_repo(),
         Arc::clone(&settings_repo),
     );
+    spawn_chat_moderation_persistence(Arc::clone(&bus), backend.chat_history_repo());
 
     let hotkey_client = Some(load_hotkey_and_register(&backend, &bus).await);
 

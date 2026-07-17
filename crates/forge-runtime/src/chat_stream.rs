@@ -40,7 +40,7 @@ pub fn chat_stream(bus: Arc<EventBus>) -> impl Stream<Item = UnifiedChatRow> + S
     )
 }
 
-fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource> {
+pub(crate) fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource> {
     match src {
         EventSource::Twitch => Some(ChatSource::Twitch),
         EventSource::YouTube => Some(ChatSource::YouTube),

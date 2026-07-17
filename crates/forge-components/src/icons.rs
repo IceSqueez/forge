@@ -94,6 +94,12 @@ tabler_icons! {
     Circle => "circle.svg",
     Coin => "coin.svg",
     Pin => "pin.svg",
+    Code => "code.svg",
+    Stack2 => "stack-2.svg",
+    Message2Share => "message-2-share.svg",
+    Piano => "piano.svg",
+    BrandDiscord => "brand-discord.svg",
+    Network => "network.svg",
 }
 
 impl Icon {
@@ -103,8 +109,14 @@ impl Icon {
             "clock" => Icon::Clock,
             "bolt" | "lightning" => Icon::Bolt,
             "terminal" | "terminal-2" => Icon::Terminal,
-            "broadcast" | "device-desktop" | "stack-2" | "record" | "brand-twitch" | "twitch"
-            | "brand-obs" | "obs" => Icon::Broadcast,
+            "broadcast" | "device-desktop" | "record" | "brand-twitch" | "twitch" | "brand-obs"
+            | "obs" => Icon::Broadcast,
+            "stack-2" | "stack" => Icon::Stack2,
+            "code" => Icon::Code,
+            "message-2-share" => Icon::Message2Share,
+            "piano" => Icon::Piano,
+            "brand-discord" | "discord" => Icon::BrandDiscord,
+            "network" => Icon::Network,
             "layout-grid" | "grid" | "apps" => Icon::LayoutGrid,
             "volume" | "speaker" => Icon::Volume,
             "music" => Icon::Music,

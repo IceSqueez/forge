@@ -140,7 +140,7 @@ impl SidebarNav {
                 screen: Screen::Triggers,
             },
             NavEntry::SectionLeaf {
-                icon: Icon::Notebook,
+                icon: Icon::Stack2,
                 label: NavText::Key("nav_item_queues"),
                 screen: Screen::Queues,
             },
@@ -155,7 +155,7 @@ impl SidebarNav {
                 screen: Screen::Globals,
             },
             NavEntry::SectionLeaf {
-                icon: Icon::FileCode,
+                icon: Icon::Code,
                 label: NavText::Key("nav_script_editor"),
                 screen: Screen::Scripts,
             },
@@ -196,7 +196,7 @@ impl SidebarNav {
             },
             NavEntry::MiniLabel(NavText::Key("nav_section_builtin")),
             NavEntry::FlatIconLeaf {
-                icon: Icon::Volume,
+                icon: Icon::Message2Share,
                 label: NavText::Key("nav_item_tts"),
                 screen: Screen::Tts,
             },
@@ -206,7 +206,7 @@ impl SidebarNav {
                 screen: Screen::Soundboard,
             },
             NavEntry::FlatIconLeaf {
-                icon: Icon::PlugConnected,
+                icon: Icon::Piano,
                 label: NavText::Brand("MIDI"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("midi")),
             },
@@ -216,12 +216,12 @@ impl SidebarNav {
                 screen: Screen::BuiltinDetail(BuiltinId::new("hotkey")),
             },
             NavEntry::FlatIconLeaf {
-                icon: Icon::Send,
+                icon: Icon::BrandDiscord,
                 label: NavText::Brand("Discord"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("discord")),
             },
             NavEntry::FlatIconLeaf {
-                icon: Icon::Server,
+                icon: Icon::Network,
                 label: NavText::Key("nav_item_ws_server"),
                 screen: Screen::Server,
             },

@@ -35,7 +35,7 @@ nav_server = Server
 
 nav_section_audience = AUDIENCE
 nav_section_automation = AUTOMATION
-nav_section_modules = Modules
+nav_section_builtin = Builtin
 
 ## Navigation - sidebar item labels
 

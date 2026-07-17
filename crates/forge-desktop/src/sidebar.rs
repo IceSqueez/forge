@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, icon, icon_inherit, radius, status_dot, tr,
+    Radius, icon, radius, status_dot, tr,
 };
 use forge_platform_core::BuiltinId;
 use gpui::{
@@ -194,7 +194,7 @@ impl SidebarNav {
                 screen: Screen::BuiltinDetail(BuiltinId::new("vtube")),
                 integ: Integration::VTube,
             },
-            NavEntry::MiniLabel(NavText::Key("nav_section_modules")),
+            NavEntry::MiniLabel(NavText::Key("nav_section_builtin")),
             NavEntry::FlatIconLeaf {
                 icon: Icon::Volume,
                 label: NavText::Key("nav_item_tts"),
@@ -341,7 +341,7 @@ impl SidebarNav {
         } else {
             (
                 palette.text_secondary,
-                icon_inherit(ic, SECTION_ICON).into_any_element(),
+                icon(ic, SECTION_ICON, palette.text_secondary).into_any_element(),
             )
         };
         Self::nav_frame(
@@ -393,7 +393,7 @@ impl SidebarNav {
                     FLAT_ITEM_MB,
                     fg,
                     vec![
-                        icon_inherit(ic, FLAT_ICON).into_any_element(),
+                        icon(ic, FLAT_ICON, fg).into_any_element(),
                         Self::text_label(label.resolve()),
                     ],
                     palette,

@@ -1504,6 +1504,11 @@ chat_ctx_timeout_1h = Таймаут 1 година
 chat_ctx_timeout_2w = Таймаут 2 тижні
 chat_ctx_ban = Бан
 chat_ctx_timeout_sent = Таймаут застосовано
+chat_reply = Відповісти
+chat_reply_title = Відповідь для @{ $recipient }
+chat_reply_placeholder = Введіть відповідь…
+chat_reply_sent = Відповідь надіслано
+chat_reply_failed = Помилка відповіді: { $error }
 
 ## Стрічка подій - заголовок / фільтри
 

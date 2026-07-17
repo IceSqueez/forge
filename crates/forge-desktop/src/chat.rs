@@ -117,6 +117,21 @@ fn build_ban_step(login: &str) -> SubActionStep {
     }
 }
 
+fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert("message".to_owned(), Variant::String(message.to_owned()));
+    config.insert(
+        "parent_message_id".to_owned(),
+        Variant::String(parent_message_id.to_owned()),
+    );
+    SubActionStep {
+        kind_id: "twitch.chat.reply".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Reply to {username}")),
+    }
+}
+
 fn blocked_alias(viewer: &str) -> VoiceAlias {
     VoiceAlias {
         id: AliasId::new(),
@@ -134,6 +149,20 @@ fn blocked_alias(viewer: &str) -> VoiceAlias {
 enum PlatformFilter {
     All,
     Single(Platform),
+}
+
+#[derive(Clone)]
+struct UserMenuTarget {
+    position: Point<Pixels>,
+    username: String,
+    message_id: String,
+    platform: Platform,
+}
+
+#[derive(Clone)]
+struct ReplyTarget {
+    username: String,
+    message_id: String,
 }
 
 struct DrawerResizeDrag;
@@ -163,7 +192,9 @@ pub struct ChatView {
     drawer_summaries: Vec<ViewerSummary>,
     whisper_open: bool,
     whisper_input: Entity<TextInput>,
-    user_menu: Option<(Point<Pixels>, String)>,
+    reply_target: Option<ReplyTarget>,
+    reply_input: Entity<TextInput>,
+    user_menu: Option<UserMenuTarget>,
     auto_scroll: bool,
     unread: usize,
     last_seen_len: usize,
@@ -174,6 +205,7 @@ pub struct ChatView {
     _search_sub: Subscription,
     _drawer_search_sub: Subscription,
     _whisper_sub: Subscription,
+    _reply_sub: Subscription,
 }
 
 fn platform_display_name(platform: Platform) -> &'static str {
@@ -205,6 +237,8 @@ impl ChatView {
         let whisper_input = cx.new(|cx| {
             TextInput::new(tr!("chat_drawer_whisper_placeholder"), cx).with_palette(palette)
         });
+        let reply_input =
+            cx.new(|cx| TextInput::new(tr!("chat_reply_placeholder"), cx).with_palette(palette));
 
         let uptime_view = cx.new(|cx| UptimeView::new(status, cx));
 
@@ -214,6 +248,7 @@ impl ChatView {
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
         let drawer_search_sub = cx.subscribe(&drawer_search, Self::on_drawer_search_event);
         let whisper_sub = cx.subscribe(&whisper_input, Self::on_whisper_event);
+        let reply_sub = cx.subscribe(&reply_input, Self::on_reply_event);
 
         let last_seen_len = feed.read(cx).messages().len();
         let drawer_summaries = drawer_summaries_for(feed.read(cx).messages(), &[], &palette);
@@ -259,6 +294,8 @@ impl ChatView {
             drawer_summaries,
             whisper_open: false,
             whisper_input,
+            reply_target: None,
+            reply_input,
             user_menu: None,
             auto_scroll: true,
             unread: 0,
@@ -270,6 +307,7 @@ impl ChatView {
             _search_sub: search_sub,
             _drawer_search_sub: drawer_search_sub,
             _whisper_sub: whisper_sub,
+            _reply_sub: reply_sub,
         }
     }
 
@@ -577,9 +615,16 @@ impl ChatView {
         &mut self,
         position: Point<Pixels>,
         username: String,
+        message_id: String,
+        platform: Platform,
         cx: &mut Context<Self>,
     ) {
-        self.user_menu = Some((position, username));
+        self.user_menu = Some(UserMenuTarget {
+            position,
+            username,
+            message_id,
+            platform,
+        });
         cx.notify();
     }
 
@@ -591,10 +636,11 @@ impl ChatView {
     }
 
     fn ctx_timeout_viewer(&mut self, seconds: i64, cx: &mut Context<Self>) {
-        let Some((_, login)) = self.user_menu.take() else {
+        let Some(target) = self.user_menu.take() else {
             cx.notify();
             return;
         };
+        let login = target.username;
         let step = build_timeout_step(&login, seconds);
         self.dispatch_quick_action(
             step,
@@ -612,10 +658,11 @@ impl ChatView {
     }
 
     fn ctx_ban_viewer(&mut self, cx: &mut Context<Self>) {
-        let Some((_, login)) = self.user_menu.take() else {
+        let Some(target) = self.user_menu.take() else {
             cx.notify();
             return;
         };
+        let login = target.username;
         let step = build_ban_step(&login);
         self.dispatch_quick_action(
             step,
@@ -629,18 +676,94 @@ impl ChatView {
         cx.notify();
     }
 
+    fn open_reply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(target) = self.user_menu.take() else {
+            cx.notify();
+            return;
+        };
+        if target.platform != Platform::Twitch {
+            cx.notify();
+            return;
+        }
+        self.reply_target = Some(ReplyTarget {
+            username: target.username,
+            message_id: target.message_id,
+        });
+        self.reply_input.update(cx, |input, cx| {
+            input.clear(cx);
+            input.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    fn cancel_reply(&mut self, cx: &mut Context<Self>) {
+        self.reply_target = None;
+        self.reply_input.update(cx, |input, cx| input.clear(cx));
+        cx.notify();
+    }
+
+    fn send_reply(&mut self, cx: &mut Context<Self>) {
+        let Some(target) = self.reply_target.clone() else {
+            return;
+        };
+        let message = self.reply_input.read(cx).content().trim().to_owned();
+        if message.is_empty() {
+            return;
+        }
+        self.reply_target = None;
+        self.reply_input.update(cx, |input, cx| input.clear(cx));
+        let step = build_reply_step(&target.username, &message, &target.message_id);
+        let username = target.username;
+        self.dispatch_quick_action(
+            step,
+            format!("Reply to {username}"),
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_reply_sent")),
+                Err(e) => (ToastKind::Error, tr!("chat_reply_failed", error = e)),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn on_reply_event(
+        &mut self,
+        _field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::Submitted(_) => self.send_reply(cx),
+            InputEvent::Cancelled => self.cancel_reply(cx),
+            InputEvent::Changed(_) => {}
+        }
+    }
+
     fn render_user_menu(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let (position, login) = {
-            let (pos, name) = self.user_menu.as_ref()?;
-            (*pos, name.clone())
-        };
+        let target = self.user_menu.as_ref()?;
+        let position = target.position;
+        let login = target.username.clone();
+        let can_reply = target.platform == Platform::Twitch;
         let view = cx.entity();
-        let items = vec![
-            menu_header(SharedString::from(login)),
+
+        let mut items = vec![menu_header(SharedString::from(login))];
+        if can_reply {
+            items.push(
+                menu_item(
+                    "chat-ctx-reply",
+                    tr!("chat_reply"),
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_reply(window, cx)),
+                )
+                .icon(Icon::MessageCircle)
+                .into(),
+            );
+            items.push(menu_divider());
+        }
+        items.push(
             menu_item(
                 "chat-ctx-timeout-10m",
                 tr!("chat_ctx_timeout_10m"),
@@ -650,6 +773,8 @@ impl ChatView {
             )
             .icon(Icon::Clock)
             .into(),
+        );
+        items.push(
             menu_item(
                 "chat-ctx-timeout-1h",
                 tr!("chat_ctx_timeout_1h"),
@@ -659,6 +784,8 @@ impl ChatView {
             )
             .icon(Icon::Clock)
             .into(),
+        );
+        items.push(
             menu_item(
                 "chat-ctx-timeout-2w",
                 tr!("chat_ctx_timeout_2w"),
@@ -669,7 +796,9 @@ impl ChatView {
             .icon(Icon::Clock)
             .color(palette.warning)
             .into(),
-            menu_divider(),
+        );
+        items.push(menu_divider());
+        items.push(
             menu_item(
                 "chat-ctx-ban",
                 tr!("chat_ctx_ban"),
@@ -678,7 +807,8 @@ impl ChatView {
             .icon(Icon::BellOff)
             .color(palette.random)
             .into(),
-        ];
+        );
+
         Some(
             context_menu(position, palette)
                 .items(items)
@@ -1108,6 +1238,8 @@ impl ChatView {
             let username = msg.username.clone();
             let menu_view = view.clone();
             let menu_username = msg.username.clone();
+            let menu_message_id = msg.id.clone();
+            let menu_platform = msg.platform;
             let has_user = !msg.username.is_empty();
             let view = view.clone();
             let row = chat_row(&pal, data).on_username_click(
@@ -1123,7 +1255,10 @@ impl ChatView {
                     move |event: &MouseDownEvent, _window, app| {
                         let position = event.position;
                         let login = menu_username.to_string();
-                        menu_view.update(app, |this, cx| this.open_user_menu(position, login, cx));
+                        let message_id = menu_message_id.to_string();
+                        menu_view.update(app, |this, cx| {
+                            this.open_user_menu(position, login, message_id, menu_platform, cx)
+                        });
                     },
                 );
             }
@@ -1550,6 +1685,96 @@ impl ChatView {
             .child(buttons)
     }
 
+    fn render_reply_compose(
+        &self,
+        recipient: String,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let title = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .font_weight(FontWeight::MEDIUM)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_muted)
+            .child(tr!("chat_reply_title", recipient = recipient));
+
+        let border = palette.border_regular;
+        let border_hover = palette.border_input;
+        let surf = palette.surface_overlay;
+        let text = palette.text_secondary;
+        let text_hover = palette.text_primary;
+        let cancel = div()
+            .id("chat-reply-cancel")
+            .flex()
+            .items_center()
+            .justify_center()
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .border(BORDER_THIN)
+            .border_color(border)
+            .cursor_pointer()
+            .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_reply(cx)))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(text)
+                    .child(tr!("chat_drawer_whisper_cancel")),
+            );
+
+        let brand = palette.brand;
+        let shell = palette.shell;
+        let send = div()
+            .id("chat-reply-send")
+            .flex()
+            .items_center()
+            .justify_center()
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .bg(brand)
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_reply(cx)))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
+                    .text_color(shell)
+                    .child(tr!("chat_drawer_whisper_send")),
+            );
+
+        let buttons = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(spacing(Spacing::Xs, density))
+            .child(cancel)
+            .child(send);
+
+        let card = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .p(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .bg(palette.elevated)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(title)
+            .child(self.reply_input.clone())
+            .child(buttons);
+
+        div()
+            .w_full()
+            .px(spacing(Spacing::Md, density))
+            .pb(spacing(Spacing::Xs, density))
+            .child(card)
+    }
+
     fn render_drawer_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let view = cx.entity();
         let items = vec![
@@ -1923,6 +2148,10 @@ impl Render for ChatView {
             .drawer_open
             .then(|| self.render_drawer(&palette, density, cx));
         let user_menu = self.render_user_menu(&palette, cx);
+        let reply_compose = self
+            .reply_target
+            .clone()
+            .map(|target| self.render_reply_compose(target.username, &palette, density, cx));
 
         div()
             .size_full()
@@ -1946,6 +2175,7 @@ impl Render for ChatView {
                             .flex_col()
                             .overflow_hidden()
                             .child(chat_area)
+                            .children(reply_compose)
                             .child(self.input.clone()),
                     )
                     .children(drawer),

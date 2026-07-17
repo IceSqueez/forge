@@ -1483,6 +1483,11 @@ chat_ctx_timeout_1h = Timeout 1 hour
 chat_ctx_timeout_2w = Timeout 2 weeks
 chat_ctx_ban = Ban
 chat_ctx_timeout_sent = Timeout applied
+chat_reply = Reply
+chat_reply_title = Replying to @{ $recipient }
+chat_reply_placeholder = Type a reply…
+chat_reply_sent = Reply sent
+chat_reply_failed = Reply failed: { $error }
 
 ## Event Feed - page header / filters
 

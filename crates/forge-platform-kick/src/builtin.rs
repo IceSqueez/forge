@@ -393,6 +393,27 @@ mod tests {
         }
 
         #[test]
+        fn pusher_ws_health_metric_reports_disconnected_with_slug_topic_while_offline() {
+            // The index-0 WS metric (the slot the health bridge emits its HealthDelta on)
+            // weaves the channel slug into the Pusher topic (chatrooms.<slug>.v2) and marks
+            // the transport inactive until a connection lands. A live transition can't be
+            // driven offline (Kick connect() needs a real Pusher WS), so Disconnected is the
+            // only reachable state here; the full per-state table lives with YouTube's
+            // factored pure fn (see QA_REPORT: Kick has no such pure fn to table-drive).
+            let bundle = disconnected_bundle();
+            let ws = &bundle.metrics()[0];
+            assert_eq!(ws.label, "Pusher WS");
+            assert_eq!(
+                ws.value,
+                HealthValue::Status {
+                    label: "Disconnected".to_owned(),
+                    active: false,
+                    detail: Some("chatrooms.test_channel.v2".to_owned()),
+                }
+            );
+        }
+
+        #[test]
         fn send_message_quick_action_is_disabled_while_disconnected() {
             let bundle = disconnected_bundle();
             let action = bundle

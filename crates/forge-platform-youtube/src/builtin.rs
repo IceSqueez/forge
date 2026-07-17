@@ -356,4 +356,119 @@ mod tests {
             assert!(reg.get(id).is_some(), "missing kind id: {id}");
         }
     }
+
+    #[test]
+    fn chat_poller_health_value_maps_each_connection_state() {
+        // Both metrics() and the health bridge feed this one fn, so its per-state
+        // mapping is the single source the health surface renders. Only Connected is
+        // active; every state pins the liveChatMessages.list endpoint as the detail.
+        for (state, label, active) in [
+            (ConnectionState::Connected, "Connected", true),
+            (ConnectionState::Connecting, "Connecting", false),
+            (ConnectionState::Reconnecting, "Reconnecting", false),
+            (ConnectionState::Disconnected, "Disconnected", false),
+        ] {
+            assert_eq!(
+                chat_poller_health_value(state),
+                HealthValue::Status {
+                    label: label.to_owned(),
+                    active,
+                    detail: Some("liveChatMessages.list".to_owned()),
+                },
+                "unexpected health value for {state:?}"
+            );
+        }
+    }
+
+    mod health_bridge {
+        use std::time::Duration;
+
+        use async_trait::async_trait;
+        use forge_platform_core::BuiltinHealth;
+        use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+        use time::OffsetDateTime;
+        use tokio_stream::StreamExt;
+
+        use super::super::*;
+        use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+        use crate::auth::GoogleAuthFlow;
+        use crate::live_chat_id::LiveChatIdHandle;
+        use crate::quota_state::QuotaState;
+
+        struct EmptyRepo;
+        #[async_trait]
+        impl CredentialsRepo for EmptyRepo {
+            async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+                Ok(None)
+            }
+            async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+                Ok(false)
+            }
+            async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+                Ok(Vec::new())
+            }
+            async fn last_refresh(
+                &self,
+                _: &CredentialId,
+            ) -> Result<Option<OffsetDateTime>, StorageError> {
+                Ok(None)
+            }
+            async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+                Ok(())
+            }
+        }
+
+        // A bundle whose platform can be driven Connecting -> Connected offline: the
+        // poller's token source fails (no stored creds), so it sleeps and retries
+        // rather than touching the network, leaving Connected as the stable terminal
+        // state. Returns the platform handle so the test can trigger the transition.
+        fn bundle_and_platform() -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
+            let manager = Arc::new(YoutubeCredentialsManager::new(
+                Arc::new(EmptyRepo),
+                GoogleAuthFlow::new("test_cid".to_owned(), "test_secret".to_owned()),
+            ));
+            let platform = Arc::new(YoutubePlatform::new(
+                "UCtest".to_owned(),
+                Arc::clone(&manager),
+                LiveChatIdHandle::new(),
+                ActiveBroadcastIdHandle::new(),
+                Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+            ));
+            let (bundle, _health_tx) = YoutubeIntegrationBundle::new(
+                "UCtest".to_owned(),
+                Arc::clone(&platform),
+                manager,
+                Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+            );
+            (bundle, platform)
+        }
+
+        #[tokio::test]
+        async fn health_stream_emits_connected_delta_when_platform_connects() {
+            // Regression: BuiltinHealth::stream() previously never emitted. The health
+            // bridge now forwards each connection-state change as a HealthDelta on index
+            // 0. Driving the platform to Connected must surface a matching delta on the
+            // public stream, proving the runtime->UI health path is live.
+            let (bundle, platform) = bundle_and_platform();
+            let mut health = BuiltinHealth::stream(bundle.as_ref());
+
+            platform.connect().await.unwrap();
+
+            let expected = chat_poller_health_value(ConnectionState::Connected);
+            let delta = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    let delta = health.next().await.unwrap();
+                    if delta.new_value == expected {
+                        return delta;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(delta.index, 0);
+        }
+    }
 }

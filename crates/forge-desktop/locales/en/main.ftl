@@ -85,6 +85,7 @@ home_card_connections_hint = Manage platforms, apps and modules
 
 home_health_title = Stream health
 home_health_live = LIVE
+home_health_offline = offline
 home_health_refresh_hint = last 60s · auto-refresh
 home_health_throughput_label = THROUGHPUT · ev/s
 home_health_bitrate_label = BITRATE · OBS

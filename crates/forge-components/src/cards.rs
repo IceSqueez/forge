@@ -38,6 +38,7 @@ pub struct Card {
     top_radius: Pixels,
     bottom_radius: Pixels,
     full_width: bool,
+    full_height: bool,
     background: Rgba,
     border: Rgba,
     text_color: Rgba,
@@ -53,6 +54,7 @@ pub fn card(child: impl IntoElement, palette: &ForgePalette) -> Card {
         top_radius: r,
         bottom_radius: r,
         full_width: false,
+        full_height: false,
         background: palette.elevated,
         border: palette.border_regular,
         text_color: palette.text_primary,
@@ -77,6 +79,12 @@ impl Card {
     #[must_use]
     pub fn full_width(mut self) -> Self {
         self.full_width = true;
+        self
+    }
+
+    #[must_use]
+    pub fn full_height(mut self) -> Self {
+        self.full_height = true;
         self
     }
 
@@ -117,6 +125,9 @@ impl RenderOnce for Card {
 
         if self.full_width {
             root = root.w_full();
+        }
+        if self.full_height {
+            root = root.h_full();
         }
 
         root

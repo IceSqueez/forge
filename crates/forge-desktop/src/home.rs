@@ -8,7 +8,7 @@ use forge_components::{
 use forge_storage::DataProvider;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, Subscription,
-    Window, div, prelude::*, px,
+    Window, div, prelude::*, px, relative,
 };
 
 use crate::home_stats::{HomeEvent, HomeStats, Integration, ObsHealth};
@@ -59,7 +59,8 @@ const EVENT_LIVE_DOT: Pixels = px(6.0);
 
 const GLANCE_ROW_PAD_V: Pixels = px(5.0);
 const DIVIDER_H: Pixels = px(1.0);
-const GLANCE_CARD_W: Pixels = px(340.0);
+const RECENT_GROW: f32 = 1.4;
+const GLANCE_GROW: f32 = 1.0;
 
 struct JumpCard {
     id: &'static str,
@@ -375,28 +376,40 @@ impl HomeView {
 
     fn render_stream_health(
         &self,
-        health: ObsHealth,
+        health: Option<ObsHealth>,
         palette: &ForgePalette,
         density: Density,
     ) -> impl IntoElement + use<> {
-        let live_badge = div()
+        let connected = health.is_some();
+        let accent = if connected {
+            palette.success
+        } else {
+            palette.text_faint
+        };
+        let badge_label = if connected {
+            tr!("home_health_live")
+        } else {
+            tr!("home_health_offline")
+        };
+
+        let status_badge = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .child(status_dot(palette.success, HEALTH_LIVE_DOT))
+            .child(status_dot(accent, HEALTH_LIVE_DOT))
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
-                    .text_color(palette.success)
-                    .child(tr!("home_health_live")),
+                    .text_color(accent)
+                    .child(badge_label),
             );
 
         let header_left = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::ChartLine, HEALTH_ICON, palette.success))
+            .child(icon(Icon::ChartLine, HEALTH_ICON, accent))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
@@ -404,7 +417,7 @@ impl HomeView {
                     .text_color(palette.text_primary)
                     .child(tr!("home_health_title")),
             )
-            .child(live_badge);
+            .child(status_badge);
 
         let header = div()
             .w_full()
@@ -420,6 +433,10 @@ impl HomeView {
                     .child(tr!("home_health_refresh_hint")),
             );
 
+        let throughput_data: Vec<f32> = health
+            .as_ref()
+            .map(|h| h.throughput.clone())
+            .unwrap_or_default();
         let throughput = div()
             .flex_1()
             .flex()
@@ -436,18 +453,34 @@ impl HomeView {
                 div()
                     .w_full()
                     .h(px(40.0))
-                    .child(sparkline(&health.throughput, palette.brand)),
+                    .child(sparkline(&throughput_data, palette.brand)),
             );
 
-        let dropped_color = if health.dropped_ok {
-            palette.success
-        } else {
-            palette.warning
+        let unit = |u: &'static str| if connected { Some(u) } else { None };
+        let bitrate = health
+            .as_ref()
+            .map_or_else(|| "-".to_owned(), |h| h.bitrate.to_string());
+        let (dropped_value, dropped_color) = match &health {
+            Some(h) => {
+                let color = if h.dropped_ok {
+                    palette.success
+                } else {
+                    palette.warning
+                };
+                let value = match &h.dropped_pct {
+                    Some(pct) => format!("{} {}", h.dropped, pct),
+                    None => h.dropped.to_string(),
+                };
+                (value, color)
+            }
+            None => ("-".to_owned(), palette.text_primary),
         };
-        let dropped_value = match health.dropped_pct {
-            Some(pct) => format!("{} {}", health.dropped, pct),
-            None => health.dropped.to_string(),
-        };
+        let fps = health
+            .as_ref()
+            .map_or_else(|| "-".to_owned(), |h| h.fps.to_string());
+        let cpu = health
+            .as_ref()
+            .map_or_else(|| "-".to_owned(), |h| h.cpu.to_string());
 
         let stats_row = div()
             .w_full()
@@ -457,8 +490,8 @@ impl HomeView {
             .child(throughput)
             .child(Self::health_stat(
                 tr!("home_health_bitrate_label"),
-                health.bitrate.to_string(),
-                Some("kbps"),
+                bitrate,
+                unit("kbps"),
                 palette.text_primary,
                 palette,
             ))
@@ -471,15 +504,15 @@ impl HomeView {
             ))
             .child(Self::health_stat(
                 tr!("home_health_fps_label"),
-                health.fps.to_string(),
+                fps,
                 None,
                 palette.text_primary,
                 palette,
             ))
             .child(Self::health_stat(
                 tr!("home_health_cpu_label"),
-                health.cpu.to_string(),
-                Some("%"),
+                cpu,
+                unit("%"),
                 palette.text_primary,
                 palette,
             ));
@@ -607,7 +640,6 @@ impl HomeView {
         for (integ, ok) in connections {
             cells = cells.child(self.connection_cell(integ, ok, palette, density, cx));
         }
-        cells = cells.child(div().flex_1().bg(palette.elevated));
 
         let cells_card = card(cells, palette)
             .full_width()
@@ -770,6 +802,7 @@ impl HomeView {
 
         card(content, palette)
             .full_width()
+            .full_height()
             .padding(spacing(Spacing::Sm, density))
     }
 
@@ -869,8 +902,17 @@ impl HomeView {
 
         card(content, palette)
             .full_width()
+            .full_height()
             .padding(spacing(Spacing::Sm, density))
     }
+}
+
+fn grow_col(grow: f32, child: impl IntoElement) -> impl IntoElement {
+    let mut col = div().min_w(px(0.0)).child(child);
+    let style = col.style();
+    style.flex_grow = Some(grow);
+    style.flex_basis = Some(relative(0.0).into());
+    col
 }
 
 async fn import_action(dp: Arc<dyn DataProvider>) -> Result<String, String> {
@@ -982,24 +1024,20 @@ impl Render for HomeView {
         let bottom = div()
             .w_full()
             .flex()
-            .items_start()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().flex_1().child(recent_card))
-            .child(div().flex_none().w(GLANCE_CARD_W).child(glance_card));
+            .child(grow_col(RECENT_GROW, recent_card))
+            .child(grow_col(GLANCE_GROW, glance_card));
 
-        let mut content = div()
+        let content = div()
             .w_full()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .child(hero)
-            .child(jump_cards);
-
-        if let Some(health) = obs_health {
-            content = content.child(self.render_stream_health(health, &palette, density));
-        }
-
-        content = content.child(connections_strip).child(bottom);
+            .child(jump_cards)
+            .child(self.render_stream_health(obs_health, &palette, density))
+            .child(connections_strip)
+            .child(bottom);
 
         let body = div()
             .id("home-scroll")

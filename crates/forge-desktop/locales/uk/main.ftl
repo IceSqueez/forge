@@ -85,6 +85,7 @@ home_card_connections_hint = Керуйте платформами, застос
 
 home_health_title = Стан стріму
 home_health_live = ЖИВИЙ
+home_health_offline = офлайн
 home_health_refresh_hint = остання хвилина · автооновлення
 home_health_throughput_label = ПРОПУСКНА ЗДАТНІСТЬ · под/с
 home_health_bitrate_label = БІТРЕЙТ · OBS

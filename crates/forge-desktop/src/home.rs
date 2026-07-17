@@ -56,9 +56,11 @@ const EVENT_ROW_PAD_H: Pixels = px(4.0);
 const EVENT_TIME_W: Pixels = px(60.0);
 const EVENT_DOT: Pixels = px(6.0);
 const EVENT_LIVE_DOT: Pixels = px(6.0);
+const EVENT_HEADER_ICON: Pixels = px(14.0);
 
 const GLANCE_ROW_PAD_V: Pixels = px(5.0);
 const DIVIDER_H: Pixels = px(1.0);
+const GLANCE_HEADER_ICON: Pixels = px(14.0);
 const RECENT_GROW: f32 = 1.4;
 const GLANCE_GROW: f32 = 1.0;
 
@@ -409,7 +411,7 @@ impl HomeView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::ChartLine, HEALTH_ICON, accent))
+            .child(icon(Icon::ChartLine, HEALTH_ICON, palette.success))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
@@ -770,10 +772,17 @@ impl HomeView {
             .justify_between()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("home_events_title")),
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(icon(Icon::Activity, EVENT_HEADER_ICON, palette.info))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_SM)
+                            .text_color(palette.text_primary)
+                            .child(tr!("home_events_title")),
+                    ),
             )
             .child(live_label);
 
@@ -893,10 +902,17 @@ impl HomeView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("home_glance_title")),
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(icon(Icon::LayoutGrid, GLANCE_HEADER_ICON, palette.brand))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_SM)
+                            .text_color(palette.text_primary)
+                            .child(tr!("home_glance_title")),
+                    ),
             )
             .child(rows);
 

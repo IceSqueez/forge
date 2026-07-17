@@ -3,8 +3,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use forge_events::{Event, EventSource};
 use forge_registry::{TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
+use forge_types::{TriggerConfig, Variant};
+use serde_json::json;
 use tracing::warn;
 
 use crate::{EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
@@ -21,6 +24,7 @@ impl TriggerEvaluatorHandle {
 }
 
 pub struct TriggerEvaluator {
+    bus: Arc<EventBus>,
     registry: Arc<TriggerRegistry>,
     actions: Arc<dyn ActionRepo>,
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -38,6 +42,7 @@ impl TriggerEvaluator {
     ) -> TriggerEvaluatorHandle {
         let subscription = bus.subscribe();
         let evaluator = Self {
+            bus,
             registry,
             actions,
             trigger_instances,
@@ -85,6 +90,8 @@ impl TriggerEvaluator {
                 return;
             }
         };
+
+        let mut command_emitted = false;
 
         for action in &actions {
             if !action.enabled {
@@ -135,6 +142,19 @@ impl TriggerEvaluator {
                     continue;
                 }
 
+                if !command_emitted && instance.kind_id.ends_with(".command") {
+                    self.bus.publish(Event::caused_by(
+                        EventSource::Core,
+                        "command.matched",
+                        json!({
+                            "command": command_phrase(&effective),
+                            "kind_id": instance.kind_id,
+                        }),
+                        event.id,
+                    ));
+                    command_emitted = true;
+                }
+
                 let args = descriptor.build_arg_stack(&event);
                 let req = SchedulerRequest {
                     queue_id: action.queue_id,
@@ -148,6 +168,13 @@ impl TriggerEvaluator {
                 }
             }
         }
+    }
+}
+
+fn command_phrase(config: &TriggerConfig) -> String {
+    match config.get("phrase") {
+        Some(Variant::String(s)) => s.clone(),
+        _ => String::new(),
     }
 }
 

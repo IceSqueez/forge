@@ -215,10 +215,10 @@ impl ChatView {
         let last_seen_len = feed.read(cx).messages().len();
         let drawer_summaries = drawer_summaries_for(feed.read(cx).messages(), &[], &palette);
 
-        let chat_list = ListState::new(last_seen_len, ListAlignment::Bottom, LIST_OVERDRAW);
+        let chat_list = ListState::new(last_seen_len, ListAlignment::Top, LIST_OVERDRAW);
         let list_entity = cx.entity();
         chat_list.set_scroll_handler(move |event, _window, app| {
-            let at_bottom = !event.is_scrolled;
+            let at_bottom = event.visible_range.end >= event.count;
             list_entity.update(app, |this, cx| {
                 this.auto_scroll = at_bottom;
                 if at_bottom {

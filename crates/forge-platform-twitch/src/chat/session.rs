@@ -3,7 +3,7 @@ use crate::chat::subscriber::{SubscribeError, subscribe_all};
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{ConnectionState, connection_state_changed_event};
-use forge_types::{ChatPayload, OAuthToken};
+use forge_types::{ChatModerationAction, ChatModerationPayload, ChatPayload, OAuthToken};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -755,7 +755,7 @@ impl ChatSession {
         // moderator identity - Twitch does not include those fields in this topic.
         info!(target_user_login = %target_user_login, message_id = %message_id, "chat message deleted");
 
-        let forge_payload = serde_json::json!({
+        let mut forge_payload = serde_json::json!({
             "message_id": message_id,
             "target_user": {
                 "id": target_user_id,
@@ -763,6 +763,10 @@ impl ChatSession {
                 "display_name": target_user_name,
             },
         });
+        attach_moderation_payload(
+            &mut forge_payload,
+            ChatModerationAction::DeleteMessage { message_id },
+        );
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -791,12 +795,13 @@ impl ChatSession {
         // does not include that field in this topic.
         info!(broadcaster_login = %broadcaster_login, "chat cleared");
 
-        let forge_payload = serde_json::json!({
+        let mut forge_payload = serde_json::json!({
             "broadcaster": {
                 "id": broadcaster_id,
                 "login": broadcaster_login,
             },
         });
+        attach_moderation_payload(&mut forge_payload, ChatModerationAction::ClearChat);
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1232,7 +1237,7 @@ impl ChatSession {
             "ban event received"
         );
 
-        let forge_payload = serde_json::json!({
+        let mut forge_payload = serde_json::json!({
             "user": {
                 "id": user_id,
                 "login": user_login,
@@ -1247,6 +1252,13 @@ impl ChatSession {
             "ends_at": ends_at,
             "is_permanent": is_permanent,
         });
+        attach_moderation_payload(
+            &mut forge_payload,
+            ChatModerationAction::RemoveUser {
+                user_name: user_display_name,
+                timeout: !is_permanent,
+            },
+        );
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3479,6 +3491,19 @@ fn attach_chat_payload(forge_payload: &mut serde_json::Value, chat: ChatPayload)
         }
         Err(e) => {
             warn!(error = %e, "failed to serialize ChatPayload; _chat key omitted");
+        }
+    }
+}
+
+fn attach_moderation_payload(forge_payload: &mut serde_json::Value, action: ChatModerationAction) {
+    match serde_json::to_value(&ChatModerationPayload { action }) {
+        Ok(mod_value) => {
+            if let serde_json::Value::Object(map) = forge_payload {
+                map.insert(ChatModerationPayload::KEY.to_owned(), mod_value);
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to serialize ChatModerationPayload; _chat_mod key omitted");
         }
     }
 }

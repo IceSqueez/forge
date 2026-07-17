@@ -61,6 +61,19 @@ const GLANCE_ROW_PAD_V: Pixels = px(5.0);
 const DIVIDER_H: Pixels = px(1.0);
 const GLANCE_CARD_W: Pixels = px(340.0);
 
+struct JumpCard {
+    id: &'static str,
+    glyph: Icon,
+    glyph_color: Rgba,
+    section: String,
+    title: String,
+    stat: String,
+    stat_label: String,
+    hint: String,
+    warn: bool,
+    target: Screen,
+}
+
 pub struct HomeView {
     stats: Entity<HomeStats>,
     backend: Arc<dyn DataProvider>,
@@ -202,19 +215,9 @@ impl HomeView {
             .radius(Radius::Lg)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn jump_card(
         &self,
-        id: &'static str,
-        glyph: Icon,
-        glyph_color: Rgba,
-        section: String,
-        title: String,
-        stat: String,
-        stat_label: String,
-        hint: String,
-        warn: bool,
-        target: Screen,
+        spec: JumpCard,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -227,7 +230,7 @@ impl HomeView {
             .justify_center()
             .rounded(JUMP_ICON_RADIUS)
             .bg(palette.surface_overlay)
-            .child(icon(glyph, JUMP_ICON_GLYPH, glyph_color));
+            .child(icon(spec.glyph, JUMP_ICON_GLYPH, spec.glyph_color));
 
         let label_col = div()
             .flex_1()
@@ -238,14 +241,14 @@ impl HomeView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(section),
+                    .child(spec.section),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(title),
+                    .child(spec.title),
             );
 
         let mut head = div()
@@ -254,7 +257,7 @@ impl HomeView {
             .gap(spacing(Spacing::Sm, density))
             .child(icon_box)
             .child(label_col);
-        if warn {
+        if spec.warn {
             head = head.child(icon(Icon::AlertTriangle, JUMP_WARN_ICON, palette.warning));
         }
 
@@ -267,15 +270,15 @@ impl HomeView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(JUMP_STAT_FONT)
-                    .text_color(glyph_color)
-                    .child(stat),
+                    .text_color(spec.glyph_color)
+                    .child(spec.stat),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child(stat_label),
+                    .child(spec.stat_label),
             );
 
         let hint_row = div()
@@ -288,14 +291,15 @@ impl HomeView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(hint),
+                    .child(spec.hint),
             )
             .child(icon(Icon::ArrowRight, JUMP_HINT_ARROW, palette.text_faint));
 
         let border = palette.border_regular;
         let hover_border = palette.border_input;
+        let target = spec.target;
         div()
-            .id(id)
+            .id(spec.id)
             .flex()
             .flex_1()
             .flex_col()
@@ -315,72 +319,18 @@ impl HomeView {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_jump_cards(
         &self,
-        viewers: String,
-        actions: String,
-        fired: String,
-        connected: usize,
-        total: usize,
-        warn: bool,
+        cards: [JumpCard; 3],
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let chat = self.jump_card(
-            "home-jump-chat",
-            Icon::MessageCircle,
-            palette.brand,
-            tr!("home_card_audience_section"),
-            tr!("home_card_audience_title"),
-            viewers,
-            tr!("home_card_audience_stat_label"),
-            tr!("home_card_audience_hint"),
-            false,
-            Screen::Chat,
-            palette,
-            density,
-            cx,
-        );
-        let automation = self.jump_card(
-            "home-jump-actions",
-            Icon::Bolt,
-            palette.warning,
-            tr!("home_card_automation_section"),
-            tr!("home_card_automation_title"),
-            actions,
-            tr!("home_card_automation_stat_label", fired = fired),
-            tr!("home_card_automation_hint"),
-            false,
-            Screen::Actions,
-            palette,
-            density,
-            cx,
-        );
-        let connections = self.jump_card(
-            "home-jump-connections",
-            Icon::Plug,
-            palette.success,
-            tr!("home_card_connections_section"),
-            tr!("home_card_connections_title"),
-            format!("{connected}/{total}"),
-            tr!("home_card_connections_stat_label"),
-            tr!("home_card_connections_hint"),
-            warn,
-            Screen::Platforms,
-            palette,
-            density,
-            cx,
-        );
-
-        div()
-            .w_full()
-            .flex()
-            .gap(spacing(Spacing::Xs, density))
-            .child(chat)
-            .child(automation)
-            .child(connections)
+        let mut row = div().w_full().flex().gap(spacing(Spacing::Xs, density));
+        for spec in cards {
+            row = row.child(self.jump_card(spec, palette, density, cx));
+        }
+        row
     }
 
     fn health_stat(
@@ -976,19 +926,49 @@ impl Render for HomeView {
         let header = breadcrumb(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette);
 
         let hero = self.render_hero(&palette, density, cx);
-        let jump_cards = self.render_jump_cards(
-            viewers, actions, fired, connected, total, warn, &palette, density, cx,
-        );
+        let cards = [
+            JumpCard {
+                id: "home-jump-chat",
+                glyph: Icon::MessageCircle,
+                glyph_color: palette.brand,
+                section: tr!("home_card_audience_section"),
+                title: tr!("home_card_audience_title"),
+                stat: viewers,
+                stat_label: tr!("home_card_audience_stat_label"),
+                hint: tr!("home_card_audience_hint"),
+                warn: false,
+                target: Screen::Chat,
+            },
+            JumpCard {
+                id: "home-jump-actions",
+                glyph: Icon::Bolt,
+                glyph_color: palette.warning,
+                section: tr!("home_card_automation_section"),
+                title: tr!("home_card_automation_title"),
+                stat: actions.clone(),
+                stat_label: tr!("home_card_automation_stat_label", fired = fired.clone()),
+                hint: tr!("home_card_automation_hint"),
+                warn: false,
+                target: Screen::Actions,
+            },
+            JumpCard {
+                id: "home-jump-connections",
+                glyph: Icon::Plug,
+                glyph_color: palette.success,
+                section: tr!("home_card_connections_section"),
+                title: tr!("home_card_connections_title"),
+                stat: format!("{connected}/{total}"),
+                stat_label: tr!("home_card_connections_stat_label"),
+                hint: tr!("home_card_connections_hint"),
+                warn,
+                target: Screen::Platforms,
+            },
+        ];
+        let jump_cards = self.render_jump_cards(cards, &palette, density, cx);
         let connections_strip =
             self.render_connections(connections, connected, total, &palette, density, cx);
         let recent_card = self.render_recent_events(recent, &palette, density, cx);
-        let glance_card = self.render_glance(
-            self.stats.read(cx).actions_display(),
-            self.stats.read(cx).triggers_fired_display(),
-            globals,
-            &palette,
-            density,
-        );
+        let glance_card = self.render_glance(actions, fired, globals, &palette, density);
 
         let bottom = div()
             .w_full()

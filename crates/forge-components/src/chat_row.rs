@@ -154,6 +154,7 @@ pub struct ChatRow {
     pub username: SharedString,
     pub username_color: Rgba,
     pub body: ChatBody,
+    pub moderated: bool,
 }
 
 fn body_accent(body: &ChatBody, palette: &ForgePalette) -> (Rgba, Option<Rgba>) {
@@ -234,25 +235,27 @@ fn separator_el(palette: &ForgePalette) -> impl IntoElement {
         .child(": ")
 }
 
-fn message_el(text: SharedString, color: Rgba) -> impl IntoElement {
-    div()
+fn message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
+    let el = div()
         .flex_1()
         .min_w(px(0.0))
         .font_family(DEFAULT_BODY_FAMILY)
         .text_size(FONT_SM)
         .line_height(LH_SM)
         .text_color(color)
-        .child(text)
+        .child(text);
+    if struck { el.line_through() } else { el }
 }
 
-fn second_line_el(text: SharedString, color: Rgba) -> impl IntoElement {
-    div()
+fn second_line_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
+    let el = div()
         .pl(BODY_INSET)
         .font_family(DEFAULT_BODY_FAMILY)
         .text_size(FONT_SM)
         .line_height(LH_SM)
         .text_color(color)
-        .child(text)
+        .child(text);
+    if struck { el.line_through() } else { el }
 }
 
 fn descriptor_el(text: SharedString, palette: &ForgePalette) -> impl IntoElement {
@@ -380,6 +383,7 @@ impl RenderOnce for ChatRowView {
         } = self;
         let (stripe_color, body_bg) = body_accent(&data.body, &p);
         let triggered = data.body.triggered();
+        let moderated = data.moderated;
         let username = username_el(data.username, data.username_color, click);
 
         let left = div()
@@ -409,13 +413,20 @@ impl RenderOnce for ChatRowView {
         }
 
         let body: AnyElement = match data.body {
-            ChatBody::Message(text) => div()
-                .flex()
-                .items_start()
-                .child(username)
-                .child(separator_el(&p))
-                .child(message_el(text, p.text_primary))
-                .into_any_element(),
+            ChatBody::Message(text) => {
+                let color = if moderated {
+                    p.text_muted
+                } else {
+                    p.text_primary
+                };
+                div()
+                    .flex()
+                    .items_start()
+                    .child(username)
+                    .child(separator_el(&p))
+                    .child(message_el(text, color, moderated))
+                    .into_any_element()
+            }
             ChatBody::Command { command, .. } => div()
                 .flex()
                 .items_center()
@@ -436,7 +447,7 @@ impl RenderOnce for ChatRowView {
                 let line1 = event_line(Icon::Star, p.brand, username, descriptor, pill, &p);
                 let mut col = div().flex().flex_col().gap(BODY_LINE_SPACING).child(line1);
                 if let Some(msg) = message {
-                    col = col.child(second_line_el(msg, p.text_muted));
+                    col = col.child(second_line_el(msg, p.text_muted, moderated));
                 }
                 col.into_any_element()
             }
@@ -448,12 +459,17 @@ impl RenderOnce for ChatRowView {
                 let pill = count_pill(SharedString::from(format!("{bits} bits")), p.warning, 0.20)
                     .into_any_element();
                 let line1 = event_line(Icon::Coin, p.warning, username, descriptor, Some(pill), &p);
+                let cheer_color = if moderated {
+                    p.text_muted
+                } else {
+                    p.text_primary
+                };
                 div()
                     .flex()
                     .flex_col()
                     .gap(BODY_LINE_SPACING)
                     .child(line1)
-                    .child(second_line_el(text, p.text_primary))
+                    .child(second_line_el(text, cheer_color, moderated))
                     .into_any_element()
             }
             ChatBody::Raid {

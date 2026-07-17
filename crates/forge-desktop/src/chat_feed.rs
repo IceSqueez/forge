@@ -5,6 +5,7 @@ use gpui::SharedString;
 
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
+    pub id: SharedString,
     pub timestamp: SharedString,
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
@@ -12,6 +13,7 @@ pub struct ChatMessage {
     pub body: ChatBody,
     pub is_event: bool,
     pub is_bot: bool,
+    pub moderated: bool,
 }
 
 impl ChatMessage {
@@ -40,7 +42,9 @@ impl ChatMessage {
     }
 
     pub fn from_row(row: &UnifiedChatRow) -> ChatMessage {
+        let moderation = &row.moderation;
         ChatMessage {
+            id: row.id.clone().into(),
             timestamp: format_clock(row.received_at.unix_timestamp()).into(),
             platform: platform_of(row.source),
             badges: row.badges.iter().filter_map(badge_kind).collect(),
@@ -48,6 +52,7 @@ impl ChatMessage {
             body: event_body(row),
             is_event: row.is_event,
             is_bot: row.badges.iter().any(|b| matches!(b, UserBadge::Bot)),
+            moderated: moderation.deleted || moderation.timed_out || moderation.banned,
         }
     }
 }
@@ -83,6 +88,30 @@ impl ChatFeed {
         }
     }
 
+    pub fn mark_deleted(&mut self, msg_id: &str) {
+        for message in &mut self.messages {
+            if message.id == msg_id {
+                message.moderated = true;
+            }
+        }
+    }
+
+    pub fn mark_user(&mut self, platform: Platform, username: &str) {
+        for message in &mut self.messages {
+            if message.platform == platform && message.username.eq_ignore_ascii_case(username) {
+                message.moderated = true;
+            }
+        }
+    }
+
+    pub fn clear_platform(&mut self, platform: Platform) {
+        for message in &mut self.messages {
+            if message.platform == platform {
+                message.moderated = true;
+            }
+        }
+    }
+
     pub fn message_from_event(event: &Event) -> Option<ChatMessage> {
         let source = chat_source(event.source)?;
         let chat_value = event.payload.get(ChatPayload::KEY)?;
@@ -92,7 +121,7 @@ impl ChatFeed {
     }
 }
 
-fn chat_source(src: EventSource) -> Option<ChatSource> {
+pub(crate) fn chat_source(src: EventSource) -> Option<ChatSource> {
     match src {
         EventSource::Twitch => Some(ChatSource::Twitch),
         EventSource::YouTube => Some(ChatSource::YouTube),
@@ -131,7 +160,7 @@ fn row_from_payload(source: ChatSource, event: &Event, payload: ChatPayload) -> 
     }
 }
 
-fn platform_of(source: ChatSource) -> Platform {
+pub(crate) fn platform_of(source: ChatSource) -> Platform {
     match source {
         ChatSource::Twitch => Platform::Twitch,
         ChatSource::YouTube => Platform::YouTube,

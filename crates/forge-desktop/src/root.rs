@@ -8,13 +8,14 @@ use forge_components::{
 use forge_events::EventsError;
 use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
 use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
+use forge_types::{ChatModerationAction, ChatModerationPayload};
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
 };
 
 use crate::boot::{BootFailure, build_runtime};
-use crate::chat_feed::{ChatFeed, ChatMessage};
+use crate::chat_feed::{ChatFeed, ChatMessage, chat_source, platform_of};
 use crate::event_log::EventLog;
 use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
@@ -269,6 +270,24 @@ fn start_bridge(
                     if let Some(message) = ChatFeed::message_from_event(&event) {
                         chat_feed.update(cx, |feed, cx| {
                             feed.push(message);
+                            cx.notify();
+                        });
+                    }
+                    if let Some(value) = event.payload.get(ChatModerationPayload::KEY)
+                        && let Ok(payload) =
+                            serde_json::from_value::<ChatModerationPayload>(value.clone())
+                        && let Some(platform) = chat_source(event.source).map(platform_of)
+                    {
+                        chat_feed.update(cx, |feed, cx| {
+                            match payload.action {
+                                ChatModerationAction::DeleteMessage { message_id } => {
+                                    feed.mark_deleted(&message_id)
+                                }
+                                ChatModerationAction::RemoveUser { user_name, .. } => {
+                                    feed.mark_user(platform, &user_name)
+                                }
+                                ChatModerationAction::ClearChat => feed.clear_platform(platform),
+                            }
                             cx.notify();
                         });
                     }

@@ -19,7 +19,7 @@ pub struct RequestId(pub String);
 
 impl RequestId {
     pub fn new() -> Self {
-        Self(ulid::Ulid::r#gen().to_string())
+        Self(ulid::Ulid::generate().to_string())
     }
 }
 

@@ -31,7 +31,7 @@ pub fn new_request<T>(msg_type: &str, data: T) -> VTubeRequest<T> {
     VTubeRequest {
         api_name: "VTubeStudioPublicAPI".to_owned(),
         api_version: "1.0".to_owned(),
-        request_id: Ulid::r#gen().to_string(),
+        request_id: Ulid::generate().to_string(),
         message_type: msg_type.to_owned(),
         data,
     }

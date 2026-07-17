@@ -12,7 +12,7 @@ macro_rules! define_id {
 
         impl $name {
             pub fn new() -> Self {
-                Self(Ulid::r#gen())
+                Self(Ulid::generate())
             }
         }
 

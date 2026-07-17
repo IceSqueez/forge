@@ -327,7 +327,7 @@ impl TtsFiltersView {
             _ => {
                 let position = self.rules.len() as u32;
                 self.rules.push(FilterRule {
-                    id: ulid::Ulid::r#gen().to_string(),
+                    id: ulid::Ulid::generate().to_string(),
                     name,
                     enabled: true,
                     position,

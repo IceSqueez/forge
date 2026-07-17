@@ -248,7 +248,7 @@ impl QueuesView {
 
     fn open_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let modal = Self::build_modal(None, "", false, cx);
-        modal.name_input.read(cx).focus(window);
+        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         cx.notify();
     }
@@ -260,7 +260,7 @@ impl QueuesView {
         let name = q.name.clone();
         let blocking = q.blocking;
         let modal = Self::build_modal(Some(id), &name, blocking, cx);
-        modal.name_input.read(cx).focus(window);
+        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         cx.notify();
     }

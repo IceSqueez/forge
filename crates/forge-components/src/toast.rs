@@ -241,6 +241,7 @@ impl RenderOnce for ToastCard {
                 offset: point(px(0.0), px(8.0)),
                 blur_radius: px(24.0),
                 spread_radius: px(0.0),
+                inset: false,
             }])
             .child(stripe)
             .child(content)

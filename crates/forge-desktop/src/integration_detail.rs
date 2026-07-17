@@ -265,7 +265,7 @@ impl IntegrationDetail {
             picker
         });
         let sub = cx.subscribe(&picker, Self::on_picker_event);
-        picker.read(cx).focus(window, cx);
+        picker.update(cx, |f, cx| f.focus(window, cx));
 
         match self.obs_source.clone() {
             Some(client) => self.spawn_picker_fetch(picker.clone(), client, kind, cx),

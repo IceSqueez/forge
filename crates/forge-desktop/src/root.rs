@@ -200,63 +200,40 @@ fn start_bridge(
                     {
                         let connected = event.payload.get("state").and_then(|v| v.as_str())
                             == Some("connected");
-                        if platforms
-                            .update(cx, |connectivity, cx| {
-                                if connectivity.set_connected(integ, connected) {
-                                    cx.notify();
-                                }
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    if let Some(item) = EventLog::item_from_event(&event)
-                        && event_log
-                            .update(cx, |log, cx| {
-                                log.push(item);
+                        platforms.update(cx, |connectivity, cx| {
+                            if connectivity.set_connected(integ, connected) {
                                 cx.notify();
-                            })
-                            .is_err()
-                    {
-                        break;
+                            }
+                        });
+                    }
+                    if let Some(item) = EventLog::item_from_event(&event) {
+                        event_log.update(cx, |log, cx| {
+                            log.push(item);
+                            cx.notify();
+                        });
                     }
                     let is_action_done = event.kind == "action.done";
-                    if home_stats
-                        .update(cx, |stats, cx| {
-                            let mut changed = stats.record_event(&event);
-                            if is_action_done {
-                                stats.record_action_done();
-                                changed = true;
-                            }
-                            if changed {
-                                cx.notify();
-                            }
-                        })
-                        .is_err()
-                    {
-                        break;
+                    home_stats.update(cx, |stats, cx| {
+                        let mut changed = stats.record_event(&event);
+                        if is_action_done {
+                            stats.record_action_done();
+                            changed = true;
+                        }
+                        if changed {
+                            cx.notify();
+                        }
+                    });
+                    if let Some(message) = ChatFeed::message_from_event(&event) {
+                        chat_feed.update(cx, |feed, cx| {
+                            feed.push(message);
+                            cx.notify();
+                        });
                     }
-                    if let Some(message) = ChatFeed::message_from_event(&event)
-                        && chat_feed
-                            .update(cx, |feed, cx| {
-                                feed.push(message);
-                                cx.notify();
-                            })
-                            .is_err()
-                    {
-                        break;
-                    }
-                    if queue_health
-                        .update(cx, |health, cx| {
-                            if health.apply_event(&event) {
-                                cx.notify();
-                            }
-                        })
-                        .is_err()
-                    {
-                        break;
-                    }
+                    queue_health.update(cx, |health, cx| {
+                        if health.apply_event(&event) {
+                            cx.notify();
+                        }
+                    });
                 }
                 Err(EventsError::LaggingReceiver) => {}
                 Err(_) => break,
@@ -270,15 +247,10 @@ fn start_uptime_clock(cx: &mut AsyncApp, status: Entity<RuntimeStatus>) {
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor().timer(Duration::from_secs(1)).await;
-            if status
-                .update(cx, |status, cx| {
-                    status.refresh(Instant::now());
-                    cx.notify();
-                })
-                .is_err()
-            {
-                break;
-            }
+            status.update(cx, |status, cx| {
+                status.refresh(Instant::now());
+                cx.notify();
+            });
         }
     })
     .detach();
@@ -292,16 +264,11 @@ fn start_live_viewers_bridge(
     cx.spawn(async move |cx| {
         let mut stream = std::pin::pin!(handle.subscribe());
         while let Some(count) = stream.next().await {
-            if home_stats
-                .update(cx, |stats, cx| {
-                    if stats.set_live_viewers(count) {
-                        cx.notify();
-                    }
-                })
-                .is_err()
-            {
-                break;
-            }
+            home_stats.update(cx, |stats, cx| {
+                if stats.set_live_viewers(count) {
+                    cx.notify();
+                }
+            });
         }
     })
     .detach();
@@ -328,7 +295,7 @@ fn apply_persisted_shortcuts(
         if overrides.is_empty() {
             return;
         }
-        let _ = cx.update(|cx| crate::actions::reapply_key_bindings(cx, &overrides));
+        cx.update(|cx| crate::actions::reapply_key_bindings(cx, &overrides));
     })
     .detach();
 }
@@ -336,16 +303,11 @@ fn apply_persisted_shortcuts(
 fn start_speak_bridge(cx: &mut AsyncApp, speak: Entity<SpeakState>, mut events: SpeakEventStream) {
     cx.spawn(async move |cx| {
         while let Ok(event) = events.recv().await {
-            if speak
-                .update(cx, |state, cx| {
-                    if state.apply_event(event) {
-                        cx.notify();
-                    }
-                })
-                .is_err()
-            {
-                break;
-            }
+            speak.update(cx, |state, cx| {
+                if state.apply_event(event) {
+                    cx.notify();
+                }
+            });
         }
     })
     .detach();

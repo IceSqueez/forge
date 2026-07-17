@@ -4,8 +4,8 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextRun, UTF16Selection, UnderlineStyle,
-    Window, actions, div, fill, point, prelude::*, px, relative, size,
+    Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextAlign, TextRun, UTF16Selection,
+    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, size,
 };
 
 use crate::icons::{Icon, icon};
@@ -181,8 +181,8 @@ impl TextInput {
         self.set_content("", cx);
     }
 
-    pub fn focus(&self, window: &mut Window) {
-        window.focus(&self.focus_handle);
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        window.focus(&self.focus_handle, cx);
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -740,7 +740,14 @@ impl Element for TextElement {
             return;
         };
         let origin = point(bounds.left() - scroll_offset, bounds.top());
-        let _ = line.paint(origin, window.line_height(), window, cx);
+        let _ = line.paint(
+            origin,
+            window.line_height(),
+            TextAlign::Left,
+            None,
+            window,
+            cx,
+        );
 
         if focus_handle.is_focused(window)
             && let Some(cursor) = prepaint.cursor.take()

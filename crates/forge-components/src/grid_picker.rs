@@ -145,8 +145,8 @@ impl GridPicker {
 
     /// The caller must call this when the picker opens; gpui delivers key events only down
     /// the focus path, so without it typing and Escape never reach the search field.
-    pub fn focus(&self, window: &mut Window, cx: &App) {
-        self.search.read(cx).focus(window);
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.search.update(cx, |f, cx| f.focus(window, cx));
     }
 
     fn on_search_event(

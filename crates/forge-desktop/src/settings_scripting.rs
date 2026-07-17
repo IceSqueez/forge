@@ -625,8 +625,8 @@ fn labeled_row(
         .gap(spacing(Spacing::Md, density))
         .child(
             div()
-                .flex_grow()
-                .flex_shrink()
+                .flex_grow(1.0)
+                .flex_shrink(1.0)
                 .flex_basis(relative(4.0))
                 .flex()
                 .flex_col()
@@ -648,8 +648,8 @@ fn labeled_row(
         )
         .child(
             div()
-                .flex_grow()
-                .flex_shrink()
+                .flex_grow(1.0)
+                .flex_shrink(1.0)
                 .flex_basis(relative(3.0))
                 .child(control),
         )

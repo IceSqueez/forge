@@ -923,7 +923,7 @@ impl ScriptEditorView {
             InputEvent::Cancelled => this.cancel_rename(cx),
             InputEvent::Changed(_) => cx.notify(),
         });
-        input.read(cx).focus(window);
+        input.update(cx, |f, cx| f.focus(window, cx));
         self.rename = Some(RenameState {
             target: id,
             input,

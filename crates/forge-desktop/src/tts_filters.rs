@@ -235,7 +235,7 @@ impl TtsFiltersView {
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let draft = self.build_draft(None, DraftKind::Literal, "", "", "", "", cx);
-        draft.name.read(cx).focus(window);
+        draft.name.update(cx, |f, cx| f.focus(window, cx));
         self.draft = Some(draft);
         cx.notify();
     }
@@ -266,7 +266,7 @@ impl TtsFiltersView {
         let mut draft =
             self.build_draft(Some(index), kind, &name, &pattern, &replacement, &words, cx);
         draft.blocklist_mode = mode;
-        draft.name.read(cx).focus(window);
+        draft.name.update(cx, |f, cx| f.focus(window, cx));
         self.draft = Some(draft);
         cx.notify();
     }

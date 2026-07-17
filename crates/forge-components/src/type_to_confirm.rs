@@ -217,7 +217,7 @@ impl TypeToConfirm {
     }
 
     pub fn focus_input(&self, window: &mut Window, cx: &mut App) {
-        self.input.read(cx).focus(window);
+        self.input.update(cx, |f, cx| f.focus(window, cx));
     }
 }
 

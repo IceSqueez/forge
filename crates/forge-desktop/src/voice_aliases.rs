@@ -276,7 +276,7 @@ impl VoiceAliasesView {
 
     fn open_assign(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let form = self.build_form(None, "", None, "", "", "", false, cx);
-        form.viewer.read(cx).focus(window);
+        form.viewer.update(cx, |f, cx| f.focus(window, cx));
         self.form = Some(form);
         cx.notify();
     }
@@ -302,7 +302,7 @@ impl VoiceAliasesView {
             blocked,
             cx,
         );
-        form.viewer.read(cx).focus(window);
+        form.viewer.update(cx, |f, cx| f.focus(window, cx));
         self.form = Some(form);
         cx.notify();
     }

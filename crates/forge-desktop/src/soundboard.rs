@@ -256,7 +256,7 @@ impl SoundboardView {
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let modal = Self::build_modal(None, "", None, "", 1.0, 0, cx);
-        modal.name_input.read(cx).focus(window);
+        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         self.reload_devices(cx);
         cx.notify();
@@ -272,7 +272,7 @@ impl SoundboardView {
         let volume = clip.volume;
         let device_idx = self.device_idx_for(&clip.output_device);
         let modal = Self::build_modal(Some(id), &name, file, &hotkey, volume, device_idx, cx);
-        modal.name_input.read(cx).focus(window);
+        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         self.reload_devices(cx);
         cx.notify();

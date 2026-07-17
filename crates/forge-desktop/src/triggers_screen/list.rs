@@ -305,7 +305,7 @@ impl TriggersRegistryView {
             input.set_content(seed, cx);
             input
         });
-        field.read(cx).focus(window);
+        field.update(cx, |f, cx| f.focus(window, cx));
         let sub = cx.subscribe(&field, Self::on_rename_event);
         self.menu_open = None;
         self.rename = Some(RenameForm {
@@ -688,7 +688,7 @@ impl TriggersRegistryView {
             .child(icon(kind_glyph, KIND_GLYPH, dot_color))
             .child(
                 div()
-                    .flex_shrink()
+                    .flex_shrink(1.0)
                     .overflow_hidden()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(KIND_FS)

@@ -10,7 +10,7 @@ use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_storage::DataProvider;
 use forge_types::{Action, ActionId, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 use gpui::{
-    AnchoredPositionMode, AnyElement, ClickEvent, Context, Corner, Keystroke, MouseButton,
+    Anchor, AnchoredPositionMode, AnyElement, ClickEvent, Context, Keystroke, MouseButton,
     MouseDownEvent, Pixels, SharedString, Subscription, Window, anchored, deferred, div, point,
     prelude::*, px,
 };
@@ -535,10 +535,10 @@ impl SettingsHotkeysView {
         let backdrop_layer = anchored()
             .position_mode(AnchoredPositionMode::Window)
             .position(point(px(0.0), px(0.0)))
-            .anchor(Corner::TopLeft)
+            .anchor(Anchor::TopLeft)
             .child(backdrop);
         let panel_layer = anchored()
-            .anchor(Corner::TopLeft)
+            .anchor(Anchor::TopLeft)
             .offset(point(px(0.0), TRIGGER_HEIGHT))
             .snap_to_window()
             .child(panel);

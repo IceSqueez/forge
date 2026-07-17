@@ -79,7 +79,7 @@ impl AppShell {
 
         cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
 
-        window.focus(&focus);
+        window.focus(&focus, cx);
 
         Self {
             router: Router { screen, content },
@@ -443,7 +443,7 @@ pub(crate) async fn refresh_dashboard_stats(
     });
     match rx.await {
         Ok(Ok(stats)) => {
-            let _ = home_stats.update(cx, |stats_topic, cx| {
+            home_stats.update(cx, |stats_topic, cx| {
                 if stats_topic.set_stats(stats) {
                     cx.notify();
                 }

@@ -816,7 +816,7 @@ impl ScreenActionsView {
         };
         let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_grid_picker_event);
-        picker.read(cx).focus(window, cx);
+        picker.update(cx, |f, cx| f.focus(window, cx));
         self.step_menu_open = None;
         self.grid_picker = Some(GridPickerForm {
             picker,
@@ -953,7 +953,7 @@ impl ScreenActionsView {
         };
         let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_trigger_picker_event);
-        picker.read(cx).focus(window, cx);
+        picker.update(cx, |f, cx| f.focus(window, cx));
         self.add_trigger = Some(AddTriggerForm {
             picker,
             picks,

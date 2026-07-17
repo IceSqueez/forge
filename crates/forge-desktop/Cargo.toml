@@ -50,6 +50,7 @@ fluent = { workspace = true }
 fluent-langneg = { workspace = true }
 futures-util = { workspace = true }
 gpui = { workspace = true }
+gpui_platform = { workspace = true }
 open = { workspace = true }
 reqwest = { workspace = true }
 rfd = { workspace = true }

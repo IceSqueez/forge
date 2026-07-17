@@ -200,8 +200,8 @@ impl InputBar {
         cx.notify();
     }
 
-    pub fn focus(&self, window: &mut Window, cx: &App) {
-        self.field.read(cx).focus(window);
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.field.update(cx, |f, cx| f.focus(window, cx));
     }
 
     pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {

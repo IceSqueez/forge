@@ -57,8 +57,8 @@ mod voice_aliases;
 use forge_components::{Density, IconAssets, ThemeId, bind_text_area_keys, bind_text_input_keys};
 use forge_platform_core::paths;
 use gpui::{
-    App, AppContext, Application, Bounds, SharedString, TitlebarOptions, WindowBounds,
-    WindowOptions, point, px, size,
+    App, AppContext, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowOptions, point, px,
+    size,
 };
 
 use crate::actions::register_shell_key_bindings;
@@ -116,7 +116,7 @@ fn main() {
     let _rt_guard = rt.enter();
 
     // Owned for the whole of run() to keep the runtime's tasks and time driver alive.
-    Application::new()
+    gpui_platform::application()
         .with_assets(IconAssets)
         .run(move |cx: &mut App| {
             // Must precede the window open, or real text falls back to gpui's built-in face.

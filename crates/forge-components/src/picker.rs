@@ -112,8 +112,8 @@ impl Picker {
 
     /// The caller must call this when the picker opens; gpui delivers key events only down
     /// the focus path, so without it typing and Escape never reach the search field.
-    pub fn focus(&self, window: &mut Window, cx: &App) {
-        self.search.read(cx).focus(window);
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.search.update(cx, |f, cx| f.focus(window, cx));
     }
 
     fn on_search_event(
@@ -139,9 +139,7 @@ impl Picker {
             .items
             .iter()
             .enumerate()
-            .filter(|(_, item)| {
-                item_matches(&item.label, item.sublabel.as_deref().map(|s| &**s), &query)
-            })
+            .filter(|(_, item)| item_matches(&item.label, item.sublabel.as_deref(), &query))
             .map(|(idx, _)| idx)
             .collect();
     }

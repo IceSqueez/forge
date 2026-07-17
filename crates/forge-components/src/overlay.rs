@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     Animation, AnimationExt, App, Div, ElementId, FocusHandle, InteractiveElement, IntoElement,
@@ -96,7 +97,7 @@ impl Overlay {
             layer
                 .with_animation(
                     ElementId::NamedChild(
-                        Box::new(self.dismiss_id.clone()),
+                        Arc::new(self.dismiss_id.clone()),
                         SharedString::new_static("scrim"),
                     ),
                     Animation::new(std::time::Duration::from_millis(ENTER_MS))
@@ -111,7 +112,7 @@ impl Overlay {
 
     fn panel_anim_id(&self) -> ElementId {
         ElementId::NamedChild(
-            Box::new(self.dismiss_id.clone()),
+            Arc::new(self.dismiss_id.clone()),
             SharedString::new_static("panel"),
         )
     }

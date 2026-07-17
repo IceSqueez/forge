@@ -191,7 +191,7 @@ impl ScreenActionsView {
             input.set_content(seed, cx);
             input
         });
-        field.read(cx).focus(window);
+        field.update(cx, |f, cx| f.focus(window, cx));
         let sub = cx.subscribe(&field, Self::on_rename_event);
         self.menu_open = None;
         self.renaming = Some(Renaming {
@@ -346,7 +346,7 @@ impl ScreenActionsView {
         let description = cx.new(|cx| {
             TextArea::new(tr!("actions_description_placeholder"), cx).with_palette(palette)
         });
-        name.read(cx).focus(window);
+        name.update(cx, |f, cx| f.focus(window, cx));
         let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
         self.add_modal = Some(AddActionForm {
             name,

@@ -243,10 +243,10 @@ impl TriggersRegistryView {
         });
         app.spawn(async move |cx| match rx.await {
             Ok(Ok(rows)) => {
-                let _ = view.update(cx, |this, cx| this.apply_rows(rows, cx));
+                view.update(cx, |this, cx| this.apply_rows(rows, cx));
             }
             Ok(Err(message)) => {
-                let _ = view.update(cx, |this, cx| this.on_repo_error(&message, cx));
+                view.update(cx, |this, cx| this.on_repo_error(&message, cx));
             }
             Err(_) => {}
         })

@@ -151,7 +151,7 @@ impl ChatView {
     fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = !self.search_open;
         if self.search_open {
-            self.search_field.read(cx).focus(window);
+            self.search_field.update(cx, |f, cx| f.focus(window, cx));
         }
         cx.notify();
     }
@@ -184,7 +184,7 @@ impl ChatView {
     ) {
         // `offset().y` is <= 0 (content scrolled up), so adding it to the total
         // scrollable height yields the remaining distance to the bottom edge.
-        let remaining = self.chat_scroll.max_offset().height + self.chat_scroll.offset().y;
+        let remaining = self.chat_scroll.max_offset().y + self.chat_scroll.offset().y;
         let at_bottom = remaining <= px(AT_BOTTOM_SLACK);
         self.auto_scroll = at_bottom;
         if at_bottom {

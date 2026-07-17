@@ -195,7 +195,7 @@ impl EventFeedView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let remaining = self.list_scroll.max_offset().height + self.list_scroll.offset().y;
+        let remaining = self.list_scroll.max_offset().y + self.list_scroll.offset().y;
         self.auto_scroll = remaining <= px(AT_BOTTOM_SLACK);
         cx.notify();
     }

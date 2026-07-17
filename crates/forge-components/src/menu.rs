@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ClickEvent, Corner, Div, ElementId, FocusHandle, InteractiveElement,
+    Anchor, AnyElement, App, ClickEvent, Div, ElementId, FocusHandle, InteractiveElement,
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred,
     div, point, px,
@@ -119,12 +119,12 @@ pub enum MenuPlacement {
 }
 
 impl MenuPlacement {
-    fn anchor_and_offset(self) -> (Corner, Point<Pixels>) {
+    fn anchor_and_offset(self) -> (Anchor, Point<Pixels>) {
         match self {
-            MenuPlacement::BottomLeft => (Corner::TopLeft, point(px(0.0), TRIGGER_SIZE)),
-            MenuPlacement::BottomRight => (Corner::TopRight, point(TRIGGER_SIZE, TRIGGER_SIZE)),
-            MenuPlacement::TopLeft => (Corner::BottomLeft, point(px(0.0), px(0.0))),
-            MenuPlacement::TopRight => (Corner::BottomRight, point(TRIGGER_SIZE, px(0.0))),
+            MenuPlacement::BottomLeft => (Anchor::TopLeft, point(px(0.0), TRIGGER_SIZE)),
+            MenuPlacement::BottomRight => (Anchor::TopRight, point(TRIGGER_SIZE, TRIGGER_SIZE)),
+            MenuPlacement::TopLeft => (Anchor::BottomLeft, point(px(0.0), px(0.0))),
+            MenuPlacement::TopRight => (Anchor::BottomRight, point(TRIGGER_SIZE, px(0.0))),
         }
     }
 }
@@ -383,7 +383,7 @@ impl RenderOnce for MenuButton {
         let backdrop_layer = anchored()
             .position_mode(gpui::AnchoredPositionMode::Window)
             .position(point(px(0.0), px(0.0)))
-            .anchor(Corner::TopLeft)
+            .anchor(Anchor::TopLeft)
             .child(div().w(viewport.width).h(viewport.height).child(backdrop));
 
         let panel_layer = anchored()

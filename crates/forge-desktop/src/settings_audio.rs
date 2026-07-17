@@ -7,7 +7,7 @@ use forge_components::{
 };
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{
-    AnchoredPositionMode, AnyElement, ClickEvent, Context, Corner, MouseButton, MouseDownEvent,
+    Anchor, AnchoredPositionMode, AnyElement, ClickEvent, Context, MouseButton, MouseDownEvent,
     Pixels, SharedString, Window, anchored, deferred, div, point, prelude::*, px,
 };
 
@@ -401,10 +401,10 @@ impl SettingsAudioView {
         let backdrop_layer = anchored()
             .position_mode(AnchoredPositionMode::Window)
             .position(point(px(0.0), px(0.0)))
-            .anchor(Corner::TopLeft)
+            .anchor(Anchor::TopLeft)
             .child(backdrop);
         let panel_layer = anchored()
-            .anchor(Corner::TopLeft)
+            .anchor(Anchor::TopLeft)
             .offset(point(px(0.0), TRIGGER_HEIGHT))
             .snap_to_window()
             .child(panel);

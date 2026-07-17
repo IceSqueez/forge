@@ -103,7 +103,7 @@ impl PushToast for App {
 
         self.spawn(async move |cx| {
             cx.background_executor().timer(duration).await;
-            let _ = cx.update(|cx| cx.global_mut::<Toasts>().dismiss(id));
+            cx.update(|cx| cx.global_mut::<Toasts>().dismiss(id));
         })
         .detach();
     }

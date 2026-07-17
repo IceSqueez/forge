@@ -198,10 +198,10 @@ impl GlobalsView {
         });
         app.spawn(async move |cx| match rx.await {
             Ok(Ok(entries)) => {
-                let _ = view.update(cx, |this, cx| this.apply_entries(entries, cx));
+                view.update(cx, |this, cx| this.apply_entries(entries, cx));
             }
             Ok(Err(message)) => {
-                let _ = view.update(cx, |this, cx| this.on_repo_error(&message, cx));
+                view.update(cx, |this, cx| this.on_repo_error(&message, cx));
             }
             Err(_) => {}
         })
@@ -379,7 +379,7 @@ impl GlobalsView {
             InputEvent::Cancelled => this.cancel_rename(cx),
             InputEvent::Changed(_) => {}
         });
-        input.read(cx).focus(window);
+        input.update(cx, |f, cx| f.focus(window, cx));
         self.renaming = Some(RenameState {
             original: name,
             input,
@@ -425,7 +425,7 @@ impl GlobalsView {
 
     fn open_create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let editor = self.build_editor(EditorMode::Create, VariantKind::Int, false, None, cx);
-        editor.name_input.read(cx).focus(window);
+        editor.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.editor = Some(editor);
         cx.notify();
     }
@@ -449,7 +449,7 @@ impl GlobalsView {
             Some(&global),
             cx,
         );
-        editor.name_input.read(cx).focus(window);
+        editor.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.editor = Some(editor);
         cx.notify();
     }

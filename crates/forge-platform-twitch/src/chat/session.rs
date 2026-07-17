@@ -3,7 +3,9 @@ use crate::chat::subscriber::{SubscribeError, subscribe_all};
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{ConnectionState, connection_state_changed_event};
-use forge_types::{ChatModerationAction, ChatModerationPayload, ChatPayload, OAuthToken};
+use forge_types::{
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, OAuthToken,
+};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -350,6 +352,21 @@ impl ChatSession {
         }
 
         attach_chat_payload(&mut forge_payload, chat_payload);
+
+        if let Some(reply) = event_data.get("reply").filter(|v| !v.is_null())
+            && let (Some(parent_author), Some(parent_text)) = (
+                reply.get("parent_user_name").and_then(|v| v.as_str()),
+                reply.get("parent_message_body").and_then(|v| v.as_str()),
+            )
+        {
+            attach_chat_reply_payload(
+                &mut forge_payload,
+                ChatReply {
+                    parent_author: parent_author.to_owned(),
+                    parent_text: parent_text.to_owned(),
+                },
+            );
+        }
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3504,6 +3521,19 @@ fn attach_moderation_payload(forge_payload: &mut serde_json::Value, action: Chat
         }
         Err(e) => {
             warn!(error = %e, "failed to serialize ChatModerationPayload; _chat_mod key omitted");
+        }
+    }
+}
+
+fn attach_chat_reply_payload(forge_payload: &mut serde_json::Value, reply: ChatReply) {
+    match serde_json::to_value(&reply) {
+        Ok(reply_value) => {
+            if let serde_json::Value::Object(map) = forge_payload {
+                map.insert(ChatReply::KEY.to_owned(), reply_value);
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to serialize ChatReply; _chat_reply key omitted");
         }
     }
 }

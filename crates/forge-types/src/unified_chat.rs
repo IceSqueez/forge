@@ -60,6 +60,16 @@ pub enum ChatModerationAction {
     ClearChat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatReply {
+    pub parent_author: String,
+    pub parent_text: String,
+}
+
+impl ChatReply {
+    pub const KEY: &'static str = "_chat_reply";
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatSource {

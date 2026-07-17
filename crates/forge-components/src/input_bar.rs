@@ -144,6 +144,7 @@ impl InputBar {
             TextInput::new(placeholder, cx)
                 .with_palette(palette)
                 .with_font_size(FIELD_TEXT_SIZE)
+                .plain()
         });
         let field_sub = cx.subscribe(&field, Self::on_field_event);
 

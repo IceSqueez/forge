@@ -86,6 +86,7 @@ pub struct TextInput {
     leading_icon: Option<(Icon, Rgba)>,
     on_surface: bool,
     static_chrome: Option<(Rgba, Radius)>,
+    plain: bool,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -111,7 +112,14 @@ impl TextInput {
             leading_icon: None,
             on_surface: false,
             static_chrome: None,
+            plain: false,
         }
+    }
+
+    #[must_use]
+    pub fn plain(mut self) -> Self {
+        self.plain = true;
+        self
     }
 
     pub fn with_palette(mut self, palette: ForgePalette) -> Self {
@@ -805,7 +813,7 @@ impl Render for TextInput {
             self.palette.shell
         };
 
-        let field = div()
+        let mut field = div()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
@@ -830,13 +838,17 @@ impl Render for TextInput {
             .w_full()
             .flex()
             .items_center()
-            .overflow_hidden()
-            .px(spacing(Spacing::Sm, self.density))
-            .py(spacing(Spacing::Xs, self.density))
-            .bg(surface)
-            .border(BORDER_THIN)
-            .border_color(border_color)
-            .rounded(radius(corner))
+            .overflow_hidden();
+        if !self.plain {
+            field = field
+                .px(spacing(Spacing::Sm, self.density))
+                .py(spacing(Spacing::Xs, self.density))
+                .bg(surface)
+                .border(BORDER_THIN)
+                .border_color(border_color)
+                .rounded(radius(corner));
+        }
+        let field = field
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(self.font_size)
             .text_color(text_color)

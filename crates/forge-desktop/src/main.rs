@@ -18,6 +18,7 @@ mod i18n;
 mod integration_detail;
 mod integration_seed;
 mod integrations;
+mod oauth_connect;
 mod platforms;
 mod presentation;
 mod queue_health;

@@ -800,6 +800,7 @@ tts_dash_stat_skipped = Пропущено
 tts_dash_stat_filtered = Відфільтровано
 tts_dash_stat_avg_latency = Сер. затримка
 tts_dash_engines_header = РУШІЇ
+tts_dash_engines_none = Немає доступних рушіїв
 
 ## TTS Engines - список
 
@@ -1091,6 +1092,7 @@ soundboard_modal_section_file = ФАЙЛ
 soundboard_modal_section_name = НАЗВА
 soundboard_modal_section_hotkey = ХОТКЕЙ
 soundboard_modal_section_device = ПРИСТРІЙ ВИВОДУ
+soundboard_device_system_default = Системний за замовчуванням
 soundboard_modal_section_volume = ГУЧНІСТЬ
 
 ## Звукова панель - помилка завантаження пристроїв

@@ -90,8 +90,15 @@ impl TtsView {
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let dashboard =
-            cx.new(|cx| TtsDashboardView::new(speak_state, speak.clone(), rt_handle.clone(), cx));
+        let dashboard = cx.new(|cx| {
+            TtsDashboardView::new(
+                speak_state,
+                speak.clone(),
+                tts_registry.clone(),
+                rt_handle.clone(),
+                cx,
+            )
+        });
         let engines = cx.new(|cx| TtsEnginesView::new(tts_registry.clone(), rt_handle.clone(), cx));
         let filters = cx.new(|cx| {
             TtsFiltersView::new(

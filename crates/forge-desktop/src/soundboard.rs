@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
@@ -25,18 +26,13 @@ const CARDS_PER_ROW: usize = 3;
 const VOLUME_MAX: f32 = 1.5;
 const MODAL_WIDTH: Pixels = px(480.0);
 
-const DEVICES: [(&str, &str); 3] = [
-    ("default", "System default"),
-    ("cable", "CABLE Input (VB-Audio Virtual Cable)"),
-    ("headphones", "Headphones"),
-];
-
 struct SoundClip {
     id: ClipId,
     name: String,
     file_path: PathBuf,
     hotkey: Option<String>,
     device_label: String,
+    output_device: OutputDevice,
     /// Playback gain, `0.0..=VOLUME_MAX` (`1.0` = 100%).
     volume: f32,
     duration_label: String,
@@ -61,6 +57,7 @@ pub struct SoundboardView {
     error: Option<SharedString>,
     feedback: Option<SharedString>,
     modal: Option<AddClipModal>,
+    devices: Vec<DeviceInfo>,
     player: Arc<SoundboardPlayer>,
     clips_repo: Arc<dyn SoundboardClipsRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -79,12 +76,78 @@ impl SoundboardView {
             error: None,
             feedback: None,
             modal: None,
+            devices: Vec::new(),
             player,
             clips_repo,
             rt_handle,
         };
         view.reload(cx);
+        view.reload_devices(cx);
         view
+    }
+
+    fn reload_devices(&self, cx: &mut Context<Self>) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn_blocking(move || {
+            let _ = tx.send(list_output_devices().map_err(|e| e.to_string()));
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_devices(result, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn apply_devices(&mut self, result: Result<Vec<DeviceInfo>, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(devices) => self.devices = devices,
+            Err(message) => {
+                tracing::warn!(error = %message, "soundboard output-device enumeration failed");
+                self.devices = Vec::new();
+                if let Some(modal) = self.modal.as_mut() {
+                    modal.error = Some(
+                        tr!(
+                            "soundboard_modal_device_load_error",
+                            error = message.as_str()
+                        )
+                        .into(),
+                    );
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn device_entries(&self) -> Vec<String> {
+        let mut entries = vec![tr!("soundboard_device_system_default")];
+        entries.extend(self.devices.iter().map(|d| d.name.clone()));
+        entries
+    }
+
+    fn device_from_idx(&self, idx: usize) -> OutputDevice {
+        match idx.checked_sub(1).and_then(|i| self.devices.get(i)) {
+            Some(device) => OutputDevice::ByName {
+                name: device.name.clone(),
+            },
+            None => OutputDevice::Default,
+        }
+    }
+
+    fn device_idx_for(&self, device: &OutputDevice) -> usize {
+        match device {
+            OutputDevice::Default => 0,
+            OutputDevice::ByName { name } => self
+                .devices
+                .iter()
+                .position(|d| &d.name == name)
+                .map_or(0, |pos| pos + 1),
+            OutputDevice::ById { id } => self
+                .devices
+                .iter()
+                .position(|d| &d.id.0 == id)
+                .map_or(0, |pos| pos + 1),
+        }
     }
 
     fn reload(&self, cx: &mut Context<Self>) {
@@ -195,6 +258,7 @@ impl SoundboardView {
         let modal = Self::build_modal(None, "", None, "", 1.0, 0, cx);
         modal.name_input.read(cx).focus(window);
         self.modal = Some(modal);
+        self.reload_devices(cx);
         cx.notify();
     }
 
@@ -206,13 +270,11 @@ impl SoundboardView {
         let file = Some(clip.file_path.clone());
         let hotkey = clip.hotkey.clone().unwrap_or_default();
         let volume = clip.volume;
-        let device_idx = DEVICES
-            .iter()
-            .position(|(_, label)| *label == clip.device_label)
-            .unwrap_or(0);
+        let device_idx = self.device_idx_for(&clip.output_device);
         let modal = Self::build_modal(Some(id), &name, file, &hotkey, volume, device_idx, cx);
         modal.name_input.read(cx).focus(window);
         self.modal = Some(modal);
+        self.reload_devices(cx);
         cx.notify();
     }
 
@@ -354,7 +416,7 @@ impl SoundboardView {
         let hotkey_raw = modal.hotkey_input.read(cx).content().trim().to_owned();
         let hotkey = (!hotkey_raw.is_empty()).then_some(hotkey_raw);
         let file_path = modal.file_path.clone().unwrap_or_default();
-        let output_device = device_from_idx(modal.device_idx);
+        let output_device = self.device_from_idx(modal.device_idx);
         let volume = modal.volume;
         let clip_id = modal.editing.unwrap_or_else(ClipId::new);
 
@@ -663,7 +725,7 @@ impl SoundboardView {
             .child(browse);
 
         let mut device_list = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
-        for (idx, (_, label)) in DEVICES.iter().enumerate() {
+        for (idx, label) in self.device_entries().into_iter().enumerate() {
             let selected = modal_state.device_idx == idx;
             let title_ink = if selected {
                 palette.text_primary
@@ -674,7 +736,7 @@ impl SoundboardView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(title_ink)
-                .child(*label);
+                .child(label);
             let leading_tint = if selected {
                 palette.brand
             } else {
@@ -929,6 +991,7 @@ fn stored_to_clip(c: StoredClip) -> SoundClip {
         file_path: c.file_path,
         hotkey: c.hotkey,
         device_label: device_display_label(&c.output_device),
+        output_device: c.output_device,
         volume: c.volume,
         duration_label: "\u{2014}".to_owned(),
     }
@@ -936,18 +999,9 @@ fn stored_to_clip(c: StoredClip) -> SoundClip {
 
 fn device_display_label(dev: &OutputDevice) -> String {
     match dev {
-        OutputDevice::Default => DEVICES[0].1.to_owned(),
+        OutputDevice::Default => tr!("soundboard_device_system_default"),
         OutputDevice::ByName { name } => name.clone(),
         OutputDevice::ById { id } => id.clone(),
-    }
-}
-
-fn device_from_idx(idx: usize) -> OutputDevice {
-    match idx {
-        0 => OutputDevice::Default,
-        _ => OutputDevice::ByName {
-            name: DEVICES.get(idx).map_or(DEVICES[0].1, |d| d.1).to_owned(),
-        },
     }
 }
 

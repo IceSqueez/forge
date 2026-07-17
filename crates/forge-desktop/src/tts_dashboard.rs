@@ -3,7 +3,10 @@ use forge_components::{
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge, card,
     confirm_modal, icon, overlay, radius, slider, spacing, status_dot, tr,
 };
+use std::sync::{Arc, RwLock};
+
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_tts_core::TtsRegistry;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
     prelude::*, px,
@@ -22,8 +25,8 @@ const VOLUME_GLYPH: Pixels = px(14.0);
 const SEED_VOLUME: f32 = 0.72;
 
 struct EngineStatus {
-    name: &'static str,
-    meta: &'static str,
+    name: String,
+    meta: String,
     warn: bool,
 }
 
@@ -43,6 +46,7 @@ impl TtsDashboardView {
     pub fn new(
         speak_state: Entity<SpeakState>,
         speak: Option<SpeakQueueHandle>,
+        registry: Option<Arc<RwLock<TtsRegistry>>>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -64,7 +68,7 @@ impl TtsDashboardView {
             speak,
             rt_handle,
             volume: SEED_VOLUME,
-            engines: seed_engines(),
+            engines: load_engine_roster(registry.as_ref()),
             pending_stop_all: false,
             test_input,
             _test_sub: test_sub,
@@ -346,13 +350,28 @@ impl TtsDashboardView {
             ));
 
         let mut engines = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
+        if self.engines.is_empty() {
+            engines = engines.child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_muted)
+                    .child(tr!("tts_dash_engines_none")),
+            );
+        }
         for eng in &self.engines {
             let color = if eng.warn {
                 palette.warning
             } else {
                 palette.success
             };
-            engines = engines.child(engine_card(eng.name, eng.meta, color, palette, density));
+            engines = engines.child(engine_card(
+                eng.name.clone(),
+                eng.meta.clone(),
+                color,
+                palette,
+                density,
+            ));
         }
         let engines_col = div()
             .flex()
@@ -745,12 +764,14 @@ fn stat_row(
 }
 
 fn engine_card(
-    name: &'static str,
-    meta: &'static str,
+    name: impl Into<SharedString>,
+    meta: impl Into<SharedString>,
     status_color: Rgba,
     palette: &ForgePalette,
     density: Density,
 ) -> impl IntoElement {
+    let name = name.into();
+    let meta = meta.into();
     card(
         div()
             .flex()
@@ -798,22 +819,42 @@ fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {
     }
 }
 
-fn seed_engines() -> Vec<EngineStatus> {
-    vec![
-        EngineStatus {
-            name: "Amazon Polly",
-            meta: "cloud · 142 calls today",
+fn load_engine_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineStatus> {
+    let Some(registry) = registry else {
+        return Vec::new();
+    };
+    let ids = registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .engine_ids();
+    ids.into_iter()
+        .map(|id| EngineStatus {
+            name: engine_label(&id.0),
+            meta: engine_kind(&id.0).to_owned(),
             warn: false,
-        },
-        EngineStatus {
-            name: "ElevenLabs",
-            meta: "cloud · 8.2k/10k chars",
-            warn: true,
-        },
-        EngineStatus {
-            name: "Piper",
-            meta: "local · GPU · 12ms",
-            warn: false,
-        },
-    ]
+        })
+        .collect()
+}
+
+fn engine_label(id: &str) -> String {
+    match id {
+        "piper" => "Piper",
+        "espeak-ng" => "eSpeak-NG",
+        "sapi" => "Microsoft SAPI 5",
+        "nsspeech" => "Apple AVSpeech",
+        "azure" => "Azure Speech",
+        "elevenlabs" => "ElevenLabs",
+        "openai" => "OpenAI TTS",
+        "polly" => "Amazon Polly",
+        other => return other.to_owned(),
+    }
+    .to_owned()
+}
+
+fn engine_kind(id: &str) -> &'static str {
+    match id {
+        "piper" | "espeak-ng" => "local",
+        "sapi" | "nsspeech" => "system",
+        _ => "cloud",
+    }
 }

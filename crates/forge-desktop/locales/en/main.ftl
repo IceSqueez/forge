@@ -798,6 +798,7 @@ tts_dash_stat_skipped = Skipped
 tts_dash_stat_filtered = Filtered
 tts_dash_stat_avg_latency = Avg latency
 tts_dash_engines_header = ENGINES
+tts_dash_engines_none = No engines available
 
 ## TTS Engines - list
 
@@ -1085,6 +1086,7 @@ soundboard_modal_section_file = FILE
 soundboard_modal_section_name = NAME
 soundboard_modal_section_hotkey = HOTKEY
 soundboard_modal_section_device = OUTPUT DEVICE
+soundboard_device_system_default = System default
 soundboard_modal_section_volume = VOLUME
 
 ## Soundboard - device load error

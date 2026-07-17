@@ -19,7 +19,6 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
-    /// `query` must already be lowercased by the caller.
     pub fn matches_query(&self, query: &str) -> bool {
         if query.is_empty() {
             return true;
@@ -72,7 +71,6 @@ impl ChatFeed {
         }
     }
 
-    /// In arrival order, oldest first.
     pub fn messages(&self) -> &[ChatMessage] {
         &self.messages
     }
@@ -81,8 +79,6 @@ impl ChatFeed {
         self.messages.push(message);
     }
 
-    /// Prepends persisted history ahead of anything already appended, keeping the
-    /// oldest-first ordering `history` arrives in.
     pub fn seed(&mut self, mut history: Vec<ChatMessage>) {
         if self.messages.is_empty() {
             self.messages = history;
@@ -257,8 +253,6 @@ fn event_body(row: &UnifiedChatRow) -> ChatBody {
     }
 }
 
-/// The kit renders descriptors verbatim next to the username, so it carries a
-/// leading space regardless of the active locale's own spacing.
 fn descriptor(text: String) -> SharedString {
     format!(" {text}").into()
 }
@@ -328,9 +322,6 @@ mod tests {
 
     #[test]
     fn event_body_maps_each_event_detail_variant() {
-        // `None` renders the plain message text (Text + Mention segments). Each
-        // ChatEventDetail maps to a specific ChatBody; the four kinds that share
-        // ChatBody::Subscription are told apart by their `months`/`message`.
         let plain = row(
             None,
             vec![
@@ -480,8 +471,6 @@ mod tests {
 
     #[test]
     fn from_row_moderated_is_true_when_any_moderation_flag_is_set() {
-        // `moderated` is the OR of the three marks; an AND or a single-field read
-        // would fail the timed_out-only and banned-only rows.
         let cases = [
             (ModerationMarks::default(), false),
             (

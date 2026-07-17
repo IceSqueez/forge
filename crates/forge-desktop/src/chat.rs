@@ -5,10 +5,10 @@ use std::time::Duration;
 use forge_components::{
     BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY,
     DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, Radius, Spacing, TextInput,
-    ToastKind, badge, badge_color, badge_label, breadcrumb, chat_row, chip, icon, menu_button,
-    menu_divider, menu_item, radius, search_input, search_input_on_surface, spacing, status_dot,
-    tr,
+    InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, Radius, ResizeEdge, ResizeRange,
+    Spacing, TextInput, ToastKind, badge, badge_color, badge_label, breadcrumb, chat_row, chip,
+    icon, install_resize, menu_button, menu_divider, menu_item, radius, search_input,
+    search_input_on_surface, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -41,6 +41,8 @@ const ICON_BTN_RADIUS: Pixels = px(5.0);
 const EXPORT_HEADER_RULE: usize = 48;
 
 const DRAWER_WIDTH: Pixels = px(320.0);
+const DRAWER_MIN: Pixels = px(260.0);
+const DRAWER_MAX: Pixels = px(520.0);
 const AVATAR_DETAIL: Pixels = px(38.0);
 const AVATAR_ROW: Pixels = px(22.0);
 const ROW_STRIPE: Pixels = px(2.0);
@@ -112,8 +114,6 @@ fn build_ban_step(login: &str) -> SubActionStep {
     }
 }
 
-/// A blocked viewer carries no engine/voice; the resolver honours `AliasState::Blocked`
-/// before any voice assignment. A fresh `AliasId` appends rather than updates.
 fn blocked_alias(viewer: &str) -> VoiceAlias {
     VoiceAlias {
         id: AliasId::new(),
@@ -133,6 +133,8 @@ enum PlatformFilter {
     Single(Platform),
 }
 
+struct DrawerResizeDrag;
+
 pub struct ChatView {
     feed: Entity<ChatFeed>,
     home_stats: Entity<HomeStats>,
@@ -149,6 +151,7 @@ pub struct ChatView {
     search_open: bool,
     search_query: String,
     drawer_open: bool,
+    drawer_width: Pixels,
     drawer_search: Entity<TextInput>,
     drawer_query: String,
     drawer_menu_open: bool,
@@ -229,6 +232,7 @@ impl ChatView {
             search_open: false,
             search_query: String::new(),
             drawer_open: true,
+            drawer_width: DRAWER_WIDTH,
             drawer_search,
             drawer_query: String::new(),
             drawer_menu_open: false,
@@ -370,6 +374,13 @@ impl ChatView {
     fn toggle_drawer(&mut self, cx: &mut Context<Self>) {
         self.drawer_open = !self.drawer_open;
         cx.notify();
+    }
+
+    fn set_drawer_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        if self.drawer_width != width {
+            self.drawer_width = width;
+            cx.notify();
+        }
     }
 
     fn open_viewer(&mut self, username: SharedString, cx: &mut Context<Self>) {
@@ -609,8 +620,6 @@ impl ChatView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // `offset().y` is <= 0 (content scrolled up), so adding it to the total
-        // scrollable height yields the remaining distance to the bottom edge.
         let remaining = self.chat_scroll.max_offset().y + self.chat_scroll.offset().y;
         let at_bottom = remaining <= px(AT_BOTTOM_SLACK);
         self.auto_scroll = at_bottom;
@@ -655,7 +664,6 @@ impl ChatView {
         });
     }
 
-    /// Search is deliberately excluded - it dims non-matches rather than filtering them.
     fn row_visible(&self, msg: &ChatMessage) -> bool {
         let platform_ok = match self.platform_filter {
             PlatformFilter::All => true,
@@ -1071,8 +1079,8 @@ impl ChatView {
         let list_el =
             self.render_viewer_list(rows, selected_name, shown.len(), palette, density, cx);
 
-        div()
-            .w(DRAWER_WIDTH)
+        let panel = div()
+            .w(self.drawer_width)
             .flex_none()
             .h_full()
             .flex()
@@ -1083,7 +1091,20 @@ impl ChatView {
             .border_color(palette.border_regular)
             .child(header)
             .child(detail_el)
-            .child(list_el)
+            .child(list_el);
+
+        install_resize(
+            panel,
+            DrawerResizeDrag,
+            "chat-drawer-resize",
+            ResizeEdge::Left,
+            ResizeRange {
+                min: DRAWER_MIN,
+                max: DRAWER_MAX,
+            },
+            palette,
+            cx.listener(|this, width: &Pixels, _, cx| this.set_drawer_width(*width, cx)),
+        )
     }
 
     fn render_drawer_header(

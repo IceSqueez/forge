@@ -8,8 +8,6 @@ use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS};
 
-// A chat line is density-neutral: its geometry stays fixed off the shared `Spacing` scale,
-// and its pill/badge micro-sizes fall below the token grid, so they are named literals here.
 const ROW_GAP: Pixels = px(8.0);
 const LINE1_GAP: Pixels = px(6.0);
 
@@ -119,7 +117,6 @@ pub enum Platform {
 }
 
 impl Platform {
-    // Semantic brand/random/info hues, not the raw `platform_*` brand fields, to stay in-theme.
     pub(crate) fn color(self, palette: &ForgePalette) -> Rgba {
         match self {
             Platform::Twitch => palette.brand,
@@ -137,7 +134,6 @@ impl Platform {
     }
 }
 
-/// Descriptors carry a leading space; the kit renders them verbatim (it owns no i18n).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatBody {
     Message(SharedString),

@@ -24,14 +24,11 @@ pub fn platform_bit(platform: Platform) -> u8 {
 
 #[derive(Clone, Debug)]
 pub enum InputBarEvent {
-    /// Not gated on non-empty text or a selected target, and does not clear the field - the caller decides and calls [`InputBar::clear`].
     Send {
         text: SharedString,
         targets: Vec<Platform>,
     },
-    /// The open flag is owned internally; this is only a mirror notification.
     EmojiToggled,
-    /// Mirror notification; the caller recomputes the localized placeholder from the selection.
     TargetsChanged,
 }
 
@@ -138,7 +135,6 @@ pub struct InputBar {
 impl EventEmitter<InputBarEvent> for InputBar {}
 
 impl InputBar {
-    /// The target strip defaults to all three platforms, each selected (override via [`InputBar::with_targets`]).
     pub fn new(
         placeholder: impl Into<SharedString>,
         palette: ForgePalette,
@@ -480,10 +476,6 @@ mod tests {
     use super::*;
     use crate::palette::CATPPUCCIN_MOCHA;
 
-    // Seed a headless InputBar carrying `targets` and run `f` against it. gpui's
-    // TestAppContext backs the window with a headless TestWindow (no GPU, no
-    // paint, no network) - the sanctioned in-process harness the other component
-    // suites use, not a "real service".
     #[allow(clippy::unwrap_used)]
     fn with_bar<R>(
         cx: &mut gpui::TestAppContext,
@@ -500,12 +492,6 @@ mod tests {
 
     #[test]
     fn platform_bit_assigns_a_distinct_stable_bit_per_platform() {
-        // Why: the bit a platform occupies is a persistence contract - a stored
-        // targets bitset must decode to the same platforms after a restart, so
-        // the Twitch=low-bit / YouTube / Kick order is load-bearing, not
-        // incidental. Pinning the exact bit also guarantees the three are
-        // distinct powers of two, which is what lets `targets_bitset` OR them
-        // together without two platforms colliding on one bit.
         assert_eq!(platform_bit(Platform::Twitch), 0b001);
         assert_eq!(platform_bit(Platform::YouTube), 0b010);
         assert_eq!(platform_bit(Platform::Kick), 0b100);
@@ -522,9 +508,6 @@ mod tests {
                 ],
                 0b111,
             ),
-            // Multi-select must OR, not overwrite: Twitch(1) | Kick(4) = 5 with
-            // YouTube off. A naive fold that assigned instead of OR-ing would
-            // land on 4 (last selected) and fail here.
             (
                 vec![
                     (Platform::Twitch, true),
@@ -541,7 +524,6 @@ mod tests {
                 ],
                 0b010,
             ),
-            // Empty floor: nothing selected packs to zero, never a stray bit.
             (
                 vec![
                     (Platform::Twitch, false),
@@ -630,10 +612,6 @@ mod tests {
 
     #[gpui::test]
     fn toggling_a_target_flips_it_in_the_bitset_and_round_trips(cx: &mut gpui::TestAppContext) {
-        // Start all-on (0b111). Toggling YouTube (index 1) off must clear only
-        // its bit -> 0b101 and drop only YouTube from the selection; toggling it
-        // again must restore 0b111 - a clean round-trip proving toggle mutates
-        // exactly one entry with no leakage into its neighbours.
         let (after_off, selected_off, after_on) = with_bar(
             cx,
             vec![

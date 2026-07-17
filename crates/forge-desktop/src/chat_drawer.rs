@@ -32,7 +32,6 @@ pub(crate) fn drawer_matches(username: &str, search: &str) -> bool {
     search.is_empty() || username.to_ascii_lowercase().contains(search)
 }
 
-/// Distinct non-empty chat authors, most-recent-first.
 pub(crate) fn unique_authors(messages: &[ChatMessage]) -> Vec<String> {
     let mut seen: HashSet<String> = HashSet::new();
     messages
@@ -92,8 +91,6 @@ pub(crate) fn synthesize_from_chat(
     })
 }
 
-/// Overlays the persisted `message_count`, real `last_seen`, and a `watch_time`
-/// derived from `first_seen_at`; leaves chat-derived role/sub untouched.
 pub(crate) fn enrich_with_storage(mut summary: ViewerSummary, viewers: &[Viewer]) -> ViewerSummary {
     if let Some(v) = viewers.iter().find(|v| v.username == summary.username) {
         summary.message_count = v.message_count;
@@ -210,8 +207,6 @@ mod tests {
 
     #[test]
     fn drawer_matches_is_empty_or_case_insensitive_substring() {
-        // Contract: caller lowercases `search`; only the username is folded here,
-        // so an upper-case username still matches a lowercase query.
         let cases = [
             ("Alice", "", true),
             ("Alice", "ali", true),
@@ -236,7 +231,6 @@ mod tests {
             msg("alice", vec![]),
             msg("carol", vec![]),
         ];
-        // rev order carol, alice, bob, alice -> first occurrence wins.
         assert_eq!(unique_authors(&messages), vec!["carol", "alice", "bob"]);
     }
 
@@ -248,9 +242,6 @@ mod tests {
 
     #[test]
     fn synthesize_uses_latest_role_and_counts_only_that_author() {
-        // alice speaks twice (Broadcaster then Vip), bob once between them. The
-        // role must come from alice's LATEST row (Vip), not her first, and the
-        // count must exclude bob's row.
         let messages = [
             msg("alice", vec![BadgeKind::Broadcaster]),
             msg("bob", vec![BadgeKind::Moderator]),
@@ -294,7 +285,6 @@ mod tests {
         assert_eq!(enriched.message_count, 99);
         assert_eq!(enriched.watch_time, "2h 0m");
         assert_eq!(enriched.last_seen_label, "2d");
-        // sub/role are chat-derived and must survive the storage overlay.
         assert_eq!(enriched.role, Some(BadgeKind::Subscriber));
         assert!(enriched.sub == SubStatus::Subscribed);
     }
@@ -363,7 +353,6 @@ mod tests {
     #[test]
     fn relative_since_labels_each_bucket() {
         let now = OffsetDateTime::now_utc();
-        // Midpoints inside each branch avoid flake from clock drift at boundaries.
         let cases = [
             (3, "now"),
             (30, "30s"),

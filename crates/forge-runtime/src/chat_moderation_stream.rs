@@ -9,11 +9,6 @@ use tokio::sync::broadcast;
 use crate::bus::EventBus;
 use crate::chat_stream::event_source_to_chat_source;
 
-/// Long-lived stream of `(ChatSource, ChatModerationAction)` pairs derived from bus events.
-///
-/// Filters to events whose payload carries the `ChatModerationPayload::KEY` key and whose
-/// `EventSource` maps to a known chat platform. Lag on the underlying broadcast channel is
-/// logged at WARN and skipped - pairs are never yielded for lagged events.
 pub fn chat_moderation_stream(
     bus: Arc<EventBus>,
 ) -> impl Stream<Item = (ChatSource, ChatModerationAction)> + Send + 'static {

@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, icon, radius, status_dot, tr,
+    Radius, ResizeEdge, ResizeRange, icon, install_resize, radius, status_dot, tr,
 };
 use forge_platform_core::BuiltinId;
 use gpui::{
@@ -14,6 +14,8 @@ use crate::presentation::{ActivePresentation, Presentation};
 use crate::screen::Screen;
 
 const SIDEBAR_WIDTH: Pixels = px(210.0);
+const SIDEBAR_MIN: Pixels = px(170.0);
+const SIDEBAR_MAX: Pixels = px(320.0);
 const SIDEBAR_PAD_H: Pixels = px(8.0);
 const SIDEBAR_PAD_TOP: Pixels = px(12.0);
 const SIDEBAR_PAD_BOTTOM: Pixels = px(12.0);
@@ -38,6 +40,8 @@ const MINI_LABEL_PAD_TOP: Pixels = px(8.0);
 const MINI_LABEL_PAD_BOTTOM: Pixels = px(3.0);
 
 pub struct NavRequested(pub Screen);
+
+struct SidebarResizeDrag;
 
 #[derive(Clone, Copy)]
 enum NavText {
@@ -87,6 +91,7 @@ enum NavEntry {
 
 pub struct SidebarNav {
     current: Screen,
+    width: Pixels,
     connectivity: Entity<PlatformConnectivity>,
 }
 
@@ -103,12 +108,20 @@ impl SidebarNav {
         cx.observe(&connectivity, |_, _, cx| cx.notify()).detach();
         Self {
             current,
+            width: SIDEBAR_WIDTH,
             connectivity,
         }
     }
 
     pub fn set_current(&mut self, screen: Screen) {
         self.current = screen;
+    }
+
+    fn set_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        if self.width != width {
+            self.width = width;
+            cx.notify();
+        }
     }
 
     fn request(&mut self, screen: Screen, cx: &mut Context<Self>) {
@@ -461,10 +474,10 @@ impl Render for SidebarNav {
             cx,
         );
 
-        div()
+        let panel = div()
             .flex()
             .flex_col()
-            .w(SIDEBAR_WIDTH)
+            .w(self.width)
             .h_full()
             .flex_none()
             .bg(palette.shell)
@@ -490,6 +503,19 @@ impl Render for SidebarNav {
                     .border_t(BORDER_THIN)
                     .border_color(palette.border_regular)
                     .child(settings),
-            )
+            );
+
+        install_resize(
+            panel,
+            SidebarResizeDrag,
+            "sidebar-resize",
+            ResizeEdge::Right,
+            ResizeRange {
+                min: SIDEBAR_MIN,
+                max: SIDEBAR_MAX,
+            },
+            &palette,
+            cx.listener(|this, width: &Pixels, _, cx| this.set_width(*width, cx)),
+        )
     }
 }

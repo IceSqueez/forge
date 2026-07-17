@@ -16,6 +16,7 @@ pub mod modal;
 pub mod overlay;
 pub mod palette;
 pub mod picker;
+pub mod resize_handle;
 pub mod side_sheet;
 pub mod slider;
 pub mod sparkline;
@@ -64,6 +65,7 @@ pub use palette::{
     bg_danger_soft, bg_warn_soft, with_alpha,
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};
+pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use sparkline::{Sparkline, sparkline};

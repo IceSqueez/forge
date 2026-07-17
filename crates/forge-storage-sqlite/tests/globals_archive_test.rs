@@ -130,12 +130,9 @@ async fn restore_returns_archived_global_to_visibility() {
 }
 
 #[tokio::test]
-async fn set_on_archived_global_updates_row_without_resurrecting_it() {
-    // EDGE: `name` is the PRIMARY KEY, so set()'s INSERT hits ON CONFLICT(name)
-    // DO UPDATE, which never touches archived_at. A caller re-`set`ting an
-    // archived name writes into the still-hidden row: the new value lands but
-    // stays invisible to get()/list() until an explicit restore(). Documents the
-    // observed footgun - a silent write to a soft-deleted global.
+async fn set_on_archived_global_resurrects_it_with_new_value() {
+    // set()'s ON CONFLICT(name) DO UPDATE clears archived_at, so writing to an
+    // archived name brings it back to visibility carrying the newly-set value.
     let repo = setup().await;
     repo.set("dup", Variant::Int(1), true).await.expect("set 1");
     repo.archive("dup").await.expect("archive");
@@ -146,18 +143,24 @@ async fn set_on_archived_global_updates_row_without_resurrecting_it() {
 
     assert_eq!(
         repo.get("dup").await.expect("get"),
-        None,
-        "set() on an archived name does NOT resurrect it - still hidden"
+        Some(Variant::Int(99)),
+        "set() on an archived name resurrects it with the new value"
     );
-    let archived = repo.list_archived().await.expect("list_archived");
-    let entry = archived
-        .iter()
-        .find(|e| e.name == "dup")
-        .expect("still archived");
-    assert_eq!(
-        entry.value,
-        Variant::Int(99),
-        "the new value landed in the archived row"
+    assert!(
+        repo.list()
+            .await
+            .expect("list")
+            .iter()
+            .any(|e| e.name == "dup"),
+        "resurrected global reappears in list()"
+    );
+    assert!(
+        repo.list_archived()
+            .await
+            .expect("list_archived")
+            .iter()
+            .all(|e| e.name != "dup"),
+        "resurrected global must leave list_archived"
     );
 }
 

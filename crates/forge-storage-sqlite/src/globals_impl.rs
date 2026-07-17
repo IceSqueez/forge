@@ -85,7 +85,8 @@ impl GlobalsRepo for SqliteGlobalsRepo {
                  type_tag     = excluded.type_tag,
                  persisted    = excluded.persisted,
                  writes       = writes + 1,
-                 last_modified = excluded.last_modified",
+                 last_modified = excluded.last_modified,
+                 archived_at  = NULL",
         )
         .bind(name)
         .bind(&value_json)

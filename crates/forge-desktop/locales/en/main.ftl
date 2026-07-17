@@ -1457,6 +1457,7 @@ chat_drawer_whisper = Whisper
 chat_drawer_whisper_title = Whisper to { $recipient }
 chat_drawer_whisper_placeholder = Type a message…
 chat_drawer_whisper_send = Send
+chat_drawer_whisper_cancel = Cancel
 chat_drawer_set_tts_voice = Set TTS voice…
 chat_drawer_block_tts = Block from TTS
 chat_drawer_timeout = Timeout 10 min
@@ -1466,7 +1467,16 @@ chat_stat_messages = MESSAGES
 chat_stat_sub = SUB
 chat_stat_sub_yes = Yes
 chat_stat_follow = FOLLOW
-chat_drawer_action_pending = Viewer actions are coming soon
+chat_drawer_shoutout_sent = Shoutout sent
+chat_drawer_shoutout_failed = Shoutout failed: { $error }
+chat_drawer_whisper_sent = Whisper sent
+chat_drawer_whisper_failed = Whisper failed: { $error }
+chat_drawer_timeout_sent = Viewer timed out for 10 min
+chat_drawer_timeout_failed = Timeout failed: { $error }
+chat_drawer_ban_sent = Viewer banned
+chat_drawer_ban_failed = Ban failed: { $error }
+chat_drawer_block_tts_sent = Viewer blocked from TTS
+chat_drawer_block_tts_failed = Block from TTS failed: { $error }
 
 ## Event Feed - page header / filters
 

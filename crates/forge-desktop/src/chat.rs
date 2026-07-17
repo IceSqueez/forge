@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,7 +10,11 @@ use forge_components::{
     menu_divider, menu_item, radius, search_input, search_input_on_surface, spacing, status_dot,
     tr,
 };
-use forge_storage::{Viewer, ViewerRepo};
+use forge_runtime::ActionEngineHandle;
+use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
+use forge_storage::{Viewer, ViewerRepo, VoiceAliasRepo};
+use forge_types::{SubActionStep, Variant};
+use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, ScrollHandle,
     ScrollWheelEvent, SharedString, Subscription, Window, div, prelude::*, px,
@@ -44,6 +49,83 @@ const BADGE_DETAIL: Pixels = px(9.0);
 const BADGE_ROW: Pixels = px(8.5);
 const VIEWER_REFRESH: Duration = Duration::from_secs(15);
 const INFINITY_GLYPH: &str = "\u{221e}";
+const DRAWER_TIMEOUT_SECONDS: i64 = 600;
+
+fn build_shoutout_step(login: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "to_broadcaster_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    SubActionStep {
+        kind_id: "twitch.channel.send_shoutout".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Shoutout {login}")),
+    }
+}
+
+fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "to_user_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    config.insert("message".to_owned(), Variant::String(message.to_owned()));
+    SubActionStep {
+        kind_id: "twitch.chat.send_whisper".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Whisper {login}")),
+    }
+}
+
+fn build_timeout_step(login: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "target_user_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    config.insert(
+        "duration_seconds".to_owned(),
+        Variant::Int(DRAWER_TIMEOUT_SECONDS),
+    );
+    SubActionStep {
+        kind_id: "twitch.moderation.timeout_user".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Timeout {login}")),
+    }
+}
+
+fn build_ban_step(login: &str) -> SubActionStep {
+    let mut config = BTreeMap::new();
+    config.insert(
+        "target_user_login".to_owned(),
+        Variant::String(login.to_owned()),
+    );
+    SubActionStep {
+        kind_id: "twitch.moderation.ban_user".to_owned(),
+        config,
+        enabled: true,
+        label: Some(format!("Ban {login}")),
+    }
+}
+
+/// A blocked viewer carries no engine/voice; the resolver honours `AliasState::Blocked`
+/// before any voice assignment. A fresh `AliasId` appends rather than updates.
+fn blocked_alias(viewer: &str) -> VoiceAlias {
+    VoiceAlias {
+        id: AliasId::new(),
+        viewer_id: viewer.to_owned(),
+        viewer_name: viewer.to_owned(),
+        engine_id: EngineId(String::new()),
+        voice_id: VoiceId(String::new()),
+        pitch_semitones: None,
+        rate_multiplier: None,
+        state: AliasState::Blocked,
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PlatformFilter {
@@ -56,6 +138,9 @@ pub struct ChatView {
     home_stats: Entity<HomeStats>,
     status: Entity<RuntimeStatus>,
     rt_handle: tokio::runtime::Handle,
+    action_engine: ActionEngineHandle,
+    voice_alias_repo: Arc<dyn VoiceAliasRepo>,
+    speak: Option<SpeakQueueHandle>,
     input: Entity<InputBar>,
     search_field: Entity<TextInput>,
     platform_filter: PlatformFilter,
@@ -69,6 +154,8 @@ pub struct ChatView {
     drawer_menu_open: bool,
     selected_viewer: Option<String>,
     viewers: Vec<Viewer>,
+    whisper_open: bool,
+    whisper_input: Entity<TextInput>,
     auto_scroll: bool,
     unread: usize,
     last_seen_len: usize,
@@ -79,15 +166,20 @@ pub struct ChatView {
     _input_sub: Subscription,
     _search_sub: Subscription,
     _drawer_search_sub: Subscription,
+    _whisper_sub: Subscription,
 }
 
 impl ChatView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,
         status: Entity<RuntimeStatus>,
         rt_handle: tokio::runtime::Handle,
         viewer_repo: Arc<dyn ViewerRepo>,
+        action_engine: ActionEngineHandle,
+        voice_alias_repo: Arc<dyn VoiceAliasRepo>,
+        speak: Option<SpeakQueueHandle>,
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -95,6 +187,9 @@ impl ChatView {
         let search_field = cx.new(|cx| search_input(tr!("chat_search_placeholder"), palette, cx));
         let drawer_search = cx
             .new(|cx| search_input_on_surface(tr!("chat_drawer_search_placeholder"), palette, cx));
+        let whisper_input = cx.new(|cx| {
+            TextInput::new(tr!("chat_drawer_whisper_placeholder"), cx).with_palette(palette)
+        });
 
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
         let stats_obs = cx.observe(&home_stats, |_, _, cx| cx.notify());
@@ -102,6 +197,7 @@ impl ChatView {
         let input_sub = cx.subscribe(&input, Self::on_input_event);
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
         let drawer_search_sub = cx.subscribe(&drawer_search, Self::on_drawer_search_event);
+        let whisper_sub = cx.subscribe(&whisper_input, Self::on_whisper_event);
 
         let last_seen_len = feed.read(cx).messages().len();
         let chat_scroll = ScrollHandle::new();
@@ -114,6 +210,9 @@ impl ChatView {
             home_stats,
             status,
             rt_handle,
+            action_engine,
+            voice_alias_repo,
+            speak,
             input,
             search_field,
             platform_filter: PlatformFilter::All,
@@ -127,6 +226,8 @@ impl ChatView {
             drawer_menu_open: false,
             selected_viewer: None,
             viewers: Vec::new(),
+            whisper_open: false,
+            whisper_input,
             auto_scroll: true,
             unread: 0,
             last_seen_len,
@@ -137,6 +238,7 @@ impl ChatView {
             _input_sub: input_sub,
             _search_sub: search_sub,
             _drawer_search_sub: drawer_search_sub,
+            _whisper_sub: whisper_sub,
         }
     }
 
@@ -280,11 +382,191 @@ impl ChatView {
         }
     }
 
-    /// Placeholder: shoutout / whisper / moderation have no runtime wiring, so every
-    /// drawer control raises an informational toast instead of executing.
-    fn viewer_action_pending(&mut self, cx: &mut Context<Self>) {
+    fn dispatch_quick_action(
+        &self,
+        step: SubActionStep,
+        label: String,
+        toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let engine = self.action_engine.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let outcome = engine
+                .execute_quick_action(step, "twitch".to_owned(), label)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| {
+            let outcome = rx
+                .await
+                .unwrap_or_else(|_| Err("dispatch cancelled".to_owned()));
+            let _ = this.update(cx, |_this, cx| {
+                let (kind, message) = toast(outcome);
+                cx.push_toast(kind, message);
+            });
+        })
+        .detach();
+    }
+
+    fn shoutout_viewer(&mut self, cx: &mut Context<Self>) {
         self.drawer_menu_open = false;
-        cx.push_toast(ToastKind::Info, tr!("chat_drawer_action_pending"));
+        let Some(login) = self.selected_viewer.clone() else {
+            cx.notify();
+            return;
+        };
+        let step = build_shoutout_step(&login);
+        self.dispatch_quick_action(
+            step,
+            format!("Shoutout {login}"),
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_drawer_shoutout_sent")),
+                Err(e) => (
+                    ToastKind::Error,
+                    tr!("chat_drawer_shoutout_failed", error = e),
+                ),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn timeout_viewer(&mut self, cx: &mut Context<Self>) {
+        self.drawer_menu_open = false;
+        let Some(login) = self.selected_viewer.clone() else {
+            cx.notify();
+            return;
+        };
+        let step = build_timeout_step(&login);
+        self.dispatch_quick_action(
+            step,
+            format!("Timeout {login}"),
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_drawer_timeout_sent")),
+                Err(e) => (
+                    ToastKind::Error,
+                    tr!("chat_drawer_timeout_failed", error = e),
+                ),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn ban_viewer(&mut self, cx: &mut Context<Self>) {
+        self.drawer_menu_open = false;
+        let Some(login) = self.selected_viewer.clone() else {
+            cx.notify();
+            return;
+        };
+        let step = build_ban_step(&login);
+        self.dispatch_quick_action(
+            step,
+            format!("Ban {login}"),
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
+                Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn open_whisper(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selected_viewer.is_none() {
+            return;
+        }
+        self.drawer_menu_open = false;
+        self.whisper_open = true;
+        self.whisper_input.update(cx, |input, cx| {
+            input.clear(cx);
+            input.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    fn cancel_whisper(&mut self, cx: &mut Context<Self>) {
+        self.whisper_open = false;
+        self.whisper_input.update(cx, |input, cx| input.clear(cx));
+        cx.notify();
+    }
+
+    fn send_whisper(&mut self, cx: &mut Context<Self>) {
+        let Some(login) = self.selected_viewer.clone() else {
+            return;
+        };
+        let message = self.whisper_input.read(cx).content().trim().to_owned();
+        if message.is_empty() {
+            return;
+        }
+        self.whisper_open = false;
+        self.whisper_input.update(cx, |input, cx| input.clear(cx));
+        let step = build_whisper_step(&login, &message);
+        self.dispatch_quick_action(
+            step,
+            format!("Whisper {login}"),
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_drawer_whisper_sent")),
+                Err(e) => (
+                    ToastKind::Error,
+                    tr!("chat_drawer_whisper_failed", error = e),
+                ),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn on_whisper_event(
+        &mut self,
+        _field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::Submitted(_) => self.send_whisper(cx),
+            InputEvent::Cancelled => self.cancel_whisper(cx),
+            InputEvent::Changed(_) => {}
+        }
+    }
+
+    fn block_tts_viewer(&mut self, cx: &mut Context<Self>) {
+        self.drawer_menu_open = false;
+        let Some(viewer) = self.selected_viewer.clone() else {
+            cx.notify();
+            return;
+        };
+        let alias = blocked_alias(&viewer);
+        let repo = Arc::clone(&self.voice_alias_repo);
+        let speak = self.speak.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let outcome = async move {
+                repo.upsert(&alias).await.map_err(|e| e.to_string())?;
+                if let Some(handle) = speak
+                    && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
+                {
+                    tracing::warn!(error = %e, "voice alias hot-reload failed");
+                }
+                Ok::<(), String>(())
+            }
+            .await;
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| {
+            let outcome = rx
+                .await
+                .unwrap_or_else(|_| Err("dispatch cancelled".to_owned()));
+            let _ = this.update(cx, |_this, cx| match outcome {
+                Ok(()) => cx.push_toast(ToastKind::Success, tr!("chat_drawer_block_tts_sent")),
+                Err(e) => cx.push_toast(
+                    ToastKind::Error,
+                    tr!("chat_drawer_block_tts_failed", error = e),
+                ),
+            });
+        })
+        .detach();
         cx.notify();
     }
 
@@ -960,7 +1242,7 @@ impl ChatView {
                 tr!("chat_drawer_shoutout"),
                 palette,
                 density,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.viewer_action_pending(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.shoutout_viewer(cx)),
             ))
             .child(drawer_ghost_button(
                 "chat-drawer-whisper",
@@ -968,15 +1250,104 @@ impl ChatView {
                 tr!("chat_drawer_whisper"),
                 palette,
                 density,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.viewer_action_pending(cx)),
+                cx.listener(|this, _: &ClickEvent, window, cx| this.open_whisper(window, cx)),
             ))
             .child(self.render_drawer_menu(palette, cx));
+
+        let whisper = self
+            .whisper_open
+            .then(|| self.render_whisper_compose(summary.username.clone(), palette, density, cx));
 
         frame
             .child(info)
             .child(grid)
             .child(actions)
+            .children(whisper)
             .into_any_element()
+    }
+
+    fn render_whisper_compose(
+        &self,
+        recipient: String,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let title = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .font_weight(FontWeight::MEDIUM)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_muted)
+            .child(tr!("chat_drawer_whisper_title", recipient = recipient));
+
+        let border = palette.border_regular;
+        let border_hover = palette.border_input;
+        let surf = palette.surface_overlay;
+        let text = palette.text_secondary;
+        let text_hover = palette.text_primary;
+        let cancel = div()
+            .id("chat-drawer-whisper-cancel")
+            .flex()
+            .items_center()
+            .justify_center()
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .border(BORDER_THIN)
+            .border_color(border)
+            .cursor_pointer()
+            .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_whisper(cx)))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(text)
+                    .child(tr!("chat_drawer_whisper_cancel")),
+            );
+
+        let brand = palette.brand;
+        let shell = palette.shell;
+        let send = div()
+            .id("chat-drawer-whisper-send")
+            .flex()
+            .items_center()
+            .justify_center()
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .bg(brand)
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_whisper(cx)))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
+                    .text_color(shell)
+                    .child(tr!("chat_drawer_whisper_send")),
+            );
+
+        let buttons = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(spacing(Spacing::Xs, density))
+            .child(cancel)
+            .child(send);
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .p(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .bg(palette.elevated)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(title)
+            .child(self.whisper_input.clone())
+            .child(buttons)
     }
 
     fn render_drawer_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
@@ -985,14 +1356,14 @@ impl ChatView {
             menu_item(
                 "chat-drawer-menu-shoutout",
                 tr!("chat_drawer_shoutout"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.viewer_action_pending(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.shoutout_viewer(cx)),
             )
             .icon(Icon::Flag)
             .into(),
             menu_item(
                 "chat-drawer-menu-whisper",
                 tr!("chat_drawer_whisper"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.viewer_action_pending(cx)),
+                cx.listener(|this, _: &ClickEvent, window, cx| this.open_whisper(window, cx)),
             )
             .icon(Icon::MessageCircle)
             .into(),
@@ -1008,21 +1379,21 @@ impl ChatView {
             menu_item(
                 "chat-drawer-menu-block-tts",
                 tr!("chat_drawer_block_tts"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.viewer_action_pending(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.block_tts_viewer(cx)),
             )
             .color(palette.warning)
             .into(),
             menu_item(
                 "chat-drawer-menu-timeout",
                 tr!("chat_drawer_timeout"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.viewer_action_pending(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.timeout_viewer(cx)),
             )
             .color(palette.warning)
             .into(),
             menu_item(
                 "chat-drawer-menu-ban",
                 tr!("chat_drawer_ban"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.viewer_action_pending(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.ban_viewer(cx)),
             )
             .color(palette.random)
             .into(),

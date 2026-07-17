@@ -1478,6 +1478,7 @@ chat_drawer_whisper = Whisper
 chat_drawer_whisper_title = Шепіт для { $recipient }
 chat_drawer_whisper_placeholder = Введіть повідомлення…
 chat_drawer_whisper_send = Надіслати
+chat_drawer_whisper_cancel = Скасувати
 chat_drawer_set_tts_voice = Встановити голос TTS…
 chat_drawer_block_tts = Заблокувати TTS
 chat_drawer_timeout = Таймаут 10 хв
@@ -1487,7 +1488,16 @@ chat_stat_messages = ПОВІДОМЛЕННЯ
 chat_stat_sub = ПІДПИСКА
 chat_stat_sub_yes = Так
 chat_stat_follow = ФОЛОУ
-chat_drawer_action_pending = Дії над глядачем скоро будуть доступні
+chat_drawer_shoutout_sent = Shoutout надіслано
+chat_drawer_shoutout_failed = Помилка shoutout: { $error }
+chat_drawer_whisper_sent = Шепіт надіслано
+chat_drawer_whisper_failed = Помилка шепоту: { $error }
+chat_drawer_timeout_sent = Глядача заблоковано на 10 хв
+chat_drawer_timeout_failed = Помилка таймауту: { $error }
+chat_drawer_ban_sent = Глядача забанено
+chat_drawer_ban_failed = Помилка бану: { $error }
+chat_drawer_block_tts_sent = Глядача заблоковано в TTS
+chat_drawer_block_tts_failed = Помилка блокування TTS: { $error }
 
 ## Стрічка подій - заголовок / фільтри
 

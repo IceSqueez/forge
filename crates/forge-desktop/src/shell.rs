@@ -119,6 +119,9 @@ impl AppShell {
                 let palette = cx.palette();
                 let rt_handle = handles.rt_handle.clone();
                 let viewer_repo = handles.backend.viewer_repo();
+                let action_engine = handles.action_engine.clone();
+                let voice_alias_repo = handles.backend.voice_alias_repo();
+                let speak = handles.speak.clone();
                 cx.new(|cx| {
                     ChatView::new(
                         topics.chat_feed.clone(),
@@ -126,6 +129,9 @@ impl AppShell {
                         topics.status.clone(),
                         rt_handle,
                         viewer_repo,
+                        action_engine,
+                        voice_alias_repo,
+                        speak,
                         palette,
                         cx,
                     )

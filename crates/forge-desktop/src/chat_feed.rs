@@ -1,11 +1,12 @@
 use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
-use forge_types::{ChatEventDetail, ChatPayload, ChatSource, UnifiedChatRow, UserBadge};
+use forge_types::{ChatEventDetail, ChatPayload, ChatSource, EventId, UnifiedChatRow, UserBadge};
 use gpui::{Rgba, SharedString};
 
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
     pub id: SharedString,
+    pub event_id: EventId,
     pub timestamp: SharedString,
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
@@ -46,6 +47,7 @@ impl ChatMessage {
         let moderation = &row.moderation;
         ChatMessage {
             id: row.id.clone().into(),
+            event_id: row.event_id,
             timestamp: format_clock(row.received_at.unix_timestamp()).into(),
             platform: platform_of(row.source),
             badges: row.badges.iter().filter_map(badge_kind).collect(),
@@ -87,6 +89,17 @@ impl ChatFeed {
         } else {
             history.append(&mut self.messages);
             self.messages = history;
+        }
+    }
+
+    pub fn set_triggered(&mut self, event_id: EventId, action_name: &str) {
+        for message in &mut self.messages {
+            if message.event_id == event_id
+                && let ChatBody::Subscription { triggered, .. } | ChatBody::Raid { triggered, .. } =
+                    &mut message.body
+            {
+                *triggered = Some(action_name.into());
+            }
         }
     }
 

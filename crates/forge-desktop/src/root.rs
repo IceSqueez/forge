@@ -291,6 +291,16 @@ fn start_bridge(
                             cx.notify();
                         });
                     }
+                    if event.kind == "action.start"
+                        && let Some(caused_by) = event.caused_by
+                        && let Some(action_name) =
+                            event.payload.get("action_name").and_then(|v| v.as_str())
+                    {
+                        chat_feed.update(cx, |feed, cx| {
+                            feed.set_triggered(caused_by, action_name);
+                            cx.notify();
+                        });
+                    }
                     queue_health.update(cx, |health, cx| {
                         if health.apply_event(&event) {
                             cx.notify();

@@ -178,6 +178,7 @@ mod tests {
     fn msg(username: &str, badges: Vec<BadgeKind>) -> ChatMessage {
         ChatMessage {
             id: "".into(),
+            event_id: forge_types::EventId::new(),
             timestamp: "".into(),
             platform: Platform::Twitch,
             badges,

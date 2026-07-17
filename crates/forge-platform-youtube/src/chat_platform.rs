@@ -37,8 +37,7 @@ pub struct YoutubePlatform {
     // coarse owned flag instead of a live transport state. Shared with the poller-exit
     // task; the lock is never held across an `.await`.
     state: Arc<Mutex<ConnectionState>>,
-    // Outlives any single poller run, so a receiver taken once at construction
-    // (e.g. by `YoutubeIntegrationBundle`) keeps observing state across every reconnect.
+    // Persists across poller runs, unlike `state`'s writers, so a receiver taken once stays live.
     state_tx: watch::Sender<ConnectionState>,
     // Lock never held across an `.await`.
     cancel: Mutex<Option<CancellationToken>>,

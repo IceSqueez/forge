@@ -31,8 +31,7 @@ pub struct KickPlatform {
     // verbs share one chat handle without `&mut self`. The lock is never held across an
     // `.await`.
     handle: Mutex<Option<KickChatHandle>>,
-    // Outlives any single `KickChatHandle`, so a receiver taken once at construction
-    // (e.g. by `KickIntegrationBundle`) keeps observing state across every reconnect.
+    // Persists across reconnects, unlike `handle`, so a receiver taken once stays live.
     state_tx: watch::Sender<ConnectionState>,
 }
 

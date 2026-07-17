@@ -359,9 +359,7 @@ mod tests {
 
     #[test]
     fn chat_poller_health_value_maps_each_connection_state() {
-        // Both metrics() and the health bridge feed this one fn, so its per-state
-        // mapping is the single source the health surface renders. Only Connected is
-        // active; every state pins the liveChatMessages.list endpoint as the detail.
+        // Both metrics() and the health bridge render from this one fn; pin its mapping.
         for (state, label, active) in [
             (ConnectionState::Connected, "Connected", true),
             (ConnectionState::Connecting, "Connecting", false),
@@ -421,10 +419,8 @@ mod tests {
             }
         }
 
-        // A bundle whose platform can be driven Connecting -> Connected offline: the
-        // poller's token source fails (no stored creds), so it sleeps and retries
-        // rather than touching the network, leaving Connected as the stable terminal
-        // state. Returns the platform handle so the test can trigger the transition.
+        // Offline the poller's token source fails and retries without touching the
+        // network, so Connected is a stable terminal state to assert against.
         fn bundle_and_platform() -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
             let manager = Arc::new(YoutubeCredentialsManager::new(
                 Arc::new(EmptyRepo),
@@ -448,10 +444,8 @@ mod tests {
 
         #[tokio::test]
         async fn health_stream_emits_connected_delta_when_platform_connects() {
-            // Regression: BuiltinHealth::stream() previously never emitted. The health
-            // bridge now forwards each connection-state change as a HealthDelta on index
-            // 0. Driving the platform to Connected must surface a matching delta on the
-            // public stream, proving the runtime->UI health path is live.
+            // Regression: stream() previously never emitted; connecting must now surface
+            // a HealthDelta on index 0.
             let (bundle, platform) = bundle_and_platform();
             let mut health = BuiltinHealth::stream(bundle.as_ref());
 

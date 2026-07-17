@@ -52,7 +52,7 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
     Ok(())
 }
 
-/// Wraps the live `YoutubePlatform` + credentials manager so `forge-app` can
+/// Wraps the live `YoutubePlatform` + credentials manager so `forge-desktop` can
 /// render the same detail-screen/health/quick-action surface every other
 /// builtin exposes (`BuiltinStatus`/`BuiltinHealth`/`BuiltinContent`/`QuickActions`).
 pub struct YoutubeIntegrationBundle {

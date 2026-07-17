@@ -29,12 +29,10 @@ members = [
   "crates/forge-tts-nsspeech",
   "crates/forge-tts-cloud",
   "crates/forge-speak-queue",
-  "crates/forge-widgets",
-  "crates/forge-app",
   "crates/forge-components",
   "crates/forge-desktop",
 ]
-default-members = ["crates/forge-app"]
+default-members = ["crates/forge-desktop"]
 
 [workspace.package]
 version = "0.3.0-beta.2"
@@ -132,25 +130,6 @@ block2 = { version = "0.6" }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 
-# Software renderer (tiny-skia) only: iced's wgpu backend drags naga 27, which fails to build
-# once gpui's naga 25 forces codespan-reporting/termcolor on in a unified workspace build. The
-# iced binary is on death row until the gpui cutover; drop this override when it is deleted.
-iced = { version = "0.14", default-features = false, features = [
-  "tokio",
-  "image",
-  "svg",
-  "advanced",
-  "canvas",
-  "lazy",
-  "tiny-skia",
-  "crisp",
-  "web-colors",
-  "thread-pool",
-  "linux-theme-detection",
-  "x11",
-  "wayland",
-] }
-iced_fonts = { version = "0.3", features = ["bootstrap"] }
 gpui = { version = "=0.2.2" }
 fontdb = "0.23"
 

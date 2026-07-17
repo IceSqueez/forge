@@ -29,7 +29,7 @@ impl fmt::Display for BuiltinId {
     }
 }
 
-/// Opaque icon token resolved to a tabler icon string by `forge-widgets::icon`.
+/// Opaque icon token resolved to a tabler icon string by `forge-components::icon`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SectionIcon(pub(crate) String);

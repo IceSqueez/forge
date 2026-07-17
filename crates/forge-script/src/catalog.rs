@@ -238,7 +238,7 @@ pub fn catalog() -> &'static [MethodDescriptor] {
     CATALOG
 }
 
-/// Takes `SymbolToken` pairs (not rhai token types) so this function stays dependency-free from forge-widgets.
+/// Takes `SymbolToken` pairs (not rhai token types) so this function stays dependency-free from forge-components.
 pub fn resolve_symbol_from_tokens(
     tokens: &[(Range<usize>, SymbolToken)],
     line_text: &str,

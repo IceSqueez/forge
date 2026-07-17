@@ -18,12 +18,12 @@ pub struct VoiceDescriptor {
 
 /// Narrow speak contract used by the action engine and the §10 TTS runners.
 ///
-/// Implemented by the forge-app `SpeakBridge` wrapper around `SpeakQueueHandle`.
+/// Implemented by the forge-desktop `SpeakBridge` wrapper around `SpeakQueueHandle`.
 /// Keeping the trait here prevents a dependency cycle: `forge-runtime` never imports
 /// `forge-speak-queue`.
 ///
 /// Every method except `speak` has a default impl: controls are no-ops returning
-/// `Ok`, queries return empty/zero. Only the forge-app bridge wires them to a live
+/// `Ok`, queries return empty/zero. Only the forge-desktop bridge wires them to a live
 /// queue - any other impl (test doubles included) is inert without overriding them.
 #[async_trait]
 pub trait SpeakDispatcher: Send + Sync {

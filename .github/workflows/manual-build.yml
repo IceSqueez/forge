@@ -14,6 +14,6 @@ jobs:
     name: Build
     uses: ./.github/workflows/_build-matrix.yml
     with:
-      package_name: forge-app
+      package_name: forge-desktop
       bin_name: forge
       retention_days: ${{ fromJSON(inputs.retention_days) }}

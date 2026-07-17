@@ -12,7 +12,7 @@ use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
 
 /// Async TTS hook exposed to rhai scripts as `forge::tts::*`. The concrete impl
-/// lives in `forge-app::speak_bridge` to keep this crate cycle-free with respect
+/// lives in `forge-desktop::speak_bridge` to keep this crate cycle-free with respect
 /// to `forge-speak-queue`.
 #[async_trait::async_trait]
 pub trait SpeakRequester: Send + Sync {

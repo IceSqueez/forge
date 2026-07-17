@@ -25,7 +25,7 @@ mod tests {
         // bytes to catch a future annotation removal.
         //
         // Why this matters: the wire string is compared against the platform id in
-        // connection-state events and chat.send targets inside forge-app.  A mismatch
+        // connection-state events and chat.send targets inside forge-desktop.  A mismatch
         // causes those events to be silently dropped.
         for (variant, expected_wire) in [
             (PlatformId::Twitch, "twitch"),

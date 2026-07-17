@@ -23,6 +23,7 @@ pub mod sub_action_runners;
 pub mod trigger_evaluator;
 pub mod triggers;
 pub mod tts_trigger_settings;
+pub mod viewer_tracker;
 
 pub use action_cancel::ActionCancelRegistry;
 pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spawn_action_engine};
@@ -48,3 +49,4 @@ pub use sub_action_runners::register_core_sub_actions;
 pub use trigger_evaluator::{TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
 pub use tts_trigger_settings::TtsTriggerSettingsHandle;
+pub use viewer_tracker::spawn_viewer_tracker;

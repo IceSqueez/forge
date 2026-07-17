@@ -309,13 +309,52 @@ fn format_clock(unix_secs: i64) -> String {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_components::{BadgeKind, ChatBody, Platform};
+    use forge_events::{Event, EventSource};
     use forge_types::{
-        ChatEventDetail, ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow,
-        UserBadge,
+        ChatEventDetail, ChatPayload, ChatReply, ChatSegment, ChatSource, EventId, ModerationMarks,
+        UnifiedChatRow, UserBadge,
     };
     use time::OffsetDateTime;
 
     use super::{ChatFeed, ChatMessage, badge_kind, event_body};
+
+    fn message_with(event_id: EventId, body: ChatBody) -> ChatMessage {
+        ChatMessage {
+            id: "id".into(),
+            event_id,
+            timestamp: "00:00:00".into(),
+            received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
+            platform: Platform::Twitch,
+            badges: vec![],
+            username: "user".into(),
+            author_color: None,
+            body,
+            is_event: false,
+            is_bot: false,
+            moderated: false,
+            reply: None,
+        }
+    }
+
+    fn chat_event(reply: Option<serde_json::Value>) -> Event {
+        let payload = ChatPayload {
+            platform_msg_id: "m1".to_string(),
+            author: "bob".to_string(),
+            author_color: None,
+            segments: vec![ChatSegment::Text {
+                text: "hi".to_string(),
+            }],
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        };
+        let mut envelope = serde_json::json!({ ChatPayload::KEY: payload });
+        if let Some(value) = reply {
+            envelope[ChatReply::KEY] = value;
+        }
+        Event::new(EventSource::Twitch, "chat.message", envelope)
+    }
 
     fn feed_row(id: &str, source: ChatSource, author: &str) -> UnifiedChatRow {
         UnifiedChatRow {
@@ -401,6 +440,38 @@ mod tests {
             matches!(event_body(&raid), ChatBody::Raid { .. }),
             "Raid must map to ChatBody::Raid"
         );
+
+        let cheer = row(
+            Some(ChatEventDetail::Cheer {
+                bits: 250,
+                message: Some("pog".to_string()),
+            }),
+            vec![],
+            vec![],
+        );
+        match event_body(&cheer) {
+            ChatBody::Cheer { bits, text, .. } => {
+                assert_eq!(bits, 250);
+                assert_eq!(text, "pog");
+            }
+            _ => panic!("Cheer must map to ChatBody::Cheer"),
+        }
+
+        let cheer_no_message = row(
+            Some(ChatEventDetail::Cheer {
+                bits: 1,
+                message: None,
+            }),
+            vec![],
+            vec![],
+        );
+        match event_body(&cheer_no_message) {
+            ChatBody::Cheer { bits, text, .. } => {
+                assert_eq!(bits, 1);
+                assert_eq!(text, "", "absent cheer message maps to empty text");
+            }
+            _ => panic!("Cheer without a message must still map to ChatBody::Cheer"),
+        }
 
         let super_chat = row(
             Some(ChatEventDetail::SuperChat {
@@ -613,5 +684,140 @@ mod tests {
 
         assert!(moderated_by_id(&feed, "tw"));
         assert!(!moderated_by_id(&feed, "yt"));
+    }
+
+    #[test]
+    fn mark_command_rewrites_only_the_matching_event_id_to_a_fresh_command() {
+        let target = EventId::new();
+        let other = EventId::new();
+        let mut feed = ChatFeed::new();
+        feed.push(message_with(target, ChatBody::Message("hi".into())));
+        feed.push(message_with(other, ChatBody::Message("hi".into())));
+
+        feed.mark_command(target, "!lurk");
+
+        match &feed.messages()[0].body {
+            ChatBody::Command { command, triggered } => {
+                assert_eq!(command, "!lurk");
+                assert_eq!(*triggered, None);
+            }
+            other => panic!("target must become a Command row, got {other:?}"),
+        }
+        assert!(
+            matches!(feed.messages()[1].body, ChatBody::Message(_)),
+            "non-matching event_id must be untouched"
+        );
+    }
+
+    #[test]
+    fn mark_command_keeps_existing_trigger_when_body_is_already_a_command() {
+        let event_id = EventId::new();
+        let mut feed = ChatFeed::new();
+        feed.push(message_with(
+            event_id,
+            ChatBody::Command {
+                command: "!old".into(),
+                triggered: Some("Greet".into()),
+            },
+        ));
+
+        feed.mark_command(event_id, "!new");
+
+        match &feed.messages()[0].body {
+            ChatBody::Command { command, triggered } => {
+                assert_eq!(command, "!new");
+                assert_eq!(triggered.as_deref(), Some("Greet"));
+            }
+            other => panic!("expected Command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_triggered_fills_command_subscription_and_raid_bodies() {
+        let event_id = EventId::new();
+        let bodies = [
+            ChatBody::Command {
+                command: "!x".into(),
+                triggered: None,
+            },
+            ChatBody::Subscription {
+                descriptor: "sub".into(),
+                months: None,
+                message: None,
+                triggered: None,
+            },
+            ChatBody::Raid {
+                descriptor: "raid".into(),
+                viewers: "5".into(),
+                triggered: None,
+            },
+        ];
+        for body in bodies {
+            let mut feed = ChatFeed::new();
+            feed.push(message_with(event_id, body));
+            feed.set_triggered(event_id, "Act");
+            let triggered = match &feed.messages()[0].body {
+                ChatBody::Command { triggered, .. }
+                | ChatBody::Subscription { triggered, .. }
+                | ChatBody::Raid { triggered, .. } => triggered.clone(),
+                other => panic!("unexpected body {other:?}"),
+            };
+            assert_eq!(triggered.as_deref(), Some("Act"));
+        }
+    }
+
+    #[test]
+    fn set_triggered_marks_only_the_matching_event_id() {
+        let target = EventId::new();
+        let other = EventId::new();
+        let mut feed = ChatFeed::new();
+        feed.push(message_with(
+            target,
+            ChatBody::Command {
+                command: "!x".into(),
+                triggered: None,
+            },
+        ));
+        feed.push(message_with(
+            other,
+            ChatBody::Command {
+                command: "!y".into(),
+                triggered: None,
+            },
+        ));
+
+        feed.set_triggered(target, "Act");
+
+        let marked = match &feed.messages()[0].body {
+            ChatBody::Command { triggered, .. } => triggered.clone(),
+            other => panic!("{other:?}"),
+        };
+        let untouched = match &feed.messages()[1].body {
+            ChatBody::Command { triggered, .. } => triggered.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(marked.as_deref(), Some("Act"));
+        assert_eq!(untouched, None);
+    }
+
+    #[test]
+    fn message_from_event_populates_reply_only_from_a_valid_chat_reply() {
+        let with_reply = chat_event(Some(serde_json::json!({
+            "parent_author": "alice",
+            "parent_text": "hello there",
+        })));
+        let message = ChatFeed::message_from_event(&with_reply).unwrap();
+        assert_eq!(message.reply, Some(("alice".into(), "hello there".into())));
+
+        let absent_or_malformed = [
+            None,
+            Some(serde_json::json!("not-an-object")),
+            Some(serde_json::json!({ "parent_author": "alice" })),
+        ];
+        for reply in absent_or_malformed {
+            let event = chat_event(reply);
+            let message = ChatFeed::message_from_event(&event).unwrap();
+            assert_eq!(message.reply, None);
+        }
     }
 }

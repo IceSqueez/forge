@@ -110,6 +110,7 @@ home_events_empty = Подій ще немає
 
 home_glance_title = Огляд
 home_glance_actions = Дії
+home_glance_commands = Команди
 home_glance_fired = Спрацювань у сесії
 home_glance_globals = Глобальні змінні
 

@@ -110,6 +110,7 @@ home_events_empty = No events yet
 
 home_glance_title = At a glance
 home_glance_actions = Actions
+home_glance_commands = Commands
 home_glance_fired = Fired this session
 home_glance_globals = Globals
 

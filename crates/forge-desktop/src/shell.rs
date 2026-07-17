@@ -436,9 +436,10 @@ pub(crate) async fn refresh_dashboard_stats(
     let actions = backend.action_repo();
     let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
     let history = backend.history_repo();
+    let triggers = backend.trigger_instance_repo();
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt_handle.spawn(async move {
-        let _ = tx.send(compute_stats(&*actions, &*globals, &*history).await);
+        let _ = tx.send(compute_stats(&*actions, &*globals, &*history, &*triggers).await);
     });
     match rx.await {
         Ok(Ok(stats)) => {

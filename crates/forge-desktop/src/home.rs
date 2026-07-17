@@ -816,6 +816,7 @@ impl HomeView {
     fn render_glance(
         &self,
         actions: String,
+        commands: String,
         fired: String,
         globals: String,
         palette: &ForgePalette,
@@ -828,6 +829,13 @@ impl HomeView {
                 tr!("home_glance_actions"),
                 actions,
                 palette.brand,
+                false,
+                palette,
+            ))
+            .child(Self::glance_row(
+                tr!("home_glance_commands"),
+                commands,
+                palette.info,
                 false,
                 palette,
             ))
@@ -914,6 +922,7 @@ impl Render for HomeView {
         let stats = self.stats.read(cx);
         let viewers = stats.viewers_display();
         let actions = stats.actions_display();
+        let commands = stats.commands_display();
         let fired = stats.triggers_fired_display();
         let globals = stats.globals_display();
         let connected = stats.connected_count();
@@ -968,7 +977,7 @@ impl Render for HomeView {
         let connections_strip =
             self.render_connections(connections, connected, total, &palette, density, cx);
         let recent_card = self.render_recent_events(recent, &palette, density, cx);
-        let glance_card = self.render_glance(actions, fired, globals, &palette, density);
+        let glance_card = self.render_glance(actions, commands, fired, globals, &palette, density);
 
         let bottom = div()
             .w_full()

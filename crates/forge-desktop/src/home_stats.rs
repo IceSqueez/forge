@@ -7,7 +7,7 @@ use gpui::{Rgba, SharedString};
 use crate::event_log::EventLog;
 use crate::screen::Screen;
 
-const EM_DASH: &str = "\u{2014}";
+const NO_DATA: &str = "-";
 
 const RECENT_CAP: usize = 50;
 
@@ -140,6 +140,7 @@ pub struct ObsHealth {
 pub struct HomeStats {
     live_viewers: Option<u64>,
     actions_count: Option<usize>,
+    commands_count: Option<usize>,
     triggers_fired: Option<u64>,
     globals_count: Option<usize>,
     connections: Vec<(Integration, bool)>,
@@ -160,6 +161,7 @@ impl HomeStats {
         Self {
             live_viewers: None,
             actions_count: None,
+            commands_count: None,
             triggers_fired: None,
             globals_count: None,
             connections,
@@ -185,15 +187,18 @@ impl HomeStats {
 
     pub fn set_stats(&mut self, stats: DashboardStats) -> bool {
         let next_actions = Some(stats.actions_count);
+        let next_commands = Some(stats.commands_count);
         let next_fired = Some(stats.triggers_fired);
         let next_globals = Some(stats.globals_count);
         if self.actions_count == next_actions
+            && self.commands_count == next_commands
             && self.triggers_fired == next_fired
             && self.globals_count == next_globals
         {
             return false;
         }
         self.actions_count = next_actions;
+        self.commands_count = next_commands;
         self.triggers_fired = next_fired;
         self.globals_count = next_globals;
         true
@@ -213,22 +218,27 @@ impl HomeStats {
 
     pub fn viewers_display(&self) -> String {
         self.live_viewers
-            .map_or_else(|| EM_DASH.to_owned(), fmt_thousands)
+            .map_or_else(|| NO_DATA.to_owned(), fmt_thousands)
     }
 
     pub fn actions_display(&self) -> String {
         self.actions_count
-            .map_or_else(|| EM_DASH.to_owned(), |n| n.to_string())
+            .map_or_else(|| NO_DATA.to_owned(), |n| n.to_string())
+    }
+
+    pub fn commands_display(&self) -> String {
+        self.commands_count
+            .map_or_else(|| NO_DATA.to_owned(), |n| n.to_string())
     }
 
     pub fn triggers_fired_display(&self) -> String {
         self.triggers_fired
-            .map_or_else(|| EM_DASH.to_owned(), fmt_thousands)
+            .map_or_else(|| NO_DATA.to_owned(), fmt_thousands)
     }
 
     pub fn globals_display(&self) -> String {
         self.globals_count
-            .map_or_else(|| EM_DASH.to_owned(), |n| n.to_string())
+            .map_or_else(|| NO_DATA.to_owned(), |n| n.to_string())
     }
 
     pub fn connected_count(&self) -> usize {

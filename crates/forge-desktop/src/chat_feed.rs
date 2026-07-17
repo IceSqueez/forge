@@ -94,10 +94,26 @@ impl ChatFeed {
     pub fn set_triggered(&mut self, event_id: EventId, action_name: &str) {
         for message in &mut self.messages {
             if message.event_id == event_id
-                && let ChatBody::Subscription { triggered, .. } | ChatBody::Raid { triggered, .. } =
-                    &mut message.body
+                && let ChatBody::Subscription { triggered, .. }
+                | ChatBody::Raid { triggered, .. }
+                | ChatBody::Command { triggered, .. } = &mut message.body
             {
                 *triggered = Some(action_name.into());
+            }
+        }
+    }
+
+    pub fn mark_command(&mut self, event_id: EventId, command: &str) {
+        for message in &mut self.messages {
+            if message.event_id == event_id {
+                let triggered = match &message.body {
+                    ChatBody::Command { triggered, .. } => triggered.clone(),
+                    _ => None,
+                };
+                message.body = ChatBody::Command {
+                    command: command.into(),
+                    triggered,
+                };
             }
         }
     }

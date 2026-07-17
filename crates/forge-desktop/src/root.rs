@@ -291,6 +291,15 @@ fn start_bridge(
                             cx.notify();
                         });
                     }
+                    if event.kind == "command.matched"
+                        && let Some(caused_by) = event.caused_by
+                        && let Some(command) = event.payload.get("command").and_then(|v| v.as_str())
+                    {
+                        chat_feed.update(cx, |feed, cx| {
+                            feed.mark_command(caused_by, command);
+                            cx.notify();
+                        });
+                    }
                     if event.kind == "action.start"
                         && let Some(caused_by) = event.caused_by
                         && let Some(action_name) =

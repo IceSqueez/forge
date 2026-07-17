@@ -73,8 +73,8 @@ pub fn bd_mauve_soft(p: &ForgePalette) -> Rgba {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeId {
-    #[default]
     CatppuccinMocha,
+    #[default]
     TokyoNight,
     Latte,
 }

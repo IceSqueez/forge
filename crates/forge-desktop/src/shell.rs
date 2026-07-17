@@ -240,8 +240,11 @@ impl AppShell {
                 .into()
             }
             Screen::Soundboard => {
+                let player = handles.soundboard_player.clone();
+                let clips_repo = handles.backend.soundboard_clips_repo();
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| SoundboardView::new(rt_handle, cx)).into()
+                cx.new(|cx| SoundboardView::new(player, clips_repo, rt_handle, cx))
+                    .into()
             }
             Screen::Tts => {
                 let speak_state = topics.speak.clone();

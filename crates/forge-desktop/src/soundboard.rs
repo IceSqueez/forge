@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
@@ -6,10 +7,14 @@ use forge_components::{
     breadcrumb, field_label, ghost_button_with_icon, icon, modal, overlay, primary_button,
     primary_button_with_icon, radius, row_card, secondary_button, slider, spacing, tr, with_alpha,
 };
+use forge_soundboard::SoundboardPlayer;
+use forge_storage::{SoundboardClipsRepo, StoredClip};
+use forge_types::{ClipId, OutputDevice};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
     prelude::*, px,
 };
+use time::OffsetDateTime;
 
 use crate::presentation::ActivePresentation;
 
@@ -27,9 +32,9 @@ const DEVICES: [(&str, &str); 3] = [
 ];
 
 struct SoundClip {
-    id: u64,
+    id: ClipId,
     name: String,
-    file_name: String,
+    file_path: PathBuf,
     hotkey: Option<String>,
     device_label: String,
     /// Playback gain, `0.0..=VOLUME_MAX` (`1.0` = 100%).
@@ -38,8 +43,8 @@ struct SoundClip {
 }
 
 struct AddClipModal {
-    editing: Option<u64>,
-    file_name: Option<String>,
+    editing: Option<ClipId>,
+    file_path: Option<PathBuf>,
     name_input: Entity<TextInput>,
     hotkey_input: Entity<TextInput>,
     device_idx: usize,
@@ -52,60 +57,138 @@ struct AddClipModal {
 
 pub struct SoundboardView {
     clips: Vec<SoundClip>,
-    next_id: u64,
     loading: bool,
     error: Option<SharedString>,
     feedback: Option<SharedString>,
     modal: Option<AddClipModal>,
+    player: Arc<SoundboardPlayer>,
+    clips_repo: Arc<dyn SoundboardClipsRepo>,
     rt_handle: tokio::runtime::Handle,
 }
 
 impl SoundboardView {
-    pub fn new(rt_handle: tokio::runtime::Handle, _cx: &mut Context<Self>) -> Self {
-        let clips = seed_clips();
-        let next_id = clips.iter().map(|c| c.id).max().map_or(0, |m| m + 1);
-        Self {
-            clips,
-            next_id,
-            loading: false,
+    pub fn new(
+        player: Arc<SoundboardPlayer>,
+        clips_repo: Arc<dyn SoundboardClipsRepo>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let view = Self {
+            clips: Vec::new(),
+            loading: true,
             error: None,
             feedback: None,
             modal: None,
+            player,
+            clips_repo,
             rt_handle,
-        }
+        };
+        view.reload(cx);
+        view
     }
 
-    fn play(&mut self, id: u64, cx: &mut Context<Self>) {
-        let Some((name, device)) = self
-            .clips
-            .iter()
-            .find(|c| c.id == id)
-            .map(|c| (c.name.clone(), c.device_label.clone()))
-        else {
-            return;
-        };
-        self.feedback = Some(
-            tr!(
-                "soundboard_playing_feedback",
-                name = name.as_str(),
-                device = device.as_str()
-            )
-            .into(),
-        );
+    fn reload(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.clips_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(load_clips(repo).await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(clips)) => {
+                let _ = this.update(cx, |this, cx| this.apply_clips(clips, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_load_error(message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn apply_clips(&mut self, clips: Vec<StoredClip>, cx: &mut Context<Self>) {
+        self.clips = clips.into_iter().map(stored_to_clip).collect();
+        self.loading = false;
+        self.error = None;
         cx.notify();
     }
 
-    fn delete(&mut self, id: u64, cx: &mut Context<Self>) {
+    fn on_load_error(&mut self, message: String, cx: &mut Context<Self>) {
+        self.loading = false;
+        self.error = Some(message.into());
+        cx.notify();
+    }
+
+    fn play(&mut self, id: ClipId, cx: &mut Context<Self>) {
+        self.error = None;
+        let info = self
+            .clips
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| (c.name.clone(), c.device_label.clone()));
+        let player = Arc::clone(&self.player);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(play_clip(player, id).await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| this.on_play_ok(info, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_play_error(message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn on_play_ok(&mut self, info: Option<(String, String)>, cx: &mut Context<Self>) {
+        if let Some((name, device)) = info {
+            self.feedback = Some(
+                tr!(
+                    "soundboard_playing_feedback",
+                    name = name.as_str(),
+                    device = device.as_str()
+                )
+                .into(),
+            );
+        }
+        cx.notify();
+    }
+
+    fn on_play_error(&mut self, message: String, cx: &mut Context<Self>) {
+        self.error = Some(message.into());
+        cx.notify();
+    }
+
+    fn delete(&mut self, id: ClipId, cx: &mut Context<Self>) {
         let name = self
             .clips
             .iter()
             .find(|c| c.id == id)
             .map(|c| c.name.clone());
-        self.clips.retain(|c| c.id != id);
+        let repo = Arc::clone(&self.clips_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(delete_clip(repo, id).await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| this.on_deleted(name, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_load_error(message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+    }
+
+    fn on_deleted(&mut self, name: Option<String>, cx: &mut Context<Self>) {
         if let Some(name) = name {
             self.feedback = Some(tr!("soundboard_removed_feedback", name = name.as_str()).into());
         }
-        cx.notify();
+        self.reload(cx);
     }
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -115,12 +198,12 @@ impl SoundboardView {
         cx.notify();
     }
 
-    fn open_edit(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_edit(&mut self, id: ClipId, window: &mut Window, cx: &mut Context<Self>) {
         let Some(clip) = self.clips.iter().find(|c| c.id == id) else {
             return;
         };
         let name = clip.name.clone();
-        let file = Some(clip.file_name.clone());
+        let file = Some(clip.file_path.clone());
         let hotkey = clip.hotkey.clone().unwrap_or_default();
         let volume = clip.volume;
         let device_idx = DEVICES
@@ -134,9 +217,9 @@ impl SoundboardView {
     }
 
     fn build_modal(
-        editing: Option<u64>,
+        editing: Option<ClipId>,
         name_seed: &str,
-        file_seed: Option<String>,
+        file_seed: Option<PathBuf>,
         hotkey_seed: &str,
         volume: f32,
         device_idx: usize,
@@ -178,7 +261,7 @@ impl SoundboardView {
 
         AddClipModal {
             editing,
-            file_name: file_seed,
+            file_path: file_seed,
             name_input,
             hotkey_input,
             device_idx,
@@ -221,12 +304,7 @@ impl SoundboardView {
         let Some(modal) = self.modal.as_mut() else {
             return;
         };
-        let file_name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(str::to_owned)
-            .unwrap_or_else(|| path.to_string_lossy().into_owned());
-        modal.file_name = Some(file_name);
+        modal.file_path = Some(path.clone());
         modal.error = None;
         let name_input = modal.name_input.clone();
         if name_input.read(cx).content().trim().is_empty()
@@ -255,7 +333,7 @@ impl SoundboardView {
     fn modal_saveable(&self, cx: &Context<Self>) -> bool {
         self.modal.as_ref().is_some_and(|modal| {
             !modal.saving
-                && modal.file_name.is_some()
+                && modal.file_path.is_some()
                 && !modal.name_input.read(cx).content().trim().is_empty()
         })
     }
@@ -275,46 +353,61 @@ impl SoundboardView {
         let name = modal.name_input.read(cx).content().trim().to_owned();
         let hotkey_raw = modal.hotkey_input.read(cx).content().trim().to_owned();
         let hotkey = (!hotkey_raw.is_empty()).then_some(hotkey_raw);
-        let file_name = modal.file_name.clone().unwrap_or_default();
-        let device_label = DEVICES
-            .get(modal.device_idx)
-            .map_or(DEVICES[0].1, |d| d.1)
-            .to_owned();
+        let file_path = modal.file_path.clone().unwrap_or_default();
+        let output_device = device_from_idx(modal.device_idx);
         let volume = modal.volume;
-        let editing = modal.editing;
+        let clip_id = modal.editing.unwrap_or_else(ClipId::new);
 
-        match editing {
-            Some(id) => {
-                if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
-                    clip.name = name.clone();
-                    clip.file_name = file_name;
-                    clip.hotkey = hotkey;
-                    clip.device_label = device_label;
-                    clip.volume = volume;
-                }
-            }
-            None => {
-                let id = self.next_id;
-                self.next_id += 1;
-                self.clips.push(SoundClip {
-                    id,
-                    name: name.clone(),
-                    file_name,
-                    hotkey,
-                    device_label,
-                    volume,
-                    duration_label: "\u{2014}".to_owned(),
-                });
-            }
+        let clip = StoredClip {
+            id: clip_id,
+            name: name.clone(),
+            file_path,
+            volume,
+            output_device,
+            hotkey,
+            created_at: OffsetDateTime::now_utc(),
+        };
+
+        if let Some(modal) = self.modal.as_mut() {
+            modal.saving = true;
+            modal.error = None;
         }
 
+        let repo = Arc::clone(&self.clips_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(save_clip(repo, clip).await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| this.on_saved(name, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_save_error(message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn on_saved(&mut self, name: String, cx: &mut Context<Self>) {
         self.modal = None;
         self.feedback = Some(tr!("soundboard_saved_feedback", name = name.as_str()).into());
+        self.reload(cx);
+    }
+
+    fn on_save_error(&mut self, message: String, cx: &mut Context<Self>) {
+        if let Some(modal) = self.modal.as_mut() {
+            modal.saving = false;
+            modal.error = Some(message.into());
+        }
         cx.notify();
     }
 
     fn clip_card(
         &self,
+        index: usize,
         clip: &SoundClip,
         palette: &ForgePalette,
         density: Density,
@@ -375,21 +468,21 @@ impl SoundboardView {
             .justify_end()
             .gap(spacing(Spacing::Xs, density))
             .child(self.card_action(
-                ("sb-play", id as usize),
+                ("sb-play", index),
                 Icon::PlayerPlay,
                 palette.success,
                 palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.play(id, cx)),
             ))
             .child(self.card_action(
-                ("sb-edit", id as usize),
+                ("sb-edit", index),
                 Icon::InfoCircle,
                 palette.info,
                 palette,
                 cx.listener(move |this, _: &ClickEvent, window, cx| this.open_edit(id, window, cx)),
             ))
             .child(self.card_action(
-                ("sb-delete", id as usize),
+                ("sb-delete", index),
                 Icon::X,
                 palette.random,
                 palette,
@@ -501,7 +594,8 @@ impl SoundboardView {
         let cards: Vec<AnyElement> = self
             .clips
             .iter()
-            .map(|clip| self.clip_card(clip, palette, density, cx))
+            .enumerate()
+            .map(|(index, clip)| self.clip_card(index, clip, palette, density, cx))
             .collect();
 
         let mut grid = div().w_full().flex().flex_col().gap(gap);
@@ -532,10 +626,13 @@ impl SoundboardView {
             tr!("soundboard_modal_title_add")
         };
 
-        let file_set = modal_state.file_name.is_some();
-        let file_label = modal_state
-            .file_name
-            .clone()
+        let file_set = modal_state.file_path.is_some();
+        let file_label: String = modal_state
+            .file_path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(str::to_owned)
             .unwrap_or_else(|| tr!("soundboard_modal_no_file"));
         let browse = ghost_button_with_icon(
             Icon::FolderOpen,
@@ -825,23 +922,47 @@ fn centered_message(
         .into_any_element()
 }
 
-fn seed_clips() -> Vec<SoundClip> {
-    let clip =
-        |id: u64, name: &str, hotkey: &str, device: &str, volume: f32, dur: &str| SoundClip {
-            id,
-            name: name.to_owned(),
-            file_name: format!("{}.wav", name.to_lowercase().replace(' ', "-")),
-            hotkey: Some(hotkey.to_owned()),
-            device_label: device.to_owned(),
-            volume,
-            duration_label: dur.to_owned(),
-        };
-    vec![
-        clip(0, "Airhorn", "1", DEVICES[1].1, 1.0, "0:02"),
-        clip(1, "Sad trombone", "2", DEVICES[1].1, 0.9, "0:03"),
-        clip(2, "Bruh", "3", DEVICES[1].1, 1.2, "0:01"),
-        clip(3, "New follow", "5", DEVICES[0].1, 0.85, "0:03"),
-        clip(4, "Intro sting", "8", DEVICES[1].1, 1.0, "0:08"),
-        clip(5, "Applause", "Q", DEVICES[2].1, 0.8, "0:04"),
-    ]
+fn stored_to_clip(c: StoredClip) -> SoundClip {
+    SoundClip {
+        id: c.id,
+        name: c.name,
+        file_path: c.file_path,
+        hotkey: c.hotkey,
+        device_label: device_display_label(&c.output_device),
+        volume: c.volume,
+        duration_label: "\u{2014}".to_owned(),
+    }
+}
+
+fn device_display_label(dev: &OutputDevice) -> String {
+    match dev {
+        OutputDevice::Default => DEVICES[0].1.to_owned(),
+        OutputDevice::ByName { name } => name.clone(),
+        OutputDevice::ById { id } => id.clone(),
+    }
+}
+
+fn device_from_idx(idx: usize) -> OutputDevice {
+    match idx {
+        0 => OutputDevice::Default,
+        _ => OutputDevice::ByName {
+            name: DEVICES.get(idx).map_or(DEVICES[0].1, |d| d.1).to_owned(),
+        },
+    }
+}
+
+async fn load_clips(repo: Arc<dyn SoundboardClipsRepo>) -> Result<Vec<StoredClip>, String> {
+    repo.list().await.map_err(|e| e.to_string())
+}
+
+async fn save_clip(repo: Arc<dyn SoundboardClipsRepo>, clip: StoredClip) -> Result<(), String> {
+    repo.save(&clip).await.map_err(|e| e.to_string())
+}
+
+async fn delete_clip(repo: Arc<dyn SoundboardClipsRepo>, id: ClipId) -> Result<(), String> {
+    repo.delete(id).await.map(|_| ()).map_err(|e| e.to_string())
+}
+
+async fn play_clip(player: Arc<SoundboardPlayer>, id: ClipId) -> Result<(), String> {
+    player.play(id, None).await.map_err(|e| e.to_string())
 }

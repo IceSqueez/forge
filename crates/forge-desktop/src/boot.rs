@@ -164,16 +164,16 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         });
         TtsTriggerSettingsHandle::new(loaded)
     };
+    let soundboard_player = Arc::new(SoundboardPlayer::new(
+        Arc::new(CpalSinkFactory),
+        Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
+        backend.soundboard_clips_repo(),
+    ));
     match speak_dispatcher {
         Some(dispatcher) => {
-            let sound_player = Arc::new(SoundboardPlayer::new(
-                Arc::new(CpalSinkFactory),
-                Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
-                backend.soundboard_clips_repo(),
-            ));
             if let Err(e) = register_audio_sub_actions(
                 &mut sub_action_reg,
-                sound_player as Arc<dyn SoundPlayer>,
+                Arc::clone(&soundboard_player) as Arc<dyn SoundPlayer>,
                 dispatcher,
                 tts_trigger_settings.clone(),
             ) {
@@ -259,6 +259,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         pipeline_config,
         tts_registry,
         hotkey_client,
+        soundboard_player,
     })
 }
 

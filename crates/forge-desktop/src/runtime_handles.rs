@@ -38,4 +38,5 @@ pub struct RuntimeHandles {
     /// `None` in lockstep with `speak` (absent when the speak subsystem doesn't build).
     pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
+    pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
 }

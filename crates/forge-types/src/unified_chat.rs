@@ -158,6 +158,10 @@ pub enum ChatEventDetail {
     Raid {
         viewer_count: u64,
     },
+    Cheer {
+        bits: u64,
+        message: Option<String>,
+    },
     SuperChat {
         amount_micros: u64,
         currency: String,

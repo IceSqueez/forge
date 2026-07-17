@@ -297,11 +297,7 @@ pub(crate) fn build_cheer_chat_payload(
         segments,
         badges: vec![],
         is_event: true,
-        event_detail: Some(ChatEventDetail::SuperChat {
-            amount_micros: bits * 10_000,
-            currency: "BITS".to_owned(),
-            message,
-        }),
+        event_detail: Some(ChatEventDetail::Cheer { bits, message }),
         moderation: ModerationMarks::default(),
     }
 }
@@ -499,15 +495,10 @@ mod tests {
         });
         let payload = build_cheer_chat_payload(&event_data, "meta-001");
         match payload.event_detail.unwrap() {
-            ChatEventDetail::SuperChat {
-                amount_micros,
-                currency,
-                ..
-            } => {
-                assert_eq!(amount_micros, 1_000_000);
-                assert_eq!(currency, "BITS");
+            ChatEventDetail::Cheer { bits, .. } => {
+                assert_eq!(bits, 100);
             }
-            other => panic!("expected SuperChat, got {other:?}"),
+            other => panic!("expected Cheer, got {other:?}"),
         }
     }
 

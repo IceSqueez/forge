@@ -1702,6 +1702,7 @@ widget_chat_triggered = Спрацювало: { $action }
 
 chat_event_subscribed = підписався (Рівень { $tier })
 chat_event_raided = рейдить з
+chat_event_cheered = чірив
 chat_event_viewers = { $viewers } глядачів
 chat_event_super_chat = надіслав Super Chat ({ $amount } { $currency })
 chat_event_new_member = став учасником

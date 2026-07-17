@@ -227,6 +227,11 @@ fn event_body(row: &UnifiedChatRow) -> ChatBody {
             viewers: tr!("chat_event_viewers", viewers = *viewer_count as i64).into(),
             triggered: None,
         },
+        Some(ChatEventDetail::Cheer { bits, message }) => ChatBody::Cheer {
+            descriptor: descriptor(tr!("chat_event_cheered")),
+            bits: *bits,
+            text: message.clone().map(SharedString::from).unwrap_or_default(),
+        },
         Some(ChatEventDetail::SuperChat {
             amount_micros,
             currency,

@@ -10,7 +10,6 @@ use crate::tokens::{BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_
 
 // A chat line is density-neutral: its geometry stays fixed off the shared `Spacing` scale,
 // and its pill/badge micro-sizes fall below the token grid, so they are named literals here.
-const TIME_W: Pixels = px(42.0);
 const ROW_GAP: Pixels = px(8.0);
 const LINE1_GAP: Pixels = px(6.0);
 
@@ -87,7 +86,7 @@ pub fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
         BadgeKind::Bot => palette.info,
         BadgeKind::Partner => palette.accent_teal,
         BadgeKind::Premium => palette.accent_pink_light,
-        BadgeKind::Founder => palette.disabled,
+        BadgeKind::Founder => palette.accent_pink_light,
         BadgeKind::Turbo => palette.brand,
         BadgeKind::HypeTrain => palette.warning,
         BadgeKind::Bits => palette.bits,
@@ -207,7 +206,6 @@ impl ChatRowView {
 fn time_el(ts: SharedString, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex_none()
-        .w(TIME_W)
         .whitespace_nowrap()
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XXS)

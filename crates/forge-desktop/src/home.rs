@@ -388,6 +388,11 @@ impl HomeView {
         } else {
             palette.text_faint
         };
+        let health_icon_color = if connected {
+            palette.success
+        } else {
+            palette.random
+        };
         let badge_label = if connected {
             tr!("home_health_live")
         } else {
@@ -411,7 +416,7 @@ impl HomeView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::ChartLine, HEALTH_ICON, palette.success))
+            .child(icon(Icon::ChartLine, HEALTH_ICON, health_icon_color))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)

@@ -4,6 +4,7 @@ use forge_components::{
     Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, icon, modal,
     overlay, primary_button, radius, spacing, tr, with_alpha,
 };
+use forge_script::MethodDescriptor;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
     SharedString, Subscription, Window, div, prelude::*, px,
@@ -117,11 +118,6 @@ struct RunModalState {
     script_name: String,
     inputs: Vec<RunInput>,
     error: Option<SharedString>,
-}
-
-struct ApiGroup {
-    label: &'static str,
-    fns: &'static [&'static str],
 }
 
 /// `None` = type-check passed; `Some(n)` = error count.
@@ -1329,34 +1325,37 @@ impl ScriptEditorView {
             .child(header)
             .child(search);
 
-        let mut any = false;
-        for group in api_catalog() {
-            let matches: Vec<&&str> = group
-                .fns
-                .iter()
-                .filter(|sig| query.is_empty() || sig.to_lowercase().contains(&query))
-                .collect();
-            if matches.is_empty() {
-                continue;
-            }
-            any = true;
+        let matches: Vec<&'static MethodDescriptor> = forge_script::catalog()
+            .iter()
+            .filter(|entry| {
+                if query.is_empty() {
+                    return true;
+                }
+                entry.name.to_lowercase().contains(&query)
+                    || entry
+                        .namespace
+                        .is_some_and(|ns| ns.to_lowercase().contains(&query))
+            })
+            .collect();
 
-            let mut section = div().flex().flex_col().child(
-                div()
-                    .pt(spacing(Spacing::Sm, Density::Cozy))
-                    .pb(spacing(Spacing::Xxs, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_muted)
-                    .child(group.label),
-            );
-            for sig in matches {
-                section = section.child(api_fn_row(sig, palette));
+        let mut current_ns: Option<Option<&'static str>> = None;
+        for entry in &matches {
+            if current_ns != Some(entry.namespace) {
+                current_ns = Some(entry.namespace);
+                pane = pane.child(
+                    div()
+                        .pt(spacing(Spacing::Sm, Density::Cozy))
+                        .pb(spacing(Spacing::Xxs, Density::Cozy))
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_muted)
+                        .child(entry.namespace.unwrap_or("core").to_uppercase()),
+                );
             }
-            pane = pane.child(section);
+            pane = pane.child(api_fn_row(entry, palette));
         }
 
-        if !any {
+        if matches.is_empty() {
             pane = pane.child(
                 div()
                     .pt(spacing(Spacing::Sm, Density::Cozy))
@@ -1606,45 +1605,46 @@ fn muted_line(text: impl Into<SharedString>, palette: &ForgePalette) -> impl Int
     div().text_color(palette.text_faint).child(text.into())
 }
 
-fn api_fn_row(sig: &'static str, palette: &ForgePalette) -> impl IntoElement {
-    div()
+fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElement {
+    let params = entry
+        .params
+        .iter()
+        .map(|p| format!("{}: {}", p.name, p.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sig = format!("{}({}) -> {}", entry.name, params, entry.return_type);
+
+    let mut row = div()
         .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
         .py(spacing(Spacing::Xxs, Density::Cozy))
-        .child(badge(palette.brand, palette.shell, "fn", true, FONT_XXS))
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_primary)
-                .child(sig),
-        )
-}
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .child(badge(palette.brand, palette.shell, "fn", true, FONT_XXS))
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_primary)
+                        .child(sig),
+                ),
+        );
 
-fn api_catalog() -> &'static [ApiGroup] {
-    &[
-        ApiGroup {
-            label: "FORGE :: CORE",
-            fns: &["log(msg)", "warn(msg)", "sleep(ms)"],
-        },
-        ApiGroup {
-            label: "FORGE :: CHAT",
-            fns: &["send(text)", "reply(to, text)", "whisper(user, msg)"],
-        },
-        ApiGroup {
-            label: "FORGE :: GLOBALS",
-            fns: &["get(key)", "set(key, val)", "incr(key)"],
-        },
-        ApiGroup {
-            label: "FORGE :: OBS",
-            fns: &["set_scene(n)", "toggle_source(n)", "set_mute(n, b)"],
-        },
-        ApiGroup {
-            label: "FORGE :: HTTP",
-            fns: &["get(url)", "post(url, b)"],
-        },
-    ]
+    if let Some(doc) = entry.doc {
+        row = row.child(
+            div()
+                .pl(spacing(Spacing::Lg, Density::Cozy))
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_muted)
+                .child(doc),
+        );
+    }
+    row
 }
 
 fn seed_run_result(name: &str) -> Vec<ConsoleLine> {

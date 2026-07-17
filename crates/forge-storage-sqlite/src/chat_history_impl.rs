@@ -22,6 +22,13 @@ fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, S
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
 }
 
+fn encode_source(source: ChatSource) -> Result<String, StorageError> {
+    Ok(serde_json::to_string(&source)
+        .map_err(StorageError::Serialization)?
+        .trim_matches('"')
+        .to_string())
+}
+
 type ChatHistoryRow = (
     String,
     String,
@@ -104,10 +111,7 @@ impl SqliteChatHistoryRepo {
 impl ChatHistoryRepo for SqliteChatHistoryRepo {
     async fn append(&self, row: &UnifiedChatRow) -> Result<(), StorageError> {
         let event_id_str = row.event_id.to_string();
-        let source_str = serde_json::to_string(&row.source)
-            .map_err(StorageError::Serialization)?
-            .trim_matches('"')
-            .to_string();
+        let source_str = encode_source(row.source)?;
         let received_at_ms = to_epoch_ms(row.received_at);
         let author_color_str = row
             .author_color
@@ -155,7 +159,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
             "SELECT id, event_id, source, received_at, author, author_color,
                     body_segments, badges, is_event, event_detail, moderation
              FROM chat_history
-             ORDER BY received_at DESC
+             ORDER BY seq DESC
              LIMIT ?",
         )
         .bind(limit as i64)
@@ -171,11 +175,75 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
     async fn prune_to_limit(&self, max_rows: usize) -> Result<u64, StorageError> {
         let result = sqlx::query(
             "DELETE FROM chat_history
-             WHERE id NOT IN (
-                 SELECT id FROM chat_history ORDER BY received_at DESC LIMIT ?
+             WHERE seq NOT IN (
+                 SELECT seq FROM chat_history ORDER BY seq DESC LIMIT ?
              )",
         )
         .bind(max_rows as i64)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected())
+    }
+
+    async fn mark_message_deleted(&self, platform_msg_id: &str) -> Result<u64, StorageError> {
+        let result = sqlx::query(
+            "UPDATE chat_history
+             SET moderation = json_set(moderation, '$.deleted', json('true'))
+             WHERE id = ?",
+        )
+        .bind(platform_msg_id)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected())
+    }
+
+    async fn mark_user_messages_moderated(
+        &self,
+        source: ChatSource,
+        author: &str,
+        timeout: bool,
+    ) -> Result<u64, StorageError> {
+        let source_str = encode_source(source)?;
+
+        let result = if timeout {
+            sqlx::query(
+                "UPDATE chat_history
+                 SET moderation = json_set(moderation, '$.timed_out', json('true'), '$.deleted', json('true'))
+                 WHERE source = ? AND author = ?",
+            )
+            .bind(&source_str)
+            .bind(author)
+            .execute(&self.pool)
+            .await
+        } else {
+            sqlx::query(
+                "UPDATE chat_history
+                 SET moderation = json_set(moderation, '$.banned', json('true'), '$.deleted', json('true'))
+                 WHERE source = ? AND author = ?",
+            )
+            .bind(&source_str)
+            .bind(author)
+            .execute(&self.pool)
+            .await
+        }
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected())
+    }
+
+    async fn clear_platform(&self, source: ChatSource) -> Result<u64, StorageError> {
+        let source_str = encode_source(source)?;
+
+        let result = sqlx::query(
+            "UPDATE chat_history
+             SET moderation = json_set(moderation, '$.deleted', json('true'))
+             WHERE source = ?",
+        )
+        .bind(&source_str)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;

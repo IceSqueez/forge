@@ -12,7 +12,7 @@ use forge_types::ActionId;
 
 /// Schema version this build expects. The startup gate compares `schema_version()`
 /// against this constant; a mismatch routes to `Screen::SchemaUpgradeRequired`.
-pub const EXPECTED_SCHEMA_VERSION: u32 = 25;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 26;
 
 #[async_trait]
 pub trait BundleRepo: Send + Sync {

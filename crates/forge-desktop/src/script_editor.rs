@@ -6,7 +6,7 @@ use forge_components::{
     Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, icon, modal,
     overlay, primary_button, radius, spacing, tr, with_alpha,
 };
-use forge_events::EventPublisher;
+use forge_events::{Event, EventPublisher, EventsError};
 use forge_runtime::{EventBus, ScriptRegistry};
 use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
@@ -113,6 +113,7 @@ enum LogTag {
     Run,
     Ok,
     Stats,
+    Log,
     Warn,
     Err,
 }
@@ -123,6 +124,7 @@ impl LogTag {
             LogTag::Run => "[run]",
             LogTag::Ok => "[ok]",
             LogTag::Stats => "[stats]",
+            LogTag::Log => "[log]",
             LogTag::Warn => "[warn]",
             LogTag::Err => "[error]",
         }
@@ -133,6 +135,7 @@ impl LogTag {
             LogTag::Run => palette.info,
             LogTag::Ok => palette.success,
             LogTag::Stats => palette.brand,
+            LogTag::Log => palette.text_secondary,
             LogTag::Warn => palette.warning,
             LogTag::Err => palette.random,
         }
@@ -267,8 +270,61 @@ impl ScriptEditorView {
             _api_search_sub: api_search_sub,
             run_modal: None,
         };
+        view.start_log_bridge(cx);
         view.load_scripts(cx);
         view
+    }
+
+    fn start_log_bridge(&self, cx: &mut Context<Self>) {
+        let bus = Arc::clone(&self.bus);
+        cx.spawn(async move |this, cx| {
+            let mut subscription = bus.subscribe();
+            loop {
+                match subscription.recv().await {
+                    Ok(event) => {
+                        if event.kind == "script.log"
+                            && this
+                                .update(cx, |this, cx| this.on_script_log(&event, cx))
+                                .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(EventsError::LaggingReceiver) => {}
+                    Err(_) => break,
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn on_script_log(&mut self, event: &Event, cx: &mut Context<Self>) {
+        let Some(open_id) = self.open.as_ref().map(|o| o.id) else {
+            return;
+        };
+        let Some(sid) = event.payload.get("script_id").and_then(|v| v.as_str()) else {
+            return;
+        };
+        if sid != open_id.to_string().as_str() {
+            return;
+        }
+        let level = event
+            .payload
+            .get("level")
+            .and_then(|v| v.as_str())
+            .unwrap_or("info");
+        let message = event
+            .payload
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let tag = match level {
+            "error" => LogTag::Err,
+            "warn" => LogTag::Warn,
+            _ => LogTag::Log,
+        };
+        self.push_console(tag, message.to_owned());
+        cx.notify();
     }
 
     fn find_entry(&self, id: ScriptId) -> Option<&ScriptEntry> {

@@ -1,8 +1,8 @@
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XS, ForgePalette, Icon, InputBar, InputBarEvent, InputEvent, Platform, Radius,
-    Spacing, TextInput, breadcrumb, chat_row, chip, icon, radius, search_input, spacing,
-    status_dot, tr,
+    BORDER_THIN, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY,
+    DEFAULT_MONO_FAMILY, Density, FONT_XS, ForgePalette, Icon, InputBar, InputBarEvent, InputEvent,
+    Platform, Radius, Spacing, TextInput, breadcrumb, chat_row, chip, icon, radius, search_input,
+    spacing, status_dot, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, ScrollHandle, ScrollWheelEvent,
@@ -20,6 +20,9 @@ const SEARCH_FIELD_WIDTH: Pixels = px(220.0);
 const VIEWER_DOT: Pixels = px(6.0);
 const CHIP_DIVIDER_W: Pixels = px(0.5);
 const CHIP_DIVIDER_H: Pixels = px(14.0);
+const ICON_BTN_PAD: Pixels = px(5.0);
+const ICON_BTN_RADIUS: Pixels = px(5.0);
+const EXPORT_HEADER_RULE: usize = 48;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PlatformFilter {
@@ -31,6 +34,7 @@ pub struct ChatView {
     feed: Entity<ChatFeed>,
     home_stats: Entity<HomeStats>,
     status: Entity<RuntimeStatus>,
+    rt_handle: tokio::runtime::Handle,
     input: Entity<InputBar>,
     search_field: Entity<TextInput>,
     platform_filter: PlatformFilter,
@@ -55,6 +59,7 @@ impl ChatView {
         feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,
         status: Entity<RuntimeStatus>,
+        rt_handle: tokio::runtime::Handle,
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -75,6 +80,7 @@ impl ChatView {
             feed,
             home_stats,
             status,
+            rt_handle,
             input,
             search_field,
             platform_filter: PlatformFilter::All,
@@ -194,6 +200,40 @@ impl ChatView {
         cx.notify();
     }
 
+    fn export_chat_log(&self, cx: &mut Context<Self>) {
+        let feed = self.feed.read(cx);
+        let mut lines: Vec<String> = Vec::new();
+        for msg in feed.messages().iter().filter(|m| self.row_visible(m)) {
+            let text = body_export_text(&msg.body);
+            if msg.username.is_empty() {
+                lines.push(format!("[{}] {}", msg.timestamp, text));
+            } else {
+                lines.push(format!("[{}] {}: {}", msg.timestamp, msg.username, text));
+            }
+        }
+
+        let stamp = time::OffsetDateTime::now_utc();
+        let when = stamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| stamp.unix_timestamp().to_string());
+        let header = format!(
+            "Forge chat log · exported {} · {} lines\n{}\n",
+            when,
+            lines.len(),
+            "-".repeat(EXPORT_HEADER_RULE),
+        );
+        let contents = format!("{header}{}", lines.join("\n"));
+        let filename = format!("forge-chat-{}.txt", stamp.unix_timestamp());
+
+        self.rt_handle.spawn(async move {
+            let path = forge_platform_core::paths::data_dir().join(filename);
+            match tokio::fs::write(&path, contents).await {
+                Ok(()) => tracing::info!(path = %path.display(), "chat log exported"),
+                Err(e) => tracing::warn!(error = %e, "chat log export failed"),
+            }
+        });
+    }
+
     /// Search is deliberately excluded - it dims non-matches rather than filtering them.
     fn row_visible(&self, msg: &ChatMessage) -> bool {
         let platform_ok = match self.platform_filter {
@@ -231,7 +271,7 @@ impl ChatView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(status_dot(palette.text_faint, VIEWER_DOT))
+            .child(status_dot(palette.success, VIEWER_DOT))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
@@ -373,7 +413,7 @@ impl ChatView {
         chips = chips.child(
             chip(
                 tr!("chat_filter_hide_bots"),
-                ChipGlyph::Icon(Icon::EyeOff, palette.text_faint),
+                ChipGlyph::Icon(Icon::BellOff, palette.text_faint),
                 self.hide_bots,
                 palette,
             )
@@ -383,6 +423,11 @@ impl ChatView {
                 cx.listener(|this, _, _, cx| this.toggle_hide_bots(cx)),
             ),
         );
+
+        let surf = palette.surface_overlay;
+        let text = palette.text_primary;
+        let faint = palette.text_faint;
+        let green = palette.success;
 
         let toggle_icon = if self.search_open {
             Icon::X
@@ -394,11 +439,30 @@ impl ChatView {
             .flex()
             .items_center()
             .justify_center()
+            .p(ICON_BTN_PAD)
+            .rounded(ICON_BTN_RADIUS)
             .cursor_pointer()
+            .hover(move |s| s.bg(surf))
             .on_click(
                 cx.listener(|this, _: &ClickEvent, window, cx| this.toggle_search(window, cx)),
             )
-            .child(icon(toggle_icon, px(14.0), palette.text_faint));
+            .child(icon(
+                toggle_icon,
+                px(14.0),
+                if self.search_open { text } else { faint },
+            ));
+
+        let export_btn = div()
+            .id("chat-export")
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(ICON_BTN_PAD)
+            .rounded(ICON_BTN_RADIUS)
+            .cursor_pointer()
+            .hover(move |s| s.bg(surf))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_chat_log(cx)))
+            .child(icon(Icon::Download, px(14.0), green));
 
         let mut search_control = div()
             .flex()
@@ -408,7 +472,7 @@ impl ChatView {
             search_control =
                 search_control.child(div().w(SEARCH_FIELD_WIDTH).child(self.search_field.clone()));
         }
-        let search_control = search_control.child(search_toggle);
+        let search_control = search_control.child(search_toggle).child(export_btn);
 
         div()
             .w_full()
@@ -544,6 +608,22 @@ impl ChatView {
         }
 
         area
+    }
+}
+
+fn body_export_text(body: &ChatBody) -> String {
+    match body {
+        ChatBody::Message(text) => text.to_string(),
+        ChatBody::Command { command, .. } => command.to_string(),
+        ChatBody::Cheer { text, .. } => text.to_string(),
+        ChatBody::Subscription {
+            descriptor,
+            message,
+            ..
+        } => message
+            .as_ref()
+            .map_or_else(|| descriptor.to_string(), |m| m.to_string()),
+        ChatBody::Raid { descriptor, .. } => descriptor.to_string(),
     }
 }
 

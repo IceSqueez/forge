@@ -256,14 +256,31 @@ fn format_clock(unix_secs: i64) -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_components::{BadgeKind, ChatBody};
+    use forge_components::{BadgeKind, ChatBody, Platform};
     use forge_types::{
         ChatEventDetail, ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow,
         UserBadge,
     };
     use time::OffsetDateTime;
 
-    use super::{ChatMessage, badge_kind, event_body};
+    use super::{ChatFeed, ChatMessage, badge_kind, event_body};
+
+    fn feed_row(id: &str, source: ChatSource, author: &str) -> UnifiedChatRow {
+        UnifiedChatRow {
+            id: id.to_string(),
+            source,
+            author: author.to_string(),
+            ..row(None, vec![], vec![])
+        }
+    }
+
+    fn moderated_by_id(feed: &ChatFeed, id: &str) -> bool {
+        feed.messages()
+            .iter()
+            .find(|m| m.id == id)
+            .unwrap()
+            .moderated
+    }
 
     fn row(
         event_detail: Option<ChatEventDetail>,
@@ -435,5 +452,119 @@ mod tests {
             let message = ChatMessage::from_row(&row(None, vec![], badges.clone()));
             assert_eq!(message.is_bot, expected, "is_bot mismatch for {badges:?}");
         }
+    }
+
+    #[test]
+    fn from_row_moderated_is_true_when_any_moderation_flag_is_set() {
+        // `moderated` is the OR of the three marks; an AND or a single-field read
+        // would fail the timed_out-only and banned-only rows.
+        let cases = [
+            (ModerationMarks::default(), false),
+            (
+                ModerationMarks {
+                    deleted: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                ModerationMarks {
+                    timed_out: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                ModerationMarks {
+                    banned: true,
+                    ..Default::default()
+                },
+                true,
+            ),
+        ];
+        for (marks, expected) in cases {
+            let mut r = row(None, vec![], vec![]);
+            r.moderation = marks.clone();
+            assert_eq!(
+                ChatMessage::from_row(&r).moderated,
+                expected,
+                "marks={marks:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mark_deleted_flips_only_the_message_with_matching_id() {
+        let mut feed = ChatFeed::new();
+        feed.push(ChatMessage::from_row(&feed_row(
+            "m1",
+            ChatSource::Twitch,
+            "alice",
+        )));
+        feed.push(ChatMessage::from_row(&feed_row(
+            "m2",
+            ChatSource::Twitch,
+            "bob",
+        )));
+
+        feed.mark_deleted("m1");
+
+        assert!(moderated_by_id(&feed, "m1"));
+        assert!(!moderated_by_id(&feed, "m2"));
+    }
+
+    #[test]
+    fn mark_user_flips_matching_platform_and_case_insensitive_username_only() {
+        let mut feed = ChatFeed::new();
+        feed.push(ChatMessage::from_row(&feed_row(
+            "same",
+            ChatSource::Twitch,
+            "Alice",
+        )));
+        feed.push(ChatMessage::from_row(&feed_row(
+            "other-name",
+            ChatSource::Twitch,
+            "Bob",
+        )));
+        feed.push(ChatMessage::from_row(&feed_row(
+            "other-platform",
+            ChatSource::YouTube,
+            "Alice",
+        )));
+
+        feed.mark_user(Platform::Twitch, "alice");
+
+        assert!(
+            moderated_by_id(&feed, "same"),
+            "same platform, case-insensitive name match"
+        );
+        assert!(
+            !moderated_by_id(&feed, "other-name"),
+            "different username untouched"
+        );
+        assert!(
+            !moderated_by_id(&feed, "other-platform"),
+            "same name on another platform untouched"
+        );
+    }
+
+    #[test]
+    fn clear_platform_flips_only_messages_on_that_platform() {
+        let mut feed = ChatFeed::new();
+        feed.push(ChatMessage::from_row(&feed_row(
+            "tw",
+            ChatSource::Twitch,
+            "a",
+        )));
+        feed.push(ChatMessage::from_row(&feed_row(
+            "yt",
+            ChatSource::YouTube,
+            "b",
+        )));
+
+        feed.clear_platform(Platform::Twitch);
+
+        assert!(moderated_by_id(&feed, "tw"));
+        assert!(!moderated_by_id(&feed, "yt"));
     }
 }

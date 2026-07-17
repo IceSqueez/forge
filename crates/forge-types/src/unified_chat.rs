@@ -409,6 +409,49 @@ mod tests {
     }
 
     #[test]
+    fn moderation_action_serde_tag_and_envelope_roundtrip() {
+        // Contract the runtime relies on: every action is internally tagged under
+        // "type" (snake_case), the payload wraps it in an "action" field, and both
+        // survive a round-trip through the reserved envelope KEY the consumer reads.
+        let cases = [
+            (
+                ChatModerationAction::DeleteMessage {
+                    message_id: "m1".to_string(),
+                },
+                "delete_message",
+            ),
+            (
+                ChatModerationAction::RemoveUser {
+                    user_name: "bob".to_string(),
+                    timeout: true,
+                },
+                "remove_user",
+            ),
+            (
+                ChatModerationAction::RemoveUser {
+                    user_name: "eve".to_string(),
+                    timeout: false,
+                },
+                "remove_user",
+            ),
+            (ChatModerationAction::ClearChat, "clear_chat"),
+        ];
+
+        for (action, tag) in cases {
+            let payload = ChatModerationPayload {
+                action: action.clone(),
+            };
+            let envelope = serde_json::json!({ ChatModerationPayload::KEY: payload });
+            let stored = &envelope[ChatModerationPayload::KEY];
+
+            assert_eq!(stored["action"]["type"], tag, "wire tag for {action:?}");
+
+            let back: ChatModerationPayload = serde_json::from_value(stored.clone()).unwrap();
+            assert_eq!(back.action, action, "round-trip for {action:?}");
+        }
+    }
+
+    #[test]
     fn chat_source_serde_snake_case() {
         assert_eq!(to_string(&ChatSource::Twitch).unwrap(), r#""twitch""#);
         assert_eq!(to_string(&ChatSource::YouTube).unwrap(), r#""youtube""#);

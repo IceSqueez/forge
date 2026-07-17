@@ -399,4 +399,162 @@ mod tests {
         assert_eq!(repo.prune_to_limit(0).await.unwrap(), 2);
         assert!(repo.list_recent(10).await.unwrap().is_empty());
     }
+
+    fn row_full(id: &str, source: ChatSource, author: &str, secs: i64) -> UnifiedChatRow {
+        UnifiedChatRow {
+            source,
+            author: author.to_string(),
+            ..row_at(id, secs)
+        }
+    }
+
+    async fn moderation_of(repo: &SqliteChatHistoryRepo, id: &str) -> ModerationMarks {
+        repo.list_recent(100)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == id)
+            .unwrap()
+            .moderation
+    }
+
+    #[tokio::test]
+    async fn list_recent_orders_ties_by_insertion_seq_not_received_at() {
+        // All rows share one received_at; the `seq` column exists precisely so
+        // equal-timestamp rows come back newest-inserted-first instead of in an
+        // order left undefined by `ORDER BY received_at`.
+        let repo = make_repo().await;
+        seed(&repo, &[("a", 100), ("b", 100), ("c", 100)]).await;
+
+        let ids: Vec<String> = repo
+            .list_recent(10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(ids, ["c", "b", "a"]);
+    }
+
+    #[tokio::test]
+    async fn mark_message_deleted_flags_only_deleted_and_survives_round_trip() {
+        // Decoding through list_recent proves the json_set write persists into the
+        // moderation column and re-parses as ModerationMarks.
+        let repo = make_repo().await;
+        seed(&repo, &[("m1", 100)]).await;
+
+        let affected = repo.mark_message_deleted("m1").await.unwrap();
+
+        assert_eq!(affected, 1);
+        assert_eq!(
+            moderation_of(&repo, "m1").await,
+            ModerationMarks {
+                deleted: true,
+                timed_out: false,
+                banned: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn mark_message_deleted_unknown_id_affects_no_rows() {
+        let repo = make_repo().await;
+        seed(&repo, &[("m1", 100)]).await;
+
+        assert_eq!(repo.mark_message_deleted("nope").await.unwrap(), 0);
+        assert!(!moderation_of(&repo, "m1").await.deleted);
+    }
+
+    #[tokio::test]
+    async fn mark_user_messages_moderated_sets_branch_flag_only_for_matching_source_and_author() {
+        // timeout=true -> timed_out+deleted; timeout=false -> banned+deleted. In
+        // both branches only rows matching BOTH source and author are touched.
+        for (timeout, expected) in [
+            (
+                true,
+                ModerationMarks {
+                    deleted: true,
+                    timed_out: true,
+                    banned: false,
+                },
+            ),
+            (
+                false,
+                ModerationMarks {
+                    deleted: true,
+                    timed_out: false,
+                    banned: true,
+                },
+            ),
+        ] {
+            let repo = make_repo().await;
+            repo.append(&row_full("v1", ChatSource::Twitch, "victim", 100))
+                .await
+                .unwrap();
+            repo.append(&row_full("v2", ChatSource::Twitch, "victim", 100))
+                .await
+                .unwrap();
+            repo.append(&row_full("by", ChatSource::Twitch, "bystander", 100))
+                .await
+                .unwrap();
+            repo.append(&row_full("yt", ChatSource::YouTube, "victim", 100))
+                .await
+                .unwrap();
+
+            let affected = repo
+                .mark_user_messages_moderated(ChatSource::Twitch, "victim", timeout)
+                .await
+                .unwrap();
+
+            assert_eq!(affected, 2, "timeout={timeout}");
+            assert_eq!(
+                moderation_of(&repo, "v1").await,
+                expected,
+                "timeout={timeout}"
+            );
+            assert_eq!(
+                moderation_of(&repo, "v2").await,
+                expected,
+                "timeout={timeout}"
+            );
+            assert_eq!(
+                moderation_of(&repo, "by").await,
+                ModerationMarks::default(),
+                "same-source other-author must be untouched, timeout={timeout}"
+            );
+            assert_eq!(
+                moderation_of(&repo, "yt").await,
+                ModerationMarks::default(),
+                "same-author other-source must be untouched, timeout={timeout}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn clear_platform_marks_only_that_source_deleted() {
+        let repo = make_repo().await;
+        repo.append(&row_full("t1", ChatSource::Twitch, "a", 100))
+            .await
+            .unwrap();
+        repo.append(&row_full("t2", ChatSource::Twitch, "b", 100))
+            .await
+            .unwrap();
+        repo.append(&row_full("y1", ChatSource::YouTube, "c", 100))
+            .await
+            .unwrap();
+
+        let affected = repo.clear_platform(ChatSource::Twitch).await.unwrap();
+
+        assert_eq!(affected, 2);
+        assert_eq!(
+            moderation_of(&repo, "t1").await,
+            ModerationMarks {
+                deleted: true,
+                timed_out: false,
+                banned: false,
+            }
+        );
+        assert!(moderation_of(&repo, "t2").await.deleted);
+        assert_eq!(moderation_of(&repo, "y1").await, ModerationMarks::default());
+    }
 }

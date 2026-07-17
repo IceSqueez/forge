@@ -10,7 +10,9 @@ use gpui::{
 };
 
 use crate::chat_feed::{ChatFeed, ChatMessage};
+use crate::home_stats::HomeStats;
 use crate::presentation::ActivePresentation;
+use crate::runtime_status::RuntimeStatus;
 
 const AT_BOTTOM_SLACK: f32 = 60.0;
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -27,6 +29,8 @@ enum PlatformFilter {
 
 pub struct ChatView {
     feed: Entity<ChatFeed>,
+    home_stats: Entity<HomeStats>,
+    status: Entity<RuntimeStatus>,
     input: Entity<InputBar>,
     search_field: Entity<TextInput>,
     platform_filter: PlatformFilter,
@@ -40,16 +44,26 @@ pub struct ChatView {
     last_seen_len: usize,
     chat_scroll: ScrollHandle,
     _feed_obs: Subscription,
+    _stats_obs: Subscription,
+    _status_obs: Subscription,
     _input_sub: Subscription,
     _search_sub: Subscription,
 }
 
 impl ChatView {
-    pub fn new(feed: Entity<ChatFeed>, palette: ForgePalette, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        feed: Entity<ChatFeed>,
+        home_stats: Entity<HomeStats>,
+        status: Entity<RuntimeStatus>,
+        palette: ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let input = cx.new(|cx| InputBar::new(tr!("chat_send_placeholder_connected"), palette, cx));
         let search_field = cx.new(|cx| search_input(tr!("chat_search_placeholder"), palette, cx));
 
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
+        let stats_obs = cx.observe(&home_stats, |_, _, cx| cx.notify());
+        let status_obs = cx.observe(&status, |_, _, cx| cx.notify());
         let input_sub = cx.subscribe(&input, Self::on_input_event);
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
 
@@ -59,6 +73,8 @@ impl ChatView {
 
         Self {
             feed,
+            home_stats,
+            status,
             input,
             search_field,
             platform_filter: PlatformFilter::All,
@@ -72,6 +88,8 @@ impl ChatView {
             last_seen_len,
             chat_scroll,
             _feed_obs: feed_obs,
+            _stats_obs: stats_obs,
+            _status_obs: status_obs,
             _input_sub: input_sub,
             _search_sub: search_sub,
         }
@@ -200,6 +218,9 @@ impl ChatView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let viewer_count = self.home_stats.read(cx).viewers_display();
+        let uptime_text = self.status.read(cx).uptime_human();
+
         let viewers = div()
             .flex()
             .items_center()
@@ -210,7 +231,7 @@ impl ChatView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
-                    .child(format!("- {}", tr!("chat_viewers_unit"))),
+                    .child(format!("{} {}", viewer_count, tr!("chat_viewers_unit"))),
             );
 
         let separator = div()
@@ -229,7 +250,7 @@ impl ChatView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child("-"),
+                    .child(uptime_text),
             );
 
         let drawer_label = if self.drawer_open {

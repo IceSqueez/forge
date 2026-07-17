@@ -117,8 +117,16 @@ impl AppShell {
             }
             Screen::Chat => {
                 let palette = cx.palette();
-                cx.new(|cx| ChatView::new(topics.chat_feed.clone(), palette, cx))
-                    .into()
+                cx.new(|cx| {
+                    ChatView::new(
+                        topics.chat_feed.clone(),
+                        topics.home_stats.clone(),
+                        topics.status.clone(),
+                        palette,
+                        cx,
+                    )
+                })
+                .into()
             }
             Screen::EventFeed => {
                 let rt_handle = handles.rt_handle.clone();

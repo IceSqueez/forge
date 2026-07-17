@@ -6,6 +6,7 @@ use crate::globals::Globals;
 use crate::home_stats::HomeStats;
 use crate::platforms::PlatformConnectivity;
 use crate::queue_health::QueueHealth;
+use crate::runtime_status::RuntimeStatus;
 use crate::speak_state::SpeakState;
 
 pub struct Topics {
@@ -16,9 +17,11 @@ pub struct Topics {
     pub platforms: Entity<PlatformConnectivity>,
     pub speak: Entity<SpeakState>,
     pub queue_health: Entity<QueueHealth>,
+    pub status: Entity<RuntimeStatus>,
 }
 
 impl Topics {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         chat_feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,
@@ -27,6 +30,7 @@ impl Topics {
         platforms: Entity<PlatformConnectivity>,
         speak: Entity<SpeakState>,
         queue_health: Entity<QueueHealth>,
+        status: Entity<RuntimeStatus>,
     ) -> Self {
         Self {
             chat_feed,
@@ -36,6 +40,7 @@ impl Topics {
             platforms,
             speak,
             queue_health,
+            status,
         }
     }
 }

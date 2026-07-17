@@ -141,6 +141,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                         platforms,
                         speak,
                         queue_health,
+                        status.clone(),
                     );
                     let shell =
                         cx.new(|cx| AppShell::new(status, topics, handles_for_shell, window, cx));

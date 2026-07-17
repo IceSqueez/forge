@@ -1,9 +1,124 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-beta.3] - 2026-07-17
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump open from 5.3.6 to 5.4.0 (#41)
+- *(deps)* Bump ulid from 1.2.1 to 2.0.1 (#42)
+
+### 🎨 Styling
+- Replace em and en dashes with plain hyphens
+- Replace prose em-dash escapes with hyphens
+
+### 🐛 Bug Fixes
+- *(ids)* Adapt ULID generation to the ulid 2.0 API
+- *(desktop)* Run dashboard stats query on the tokio runtime
+- *(deps)* Drive zbus on async-io so gpui portal usage has a reactor
+- *(desktop)* Hold a tokio enter guard so pool teardown has a reactor
+
+### 📚 Documentation
+- *(workspace)* Drop non-invariant doc comments
+- *(readme)* Correct the fourth cloud TTS engine to Amazon Polly
+
+### 🚀 Features
+- *(storage)* Gate open on a typed schema-version mismatch
+- *(desktop)* Boot the real runtime behind a two-phase boot
+- *(desktop)* Feed observability topics from the live event bus
+- *(desktop)* Bring up the platform integrations at boot
+- *(desktop)* Wire live connection state into the integration UI
+- *(desktop)* Feed the Home viewers-now cell from the live aggregate
+- *(desktop)* Pull Home at-a-glance stats from the dashboard aggregate
+- *(desktop)* Stream live health deltas into the integration detail
+- *(desktop)* Drive integration lifecycle controls through the runtime
+- *(desktop)* Dispatch integration quick actions through the action engine
+- *(desktop)* Pick OBS scene and source targets for quick actions
+- *(server)* Expose an in-process ServerSnapshot getter on ServerHandle
+- *(desktop)* Drive the server console from a live snapshot poll
+- *(desktop)* Bring up the speak pipeline at boot
+- *(desktop)* Drive the TTS dashboard from the live speak queue
+- *(desktop)* Drive queue console controls through the scheduler
+- *(storage)* Soft-delete globals via an archive marker
+- *(desktop)* Drive the globals screen from live storage CRUD
+- *(storage)* Soft-delete actions and trigger instances via archive markers
+- *(desktop)* Drive the actions roster from live storage CRUD
+- *(desktop)* Rewrite the action editor onto live sub-action steps
+- *(desktop)* Show linked trigger instances in the action editor
+- *(desktop)* Fire a synthetic test event from the action editor
+- *(desktop)* Drive the triggers roster from live storage CRUD
+- *(desktop)* Show trigger detail with a live config editor
+- *(desktop)* Create trigger instances from a kind picker
+- *(desktop)* Link and unlink triggers from the action editor
+- *(desktop)* Drive the queues roster from storage with live register
+- *(desktop)* Drive voice aliases from storage with live hot-reload
+- *(desktop)* Drive tts filters from storage with live pipeline swap
+- *(desktop)* Register audio sub-action runners in the runtime
+- *(desktop)* Persist tts trigger settings with live hot-swap
+- *(desktop)* Store cloud tts credentials with live engine register
+- *(desktop)* Drive the tts engines roster from the live registry
+- *(desktop)* Write rolling file logs via a tracing subscriber
+- *(components)* Add a fluent-backed localization runtime
+- *(desktop)* Resolve and install the startup locale at boot
+- *(desktop)* Localize the navigation sidebar labels
+- *(desktop)* Localize the home, platforms, and stream apps screens
+- *(desktop)* Localize the live chat and event feed screens
+- *(desktop)* Localize the globals screen
+- *(desktop)* Localize the queues screen
+- *(desktop)* Localize the actions list screen
+- *(desktop)* Localize the action editor screen
+- *(desktop)* Localize the branch flow-control editor
+- *(desktop)* Localize the triggers list and detail screens
+- *(desktop)* Localize the trigger create screen
+- *(desktop)* Localize the TTS dashboard screen
+- *(desktop)* Localize the TTS engines screens
+- *(desktop)* Localize the TTS triggers and voice aliases screens
+- *(desktop)* Localize the TTS filters screen
+- *(desktop)* Localize the soundboard and server console screens
+- *(desktop)* Localize the script editor screen
+- *(desktop)* Localize the integration detail renderer
+- *(desktop)* Localize integration preview seed labels
+- *(desktop)* Localize the boot and data-failure screens
+- *(desktop)* Localize the settings frame and panes
+- *(desktop)* Localize the trigger platform filter chips
+- *(desktop)* Port the settings language section
+- *(desktop)* Port the settings audio section
+- *(desktop)* Port the settings notifications, queues, and storage panes
+- *(desktop)* Port the settings scripting section
+- *(desktop)* Port the settings websocket server section
+- *(desktop)* Port the settings shortcuts section
+- *(desktop)* Wire the global-hotkey subsystem into boot
+- *(desktop)* Port the settings hotkeys section
+- *(desktop)* Wire file-dialog import and export handlers
+- *(desktop)* Render scripting api docs from the live catalog
+- *(desktop)* Connect youtube and kick via loopback oauth
+- *(desktop)* Connect twitch via device-code authorization
+- *(desktop)* Play and persist soundboard clips via runtime
+- *(desktop)* Run and persist scripts via the runtime
+
+### 🚜 Refactor
+- *(components)* Promote field_label to the kit
+- *(components)* Let field_label take dynamic label text
+- *(desktop)* Hold runtime handles in the settings view
+
+### 🛠️ Build
+- *(deps)* Bump open to 5.4
+- *(deps)* Bump version to nearest compatible
+- *(desktop)* Make gpui the shipped forge binary, remove iced
+- *(deps)* Bump versions
+- *(audit)* Ignore unreachable quick-xml advisories in the gpui stack
+
+### 🧪 Testing
+- *(storage)* Cover soft-delete archive/restore for globals/actions/triggers
+- *(i18n)* Guard ftl key parity and locale formatters
+
 ## [0.3.0-beta.2] - 2026-07-13
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(desktop)* Route midi/hotkey/discord modules to integration detail
+
+### 📚 Documentation
+- *(release)* Release v0.3.0-beta.2
 
 ### 🚀 Features
 - *(desktop)* Boot the gpui app shell with fonts, theme global, and screen router

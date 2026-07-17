@@ -35,6 +35,8 @@ pub mod reserved_keys {
     pub const LANGUAGE: &str = "app.language";
     pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
     pub const AUDIO_OUTPUT_DEVICE_ID_KEY: &str = "audio.output_device_id";
+    pub const CHAT_HISTORY_STORE_LIMIT_KEY: &str = "chat_history.store_limit";
+    pub const CHAT_HISTORY_DISPLAY_LIMIT_KEY: &str = "chat_history.display_limit";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -219,6 +221,42 @@ pub trait SettingsRepo: Send + Sync {
             }
         }
     }
+}
+
+pub async fn chat_history_store_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT_KEY)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(5000))
+}
+
+pub async fn set_chat_history_store_limit(
+    repo: &dyn SettingsRepo,
+    limit: u32,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::CHAT_HISTORY_STORE_LIMIT_KEY,
+        &limit.to_string(),
+    )
+    .await
+}
+
+pub async fn chat_history_display_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT_KEY)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(500))
+}
+
+pub async fn set_chat_history_display_limit(
+    repo: &dyn SettingsRepo,
+    limit: u32,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT_KEY,
+        &limit.to_string(),
+    )
+    .await
 }
 
 #[cfg(test)]

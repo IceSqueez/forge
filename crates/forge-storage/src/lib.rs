@@ -1,6 +1,7 @@
 #![doc = "DataProvider trait + per-domain repo traits. Backend-agnostic storage contract."]
 
 pub mod action;
+pub mod chat_history;
 pub mod credentials;
 pub mod error;
 pub mod event_log;
@@ -20,6 +21,7 @@ pub mod viewer;
 pub mod voice_aliases;
 
 pub use action::{ActionRepo, ActionTelemetry, ExecutionStatus};
+pub use chat_history::ChatHistoryRepo;
 pub use credentials::{CredentialId, CredentialsRepo};
 pub use error::StorageError;
 pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
@@ -28,7 +30,10 @@ pub use history::{ActionStats, HistoryRepo};
 pub use provider::{BundleRepo, DataProvider, EXPECTED_SCHEMA_VERSION};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo};
-pub use settings::{Language, SettingsRepo, UnknownLanguage, reserved_keys};
+pub use settings::{
+    Language, SettingsRepo, UnknownLanguage, chat_history_display_limit, chat_history_store_limit,
+    reserved_keys, set_chat_history_display_limit, set_chat_history_store_limit,
+};
 pub use soundboard::{SoundboardClipsRepo, StoredClip};
 pub use transit::{
     ActionTransit, BUNDLE_FORMAT_VERSION, BundleDocument, BundleExportOutcome, BundleImportOutcome,

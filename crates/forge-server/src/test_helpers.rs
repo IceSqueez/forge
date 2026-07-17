@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_storage::action::MockActionRepo;
+use forge_storage::chat_history::MockChatHistoryRepo;
 use forge_storage::credentials::MockCredentialsRepo;
 use forge_storage::event_log::MockEventLogRepo;
 use forge_storage::globals::MockGlobalsRepo;
@@ -21,11 +22,11 @@ use forge_storage::user_globals::MockUserGlobalsRepo;
 use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
-    ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, CredentialId,
-    CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo, HistoryRepo, ImportMode,
-    QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, TtsTriggerSettingsRepo, UserGlobalEntry, UserGlobalsRepo,
-    ViewerRepo, VoiceAliasRepo,
+    ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, ChatHistoryRepo,
+    CredentialId, CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo,
+    HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, TtsTriggerSettingsRepo,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -41,6 +42,7 @@ pub struct TestDataProvider {
     pub viewer_repo: Arc<MockViewerRepo>,
     pub tts_filters_repo: Arc<MockTtsFiltersRepo>,
     pub tts_trigger_settings_repo: Arc<MockTtsTriggerSettingsRepo>,
+    pub chat_history_repo: Arc<MockChatHistoryRepo>,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
     pub settings_repo: Arc<MockSettingsRepo>,
@@ -61,6 +63,7 @@ impl TestDataProvider {
             viewer_repo: Arc::new(MockViewerRepo::new()),
             tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
             tts_trigger_settings_repo: Arc::new(MockTtsTriggerSettingsRepo::new()),
+            chat_history_repo: Arc::new(MockChatHistoryRepo::new()),
             globals_repo: Arc::new(MockGlobalsRepo::new()),
             user_globals_repo: Arc::new(MockUserGlobalsRepo::new()),
             settings_repo: Arc::new(MockSettingsRepo::new()),
@@ -346,6 +349,10 @@ impl DataProvider for TestDataProvider {
 
     fn tts_trigger_settings_repo(&self) -> Arc<dyn TtsTriggerSettingsRepo> {
         Arc::clone(&self.tts_trigger_settings_repo) as Arc<dyn TtsTriggerSettingsRepo>
+    }
+
+    fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {
+        Arc::clone(&self.chat_history_repo) as Arc<dyn ChatHistoryRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

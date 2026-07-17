@@ -1,10 +1,77 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-beta.4] - 2026-07-17
+### ⚡ Performance
+- *(chat)* Memoize drawer summaries and virtualize the message list
+
+### 🎨 Styling
+- *(platform)* Trim health-bridge comments to lean rationale
+
+### 🐛 Bug Fixes
+- *(kick)* Feed BuiltinHealth::stream() with live connection deltas
+- *(youtube)* Feed BuiltinHealth::stream() with live connection deltas
+- *(desktop)* Render inactive sidebar icons and label builtin section
+- *(desktop)* Match sidebar icons to the design for six nav items
+- *(desktop)* Always show stream health and balance the home layout
+- *(ui)* Give chat rows a stable id so hover survives re-render
+- *(ui)* Stop chat timestamps overlapping and brighten the founder badge
+- *(ui)* Match chat composer sizing and add a dynamic placeholder
+- *(ui)* Thin the panel resize divider
+- *(ui)* Make the chat composer a single borderless input block
+- *(ui)* Keep the chat input pinned and scroll the message list
+- *(chat)* Top-anchor the message list so short chats fill from the top
+- *(ui)* Make the composer platform divider visible
+
+### 🚀 Features
+- *(desktop)* Enumerate soundboard devices and tts engines live
+- *(desktop)* Stream script log output to the editor console
+- *(desktop)* Show live viewers and uptime in the chat header
+- *(desktop)* Add a commands count to the home at-a-glance
+- *(ui)* Default to Tokyo Night theme
+- *(storage)* Persist chat history to a dedicated table
+- *(runtime)* Drain live chat into the history store
+- *(ui)* Render rich chat rows and restore history on boot
+- *(ui)* Make chat history limits configurable in settings
+- *(storage)* Add chat sequence id and moderation update methods
+- *(runtime)* Persist chat moderation via a moderation envelope
+- *(twitch)* Attach moderation envelope to delete/ban/clear events
+- *(ui)* Strike through moderated messages and update live feed
+- *(ui)* Redesign chat rows to single-line with right-aligned badges
+- *(ui)* Add chat-log export and refine the chat chrome
+- *(runtime)* Track chat viewers into the viewer store
+- *(ui)* Restore the viewers drawer on the chat screen
+- *(ui)* Dispatch viewer actions from the chat drawer
+- *(ui)* Annotate chat event rows with the triggered action
+- *(ui)* Make the viewers drawer and sidebar resizable
+- *(chat)* Show viewer last-seen from their latest message
+- *(chat)* Render Twitch cheers as a distinct bits event
+- *(runtime)* Emit command.matched when a chat command fires
+- *(chat)* Render command messages as command rows
+- *(chat)* Carry Twitch reply threading via an envelope
+- *(chat)* Render reply messages with a quoted parent
+- *(chat)* Isolate uptime rerender and add a user moderation menu
+- *(chat)* Reply to a message from the user context menu
+
+### 🚜 Refactor
+- *(desktop)* Move oauth connect flow to its own module
+- *(desktop)* Collapse home jump-card args into a spec struct
+
+### 🛠️ Build
+- *(deps)* Migrate gpui to git dependency at tag v1.11.3
+
+### 🧪 Testing
+- *(platform)* Cover kick and youtube health-delta bridges
+- *(chat-history)* Cover history repo, persistence loop, and converter
+- *(chat)* Cover chat moderation storage, envelope, stream and feed
+- *(chat)* Cover viewers-drawer data logic and viewer tracker
+- *(chat)* Cover cheer body, command marking, and reply parsing
+
 ## [0.3.0-beta.3] - 2026-07-17
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump open from 5.3.6 to 5.4.0 (#41)
 - *(deps)* Bump ulid from 1.2.1 to 2.0.1 (#42)
+- Release
 
 ### 🎨 Styling
 - Replace em and en dashes with plain hyphens
@@ -15,10 +82,12 @@ All notable changes to this project will be documented in this file.
 - *(desktop)* Run dashboard stats query on the tokio runtime
 - *(deps)* Drive zbus on async-io so gpui portal usage has a reactor
 - *(desktop)* Hold a tokio enter guard so pool teardown has a reactor
+- *(storage)* Resurrect an archived global on set
 
 ### 📚 Documentation
 - *(workspace)* Drop non-invariant doc comments
 - *(readme)* Correct the fourth cloud TTS engine to Amazon Polly
+- *(release)* Release v0.3.0-beta.3
 
 ### 🚀 Features
 - *(storage)* Gate open on a typed schema-version mismatch
@@ -105,6 +174,9 @@ All notable changes to this project will be documented in this file.
 - *(desktop)* Make gpui the shipped forge binary, remove iced
 - *(deps)* Bump versions
 - *(audit)* Ignore unreachable quick-xml advisories in the gpui stack
+- *(linux)* Add libxkbcommon-x11 build and runtime deps for gpui
+- Install gpui system libraries in the shared rust setup
+- *(deps)* Bump ulid to 3.0.0
 
 ### 🧪 Testing
 - *(storage)* Cover soft-delete archive/restore for globals/actions/triggers

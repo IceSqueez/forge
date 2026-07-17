@@ -1,0 +1,21 @@
+# cargo-audit configuration (read by rustsec/audit-check in .github/workflows/audit.yml).
+#
+# The two ignored advisories are quadratic-runtime / memory-exhaustion DoS bugs in
+# quick-xml, reachable only through the gpui rendering stack:
+#   - quick-xml 0.30 via xcb -> zed-scap -> gpui           (X11 screen-capture codegen)
+#   - quick-xml 0.39 via wayland-scanner (a build-time      (Wayland protocol codegen +
+#     proc-macro) -> wayland-client -> ashpd/wl-clipboard    clipboard access)
+#
+# In both paths quick-xml only parses trusted, crate-bundled protocol-definition XML at
+# BUILD time; no runtime path feeds attacker-controlled XML into it, so the DoS is not
+# reachable in forge. The versions cannot be bumped: arboard/wl-clipboard-rs are already
+# latest, gpui is pinned to =0.2.2, and the intermediate semver requirements (^0.30 / ^0.39)
+# forbid pulling the fixed quick-xml >=0.41.
+#
+# REVIEW TRIGGER: drop these ignores when the gpui / xcb / wayland-rs stack ships a release
+# that consumes quick-xml >= 0.41 (re-check on every gpui version bump).
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]

@@ -2,12 +2,14 @@ use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
 use forge_types::{ChatEventDetail, ChatPayload, ChatSource, EventId, UnifiedChatRow, UserBadge};
 use gpui::{Rgba, SharedString};
+use time::OffsetDateTime;
 
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
     pub id: SharedString,
     pub event_id: EventId,
     pub timestamp: SharedString,
+    pub received_at: OffsetDateTime,
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
     pub username: SharedString,
@@ -48,6 +50,7 @@ impl ChatMessage {
             id: row.id.clone().into(),
             event_id: row.event_id,
             timestamp: format_clock(row.received_at.unix_timestamp()).into(),
+            received_at: row.received_at,
             platform: platform_of(row.source),
             badges: row.badges.iter().filter_map(badge_kind).collect(),
             username: row.author.clone().into(),

@@ -56,7 +56,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
-            libwayland-dev libxkbcommon-dev libgl1-mesa-dev libx11-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev libx11-dev \
             libasound2-dev libdbus-1-dev pkg-config \
             libfuse2 desktop-file-utils
 

@@ -306,3 +306,26 @@ fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl Int
         .text_color(palette.text_muted)
         .child(text.into())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_limit;
+
+    #[test]
+    fn parse_limit_accepts_positive_integers_and_rejects_everything_else() {
+        // Whitespace is trimmed; zero is rejected by the `>= 1` floor alongside
+        // empty, non-numeric, negative, and fractional input.
+        for (raw, expected) in [
+            ("500", Some(500)),
+            (" 42 ", Some(42)),
+            ("1", Some(1)),
+            ("0", None),
+            ("", None),
+            ("abc", None),
+            ("-5", None),
+            ("1.5", None),
+        ] {
+            assert_eq!(parse_limit(raw), expected, "parse_limit({raw:?})");
+        }
+    }
+}

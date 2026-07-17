@@ -183,3 +183,152 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         Ok(result.rows_affected())
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_storage::ChatHistoryRepo;
+    use forge_types::EventId;
+    use forge_types::unified_chat::{
+        ChatEventDetail, ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
+    };
+    use time::OffsetDateTime;
+
+    use super::SqliteChatHistoryRepo;
+    use crate::{apply_migrations, connect};
+
+    async fn make_repo() -> SqliteChatHistoryRepo {
+        let pool = connect(":memory:").await.unwrap();
+        apply_migrations(&pool).await.unwrap();
+        SqliteChatHistoryRepo::new(pool)
+    }
+
+    fn row_at(id: &str, unix_secs: i64) -> UnifiedChatRow {
+        UnifiedChatRow {
+            id: id.to_string(),
+            event_id: EventId::new(),
+            source: ChatSource::Twitch,
+            received_at: OffsetDateTime::from_unix_timestamp(unix_secs).unwrap(),
+            author: "user".to_string(),
+            author_color: None,
+            body_segments: vec![],
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
+    }
+
+    async fn seed(repo: &SqliteChatHistoryRepo, ids_and_secs: &[(&str, i64)]) {
+        for (id, secs) in ids_and_secs {
+            repo.append(&row_at(id, *secs)).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn append_then_list_recent_preserves_all_rich_fields() {
+        // Every rich field goes through a distinct encoding path: source as a
+        // lowercase enum string, received_at as epoch-ms, author_color/segments/
+        // badges/event_detail/moderation as JSON columns. Comparing the decoded
+        // row against the original proves each survives the round-trip. received_at
+        // is whole seconds so the ms-truncating epoch encoding is lossless here.
+        let repo = make_repo().await;
+        let row = UnifiedChatRow {
+            id: "rich-1".to_string(),
+            event_id: EventId::new(),
+            source: ChatSource::YouTube,
+            received_at: OffsetDateTime::from_unix_timestamp(1_700_000_123).unwrap(),
+            author: "Стрімер".to_string(),
+            author_color: Some([0x12, 0xAB, 0xFF]),
+            body_segments: vec![
+                ChatSegment::Text {
+                    text: "gg ".to_string(),
+                },
+                ChatSegment::Emote {
+                    id: "42".to_string(),
+                    name: "KEKW".to_string(),
+                },
+                ChatSegment::Mention {
+                    username: "mod".to_string(),
+                },
+            ],
+            badges: vec![UserBadge::Moderator, UserBadge::Subscriber { months: 12 }],
+            is_event: true,
+            event_detail: Some(ChatEventDetail::SuperChat {
+                amount_micros: 5_000_000,
+                currency: "USD".to_string(),
+                message: Some("thx".to_string()),
+            }),
+            moderation: ModerationMarks {
+                deleted: true,
+                timed_out: false,
+                banned: true,
+            },
+        };
+
+        repo.append(&row).await.unwrap();
+        let got = repo.list_recent(10).await.unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&got[0]).unwrap(),
+            serde_json::to_value(&row).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn list_recent_returns_newest_first_and_caps_at_limit() {
+        let repo = make_repo().await;
+        seed(
+            &repo,
+            &[("a", 100), ("b", 200), ("c", 300), ("d", 400), ("e", 500)],
+        )
+        .await;
+
+        let got = repo.list_recent(3).await.unwrap();
+
+        let ids: Vec<&str> = got.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["e", "d", "c"]);
+    }
+
+    #[tokio::test]
+    async fn prune_to_limit_keeps_newest_rows_and_reports_deleted_count() {
+        let repo = make_repo().await;
+        seed(
+            &repo,
+            &[("a", 100), ("b", 200), ("c", 300), ("d", 400), ("e", 500)],
+        )
+        .await;
+
+        let deleted = repo.prune_to_limit(2).await.unwrap();
+
+        assert_eq!(deleted, 3);
+        let remaining: Vec<String> = repo
+            .list_recent(10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(remaining, ["e", "d"]);
+    }
+
+    #[tokio::test]
+    async fn prune_to_limit_is_noop_when_limit_meets_or_exceeds_row_count() {
+        let repo = make_repo().await;
+        seed(&repo, &[("a", 100), ("b", 200), ("c", 300)]).await;
+
+        assert_eq!(repo.prune_to_limit(3).await.unwrap(), 0);
+        assert_eq!(repo.prune_to_limit(10).await.unwrap(), 0);
+        assert_eq!(repo.list_recent(10).await.unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn prune_to_limit_zero_deletes_all_rows() {
+        let repo = make_repo().await;
+        seed(&repo, &[("a", 100), ("b", 200)]).await;
+
+        assert_eq!(repo.prune_to_limit(0).await.unwrap(), 2);
+        assert!(repo.list_recent(10).await.unwrap().is_empty());
+    }
+}

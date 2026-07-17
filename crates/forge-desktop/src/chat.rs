@@ -8,8 +8,8 @@ use forge_components::{
     DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, Radius, ResizeEdge, ResizeRange,
     Spacing, TextInput, ToastKind, badge, badge_color, badge_label, breadcrumb, chat_row, chip,
-    icon, install_resize, menu_button, menu_divider, menu_item, radius, search_input,
-    search_input_on_surface, spacing, status_dot, tr,
+    context_menu, icon, install_resize, menu_button, menu_divider, menu_header, menu_item, radius,
+    search_input, search_input_on_surface, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -17,8 +17,9 @@ use forge_storage::{Viewer, ViewerRepo, VoiceAliasRepo};
 use forge_types::{SubActionStep, Variant};
 use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, FontWeight, ListAlignment, ListState, Pixels,
-    Rgba, SharedString, Subscription, Window, div, list, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, ListAlignment, ListState,
+    MouseButton, MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div,
+    list, prelude::*, px,
 };
 
 use crate::chat_drawer::{
@@ -30,6 +31,7 @@ use crate::home_stats::HomeStats;
 use crate::presentation::ActivePresentation;
 use crate::runtime_status::RuntimeStatus;
 use crate::toasts::PushToast;
+use crate::uptime_view::UptimeView;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -53,6 +55,9 @@ const BADGE_ROW: Pixels = px(8.5);
 const VIEWER_REFRESH: Duration = Duration::from_secs(15);
 const INFINITY_GLYPH: &str = "\u{221e}";
 const DRAWER_TIMEOUT_SECONDS: i64 = 600;
+const CTX_TIMEOUT_10M: i64 = 600;
+const CTX_TIMEOUT_1H: i64 = 3600;
+const CTX_TIMEOUT_2W: i64 = 1_209_600;
 
 fn build_shoutout_step(login: &str) -> SubActionStep {
     let mut config = BTreeMap::new();
@@ -83,16 +88,13 @@ fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
     }
 }
 
-fn build_timeout_step(login: &str) -> SubActionStep {
+fn build_timeout_step(login: &str, seconds: i64) -> SubActionStep {
     let mut config = BTreeMap::new();
     config.insert(
         "target_user_login".to_owned(),
         Variant::String(login.to_owned()),
     );
-    config.insert(
-        "duration_seconds".to_owned(),
-        Variant::Int(DRAWER_TIMEOUT_SECONDS),
-    );
+    config.insert("duration_seconds".to_owned(), Variant::Int(seconds));
     SubActionStep {
         kind_id: "twitch.moderation.timeout_user".to_owned(),
         config,
@@ -139,7 +141,7 @@ struct DrawerResizeDrag;
 pub struct ChatView {
     feed: Entity<ChatFeed>,
     home_stats: Entity<HomeStats>,
-    status: Entity<RuntimeStatus>,
+    uptime_view: Entity<UptimeView>,
     rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     voice_alias_repo: Arc<dyn VoiceAliasRepo>,
@@ -161,13 +163,13 @@ pub struct ChatView {
     drawer_summaries: Vec<ViewerSummary>,
     whisper_open: bool,
     whisper_input: Entity<TextInput>,
+    user_menu: Option<(Point<Pixels>, String)>,
     auto_scroll: bool,
     unread: usize,
     last_seen_len: usize,
     chat_list: ListState,
     _feed_obs: Subscription,
     _stats_obs: Subscription,
-    _status_obs: Subscription,
     _input_sub: Subscription,
     _search_sub: Subscription,
     _drawer_search_sub: Subscription,
@@ -204,9 +206,10 @@ impl ChatView {
             TextInput::new(tr!("chat_drawer_whisper_placeholder"), cx).with_palette(palette)
         });
 
+        let uptime_view = cx.new(|cx| UptimeView::new(status, cx));
+
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
         let stats_obs = cx.observe(&home_stats, |_, _, cx| cx.notify());
-        let status_obs = cx.observe(&status, |_, _, cx| cx.notify());
         let input_sub = cx.subscribe(&input, Self::on_input_event);
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
         let drawer_search_sub = cx.subscribe(&drawer_search, Self::on_drawer_search_event);
@@ -234,7 +237,7 @@ impl ChatView {
         Self {
             feed,
             home_stats,
-            status,
+            uptime_view,
             rt_handle,
             action_engine,
             voice_alias_repo,
@@ -256,13 +259,13 @@ impl ChatView {
             drawer_summaries,
             whisper_open: false,
             whisper_input,
+            user_menu: None,
             auto_scroll: true,
             unread: 0,
             last_seen_len,
             chat_list,
             _feed_obs: feed_obs,
             _stats_obs: stats_obs,
-            _status_obs: status_obs,
             _input_sub: input_sub,
             _search_sub: search_sub,
             _drawer_search_sub: drawer_search_sub,
@@ -535,7 +538,7 @@ impl ChatView {
             cx.notify();
             return;
         };
-        let step = build_timeout_step(&login);
+        let step = build_timeout_step(&login, DRAWER_TIMEOUT_SECONDS);
         self.dispatch_quick_action(
             step,
             format!("Timeout {login}"),
@@ -568,6 +571,122 @@ impl ChatView {
             cx,
         );
         cx.notify();
+    }
+
+    fn open_user_menu(
+        &mut self,
+        position: Point<Pixels>,
+        username: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.user_menu = Some((position, username));
+        cx.notify();
+    }
+
+    fn close_user_menu(&mut self, cx: &mut Context<Self>) {
+        if self.user_menu.is_some() {
+            self.user_menu = None;
+            cx.notify();
+        }
+    }
+
+    fn ctx_timeout_viewer(&mut self, seconds: i64, cx: &mut Context<Self>) {
+        let Some((_, login)) = self.user_menu.take() else {
+            cx.notify();
+            return;
+        };
+        let step = build_timeout_step(&login, seconds);
+        self.dispatch_quick_action(
+            step,
+            format!("Timeout {login}"),
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_ctx_timeout_sent")),
+                Err(e) => (
+                    ToastKind::Error,
+                    tr!("chat_drawer_timeout_failed", error = e),
+                ),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn ctx_ban_viewer(&mut self, cx: &mut Context<Self>) {
+        let Some((_, login)) = self.user_menu.take() else {
+            cx.notify();
+            return;
+        };
+        let step = build_ban_step(&login);
+        self.dispatch_quick_action(
+            step,
+            format!("Ban {login}"),
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
+                Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn render_user_menu(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let (position, login) = {
+            let (pos, name) = self.user_menu.as_ref()?;
+            (*pos, name.clone())
+        };
+        let view = cx.entity();
+        let items = vec![
+            menu_header(SharedString::from(login)),
+            menu_item(
+                "chat-ctx-timeout-10m",
+                tr!("chat_ctx_timeout_10m"),
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.ctx_timeout_viewer(CTX_TIMEOUT_10M, cx)
+                }),
+            )
+            .icon(Icon::Clock)
+            .into(),
+            menu_item(
+                "chat-ctx-timeout-1h",
+                tr!("chat_ctx_timeout_1h"),
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.ctx_timeout_viewer(CTX_TIMEOUT_1H, cx)
+                }),
+            )
+            .icon(Icon::Clock)
+            .into(),
+            menu_item(
+                "chat-ctx-timeout-2w",
+                tr!("chat_ctx_timeout_2w"),
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.ctx_timeout_viewer(CTX_TIMEOUT_2W, cx)
+                }),
+            )
+            .icon(Icon::Clock)
+            .color(palette.warning)
+            .into(),
+            menu_divider(),
+            menu_item(
+                "chat-ctx-ban",
+                tr!("chat_ctx_ban"),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.ctx_ban_viewer(cx)),
+            )
+            .icon(Icon::BellOff)
+            .color(palette.random)
+            .into(),
+        ];
+        Some(
+            context_menu(position, palette)
+                .items(items)
+                .on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_user_menu(cx));
+                })
+                .into_any_element(),
+        )
     }
 
     fn open_whisper(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -739,7 +858,6 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let viewer_count = self.home_stats.read(cx).viewers_display();
-        let uptime_text = self.status.read(cx).uptime_human();
 
         let viewers = div()
             .flex()
@@ -759,19 +877,6 @@ impl ChatView {
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .child("·");
-
-        let uptime = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(icon(Icon::Clock, px(12.0), palette.text_muted))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(uptime_text),
-            );
 
         let drawer_label = if self.drawer_open {
             tr!("chat_hide_viewers")
@@ -807,7 +912,7 @@ impl ChatView {
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .child(viewers)
             .child(separator)
-            .child(uptime)
+            .child(self.uptime_view.clone())
             .child(drawer_btn);
 
         breadcrumb(
@@ -1001,6 +1106,9 @@ impl ChatView {
                 reply: msg.reply.clone(),
             };
             let username = msg.username.clone();
+            let menu_view = view.clone();
+            let menu_username = msg.username.clone();
+            let has_user = !msg.username.is_empty();
             let view = view.clone();
             let row = chat_row(&pal, data).on_username_click(
                 ("chat-username", ix),
@@ -1008,7 +1116,17 @@ impl ChatView {
                     view.update(app, |this, cx| this.open_viewer(username.clone(), cx));
                 },
             );
-            let framed = div().pb(row_gap).child(row);
+            let mut framed = div().pb(row_gap).child(row);
+            if has_user {
+                framed = framed.on_mouse_down(
+                    MouseButton::Right,
+                    move |event: &MouseDownEvent, _window, app| {
+                        let position = event.position;
+                        let login = menu_username.to_string();
+                        menu_view.update(app, |this, cx| this.open_user_menu(position, login, cx));
+                    },
+                );
+            }
             if search_active && !msg.matches_query(&query) {
                 framed.opacity(0.3).into_any_element()
             } else {
@@ -1804,6 +1922,7 @@ impl Render for ChatView {
         let drawer = self
             .drawer_open
             .then(|| self.render_drawer(&palette, density, cx));
+        let user_menu = self.render_user_menu(&palette, cx);
 
         div()
             .size_full()
@@ -1831,5 +1950,6 @@ impl Render for ChatView {
                     )
                     .children(drawer),
             )
+            .children(user_menu)
     }
 }

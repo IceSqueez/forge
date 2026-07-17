@@ -1478,6 +1478,11 @@ chat_drawer_ban_sent = Viewer banned
 chat_drawer_ban_failed = Ban failed: { $error }
 chat_drawer_block_tts_sent = Viewer blocked from TTS
 chat_drawer_block_tts_failed = Block from TTS failed: { $error }
+chat_ctx_timeout_10m = Timeout 10 min
+chat_ctx_timeout_1h = Timeout 1 hour
+chat_ctx_timeout_2w = Timeout 2 weeks
+chat_ctx_ban = Ban
+chat_ctx_timeout_sent = Timeout applied
 
 ## Event Feed - page header / filters
 

@@ -1499,6 +1499,11 @@ chat_drawer_ban_sent = Глядача забанено
 chat_drawer_ban_failed = Помилка бану: { $error }
 chat_drawer_block_tts_sent = Глядача заблоковано в TTS
 chat_drawer_block_tts_failed = Помилка блокування TTS: { $error }
+chat_ctx_timeout_10m = Таймаут 10 хв
+chat_ctx_timeout_1h = Таймаут 1 година
+chat_ctx_timeout_2w = Таймаут 2 тижні
+chat_ctx_ban = Бан
+chat_ctx_timeout_sent = Таймаут застосовано
 
 ## Стрічка подій - заголовок / фільтри
 

@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    Anchor, AnyElement, App, ClickEvent, Div, ElementId, FocusHandle, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
-    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred,
-    div, point, px,
+    Anchor, AnchoredPositionMode, AnyElement, App, ClickEvent, Div, ElementId, FocusHandle,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    Pixels, Point, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window,
+    anchored, deferred, div, point, px,
 };
 
 use crate::icons::{Icon, icon};
@@ -129,6 +129,154 @@ impl MenuPlacement {
     }
 }
 
+#[derive(Clone, Copy)]
+struct MenuInk {
+    panel_bg: Rgba,
+    panel_border: Rgba,
+    divider_ink: Rgba,
+    item_hover_bg: Rgba,
+    header_ink: Rgba,
+    label_ink: Rgba,
+    icon_ink: Rgba,
+    faint_ink: Rgba,
+}
+
+impl MenuInk {
+    fn from_palette(palette: &ForgePalette) -> Self {
+        Self {
+            panel_bg: palette.elevated,
+            panel_border: palette.border_input,
+            divider_ink: palette.border_regular,
+            item_hover_bg: palette.surface_overlay,
+            header_ink: palette.text_muted,
+            label_ink: palette.text_primary,
+            icon_ink: palette.text_secondary,
+            faint_ink: palette.text_faint,
+        }
+    }
+
+    fn render_item(&self, entry: MenuEntry, dismiss: &Option<DismissHandler>) -> AnyElement {
+        let text_ink = if entry.disabled {
+            self.faint_ink
+        } else {
+            entry.color.unwrap_or(self.label_ink)
+        };
+        let glyph_ink = if entry.disabled {
+            self.faint_ink
+        } else {
+            entry.color.unwrap_or(self.icon_ink)
+        };
+
+        let mut row = div()
+            .flex()
+            .items_center()
+            .w_full()
+            .gap(pad(Spacing::Sm))
+            .py(pad(Spacing::Xs))
+            .px(pad(Spacing::Sm))
+            .rounded(radius(Radius::Sm))
+            .font_family(DEFAULT_BODY_FAMILY);
+
+        if let Some(glyph) = entry.icon {
+            row = row.child(icon(glyph, FONT_SM, glyph_ink));
+        }
+
+        row = row.child(
+            div()
+                .flex_1()
+                .text_size(FONT_SM)
+                .text_color(text_ink)
+                .child(entry.label),
+        );
+
+        if let Some(shortcut) = entry.shortcut {
+            row = row.child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(self.faint_ink)
+                    .child(shortcut),
+            );
+        }
+
+        if entry.disabled {
+            return row.into_any_element();
+        }
+
+        let hover_bg = self.item_hover_bg;
+        let handler = entry.on_click;
+        let dismiss = dismiss.clone();
+        row.hover(move |style| style.bg(hover_bg))
+            .id(entry.id)
+            .cursor_pointer()
+            .on_click(move |event, window, cx| {
+                handler(event, window, cx);
+                if let Some(dismiss) = &dismiss {
+                    dismiss(window, cx);
+                }
+            })
+            .into_any_element()
+    }
+
+    fn render_divider(&self) -> AnyElement {
+        div()
+            .py(pad(Spacing::Xs) * 0.5)
+            .child(div().w_full().h(BORDER_THIN).bg(self.divider_ink))
+            .into_any_element()
+    }
+
+    fn render_header(&self, label: SharedString) -> AnyElement {
+        div()
+            .pt(pad(Spacing::Xs))
+            .pb(pad(Spacing::Xs) * 0.5)
+            .px(pad(Spacing::Sm))
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(self.header_ink)
+            .child(label)
+            .into_any_element()
+    }
+
+    fn render_panel(
+        &self,
+        items: Vec<MenuItem>,
+        escape_focus: Option<&FocusHandle>,
+        dismiss: Option<DismissHandler>,
+    ) -> Div {
+        let mut panel = div()
+            .flex()
+            .flex_col()
+            .w(PANEL_WIDTH)
+            .py(pad(Spacing::Xs))
+            .bg(self.panel_bg)
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(self.panel_border)
+            .occlude();
+
+        for item in items {
+            panel = match item {
+                MenuItem::Item(entry) => panel.child(self.render_item(entry, &dismiss)),
+                MenuItem::Divider => panel.child(self.render_divider()),
+                MenuItem::Header(label) => panel.child(self.render_header(label)),
+            };
+        }
+
+        if let (Some(focus), Some(dismiss)) = (escape_focus, dismiss) {
+            panel =
+                panel
+                    .track_focus(focus)
+                    .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key.as_str() == "escape" {
+                            dismiss(window, cx);
+                        }
+                    });
+        }
+
+        panel
+    }
+}
+
 #[derive(IntoElement)]
 pub struct MenuButton {
     trigger_icon: Icon,
@@ -141,14 +289,7 @@ pub struct MenuButton {
     escape_focus: Option<FocusHandle>,
     trigger_ink: Rgba,
     trigger_hover_bg: Rgba,
-    panel_bg: Rgba,
-    panel_border: Rgba,
-    divider_ink: Rgba,
-    item_hover_bg: Rgba,
-    header_ink: Rgba,
-    label_ink: Rgba,
-    icon_ink: Rgba,
-    faint_ink: Rgba,
+    ink: MenuInk,
 }
 
 pub fn menu_button(trigger_icon: Icon, open: bool, palette: &ForgePalette) -> MenuButton {
@@ -163,14 +304,7 @@ pub fn menu_button(trigger_icon: Icon, open: bool, palette: &ForgePalette) -> Me
         escape_focus: None,
         trigger_ink: palette.text_faint,
         trigger_hover_bg: palette.surface_overlay,
-        panel_bg: palette.elevated,
-        panel_border: palette.border_input,
-        divider_ink: palette.border_regular,
-        item_hover_bg: palette.surface_overlay,
-        header_ink: palette.text_muted,
-        label_ink: palette.text_primary,
-        icon_ink: palette.text_secondary,
-        faint_ink: palette.text_faint,
+        ink: MenuInk::from_palette(palette),
     }
 }
 
@@ -239,124 +373,6 @@ impl MenuButton {
 
         trigger.into_any_element()
     }
-
-    fn render_item(&self, entry: MenuEntry) -> AnyElement {
-        let text_ink = if entry.disabled {
-            self.faint_ink
-        } else {
-            entry.color.unwrap_or(self.label_ink)
-        };
-        let glyph_ink = if entry.disabled {
-            self.faint_ink
-        } else {
-            entry.color.unwrap_or(self.icon_ink)
-        };
-
-        let mut row = div()
-            .flex()
-            .items_center()
-            .w_full()
-            .gap(pad(Spacing::Sm))
-            .py(pad(Spacing::Xs))
-            .px(pad(Spacing::Sm))
-            .rounded(radius(Radius::Sm))
-            .font_family(DEFAULT_BODY_FAMILY);
-
-        if let Some(glyph) = entry.icon {
-            row = row.child(icon(glyph, FONT_SM, glyph_ink));
-        }
-
-        row = row.child(
-            div()
-                .flex_1()
-                .text_size(FONT_SM)
-                .text_color(text_ink)
-                .child(entry.label),
-        );
-
-        if let Some(shortcut) = entry.shortcut {
-            row = row.child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(self.faint_ink)
-                    .child(shortcut),
-            );
-        }
-
-        if entry.disabled {
-            return row.into_any_element();
-        }
-
-        let hover_bg = self.item_hover_bg;
-        let handler = entry.on_click;
-        let dismiss = self.on_dismiss.clone();
-        row.hover(move |style| style.bg(hover_bg))
-            .id(entry.id)
-            .cursor_pointer()
-            .on_click(move |event, window, cx| {
-                handler(event, window, cx);
-                if let Some(dismiss) = &dismiss {
-                    dismiss(window, cx);
-                }
-            })
-            .into_any_element()
-    }
-
-    fn render_divider(&self) -> AnyElement {
-        div()
-            .py(pad(Spacing::Xs) * 0.5)
-            .child(div().w_full().h(BORDER_THIN).bg(self.divider_ink))
-            .into_any_element()
-    }
-
-    fn render_header(&self, label: SharedString) -> AnyElement {
-        div()
-            .pt(pad(Spacing::Xs))
-            .pb(pad(Spacing::Xs) * 0.5)
-            .px(pad(Spacing::Sm))
-            .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(self.header_ink)
-            .child(label)
-            .into_any_element()
-    }
-
-    fn render_panel(&mut self) -> Div {
-        let items = std::mem::take(&mut self.items);
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .w(PANEL_WIDTH)
-            .py(pad(Spacing::Xs))
-            .bg(self.panel_bg)
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(self.panel_border)
-            .occlude();
-
-        for item in items {
-            panel = match item {
-                MenuItem::Item(entry) => panel.child(self.render_item(entry)),
-                MenuItem::Divider => panel.child(self.render_divider()),
-                MenuItem::Header(label) => panel.child(self.render_header(label)),
-            };
-        }
-
-        if let (Some(focus), Some(dismiss)) = (self.escape_focus.as_ref(), self.on_dismiss.clone())
-        {
-            panel =
-                panel
-                    .track_focus(focus)
-                    .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key.as_str() == "escape" {
-                            dismiss(window, cx);
-                        }
-                    });
-        }
-
-        panel
-    }
 }
 
 impl RenderOnce for MenuButton {
@@ -370,7 +386,11 @@ impl RenderOnce for MenuButton {
         }
 
         let (anchor_corner, offset) = self.placement.anchor_and_offset();
-        let panel = self.render_panel();
+        let panel = self.ink.render_panel(
+            std::mem::take(&mut self.items),
+            self.escape_focus.as_ref(),
+            self.on_dismiss.clone(),
+        );
 
         let viewport = window.viewport_size();
         let mut backdrop = div().size_full().occlude();
@@ -381,7 +401,7 @@ impl RenderOnce for MenuButton {
                 });
         }
         let backdrop_layer = anchored()
-            .position_mode(gpui::AnchoredPositionMode::Window)
+            .position_mode(AnchoredPositionMode::Window)
             .position(point(px(0.0), px(0.0)))
             .anchor(Anchor::TopLeft)
             .child(div().w(viewport.width).h(viewport.height).child(backdrop));
@@ -397,6 +417,72 @@ impl RenderOnce for MenuButton {
         );
 
         root
+    }
+}
+
+#[derive(IntoElement)]
+pub struct ContextMenu {
+    position: Point<Pixels>,
+    items: Vec<MenuItem>,
+    on_dismiss: Option<DismissHandler>,
+    ink: MenuInk,
+}
+
+pub fn context_menu(position: Point<Pixels>, palette: &ForgePalette) -> ContextMenu {
+    ContextMenu {
+        position,
+        items: Vec::new(),
+        on_dismiss: None,
+        ink: MenuInk::from_palette(palette),
+    }
+}
+
+impl ContextMenu {
+    #[must_use]
+    pub fn items(mut self, items: Vec<MenuItem>) -> Self {
+        self.items = items;
+        self
+    }
+
+    #[must_use]
+    pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_dismiss = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for ContextMenu {
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let panel = self
+            .ink
+            .render_panel(self.items, None, self.on_dismiss.clone());
+
+        let viewport = window.viewport_size();
+        let mut backdrop = div().size_full().occlude();
+        if let Some(dismiss) = self.on_dismiss.clone() {
+            let dismiss_right = dismiss.clone();
+            backdrop = backdrop
+                .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
+                    dismiss(window, cx);
+                })
+                .on_mouse_down(MouseButton::Right, move |_: &MouseDownEvent, window, cx| {
+                    dismiss_right(window, cx);
+                });
+        }
+        let backdrop_layer = anchored()
+            .position_mode(AnchoredPositionMode::Window)
+            .position(point(px(0.0), px(0.0)))
+            .anchor(Anchor::TopLeft)
+            .child(div().w(viewport.width).h(viewport.height).child(backdrop));
+
+        let panel_layer = anchored()
+            .position_mode(AnchoredPositionMode::Window)
+            .position(self.position)
+            .anchor(Anchor::TopLeft)
+            .snap_to_window()
+            .child(panel);
+
+        deferred(div().child(backdrop_layer).child(panel_layer)).with_priority(MENU_PRIORITY)
     }
 }
 

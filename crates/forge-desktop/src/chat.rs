@@ -169,6 +169,14 @@ pub struct ChatView {
     _whisper_sub: Subscription,
 }
 
+fn platform_display_name(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Twitch => "Twitch",
+        Platform::YouTube => "YouTube",
+        Platform::Kick => "Kick",
+    }
+}
+
 impl ChatView {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -301,10 +309,27 @@ impl ChatView {
         event: &InputBarEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputBarEvent::Send { .. } = event {
-            self.input.update(cx, |bar, cx| bar.clear(cx));
-            cx.notify();
+        match event {
+            InputBarEvent::Send { .. } => {
+                self.input.update(cx, |bar, cx| bar.clear(cx));
+                cx.notify();
+            }
+            InputBarEvent::TargetsChanged => self.refresh_send_placeholder(cx),
+            InputBarEvent::EmojiToggled => {}
         }
+    }
+
+    fn refresh_send_placeholder(&mut self, cx: &mut Context<Self>) {
+        let selected = self.input.read(cx).selected_targets();
+        let placeholder = match selected.as_slice() {
+            [only] => tr!(
+                "chat_send_placeholder_to",
+                platform = platform_display_name(*only)
+            ),
+            _ => tr!("chat_send_placeholder_connected"),
+        };
+        self.input
+            .update(cx, |bar, cx| bar.set_placeholder(placeholder, cx));
     }
 
     fn on_search_event(

@@ -9,7 +9,7 @@ use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, Radius,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XXS, Radius,
     Spacing, radius, spacing,
 };
 
@@ -31,6 +31,8 @@ pub enum InputBarEvent {
     },
     /// The open flag is owned internally; this is only a mirror notification.
     EmojiToggled,
+    /// Mirror notification; the caller recomputes the localized placeholder from the selection.
+    TargetsChanged,
 }
 
 const COMPOSER_GAP: gpui::Pixels = px(8.0);
@@ -46,6 +48,8 @@ const EMOJI_GAP: gpui::Pixels = px(4.0);
 const EMOJI_PANEL_GAP: gpui::Pixels = px(8.0);
 const HINT_GAP: gpui::Pixels = px(4.0);
 const HINT_ROW_GAP: gpui::Pixels = px(14.0);
+const TARGET_GROUP_GAP: gpui::Pixels = px(4.0);
+const WRAP_PAD_X: gpui::Pixels = px(14.0);
 
 const EMOJIS: &[&str] = &[
     "😀",
@@ -204,6 +208,16 @@ impl InputBar {
         self.field.update(cx, |f, cx| f.focus(window, cx));
     }
 
+    pub fn set_placeholder(
+        &mut self,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        self.field
+            .update(cx, |field, cx| field.set_placeholder(placeholder, cx));
+        cx.notify();
+    }
+
     pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
         self.palette = palette;
         self.field
@@ -235,6 +249,7 @@ impl InputBar {
         if let Some(entry) = self.targets.get_mut(idx) {
             entry.1 = !entry.1;
         }
+        cx.emit(InputBarEvent::TargetsChanged);
         cx.notify();
     }
 
@@ -301,14 +316,14 @@ impl InputBar {
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(color)
                     .child(glyph),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(color)
                     .child(label),
             )
@@ -395,7 +410,16 @@ impl Render for InputBar {
             .child(icon(Icon::Send, GLYPH_SIZE, p.brand));
 
         let strip = self.targets.clone();
-        let mut composer = div()
+        let mut targets_group = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(TARGET_GROUP_GAP);
+        for (idx, (platform, active)) in strip.into_iter().enumerate() {
+            targets_group = targets_group.child(self.render_target(idx, platform, active, cx));
+        }
+
+        let composer = div()
             .flex()
             .items_center()
             .gap(COMPOSER_GAP)
@@ -404,11 +428,8 @@ impl Render for InputBar {
             .bg(p.elevated)
             .border(BORDER_THIN)
             .border_color(p.border_input)
-            .rounded(radius(Radius::Md));
-        for (idx, (platform, active)) in strip.into_iter().enumerate() {
-            composer = composer.child(self.render_target(idx, platform, active, cx));
-        }
-        let composer = composer
+            .rounded(radius(Radius::Md))
+            .child(targets_group)
             .child(divider)
             .child(field)
             .child(emoji_toggle)
@@ -423,9 +444,9 @@ impl Render for InputBar {
                     .flex()
                     .items_center()
                     .gap(HINT_ROW_GAP)
-                    .child(self.render_hint("/", " commands"))
-                    .child(self.render_hint("@", " mention"))
-                    .child(self.render_hint("!", " trigger action")),
+                    .child(self.render_hint("/", "commands"))
+                    .child(self.render_hint("@", "mention"))
+                    .child(self.render_hint("!", "trigger action")),
             );
 
         let emoji_panel = if self.emoji_open {
@@ -439,7 +460,7 @@ impl Render for InputBar {
             .flex()
             .flex_col()
             .py(spacing(Spacing::Sm, d))
-            .px(spacing(Spacing::Md, d))
+            .px(WRAP_PAD_X)
             .bg(p.shell)
             .children(emoji_panel)
             .child(composer)

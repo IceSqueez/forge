@@ -161,3 +161,240 @@ fn watch_time_since(first_seen: OffsetDateTime) -> String {
         format!("{mins} min")
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use forge_components::{BadgeKind, CATPPUCCIN_MOCHA, ChatBody, Platform};
+    use forge_storage::{Viewer, ViewerPlatform};
+    use time::{Duration, OffsetDateTime};
+
+    use super::{
+        DASH, SubStatus, drawer_matches, enrich_with_storage, relative_since, selected_summary,
+        sub_status, synthesize_from_chat, unique_authors, watch_time_since,
+    };
+    use crate::chat_feed::ChatMessage;
+
+    fn msg(username: &str, badges: Vec<BadgeKind>) -> ChatMessage {
+        ChatMessage {
+            id: "".into(),
+            timestamp: "".into(),
+            platform: Platform::Twitch,
+            badges,
+            username: username.into(),
+            author_color: None,
+            body: ChatBody::Message("".into()),
+            is_event: false,
+            is_bot: false,
+            moderated: false,
+        }
+    }
+
+    fn viewer(
+        username: &str,
+        message_count: u64,
+        first_seen_at: OffsetDateTime,
+        last_seen_at: OffsetDateTime,
+    ) -> Viewer {
+        Viewer {
+            viewer_id: "id".into(),
+            platform: ViewerPlatform::Twitch,
+            username: username.into(),
+            first_seen_at,
+            last_seen_at,
+            message_count,
+            custom_greeting: false,
+        }
+    }
+
+    #[test]
+    fn drawer_matches_is_empty_or_case_insensitive_substring() {
+        // Contract: caller lowercases `search`; only the username is folded here,
+        // so an upper-case username still matches a lowercase query.
+        let cases = [
+            ("Alice", "", true),
+            ("Alice", "ali", true),
+            ("Alice", "lic", true),
+            ("Alice", "bob", false),
+            ("Alice", "alicee", false),
+        ];
+        for (username, search, expected) in cases {
+            assert_eq!(
+                drawer_matches(username, search),
+                expected,
+                "username={username:?} search={search:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unique_authors_dedups_keeping_newest_first() {
+        let messages = [
+            msg("alice", vec![]),
+            msg("bob", vec![]),
+            msg("alice", vec![]),
+            msg("carol", vec![]),
+        ];
+        // rev order carol, alice, bob, alice -> first occurrence wins.
+        assert_eq!(unique_authors(&messages), vec!["carol", "alice", "bob"]);
+    }
+
+    #[test]
+    fn unique_authors_drops_empty_usernames() {
+        let messages = [msg("alice", vec![]), msg("", vec![]), msg("bob", vec![])];
+        assert_eq!(unique_authors(&messages), vec!["bob", "alice"]);
+    }
+
+    #[test]
+    fn synthesize_uses_latest_role_and_counts_only_that_author() {
+        // alice speaks twice (Broadcaster then Vip), bob once between them. The
+        // role must come from alice's LATEST row (Vip), not her first, and the
+        // count must exclude bob's row.
+        let messages = [
+            msg("alice", vec![BadgeKind::Broadcaster]),
+            msg("bob", vec![BadgeKind::Moderator]),
+            msg("alice", vec![BadgeKind::Vip, BadgeKind::Subscriber]),
+        ];
+        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        assert_eq!(summary.message_count, 2);
+        assert_eq!(summary.role, Some(BadgeKind::Vip));
+        assert_eq!(summary.avatar_letter, 'A');
+    }
+
+    #[test]
+    fn synthesize_role_is_none_when_latest_row_has_no_badges() {
+        let messages = [msg("alice", vec![])];
+        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        assert_eq!(summary.role, None);
+    }
+
+    #[test]
+    fn synthesize_returns_none_when_author_absent() {
+        let messages = [msg("alice", vec![])];
+        assert!(synthesize_from_chat("ghost", &messages, &CATPPUCCIN_MOCHA).is_none());
+    }
+
+    #[test]
+    fn enrich_overlays_storage_fields_and_leaves_role_untouched() {
+        let messages = [msg("alice", vec![BadgeKind::Subscriber])];
+        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        assert_eq!(summary.message_count, 1);
+        assert_eq!(summary.watch_time, DASH);
+
+        let now = OffsetDateTime::now_utc();
+        let stored = viewer(
+            "alice",
+            99,
+            now - Duration::minutes(120),
+            now - Duration::days(2),
+        );
+        let enriched = enrich_with_storage(summary, &[stored]);
+
+        assert_eq!(enriched.message_count, 99);
+        assert_eq!(enriched.watch_time, "2h 0m");
+        assert_eq!(enriched.last_seen_label, "2d");
+        // sub/role are chat-derived and must survive the storage overlay.
+        assert_eq!(enriched.role, Some(BadgeKind::Subscriber));
+        assert!(enriched.sub == SubStatus::Subscribed);
+    }
+
+    #[test]
+    fn enrich_leaves_synthesized_values_when_no_viewer_matches() {
+        let messages = [msg("alice", vec![])];
+        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        let now = OffsetDateTime::now_utc();
+        let other = viewer("someone-else", 99, now, now);
+        let enriched = enrich_with_storage(summary, &[other]);
+
+        assert_eq!(enriched.message_count, 1);
+        assert_eq!(enriched.watch_time, DASH);
+        assert_eq!(enriched.last_seen_label, "now");
+    }
+
+    #[test]
+    fn sub_status_derives_from_role() {
+        let cases = [
+            (Some(BadgeKind::Broadcaster), SubStatus::Unlimited),
+            (Some(BadgeKind::Subscriber), SubStatus::Subscribed),
+            (Some(BadgeKind::Founder), SubStatus::Subscribed),
+            (Some(BadgeKind::Moderator), SubStatus::None),
+            (Some(BadgeKind::Vip), SubStatus::None),
+            (None, SubStatus::None),
+        ];
+        for (role, expected) in cases {
+            assert!(sub_status(role) == expected, "role={role:?}");
+        }
+    }
+
+    #[test]
+    fn selected_summary_falls_back_to_latest_author_when_none_selected() {
+        let messages = [msg("alice", vec![]), msg("bob", vec![])];
+        let summary = selected_summary(None, &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        assert_eq!(summary.username, "bob");
+    }
+
+    #[test]
+    fn selected_summary_fallback_skips_a_trailing_empty_author() {
+        let messages = [msg("alice", vec![]), msg("", vec![])];
+        let summary = selected_summary(None, &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        assert_eq!(summary.username, "alice");
+    }
+
+    #[test]
+    fn selected_summary_uses_the_selected_author() {
+        let messages = [msg("alice", vec![]), msg("bob", vec![])];
+        let summary = selected_summary(Some("alice"), &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        assert_eq!(summary.username, "alice");
+    }
+
+    #[test]
+    fn selected_summary_absent_selection_falls_back_to_latest_author() {
+        let messages = [msg("alice", vec![])];
+        let summary = selected_summary(Some("ghost"), &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        assert_eq!(summary.username, "alice");
+    }
+
+    #[test]
+    fn selected_summary_is_none_without_any_authored_message() {
+        assert!(selected_summary(None, &[], &[], &CATPPUCCIN_MOCHA).is_none());
+    }
+
+    #[test]
+    fn relative_since_labels_each_bucket() {
+        let now = OffsetDateTime::now_utc();
+        // Midpoints inside each branch avoid flake from clock drift at boundaries.
+        let cases = [
+            (3, "now"),
+            (30, "30s"),
+            (120, "2 min"),
+            (7200, "2h"),
+            (2 * 86_400, "2d"),
+        ];
+        for (secs_ago, expected) in cases {
+            assert_eq!(
+                relative_since(now - Duration::seconds(secs_ago)),
+                expected,
+                "secs_ago={secs_ago}"
+            );
+        }
+    }
+
+    #[test]
+    fn relative_since_clamps_future_timestamps_to_now() {
+        let future = OffsetDateTime::now_utc() + Duration::seconds(120);
+        assert_eq!(relative_since(future), "now");
+    }
+
+    #[test]
+    fn watch_time_since_formats_minutes_and_hours() {
+        let now = OffsetDateTime::now_utc();
+        let cases = [(0, "0 min"), (30, "30 min"), (60, "1h 0m"), (150, "2h 30m")];
+        for (mins_ago, expected) in cases {
+            assert_eq!(
+                watch_time_since(now - Duration::minutes(mins_ago)),
+                expected,
+                "mins_ago={mins_ago}"
+            );
+        }
+    }
+}

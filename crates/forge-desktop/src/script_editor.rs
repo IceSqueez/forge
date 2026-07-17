@@ -1,14 +1,25 @@
+use std::sync::Arc;
+
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
     Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, icon, modal,
     overlay, primary_button, radius, spacing, tr, with_alpha,
 };
-use forge_script::MethodDescriptor;
+use forge_events::EventPublisher;
+use forge_runtime::{EventBus, ScriptRegistry};
+use forge_script::contract::collect_annotation_diagnostics;
+use forge_script::{
+    MethodDescriptor, RunResult, content_hash, format_script, parse_contract, run_inline,
+    validate_syntax,
+};
+use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
+use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
     SharedString, Subscription, Window, div, prelude::*, px,
 };
+use time::OffsetDateTime;
 
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
@@ -16,7 +27,6 @@ use crate::sidebar::NavRequested;
 
 const LEFT_PANE_W: Pixels = px(200.0);
 const STRIPE_W: Pixels = px(2.0);
-const FILE_INDENT: Pixels = px(14.0);
 const RIGHT_PANE_W: Pixels = px(220.0);
 const GLYPH_PIN: Pixels = px(12.0);
 
@@ -32,7 +42,6 @@ const DIVIDER_H: Pixels = px(16.0);
 const GLYPH_RUN: Pixels = px(11.0);
 const GLYPH_TOOLBAR: Pixels = px(13.0);
 const GLYPH_STATUS: Pixels = px(12.0);
-const GLYPH_FOLDER: Pixels = px(13.0);
 const GLYPH_FILE: Pixels = px(12.0);
 const GLYPH_TAB: Pixels = px(12.0);
 const GLYPH_ACTION: Pixels = px(12.0);
@@ -42,21 +51,52 @@ fn code_field_height(content: &str) -> Pixels {
     px(lines * CODE_LINE_H_PX + CODE_PAD_V_PX * 2.0)
 }
 
-struct ScriptFile {
-    id: u64,
-    name: String,
-    content: String,
-    dirty: bool,
+fn now_timestamp() -> String {
+    let now = OffsetDateTime::now_utc();
+    format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second())
 }
 
-struct ScriptFolder {
+fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
+    format!("executed in {duration_ms:.2}ms · {error_count} errors")
+}
+
+fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Variant, String> {
+    match kind {
+        VariantKind::Int => raw
+            .trim()
+            .parse::<i64>()
+            .map(Variant::Int)
+            .map_err(|_| format!("`{name}` must be an integer")),
+        VariantKind::Float => raw
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| format!("`{name}` must be a float"))
+            .and_then(|f| Variant::float(f).map_err(|e| e.to_string())),
+        VariantKind::Bool => match raw.trim() {
+            "true" => Ok(Variant::Bool(true)),
+            "false" => Ok(Variant::Bool(false)),
+            _ => Err(format!("`{name}` must be `true` or `false`")),
+        },
+        VariantKind::String => Ok(Variant::String(raw.to_owned())),
+        other => Err(format!(
+            "`{name}`: {other:?} inputs not supported in this run modal"
+        )),
+    }
+}
+
+struct ScriptEntry {
+    id: ScriptId,
     name: String,
-    expanded: bool,
-    files: Vec<ScriptFile>,
+}
+
+struct OpenScript {
+    id: ScriptId,
+    record: ScriptRecord,
+    original_body: String,
 }
 
 struct RenameState {
-    target: u64,
+    target: ScriptId,
     input: Entity<TextInput>,
     _sub: Subscription,
 }
@@ -71,26 +111,30 @@ enum ConsoleTab {
 #[derive(Clone, Copy)]
 enum LogTag {
     Run,
-    Info,
     Ok,
     Stats,
+    Warn,
+    Err,
 }
 
 impl LogTag {
     fn label(self) -> &'static str {
         match self {
             LogTag::Run => "[run]",
-            LogTag::Info => "[info]",
             LogTag::Ok => "[ok]",
             LogTag::Stats => "[stats]",
+            LogTag::Warn => "[warn]",
+            LogTag::Err => "[error]",
         }
     }
 
     fn color(self, palette: &ForgePalette) -> Rgba {
         match self {
             LogTag::Run => palette.info,
-            LogTag::Info | LogTag::Ok => palette.success,
+            LogTag::Ok => palette.success,
             LogTag::Stats => palette.brand,
+            LogTag::Warn => palette.warning,
+            LogTag::Err => palette.random,
         }
     }
 }
@@ -102,86 +146,87 @@ struct ConsoleLine {
 }
 
 enum PendingNav {
-    SelectScript(u64),
+    SelectScript(ScriptId),
+    NewScript,
     GoBack,
 }
 
 struct RunInput {
     name: SharedString,
     label: SharedString,
+    kind: VariantKind,
     input: Entity<TextInput>,
     _sub: Subscription,
 }
 
 struct RunModalState {
     title: SharedString,
+    script_id: ScriptId,
     script_name: String,
     inputs: Vec<RunInput>,
     error: Option<SharedString>,
+    running: bool,
 }
 
 /// `None` = type-check passed; `Some(n)` = error count.
 type TypeCheck = Option<u32>;
 
 pub struct ScriptEditorView {
-    folders: Vec<ScriptFolder>,
-    shared: Vec<ScriptFile>,
+    backend: Arc<dyn DataProvider>,
+    script_registry: Arc<ScriptRegistry>,
+    bus: Arc<EventBus>,
+    rt_handle: tokio::runtime::Handle,
+
+    scripts: Vec<ScriptEntry>,
+    selected: Option<ScriptId>,
+    open: Option<OpenScript>,
     variables: Vec<(SharedString, SharedString)>,
-    selected: Option<u64>,
-    open_original: String,
+    loading: bool,
+
     rename: Option<RenameState>,
-    pending_delete: Option<u64>,
+    pending_delete: Option<ScriptId>,
     pending_nav: Option<PendingNav>,
+
     code_input: Entity<TextArea>,
     _code_sub: Subscription,
+
     console: Vec<ConsoleLine>,
     console_tab: ConsoleTab,
     console_collapsed: bool,
     problems: Vec<SharedString>,
     type_check: TypeCheck,
+
     api_docs_open: bool,
     api_search: Entity<TextInput>,
     _api_search_sub: Subscription,
+
     run_modal: Option<RunModalState>,
-    next_id: u64,
 }
 
 impl EventEmitter<NavRequested> for ScriptEditorView {}
 
 impl ScriptEditorView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        backend: Arc<dyn DataProvider>,
+        script_registry: Arc<ScriptRegistry>,
+        bus: Arc<EventBus>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
-        let (folders, shared) = seed_scripts();
-
-        let selected = folders.first().and_then(|f| f.files.first()).map(|f| f.id);
-        let seed_content = folders
-            .first()
-            .and_then(|f| f.files.first())
-            .map(|f| f.content.clone())
-            .unwrap_or_default();
 
         let code_input = cx.new(|cx| {
-            let mut area = TextArea::new("// write your rhai script", cx)
+            TextArea::new("// write your rhai script", cx)
                 .with_palette(palette)
                 .mono()
                 .with_font_size(FONT_XS)
-                .with_height(code_field_height(&seed_content));
-            area.set_content(seed_content.clone(), cx);
-            area
+                .with_height(code_field_height(""))
         });
         let code_sub = cx.subscribe(&code_input, |this, _area, event: &InputEvent, cx| {
             if let InputEvent::Changed(_) = event {
                 this.on_code_changed(cx);
             }
         });
-
-        let next_id = folders
-            .iter()
-            .flat_map(|f| f.files.iter())
-            .chain(shared.iter())
-            .map(|f| f.id)
-            .max()
-            .map_or(0, |m| m + 1);
 
         let api_search = cx.new(|cx| {
             TextInput::new(tr!("script_editor_api_search_placeholder"), cx)
@@ -197,93 +242,192 @@ impl ScriptEditorView {
             }
         });
 
-        Self {
-            folders,
-            shared,
-            variables: vec![
-                ("%lines%".into(), "array".into()),
-                ("%idx%".into(), "int".into()),
-                ("%user%".into(), "User".into()),
-            ],
-            selected,
-            open_original: seed_content,
+        let mut view = Self {
+            backend,
+            script_registry,
+            bus,
+            rt_handle,
+            scripts: Vec::new(),
+            selected: None,
+            open: None,
+            variables: Vec::new(),
+            loading: false,
             rename: None,
             pending_delete: None,
             pending_nav: None,
             code_input,
             _code_sub: code_sub,
-            console: seed_console(),
+            console: Vec::new(),
             console_tab: ConsoleTab::Output,
             console_collapsed: false,
-            problems: vec!["Ln 8 · unused binding `parts` before reassignment".into()],
+            problems: Vec::new(),
             type_check: None,
             api_docs_open: false,
             api_search,
             _api_search_sub: api_search_sub,
             run_modal: None,
-            next_id,
-        }
-    }
-
-    fn find_file(&self, id: u64) -> Option<&ScriptFile> {
-        self.folders
-            .iter()
-            .flat_map(|f| f.files.iter())
-            .chain(self.shared.iter())
-            .find(|f| f.id == id)
-    }
-
-    fn find_file_mut(&mut self, id: u64) -> Option<&mut ScriptFile> {
-        self.folders
-            .iter_mut()
-            .flat_map(|f| f.files.iter_mut())
-            .chain(self.shared.iter_mut())
-            .find(|f| f.id == id)
-    }
-
-    fn folder_of(&self, id: u64) -> Option<&str> {
-        self.folders
-            .iter()
-            .find(|folder| folder.files.iter().any(|f| f.id == id))
-            .map(|folder| folder.name.as_str())
-    }
-
-    fn current_dirty(&self) -> bool {
-        self.selected
-            .and_then(|id| self.find_file(id))
-            .is_some_and(|f| f.dirty)
-    }
-
-    fn open_file(&mut self, id: u64, cx: &mut Context<Self>) {
-        let Some(content) = self.find_file(id).map(|f| f.content.clone()) else {
-            return;
         };
-        self.selected = Some(id);
-        self.open_original = content.clone();
-        let height = code_field_height(&content);
-        self.code_input.update(cx, |area, cx| {
-            area.set_content(content, cx);
-            area.set_height(height, cx);
+        view.load_scripts(cx);
+        view
+    }
+
+    fn find_entry(&self, id: ScriptId) -> Option<&ScriptEntry> {
+        self.scripts.iter().find(|e| e.id == id)
+    }
+
+    fn push_console(&mut self, tag: LogTag, text: impl Into<SharedString>) {
+        self.console.push(ConsoleLine {
+            time: now_timestamp().into(),
+            tag,
+            text: text.into(),
         });
+    }
+
+    fn recompute_diagnostics(&mut self, body: &str) {
+        let diags = collect_annotation_diagnostics(body);
+        self.type_check = if diags.is_empty() {
+            None
+        } else {
+            Some(diags.len() as u32)
+        };
+        self.problems = diags
+            .into_iter()
+            .map(|d| SharedString::from(format!("Ln {} · {}", d.line + 1, d.message)))
+            .collect();
+    }
+
+    fn current_dirty(&self, cx: &App) -> bool {
+        self.open
+            .as_ref()
+            .is_some_and(|o| self.code_input.read(cx).content() != o.original_body)
+    }
+
+    fn load_scripts(&mut self, cx: &mut Context<Self>) {
+        self.loading = true;
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let result = repo
+                .list()
+                .await
+                .map(|records| {
+                    records
+                        .into_iter()
+                        .map(|r| ScriptEntry {
+                            id: r.id,
+                            name: r.name,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_scripts_loaded(result, cx));
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn apply_scripts_loaded(
+        &mut self,
+        result: Result<Vec<ScriptEntry>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.loading = false;
+        match result {
+            Ok(entries) => {
+                let first = entries.first().map(|e| e.id);
+                self.scripts = entries;
+                if let Some(id) = first
+                    && self.open.is_none()
+                {
+                    self.open_script(id, cx);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "script list load failed");
+                self.push_console(LogTag::Err, format!("Could not load scripts: {e}"));
+            }
+        }
+        cx.notify();
+    }
+
+    fn open_script(&mut self, id: ScriptId, cx: &mut Context<Self>) {
+        self.selected = Some(id);
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let result = ScriptRepo::get(&*repo, id)
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|opt| opt.ok_or_else(|| format!("script {id} not found")));
+            let _ = tx.send(result);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_script_opened(result, cx));
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn apply_script_opened(
+        &mut self,
+        result: Result<ScriptRecord, String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(record) => {
+                let body = record.body.clone();
+                let contract = parse_contract(&body).unwrap_or_default();
+                self.variables = contract
+                    .inputs
+                    .iter()
+                    .map(|i| {
+                        (
+                            SharedString::from(format!("%{}%", i.name)),
+                            SharedString::from(i.kind.label().to_lowercase()),
+                        )
+                    })
+                    .collect();
+                let height = code_field_height(&body);
+                self.code_input.update(cx, |area, cx| {
+                    area.set_content(body.clone(), cx);
+                    area.set_height(height, cx);
+                });
+                self.recompute_diagnostics(&body);
+                self.open = Some(OpenScript {
+                    id: record.id,
+                    original_body: body,
+                    record,
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "script open failed");
+                self.push_console(LogTag::Err, format!("Could not open script: {e}"));
+            }
+        }
+        cx.notify();
     }
 
     fn revert_current(&mut self, cx: &mut Context<Self>) {
-        let original = self.open_original.clone();
-        if let Some(id) = self.selected
-            && let Some(file) = self.find_file_mut(id)
-        {
-            file.content = original.clone();
-            file.dirty = false;
-        }
+        let Some(original) = self.open.as_ref().map(|o| o.original_body.clone()) else {
+            return;
+        };
         let height = code_field_height(&original);
         self.code_input.update(cx, |area, cx| {
-            area.set_content(original, cx);
+            area.set_content(original.clone(), cx);
             area.set_height(height, cx);
         });
+        self.recompute_diagnostics(&original);
     }
 
     fn go_back(&mut self, cx: &mut Context<Self>) {
-        if self.current_dirty() {
+        if self.current_dirty(cx) {
             self.pending_nav = Some(PendingNav::GoBack);
             cx.notify();
             return;
@@ -297,7 +441,8 @@ impl ScriptEditorView {
         };
         self.revert_current(cx);
         match nav {
-            PendingNav::SelectScript(id) => self.open_file(id, cx),
+            PendingNav::SelectScript(id) => self.open_script(id, cx),
+            PendingNav::NewScript => self.new_script(cx),
             PendingNav::GoBack => cx.emit(NavRequested(Screen::Actions)),
         }
         cx.notify();
@@ -308,80 +453,350 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    fn toggle_folder(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(folder) = self.folders.get_mut(index) {
-            folder.expanded = !folder.expanded;
-        }
-        cx.notify();
-    }
-
-    fn select(&mut self, id: u64, cx: &mut Context<Self>) {
+    fn select(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         if self.selected == Some(id) {
             return;
         }
-        if self.current_dirty() {
+        if self.current_dirty(cx) {
             self.pending_nav = Some(PendingNav::SelectScript(id));
             cx.notify();
             return;
         }
-        self.open_file(id, cx);
-        cx.notify();
+        self.open_script(id, cx);
     }
 
     fn on_code_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.code_input.read(cx).content().to_owned();
         let height = code_field_height(&content);
-        if let Some(id) = self.selected
-            && let Some(file) = self.find_file_mut(id)
-        {
-            file.content = content;
-            file.dirty = true;
-        }
         self.code_input
             .update(cx, |area, cx| area.set_height(height, cx));
+        self.recompute_diagnostics(&content);
+        cx.notify();
+    }
+
+    fn save(&mut self, cx: &mut Context<Self>) {
+        if !self.current_dirty(cx) {
+            return;
+        }
+        let Some(record) = self.open.as_ref().map(|o| o.record.clone()) else {
+            return;
+        };
+        let body = self.code_input.read(cx).content().to_owned();
+        let contract = match parse_contract(&body) {
+            Ok(c) => c,
+            Err(e) => {
+                self.push_console(LogTag::Err, format!("contract parse error: {e}"));
+                cx.notify();
+                return;
+            }
+        };
+        if let Err(e) = validate_syntax(&body) {
+            self.push_console(LogTag::Err, format!("syntax error: {e}"));
+            self.push_console(LogTag::Warn, tr!("script_editor_save_blocked"));
+            cx.notify();
+            return;
+        }
+
+        let mut record = record;
+        record.body = body.clone();
+        record.body_hash = content_hash(&body);
+        record.contract = contract;
+        record.last_modified = OffsetDateTime::now_utc();
+
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let registry = Arc::clone(&self.script_registry);
+        let bus = Arc::clone(&self.bus);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let saved = ScriptRepo::save(&*repo, record.clone())
+                .await
+                .map_err(|e| e.to_string());
+            let outcome = match saved {
+                Ok(()) => {
+                    let reload = registry
+                        .reload(record.clone(), bus.as_ref())
+                        .await
+                        .map_err(|e| e.to_string());
+                    Ok((record, reload))
+                }
+                Err(e) => Err(e),
+            };
+            let _ = tx.send(outcome);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_saved(result, cx));
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn apply_saved(
+        &mut self,
+        result: Result<(ScriptRecord, Result<(), String>), String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok((record, reload)) => {
+                if let Some(open) = self.open.as_mut()
+                    && open.id == record.id
+                {
+                    open.original_body = record.body.clone();
+                    open.record = record;
+                }
+                self.push_console(LogTag::Ok, "script saved");
+                if let Err(e) = reload {
+                    self.push_console(LogTag::Err, format!("hot-reload failed: {e}"));
+                }
+            }
+            Err(e) => {
+                self.push_console(LogTag::Err, format!("save failed: {e}"));
+            }
+        }
+        cx.notify();
+    }
+
+    fn run(&mut self, cx: &mut Context<Self>) {
+        let Some((script_id, name)) = self.open.as_ref().map(|o| (o.id, o.record.name.clone()))
+        else {
+            return;
+        };
+        let body = self.code_input.read(cx).content().to_owned();
+        let contract = parse_contract(&body).unwrap_or_default();
+        if contract.inputs.is_empty() {
+            self.push_console(LogTag::Run, format!("running {name}"));
+            self.console_tab = ConsoleTab::Output;
+            self.console_collapsed = false;
+            self.run_inline_exec(body, ArgStack::new(), script_id, cx);
+            cx.notify();
+        } else {
+            let palette = cx.palette();
+            let fields: Vec<(String, VariantKind)> = contract
+                .inputs
+                .iter()
+                .map(|i| (i.name.clone(), i.kind))
+                .collect();
+            let inputs = fields
+                .iter()
+                .map(|(n, k)| self.build_run_input(n, *k, palette, cx))
+                .collect();
+            self.run_modal = Some(RunModalState {
+                title: tr!("script_editor_run_modal_title", name = name.as_str()).into(),
+                script_id,
+                script_name: name,
+                inputs,
+                error: None,
+                running: false,
+            });
+            cx.notify();
+        }
+    }
+
+    fn build_run_input(
+        &self,
+        name: &str,
+        kind: VariantKind,
+        palette: ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> RunInput {
+        let label = kind.label().to_lowercase();
+        let placeholder = tr!(
+            "script_editor_run_input_placeholder",
+            label = label.as_str()
+        );
+        let input = cx.new(|cx| {
+            TextInput::new(placeholder, cx)
+                .with_palette(palette)
+                .with_font_size(FONT_SM)
+                .on_surface()
+                .static_chrome(palette.border_input, Radius::Sm)
+        });
+        let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event
+                && let Some(modal) = this.run_modal.as_mut()
+            {
+                modal.error = None;
+                cx.notify();
+            }
+        });
+        RunInput {
+            name: name.to_owned().into(),
+            label: label.into(),
+            kind,
+            input,
+            _sub: sub,
+        }
+    }
+
+    fn run_inline_exec(
+        &mut self,
+        body: String,
+        args: ArgStack,
+        script_id: ScriptId,
+        cx: &mut Context<Self>,
+    ) {
+        let globals = Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>;
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let publisher = Arc::clone(&self.bus) as Arc<dyn EventPublisher>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let result = run_inline(body, args, globals, settings, publisher, script_id)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_run_finished(result, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn apply_run_finished(&mut self, result: Result<RunResult, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(r) => {
+                self.run_modal = None;
+                self.push_console(LogTag::Ok, format!("returned: {}", r.output_display));
+                self.push_console(
+                    LogTag::Stats,
+                    format_run_stats(r.duration_ms, r.error_count),
+                );
+            }
+            Err(e) => {
+                if let Some(modal) = self.run_modal.as_mut() {
+                    modal.running = false;
+                    modal.error = Some(e.clone().into());
+                }
+                self.push_console(LogTag::Err, format!("run error: {e}"));
+            }
+        }
+        cx.notify();
+    }
+
+    fn submit_run(&mut self, cx: &mut Context<Self>) {
+        let Some(modal) = self.run_modal.as_ref() else {
+            return;
+        };
+        let script_id = modal.script_id;
+        let name = modal.script_name.clone();
+        let raws: Vec<(String, VariantKind, String)> = modal
+            .inputs
+            .iter()
+            .map(|f| {
+                (
+                    f.name.to_string(),
+                    f.kind,
+                    f.input.read(cx).content().trim().to_owned(),
+                )
+            })
+            .collect();
+
+        let mut args = ArgStack::new();
+        for (fname, kind, raw) in &raws {
+            match parse_input_to_variant(fname, *kind, raw) {
+                Ok(v) => args = args.set(fname.clone(), v),
+                Err(e) => {
+                    if let Some(modal) = self.run_modal.as_mut() {
+                        modal.error = Some(e.into());
+                    }
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+
+        if self.open.is_none() {
+            return;
+        }
+        let body = self.code_input.read(cx).content().to_owned();
+        if let Some(modal) = self.run_modal.as_mut() {
+            modal.running = true;
+            modal.error = None;
+        }
+        self.push_console(LogTag::Run, format!("running {name} with inputs"));
+        self.console_tab = ConsoleTab::Output;
+        self.console_collapsed = false;
+        self.run_inline_exec(body, args, script_id, cx);
+        cx.notify();
+    }
+
+    fn cancel_run(&mut self, cx: &mut Context<Self>) {
+        self.run_modal = None;
         cx.notify();
     }
 
     fn new_script(&mut self, cx: &mut Context<Self>) {
-        let id = self.next_id;
-        self.next_id += 1;
-        let name = format!("script_{id}.rhai");
-        let content = format!("// {name}\n\nfn main() {{\n    \n}}\n");
-
-        let target_folder = self
-            .selected
-            .and_then(|sel| {
-                self.folders
-                    .iter()
-                    .position(|folder| folder.files.iter().any(|f| f.id == sel))
-            })
-            .or_else(|| (!self.folders.is_empty()).then_some(0));
-
-        let file = ScriptFile {
-            id,
-            name,
-            content: content.clone(),
-            dirty: false,
-        };
-        match target_folder {
-            Some(idx) => {
-                self.folders[idx].expanded = true;
-                self.folders[idx].files.push(file);
-            }
-            None => self.shared.push(file),
+        if self.current_dirty(cx) {
+            self.pending_nav = Some(PendingNav::NewScript);
+            cx.notify();
+            return;
         }
-
-        self.selected = Some(id);
-        self.open_original = content.clone();
-        let height = code_field_height(&content);
-        self.code_input.update(cx, |area, cx| {
-            area.set_content(content, cx);
-            area.set_height(height, cx);
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let now = OffsetDateTime::now_utc();
+            let name = format!("script_{}", now.unix_timestamp());
+            let body = "// @return string\n\n\"hello from forge\"".to_owned();
+            let record = ScriptRecord {
+                id: ScriptId::new(),
+                name,
+                body_hash: content_hash(&body),
+                body,
+                contract: ScriptContract::default(),
+                enabled: true,
+                created_at: now,
+                last_modified: now,
+            };
+            let result = ScriptRepo::save(&*repo, record.clone())
+                .await
+                .map(|_| record)
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
         });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_new_script(result, cx));
+            }
+        })
+        .detach();
         cx.notify();
     }
 
-    fn request_delete(&mut self, id: u64, cx: &mut Context<Self>) {
+    fn apply_new_script(&mut self, result: Result<ScriptRecord, String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(record) => {
+                self.scripts.push(ScriptEntry {
+                    id: record.id,
+                    name: record.name.clone(),
+                });
+                let id = record.id;
+                let body = record.body.clone();
+                self.selected = Some(id);
+                self.variables.clear();
+                let height = code_field_height(&body);
+                self.code_input.update(cx, |area, cx| {
+                    area.set_content(body.clone(), cx);
+                    area.set_height(height, cx);
+                });
+                self.recompute_diagnostics(&body);
+                self.open = Some(OpenScript {
+                    id,
+                    original_body: body,
+                    record,
+                });
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "new script creation failed");
+                self.push_console(LogTag::Err, format!("Could not create script: {e}"));
+            }
+        }
+        cx.notify();
+    }
+
+    fn request_delete(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         self.pending_delete = Some(id);
         cx.notify();
     }
@@ -395,36 +810,49 @@ impl ScriptEditorView {
         let Some(id) = self.pending_delete.take() else {
             return;
         };
-        for folder in &mut self.folders {
-            folder.files.retain(|f| f.id != id);
-        }
-        self.shared.retain(|f| f.id != id);
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let result = ScriptRepo::delete(&*repo, id)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_deleted(id, result, cx));
+            }
+        })
+        .detach();
+        cx.notify();
+    }
 
-        if self.selected == Some(id) {
-            let next = self
-                .folders
-                .iter()
-                .flat_map(|f| f.files.iter())
-                .chain(self.shared.iter())
-                .map(|f| f.id)
-                .next();
-            match next {
-                Some(next_id) => self.open_file(next_id, cx),
-                None => {
+    fn apply_deleted(&mut self, id: ScriptId, result: Result<(), String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(()) => {
+                self.scripts.retain(|e| e.id != id);
+                if self.selected == Some(id) {
                     self.selected = None;
-                    self.open_original = String::new();
+                    self.open = None;
+                    self.variables.clear();
                     self.code_input.update(cx, |area, cx| {
                         area.set_content("", cx);
                         area.set_height(code_field_height(""), cx);
                     });
                 }
+                self.load_scripts(cx);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "script delete failed");
+                self.push_console(LogTag::Err, format!("Could not delete script: {e}"));
+                cx.notify();
             }
         }
-        cx.notify();
     }
 
-    fn start_rename(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(current) = self.find_file(id).map(|f| f.name.clone()) else {
+    fn start_rename(&mut self, id: ScriptId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(current) = self.find_entry(id).map(|e| e.name.clone()) else {
             return;
         };
         let palette = cx.palette();
@@ -452,11 +880,70 @@ impl ScriptEditorView {
         let Some(state) = self.rename.take() else {
             return;
         };
+        let id = state.target;
         let name = state.input.read(cx).content().trim().to_owned();
-        if !name.is_empty()
-            && let Some(file) = self.find_file_mut(state.target)
-        {
-            file.name = name;
+        if name.is_empty() {
+            cx.notify();
+            return;
+        }
+        let taken = self
+            .scripts
+            .iter()
+            .any(|e| e.id != id && e.name.eq_ignore_ascii_case(&name));
+        if taken {
+            self.push_console(LogTag::Err, format!("Name \"{name}\" is already taken"));
+            cx.notify();
+            return;
+        }
+
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let name_for_task = name.clone();
+        self.rt_handle.spawn(async move {
+            let result = async {
+                let mut record = ScriptRepo::get(&*repo, id)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| "script not found".to_owned())?;
+                record.name = name_for_task.clone();
+                ScriptRepo::save(&*repo, record)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok::<(ScriptId, String), String>((id, name_for_task))
+            }
+            .await;
+            let _ = tx.send(result);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_renamed(result, cx));
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn apply_renamed(
+        &mut self,
+        result: Result<(ScriptId, String), String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok((id, new_name)) => {
+                for entry in &mut self.scripts {
+                    if entry.id == id {
+                        entry.name = new_name.clone();
+                    }
+                }
+                if let Some(open) = self.open.as_mut()
+                    && open.id == id
+                {
+                    open.record.name = new_name;
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "script rename failed");
+            }
         }
         cx.notify();
     }
@@ -466,115 +953,20 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    fn open_run_modal(&mut self, cx: &mut Context<Self>) {
-        let (script_name, title) = match self.selected.and_then(|id| self.find_file(id)) {
-            Some(f) => (
-                f.name.clone(),
-                tr!("script_editor_run_modal_title", name = f.name.as_str()),
-            ),
-            None => (
-                "script".to_owned(),
-                tr!("script_editor_run_modal_title_generic"),
-            ),
-        };
-        let palette = cx.palette();
-        let mut inputs = Vec::new();
-        for (name, label) in [("lines", "array"), ("idx", "int")] {
-            inputs.push(self.build_run_input(name, label, palette, cx));
-        }
-        self.run_modal = Some(RunModalState {
-            title: title.into(),
-            script_name,
-            inputs,
-            error: None,
-        });
-        cx.notify();
-    }
-
-    fn build_run_input(
-        &self,
-        name: &str,
-        label: &str,
-        palette: ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> RunInput {
-        let placeholder = tr!("script_editor_run_input_placeholder", label = label);
-        let input = cx.new(|cx| {
-            TextInput::new(placeholder, cx)
-                .with_palette(palette)
-                .with_font_size(FONT_SM)
-                .on_surface()
-                .static_chrome(palette.border_input, Radius::Sm)
-        });
-        let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| {
-            if let InputEvent::Changed(_) = event
-                && let Some(modal) = this.run_modal.as_mut()
-            {
-                modal.error = None;
-                cx.notify();
-            }
-        });
-        RunInput {
-            name: name.to_owned().into(),
-            label: label.to_owned().into(),
-            input,
-            _sub: sub,
-        }
-    }
-
-    fn submit_run(&mut self, cx: &mut Context<Self>) {
-        let Some(modal) = self.run_modal.as_ref() else {
-            return;
-        };
-        let missing = modal
-            .inputs
-            .iter()
-            .find(|f| f.input.read(cx).content().trim().is_empty())
-            .map(|f| f.name.clone());
-        if let Some(name) = missing {
-            if let Some(modal) = self.run_modal.as_mut() {
-                modal.error =
-                    Some(tr!("script_editor_run_input_error", name = name.as_ref()).into());
-            }
-            cx.notify();
-            return;
-        }
-
-        let name = modal.script_name.clone();
-        self.run_modal = None;
-        self.console.extend(seed_run_result(&name));
-        self.console_tab = ConsoleTab::Output;
-        self.console_collapsed = false;
-        cx.notify();
-    }
-
-    fn cancel_run(&mut self, cx: &mut Context<Self>) {
-        self.run_modal = None;
-        cx.notify();
-    }
-
     fn format(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected
-            && let Some(file) = self.find_file_mut(id)
-        {
-            file.dirty = false;
+        if self.open.is_none() {
+            return;
         }
-        self.console.push(ConsoleLine {
-            time: "--:--:--".into(),
-            tag: LogTag::Info,
-            text: "formatted (stub)".into(),
-        });
-        cx.notify();
-    }
-
-    fn debug(&mut self, cx: &mut Context<Self>) {
-        self.console.push(ConsoleLine {
-            time: "--:--:--".into(),
-            tag: LogTag::Info,
-            text: "debug session unavailable (stub - no runtime wired)".into(),
-        });
-        self.console_tab = ConsoleTab::Output;
-        self.console_collapsed = false;
+        let source = self.code_input.read(cx).content().to_owned();
+        let formatted = format_script(&source);
+        if formatted != source {
+            let height = code_field_height(&formatted);
+            self.code_input.update(cx, |area, cx| {
+                area.set_content(formatted.clone(), cx);
+                area.set_height(height, cx);
+            });
+            self.recompute_diagnostics(&formatted);
+        }
         cx.notify();
     }
 
@@ -605,17 +997,12 @@ impl ScriptEditorView {
             "script-crumb-actions",
             cx.listener(|this, _: &ClickEvent, _, cx| this.go_back(cx)),
         )];
-        match self.selected.and_then(|id| self.find_file(id)) {
-            Some(file) => {
-                let folder = self
-                    .folder_of(file.id)
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| tr!("script_editor_shared"));
-                crumbs.push(BreadcrumbCrumb::leaf(folder));
-                let label = if file.dirty {
-                    format!("{} ●", file.name)
+        match self.selected.and_then(|id| self.find_entry(id)) {
+            Some(entry) => {
+                let label = if self.current_dirty(cx) {
+                    format!("{} ●", entry.name)
                 } else {
-                    file.name.clone()
+                    entry.name.clone()
                 };
                 crumbs.push(BreadcrumbCrumb::leaf(label));
             }
@@ -664,7 +1051,7 @@ impl ScriptEditorView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child("Rhai 1.19"),
+                    .child("Rhai 1.25"),
             );
 
         breadcrumb(crumbs, palette).right(right).into_any_element()
@@ -687,7 +1074,7 @@ impl ScriptEditorView {
             .bg(palette.success)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.success, 0.92)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_run_modal(cx)))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.run(cx)))
             .child(icon(Icon::PlayerPlay, GLYPH_RUN, palette.shell))
             .child(
                 div()
@@ -698,13 +1085,13 @@ impl ScriptEditorView {
                     .child(tr!("script_editor_run")),
             );
 
-        let debug = self.toolbar_button(
-            "script-debug",
-            Icon::Bolt,
-            tr!("script_editor_debug"),
+        let save = self.toolbar_button(
+            "script-save",
+            Icon::Download,
+            tr!("script_editor_save"),
             palette,
             density,
-            cx.listener(|this, _: &ClickEvent, _, cx| this.debug(cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
         );
         let format = self.toolbar_button(
             "script-format",
@@ -714,6 +1101,8 @@ impl ScriptEditorView {
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.format(cx)),
         );
+        let debug =
+            self.disabled_toolbar_button(Icon::Bolt, tr!("script_editor_debug"), palette, density);
         let api = self.toolbar_button(
             "script-api-docs",
             Icon::Notebook,
@@ -733,8 +1122,9 @@ impl ScriptEditorView {
             .flex()
             .items_center()
             .child(run)
-            .child(debug)
+            .child(save)
             .child(format)
+            .child(debug)
             .child(divider)
             .child(api);
 
@@ -767,13 +1157,6 @@ impl ScriptEditorView {
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child("Timeout: 500ms"),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child("Ln 1, Col 1"),
             );
 
         div()
@@ -823,6 +1206,31 @@ impl ScriptEditorView {
             .into_any_element()
     }
 
+    fn disabled_toolbar_button(
+        &self,
+        glyph: Icon,
+        label: impl Into<SharedString>,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Xs, density))
+            .rounded(radius(Radius::Sm))
+            .child(icon(glyph, GLYPH_TOOLBAR, palette.text_faint))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_faint)
+                    .child(label.into()),
+            )
+            .into_any_element()
+    }
+
     fn left_pane(
         &self,
         palette: &ForgePalette,
@@ -831,29 +1239,40 @@ impl ScriptEditorView {
     ) -> AnyElement {
         let mut scripts = div().flex().flex_col().child(scripts_header(palette, cx));
 
-        for (index, folder) in self.folders.iter().enumerate() {
-            scripts = scripts.child(self.folder_header(index, folder, palette, cx));
-            if folder.expanded {
-                for file in &folder.files {
-                    scripts = scripts.child(self.file_row(file, true, palette, cx));
-                }
+        if self.scripts.is_empty() {
+            scripts = scripts.child(
+                div()
+                    .py(spacing(Spacing::Xxs, Density::Cozy))
+                    .px(spacing(Spacing::Xs, Density::Cozy))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("script_editor_no_scripts")),
+            );
+        } else {
+            for entry in &self.scripts {
+                scripts = scripts.child(self.file_row(entry, palette, cx));
             }
-        }
-
-        let mut shared = div().flex().flex_col().child(section_label(
-            SharedString::from(tr!("script_editor_shared").to_uppercase()),
-            palette,
-        ));
-        for file in &self.shared {
-            shared = shared.child(self.file_row(file, false, palette, cx));
         }
 
         let mut vars = div()
             .flex()
             .flex_col()
             .child(section_label(tr!("script_editor_vars_label"), palette));
-        for (name, ty) in &self.variables {
-            vars = vars.child(variable_row(name.clone(), ty.clone(), palette));
+        if self.variables.is_empty() {
+            vars = vars.child(
+                div()
+                    .py(spacing(Spacing::Xxs, Density::Cozy))
+                    .px(spacing(Spacing::Xs, Density::Cozy))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child("-"),
+            );
+        } else {
+            for (name, ty) in &self.variables {
+                vars = vars.child(variable_row(name.clone(), ty.clone(), palette));
+            }
         }
 
         div()
@@ -868,62 +1287,25 @@ impl ScriptEditorView {
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Xs, density))
             .child(scripts)
-            .child(shared)
             .child(vars)
-            .into_any_element()
-    }
-
-    fn folder_header(
-        &self,
-        index: usize,
-        folder: &ScriptFolder,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let glyph = if folder.expanded {
-            Icon::FolderOpen
-        } else {
-            Icon::Folder
-        };
-        div()
-            .id(("script-folder", index))
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .cursor_pointer()
-            .hover(|s| s.bg(palette.elevated))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_folder(index, cx)))
-            .child(icon(glyph, GLYPH_FOLDER, palette.warning))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_secondary)
-                    .child(folder.name.clone()),
-            )
             .into_any_element()
     }
 
     fn file_row(
         &self,
-        file: &ScriptFile,
-        in_folder: bool,
+        entry: &ScriptEntry,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let id = file.id;
+        let id = entry.id;
         let selected = self.selected == Some(id);
         let renaming = self.rename.as_ref().is_some_and(|r| r.target == id);
 
-        let base_icon = if in_folder {
+        let icon_color = if selected {
             palette.brand
         } else {
             palette.info
         };
-        let icon_color = if selected { palette.brand } else { base_icon };
         let text_color = if selected {
             palette.brand
         } else {
@@ -941,19 +1323,18 @@ impl ScriptEditorView {
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(text_color)
-                .child(file.name.clone())
+                .child(entry.name.clone())
                 .into_any_element()
         };
 
         let mut row = div()
-            .id(("script-file", id as usize))
+            .id(SharedString::from(format!("script-file-{id}")))
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .py(spacing(Spacing::Xxs, Density::Cozy))
             .px(spacing(Spacing::Xs, Density::Cozy))
             .rounded(radius(Radius::Sm))
-            .when(in_folder, |d| d.ml(FILE_INDENT))
             .when(selected, |d| {
                 d.bg(palette.elevated)
                     .border_l(STRIPE_W)
@@ -973,7 +1354,7 @@ impl ScriptEditorView {
             row = row
                 .child(
                     div()
-                        .id(("script-rename", id as usize))
+                        .id(SharedString::from(format!("script-rename-{id}")))
                         .cursor_pointer()
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             this.start_rename(id, window, cx)
@@ -982,7 +1363,7 @@ impl ScriptEditorView {
                 )
                 .child(
                     div()
-                        .id(("script-delete", id as usize))
+                        .id(SharedString::from(format!("script-delete-{id}")))
                         .cursor_pointer()
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.request_delete(id, cx)
@@ -1254,8 +1635,8 @@ impl ScriptEditorView {
     fn delete_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
         let id = self.pending_delete?;
         let name = self
-            .find_file(id)
-            .map(|f| f.name.clone())
+            .find_entry(id)
+            .map(|e| e.name.clone())
             .unwrap_or_default();
 
         let kind = tr!("widget_confirm_delete_kind_script");
@@ -1406,6 +1787,32 @@ impl ScriptEditorView {
             );
         }
 
+        let submit: AnyElement = if modal_state.running {
+            div()
+                .flex()
+                .items_center()
+                .py(spacing(Spacing::Xs, Density::Cozy))
+                .px(spacing(Spacing::Md, Density::Cozy))
+                .rounded(radius(Radius::Sm))
+                .bg(with_alpha(palette.success, 0.5))
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(FONT_XS)
+                        .text_color(palette.shell)
+                        .child(tr!("script_editor_running")),
+                )
+                .into_any_element()
+        } else {
+            primary_button(tr!("script_editor_run"), palette)
+                .on_click(
+                    "script-run-submit",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.submit_run(cx)),
+                )
+                .into_any_element()
+        };
+
         let footer = div()
             .w_full()
             .flex()
@@ -1417,10 +1824,7 @@ impl ScriptEditorView {
                     cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_run(cx)),
                 ),
             )
-            .child(primary_button(tr!("script_editor_run"), palette).on_click(
-                "script-run-submit",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_run(cx)),
-            ));
+            .child(submit);
 
         let card = modal(modal_state.title.clone(), body, palette)
             .size(ModalSize::Md)
@@ -1645,158 +2049,4 @@ fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElem
         );
     }
     row
-}
-
-fn seed_run_result(name: &str) -> Vec<ConsoleLine> {
-    vec![
-        ConsoleLine {
-            time: "--:--:--".into(),
-            tag: LogTag::Run,
-            text: format!("{name} with inputs").into(),
-        },
-        ConsoleLine {
-            time: "--:--:--".into(),
-            tag: LogTag::Info,
-            text: "quote #2 by GLaDOS".into(),
-        },
-        ConsoleLine {
-            time: "--:--:--".into(),
-            tag: LogTag::Ok,
-            text: "returned: \"The cake is a lie.\" - GLaDOS".into(),
-        },
-        ConsoleLine {
-            time: "--:--:--".into(),
-            tag: LogTag::Stats,
-            text: "executed in 1.84ms · 0 errors".into(),
-        },
-    ]
-}
-
-fn seed_scripts() -> (Vec<ScriptFolder>, Vec<ScriptFile>) {
-    let format_quote = "\
-// Pick a random quote and format with author
-// @input  lines: Array<string>
-// @input  idx: int
-// @return string
-
-fn format_quote(lines, idx) {
-    let raw = lines[idx];
-    let parts = raw.split(\"|\");
-
-    if parts.len() < 2 {
-        return raw.trim();
-    }
-
-    let quote = parts[0].trim();
-    let author = parts[1].trim();
-
-    forge::log(`quote #${idx} by ${author}`);
-    return `\"${quote}\" - ${author}`;
-}
-";
-
-    let shoutout = "\
-// Shout out a raider
-fn shoutout(user) {
-    forge::chat::send(`Go follow ${user}! <3`);
-}
-";
-
-    let remind = "\
-// Post a periodic social reminder
-fn remind() {
-    forge::chat::send(\"Follow on socials - links in panels!\");
-}
-";
-
-    let utils = "\
-// Shared helpers
-fn clamp(n, lo, hi) {
-    if n < lo { return lo; }
-    if n > hi { return hi; }
-    n
-}
-";
-
-    let api_helpers = "\
-// Shared API helpers
-fn json_get(url) {
-    forge::http::get(url)
-}
-";
-
-    let folders = vec![
-        ScriptFolder {
-            name: "!quote".to_owned(),
-            expanded: true,
-            files: vec![ScriptFile {
-                id: 0,
-                name: "format_quote.rhai".to_owned(),
-                content: format_quote.to_owned(),
-                dirty: false,
-            }],
-        },
-        ScriptFolder {
-            name: "!so".to_owned(),
-            expanded: false,
-            files: vec![ScriptFile {
-                id: 1,
-                name: "shoutout.rhai".to_owned(),
-                content: shoutout.to_owned(),
-                dirty: false,
-            }],
-        },
-        ScriptFolder {
-            name: "SocialReminder".to_owned(),
-            expanded: false,
-            files: vec![ScriptFile {
-                id: 2,
-                name: "remind.rhai".to_owned(),
-                content: remind.to_owned(),
-                dirty: false,
-            }],
-        },
-    ];
-
-    let shared = vec![
-        ScriptFile {
-            id: 3,
-            name: "utils.rhai".to_owned(),
-            content: utils.to_owned(),
-            dirty: false,
-        },
-        ScriptFile {
-            id: 4,
-            name: "api_helpers.rhai".to_owned(),
-            content: api_helpers.to_owned(),
-            dirty: false,
-        },
-    ];
-
-    (folders, shared)
-}
-
-fn seed_console() -> Vec<ConsoleLine> {
-    vec![
-        ConsoleLine {
-            time: "14:23:14".into(),
-            tag: LogTag::Run,
-            text: "format_quote.rhai with sample inputs".into(),
-        },
-        ConsoleLine {
-            time: "14:23:14".into(),
-            tag: LogTag::Info,
-            text: "quote #2 by GLaDOS".into(),
-        },
-        ConsoleLine {
-            time: "14:23:14".into(),
-            tag: LogTag::Ok,
-            text: "returned: \"The cake is a lie.\" - GLaDOS".into(),
-        },
-        ConsoleLine {
-            time: "14:23:14".into(),
-            tag: LogTag::Stats,
-            text: "executed in 1.84ms · 3 allocations · 0 errors".into(),
-        },
-    ]
 }

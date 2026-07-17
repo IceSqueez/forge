@@ -313,7 +313,12 @@ impl AppShell {
                     .into()
             }
             Screen::Scripts => {
-                let editor = cx.new(ScriptEditorView::new);
+                let backend = handles.backend.clone();
+                let script_registry = handles.script_registry.clone();
+                let bus = handles.bus.clone();
+                let rt_handle = handles.rt_handle.clone();
+                let editor = cx
+                    .new(|cx| ScriptEditorView::new(backend, script_registry, bus, rt_handle, cx));
                 cx.subscribe(&editor, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
                 })

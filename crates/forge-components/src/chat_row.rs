@@ -6,31 +6,61 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_SM, FONT_XS, Radius, radius};
+use crate::tokens::{BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS};
 
-// Off the shared `Spacing` scale on purpose: a chat line is density-neutral, so its
-// geometry stays fixed. Pill paddings below do use the `Spacing` tokens.
+// A chat line is density-neutral: its geometry stays fixed off the shared `Spacing` scale,
+// and its pill/badge micro-sizes fall below the token grid, so they are named literals here.
+const TIME_W: Pixels = px(42.0);
+const ROW_GAP: Pixels = px(8.0);
+const LINE1_GAP: Pixels = px(6.0);
+
+const ROW_PAD_T: Pixels = px(3.0);
+const ROW_PAD_R: Pixels = px(10.0);
+const ROW_PAD_B: Pixels = px(3.0);
+const ROW_PAD_L: Pixels = px(8.0);
+const ROW_RADIUS: Pixels = px(5.0);
+
+const EVENT_PAD_V: Pixels = px(6.0);
+const EVENT_PAD_H: Pixels = px(10.0);
+const EVENT_RADIUS: Pixels = px(6.0);
+const EVENT_MARGIN_V: Pixels = px(2.0);
 const STRIPE_W: Pixels = px(2.0);
-const PAD_V: Pixels = px(8.0);
-const PAD_H: Pixels = px(12.0);
-const META_BODY_GAP: Pixels = px(2.0);
-const ICON_W: Pixels = px(13.0);
-const ICON_SPACING: Pixels = px(8.0);
-const BADGE_SPACING: Pixels = px(6.0);
+const EVENT_ICON: Pixels = px(14.0);
+const ICON_TOP: Pixels = px(2.0);
+
 const PLATFORM_TILE: Pixels = px(14.0);
-const PLATFORM_TILE_CORNER: Pixels = px(3.22);
-const PLATFORM_GLYPH: Pixels = px(7.0);
-const SEPARATOR_H: Pixels = px(0.5);
-const BODY_LINE_SPACING: Pixels = px(3.0);
-const BODY_INSET: Pixels = px(21.0);
-const USERNAME_SEP_GAP: Pixels = px(2.0);
+const PLATFORM_CORNER: Pixels = px(3.0);
+const PLATFORM_GLYPH: Pixels = px(8.0);
 
-const LH_XS: Pixels = px(15.6);
-const LH_SM: Pixels = px(18.2);
+const ROLE_BADGE_FONT: Pixels = px(8.5);
+const ROLE_BADGE_PAD_H: Pixels = px(5.0);
+const ROLE_BADGE_PAD_V: Pixels = px(1.0);
+const ROLE_BADGE_RADIUS: Pixels = px(4.0);
+const ROLE_BADGE_GAP: Pixels = px(4.0);
+const ROLE_BADGE_ML: Pixels = px(4.0);
+const ROLE_TINT_ALPHA: f32 = 0.07;
+const ROLE_BORDER_ALPHA: f32 = 0.45;
 
+const PILL_FONT: Pixels = px(10.0);
 const PILL_PAD_H: Pixels = px(6.0);
-const PILL_PAD_V: Pixels = px(4.0);
-const BADGE_PAD_H: Pixels = px(4.0);
+const PILL_PAD_V: Pixels = px(1.0);
+const PILL_RADIUS: Pixels = px(8.0);
+const PILL_GAP: Pixels = px(4.0);
+const PILL_ICON: Pixels = px(9.0);
+
+const CMD_PILL_FONT: Pixels = px(11.5);
+const CMD_PILL_PAD_H: Pixels = px(5.0);
+const CMD_PILL_PAD_V: Pixels = px(1.0);
+const CMD_PILL_RADIUS: Pixels = px(3.0);
+const CMD_SECOND_INSET: Pixels = px(50.0);
+
+const EVENT_MSG_FONT: Pixels = px(11.5);
+const EVENT_MSG_TOP: Pixels = px(1.0);
+const TRIGGERED_TOP: Pixels = px(5.0);
+const BODY_LINE_GAP: Pixels = px(2.0);
+
+const LINE_BODY: Pixels = px(18.0);
+const LINE_TIME: Pixels = px(15.75);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BadgeKind {
@@ -48,14 +78,13 @@ pub enum BadgeKind {
     BitsLeader,
 }
 
-// Vip/Bot/Turbo deliberately share `brand` (they never co-occur on one user).
 pub(crate) fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
     match kind {
+        BadgeKind::Broadcaster => palette.warning,
         BadgeKind::Moderator => palette.success,
         BadgeKind::Vip => palette.brand,
-        BadgeKind::Bot => palette.brand,
-        BadgeKind::Subscriber => palette.info,
-        BadgeKind::Broadcaster => palette.warning,
+        BadgeKind::Subscriber => palette.bits,
+        BadgeKind::Bot => palette.info,
         BadgeKind::Partner => palette.accent_teal,
         BadgeKind::Premium => palette.accent_pink_light,
         BadgeKind::Founder => palette.disabled,
@@ -68,11 +97,11 @@ pub(crate) fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
 
 pub(crate) fn badge_label(kind: BadgeKind) -> &'static str {
     match kind {
+        BadgeKind::Broadcaster => "OWNER",
         BadgeKind::Moderator => "MOD",
         BadgeKind::Vip => "VIP",
         BadgeKind::Subscriber => "SUB",
         BadgeKind::Bot => "BOT",
-        BadgeKind::Broadcaster => "OWN",
         BadgeKind::Partner => "PARTNER",
         BadgeKind::Premium => "PRIME",
         BadgeKind::Founder => "FOUNDER",
@@ -135,17 +164,6 @@ pub enum ChatBody {
     },
 }
 
-impl ChatBody {
-    fn triggered(&self) -> Option<SharedString> {
-        match self {
-            ChatBody::Subscription { triggered, .. }
-            | ChatBody::Raid { triggered, .. }
-            | ChatBody::Command { triggered, .. } => triggered.clone(),
-            ChatBody::Message(_) | ChatBody::Cheer { .. } => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ChatRow {
     pub timestamp: SharedString,
@@ -157,19 +175,8 @@ pub struct ChatRow {
     pub moderated: bool,
 }
 
-fn body_accent(body: &ChatBody, palette: &ForgePalette) -> (Rgba, Option<Rgba>) {
-    match body {
-        ChatBody::Message(_) | ChatBody::Command { .. } => (with_alpha(palette.brand, 0.0), None),
-        ChatBody::Subscription { .. } => (palette.brand, Some(palette.elevated)),
-        ChatBody::Cheer { .. } => (palette.warning, Some(palette.elevated)),
-        ChatBody::Raid { .. } => (palette.random, Some(palette.elevated)),
-    }
-}
-
 type UsernameClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// Two-line row: badges live on the meta line, so the username's start-x is fixed
-/// regardless of badge count.
 #[derive(IntoElement)]
 pub struct ChatRowView {
     palette: ForgePalette,
@@ -196,6 +203,37 @@ impl ChatRowView {
     }
 }
 
+fn time_el(ts: SharedString, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex_none()
+        .w(TIME_W)
+        .whitespace_nowrap()
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XXS)
+        .line_height(LINE_TIME)
+        .text_color(palette.text_faint)
+        .child(ts)
+}
+
+fn platform_tile(platform: Platform, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex_none()
+        .size(PLATFORM_TILE)
+        .rounded(PLATFORM_CORNER)
+        .bg(platform.color(palette))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(PLATFORM_GLYPH)
+                .text_color(palette.shell)
+                .child(platform.letter()),
+        )
+}
+
 fn username_el(
     name: SharedString,
     color: Rgba,
@@ -205,8 +243,9 @@ fn username_el(
         .flex_none()
         .whitespace_nowrap()
         .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_SM)
-        .line_height(LH_SM)
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(FONT_XS)
+        .line_height(LINE_BODY)
         .text_color(color)
         .child(name);
 
@@ -223,39 +262,19 @@ fn username_el(
     }
 }
 
-fn separator_el(palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .flex_none()
-        .whitespace_nowrap()
-        .ml(USERNAME_SEP_GAP)
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_SM)
-        .line_height(LH_SM)
-        .text_color(palette.text_secondary)
-        .child(": ")
-}
-
 fn message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
     let el = div()
         .flex_1()
         .min_w(px(0.0))
         .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_SM)
-        .line_height(LH_SM)
-        .text_color(color)
-        .child(text);
-    if struck { el.line_through() } else { el }
-}
-
-fn second_line_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
-    let el = div()
-        .pl(BODY_INSET)
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_SM)
-        .line_height(LH_SM)
-        .text_color(color)
-        .child(text);
-    if struck { el.line_through() } else { el }
+        .text_size(FONT_XS)
+        .line_height(LINE_BODY)
+        .text_color(color);
+    if struck {
+        el.line_through().child(text)
+    } else {
+        el.child(text)
+    }
 }
 
 fn descriptor_el(text: SharedString, palette: &ForgePalette) -> impl IntoElement {
@@ -263,115 +282,246 @@ fn descriptor_el(text: SharedString, palette: &ForgePalette) -> impl IntoElement
         .flex_none()
         .whitespace_nowrap()
         .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_SM)
-        .line_height(LH_SM)
+        .text_size(FONT_XS)
+        .line_height(LINE_BODY)
         .text_color(palette.text_secondary)
-        .child(text)
-}
-
-fn platform_tile(platform: Platform, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .flex_none()
-        .size(PLATFORM_TILE)
-        .rounded(PLATFORM_TILE_CORNER)
-        .bg(platform.color(palette))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_size(PLATFORM_GLYPH)
-                .text_color(palette.shell)
-                .child(platform.letter()),
-        )
-}
-
-fn badge_pill(kind: BadgeKind, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .flex_none()
-        .h(LH_XS)
-        .px(BADGE_PAD_H)
-        .rounded(radius(Radius::Sm))
-        .bg(badge_color(kind, palette))
-        .flex()
-        .items_center()
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.shell)
-                .child(badge_label(kind)),
-        )
-}
-
-fn triggered_pill(text: SharedString, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .flex_none()
-        .py(PILL_PAD_V)
-        .px(PILL_PAD_H)
-        .rounded(radius(Radius::Sm))
-        .bg(with_alpha(palette.success, 0.20))
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.success)
-        .child(text)
-}
-
-fn count_pill(text: SharedString, hue: Rgba, alpha: f32) -> impl IntoElement {
-    div()
-        .flex_none()
-        .ml(BADGE_SPACING)
-        .h(LH_SM)
-        .px(PILL_PAD_H)
-        .rounded(radius(Radius::Sm))
-        .bg(with_alpha(hue, alpha))
-        .flex()
-        .items_center()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(hue)
         .child(text)
 }
 
 fn command_pill(command: SharedString, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .flex_none()
-        .h(LH_SM)
-        .px(PILL_PAD_H)
-        .rounded(radius(Radius::Sm))
-        .bg(with_alpha(palette.surface_overlay, 0.25))
-        .flex()
-        .items_center()
+        .flex_1()
+        .min_w(px(0.0))
+        .py(CMD_PILL_PAD_V)
+        .px(CMD_PILL_PAD_H)
+        .rounded(CMD_PILL_RADIUS)
+        .bg(palette.surface_overlay)
         .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
+        .text_size(CMD_PILL_FONT)
         .text_color(palette.brand)
         .child(command)
 }
 
-fn event_line(
-    glyph: Icon,
-    glyph_color: Rgba,
-    username: AnyElement,
-    descriptor: SharedString,
-    pill: Option<AnyElement>,
-    palette: &ForgePalette,
+fn role_badge(kind: BadgeKind, palette: &ForgePalette) -> impl IntoElement {
+    let c = badge_color(kind, palette);
+    div()
+        .flex_none()
+        .py(ROLE_BADGE_PAD_V)
+        .px(ROLE_BADGE_PAD_H)
+        .rounded(ROLE_BADGE_RADIUS)
+        .border(BORDER_THIN)
+        .border_color(with_alpha(c, ROLE_BORDER_ALPHA))
+        .bg(with_alpha(c, ROLE_TINT_ALPHA))
+        .font_family(DEFAULT_MONO_FAMILY)
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(ROLE_BADGE_FONT)
+        .text_color(c)
+        .child(badge_label(kind))
+}
+
+fn role_badges(badges: &[BadgeKind], palette: &ForgePalette) -> Option<impl IntoElement> {
+    if badges.is_empty() {
+        return None;
+    }
+    Some(
+        div()
+            .flex_none()
+            .ml(ROLE_BADGE_ML)
+            .flex()
+            .items_center()
+            .gap(ROLE_BADGE_GAP)
+            .children(badges.iter().map(|&kind| role_badge(kind, palette))),
+    )
+}
+
+fn pill_badge(
+    bg: Rgba,
+    text_color: Rgba,
+    mono: bool,
+    leading: Option<(Icon, Rgba)>,
+    label: SharedString,
 ) -> impl IntoElement {
-    let mut cluster = div()
+    let family = if mono {
+        DEFAULT_MONO_FAMILY
+    } else {
+        DEFAULT_BODY_FAMILY
+    };
+    div()
+        .flex_none()
         .flex()
         .items_center()
-        .child(username)
-        .child(descriptor_el(descriptor, palette));
-    if let Some(pill) = pill {
-        cluster = cluster.child(pill);
+        .gap(PILL_GAP)
+        .py(PILL_PAD_V)
+        .px(PILL_PAD_H)
+        .rounded(PILL_RADIUS)
+        .bg(bg)
+        .children(leading.map(|(glyph, glyph_color)| icon(glyph, PILL_ICON, glyph_color)))
+        .child(
+            div()
+                .font_family(family)
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(PILL_FONT)
+                .text_color(text_color)
+                .child(label),
+        )
+}
+
+fn event_glyph(glyph: Icon, color: Rgba) -> impl IntoElement {
+    div()
+        .flex_none()
+        .mt(ICON_TOP)
+        .child(icon(glyph, EVENT_ICON, color))
+}
+
+fn event_message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
+    let el = div()
+        .mt(EVENT_MSG_TOP)
+        .font_family(DEFAULT_BODY_FAMILY)
+        .text_size(EVENT_MSG_FONT)
+        .line_height(LINE_BODY)
+        .text_color(color);
+    if struck {
+        el.line_through().child(text)
+    } else {
+        el.child(text)
     }
+}
+
+fn triggered_row(text: SharedString, palette: &ForgePalette) -> impl IntoElement {
+    div().mt(TRIGGERED_TOP).flex().child(pill_badge(
+        palette.surface_overlay,
+        palette.success,
+        false,
+        Some((Icon::Bolt, palette.success)),
+        text,
+    ))
+}
+
+fn standard_row(
+    data: &ChatRow,
+    click: Option<(ElementId, UsernameClick)>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    let text = match &data.body {
+        ChatBody::Message(t) => t.clone(),
+        _ => SharedString::default(),
+    };
+    let color = if data.moderated {
+        palette.text_muted
+    } else {
+        palette.text_secondary
+    };
     div()
         .flex()
         .items_center()
-        .gap(ICON_SPACING)
-        .child(icon(glyph, ICON_W, glyph_color))
-        .child(cluster)
+        .gap(ROW_GAP)
+        .pt(ROW_PAD_T)
+        .pr(ROW_PAD_R)
+        .pb(ROW_PAD_B)
+        .pl(ROW_PAD_L)
+        .rounded(ROW_RADIUS)
+        .hover(|s| s.bg(palette.elevated))
+        .child(time_el(data.timestamp.clone(), palette))
+        .child(platform_tile(data.platform, palette))
+        .child(username_el(
+            data.username.clone(),
+            data.username_color,
+            click,
+        ))
+        .child(message_el(text, color, data.moderated))
+        .children(role_badges(&data.badges, palette))
+}
+
+fn command_row(
+    data: &ChatRow,
+    click: Option<(ElementId, UsernameClick)>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    let (command, triggered) = match &data.body {
+        ChatBody::Command { command, triggered } => (command.clone(), triggered.clone()),
+        _ => (SharedString::default(), None),
+    };
+    let main = div()
+        .flex()
+        .items_center()
+        .gap(ROW_GAP)
+        .child(time_el(data.timestamp.clone(), palette))
+        .child(platform_tile(data.platform, palette))
+        .child(username_el(
+            data.username.clone(),
+            data.username_color,
+            click,
+        ))
+        .child(command_pill(command, palette))
+        .children(role_badges(&data.badges, palette));
+    let second = triggered.map(|t| {
+        div().pl(CMD_SECOND_INSET).flex().child(pill_badge(
+            palette.elevated,
+            palette.success,
+            false,
+            Some((Icon::ArrowRight, palette.success)),
+            t,
+        ))
+    });
+    div()
+        .flex()
+        .flex_col()
+        .gap(BODY_LINE_GAP)
+        .pt(ROW_PAD_T)
+        .pr(ROW_PAD_R)
+        .pb(ROW_PAD_B)
+        .pl(ROW_PAD_L)
+        .rounded(ROW_RADIUS)
+        .hover(|s| s.bg(palette.elevated))
+        .child(main)
+        .children(second)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn event_row(
+    timestamp: SharedString,
+    stripe: Rgba,
+    glyph: Icon,
+    username: AnyElement,
+    descriptor: SharedString,
+    count: Option<AnyElement>,
+    message: Option<(SharedString, Rgba, bool)>,
+    triggered: Option<SharedString>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    let line1 = div()
+        .flex()
+        .items_center()
+        .gap(LINE1_GAP)
+        .child(username)
+        .child(descriptor_el(descriptor, palette))
+        .children(count);
+    let column = div()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .child(line1)
+        .children(message.map(|(text, color, struck)| event_message_el(text, color, struck)))
+        .children(triggered.map(|t| triggered_row(t, palette)));
+    div()
+        .flex()
+        .items_start()
+        .gap(ROW_GAP)
+        .my(EVENT_MARGIN_V)
+        .py(EVENT_PAD_V)
+        .px(EVENT_PAD_H)
+        .bg(palette.elevated)
+        .border_l(STRIPE_W)
+        .border_color(stripe)
+        .rounded_r(EVENT_RADIUS)
+        .child(
+            div()
+                .flex_none()
+                .mt(ICON_TOP)
+                .child(time_el(timestamp, palette)),
+        )
+        .child(event_glyph(glyph, stripe))
+        .child(column)
 }
 
 impl RenderOnce for ChatRowView {
@@ -381,277 +531,96 @@ impl RenderOnce for ChatRowView {
             data,
             click,
         } = self;
-        let (stripe_color, body_bg) = body_accent(&data.body, &p);
-        let triggered = data.body.triggered();
-        let moderated = data.moderated;
-        let username = username_el(data.username, data.username_color, click);
 
-        let left = div()
-            .flex()
-            .items_center()
-            .gap(BADGE_SPACING)
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .line_height(LH_XS)
-                    .text_color(p.text_faint)
-                    .child(data.timestamp),
-            )
-            .child(platform_tile(data.platform, &p))
-            .children(data.badges.iter().map(|&kind| badge_pill(kind, &p)));
-
-        let mut meta = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .w_full()
-            .h(LH_XS)
-            .child(left);
-        if let Some(t) = triggered {
-            meta = meta.child(triggered_pill(t, &p));
-        }
-
-        let body: AnyElement = match data.body {
-            ChatBody::Message(text) => {
-                let color = if moderated {
-                    p.text_muted
-                } else {
-                    p.text_primary
-                };
-                div()
-                    .flex()
-                    .items_start()
-                    .child(username)
-                    .child(separator_el(&p))
-                    .child(message_el(text, color, moderated))
-                    .into_any_element()
-            }
-            ChatBody::Command { command, .. } => div()
-                .flex()
-                .items_center()
-                .child(username)
-                .child(separator_el(&p))
-                .child(command_pill(command, &p))
-                .into_any_element(),
+        match &data.body {
+            ChatBody::Message(_) => standard_row(&data, click, &p).into_any_element(),
+            ChatBody::Command { .. } => command_row(&data, click, &p).into_any_element(),
             ChatBody::Subscription {
                 descriptor,
                 months,
                 message,
-                ..
+                triggered,
             } => {
-                let pill = months.map(|m| {
-                    count_pill(SharedString::from(format!("{m} mo")), p.warning, 0.15)
-                        .into_any_element()
+                let username = username_el(data.username.clone(), data.username_color, click);
+                let count = months.as_ref().map(|m| {
+                    pill_badge(
+                        p.surface_overlay,
+                        p.warning,
+                        true,
+                        None,
+                        SharedString::from(format!("{m} mo")),
+                    )
+                    .into_any_element()
                 });
-                let line1 = event_line(Icon::Star, p.brand, username, descriptor, pill, &p);
-                let mut col = div().flex().flex_col().gap(BODY_LINE_SPACING).child(line1);
-                if let Some(msg) = message {
-                    col = col.child(second_line_el(msg, p.text_muted, moderated));
-                }
-                col.into_any_element()
+                let msg = message
+                    .clone()
+                    .map(|text| (text, p.text_muted, data.moderated));
+                event_row(
+                    data.timestamp.clone(),
+                    p.brand,
+                    Icon::Star,
+                    username,
+                    descriptor.clone(),
+                    count,
+                    msg,
+                    triggered.clone(),
+                    &p,
+                )
+                .into_any_element()
             }
             ChatBody::Cheer {
                 descriptor,
                 bits,
                 text,
             } => {
-                let pill = count_pill(SharedString::from(format!("{bits} bits")), p.warning, 0.20)
-                    .into_any_element();
-                let line1 = event_line(Icon::Coin, p.warning, username, descriptor, Some(pill), &p);
-                let cheer_color = if moderated {
+                let username = username_el(data.username.clone(), data.username_color, click);
+                let count = pill_badge(
+                    p.warning,
+                    p.shell,
+                    false,
+                    None,
+                    SharedString::from(format!("{bits} bits")),
+                )
+                .into_any_element();
+                let color = if data.moderated {
                     p.text_muted
                 } else {
                     p.text_primary
                 };
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(BODY_LINE_SPACING)
-                    .child(line1)
-                    .child(second_line_el(text, cheer_color, moderated))
-                    .into_any_element()
+                event_row(
+                    data.timestamp.clone(),
+                    p.warning,
+                    Icon::Coin,
+                    username,
+                    descriptor.clone(),
+                    Some(count),
+                    Some((text.clone(), color, data.moderated)),
+                    None,
+                    &p,
+                )
+                .into_any_element()
             }
             ChatBody::Raid {
                 descriptor,
                 viewers,
-                ..
+                triggered,
             } => {
-                let pill = count_pill(viewers, p.random, 0.20).into_any_element();
-                event_line(Icon::Flag, p.random, username, descriptor, Some(pill), &p)
-                    .into_any_element()
+                let username = username_el(data.username.clone(), p.random, click);
+                let count =
+                    pill_badge(p.random, p.shell, false, None, viewers.clone()).into_any_element();
+                event_row(
+                    data.timestamp.clone(),
+                    p.random,
+                    Icon::Flag,
+                    username,
+                    descriptor.clone(),
+                    Some(count),
+                    None,
+                    triggered.clone(),
+                    &p,
+                )
+                .into_any_element()
             }
-        };
-
-        let mut content = div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .border_l(STRIPE_W)
-            .border_color(stripe_color)
-            .py(PAD_V)
-            .px(PAD_H)
-            .gap(META_BODY_GAP)
-            .child(meta)
-            .child(body);
-        if let Some(bg) = body_bg {
-            content = content.bg(bg).rounded_r(radius(Radius::Sm));
-        }
-
-        div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .border_b(SEPARATOR_H)
-            .border_color(p.border_regular)
-            .child(content)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
-
-    /// Channel-wise colour identity. `Rgba` carries neither `Debug` nor `Eq`, so
-    /// this stands in for the `assert_eq!` the hue assertions would otherwise reach
-    /// for.
-    fn same_rgba(a: Rgba, b: Rgba) -> bool {
-        a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
-    }
-
-    #[test]
-    fn badge_maps_each_kind_to_its_hue_field_and_caption() {
-        let p = CATPPUCCIN_MOCHA;
-
-        // Guard: the distinct palette fields the badge map draws from are pairwise
-        // distinct, so each per-kind hue row below has teeth - a mis-wire to a
-        // neighbouring field (VIP onto `warning`, Subscriber onto `success`, ...)
-        // resolves to a detectably different colour rather than a silent alias.
-        // `brand` (Vip/Bot/Turbo) and `bits` (Bits/BitsLeader) are intentionally
-        // shared within their own group and appear once here.
-        let distinct = [
-            p.success,
-            p.brand,
-            p.info,
-            p.warning,
-            p.accent_teal,
-            p.accent_pink_light,
-            p.disabled,
-            p.bits,
-        ];
-        for i in 0..distinct.len() {
-            for j in (i + 1)..distinct.len() {
-                assert!(
-                    !same_rgba(distinct[i], distinct[j]),
-                    "badge hue fields {i} and {j} collide",
-                );
-            }
-        }
-
-        // Captions are deliberate abbreviations (OWN not OWNER, PRIME not PREMIUM,
-        // HYPE not HYPE TRAIN) - a future "tidy-up" that expands them is the
-        // regression this row pins.
-        for (kind, hue, label) in [
-            (BadgeKind::Moderator, p.success, "MOD"),
-            (BadgeKind::Vip, p.brand, "VIP"),
-            (BadgeKind::Subscriber, p.info, "SUB"),
-            (BadgeKind::Bot, p.brand, "BOT"),
-            (BadgeKind::Broadcaster, p.warning, "OWN"),
-            (BadgeKind::Partner, p.accent_teal, "PARTNER"),
-            (BadgeKind::Premium, p.accent_pink_light, "PRIME"),
-            (BadgeKind::Founder, p.disabled, "FOUNDER"),
-            (BadgeKind::Turbo, p.brand, "TURBO"),
-            (BadgeKind::HypeTrain, p.warning, "HYPE"),
-            (BadgeKind::Bits, p.bits, "BITS"),
-            (BadgeKind::BitsLeader, p.bits, "BITS LEADER"),
-        ] {
-            assert!(same_rgba(badge_color(kind, &p), hue), "hue for {kind:?}");
-            assert_eq!(badge_label(kind), label, "label for {kind:?}");
-        }
-    }
-
-    #[test]
-    fn platform_maps_each_source_to_its_tile_hue_and_letter() {
-        let p = CATPPUCCIN_MOCHA;
-
-        // Guard: the three tile hues are distinct, so a swapped arm returns a
-        // detectably wrong colour rather than the same value on two sources.
-        assert!(!same_rgba(p.brand, p.random));
-        assert!(!same_rgba(p.random, p.info));
-        assert!(!same_rgba(p.brand, p.info));
-
-        for (platform, hue, letter) in [
-            (Platform::Twitch, p.brand, "T"),
-            (Platform::YouTube, p.random, "Y"),
-            (Platform::Kick, p.info, "K"),
-        ] {
-            assert!(same_rgba(platform.color(&p), hue), "hue for {platform:?}");
-            assert_eq!(platform.letter(), letter, "letter for {platform:?}");
-        }
-    }
-
-    #[test]
-    fn triggered_is_carried_only_by_the_pill_bearing_bodies() {
-        // `triggered()` fans three variants' optional pill into one accessor and
-        // must return `None` for the two bodies that carry no pill field
-        // (Message, Cheer). Both the Some-passthrough and the structural `None`
-        // are pinned here.
-        let cases: [(ChatBody, Option<&str>); 7] = [
-            (ChatBody::Message("hi".into()), None),
-            (
-                ChatBody::Subscription {
-                    descriptor: "".into(),
-                    months: None,
-                    message: None,
-                    triggered: Some("greet".into()),
-                },
-                Some("greet"),
-            ),
-            (
-                ChatBody::Subscription {
-                    descriptor: "".into(),
-                    months: None,
-                    message: None,
-                    triggered: None,
-                },
-                None,
-            ),
-            (
-                ChatBody::Cheer {
-                    descriptor: "".into(),
-                    bits: 0,
-                    text: "".into(),
-                },
-                None,
-            ),
-            (
-                ChatBody::Raid {
-                    descriptor: "".into(),
-                    viewers: "".into(),
-                    triggered: Some("raid-fx".into()),
-                },
-                Some("raid-fx"),
-            ),
-            (
-                ChatBody::Command {
-                    command: "".into(),
-                    triggered: Some("run · 12ms".into()),
-                },
-                Some("run · 12ms"),
-            ),
-            (
-                ChatBody::Command {
-                    command: "".into(),
-                    triggered: None,
-                },
-                None,
-            ),
-        ];
-        for (body, expected) in cases {
-            let got = body.triggered();
-            let got: Option<&str> = got.as_ref().map(|s| s.as_ref());
-            assert_eq!(got, expected, "for {body:?}");
         }
     }
 }

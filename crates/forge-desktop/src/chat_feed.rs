@@ -1,7 +1,7 @@
 use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
 use forge_types::{ChatEventDetail, ChatPayload, ChatSource, UnifiedChatRow, UserBadge};
-use gpui::SharedString;
+use gpui::{Rgba, SharedString};
 
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
@@ -10,6 +10,7 @@ pub struct ChatMessage {
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
     pub username: SharedString,
+    pub author_color: Option<Rgba>,
     pub body: ChatBody,
     pub is_event: bool,
     pub is_bot: bool,
@@ -49,6 +50,7 @@ impl ChatMessage {
             platform: platform_of(row.source),
             badges: row.badges.iter().filter_map(badge_kind).collect(),
             username: row.author.clone().into(),
+            author_color: row.author_color.map(rgb_channels),
             body: event_body(row),
             is_event: row.is_event,
             is_bot: row.badges.iter().any(|b| matches!(b, UserBadge::Bot)),
@@ -157,6 +159,15 @@ fn row_from_payload(source: ChatSource, event: &Event, payload: ChatPayload) -> 
         is_event: payload.is_event,
         event_detail: payload.event_detail,
         moderation: payload.moderation,
+    }
+}
+
+fn rgb_channels([r, g, b]: [u8; 3]) -> Rgba {
+    Rgba {
+        r: f32::from(r) / 255.0,
+        g: f32::from(g) / 255.0,
+        b: f32::from(b) / 255.0,
+        a: 1.0,
     }
 }
 

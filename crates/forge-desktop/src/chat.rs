@@ -205,11 +205,17 @@ impl ChatView {
         platform_ok && events_ok && bots_ok
     }
 
-    fn username_color(platform: Platform, palette: &ForgePalette) -> Rgba {
-        match platform {
-            Platform::Twitch => palette.brand,
-            Platform::YouTube => palette.random,
-            Platform::Kick => palette.info,
+    fn username_color(msg: &ChatMessage, palette: &ForgePalette) -> Rgba {
+        if let Some(color) = msg.author_color {
+            color
+        } else if !msg.username.is_empty() {
+            hashed_username_color(&msg.username, palette)
+        } else {
+            match msg.platform {
+                Platform::Twitch => palette.brand,
+                Platform::YouTube => palette.random,
+                Platform::Kick => palette.info,
+            }
         }
     }
 
@@ -440,7 +446,7 @@ impl ChatView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Md, density));
 
         for (idx, msg) in visible.iter().enumerate() {
@@ -449,7 +455,7 @@ impl ChatView {
                 platform: msg.platform,
                 badges: msg.badges.clone(),
                 username: msg.username.clone(),
-                username_color: Self::username_color(msg.platform, palette),
+                username_color: Self::username_color(msg, palette),
                 body: msg.body.clone(),
                 moderated: msg.moderated,
             };
@@ -539,6 +545,21 @@ impl ChatView {
 
         area
     }
+}
+
+fn hashed_username_color(username: &str, palette: &ForgePalette) -> Rgba {
+    let hash = username.bytes().fold(0u32, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(u32::from(b))
+    });
+    let colors = [
+        palette.brand,
+        palette.success,
+        palette.warning,
+        palette.info,
+        palette.random,
+        palette.bits,
+    ];
+    colors[(hash as usize) % colors.len()]
 }
 
 impl Render for ChatView {

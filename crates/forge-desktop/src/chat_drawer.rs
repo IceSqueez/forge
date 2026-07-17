@@ -16,6 +16,7 @@ pub(crate) enum SubStatus {
     None,
 }
 
+#[derive(Clone)]
 pub(crate) struct ViewerSummary {
     pub username: String,
     pub role: Option<BadgeKind>,

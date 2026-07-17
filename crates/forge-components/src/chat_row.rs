@@ -59,6 +59,10 @@ const BODY_LINE_GAP: Pixels = px(2.0);
 const LINE_BODY: Pixels = px(18.0);
 const LINE_TIME: Pixels = px(15.75);
 
+const REPLY_GAP: Pixels = px(4.0);
+const REPLY_ICON: Pixels = px(11.0);
+const REPLY_SNIPPET_MAX: usize = 80;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BadgeKind {
     Moderator,
@@ -169,6 +173,7 @@ pub struct ChatRow {
     pub username_color: Rgba,
     pub body: ChatBody,
     pub moderated: bool,
+    pub reply: Option<(SharedString, SharedString)>,
 }
 
 type UsernameClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -392,6 +397,48 @@ fn triggered_row(text: SharedString, palette: &ForgePalette) -> impl IntoElement
     ))
 }
 
+fn reply_snippet(text: &str) -> String {
+    let flat = text.replace(['\n', '\r'], " ");
+    let trimmed = flat.trim();
+    match trimmed.char_indices().nth(REPLY_SNIPPET_MAX) {
+        Some((idx, _)) => format!("{}\u{2026}", &trimmed[..idx]),
+        None => trimmed.to_owned(),
+    }
+}
+
+fn reply_line(
+    author: SharedString,
+    text: SharedString,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(REPLY_GAP)
+        .child(icon(Icon::ArrowBackUp, REPLY_ICON, palette.text_faint))
+        .child(
+            div()
+                .flex_none()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XXS)
+                .line_height(LINE_TIME)
+                .text_color(palette.text_muted)
+                .child(SharedString::from(format!("@{author}"))),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .whitespace_nowrap()
+                .overflow_hidden()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XXS)
+                .line_height(LINE_TIME)
+                .text_color(palette.text_faint)
+                .child(SharedString::from(reply_snippet(&text))),
+        )
+}
+
 fn standard_row(
     data: &ChatRow,
     click: Option<(ElementId, UsernameClick)>,
@@ -406,17 +453,14 @@ fn standard_row(
     } else {
         palette.text_secondary
     };
-    div()
-        .id(data.id.clone())
+    let reply = data
+        .reply
+        .clone()
+        .map(|(author, parent)| reply_line(author, parent, palette));
+    let main = div()
         .flex()
         .items_center()
         .gap(ROW_GAP)
-        .pt(ROW_PAD_T)
-        .pr(ROW_PAD_R)
-        .pb(ROW_PAD_B)
-        .pl(ROW_PAD_L)
-        .rounded(ROW_RADIUS)
-        .hover(|s| s.bg(palette.elevated))
         .child(time_el(data.timestamp.clone(), palette))
         .child(platform_tile(data.platform, palette))
         .child(username_el(
@@ -425,7 +469,20 @@ fn standard_row(
             click,
         ))
         .child(message_el(text, color, data.moderated))
-        .children(role_badges(&data.badges, palette))
+        .children(role_badges(&data.badges, palette));
+    div()
+        .id(data.id.clone())
+        .flex()
+        .flex_col()
+        .gap(BODY_LINE_GAP)
+        .pt(ROW_PAD_T)
+        .pr(ROW_PAD_R)
+        .pb(ROW_PAD_B)
+        .pl(ROW_PAD_L)
+        .rounded(ROW_RADIUS)
+        .hover(|s| s.bg(palette.elevated))
+        .children(reply)
+        .child(main)
 }
 
 fn command_row(

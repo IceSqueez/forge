@@ -186,6 +186,7 @@ mod tests {
             is_event: false,
             is_bot: false,
             moderated: false,
+            reply: None,
         }
     }
 

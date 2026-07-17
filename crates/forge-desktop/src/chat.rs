@@ -952,6 +952,7 @@ impl ChatView {
                 username_color: Self::username_color(msg, palette),
                 body: msg.body.clone(),
                 moderated: msg.moderated,
+                reply: msg.reply.clone(),
             };
             let username = msg.username.clone();
             let row = chat_row(palette, data).on_username_click(

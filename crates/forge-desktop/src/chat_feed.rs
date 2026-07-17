@@ -1,6 +1,8 @@
 use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
-use forge_types::{ChatEventDetail, ChatPayload, ChatSource, EventId, UnifiedChatRow, UserBadge};
+use forge_types::{
+    ChatEventDetail, ChatPayload, ChatReply, ChatSource, EventId, UnifiedChatRow, UserBadge,
+};
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
 
@@ -18,6 +20,7 @@ pub struct ChatMessage {
     pub is_event: bool,
     pub is_bot: bool,
     pub moderated: bool,
+    pub reply: Option<(SharedString, SharedString)>,
 }
 
 impl ChatMessage {
@@ -59,6 +62,7 @@ impl ChatMessage {
             is_event: row.is_event,
             is_bot: row.badges.iter().any(|b| matches!(b, UserBadge::Bot)),
             moderated: moderation.deleted || moderation.timed_out || moderation.banned,
+            reply: None,
         }
     }
 }
@@ -147,7 +151,13 @@ impl ChatFeed {
         let chat_value = event.payload.get(ChatPayload::KEY)?;
         let payload: ChatPayload = serde_json::from_value(chat_value.clone()).ok()?;
         let row = row_from_payload(source, event, payload);
-        Some(ChatMessage::from_row(&row))
+        let mut message = ChatMessage::from_row(&row);
+        if let Some(reply_value) = event.payload.get(ChatReply::KEY)
+            && let Ok(reply) = serde_json::from_value::<ChatReply>(reply_value.clone())
+        {
+            message.reply = Some((reply.parent_author.into(), reply.parent_text.into()));
+        }
+        Some(message)
     }
 }
 

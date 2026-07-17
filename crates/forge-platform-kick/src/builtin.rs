@@ -9,7 +9,7 @@ use forge_platform_core::{
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{SubActionStep, Variant};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -47,6 +47,7 @@ pub struct KickIntegrationBundle {
     health_tx: broadcast::Sender<HealthDelta>,
     platform: Arc<KickPlatform>,
     credentials_manager: Arc<KickCredentialsManager>,
+    state_rx: watch::Receiver<ConnectionState>,
 }
 
 impl KickIntegrationBundle {
@@ -56,18 +57,52 @@ impl KickIntegrationBundle {
         credentials_manager: Arc<KickCredentialsManager>,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
+        let state_rx = platform.state_receiver();
         let bundle = Arc::new(Self {
             id: BuiltinId::new("kick"),
             slug,
             health_tx: health_tx.clone(),
             platform,
             credentials_manager,
+            state_rx,
         });
+        Self::spawn_health_bridge(&bundle);
         (bundle, health_tx)
     }
 
     fn current_state(&self) -> ConnectionState {
         self.platform.connection_state()
+    }
+
+    fn ws_health_value(&self) -> HealthValue {
+        let (label, active) = match self.current_state() {
+            ConnectionState::Connected => ("Connected".to_owned(), true),
+            ConnectionState::Connecting => ("Connecting".to_owned(), false),
+            ConnectionState::Reconnecting => ("Reconnecting".to_owned(), false),
+            ConnectionState::Disconnected => ("Disconnected".to_owned(), false),
+        };
+        HealthValue::Status {
+            label,
+            active,
+            detail: Some(format!("chatrooms.{}.v2", self.slug)),
+        }
+    }
+
+    fn spawn_health_bridge(bundle: &Arc<Self>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let bundle = Arc::clone(bundle);
+        let mut state_rx = bundle.state_rx.clone();
+        handle.spawn(async move {
+            while state_rx.changed().await.is_ok() {
+                let delta = HealthDelta {
+                    index: 0,
+                    new_value: bundle.ws_health_value(),
+                };
+                let _ = bundle.health_tx.send(delta);
+            }
+        });
     }
 
     pub(crate) fn credentials_manager(&self) -> &Arc<KickCredentialsManager> {
@@ -122,22 +157,10 @@ impl BuiltinStatus for KickIntegrationBundle {
 
 impl BuiltinHealth for KickIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let state = self.current_state();
-        let (ws_label, ws_active) = match state {
-            ConnectionState::Connected => ("Connected".to_owned(), true),
-            ConnectionState::Connecting => ("Connecting".to_owned(), false),
-            ConnectionState::Reconnecting => ("Reconnecting".to_owned(), false),
-            ConnectionState::Disconnected => ("Disconnected".to_owned(), false),
-        };
-
         [
             HealthMetric {
                 label: "Pusher WS".to_owned(),
-                value: HealthValue::Status {
-                    label: ws_label,
-                    active: ws_active,
-                    detail: Some(format!("chatrooms.{}.v2", self.slug)),
-                },
+                value: self.ws_health_value(),
             },
             HealthMetric {
                 label: "Chat mode".to_owned(),

@@ -6,7 +6,7 @@ use forge_platform_core::{
     AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformError, RateLimiter,
     connection_state_changed_event,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::auth::kick_auth_flow;
 use crate::capabilities::kick_capabilities;
@@ -31,6 +31,9 @@ pub struct KickPlatform {
     // verbs share one chat handle without `&mut self`. The lock is never held across an
     // `.await`.
     handle: Mutex<Option<KickChatHandle>>,
+    // Outlives any single `KickChatHandle`, so a receiver taken once at construction
+    // (e.g. by `KickIntegrationBundle`) keeps observing state across every reconnect.
+    state_tx: watch::Sender<ConnectionState>,
 }
 
 impl KickPlatform {
@@ -39,6 +42,7 @@ impl KickPlatform {
         credentials_manager: Arc<KickCredentialsManager>,
         rate_limiter: Arc<dyn RateLimiter>,
     ) -> Self {
+        let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
             auth_flow: kick_auth_flow(),
             capabilities: kick_capabilities(),
@@ -48,7 +52,12 @@ impl KickPlatform {
             http: reqwest::Client::new(),
             sender: KickSendChat::new(rate_limiter),
             handle: Mutex::new(None),
+            state_tx,
         }
+    }
+
+    pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
+        self.state_tx.subscribe()
     }
 }
 
@@ -95,11 +104,13 @@ impl ChatPlatform for KickPlatform {
         });
 
         let state_events = self.events.clone();
+        let platform_state_tx = self.state_tx.clone();
         let mut state_rx = handle.state_receiver();
         tokio::spawn(async move {
             loop {
                 let state = *state_rx.borrow_and_update();
                 state_events.publish(connection_state_changed_event(PLATFORM_ID, state));
+                let _ = platform_state_tx.send(state);
                 if state_rx.changed().await.is_err() {
                     break;
                 }

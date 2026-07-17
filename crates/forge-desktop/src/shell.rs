@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
+use forge_events::EventPublisher;
 use forge_platform_core::BuiltinId;
 use forge_runtime::dashboard::compute_stats;
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
@@ -150,6 +151,8 @@ impl AppShell {
             }
             Screen::BuiltinDetail(id) => {
                 let connectivity = topics.platforms.clone();
+                let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
+                let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
                 let detail = match handles.builtins.get(id) {
                     Some(obj) => {
                         let icon = obj.icon.clone();
@@ -172,6 +175,8 @@ impl AppShell {
                                 obs_client,
                                 rt_handle,
                                 action_engine,
+                                credentials,
+                                bus,
                                 connectivity,
                                 cx,
                             )
@@ -192,6 +197,8 @@ impl AppShell {
                                 None,
                                 rt_handle,
                                 action_engine,
+                                credentials,
+                                bus,
                                 connectivity,
                                 cx,
                             )

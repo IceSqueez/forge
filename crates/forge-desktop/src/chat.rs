@@ -515,6 +515,7 @@ impl ChatView {
 
         for (idx, msg) in visible.iter().enumerate() {
             let data = ChatRow {
+                id: format!("chat-row-{idx}").into(),
                 timestamp: msg.timestamp.clone(),
                 platform: msg.platform,
                 badges: msg.badges.clone(),

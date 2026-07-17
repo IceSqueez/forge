@@ -166,6 +166,7 @@ pub enum ChatBody {
 
 #[derive(Debug, Clone)]
 pub struct ChatRow {
+    pub id: SharedString,
     pub timestamp: SharedString,
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
@@ -412,6 +413,7 @@ fn standard_row(
         palette.text_secondary
     };
     div()
+        .id(data.id.clone())
         .flex()
         .items_center()
         .gap(ROW_GAP)
@@ -464,6 +466,7 @@ fn command_row(
         ))
     });
     div()
+        .id(data.id.clone())
         .flex()
         .flex_col()
         .gap(BODY_LINE_GAP)

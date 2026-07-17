@@ -11,7 +11,8 @@ use forge_platform_core::{
     ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, PickerKind,
     QuickAction, QuickActions, SectionIcon,
 };
-use forge_runtime::ActionEngineHandle;
+use forge_platform_twitch::TwitchIntegrationBundle;
+use forge_runtime::{ActionEngineHandle, LiveViewerAggregatorHandle};
 use forge_storage::CredentialsRepo;
 use forge_types::{PlatformId, Variant};
 use futures_util::StreamExt as _;
@@ -43,6 +44,7 @@ use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use crate::twitch_panel::{TwitchFlowHandle, TwitchPanelState};
 
 pub struct IntegrationDetail {
     status: Arc<dyn BuiltinStatus>,
@@ -50,17 +52,23 @@ pub struct IntegrationDetail {
     content: Arc<dyn BuiltinContent>,
     quick: Arc<dyn QuickActions>,
     control: Option<Arc<dyn BuiltinControl>>,
-    rt_handle: tokio::runtime::Handle,
+    pub(crate) rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     obs_source: Option<Arc<ObsClient>>,
-    credentials: Arc<dyn CredentialsRepo>,
-    bus: Arc<dyn EventPublisher>,
+    pub(crate) credentials: Arc<dyn CredentialsRepo>,
+    pub(crate) bus: Arc<dyn EventPublisher>,
+    pub(crate) live_viewers: LiveViewerAggregatorHandle,
     connect_platform: Option<PlatformId>,
     flow_phase: LocalCallbackFlowPhase,
     flow_auth_url: Option<String>,
     flow_error: Option<String>,
     youtube_flow: Option<YoutubeFlowHandle>,
     kick_flow: Option<KickFlowHandle>,
+    is_twitch: bool,
+    show_twitch_connect: bool,
+    twitch_reauth_required: bool,
+    pub(crate) twitch_state: TwitchPanelState,
+    pub(crate) twitch_flow: Option<TwitchFlowHandle>,
     icon: SectionIcon,
     display_name: String,
     version: Option<String>,
@@ -94,11 +102,14 @@ impl IntegrationDetail {
         action_engine: ActionEngineHandle,
         credentials: Arc<dyn CredentialsRepo>,
         bus: Arc<dyn EventPublisher>,
+        live_viewers: LiveViewerAggregatorHandle,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
 
+        let is_twitch = status.id().as_str() == "twitch";
+        let show_twitch_connect = is_twitch && control.is_none();
         let connect_platform = connect_platform_for(status.id().as_str(), control.is_some());
         let display_name = status.display_name().to_owned();
         let version = status.version().map(ToOwned::to_owned);
@@ -135,12 +146,18 @@ impl IntegrationDetail {
             obs_source,
             credentials,
             bus,
+            live_viewers,
             connect_platform,
             flow_phase: LocalCallbackFlowPhase::Idle,
             flow_auth_url: None,
             flow_error: None,
             youtube_flow: None,
             kick_flow: None,
+            is_twitch,
+            show_twitch_connect,
+            twitch_reauth_required: false,
+            twitch_state: TwitchPanelState::default(),
+            twitch_flow: None,
             icon,
             display_name,
             version,
@@ -567,12 +584,46 @@ impl IntegrationDetail {
         }
     }
 
-    fn open_url(&self, url: String) {
+    pub(crate) fn open_url(&self, url: String) {
         self.rt_handle.spawn(async move {
             if let Err(e) = open::that(&url) {
                 tracing::warn!(error = %e, url = %url, "open browser failed");
             }
         });
+    }
+
+    pub(crate) fn install_twitch_bundle(
+        &mut self,
+        bundle: Arc<TwitchIntegrationBundle>,
+        cx: &mut Context<Self>,
+    ) {
+        self.status = bundle.clone();
+        self.health = bundle.clone();
+        self.content = bundle.clone();
+        self.quick = bundle.clone();
+        self.control = Some(bundle as Arc<dyn BuiltinControl>);
+        self.connect_platform = None;
+        self.show_twitch_connect = false;
+        self.twitch_state = TwitchPanelState::Disconnected;
+        self.twitch_flow = None;
+        self.reload(cx);
+    }
+
+    pub(crate) fn reset_twitch_to_connect(&mut self, cx: &mut Context<Self>) {
+        if let Some(ctrl) = self.control.take() {
+            self.rt_handle.spawn(async move {
+                let _ = ctrl.disconnect().await;
+            });
+        }
+        self.show_twitch_connect = true;
+        self.twitch_reauth_required = false;
+        self.twitch_state = TwitchPanelState::Disconnected;
+        let credentials = Arc::clone(&self.credentials);
+        self.rt_handle.spawn(async move {
+            let id = forge_storage::CredentialId::new("twitch:broadcaster");
+            let _ = credentials.delete(&id).await;
+        });
+        cx.notify();
     }
 
     fn connect_body(
@@ -1671,33 +1722,40 @@ impl Render for IntegrationDetail {
         let palette = cx.palette();
         let density = cx.density();
 
-        let body = match self.connect_platform {
-            Some(platform) if self.flow_phase == LocalCallbackFlowPhase::Idle => {
-                self.connect_body(platform, &palette, density, cx)
-            }
-            Some(platform) => self.flow_body(platform, &palette, density, cx),
-            None => {
-                let header_card = self.header_card(&palette, density, cx);
-                let reconnecting = matches!(
-                    self.connection,
-                    ConnectionState::Connecting | ConnectionState::Reconnecting
-                );
-                let state_banner = self.state_banner(&palette, density);
-                let health = health_grid(&self.health_metrics, reconnecting, &palette, density);
-                let content = content_sections(&self.sections, &palette, density);
-                let quick = self.quick_actions_card(&palette, density, cx);
+        let body = if self.show_twitch_connect {
+            self.twitch_connect_view(&palette, density, cx)
+        } else {
+            match self.connect_platform {
+                Some(platform) if self.flow_phase == LocalCallbackFlowPhase::Idle => {
+                    self.connect_body(platform, &palette, density, cx)
+                }
+                Some(platform) => self.flow_body(platform, &palette, density, cx),
+                None => {
+                    let header_card = self.header_card(&palette, density, cx);
+                    let reconnecting = matches!(
+                        self.connection,
+                        ConnectionState::Connecting | ConnectionState::Reconnecting
+                    );
+                    let state_banner = self.state_banner(&palette, density);
+                    let reauth_banner = (self.is_twitch && self.twitch_reauth_required)
+                        .then(|| self.twitch_reauth_banner(&palette, density, cx));
+                    let health = health_grid(&self.health_metrics, reconnecting, &palette, density);
+                    let content = content_sections(&self.sections, &palette, density);
+                    let quick = self.quick_actions_card(&palette, density, cx);
 
-                div()
-                    .w_full()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Md, density))
-                    .children(state_banner)
-                    .child(header_card)
-                    .child(health)
-                    .child(content)
-                    .child(quick)
-                    .into_any_element()
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap(spacing(Spacing::Md, density))
+                        .children(reauth_banner)
+                        .children(state_banner)
+                        .child(header_card)
+                        .child(health)
+                        .child(content)
+                        .child(quick)
+                        .into_any_element()
+                }
             }
         };
 

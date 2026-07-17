@@ -164,6 +164,7 @@ impl AppShell {
                         let obs_client = obj.obs_client.clone();
                         let rt_handle = handles.rt_handle.clone();
                         let action_engine = handles.action_engine.clone();
+                        let live_viewers = handles.live_viewers.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 icon,
@@ -177,6 +178,7 @@ impl AppShell {
                                 action_engine,
                                 credentials,
                                 bus,
+                                live_viewers,
                                 connectivity,
                                 cx,
                             )
@@ -186,6 +188,7 @@ impl AppShell {
                         let seed = integration_seed::seed(id);
                         let rt_handle = handles.rt_handle.clone();
                         let action_engine = handles.action_engine.clone();
+                        let live_viewers = handles.live_viewers.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 seed.icon,
@@ -199,6 +202,7 @@ impl AppShell {
                                 action_engine,
                                 credentials,
                                 bus,
+                                live_viewers,
                                 connectivity,
                                 cx,
                             )

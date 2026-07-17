@@ -50,6 +50,7 @@ mod tts_dashboard;
 mod tts_engines;
 mod tts_filters;
 mod tts_triggers;
+mod twitch_panel;
 mod voice_aliases;
 
 use forge_components::{Density, IconAssets, ThemeId, bind_text_area_keys, bind_text_input_keys};

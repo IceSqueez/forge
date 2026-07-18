@@ -92,22 +92,22 @@ impl TriggersRegistryView {
             );
         }
 
-        let global_cooldown =
-            self.build_cooldown_input(data.instance.global_cooldown_secs, palette, cx);
-        let user_cooldown =
-            self.build_cooldown_input(data.instance.user_cooldown_secs, palette, cx);
-        let cooldown_subs = [
-            cx.subscribe(&global_cooldown, Self::on_cooldown_committed),
-            cx.subscribe(&user_cooldown, Self::on_cooldown_committed),
-        ];
+        let cooldown_per_user = data.instance.user_cooldown_secs > 0;
+        let cooldown_seed = if cooldown_per_user {
+            data.instance.user_cooldown_secs
+        } else {
+            data.instance.global_cooldown_secs
+        };
+        let cooldown_input = self.build_cooldown_input(cooldown_seed, palette, cx);
+        let cooldown_sub = cx.subscribe(&cooldown_input, Self::on_cooldown_committed);
 
         self.detail = Some(TriggerDetail {
             instance: data.instance,
             fields,
             used_in: data.used_in,
-            global_cooldown,
-            user_cooldown,
-            _cooldown_subs: cooldown_subs,
+            cooldown_input,
+            cooldown_per_user,
+            _cooldown_sub: cooldown_sub,
         });
         cx.notify();
     }
@@ -168,6 +168,13 @@ impl TriggersRegistryView {
         self.commit_config(cx);
     }
 
+    fn toggle_cooldown_scope(&mut self, cx: &mut Context<Self>) {
+        if let Some(detail) = self.detail.as_mut() {
+            detail.cooldown_per_user = !detail.cooldown_per_user;
+        }
+        self.commit_config(cx);
+    }
+
     fn commit_config(&mut self, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
@@ -182,8 +189,12 @@ impl TriggersRegistryView {
         overlay_field_values(&detail.fields, &mut buffer, cx);
 
         let sparse = sparse_overrides(&default, &buffer);
-        let global_cooldown_secs = parse_cooldown(detail.global_cooldown.read(cx).content());
-        let user_cooldown_secs = parse_cooldown(detail.user_cooldown.read(cx).content());
+        let cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
+        let (global_cooldown_secs, user_cooldown_secs) = if detail.cooldown_per_user {
+            (0, cooldown_secs)
+        } else {
+            (cooldown_secs, 0)
+        };
         let mut instance = detail.instance.clone();
         instance.overrides = sparse;
         instance.global_cooldown_secs = global_cooldown_secs;
@@ -411,7 +422,7 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .child(self.render_config_section(detail, palette, cx))
-            .child(self.render_cooldown_section(detail, palette))
+            .child(self.render_cooldown_section(detail, palette, cx))
             .child(self.render_used_in_section(detail, palette))
             .into_any_element()
     }
@@ -606,6 +617,7 @@ impl TriggersRegistryView {
         &self,
         detail: &TriggerDetail,
         palette: &ForgePalette,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let caption = div()
             .font_family(DEFAULT_MONO_FAMILY)
@@ -614,43 +626,49 @@ impl TriggersRegistryView {
             .child(tr!("triggers_sheet_cooldown_caption"))
             .into_any_element();
 
-        let row = |label: SharedString, input: Entity<TextInput>, last: bool| {
+        let label_cell = |label: SharedString| {
             div()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Sm, Density::Cozy))
-                .py(CFG_ROW_PAD_V)
-                .px(CFG_ROW_PAD_H)
-                .when(!last, |r| {
-                    r.border_b(HALF_BORDER).border_color(palette.border_regular)
-                })
-                .child(
-                    div()
-                        .w(CFG_KEY_W)
-                        .flex_none()
-                        .overflow_hidden()
-                        .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(CFG_KEY_FS)
-                        .text_color(palette.text_muted)
-                        .child(label),
-                )
-                .child(div().flex_1().min_w(px(0.0)).child(input))
+                .w(CFG_KEY_W)
+                .flex_none()
+                .overflow_hidden()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(CFG_KEY_FS)
+                .text_color(palette.text_muted)
+                .child(label)
         };
 
-        let card = div()
+        let value_row = div()
+            .w_full()
             .flex()
-            .flex_col()
-            .child(row(
-                tr!("triggers_sheet_cooldown_global").into(),
-                detail.global_cooldown.clone(),
-                false,
-            ))
-            .child(row(
-                tr!("triggers_sheet_cooldown_user").into(),
-                detail.user_cooldown.clone(),
-                true,
-            ));
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .py(CFG_ROW_PAD_V)
+            .px(CFG_ROW_PAD_H)
+            .border_b(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .child(label_cell(tr!("triggers_sheet_cooldown_value").into()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(detail.cooldown_input.clone()),
+            );
+
+        let scope_toggle = toggle(detail.cooldown_per_user, palette).on_click(
+            "triggers-detail-cooldown-scope",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_cooldown_scope(cx)),
+        );
+        let scope_row = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .py(CFG_ROW_PAD_V)
+            .px(CFG_ROW_PAD_H)
+            .child(label_cell(tr!("triggers_sheet_cooldown_scope").into()))
+            .child(div().flex_1().min_w(px(0.0)).child(scope_toggle));
+
+        let card = div().flex().flex_col().child(value_row).child(scope_row);
 
         let framed = div()
             .w_full()

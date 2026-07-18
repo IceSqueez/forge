@@ -144,9 +144,9 @@ struct TriggerDetail {
     instance: TriggerInstance,
     fields: Vec<ConfigField>,
     used_in: Vec<(ActionId, String)>,
-    global_cooldown: Entity<TextInput>,
-    user_cooldown: Entity<TextInput>,
-    _cooldown_subs: [Subscription; 2],
+    cooldown_input: Entity<TextInput>,
+    cooldown_per_user: bool,
+    _cooldown_sub: Subscription,
 }
 
 pub(crate) fn cooldown_suffix(global_cooldown_secs: u32, user_cooldown_secs: u32) -> String {

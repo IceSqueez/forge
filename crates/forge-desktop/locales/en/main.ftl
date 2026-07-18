@@ -650,10 +650,10 @@ triggers_sheet_config_cancel = Cancel
 triggers_sheet_no_config = No configurable fields
 triggers_sheet_section_cooldown = COOLDOWN
 triggers_sheet_cooldown_caption = seconds · 0 = off
-triggers_sheet_cooldown_global = global
-triggers_sheet_cooldown_user = per-user
+triggers_sheet_cooldown_value = cooldown
+triggers_sheet_cooldown_scope = per-user
 triggers_cooldown_global_suffix = { " · cooldown=" }{ $secs }s
-triggers_cooldown_user_suffix = { " · per-user " }{ $secs }s
+triggers_cooldown_user_suffix = { " · cooldown=" }{ $secs }{ "s per-user" }
 triggers_sheet_not_registered = Trigger kind not registered
 triggers_sheet_section_used_in = USED IN
 triggers_sheet_section_platform = PLATFORM

@@ -20,11 +20,9 @@ const INSPECTOR_INITIAL: f32 = 300.0;
 const INSPECTOR_MIN: f32 = 220.0;
 const INSPECTOR_MAX: f32 = 540.0;
 
-const TS_COL_W: Pixels = px(64.0);
+const TS_COL_W: Pixels = px(88.0);
 const TYPE_COL_W: Pixels = px(104.0);
 const STATUS_DOT: Pixels = px(6.0);
-const ACTION_DIVIDER_W: Pixels = px(0.5);
-const ACTION_DIVIDER_H: Pixels = px(14.0);
 const ROW_RAIL_W: Pixels = px(2.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
 const ACTION_HOVER_ALPHA: f32 = 0.05;
@@ -205,30 +203,6 @@ impl EventFeedView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let paused = self.log.read(cx).is_paused();
-        let (status_ink, status_label) = if paused {
-            (palette.warning, tr!("event_feed_status_paused"))
-        } else {
-            (palette.success, tr!("event_feed_status_live"))
-        };
-
-        let status_badge = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(px(2.0))
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.surface_overlay)
-            .child(status_dot(status_ink, px(5.0)))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(status_ink)
-                    .child(status_label),
-            );
-
         let count = self.log.read(cx).items().len();
         let count_readout = div()
             .flex()
@@ -249,14 +223,14 @@ impl EventFeedView {
                     .child(tr!("event_feed_events_live_stream")),
             );
 
-        let cluster = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(status_badge)
-            .child(count_readout);
-
-        breadcrumb(vec![BreadcrumbCrumb::leaf(tr!("nav_event_feed"))], palette).right(cluster)
+        breadcrumb(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("event_feed_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("nav_event_feed")),
+            ],
+            palette,
+        )
+        .right(count_readout)
     }
 
     fn render_toolbar(
@@ -286,29 +260,21 @@ impl EventFeedView {
             );
         }
 
-        let (pause_icon, pause_label) = if paused {
-            (Icon::PlayerPlay, tr!("event_feed_resume"))
+        let (pause_icon, pause_ink) = if paused {
+            (Icon::PlayerPlay, palette.success)
         } else {
-            (Icon::PlayerPause, tr!("event_feed_pause"))
+            (Icon::PlayerPause, palette.warning)
         };
         let pause = Self::action_shell("event-action-pause", palette, density)
-            .child(icon(pause_icon, FONT_XS, palette.text_secondary))
-            .child(Self::action_label(pause_label, palette))
+            .child(icon(pause_icon, px(14.0), pause_ink))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_pause(cx)));
 
-        let divider = div()
-            .w(ACTION_DIVIDER_W)
-            .h(ACTION_DIVIDER_H)
-            .bg(palette.border_regular);
-
         let clear = Self::action_shell("event-action-clear", palette, density)
-            .child(icon(Icon::Eraser, FONT_XS, palette.text_secondary))
-            .child(Self::action_label(tr!("event_feed_clear"), palette))
+            .child(icon(Icon::Eraser, px(14.0), palette.random))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear(cx)));
 
         let export = Self::action_shell("event-action-export", palette, density)
-            .child(icon(Icon::Download, FONT_XS, palette.text_secondary))
-            .child(Self::action_label(tr!("event_feed_export"), palette))
+            .child(icon(Icon::Download, px(14.0), palette.success))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
 
         let (scroll_ink, scroll_label) = if self.auto_scroll {
@@ -324,9 +290,8 @@ impl EventFeedView {
         let actions = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
+            .gap(spacing(Spacing::Xxs, density))
             .child(pause)
-            .child(divider)
             .child(clear)
             .child(export)
             .child(auto_scroll);
@@ -377,6 +342,7 @@ impl EventFeedView {
         let type_cell = div()
             .flex_none()
             .w(TYPE_COL_W)
+            .truncate()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
             .text_color(type_color(&item.kind, item.is_error, palette))
@@ -408,6 +374,7 @@ impl EventFeedView {
                 div()
                     .flex_none()
                     .w(TS_COL_W)
+                    .truncate()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
@@ -427,6 +394,7 @@ impl EventFeedView {
 
         let mut row = div()
             .id(("event-row", idx))
+            .w_full()
             .flex()
             .border_b(BORDER_THIN)
             .border_color(palette.elevated)
@@ -461,7 +429,7 @@ impl EventFeedView {
             .collect();
 
         let empty = visible.is_empty();
-        let mut list = div().flex().flex_col();
+        let mut list = div().w_full().flex().flex_col();
         for (idx, item) in visible.iter().enumerate() {
             let is_sel = selected_id == Some(&item.id);
             list = list.child(self.render_row(idx, item, is_sel, palette, cx));

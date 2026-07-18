@@ -555,6 +555,9 @@ action_editor_kind_play_sound = Відтворити звук
 action_editor_kind_speak = Синтез мовлення
 action_editor_kind_read_file = Читати файл
 action_editor_kind_random_int = Випадкове число
+action_editor_kind_incr_global = Збільшити змінну
+action_editor_kind_run_script = Запустити скрипт
+action_editor_persisted_note = (збережено)
 action_editor_kind_sub_action = Підпункт
 
 ## Реєстр тригерів - заголовок / фільтри

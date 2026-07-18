@@ -555,6 +555,9 @@ action_editor_kind_play_sound = Play sound
 action_editor_kind_speak = Speak
 action_editor_kind_read_file = Read file
 action_editor_kind_random_int = Random int
+action_editor_kind_incr_global = Increment global
+action_editor_kind_run_script = Run script
+action_editor_persisted_note = (persisted)
 action_editor_kind_sub_action = Sub-action
 
 ## Triggers registry - page header / filters

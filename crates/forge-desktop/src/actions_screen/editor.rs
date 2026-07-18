@@ -19,7 +19,7 @@ use gpui::{
 };
 use std::collections::HashMap;
 
-fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
+fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
             s.as_str()
@@ -30,6 +30,9 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
     fn as_i64(v: &Variant) -> i64 {
         if let Variant::Int(n) = v { *n } else { 0 }
     }
+    fn wrap_var(name: &str) -> String {
+        format!("%{}%", name.trim_matches('%'))
+    }
     match step.kind_id.as_str() {
         "twitch.chat.send_message" => {
             let target = step.config.get("target").map(as_str).unwrap_or("twitch");
@@ -37,7 +40,7 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             (
                 "send",
                 tr!("action_editor_kind_send_chat"),
-                format!("\u{2192} {target}: \"{message}\""),
+                Some(format!("\u{2192} {target}: \"{message}\"")),
             )
         }
         "core.globals.set" => {
@@ -46,12 +49,28 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             (
                 "variable",
                 tr!("action_editor_kind_set_global"),
-                format!("{name} = \"{value}\""),
+                Some(format!("{name} = \"{value}\"")),
+            )
+        }
+        "core.globals.increment" => {
+            let name = step.config.get("name").map(as_str).unwrap_or("");
+            let amount = step.config.get("amount").map(as_i64).unwrap_or(1);
+            (
+                "variable",
+                tr!("action_editor_kind_incr_global"),
+                Some(format!(
+                    "{name} += {amount} {note}",
+                    note = tr!("action_editor_persisted_note")
+                )),
             )
         }
         "core.logic.wait" => {
             let ms = step.config.get("ms").map(as_i64).unwrap_or(0);
-            ("clock", tr!("action_editor_kind_delay"), format!("{ms} ms"))
+            (
+                "clock",
+                tr!("action_editor_kind_delay"),
+                Some(format!("{ms} ms")),
+            )
         }
         "core.log.write" => {
             let level = step.config.get("level").map(as_str).unwrap_or("info");
@@ -59,7 +78,15 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             (
                 "info-circle",
                 tr!("action_editor_kind_log"),
-                format!("[{level}] \"{message}\""),
+                Some(format!("[{level}] \"{message}\"")),
+            )
+        }
+        "script.run.named" => {
+            let script_name = step.config.get("script_name").map(as_str).unwrap_or("");
+            (
+                "script",
+                tr!("action_editor_kind_run_script"),
+                Some(script_name.to_owned()),
             )
         }
         "soundboard.sound.play" => {
@@ -67,12 +94,16 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             (
                 "music",
                 tr!("action_editor_kind_play_sound"),
-                clip_id.to_owned(),
+                Some(clip_id.to_owned()),
             )
         }
         "tts.speak.text" => {
             let text = step.config.get("text").map(as_str).unwrap_or("");
-            ("volume", tr!("action_editor_kind_speak"), text.to_owned())
+            (
+                "volume",
+                tr!("action_editor_kind_speak"),
+                Some(text.to_owned()),
+            )
         }
         "core.file.read" => {
             let path = step.config.get("path").map(as_str).unwrap_or("");
@@ -80,7 +111,7 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             (
                 "file",
                 tr!("action_editor_kind_read_file"),
-                format!("{path} \u{2192} %{var}%"),
+                Some(format!("{path} \u{2192} {}", wrap_var(var))),
             )
         }
         "core.random.int" => {
@@ -90,14 +121,10 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, String) {
             (
                 "dice",
                 tr!("action_editor_kind_random_int"),
-                format!("[{min}..{max}] \u{2192} %{var}%"),
+                Some(format!("[{min}..{max}] \u{2192} {}", wrap_var(var))),
             )
         }
-        _ => (
-            "bolt",
-            tr!("action_editor_kind_sub_action"),
-            step.kind_id.clone(),
-        ),
+        _ => ("bolt", tr!("action_editor_kind_sub_action"), None),
     }
 }
 
@@ -1561,12 +1588,15 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let is_last = i + 1 == total;
-        let (fallback_icon, fallback_title, detail_str) = sub_action_summary(step);
+        let (fallback_icon, fallback_title, detail_opt) = sub_action_summary(step);
         let runner = self.sub_action_registry.get(&step.kind_id);
         let title = runner
             .map(|r| r.label().to_owned())
             .unwrap_or(fallback_title);
         let glyph = Icon::from_name(runner.map(|r| r.icon_name()).unwrap_or(fallback_icon));
+        let detail_str = detail_opt
+            .or_else(|| runner.map(|r| r.summary().to_owned()))
+            .unwrap_or_else(|| step.kind_id.clone());
 
         let circle = div()
             .flex()

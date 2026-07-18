@@ -1301,7 +1301,7 @@ fn card_button(
         .justify_center()
         .gap(px(5.0))
         .py(px(5.0))
-        .px(px(10.0))
+        .px(px(11.0))
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .on_click(handler)
@@ -1316,11 +1316,11 @@ fn card_button(
     match fill {
         Some(bg) => btn = btn.bg(bg),
         None => {
-            let hover = palette.surface_overlay;
+            let hover_border = palette.border_input;
             btn = btn
                 .border(BORDER_THIN)
                 .border_color(palette.border_regular)
-                .hover(move |s| s.bg(hover));
+                .hover(move |s| s.border_color(hover_border));
         }
     }
     btn.into_any_element()

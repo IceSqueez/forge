@@ -3,15 +3,15 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, breadcrumb,
-    chip, confirm_modal, icon, menu_button, menu_divider, menu_item, modal, overlay,
-    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
+    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
+    Spacing, TextArea, TextInput, ToastAction, ToastKind, breadcrumb, chip, confirm_modal,
+    context_menu, icon, menu_divider, menu_item, modal, overlay, primary_button,
+    primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, ExecutionMode, Queue};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, Rgba, SharedString, Window, div,
-    px,
+    AnyElement, App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Pixels, Point, Rgba,
+    SharedString, Window, div, px,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -127,13 +127,9 @@ impl ScreenActionsView {
         }
     }
 
-    fn toggle_menu(&mut self, id: ActionId, position: Point<Pixels>, cx: &mut Context<Self>) {
-        if self.menu_open == Some(id) {
-            self.menu_open = None;
-        } else {
-            self.menu_open = Some(id);
-            self.menu_click_pos = Some(position);
-        }
+    fn open_row_menu(&mut self, id: ActionId, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.menu_open = Some(id);
+        self.menu_click_pos = Some(position);
         cx.notify();
     }
 
@@ -631,6 +627,7 @@ impl ScreenActionsView {
             .border_color(palette.border_regular)
             .overflow_y_scroll()
             .child(col)
+            .children(self.render_row_context_menu(palette, cx))
             .into_any_element()
     }
 
@@ -686,7 +683,6 @@ impl ScreenActionsView {
         let id = action.id;
         let selected = self.selected == Some(id);
         let hovered = self.hovered == Some(id);
-        let menu_open = self.menu_open == Some(id);
         let renaming = self.renaming.as_ref().filter(|r| r.id == id);
 
         let (state_icon, state_color) = if action.enabled {
@@ -746,20 +742,15 @@ impl ScreenActionsView {
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
         }
 
-        let show_menu = hovered || menu_open;
-        let slot_inner: AnyElement = if show_menu {
-            self.render_row_menu(action, menu_open, palette, cx)
-        } else {
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(tr!(
-                    "action_editor_sub_count",
-                    count = action.sub_action_count as i64
-                ))
-                .into_any_element()
-        };
+        let slot_inner: AnyElement = div()
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
+            .child(tr!(
+                "action_editor_sub_count",
+                count = action.sub_action_count as i64
+            ))
+            .into_any_element();
         let right_slot = div().pr(ROW_GUTTER).child(
             div()
                 .w(RIGHT_SLOT_W)
@@ -779,20 +770,30 @@ impl ScreenActionsView {
             .on_hover(
                 cx.listener(move |this, hovered: &bool, _, cx| this.set_hover(id, *hovered, cx)),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                    this.open_row_menu(id, ev.position, cx)
+                }),
+            )
             .child(div().w(STRIPE_W).h_full().bg(stripe_color))
             .child(select_area)
             .child(right_slot)
             .into_any_element()
     }
 
-    fn render_row_menu(
+    pub(super) fn render_row_context_menu(
         &self,
-        action: &ActionSummary,
-        menu_open: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let id = action.id;
+    ) -> Option<AnyElement> {
+        let id = self.menu_open?;
+        let position = self.menu_click_pos?;
+        let action = self
+            .groups
+            .iter()
+            .flat_map(|g| &g.actions)
+            .find(|a| a.id == id)?;
         let toggle_label = if action.enabled {
             tr!("actions_menu_disable")
         } else {
@@ -800,57 +801,52 @@ impl ScreenActionsView {
         };
         let next_enabled = !action.enabled;
         let view = cx.entity();
-        let menu_pos = if menu_open { self.menu_click_pos } else { None };
 
-        menu_button(Icon::DotsVertical, menu_open, palette)
-            .placement(MenuPlacement::BottomRight)
-            .open_at(menu_pos)
-            .items(vec![
-                menu_item(
-                    SharedString::from(format!("actions-menu-rename-{id}")),
-                    tr!("actions_menu_rename"),
-                    cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.start_rename(id, window, cx)
-                    }),
-                )
-                .icon(Icon::Pencil)
-                .into(),
-                menu_item(
-                    SharedString::from(format!("actions-menu-dup-{id}")),
-                    tr!("actions_menu_duplicate"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.duplicate(id, cx)),
-                )
-                .icon(Icon::Copy)
-                .into(),
-                menu_item(
-                    SharedString::from(format!("actions-menu-toggle-{id}")),
-                    toggle_label,
-                    cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.set_enabled(id, next_enabled, cx)
-                    }),
-                )
-                .icon(Icon::Bolt)
-                .into(),
-                menu_divider(),
-                menu_item(
-                    SharedString::from(format!("actions-menu-del-{id}")),
-                    tr!("actions_menu_delete"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
-                )
-                .icon(Icon::Eraser)
-                .color(palette.random)
-                .into(),
-            ])
-            .on_toggle(
-                SharedString::from(format!("actions-menu-trigger-{id}")),
-                cx.listener(move |this, ev: &ClickEvent, _, cx| {
-                    this.toggle_menu(id, ev.position(), cx)
+        let items = vec![
+            menu_item(
+                SharedString::from(format!("actions-menu-rename-{id}")),
+                tr!("actions_menu_rename"),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.start_rename(id, window, cx)
                 }),
             )
-            .on_dismiss(move |_window, cx| {
-                view.update(cx, |this, cx| this.close_menu(cx));
-            })
-            .into_any_element()
+            .icon(Icon::Pencil)
+            .into(),
+            menu_item(
+                SharedString::from(format!("actions-menu-dup-{id}")),
+                tr!("actions_menu_duplicate"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.duplicate(id, cx)),
+            )
+            .icon(Icon::Copy)
+            .into(),
+            menu_item(
+                SharedString::from(format!("actions-menu-toggle-{id}")),
+                toggle_label,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.set_enabled(id, next_enabled, cx)
+                }),
+            )
+            .icon(Icon::Bolt)
+            .into(),
+            menu_divider(),
+            menu_item(
+                SharedString::from(format!("actions-menu-del-{id}")),
+                tr!("actions_menu_delete"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
+            )
+            .icon(Icon::Eraser)
+            .color(palette.random)
+            .into(),
+        ];
+
+        Some(
+            context_menu(position, palette)
+                .items(items)
+                .on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_menu(cx));
+                })
+                .into_any_element(),
+        )
     }
 
     pub(super) fn render_add_modal(

@@ -517,7 +517,7 @@ impl GridPicker {
         let name = div()
             .flex_1()
             .min_w(px(0.0))
-            .overflow_hidden()
+            .truncate()
             .font_family(DEFAULT_BODY_FAMILY)
             .font_weight(FontWeight::MEDIUM)
             .text_size(GRID_CARD_NAME_FS)
@@ -548,7 +548,8 @@ impl GridPicker {
             .child(trailing);
 
         let desc = div()
-            .overflow_hidden()
+            .truncate()
+            .w_full()
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(GRID_META_FS)
             .text_color(p.text_muted)

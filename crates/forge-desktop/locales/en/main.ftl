@@ -658,6 +658,7 @@ triggers_sheet_not_registered = Trigger kind not registered
 triggers_sheet_section_used_in = USED IN
 triggers_sheet_section_platform = PLATFORM
 triggers_sheet_delete_btn = Delete
+triggers_sheet_save_btn = Save
 triggers_sheet_any_platform = Any platform
 triggers_sheet_will_fire_on = Will fire on: { $platform }
 triggers_sheet_will_fire_on_scope = Will fire on: { $scope }

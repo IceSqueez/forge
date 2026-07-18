@@ -660,6 +660,7 @@ triggers_sheet_not_registered = Тип тригера не зареєстров�
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_section_platform = ПЛАТФОРМА
 triggers_sheet_delete_btn = Видалити
+triggers_sheet_save_btn = Зберегти
 triggers_sheet_any_platform = Будь-яка платформа
 triggers_sheet_will_fire_on = Спрацює на: { $platform }
 triggers_sheet_will_fire_on_scope = Спрацює на: { $scope }

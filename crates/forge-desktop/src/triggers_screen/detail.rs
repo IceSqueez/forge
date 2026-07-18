@@ -3,7 +3,8 @@ use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, Icon, InputEvent, Radius, Spacing,
-    TextInput, ghost_button_with_icon, icon, radius, spacing, status_dot, toggle, tr,
+    TextInput, ghost_button_with_icon, icon, primary_button, radius, spacing, status_dot, toggle,
+    tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -807,6 +808,11 @@ impl TriggersRegistryView {
                 .into_any_element()
         };
 
+        let save = primary_button(tr!("triggers_sheet_save_btn"), palette).on_click(
+            "triggers-detail-save",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.commit_config(cx)),
+        );
+
         div()
             .flex_none()
             .w_full()
@@ -820,6 +826,7 @@ impl TriggersRegistryView {
             .border_color(palette.border_regular)
             .child(template)
             .child(div().flex_1())
+            .child(save)
             .child(delete)
             .into_any_element()
     }

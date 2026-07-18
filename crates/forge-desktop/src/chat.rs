@@ -186,7 +186,7 @@ pub struct ChatView {
     drawer_width: Pixels,
     drawer_search: Entity<TextInput>,
     drawer_query: String,
-    drawer_menu_open: bool,
+    drawer_menu_open: Option<Point<Pixels>>,
     selected_viewer: Option<String>,
     viewers: Vec<Viewer>,
     drawer_summaries: Vec<ViewerSummary>,
@@ -288,7 +288,7 @@ impl ChatView {
             drawer_width: DRAWER_WIDTH,
             drawer_search,
             drawer_query: String::new(),
-            drawer_menu_open: false,
+            drawer_menu_open: None,
             selected_viewer: None,
             viewers: Vec::new(),
             drawer_summaries,
@@ -508,14 +508,18 @@ impl ChatView {
         cx.notify();
     }
 
-    fn toggle_drawer_menu(&mut self, cx: &mut Context<Self>) {
-        self.drawer_menu_open = !self.drawer_menu_open;
+    fn toggle_drawer_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.drawer_menu_open = if self.drawer_menu_open.is_some() {
+            None
+        } else {
+            Some(position)
+        };
         cx.notify();
     }
 
     fn close_drawer_menu(&mut self, cx: &mut Context<Self>) {
-        if self.drawer_menu_open {
-            self.drawer_menu_open = false;
+        if self.drawer_menu_open.is_some() {
+            self.drawer_menu_open = None;
             cx.notify();
         }
     }
@@ -549,7 +553,7 @@ impl ChatView {
     }
 
     fn shoutout_viewer(&mut self, cx: &mut Context<Self>) {
-        self.drawer_menu_open = false;
+        self.drawer_menu_open = None;
         let Some(login) = self.selected_viewer.clone() else {
             cx.notify();
             return;
@@ -571,7 +575,7 @@ impl ChatView {
     }
 
     fn timeout_viewer(&mut self, cx: &mut Context<Self>) {
-        self.drawer_menu_open = false;
+        self.drawer_menu_open = None;
         let Some(login) = self.selected_viewer.clone() else {
             cx.notify();
             return;
@@ -593,7 +597,7 @@ impl ChatView {
     }
 
     fn ban_viewer(&mut self, cx: &mut Context<Self>) {
-        self.drawer_menu_open = false;
+        self.drawer_menu_open = None;
         let Some(login) = self.selected_viewer.clone() else {
             cx.notify();
             return;
@@ -823,7 +827,7 @@ impl ChatView {
         if self.selected_viewer.is_none() {
             return;
         }
-        self.drawer_menu_open = false;
+        self.drawer_menu_open = None;
         self.whisper_open = true;
         self.whisper_input.update(cx, |input, cx| {
             input.clear(cx);
@@ -878,7 +882,7 @@ impl ChatView {
     }
 
     fn block_tts_viewer(&mut self, cx: &mut Context<Self>) {
-        self.drawer_menu_open = false;
+        self.drawer_menu_open = None;
         let Some(viewer) = self.selected_viewer.clone() else {
             cx.notify();
             return;
@@ -1824,12 +1828,15 @@ impl ChatView {
             .into(),
         ];
 
-        menu_button(Icon::DotsVertical, self.drawer_menu_open, palette)
+        menu_button(Icon::DotsVertical, self.drawer_menu_open.is_some(), palette)
             .placement(MenuPlacement::TopRight)
+            .open_at(self.drawer_menu_open)
             .items(items)
             .on_toggle(
                 "chat-drawer-menu-trigger",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_drawer_menu(cx)),
+                cx.listener(|this, ev: &ClickEvent, _, cx| {
+                    this.toggle_drawer_menu(ev.position(), cx)
+                }),
             )
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_drawer_menu(cx));

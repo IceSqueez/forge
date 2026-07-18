@@ -2,7 +2,7 @@ use forge_components::{ForgePalette, TextInput, ToastKind, search_input, tr};
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
-use gpui::{App, Context, Entity, Pixels, Rgba, Subscription, Window, div, prelude::*, px};
+use gpui::{App, Context, Entity, Pixels, Point, Rgba, Subscription, Window, div, prelude::*, px};
 use std::future::Future;
 use std::sync::Arc;
 
@@ -170,6 +170,7 @@ pub struct TriggersRegistryView {
     detail: Option<TriggerDetail>,
     hovered: Option<TriggerInstanceId>,
     menu_open: Option<TriggerInstanceId>,
+    menu_click_pos: Option<Point<Pixels>>,
     search: String,
     search_field: Entity<TextInput>,
     platforms: Vec<Platform>,
@@ -205,6 +206,7 @@ impl TriggersRegistryView {
             detail: None,
             hovered: None,
             menu_open: None,
+            menu_click_pos: None,
             search: String::new(),
             search_field,
             platforms: Vec::new(),

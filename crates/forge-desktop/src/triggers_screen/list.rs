@@ -9,8 +9,8 @@ use forge_components::{
     primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Rgba, SharedString, Window, div,
-    px,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Point, Rgba,
+    SharedString, Window, div, px,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -147,12 +147,18 @@ impl TriggersRegistryView {
         }
     }
 
-    fn toggle_menu(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
-        self.menu_open = if self.menu_open == Some(id) {
-            None
+    fn toggle_menu(
+        &mut self,
+        id: TriggerInstanceId,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.menu_open == Some(id) {
+            self.menu_open = None;
         } else {
-            Some(id)
-        };
+            self.menu_open = Some(id);
+            self.menu_click_pos = Some(position);
+        }
         cx.notify();
     }
 
@@ -821,11 +827,13 @@ impl TriggersRegistryView {
     ) -> AnyElement {
         let id = instance.id;
         let menu_open = self.menu_open == Some(id);
+        let menu_pos = if menu_open { self.menu_click_pos } else { None };
         let block_delete = instance.used_in_count > 0;
         let view = cx.entity();
 
         menu_button(Icon::DotsVertical, menu_open, palette)
             .placement(MenuPlacement::BottomRight)
+            .open_at(menu_pos)
             .items(vec![
                 menu_item(
                     SharedString::from(format!("triggers-menu-rename-{id}")),
@@ -849,7 +857,9 @@ impl TriggersRegistryView {
             ])
             .on_toggle(
                 SharedString::from(format!("triggers-menu-trigger-{id}")),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_menu(id, cx)),
+                cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                    this.toggle_menu(id, ev.position(), cx)
+                }),
             )
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_menu(cx));

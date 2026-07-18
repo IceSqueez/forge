@@ -35,6 +35,7 @@ const GRID_GROUP_HEADER_MB: Pixels = px(8.0);
 const GRID_GROUP_FS: Pixels = px(9.5);
 const GRID_GROUP_DOT: Pixels = px(5.0);
 const GRID_CARD_GAP: Pixels = px(8.0);
+const GRID_CONTENT_W: Pixels = px(628.0);
 const GRID_CARD_PAD_V: Pixels = px(11.0);
 const GRID_CARD_PAD_H: Pixels = px(12.0);
 const GRID_CARD_TILE: Pixels = px(26.0);
@@ -468,9 +469,9 @@ impl GridPicker {
                     .child(items.len().to_string()),
             );
 
-        let mut rows = div().flex().flex_col().w_full().gap(GRID_CARD_GAP);
+        let mut rows = div().flex().flex_col().w(GRID_CONTENT_W).gap(GRID_CARD_GAP);
         for chunk in items.chunks(2) {
-            let mut pair = div().flex().w_full().gap(GRID_CARD_GAP);
+            let mut pair = div().flex().w(GRID_CONTENT_W).gap(GRID_CARD_GAP);
             for item in chunk {
                 pair = pair.child(self.render_card(item, accent, cx));
             }

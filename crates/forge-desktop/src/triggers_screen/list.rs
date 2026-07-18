@@ -758,6 +758,8 @@ impl TriggersRegistryView {
             .flex_1()
             .flex()
             .items_center()
+            .pl(ROW_PAD_L)
+            .py(ROW_PAD_V)
             .cursor_pointer()
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)))
             .child(
@@ -808,9 +810,7 @@ impl TriggersRegistryView {
             .w_full()
             .flex()
             .items_center()
-            .pl(ROW_PAD_L)
             .pr(ROW_PAD_R)
-            .py(ROW_PAD_V)
             .child(select_region)
             .child(on_cell)
             .child(menu_cell);

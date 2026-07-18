@@ -480,7 +480,7 @@ fn add_row_button(
         .border_color(palette.border_input)
         .bg(palette.shell)
         .cursor_pointer()
-        .hover(move |s| s.bg(hover))
+        .hover(move |s| s.bg(hover).border_color(accent))
         .on_click(handler)
         .child(icon(glyph, CARD_GLYPH, accent))
         .child(

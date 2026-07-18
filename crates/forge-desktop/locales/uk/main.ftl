@@ -554,6 +554,7 @@ action_editor_test_failed = Не вдалося запустити тестов�
 
 action_editor_this_action = цю дію
 action_editor_saved_triggers = Ваші збережені тригери
+action_editor_recent_triggers = Нещодавні
 action_editor_picker_add_sub_title = Додати підпункт
 action_editor_picker_inserting_into = Вставлення у
 action_editor_picker_sub_count = · { $count } підпунктів

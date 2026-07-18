@@ -1,12 +1,22 @@
-use forge_components::{ForgePalette, InputEvent, TextInput};
+use forge_components::{
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, ForgePalette, InputEvent,
+    Spacing, TextInput, spacing, toggle, tr,
+};
 use forge_registry::FormField;
 use forge_types::{TriggerConfig, Variant};
-use gpui::{App, Context, Entity, Subscription, prelude::*};
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
+    prelude::*, px,
+};
 use std::collections::HashMap;
 
-use super::TriggersRegistryView;
+const FILL_KEY_W: Pixels = px(110.0);
+const FILL_KEY_FS: Pixels = px(11.0);
+pub(crate) const FILL_VAL_FS: Pixels = px(11.5);
+const FILL_ROW_PAD_V: Pixels = px(8.0);
+const FILL_ROW_PAD_H: Pixels = px(12.0);
 
-pub(super) enum ConfigField {
+pub(crate) enum ConfigField {
     Input {
         key: String,
         integer: bool,
@@ -24,14 +34,10 @@ pub(super) enum ConfigField {
     },
 }
 
-pub(super) type ConfigCommitHandler = fn(
-    &mut TriggersRegistryView,
-    Entity<TextInput>,
-    &InputEvent,
-    &mut Context<TriggersRegistryView>,
-);
+pub(crate) type ConfigCommitHandler<V> =
+    fn(&mut V, Entity<TextInput>, &InputEvent, &mut Context<V>);
 
-pub(super) fn variant_display(v: &Variant) -> String {
+fn variant_display(v: &Variant) -> String {
     match v {
         Variant::Int(n) => n.to_string(),
         Variant::Float(f) => f.to_string(),
@@ -42,7 +48,7 @@ pub(super) fn variant_display(v: &Variant) -> String {
     }
 }
 
-pub(super) fn sparse_overrides(default: &TriggerConfig, buffer: &TriggerConfig) -> TriggerConfig {
+pub(crate) fn sparse_overrides(default: &TriggerConfig, buffer: &TriggerConfig) -> TriggerConfig {
     buffer
         .iter()
         .filter(|(k, v)| default.get(*k) != Some(*v))
@@ -50,14 +56,14 @@ pub(super) fn sparse_overrides(default: &TriggerConfig, buffer: &TriggerConfig) 
         .collect()
 }
 
-pub(super) fn fold_config_field(
+pub(crate) fn fold_config_field<V: 'static>(
     spec: &FormField,
     gate: Option<String>,
     config: &TriggerConfig,
     palette: &ForgePalette,
-    on_committed: ConfigCommitHandler,
+    on_committed: ConfigCommitHandler<V>,
     out: &mut Vec<ConfigField>,
-    cx: &mut Context<TriggersRegistryView>,
+    cx: &mut Context<V>,
 ) {
     match spec {
         FormField::Text {
@@ -130,15 +136,15 @@ pub(super) fn fold_config_field(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_config_input(
+fn build_config_input<V: 'static>(
     key: &str,
     placeholder: &'static str,
     integer: bool,
     gate: Option<String>,
     config: &TriggerConfig,
     palette: &ForgePalette,
-    on_committed: ConfigCommitHandler,
-    cx: &mut Context<TriggersRegistryView>,
+    on_committed: ConfigCommitHandler<V>,
+    cx: &mut Context<V>,
 ) -> ConfigField {
     let seed = config.get(key).map(variant_display).unwrap_or_default();
     let palette = *palette;
@@ -159,7 +165,7 @@ fn build_config_input(
     }
 }
 
-pub(super) fn overlay_field_values(fields: &[ConfigField], buffer: &mut TriggerConfig, cx: &App) {
+pub(crate) fn overlay_field_values(fields: &[ConfigField], buffer: &mut TriggerConfig, cx: &App) {
     let bool_vals: HashMap<&str, bool> = fields
         .iter()
         .filter_map(|f| match f {
@@ -204,4 +210,66 @@ pub(super) fn overlay_field_values(fields: &[ConfigField], buffer: &mut TriggerC
             ConfigField::Hint { .. } => {}
         }
     }
+}
+
+pub(crate) fn render_config_row<V: 'static>(
+    field: &ConfigField,
+    last: bool,
+    palette: &ForgePalette,
+    toggle_id_prefix: &str,
+    view: &Entity<V>,
+    on_toggle: fn(&mut V, String, &mut Context<V>),
+) -> AnyElement {
+    let key = match field {
+        ConfigField::Input { key, .. }
+        | ConfigField::Bool { key, .. }
+        | ConfigField::Hint { key } => key.clone(),
+    };
+
+    let label = div()
+        .w(FILL_KEY_W)
+        .flex_none()
+        .overflow_hidden()
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FILL_KEY_FS)
+        .text_color(palette.text_muted)
+        .child(key.clone());
+
+    let value: AnyElement = match field {
+        ConfigField::Input { input, .. } => div().child(input.clone()).into_any_element(),
+        ConfigField::Bool { key, value, .. } => {
+            let toggle_key = key.clone();
+            let view = view.clone();
+            toggle(*value, palette)
+                .on_click(
+                    SharedString::from(format!("{toggle_id_prefix}-{key}")),
+                    move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                        view.update(cx, |this, cx| on_toggle(this, toggle_key.clone(), cx));
+                    },
+                )
+                .into_any_element()
+        }
+        ConfigField::Hint { .. } => div()
+            .italic()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FILL_VAL_FS)
+            .text_color(palette.text_faint)
+            .child(tr!("triggers_sheet_config_authored"))
+            .into_any_element(),
+    };
+
+    div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Sm, Density::Cozy))
+        .py(FILL_ROW_PAD_V)
+        .px(FILL_ROW_PAD_H)
+        .when(!last, |row| {
+            row.border_b(BORDER_THIN)
+                .border_color(palette.border_regular)
+        })
+        .child(label)
+        .child(div().flex_1().min_w(px(0.0)).child(value))
+        .into_any_element()
 }

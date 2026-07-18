@@ -14,7 +14,10 @@ mod create;
 mod detail;
 mod list;
 
-use config_form::ConfigField;
+pub(crate) use config_form::{
+    ConfigField, FILL_VAL_FS, fold_config_field, overlay_field_values, render_config_row,
+    sparse_overrides,
+};
 use create::CreateStage;
 pub(crate) use create::build_kind_groups;
 
@@ -120,7 +123,7 @@ impl Platform {
     }
 }
 
-fn platform_dot_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
+pub(crate) fn platform_dot_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
     Platform::from_kind_id(kind_id)
         .map(|p| p.dot(palette))
         .unwrap_or(palette.info)

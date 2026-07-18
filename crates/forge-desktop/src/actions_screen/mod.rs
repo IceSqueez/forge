@@ -10,7 +10,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo, TriggerInstanceRepo};
-use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep};
+use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
     SharedString, Subscription, Window, div, prelude::*, px,
@@ -169,7 +169,7 @@ pub struct ScreenActionsView {
     step_menu_open: Option<usize>,
     menu_click_pos: Option<Point<Pixels>>,
     grid_picker: Option<GridPickerForm>,
-    add_trigger: Option<AddTriggerForm>,
+    add_trigger: Option<AddTriggerStage>,
     nav_path: Vec<nav::NavFrame>,
     /// Keyed by `(step_index, case_index)` within the current chain.
     case_fields: BTreeMap<(usize, usize), CaseField>,
@@ -444,15 +444,10 @@ impl Render for ScreenActionsView {
                 })
                 .into_any_element()
         });
-        let trigger_grid = self.add_trigger.as_ref().map(|form| {
-            let view = cx.entity();
-            overlay(form.picker.clone(), &palette)
-                .position(OverlayPosition::Center)
-                .on_dismiss("actions-trigger-grid-scrim", move |_window, cx| {
-                    view.update(cx, |this, cx| this.cancel_trigger_picker(cx));
-                })
-                .into_any_element()
-        });
+        let trigger_grid = self
+            .add_trigger
+            .as_ref()
+            .map(|stage| self.render_add_trigger(stage, &palette, cx));
         div()
             .size_full()
             .flex()
@@ -519,11 +514,27 @@ struct GridPickerForm {
     _sub: Subscription,
 }
 
-struct AddTriggerForm {
+enum AddTriggerStage {
+    Pick(AddTriggerPicker),
+    Fill(AddTriggerFill),
+}
+
+struct AddTriggerPicker {
     picker: Entity<GridPicker>,
-    picks: HashMap<SharedString, String>,
+    picks_kind: HashMap<SharedString, String>,
+    picks_instance: HashMap<SharedString, TriggerInstanceId>,
     action_id: ActionId,
     _sub: Subscription,
+}
+
+struct AddTriggerFill {
+    action_id: ActionId,
+    kind_id: String,
+    kind_label: String,
+    name_field: Entity<TextInput>,
+    fields: Vec<crate::triggers_screen::ConfigField>,
+    saving: bool,
+    _name_sub: Subscription,
 }
 
 #[derive(Clone, Copy)]

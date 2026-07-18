@@ -554,6 +554,7 @@ action_editor_test_failed = Test trigger failed: { $error }
 
 action_editor_this_action = this action
 action_editor_saved_triggers = Your saved triggers
+action_editor_recent_triggers = Recent
 action_editor_picker_add_sub_title = Add sub-action
 action_editor_picker_inserting_into = Inserting into
 action_editor_picker_sub_count = · { $count } sub-actions

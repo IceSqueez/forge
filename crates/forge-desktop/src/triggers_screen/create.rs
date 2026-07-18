@@ -1,4 +1,7 @@
-use super::config_form::{ConfigField, fold_config_field, overlay_field_values, sparse_overrides};
+use super::config_form::{
+    ConfigField, FILL_VAL_FS, fold_config_field, overlay_field_values, render_config_row,
+    sparse_overrides,
+};
 use super::{TriggerInstanceRow, TriggersRegistryView, load_rows, platform_dot_color};
 use crate::presentation::ActivePresentation;
 use forge_components::{
@@ -6,22 +9,15 @@ use forge_components::{
     GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
     GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
     Spacing, TextInput, ghost_button_with_icon, modal, overlay, primary_button, radius,
-    secondary_button, spacing, toggle, tr,
+    secondary_button, spacing, tr,
 };
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{PlatformScope, TriggerInstance, TriggerInstanceId};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, SharedString, Subscription, Window, div, prelude::*,
-    px,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-
-const FILL_KEY_W: gpui::Pixels = px(110.0);
-const FILL_KEY_FS: gpui::Pixels = px(11.0);
-const FILL_VAL_FS: gpui::Pixels = px(11.5);
-const FILL_ROW_PAD_V: gpui::Pixels = px(8.0);
-const FILL_ROW_PAD_H: gpui::Pixels = px(12.0);
 
 pub(super) enum CreateStage {
     PickKind(KindPickerForm),
@@ -305,7 +301,14 @@ impl TriggersRegistryView {
             let last = form.fields.len().saturating_sub(1);
             let mut col = div().flex().flex_col();
             for (i, field) in form.fields.iter().enumerate() {
-                col = col.child(self.render_fill_config_row(field, i == last, palette, cx));
+                col = col.child(render_config_row(
+                    field,
+                    i == last,
+                    palette,
+                    "triggers-create-toggle",
+                    &cx.entity(),
+                    Self::toggle_create_config_field,
+                ));
             }
             div()
                 .w_full()
@@ -397,66 +400,6 @@ impl TriggersRegistryView {
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(label.into())
-            .into_any_element()
-    }
-
-    fn render_fill_config_row(
-        &self,
-        field: &ConfigField,
-        last: bool,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let key = match field {
-            ConfigField::Input { key, .. }
-            | ConfigField::Bool { key, .. }
-            | ConfigField::Hint { key } => key.clone(),
-        };
-
-        let label = div()
-            .w(FILL_KEY_W)
-            .flex_none()
-            .overflow_hidden()
-            .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FILL_KEY_FS)
-            .text_color(palette.text_muted)
-            .child(key.clone());
-
-        let value: AnyElement = match field {
-            ConfigField::Input { input, .. } => div().child(input.clone()).into_any_element(),
-            ConfigField::Bool { key, value, .. } => {
-                let toggle_key = key.clone();
-                toggle(*value, palette)
-                    .on_click(
-                        SharedString::from(format!("triggers-create-toggle-{key}")),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.toggle_create_config_field(toggle_key.clone(), cx)
-                        }),
-                    )
-                    .into_any_element()
-            }
-            ConfigField::Hint { .. } => div()
-                .italic()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FILL_VAL_FS)
-                .text_color(palette.text_faint)
-                .child(tr!("triggers_sheet_config_authored"))
-                .into_any_element(),
-        };
-
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .py(FILL_ROW_PAD_V)
-            .px(FILL_ROW_PAD_H)
-            .when(!last, |row| {
-                row.border_b(BORDER_THIN)
-                    .border_color(palette.border_regular)
-            })
-            .child(label)
-            .child(div().flex_1().min_w(px(0.0)).child(value))
             .into_any_element()
     }
 }

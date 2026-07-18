@@ -309,7 +309,7 @@ impl AppShell {
                 let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
                 let bus = Arc::clone(&handles.bus);
-                cx.new(|cx| {
+                let view = cx.new(|cx| {
                     ScreenActionsView::new(
                         action_repo,
                         queue_repo,
@@ -321,8 +321,12 @@ impl AppShell {
                         bus,
                         cx,
                     )
+                });
+                cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
                 })
-                .into()
+                .detach();
+                view.into()
             }
             Screen::Triggers => {
                 let repo = handles.backend.trigger_instance_repo();

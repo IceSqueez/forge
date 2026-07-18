@@ -1,4 +1,6 @@
 use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
+use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
     ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, ToastKind, fmt_number,
@@ -10,8 +12,8 @@ use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo, TriggerInstanceRepo};
 use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, Point, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -395,6 +397,8 @@ impl ScreenActionsView {
         self.persist_action(action, cx);
     }
 }
+
+impl EventEmitter<NavRequested> for ScreenActionsView {}
 
 impl Render for ScreenActionsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

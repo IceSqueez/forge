@@ -5,8 +5,8 @@ use forge_components::{
     FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup,
     GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuPlacement,
     ModalSize, OverlayPosition, Radius, Spacing, TextInput, ghost_button_with_icon, icon,
-    icon_inherit, menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius,
-    row_card, secondary_button, spacing, status_dot, toggle, tr,
+    menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius, row_card,
+    secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -549,7 +549,6 @@ fn trigger_unlink_btn(
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     let solid = palette.random;
-    let on_solid = palette.shell;
     div()
         .id(id.into())
         .flex()
@@ -557,11 +556,10 @@ fn trigger_unlink_btn(
         .justify_center()
         .p(spacing(Spacing::Xxs, Density::Cozy))
         .rounded(radius(Radius::Sm))
-        .text_color(palette.text_faint)
         .cursor_pointer()
-        .hover(move |s| s.bg(solid).text_color(on_solid))
+        .hover(move |s| s.bg(solid))
         .on_click(handler)
-        .child(icon_inherit(Icon::X, UNLINK_GLYPH))
+        .child(icon(Icon::X, UNLINK_GLYPH, palette.text_faint))
         .into_any_element()
 }
 
@@ -1977,7 +1975,10 @@ impl ScreenActionsView {
         let unlink = trigger_unlink_btn(
             SharedString::from(format!("actions-trigger-unlink-{instance_id}")),
             palette,
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.unlink_trigger(instance_id, cx)),
+            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                cx.stop_propagation();
+                this.unlink_trigger(instance_id, cx)
+            }),
         );
 
         row_card(title, palette)
@@ -1985,6 +1986,10 @@ impl ScreenActionsView {
             .trailing(unlink)
             .idle_background(palette.elevated)
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
+            .on_click(
+                SharedString::from(format!("actions-trigger-open-{instance_id}")),
+                cx.listener(|_this, _: &ClickEvent, _, cx| cx.emit(NavRequested(Screen::Triggers))),
+            )
             .into_any_element()
     }
 

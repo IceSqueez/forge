@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, OverlayPosition,
-    Radius, Spacing, TextInput, breadcrumb, icon, menu_button, menu_divider, menu_item, modal,
-    overlay, primary_button, primary_button_with_icon, radius, secondary_button, slider, spacing,
-    spinner, tr, with_alpha,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
+    OverlayPosition, Radius, Spacing, TextInput, breadcrumb, icon, menu_button, menu_divider,
+    menu_item, modal, overlay, primary_button, primary_button_with_icon, radius, secondary_button,
+    slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -38,7 +38,6 @@ const SERIAL_CONCURRENCY: u32 = 1;
 const PARALLEL_CONCURRENCY: u32 = 8;
 const MIN_CONCURRENCY: u32 = 1;
 const MAX_CONCURRENCY: u32 = 16;
-const MODAL_WIDTH: Pixels = px(440.0);
 
 struct QueueRow {
     id: QueueId,
@@ -934,7 +933,7 @@ impl QueuesView {
         let card = modal(title, body, palette)
             .header_icon(Icon::Stack2, palette.bits)
             .subtitle(tr!("queues_create_subtitle"))
-            .width(MODAL_WIDTH)
+            .size(ModalSize::Md)
             .footer(footer)
             .on_close(
                 "q-modal-close",

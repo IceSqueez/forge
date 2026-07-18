@@ -521,7 +521,7 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(div().child(self.search_field.clone()))
+            .child(div().w(SEARCH_W).child(self.search_field.clone()))
             .child(self.divider(palette))
             .child(platform_chips)
             .child(self.divider(palette))
@@ -786,6 +786,7 @@ impl TriggersRegistryView {
                     .flex_none()
                     .flex()
                     .justify_end()
+                    .pr(USED_CELL_GAP)
                     .child(used),
             );
 

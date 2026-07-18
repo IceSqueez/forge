@@ -475,20 +475,23 @@ impl QueuesView {
             name_row = name_row.child(not_live_badge(palette));
         }
 
-        let desc = (!q.description.is_empty()).then(|| {
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(DESC_FS)
-                .text_color(palette.text_muted)
-                .child(q.description.clone())
-        });
+        let desc_text = if q.description.is_empty() {
+            SharedString::from("\u{a0}")
+        } else {
+            SharedString::from(q.description.clone())
+        };
+        let desc = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(DESC_FS)
+            .text_color(palette.text_muted)
+            .child(desc_text);
 
         let left = div()
             .flex()
             .flex_col()
             .gap(px(3.0))
             .child(name_row)
-            .children(desc);
+            .child(desc);
 
         div()
             .flex()

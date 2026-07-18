@@ -3,16 +3,17 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    breadcrumb, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
-    secondary_button, spacing, toggle, tr, with_alpha,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, OverlayPosition,
+    Radius, Spacing, TextInput, breadcrumb, icon, menu_button, menu_divider, menu_item, modal,
+    overlay, primary_button, primary_button_with_icon, radius, secondary_button, spacing, spinner,
+    toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Queue, QueueId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Point, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
 
@@ -20,15 +21,18 @@ use crate::presentation::ActivePresentation;
 use crate::queue_health::QueueHealth;
 
 const BADGE_RADIUS: Pixels = px(8.0);
-const STATUS_DOT: Pixels = px(5.0);
 const PILL_RADIUS: Pixels = px(5.0);
 const BADGE_GLYPH: Pixels = px(9.0);
 const PANEL_GLYPH: Pixels = px(12.0);
-const MENU_GLYPH: Pixels = px(14.0);
-const HEADER_BTN_GLYPH: Pixels = px(13.0);
 const CARDS_PER_ROW: usize = 2;
 const STATS_FS: Pixels = px(11.5);
 const HEADER_PAD_V: Pixels = px(8.0);
+const CARD_PAD: Pixels = px(14.0);
+const SECTION_GAP: Pixels = px(10.0);
+const HEADER_GAP: Pixels = px(12.0);
+const BAR_GAP: Pixels = px(8.0);
+const STAT_VALUE_FS: Pixels = px(13.0);
+const DESC_FS: Pixels = px(11.0);
 const MAX_PILLS: usize = 3;
 const SERIAL_CONCURRENCY: u32 = 1;
 const PARALLEL_CONCURRENCY: u32 = 8;
@@ -70,6 +74,8 @@ pub struct QueuesView {
     loading: bool,
     feedback: Option<SharedString>,
     modal: Option<EditQueueModal>,
+    menu_open: Option<QueueId>,
+    menu_click_pos: Option<Point<Pixels>>,
     diverged: HashSet<QueueId>,
     queue_health: Entity<QueueHealth>,
     scheduler: QueueSchedulerHandle,
@@ -97,6 +103,8 @@ impl QueuesView {
             loading: true,
             feedback: None,
             modal: None,
+            menu_open: None,
+            menu_click_pos: None,
             diverged: HashSet::new(),
             queue_health,
             scheduler,
@@ -302,6 +310,21 @@ impl QueuesView {
         cx.notify();
     }
 
+    fn toggle_menu(&mut self, id: QueueId, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.menu_open == Some(id) {
+            self.menu_open = None;
+        } else {
+            self.menu_open = Some(id);
+            self.menu_click_pos = Some(position);
+        }
+        cx.notify();
+    }
+
+    fn close_menu(&mut self, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        cx.notify();
+    }
+
     fn toggle_blocking(&mut self, cx: &mut Context<Self>) {
         if let Some(modal) = self.modal.as_mut() {
             modal.blocking = !modal.blocking;
@@ -390,23 +413,23 @@ impl QueuesView {
         let not_live = self.diverged.contains(&q.id);
 
         let border_color = if paused {
-            with_alpha(palette.warning, 0.35)
+            with_alpha(palette.warning, 0.20)
         } else {
             palette.border_regular
         };
 
         div()
             .w_full()
+            .h_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .p(spacing(Spacing::Sm, density))
+            .p(CARD_PAD)
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(border_color)
             .bg(palette.elevated)
-            .child(self.card_header(q, paused, not_live, palette, density))
-            .child(self.card_metrics(q, paused, palette, density))
+            .child(self.card_header(index, q, paused, not_live, palette, cx))
+            .child(self.card_metrics(q, paused, palette))
             .child(self.running_panel(q, paused, palette, density))
             .child(self.card_buttons(index, q, paused, palette, density, cx))
             .into_any_element()
@@ -414,12 +437,14 @@ impl QueuesView {
 
     fn card_header(
         &self,
+        index: usize,
         q: &QueueRow,
         paused: bool,
         not_live: bool,
         palette: &ForgePalette,
-        density: Density,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
+        let spin_id = SharedString::from(format!("q-badge-spin-{}", q.id));
         let name = div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_SM)
@@ -429,9 +454,9 @@ impl QueuesView {
         let mut name_row = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, density))
+            .gap(BAR_GAP)
             .child(name)
-            .child(status_badge(paused, palette));
+            .child(status_badge(spin_id, paused, palette));
         if not_live {
             name_row = name_row.child(not_live_badge(palette));
         }
@@ -440,7 +465,7 @@ impl QueuesView {
         let desc = (!desc_text.is_empty()).then(|| {
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
+                .text_size(DESC_FS)
                 .text_color(palette.text_muted)
                 .child(desc_text)
         });
@@ -448,7 +473,7 @@ impl QueuesView {
         let left = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
+            .gap(px(3.0))
             .child(name_row)
             .children(desc);
 
@@ -456,18 +481,101 @@ impl QueuesView {
             .flex()
             .items_start()
             .justify_between()
+            .mb(HEADER_GAP)
             .child(left)
-            .child(icon(Icon::DotsVertical, MENU_GLYPH, palette.text_faint))
+            .child(self.card_menu(index, q, paused, palette, cx))
             .into_any_element()
     }
 
-    fn card_metrics(
+    fn card_menu(
         &self,
+        index: usize,
         q: &QueueRow,
         paused: bool,
         palette: &ForgePalette,
-        density: Density,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
+        let id = q.id;
+        let is_default = q.name == "Default";
+        let menu_open = self.menu_open == Some(id);
+        let menu_pos = if menu_open { self.menu_click_pos } else { None };
+        let view = cx.entity();
+
+        let pause_resume: MenuItem = if paused {
+            menu_item(
+                ("q-menu-resume", index),
+                tr!("queues_menu_resume"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.resume(id, cx)),
+            )
+            .icon(Icon::PlayerPlay)
+            .color(palette.warning)
+            .into()
+        } else {
+            menu_item(
+                ("q-menu-pause", index),
+                tr!("queues_menu_pause"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.pause(id, cx)),
+            )
+            .icon(Icon::PlayerPause)
+            .color(palette.warning)
+            .into()
+        };
+
+        menu_button(Icon::DotsVertical, menu_open, palette)
+            .placement(MenuPlacement::BottomRight)
+            .open_at(menu_pos)
+            .items(vec![
+                menu_item(
+                    ("q-menu-configure", index),
+                    tr!("queues_menu_configure"),
+                    cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open_configure(id, window, cx)
+                    }),
+                )
+                .icon(Icon::Settings)
+                .into(),
+                menu_item(
+                    ("q-menu-rename", index),
+                    tr!("queues_menu_rename"),
+                    cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open_configure(id, window, cx)
+                    }),
+                )
+                .icon(Icon::Edit)
+                .into(),
+                menu_divider(),
+                pause_resume,
+                menu_item(
+                    ("q-menu-drain", index),
+                    tr!("queues_menu_drain"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.drain(id, cx)),
+                )
+                .icon(Icon::Eraser)
+                .into(),
+                menu_divider(),
+                menu_item(
+                    ("q-menu-delete", index),
+                    tr!("queues_menu_delete"),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.close_menu(cx)),
+                )
+                .icon(Icon::CircleX)
+                .color(palette.random)
+                .disabled(is_default)
+                .into(),
+            ])
+            .on_toggle(
+                ("q-menu-trigger", index),
+                cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                    this.toggle_menu(id, ev.position(), cx)
+                }),
+            )
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_menu(cx));
+            })
+            .into_any_element()
+    }
+
+    fn card_metrics(&self, q: &QueueRow, paused: bool, palette: &ForgePalette) -> AnyElement {
         let pending_value_color = if paused {
             palette.warning
         } else {
@@ -496,7 +604,6 @@ impl QueuesView {
                 palette.text_primary,
                 palette.text_faint,
                 palette,
-                density,
             ))
             .child(metric_col(
                 SharedString::from(tr!("queues_metric_pending")),
@@ -505,7 +612,6 @@ impl QueuesView {
                 pending_value_color,
                 pending_hint_color,
                 palette,
-                density,
             ))
             .child(metric_col(
                 SharedString::from(tr!("queues_metric_actions")),
@@ -514,12 +620,12 @@ impl QueuesView {
                 palette.text_primary,
                 palette.text_faint,
                 palette,
-                density,
             ));
 
         div()
             .w_full()
-            .pt(spacing(Spacing::Xs, density))
+            .pt(SECTION_GAP)
+            .mb(SECTION_GAP)
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(row)
@@ -564,7 +670,6 @@ impl QueuesView {
                 palette.shell,
                 Some(palette.success),
                 palette,
-                density,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.resume(id, cx)),
             )
         } else {
@@ -575,7 +680,6 @@ impl QueuesView {
                 palette.warning,
                 None,
                 palette,
-                density,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.pause(id, cx)),
             )
         };
@@ -587,7 +691,6 @@ impl QueuesView {
             palette.text_secondary,
             None,
             palette,
-            density,
             cx.listener(move |this, _: &ClickEvent, _, cx| this.drain(id, cx)),
         );
 
@@ -598,7 +701,6 @@ impl QueuesView {
             palette.text_secondary,
             None,
             palette,
-            density,
             cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_configure(id, window, cx)
             }),
@@ -635,8 +737,8 @@ impl QueuesView {
             let mut row = div().w_full().flex().flex_row().gap(gap);
             for _ in 0..CARDS_PER_ROW {
                 match iter.next() {
-                    Some(card) => row = row.child(div().flex_1().child(card)),
-                    None => row = row.child(div().flex_1()),
+                    Some(card) => row = row.child(div().flex_1().min_w_0().child(card)),
+                    None => row = row.child(div().flex_1().min_w_0()),
                 }
             }
             grid = grid.child(row);
@@ -796,7 +898,6 @@ impl Render for QueuesView {
             Icon::PlayerPause,
             SharedString::from(tr!("queues_pause_all_btn")),
             &palette,
-            density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.pause_all(cx)),
         );
         let new_queue = primary_button_with_icon(Icon::Plus, tr!("queues_new_queue_btn"), &palette)
@@ -945,7 +1046,7 @@ impl Render for QueuesView {
     }
 }
 
-fn status_badge(paused: bool, palette: &ForgePalette) -> AnyElement {
+fn status_badge(spin_id: SharedString, paused: bool, palette: &ForgePalette) -> AnyElement {
     let (mark, label, ink): (AnyElement, SharedString, gpui::Rgba) = if paused {
         (
             icon(Icon::PlayerPause, BADGE_GLYPH, palette.warning).into_any_element(),
@@ -954,11 +1055,7 @@ fn status_badge(paused: bool, palette: &ForgePalette) -> AnyElement {
         )
     } else {
         (
-            div()
-                .size(STATUS_DOT)
-                .rounded(radius(Radius::Pill))
-                .bg(palette.success)
-                .into_any_element(),
+            spinner(spin_id, Icon::Loader2, BADGE_GLYPH, palette.success).into_any_element(),
             SharedString::from(tr!("queues_status_running")),
             palette.success,
         )
@@ -982,7 +1079,6 @@ fn status_badge(paused: bool, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn metric_col(
     caption: SharedString,
     value: String,
@@ -990,31 +1086,31 @@ fn metric_col(
     value_color: gpui::Rgba,
     hint_color: gpui::Rgba,
     palette: &ForgePalette,
-    density: Density,
 ) -> impl IntoElement {
     div()
         .flex_1()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_secondary)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_muted)
+                .mb(px(3.0))
                 .child(caption),
         )
         .child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_SM)
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(STAT_VALUE_FS)
                 .text_color(value_color)
                 .child(value),
         )
         .child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
+                .text_size(FONT_XXS)
                 .text_color(hint_color)
                 .child(hint),
         )
@@ -1025,9 +1121,10 @@ fn idle_panel(palette: &ForgePalette, density: Density) -> AnyElement {
         .w_full()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, density))
+        .gap(BAR_GAP)
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
+        .mb(SECTION_GAP)
         .rounded(radius(Radius::Sm))
         .bg(palette.shell)
         .child(icon(Icon::CircleDashed, PANEL_GLYPH, palette.text_faint))
@@ -1043,16 +1140,18 @@ fn idle_panel(palette: &ForgePalette, density: Density) -> AnyElement {
 
 fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
     let name = q.running.first().cloned().unwrap_or_default();
+    let spin_id = SharedString::from(format!("q-serial-spin-{}", q.id));
     div()
         .w_full()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, density))
+        .gap(BAR_GAP)
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
+        .mb(SECTION_GAP)
         .rounded(radius(Radius::Sm))
         .bg(palette.shell)
-        .child(icon(Icon::Loader2, PANEL_GLYPH, palette.brand))
+        .child(spinner(spin_id, Icon::Loader2, PANEL_GLYPH, palette.brand))
         .child(
             div()
                 .flex_1()
@@ -1064,7 +1163,7 @@ fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
         .child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
+                .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("queues_running_label"))),
         )
@@ -1093,12 +1192,13 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
         .gap(spacing(Spacing::Xxs, density))
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
+        .mb(SECTION_GAP)
         .rounded(radius(Radius::Sm))
         .bg(palette.shell)
         .child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
+                .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("queues_running_now_header"))),
         )
@@ -1135,9 +1235,10 @@ fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
         .w_full()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, density))
+        .gap(BAR_GAP)
         .py(spacing(Spacing::Xs, density))
         .px(spacing(Spacing::Sm, density))
+        .mb(SECTION_GAP)
         .rounded(radius(Radius::Sm))
         .bg(with_alpha(palette.warning, 0.06))
         .border(BORDER_THIN)
@@ -1154,7 +1255,6 @@ fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
         .into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn card_button(
     id: impl Into<gpui::ElementId>,
     glyph: Icon,
@@ -1162,7 +1262,6 @@ fn card_button(
     ink: gpui::Rgba,
     fill: Option<gpui::Rgba>,
     palette: &ForgePalette,
-    density: Density,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     let mut btn = div()
@@ -1171,9 +1270,9 @@ fn card_button(
         .flex()
         .items_center()
         .justify_center()
-        .gap(spacing(Spacing::Xxs, density))
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Xs, density))
+        .gap(px(5.0))
+        .py(px(5.0))
+        .px(px(10.0))
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .on_click(handler)
@@ -1181,7 +1280,7 @@ fn card_button(
         .child(
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .text_size(FONT_XS)
                 .text_color(ink)
                 .child(label),
         );
@@ -1203,28 +1302,27 @@ fn warning_ghost_button(
     glyph: Icon,
     label: SharedString,
     palette: &ForgePalette,
-    density: Density,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let hover = palette.elevated;
+    let hover_border = palette.border_input;
     div()
         .id(id)
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xxs, density))
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Sm, density))
+        .gap(px(5.0))
+        .py(px(4.0))
+        .px(px(12.0))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .cursor_pointer()
-        .hover(move |s| s.bg(hover))
+        .hover(move |s| s.border_color(hover_border))
         .on_click(handler)
-        .child(icon(glyph, HEADER_BTN_GLYPH, palette.warning))
+        .child(icon(glyph, FONT_XS, palette.warning))
         .child(
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .text_size(FONT_XS)
                 .text_color(palette.warning)
                 .child(label),
         )

@@ -1174,6 +1174,15 @@ queues_drain_btn = Спустошити
 queues_pause_btn = Пауза
 queues_resume_btn = Продовжити
 
+## Черги - меню картки
+
+queues_menu_configure = Налаштувати…
+queues_menu_rename = Перейменувати…
+queues_menu_pause = Пауза
+queues_menu_resume = Продовжити
+queues_menu_drain = Спустошити чергу
+queues_menu_delete = Видалити…
+
 ## Черги - модальне вікно нової черги
 
 queues_create_title = Нова черга
@@ -1208,7 +1217,7 @@ queues_paused_simple = Черга на паузі
 
 queues_running_now_header = ВИКОНУЄТЬСЯ ЗАРАЗ
 queues_no_actions_running = Дій не виконується
-queues_running_label = виконується -
+queues_running_label = виконується
 
 ## Черги - бейдж статусу
 

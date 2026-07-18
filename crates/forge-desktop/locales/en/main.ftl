@@ -1168,6 +1168,15 @@ queues_drain_btn = Drain
 queues_pause_btn = Pause
 queues_resume_btn = Resume
 
+## Queues - card menu
+
+queues_menu_configure = Configure…
+queues_menu_rename = Rename…
+queues_menu_pause = Pause
+queues_menu_resume = Resume
+queues_menu_drain = Drain queue
+queues_menu_delete = Delete…
+
 ## Queues - new queue modal
 
 queues_create_title = New queue
@@ -1202,7 +1211,7 @@ queues_paused_simple = Queue is paused
 
 queues_running_now_header = RUNNING NOW
 queues_no_actions_running = No actions running
-queues_running_label = running -
+queues_running_label = running
 
 ## Queues - status badge
 

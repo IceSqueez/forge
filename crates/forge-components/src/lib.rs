@@ -48,7 +48,7 @@ pub use grid_picker::{
     GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
     GridPickerItemState, GridPickerSubtitle,
 };
-pub use icons::{Icon, IconAssets, icon, icon_inherit};
+pub use icons::{Icon, IconAssets, icon, icon_inherit, spinner};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
 pub use locale::{
     ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,

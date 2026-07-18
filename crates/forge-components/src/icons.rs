@@ -1,6 +1,10 @@
 use std::borrow::Cow;
+use std::time::Duration;
 
-use gpui::{AssetSource, IntoElement, Pixels, Rgba, SharedString, Styled, svg};
+use gpui::{
+    Animation, AnimationExt, AssetSource, ElementId, IntoElement, Pixels, Rgba, SharedString,
+    Styled, Transformation, percentage, svg,
+};
 
 macro_rules! tabler_icons {
     ($($variant:ident => $file:literal),+ $(,)?) => {
@@ -232,6 +236,26 @@ pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
 /// re-tints the glyph. Use [`icon`] for a fixed tint.
 pub fn icon_inherit(icon: Icon, size: Pixels) -> impl IntoElement {
     svg().flex_none().size(size).path(icon.path())
+}
+
+/// Continuously rotates `glyph`. Each live instance needs a distinct `id`, or gpui
+/// shares one animation clock across them.
+pub fn spinner(
+    id: impl Into<ElementId>,
+    glyph: Icon,
+    size: Pixels,
+    color: Rgba,
+) -> impl IntoElement {
+    svg()
+        .flex_none()
+        .size(size)
+        .path(glyph.path())
+        .text_color(color)
+        .with_animation(
+            id.into(),
+            Animation::new(Duration::from_millis(1200)).repeat(),
+            |el, delta| el.with_transformation(Transformation::rotate(percentage(delta))),
+        )
 }
 
 #[cfg(test)]

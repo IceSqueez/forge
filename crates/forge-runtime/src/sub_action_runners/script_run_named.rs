@@ -67,15 +67,23 @@ impl SubActionRunner for ScriptRunNamedRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("script_name".to_owned(), Variant::String(String::new()));
+        cfg.insert("target_var".to_owned(), Variant::String(String::new()));
         cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::DynamicSelect {
-            key: "script_name",
-            label: "Script",
-            options_key: "script.names",
-        }]
+        vec![
+            FormField::DynamicSelect {
+                key: "script_name",
+                label: "Script",
+                options_key: "script.names",
+            },
+            FormField::Text {
+                key: "target_var",
+                label: "Output Variable",
+                placeholder: "script_result",
+            },
+        ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
@@ -100,6 +108,12 @@ impl SubActionRunner for ScriptRunNamedRunner {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         let name = ctx.arg_stack.interpolate(name_template);
+
+        let target_var_template = config
+            .get("target_var")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let target_var = ctx.arg_stack.interpolate(target_var_template);
 
         let Some(compiled) = self.registry.get_by_name(&name).await else {
             let duration_ms = wall_start.elapsed().as_millis() as u64;
@@ -163,14 +177,22 @@ impl SubActionRunner for ScriptRunNamedRunner {
             }
             let engine = Engine::with_api(cfg, api);
             let mut scope = scope;
-            engine.eval_script_with_scope(&body, &mut scope)
+            engine.eval_script_with_scope_as_variant(&body, &mut scope)
         })
         .await;
 
         let duration_ms = wall_start.elapsed().as_millis() as u64;
 
         let outcome = match exec_result {
-            Ok(Ok(_)) => SubActionOutcome::Success,
+            Ok(Ok(value)) => match value {
+                Some(value) if !target_var.is_empty() => {
+                    match self.globals.set(&target_var, value, false).await {
+                        Ok(()) => SubActionOutcome::Success,
+                        Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
+                    }
+                }
+                _ => SubActionOutcome::Success,
+            },
             Ok(Err(script_err)) => {
                 self.publisher.publish(Event::caused_by(
                     EventSource::Rhai,

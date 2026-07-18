@@ -2,11 +2,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use forge_storage::{SettingsRepo, reserved_keys};
+use forge_types::Variant;
 use rhai::Dynamic;
 use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
 
 use crate::ScriptError;
 use crate::api::ForgeApi;
+use crate::convert::dynamic_to_variant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineConfig {
@@ -135,6 +137,16 @@ impl Engine {
         self.inner
             .eval_with_scope::<rhai::Dynamic>(scope, body)
             .map_err(|e| map_eval_error(body, &self.config, *e))
+    }
+
+    /// Returns `None` when the script yields unit or a value outside the 7 `Variant` kinds.
+    pub fn eval_script_with_scope_as_variant(
+        &self,
+        body: &str,
+        scope: &mut rhai::Scope<'_>,
+    ) -> Result<Option<Variant>, ScriptError> {
+        let value = self.eval_script_with_scope(body, scope)?;
+        Ok(dynamic_to_variant(value).ok())
     }
 
     pub(crate) fn reset_timer(&self) {

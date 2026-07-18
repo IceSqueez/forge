@@ -60,13 +60,13 @@ impl ButtonVariant {
             },
             ButtonVariant::Ghost => ButtonColors {
                 fill: None,
-                text: p.text_muted,
+                text: p.text_secondary,
                 border: Some(p.border_regular),
                 hover_fill: None,
                 hover_text: p.text_primary,
                 hover_border: Some(p.border_input),
                 disabled_fill: None,
-                disabled_text: with_alpha(p.text_muted, OUTLINE_DISABLED_ALPHA),
+                disabled_text: with_alpha(p.text_secondary, OUTLINE_DISABLED_ALPHA),
                 disabled_border: Some(with_alpha(p.border_regular, OUTLINE_DISABLED_ALPHA)),
             },
             ButtonVariant::Icon => ButtonColors {
@@ -430,7 +430,7 @@ mod tests {
             (
                 ButtonVariant::Ghost,
                 None,
-                Some((P.text_muted, 1.0)),
+                Some((P.text_secondary, 1.0)),
                 Some((P.border_regular, 1.0)),
             ),
             (
@@ -516,7 +516,7 @@ mod tests {
             (
                 ButtonVariant::Ghost,
                 None,
-                Some((P.text_muted, 0.4)),
+                Some((P.text_secondary, 0.4)),
                 Some((P.border_regular, 0.4)),
             ),
             (

@@ -1338,7 +1338,7 @@ impl ScreenActionsView {
                     ),
             )
             .child(
-                ghost_button_with_icon(Icon::Pencil, tr!("action_editor_edit"), palette).on_click(
+                ghost_button_with_icon(Icon::Edit, tr!("action_editor_edit"), palette).on_click(
                     "actions-editor-edit",
                     cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.open_edit_modal(window, cx)

@@ -48,8 +48,7 @@ jobs:
           # actions-rust-lang reads rust-toolchain.toml automatically; we only specify additional targets.
           # Universal macOS needs both Apple targets installed onto the same toolchain channel.
           target: ${{ matrix.asset_name == 'macos-universal' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
-          cache-shared-key: release-${{ matrix.target }}
-          cache-all-crates: true
+          cache: false
 
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-latest'

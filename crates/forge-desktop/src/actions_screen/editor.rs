@@ -1988,7 +1988,9 @@ impl ScreenActionsView {
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
             .on_click(
                 SharedString::from(format!("actions-trigger-open-{instance_id}")),
-                cx.listener(|_this, _: &ClickEvent, _, cx| cx.emit(NavRequested(Screen::Triggers))),
+                cx.listener(move |_this, _: &ClickEvent, _, cx| {
+                    cx.emit(NavRequested(Screen::Triggers(Some(instance_id))))
+                }),
             )
             .into_any_element()
     }

@@ -150,7 +150,7 @@ impl SidebarNav {
             NavEntry::SectionLeaf {
                 icon: Icon::TargetArrow,
                 label: NavText::Key("nav_item_triggers"),
-                screen: Screen::Triggers,
+                screen: Screen::Triggers(None),
             },
             NavEntry::SectionLeaf {
                 icon: Icon::Stack2,
@@ -345,7 +345,7 @@ impl SidebarNav {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let active = self.current == screen;
+        let active = self.current.same_nav(&screen);
         let (fg, glyph) = if active {
             (
                 palette.text_primary,
@@ -392,7 +392,7 @@ impl SidebarNav {
                 label,
                 screen,
             } => {
-                let active = self.current == screen;
+                let active = self.current.same_nav(&screen);
                 let fg = if active {
                     palette.text_primary
                 } else {
@@ -420,7 +420,7 @@ impl SidebarNav {
                 integ,
             } => {
                 let connected = self.connectivity.read(cx).is_connected(integ);
-                let active = self.current == screen;
+                let active = self.current.same_nav(&screen);
                 let fg = if active {
                     palette.text_primary
                 } else {

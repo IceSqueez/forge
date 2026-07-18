@@ -188,6 +188,7 @@ impl TriggersRegistryView {
         action_repo: Arc<dyn ActionRepo>,
         registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
+        preselect: Option<TriggerInstanceId>,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -202,7 +203,7 @@ impl TriggersRegistryView {
             rt_handle,
             loading: true,
             instances: Vec::new(),
-            selected: None,
+            selected: preselect,
             detail: None,
             hovered: None,
             menu_open: None,
@@ -265,8 +266,8 @@ impl TriggersRegistryView {
             self.detail = None;
         }
         self.loading = false;
-        if self.selected.is_some() && self.detail.is_some() {
-            self.reload_detail(cx);
+        if let Some(id) = self.selected {
+            self.load_detail(id, cx);
         }
         cx.notify();
     }

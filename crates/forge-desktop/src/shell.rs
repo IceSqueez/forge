@@ -328,13 +328,16 @@ impl AppShell {
                 .detach();
                 view.into()
             }
-            Screen::Triggers => {
+            Screen::Triggers(preselect) => {
                 let repo = handles.backend.trigger_instance_repo();
                 let action_repo = handles.backend.action_repo();
                 let registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| TriggersRegistryView::new(repo, action_repo, registry, rt_handle, cx))
-                    .into()
+                let preselect = *preselect;
+                cx.new(|cx| {
+                    TriggersRegistryView::new(repo, action_repo, registry, rt_handle, preselect, cx)
+                })
+                .into()
             }
             Screen::Scripts => {
                 let backend = handles.backend.clone();
@@ -378,7 +381,7 @@ impl AppShell {
     }
 
     fn go_triggers(&mut self, _: &GoTriggers, _: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Screen::Triggers, cx);
+        self.navigate(Screen::Triggers(None), cx);
     }
 
     fn go_twitch(&mut self, _: &GoTwitch, _: &mut Window, cx: &mut Context<Self>) {

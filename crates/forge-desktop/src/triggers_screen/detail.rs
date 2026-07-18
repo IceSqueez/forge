@@ -37,12 +37,6 @@ const PLACEHOLDER_PAD_V: Pixels = px(14.0);
 const PLACEHOLDER_PAD_H: Pixels = px(12.0);
 
 impl TriggersRegistryView {
-    pub(super) fn reload_detail(&self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected {
-            self.load_detail(id, cx);
-        }
-    }
-
     pub(super) fn load_detail(&self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let action_repo = Arc::clone(&self.action_repo);

@@ -19,6 +19,46 @@ use gpui::{
 };
 use std::collections::HashMap;
 
+const EXPORT_CANCELLED: &str = "export cancelled";
+
+fn sanitize_action_stem(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for ch in name.chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+            prev_dash = false;
+        } else if !prev_dash && !out.is_empty() {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    if trimmed.is_empty() {
+        "action".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
+async fn export_action_to_chosen_file(action: Action) -> Result<std::path::PathBuf, String> {
+    let json = serde_json::to_string_pretty(&action).map_err(|e| e.to_string())?;
+    let default_name = format!("{}.forge.json", sanitize_action_stem(&action.name));
+    let Some(handle) = rfd::AsyncFileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_file_name(&default_name)
+        .save_file()
+        .await
+    else {
+        return Err(EXPORT_CANCELLED.to_owned());
+    };
+    let path = handle.path().to_path_buf();
+    tokio::fs::write(&path, json)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
@@ -1249,6 +1289,13 @@ impl ScreenActionsView {
                 )
                 .icon(Icon::Copy)
                 .into(),
+                menu_item(
+                    SharedString::from("actions-header-menu-export"),
+                    tr!("action_editor_export"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.export_json(cx)),
+                )
+                .icon(Icon::Download)
+                .into(),
                 menu_divider(),
                 menu_item(
                     SharedString::from("actions-header-menu-del"),
@@ -1313,6 +1360,43 @@ impl ScreenActionsView {
 
     fn close_header_menu(&mut self, cx: &mut Context<Self>) {
         self.header_menu_open = false;
+        cx.notify();
+    }
+
+    fn export_json(&mut self, cx: &mut Context<Self>) {
+        let Some(detail) = self.detail.as_ref() else {
+            return;
+        };
+        let action = detail.action.clone();
+        self.header_menu_open = false;
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<std::path::PathBuf, String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(export_action_to_chosen_file(action).await);
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(path)) => {
+                let shown = path.display().to_string();
+                let _ = this.update(cx, |_, cx| {
+                    cx.push_toast(
+                        ToastKind::Success,
+                        tr!("action_editor_export_done", path = shown.as_str()),
+                    );
+                });
+            }
+            Ok(Err(reason)) => {
+                if reason == EXPORT_CANCELLED {
+                    return;
+                }
+                let _ = this.update(cx, |_, cx| {
+                    cx.push_toast(
+                        ToastKind::Error,
+                        tr!("action_editor_export_failed", error = reason.as_str()),
+                    );
+                });
+            }
+            Err(_) => {}
+        })
+        .detach();
         cx.notify();
     }
 

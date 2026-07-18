@@ -524,6 +524,18 @@ action_stat_avg_none = -
 action_stat_no_errors = без помилок
 action_step_avg_badge = { $count } мс сер.
 
+## Редактор дій - історія запусків
+
+action_editor_run_history = Історія запусків…
+action_editor_run_history_title = Історія запусків
+action_editor_run_history_loading = Завантаження історії запусків…
+action_editor_run_history_empty_title = Запусків ще немає
+action_editor_run_history_empty_hint = Ця дія ще не виконувалася
+action_editor_run_history_duration_ms = { $count } мс
+action_editor_run_history_outcome_success = Успіх
+action_editor_run_history_outcome_failed = Помилка
+action_editor_run_history_outcome_cancelled = Скасовано
+
 ## Редактор дій - меню кроку
 
 action_editor_step_menu_edit = Редагувати крок…

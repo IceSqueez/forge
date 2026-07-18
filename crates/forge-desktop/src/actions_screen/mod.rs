@@ -8,7 +8,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo};
-use forge_types::{Action, ActionId, QueueId, SubActionStep, TriggerInstanceId};
+use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -65,6 +65,9 @@ const PANE_PAD_V: Pixels = px(18.0);
 const PANE_PAD_H: Pixels = px(22.0);
 const STEP_GAP: Pixels = px(6.0);
 const SUB_SHEET_W: Pixels = px(480.0);
+const HISTORY_MAX_H: Pixels = px(360.0);
+const HISTORY_ROW_DOT: Pixels = px(7.0);
+const HISTORY_EMPTY_GLYPH: Pixels = px(26.0);
 
 const CHIP_RADIUS: Pixels = px(6.0);
 const BRANCH_GLYPH: Pixels = px(11.0);
@@ -126,6 +129,12 @@ struct EditActionForm {
     _name_sub: Subscription,
 }
 
+struct HistoryModal {
+    action_id: ActionId,
+    action_name: SharedString,
+    runs: Option<Vec<ExecutionContext>>,
+}
+
 pub struct ScreenActionsView {
     action_repo: Arc<dyn ActionRepo>,
     queue_repo: Arc<dyn QueueRepo>,
@@ -145,6 +154,7 @@ pub struct ScreenActionsView {
     renaming: Option<Renaming>,
     add_modal: Option<AddActionForm>,
     edit_modal: Option<EditActionForm>,
+    history_modal: Option<HistoryModal>,
     header_menu_open: bool,
     pending_delete: Option<ActionId>,
     detail: Option<ActionDetail>,
@@ -195,6 +205,7 @@ impl ScreenActionsView {
             renaming: None,
             add_modal: None,
             edit_modal: None,
+            history_modal: None,
             header_menu_open: false,
             pending_delete: None,
             detail: None,
@@ -401,6 +412,10 @@ impl Render for ScreenActionsView {
             .edit_modal
             .as_ref()
             .map(|form| self.render_edit_modal(form, &palette, cx));
+        let history_modal = self
+            .history_modal
+            .as_ref()
+            .map(|state| self.render_history_modal(state, &palette, cx));
         let delete_modal = self
             .pending_delete
             .map(|id| self.render_delete_confirm(id, &palette, cx));
@@ -435,6 +450,7 @@ impl Render for ScreenActionsView {
             .child(body)
             .children(add_modal)
             .children(edit_modal)
+            .children(history_modal)
             .children(delete_modal)
             .children(sub_modal)
             .children(grid_picker)

@@ -30,6 +30,7 @@ macro_rules! tabler_icons {
 tabler_icons! {
     Home => "home.svg",
     Clock => "clock.svg",
+    History => "history.svg",
     Bolt => "bolt.svg",
     Terminal => "terminal-2.svg",
     Broadcast => "broadcast.svg",
@@ -108,6 +109,7 @@ impl Icon {
         match name {
             "home" => Icon::Home,
             "clock" => Icon::Clock,
+            "history" => Icon::History,
             "bolt" | "lightning" => Icon::Bolt,
             "terminal" | "terminal-2" => Icon::Terminal,
             "broadcast" | "device-desktop" | "record" | "brand-twitch" | "twitch" | "brand-obs"

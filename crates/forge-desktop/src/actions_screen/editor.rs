@@ -12,7 +12,10 @@ use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
     TriggerRegistry,
 };
-use forge_types::{SubActionConfig, SubActionStep, TriggerInstance, TriggerInstanceId, Variant};
+use forge_types::{
+    ExecutionContext, ExecutionOutcome, SubActionConfig, SubActionStep, TriggerInstance,
+    TriggerInstanceId, Variant,
+};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
     Window, div, px,
@@ -1290,6 +1293,13 @@ impl ScreenActionsView {
                 .icon(Icon::Copy)
                 .into(),
                 menu_item(
+                    SharedString::from("actions-header-menu-history"),
+                    tr!("action_editor_run_history"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.open_history_modal(cx)),
+                )
+                .icon(Icon::History)
+                .into(),
+                menu_item(
                     SharedString::from("actions-header-menu-export"),
                     tr!("action_editor_export"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.export_json(cx)),
@@ -1348,7 +1358,7 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Md, Density::Cozy))
             .child(header_row);
         if let Some(telemetry) = &self.telemetry {
-            col = col.child(self.render_stats_row(telemetry, palette));
+            col = col.child(self.render_stats_row(telemetry, palette, cx));
         }
         col.into_any_element()
     }
@@ -1542,7 +1552,237 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    fn render_stats_row(&self, telemetry: &ActionTelemetry, palette: &ForgePalette) -> AnyElement {
+    fn open_history_modal(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.selected else {
+            return;
+        };
+        let action_name = self
+            .detail
+            .as_ref()
+            .map(|d| d.action.name.clone())
+            .unwrap_or_else(|| tr!("action_editor_this_action"));
+        self.header_menu_open = false;
+        self.history_modal = Some(HistoryModal {
+            action_id: id,
+            action_name: action_name.into(),
+            runs: None,
+        });
+        let service = Arc::clone(&self.actions_service);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(service.recent_runs(id, 50).await.map_err(|e| e.to_string()));
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(runs)) => {
+                let _ = this.update(cx, |this, cx| this.apply_history_runs(id, runs, cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn apply_history_runs(
+        &mut self,
+        id: ActionId,
+        runs: Vec<ExecutionContext>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(modal) = self.history_modal.as_mut()
+            && modal.action_id == id
+        {
+            modal.runs = Some(runs);
+            cx.notify();
+        }
+    }
+
+    fn cancel_history_modal(&mut self, cx: &mut Context<Self>) {
+        self.history_modal = None;
+        cx.notify();
+    }
+
+    pub(super) fn render_history_modal(
+        &self,
+        state: &HistoryModal,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let body = match &state.runs {
+            None => self.render_history_loading(palette),
+            Some(runs) if runs.is_empty() => self.render_history_empty(palette),
+            Some(runs) => self.render_history_list(runs, palette),
+        };
+
+        let card = modal(tr!("action_editor_run_history_title"), body, palette)
+            .size(ModalSize::Md)
+            .header_icon(Icon::History, palette.brand)
+            .subtitle(state.action_name.clone())
+            .kbd_hint(tr!("actions_esc_hint"))
+            .on_close(
+                "actions-history-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_history_modal(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("actions-history-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_history_modal(cx));
+            })
+            .into_any_element()
+    }
+
+    fn render_history_loading(&self, palette: &ForgePalette) -> AnyElement {
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .py(spacing(Spacing::Lg, Density::Cozy))
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_SM)
+            .text_color(palette.text_muted)
+            .child(tr!("action_editor_run_history_loading"))
+            .into_any_element()
+    }
+
+    fn render_history_empty(&self, palette: &ForgePalette) -> AnyElement {
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .py(spacing(Spacing::Lg, Density::Cozy))
+            .child(icon(Icon::History, HISTORY_EMPTY_GLYPH, palette.text_faint))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_secondary)
+                    .child(tr!("action_editor_run_history_empty_title")),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("action_editor_run_history_empty_hint")),
+            )
+            .into_any_element()
+    }
+
+    fn render_history_list(&self, runs: &[ExecutionContext], palette: &ForgePalette) -> AnyElement {
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, Density::Cozy));
+        for ctx in runs {
+            col = col.child(self.render_history_row(ctx, palette));
+        }
+        div()
+            .id("actions-history-scroll")
+            .max_h(HISTORY_MAX_H)
+            .overflow_y_scroll()
+            .child(col)
+            .into_any_element()
+    }
+
+    fn render_history_row(&self, ctx: &ExecutionContext, palette: &ForgePalette) -> AnyElement {
+        let when = fmt_relative_time(Some(ctx.started_at));
+        let duration = match ctx.completed_at {
+            Some(done) => {
+                let ms = (done - ctx.started_at).whole_milliseconds().max(0);
+                tr!("action_editor_run_history_duration_ms", count = ms as i64)
+            }
+            None => "-".to_owned(),
+        };
+        let (badge_color, badge_label, error_message) = match &ctx.outcome {
+            ExecutionOutcome::Success => (
+                palette.success,
+                tr!("action_editor_run_history_outcome_success"),
+                None,
+            ),
+            ExecutionOutcome::Failed(message) => (
+                palette.random,
+                tr!("action_editor_run_history_outcome_failed"),
+                Some(message.clone()),
+            ),
+            ExecutionOutcome::Cancelled => (
+                palette.text_muted,
+                tr!("action_editor_run_history_outcome_cancelled"),
+                None,
+            ),
+        };
+
+        let badge = div()
+            .flex_shrink_0()
+            .py(px(1.0))
+            .px(px(6.0))
+            .rounded(CHIP_RADIUS)
+            .bg(palette.surface_overlay)
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XXS)
+            .text_color(badge_color)
+            .child(badge_label);
+
+        let top = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(status_dot(badge_color, HISTORY_ROW_DOT))
+            .child(
+                div()
+                    .flex_1()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(when),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(duration),
+            )
+            .child(badge);
+
+        let mut card = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .py(CARD_PAD_V)
+            .px(CARD_PAD_H)
+            .rounded(radius(Radius::Md))
+            .border(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .bg(palette.elevated)
+            .child(top);
+        if let Some(message) = error_message {
+            card = card.child(
+                div()
+                    .pl(HISTORY_ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.random)
+                    .child(message),
+            );
+        }
+        card.into_any_element()
+    }
+
+    fn render_stats_row(
+        &self,
+        telemetry: &ActionTelemetry,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let last_fired = fmt_relative_time(telemetry.last_fired_at);
         let runs = fmt_number(telemetry.runs_today as f64, 0);
         let avg = match telemetry.avg_duration_ms {
@@ -1577,13 +1817,7 @@ impl ScreenActionsView {
                 None,
                 palette,
             ))
-            .child(self.render_stat_cell(
-                tr!("action_stat_runs_today"),
-                runs,
-                palette.text_primary,
-                None,
-                palette,
-            ))
+            .child(self.render_runs_stat_cell(runs, palette, cx))
             .child(self.render_stat_cell(
                 tr!("action_stat_avg_time"),
                 avg,
@@ -1638,6 +1872,43 @@ impl ScreenActionsView {
             );
         }
         cell.into_any_element()
+    }
+
+    fn render_runs_stat_cell(
+        &self,
+        value: impl Into<SharedString>,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .items_start()
+            .gap(STAT_VALUE_GAP)
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("action_stat_runs_today")),
+            )
+            .child(
+                div()
+                    .id("actions-runs-history-link")
+                    .cursor_pointer()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.brand)
+                    .underline()
+                    .text_decoration_1()
+                    .text_decoration_color(palette.border_input)
+                    .child(value.into())
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.open_history_modal(cx)),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_triggers_section(

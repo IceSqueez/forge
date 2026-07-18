@@ -524,6 +524,18 @@ action_stat_avg_none = -
 action_stat_no_errors = no errors
 action_step_avg_badge = { $count } ms avg
 
+## Action editor - run history
+
+action_editor_run_history = Run history…
+action_editor_run_history_title = Run history
+action_editor_run_history_loading = Loading run history…
+action_editor_run_history_empty_title = No runs yet
+action_editor_run_history_empty_hint = This action has not run yet
+action_editor_run_history_duration_ms = { $count } ms
+action_editor_run_history_outcome_success = Success
+action_editor_run_history_outcome_failed = Failed
+action_editor_run_history_outcome_cancelled = Cancelled
+
 ## Action editor - step menu
 
 action_editor_step_menu_edit = Edit step…

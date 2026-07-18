@@ -526,9 +526,15 @@ struct AddTriggerForm {
     _sub: Subscription,
 }
 
+#[derive(Clone, Copy)]
+enum SubFormTarget {
+    Edit(usize),
+    Add,
+}
+
 struct EditSubActionForm {
     kind_id: String,
-    index: usize,
+    target: SubFormTarget,
     fields: Vec<SubFormField>,
 }
 

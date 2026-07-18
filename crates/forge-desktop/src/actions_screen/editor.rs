@@ -707,29 +707,38 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    fn build_sub_form_fields(
+        &self,
+        kind_id: &str,
+        config: &SubActionConfig,
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<SubFormField>> {
+        let specs = self
+            .sub_action_registry
+            .get(kind_id)
+            .map(|r| r.config_fields())?;
+        let palette = cx.palette();
+        let mut fields: Vec<SubFormField> = Vec::new();
+        for spec in &specs {
+            push_form_field(spec, None, config, palette, &mut fields, cx);
+        }
+        Some(fields)
+    }
+
     fn open_edit_sub_action(&mut self, i: usize, cx: &mut Context<Self>) {
         let chain = self.current_chain();
         let Some(step) = chain.get(i) else {
             return;
         };
         let kind_id = step.kind_id.clone();
-        let Some(specs) = self
-            .sub_action_registry
-            .get(&kind_id)
-            .map(|r| r.config_fields())
-        else {
+        let config = step.config.clone();
+        let Some(fields) = self.build_sub_form_fields(&kind_id, &config, cx) else {
             return;
         };
-        let palette = cx.palette();
-        let config = step.config.clone();
-        let mut fields: Vec<SubFormField> = Vec::new();
-        for spec in &specs {
-            push_form_field(spec, None, &config, palette, &mut fields, cx);
-        }
         self.step_menu_open = None;
         self.sub_form = Some(EditSubActionForm {
             kind_id,
-            index: i,
+            target: SubFormTarget::Edit(i),
             fields,
         });
         cx.notify();
@@ -757,7 +766,8 @@ impl ScreenActionsView {
         let Some(form) = self.sub_form.as_ref() else {
             return;
         };
-        let index = form.index;
+        let target = form.target;
+        let kind_id = form.kind_id.clone();
         let bool_vals: HashMap<String, bool> = form
             .fields
             .iter()
@@ -806,16 +816,41 @@ impl ScreenActionsView {
 
         self.sub_form = None;
         self.step_menu_open = None;
-        self.persist_chain_mutation(
-            move |chain| {
-                if let Some(step) = chain.get_mut(index) {
-                    for (key, value) in overrides {
-                        step.config.insert(key, value);
-                    }
+        match target {
+            SubFormTarget::Edit(index) => {
+                self.persist_chain_mutation(
+                    move |chain| {
+                        if let Some(step) = chain.get_mut(index) {
+                            for (key, value) in overrides {
+                                step.config.insert(key, value);
+                            }
+                        }
+                    },
+                    cx,
+                );
+            }
+            SubFormTarget::Add => {
+                let mut config = self
+                    .sub_action_registry
+                    .get(&kind_id)
+                    .map(|r| r.default_config())
+                    .unwrap_or_default();
+                for (key, value) in overrides {
+                    config.insert(key, value);
                 }
-            },
-            cx,
-        );
+                self.persist_chain_mutation(
+                    move |chain| {
+                        chain.push(SubActionStep {
+                            kind_id,
+                            config,
+                            enabled: true,
+                            label: None,
+                        });
+                    },
+                    cx,
+                );
+            }
+        }
         cx.notify();
     }
 
@@ -896,24 +931,21 @@ impl ScreenActionsView {
             .get(&kind_id)
             .map(|r| r.default_config());
         self.grid_picker = None;
-        cx.notify();
-        let Some(config) = config else {
+        let Some(config) = config.filter(|_| same) else {
+            cx.notify();
             return;
         };
-        if !same {
+        let Some(fields) = self.build_sub_form_fields(&kind_id, &config, cx) else {
+            cx.notify();
             return;
-        }
-        self.persist_chain_mutation(
-            move |chain| {
-                chain.push(SubActionStep {
-                    kind_id,
-                    config,
-                    enabled: true,
-                    label: None,
-                });
-            },
-            cx,
-        );
+        };
+        self.step_menu_open = None;
+        self.sub_form = Some(EditSubActionForm {
+            kind_id,
+            target: SubFormTarget::Add,
+            fields,
+        });
+        cx.notify();
     }
 
     fn open_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2448,7 +2480,11 @@ impl ScreenActionsView {
             .child(cancel)
             .child(save);
 
-        let card = modal(tr!("actions_sub_modal_edit_title"), body, palette)
+        let modal_title = match form.target {
+            SubFormTarget::Edit(_) => tr!("actions_sub_modal_edit_title"),
+            SubFormTarget::Add => tr!("actions_sub_modal_add_title"),
+        };
+        let card = modal(modal_title, body, palette)
             .size(ModalSize::Md)
             .footer(footer)
             .kbd_hint(tr!("actions_esc_hint"))

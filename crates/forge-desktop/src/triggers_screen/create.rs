@@ -459,7 +459,7 @@ impl TriggersRegistryView {
     }
 }
 
-fn build_kind_groups(
+pub(crate) fn build_kind_groups(
     registry: &TriggerRegistry,
     palette: &ForgePalette,
 ) -> (Vec<GridPickerGroup>, HashMap<SharedString, String>) {

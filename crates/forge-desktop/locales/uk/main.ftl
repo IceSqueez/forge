@@ -561,7 +561,7 @@ action_editor_picker_footer_hint = Додається з розумними ти
 action_editor_picker_search = Пошук серед { $count } підпунктів…
 action_editor_picker_fires = Запускає
 action_editor_picker_available_count = · { $count } доступно
-action_editor_trigger_picker_footer_hint = Прив'язує збережений тригер - нові створюйте на екрані тригерів
+action_editor_trigger_picker_footer_hint = Створює новий тригер обраного типу та прив'язує його
 action_editor_no_unlinked_triggers = Немає доступних неприв'язаних тригерів - створіть один на екрані тригерів
 
 ## Редактор дій - назви типів кроків

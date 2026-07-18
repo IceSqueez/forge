@@ -10,11 +10,10 @@ use forge_components::{
 };
 use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
-    TriggerRegistry,
 };
 use forge_types::{
-    ExecutionContext, ExecutionOutcome, SubActionConfig, SubActionStep, TriggerInstance,
-    TriggerInstanceId, Variant,
+    ExecutionContext, ExecutionOutcome, PlatformScope, SubActionConfig, SubActionStep,
+    TriggerInstance, TriggerInstanceId, Variant,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -544,79 +543,6 @@ fn empty_placeholder_card(
         .into_any_element()
 }
 
-fn trigger_kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
-    if kind_id.starts_with("twitch.") {
-        palette.brand
-    } else if kind_id.starts_with("youtube.") {
-        palette.platform_youtube
-    } else if kind_id.starts_with("kick.") {
-        palette.platform_kick
-    } else if kind_id.starts_with("obs.") {
-        palette.text_secondary
-    } else if kind_id.starts_with("vtube.") {
-        palette.accent_teal
-    } else if kind_id.starts_with("midi.") {
-        palette.random
-    } else if kind_id.starts_with("hotkey.") || kind_id.starts_with("script.") {
-        palette.warning
-    } else {
-        palette.info
-    }
-}
-
-fn build_trigger_groups(
-    instances: &[TriggerInstance],
-    registry: &TriggerRegistry,
-    palette: &ForgePalette,
-) -> (
-    Vec<GridPickerGroup>,
-    HashMap<SharedString, TriggerInstanceId>,
-) {
-    let mut items: Vec<GridPickerItem> = Vec::with_capacity(instances.len());
-    let mut picks: HashMap<SharedString, TriggerInstanceId> = HashMap::new();
-    for instance in instances {
-        let descriptor = registry.get(&instance.kind_id);
-        let color = trigger_kind_color(&instance.kind_id, palette);
-        let id = SharedString::from(format!("trigger-{}", instance.id));
-        picks.insert(id.clone(), instance.id);
-        let glyph = Icon::from_name(
-            descriptor
-                .map(TriggerKindDescriptor::icon_name)
-                .unwrap_or("bolt"),
-        );
-        let condition = descriptor
-            .map(|d| d.condition_display(&instance.overrides))
-            .unwrap_or_default();
-        let desc = if condition.is_empty() {
-            descriptor
-                .map(|d| d.label().to_owned())
-                .unwrap_or_else(|| instance.kind_id.clone())
-        } else {
-            condition
-        };
-        let state = if instance.enabled {
-            GridPickerItemState::Normal
-        } else {
-            GridPickerItemState::Disabled
-        };
-        items.push(GridPickerItem {
-            id,
-            icon: glyph,
-            icon_color: color,
-            name: instance.name.clone().into(),
-            desc: desc.into(),
-            state,
-        });
-    }
-    let groups = vec![GridPickerGroup {
-        label: tr!("action_editor_saved_triggers").into(),
-        dot_color: palette.warning,
-        scope: SharedString::from("all"),
-        items,
-    }];
-    (groups, picks)
-}
-
 fn trigger_unlink_btn(
     id: impl Into<ElementId>,
     palette: &ForgePalette,
@@ -999,53 +925,15 @@ impl ScreenActionsView {
             return;
         }
         self.step_menu_open = None;
-        let service = Arc::clone(&self.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(
-                service
-                    .list_linkable_triggers(action_id)
-                    .await
-                    .map_err(|e| e.to_string()),
-            );
-        });
-        cx.spawn_in(window, async move |this, cx| match rx.await {
-            Ok(Ok(instances)) => {
-                let _ = this.update_in(cx, |this, window, cx| {
-                    this.apply_trigger_picker(action_id, instances, window, cx)
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
-    }
-
-    fn apply_trigger_picker(
-        &mut self,
-        action_id: ActionId,
-        instances: Vec<TriggerInstance>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.selected != Some(action_id) {
-            return;
-        }
-        if instances.is_empty() {
-            cx.push_toast(ToastKind::Info, tr!("action_editor_no_unlinked_triggers"));
-            cx.notify();
-            return;
-        }
         let palette = cx.palette();
         let action_name = self
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
             .unwrap_or_else(|| tr!("action_editor_this_action"));
-        let count = instances.len();
-        let (groups, picks) = build_trigger_groups(&instances, &self.trigger_registry, &palette);
+        let (groups, picks) =
+            crate::triggers_screen::build_kind_groups(&self.trigger_registry, &palette);
+        let count = self.trigger_registry.all().count();
         let config = GridPickerConfig {
             accent: palette.warning,
             header_icon: Icon::Bolt,
@@ -1079,12 +967,12 @@ impl ScreenActionsView {
     ) {
         match event {
             GridPickerEvent::Picked(id) => {
-                if let Some((action_id, instance_id)) = self
+                if let Some((action_id, kind_id)) = self
                     .add_trigger
                     .as_ref()
-                    .and_then(|f| f.picks.get(id).copied().map(|inst| (f.action_id, inst)))
+                    .and_then(|f| f.picks.get(id).cloned().map(|kind| (f.action_id, kind)))
                 {
-                    self.link_trigger(action_id, instance_id, cx);
+                    self.create_and_link_trigger(action_id, kind_id, cx);
                 }
             }
             GridPickerEvent::Dismissed => self.cancel_trigger_picker(cx),
@@ -1096,10 +984,10 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn link_trigger(
+    fn create_and_link_trigger(
         &mut self,
         action_id: ActionId,
-        instance_id: TriggerInstanceId,
+        kind_id: String,
         cx: &mut Context<Self>,
     ) {
         if self.selected != Some(action_id) {
@@ -1108,15 +996,33 @@ impl ScreenActionsView {
             return;
         }
         self.add_trigger = None;
+        let Some(descriptor) = self.trigger_registry.get(&kind_id) else {
+            cx.notify();
+            return;
+        };
+        let new_id = TriggerInstanceId::new();
+        let instance = TriggerInstance {
+            id: new_id,
+            name: descriptor.label().to_owned(),
+            kind_id,
+            overrides: descriptor.default_config(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: PlatformScope::Any,
+        };
+        let repo = Arc::clone(&self.trigger_instance_repo);
         let service = Arc::clone(&self.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
         self.rt_handle.spawn(async move {
-            let _ = tx.send(
+            let outcome = async {
+                repo.save(&instance).await.map_err(|e| e.to_string())?;
                 service
-                    .link_trigger_instance(action_id, instance_id)
+                    .link_trigger_instance(action_id, new_id)
                     .await
-                    .map_err(|e| e.to_string()),
-            );
+                    .map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(outcome);
         });
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(())) => {

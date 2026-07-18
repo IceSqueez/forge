@@ -304,6 +304,7 @@ impl AppShell {
                     handles.backend.trigger_instance_repo(),
                     handles.backend.soundboard_clips_repo(),
                 ));
+                let trigger_instance_repo = handles.backend.trigger_instance_repo();
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
@@ -313,6 +314,7 @@ impl AppShell {
                         action_repo,
                         queue_repo,
                         actions_service,
+                        trigger_instance_repo,
                         sub_action_registry,
                         trigger_registry,
                         rt_handle,

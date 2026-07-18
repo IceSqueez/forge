@@ -561,7 +561,7 @@ action_editor_picker_footer_hint = Added with smart defaults - edit inline after
 action_editor_picker_search = Search { $count } sub-actions…
 action_editor_picker_fires = Fires
 action_editor_picker_available_count = · { $count } available
-action_editor_trigger_picker_footer_hint = Links a saved trigger - create new ones on the Triggers screen
+action_editor_trigger_picker_footer_hint = Creates a new trigger of the chosen kind and links it
 action_editor_no_unlinked_triggers = No unlinked triggers available - create one on the Triggers screen
 
 ## Action editor - sub-action card titles

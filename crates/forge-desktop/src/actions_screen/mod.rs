@@ -7,8 +7,8 @@ use forge_components::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
-use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo};
-use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep, TriggerInstanceId};
+use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo, TriggerInstanceRepo};
+use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -141,6 +141,7 @@ pub struct ScreenActionsView {
     action_repo: Arc<dyn ActionRepo>,
     queue_repo: Arc<dyn QueueRepo>,
     actions_service: Arc<ActionsService>,
+    trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
     sub_action_registry: Arc<SubActionRegistry>,
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
@@ -177,6 +178,7 @@ impl ScreenActionsView {
         action_repo: Arc<dyn ActionRepo>,
         queue_repo: Arc<dyn QueueRepo>,
         actions_service: Arc<ActionsService>,
+        trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
@@ -192,6 +194,7 @@ impl ScreenActionsView {
             action_repo,
             queue_repo,
             actions_service,
+            trigger_instance_repo,
             sub_action_registry,
             trigger_registry,
             rt_handle,
@@ -511,7 +514,7 @@ struct GridPickerForm {
 
 struct AddTriggerForm {
     picker: Entity<GridPicker>,
-    picks: HashMap<SharedString, TriggerInstanceId>,
+    picks: HashMap<SharedString, String>,
     action_id: ActionId,
     _sub: Subscription,
 }

@@ -16,6 +16,7 @@ mod list;
 
 use config_form::ConfigField;
 use create::CreateStage;
+pub(crate) use create::build_kind_groups;
 
 const STRIPE_W: Pixels = px(2.0);
 const ROW_PAD_L: Pixels = px(16.0);

@@ -1930,9 +1930,13 @@ impl ScreenActionsView {
         let kind_label = descriptor
             .map(|d| d.label().to_owned())
             .unwrap_or_else(|| instance.kind_id.clone());
-        let condition = descriptor
+        let mut condition = descriptor
             .map(|d| d.condition_display(&instance.overrides))
             .unwrap_or_default();
+        condition.push_str(&crate::triggers_screen::cooldown_suffix(
+            instance.global_cooldown_secs,
+            instance.user_cooldown_secs,
+        ));
         let glyph = Icon::from_name(
             descriptor
                 .map(TriggerKindDescriptor::icon_name)

@@ -649,6 +649,12 @@ triggers_sheet_config_all_defaults = усе за замовчуванням
 triggers_sheet_config_save = Зберегти
 triggers_sheet_config_cancel = Скасувати
 triggers_sheet_no_config = Налаштованих полів немає
+triggers_sheet_section_cooldown = ПЕРЕЗАРЯДКА
+triggers_sheet_cooldown_caption = секунди · 0 = вимк
+triggers_sheet_cooldown_global = загальна
+triggers_sheet_cooldown_user = на глядача
+triggers_cooldown_global_suffix = { " · перезарядка=" }{ $secs }с
+triggers_cooldown_user_suffix = { " · на глядача " }{ $secs }с
 triggers_sheet_not_registered = Тип тригера не зареєстровано
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_section_platform = ПЛАТФОРМА

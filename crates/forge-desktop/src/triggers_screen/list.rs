@@ -714,6 +714,17 @@ impl TriggersRegistryView {
                 BADGE_FS,
             ));
         }
+        let cooldown = cooldown_suffix(instance.global_cooldown_secs, instance.user_cooldown_secs);
+        if !cooldown.is_empty() {
+            kind = kind.child(
+                div()
+                    .flex_none()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(KIND_FS)
+                    .text_color(palette.bits)
+                    .child(cooldown),
+            );
+        }
 
         let used: AnyElement = if instance.used_in_count > 0 {
             div()

@@ -92,10 +92,22 @@ impl TriggersRegistryView {
             );
         }
 
+        let global_cooldown =
+            self.build_cooldown_input(data.instance.global_cooldown_secs, palette, cx);
+        let user_cooldown =
+            self.build_cooldown_input(data.instance.user_cooldown_secs, palette, cx);
+        let cooldown_subs = [
+            cx.subscribe(&global_cooldown, Self::on_cooldown_committed),
+            cx.subscribe(&user_cooldown, Self::on_cooldown_committed),
+        ];
+
         self.detail = Some(TriggerDetail {
             instance: data.instance,
             fields,
             used_in: data.used_in,
+            global_cooldown,
+            user_cooldown,
+            _cooldown_subs: cooldown_subs,
         });
         cx.notify();
     }
@@ -115,6 +127,32 @@ impl TriggersRegistryView {
         if let InputEvent::Submitted(_) = event {
             self.commit_config(cx);
         }
+    }
+
+    fn on_cooldown_committed(
+        &mut self,
+        _field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if let InputEvent::Submitted(_) = event {
+            self.commit_config(cx);
+        }
+    }
+
+    fn build_cooldown_input(
+        &self,
+        seed: u32,
+        palette: ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Entity<TextInput> {
+        cx.new(|cx| {
+            let mut input = TextInput::new("0", cx).with_palette(palette);
+            if seed > 0 {
+                input.set_content(seed.to_string(), cx);
+            }
+            input
+        })
     }
 
     fn toggle_config_field(&mut self, key: String, cx: &mut Context<Self>) {
@@ -144,8 +182,12 @@ impl TriggersRegistryView {
         overlay_field_values(&detail.fields, &mut buffer, cx);
 
         let sparse = sparse_overrides(&default, &buffer);
+        let global_cooldown_secs = parse_cooldown(detail.global_cooldown.read(cx).content());
+        let user_cooldown_secs = parse_cooldown(detail.user_cooldown.read(cx).content());
         let mut instance = detail.instance.clone();
         instance.overrides = sparse;
+        instance.global_cooldown_secs = global_cooldown_secs;
+        instance.user_cooldown_secs = user_cooldown_secs;
         let repo = Arc::clone(&self.repo);
         self.spawn_reload(
             async move {
@@ -369,6 +411,7 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .child(self.render_config_section(detail, palette, cx))
+            .child(self.render_cooldown_section(detail, palette))
             .child(self.render_used_in_section(detail, palette))
             .into_any_element()
     }
@@ -559,6 +602,77 @@ impl TriggersRegistryView {
             .into_any_element()
     }
 
+    fn render_cooldown_section(
+        &self,
+        detail: &TriggerDetail,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let caption = div()
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
+            .child(tr!("triggers_sheet_cooldown_caption"))
+            .into_any_element();
+
+        let row = |label: SharedString, input: Entity<TextInput>, last: bool| {
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Sm, Density::Cozy))
+                .py(CFG_ROW_PAD_V)
+                .px(CFG_ROW_PAD_H)
+                .when(!last, |r| {
+                    r.border_b(HALF_BORDER).border_color(palette.border_regular)
+                })
+                .child(
+                    div()
+                        .w(CFG_KEY_W)
+                        .flex_none()
+                        .overflow_hidden()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(CFG_KEY_FS)
+                        .text_color(palette.text_muted)
+                        .child(label),
+                )
+                .child(div().flex_1().min_w(px(0.0)).child(input))
+        };
+
+        let card = div()
+            .flex()
+            .flex_col()
+            .child(row(
+                tr!("triggers_sheet_cooldown_global").into(),
+                detail.global_cooldown.clone(),
+                false,
+            ))
+            .child(row(
+                tr!("triggers_sheet_cooldown_user").into(),
+                detail.user_cooldown.clone(),
+                true,
+            ));
+
+        let framed = div()
+            .w_full()
+            .rounded(radius(Radius::Md))
+            .border(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .bg(palette.shell)
+            .child(card);
+
+        div()
+            .flex()
+            .flex_col()
+            .pb(spacing(Spacing::Md, Density::Cozy))
+            .child(self.section_label(
+                tr!("triggers_sheet_section_cooldown"),
+                Some(caption),
+                palette,
+            ))
+            .child(framed)
+            .into_any_element()
+    }
+
     fn render_used_in_section(&self, detail: &TriggerDetail, palette: &ForgePalette) -> AnyElement {
         let count = detail.used_in.len();
         let label = if count > 0 {
@@ -691,6 +805,10 @@ impl TriggersRegistryView {
             .child(delete)
             .into_any_element()
     }
+}
+
+fn parse_cooldown(text: &str) -> u32 {
+    text.trim().parse::<u32>().unwrap_or(0)
 }
 
 async fn load_detail_data(

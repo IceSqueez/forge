@@ -22,10 +22,12 @@ const INSPECTOR_MAX: f32 = 540.0;
 
 const TS_COL_W: Pixels = px(88.0);
 const TYPE_COL_W: Pixels = px(104.0);
+const ROW_FS: Pixels = px(11.0);
+const BADGE_FS: Pixels = px(9.0);
+const SUFFIX_FS: Pixels = px(10.0);
 const STATUS_DOT: Pixels = px(6.0);
 const ROW_RAIL_W: Pixels = px(2.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
-const ACTION_HOVER_ALPHA: f32 = 0.05;
 
 const EXPORT_CANCELLED: &str = "export cancelled";
 
@@ -336,15 +338,16 @@ impl EventFeedView {
             source_color(item.source, palette),
             source_label(item.source),
             true,
-            FONT_XXS,
+            BADGE_FS,
         );
 
         let type_cell = div()
             .flex_none()
             .w(TYPE_COL_W)
-            .truncate()
+            .whitespace_nowrap()
+            .overflow_hidden()
             .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
+            .text_size(ROW_FS)
             .text_color(type_color(&item.kind, item.is_error, palette))
             .child(item.kind.clone());
 
@@ -352,7 +355,7 @@ impl EventFeedView {
             div()
                 .truncate()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
+                .text_size(ROW_FS)
                 .text_color(palette.text_primary)
                 .child(item.summary.clone()),
         );
@@ -374,9 +377,9 @@ impl EventFeedView {
                 div()
                     .flex_none()
                     .w(TS_COL_W)
-                    .truncate()
+                    .whitespace_nowrap()
                     .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
+                    .text_size(ROW_FS)
                     .text_color(palette.text_faint)
                     .child(item.timestamp.clone()),
             )
@@ -386,8 +389,9 @@ impl EventFeedView {
             .children(item.result_tag.clone().map(|tag| {
                 div()
                     .flex_none()
+                    .whitespace_nowrap()
                     .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
+                    .text_size(SUFFIX_FS)
                     .text_color(result_color(&item.kind, item.is_error, palette))
                     .child(tag)
             }));
@@ -499,8 +503,10 @@ impl EventFeedView {
         let last6 = &id_str[id_str.len().saturating_sub(6)..];
 
         let summary_card = div()
+            .w_full()
             .flex()
             .flex_col()
+            .overflow_hidden()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .p(spacing(Spacing::Sm, Density::Cozy))
             .rounded(radius(Radius::Md))
@@ -509,8 +515,10 @@ impl EventFeedView {
             .border_color(palette.border_regular)
             .child(
                 div()
+                    .w_full()
                     .flex()
                     .items_center()
+                    .overflow_hidden()
                     .gap(spacing(Spacing::Xs, Density::Cozy))
                     .child(badge(
                         palette.surface_overlay,
@@ -521,6 +529,9 @@ impl EventFeedView {
                     ))
                     .child(
                         div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
                             .font_family(DEFAULT_MONO_FAMILY)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
@@ -586,8 +597,10 @@ impl EventFeedView {
             );
 
         div()
+            .w_full()
             .flex()
             .flex_col()
+            .overflow_hidden()
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .child(summary_card)
             .child(self.section_label(tr!("widget_event_payload_header"), palette))
@@ -628,8 +641,10 @@ impl EventFeedView {
         };
 
         let mut block = div()
+            .w_full()
             .flex()
             .flex_col()
+            .overflow_hidden()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XXS)
             .p(spacing(Spacing::Sm, Density::Cozy))
@@ -724,25 +739,25 @@ impl EventFeedView {
     fn tab_glyph(filter: EventFilter, palette: &ForgePalette) -> forge_components::ChipGlyph {
         use forge_components::ChipGlyph;
         match filter {
-            EventFilter::All => ChipGlyph::None,
-            EventFilter::Chat => ChipGlyph::Icon(Icon::MessageCircle, palette.info),
-            EventFilter::Subs => ChipGlyph::Icon(Icon::Star, palette.brand),
-            EventFilter::Bits => ChipGlyph::Icon(Icon::Coin, palette.warning),
-            EventFilter::Timers => ChipGlyph::Icon(Icon::Clock, palette.warning),
-            EventFilter::Obs => ChipGlyph::Icon(Icon::Broadcast, palette.success),
-            EventFilter::Errors => ChipGlyph::Icon(Icon::AlertTriangle, palette.random),
+            EventFilter::All => ChipGlyph::Dot(palette.brand),
+            EventFilter::Chat => ChipGlyph::DotIcon(palette.info, Icon::MessageCircle),
+            EventFilter::Subs => ChipGlyph::DotIcon(palette.brand, Icon::Star),
+            EventFilter::Bits => ChipGlyph::DotIcon(palette.warning, Icon::Coin),
+            EventFilter::Timers => ChipGlyph::DotIcon(palette.warning, Icon::Clock),
+            EventFilter::Obs => ChipGlyph::DotIcon(palette.success, Icon::Broadcast),
+            EventFilter::Errors => ChipGlyph::DotIcon(palette.random, Icon::AlertTriangle),
         }
     }
 
-    fn action_shell(id: &'static str, palette: &ForgePalette, density: Density) -> Stateful<Div> {
-        let hover = with_alpha(palette.border_regular, ACTION_HOVER_ALPHA);
+    fn action_shell(id: &'static str, palette: &ForgePalette, _density: Density) -> Stateful<Div> {
+        let hover = palette.surface_overlay;
         div()
             .id(id)
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Xs, density))
+            .justify_center()
+            .gap(px(5.0))
+            .p(px(5.0))
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(hover))

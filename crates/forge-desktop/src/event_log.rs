@@ -148,7 +148,18 @@ impl EventLog {
                 .and_then(|v| v.as_str())
                 .unwrap_or("done")
                 .to_owned(),
-            _ => event.kind.clone(),
+            _ => {
+                for key in [
+                    "message", "name", "detail", "reason", "status", "state", "scene", "value",
+                ] {
+                    if let Some(s) = p.get(key).and_then(|v| v.as_str())
+                        && !s.is_empty()
+                    {
+                        return s.to_owned();
+                    }
+                }
+                String::new()
+            }
         }
     }
 

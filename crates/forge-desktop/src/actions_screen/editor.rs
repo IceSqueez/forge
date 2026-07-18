@@ -251,6 +251,28 @@ fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> Rgba {
     }
 }
 
+fn step_glyph(
+    kind_id: &str,
+    fallback_icon: &str,
+    fallback_color: Option<Rgba>,
+    palette: &ForgePalette,
+) -> (Icon, Rgba) {
+    let (name, color) = match kind_id {
+        "core.file.read" => ("file-text", palette.info),
+        "core.random.int" => ("dice", palette.random),
+        "script.run.named" => ("code", palette.success),
+        "core.globals.increment" | "core.globals.set" => ("variable", palette.warning),
+        "twitch.chat.send_message" => ("send", palette.brand),
+        _ => {
+            return (
+                Icon::from_name(fallback_icon),
+                fallback_color.unwrap_or(palette.text_secondary),
+            );
+        }
+    };
+    (Icon::from_name(name), color)
+}
+
 fn build_step_groups(
     registry: &SubActionRegistry,
     palette: &ForgePalette,
@@ -2140,10 +2162,12 @@ impl ScreenActionsView {
         let title = runner
             .map(|r| r.label().to_owned())
             .unwrap_or(fallback_title);
-        let glyph = Icon::from_name(runner.map(|r| r.icon_name()).unwrap_or(fallback_icon));
-        let glyph_color = runner
-            .map(|r| sub_category_color(r.category(), palette))
-            .unwrap_or(palette.text_secondary);
+        let (glyph, glyph_color) = step_glyph(
+            &step.kind_id,
+            runner.map(|r| r.icon_name()).unwrap_or(fallback_icon),
+            runner.map(|r| sub_category_color(r.category(), palette)),
+            palette,
+        );
         let detail_str = detail_opt
             .or_else(|| runner.map(|r| r.summary().to_owned()))
             .unwrap_or_else(|| step.kind_id.clone());

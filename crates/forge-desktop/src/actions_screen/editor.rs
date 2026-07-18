@@ -2132,6 +2132,9 @@ impl ScreenActionsView {
             .map(|r| r.label().to_owned())
             .unwrap_or(fallback_title);
         let glyph = Icon::from_name(runner.map(|r| r.icon_name()).unwrap_or(fallback_icon));
+        let glyph_color = runner
+            .map(|r| sub_category_color(r.category(), palette))
+            .unwrap_or(palette.text_secondary);
         let detail_str = detail_opt
             .or_else(|| runner.map(|r| r.summary().to_owned()))
             .unwrap_or_else(|| step.kind_id.clone());
@@ -2186,11 +2189,16 @@ impl ScreenActionsView {
         }
 
         let card = row_card(title_el, palette)
-            .leading(icon(glyph, CARD_GLYPH, palette.text_secondary))
+            .leading(icon(glyph, CARD_GLYPH, glyph_color))
             .meta(variable_text(&detail_str, palette))
             .trailing(self.render_step_controls(i, total, palette, cx))
             .idle_background(palette.elevated)
-            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md));
+            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
+            .padding_xy(STEP_CARD_PAD_V, STEP_CARD_PAD_H)
+            .on_click(
+                SharedString::from(format!("actions-step-card-{i}")),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.open_edit_sub_action(i, cx)),
+            );
 
         let step_row = div()
             .flex()
@@ -2302,9 +2310,11 @@ impl ScreenActionsView {
             });
 
         div()
+            .id(SharedString::from(format!("actions-step-controls-{i}")))
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .on_click(|_, _, cx| cx.stop_propagation())
             .child(move_up)
             .child(move_down)
             .child(menu)

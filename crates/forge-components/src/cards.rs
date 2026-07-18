@@ -232,6 +232,7 @@ pub(crate) enum RowState {
 pub(crate) struct RowCardColors {
     pub(crate) idle_bg: Rgba,
     pub(crate) hover_bg: Rgba,
+    pub(crate) hover_border: Rgba,
     pub(crate) selected_bg: Rgba,
     pub(crate) accent: Rgba,
     /// `None` draws a transparent border (flat list-row); `Some` makes it a bordered card.
@@ -260,6 +261,8 @@ pub struct RowCard {
     border_width: Pixels,
     corner_radius: Pixels,
     density: Density,
+    pad_v: Option<Pixels>,
+    pad_h: Option<Pixels>,
     id: Option<ElementId>,
     on_click: Option<RowClick>,
 }
@@ -274,6 +277,7 @@ pub fn row_card(title: impl IntoElement, palette: &ForgePalette) -> RowCard {
         colors: RowCardColors {
             idle_bg: TRANSPARENT,
             hover_bg: palette.surface_overlay,
+            hover_border: palette.border_input,
             selected_bg: palette.elevated,
             accent: palette.brand,
             idle_border: None,
@@ -282,6 +286,8 @@ pub fn row_card(title: impl IntoElement, palette: &ForgePalette) -> RowCard {
         border_width: ROW_BORDER,
         corner_radius: px(0.0),
         density: Density::default(),
+        pad_v: None,
+        pad_h: None,
         id: None,
         on_click: None,
     }
@@ -338,6 +344,13 @@ impl RowCard {
         self
     }
 
+    #[must_use]
+    pub fn padding_xy(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+        self.pad_v = Some(vertical);
+        self.pad_h = Some(horizontal);
+        self
+    }
+
     pub fn on_click(
         mut self,
         id: impl Into<ElementId>,
@@ -376,8 +389,8 @@ impl RenderOnce for RowCard {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, d))
-            .py(spacing(Spacing::Xs, d))
-            .px(spacing(Spacing::Md, d))
+            .py(self.pad_v.unwrap_or_else(|| spacing(Spacing::Xs, d)))
+            .px(self.pad_h.unwrap_or_else(|| spacing(Spacing::Md, d)))
             .rounded(self.corner_radius)
             .border(self.border_width)
             .border_color(rest_border.unwrap_or(TRANSPARENT))
@@ -402,10 +415,17 @@ impl RenderOnce for RowCard {
             (Some(id), Some(handler)) => {
                 let mut r = root.id(id).cursor_pointer();
                 if !selected {
-                    let (hover_bg, _) = colors.resolve(RowState::Hover);
-                    r = r
-                        .hover(move |s| s.bg(hover_bg))
-                        .active(move |s| s.bg(hover_bg));
+                    if rest_border.is_some() {
+                        let hover_border = colors.hover_border;
+                        r = r
+                            .hover(move |s| s.border_color(hover_border))
+                            .active(move |s| s.border_color(hover_border));
+                    } else {
+                        let (hover_bg, _) = colors.resolve(RowState::Hover);
+                        r = r
+                            .hover(move |s| s.bg(hover_bg))
+                            .active(move |s| s.bg(hover_bg));
+                    }
                 }
                 r.on_click(handler).into_any_element()
             }

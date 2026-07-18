@@ -36,6 +36,7 @@ const GRID_GROUP_FS: Pixels = px(9.5);
 const GRID_GROUP_DOT: Pixels = px(5.0);
 const GRID_CARD_GAP: Pixels = px(8.0);
 const GRID_CONTENT_W: Pixels = px(628.0);
+const GRID_CARD_W: Pixels = px(310.0);
 const GRID_CARD_PAD_V: Pixels = px(11.0);
 const GRID_CARD_PAD_H: Pixels = px(12.0);
 const GRID_CARD_TILE: Pixels = px(26.0);
@@ -558,8 +559,8 @@ impl GridPicker {
             .child(item.desc.clone());
 
         let card = div()
-            .flex_1()
-            .min_w(px(0.0))
+            .flex_none()
+            .w(GRID_CARD_W)
             .flex()
             .flex_col()
             .py(GRID_CARD_PAD_V)

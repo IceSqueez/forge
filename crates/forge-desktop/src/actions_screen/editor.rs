@@ -1269,18 +1269,21 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(
                 ghost_button_with_icon(Icon::PlayerPlay, tr!("action_editor_test_run"), palette)
+                    .height(HEADER_ACTION_H)
                     .on_click(
                         "actions-editor-test",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.test_run(cx)),
                     ),
             )
             .child(
-                ghost_button_with_icon(Icon::Edit, tr!("action_editor_edit"), palette).on_click(
-                    "actions-editor-edit",
-                    cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.open_edit_modal(window, cx)
-                    }),
-                ),
+                ghost_button_with_icon(Icon::Edit, tr!("action_editor_edit"), palette)
+                    .height(HEADER_ACTION_H)
+                    .on_click(
+                        "actions-editor-edit",
+                        cx.listener(|this, _: &ClickEvent, window, cx| {
+                            this.open_edit_modal(window, cx)
+                        }),
+                    ),
             )
             .child(header_menu);
 

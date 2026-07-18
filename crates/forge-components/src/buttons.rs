@@ -109,6 +109,7 @@ pub struct Button {
     density: Density,
     disabled: bool,
     full_width: bool,
+    height: Option<Pixels>,
     id: Option<ElementId>,
     on_click: Option<ButtonClick>,
 }
@@ -132,9 +133,15 @@ impl Button {
             density: Density::default(),
             disabled: false,
             full_width: false,
+            height: None,
             id: None,
             on_click: None,
         }
+    }
+
+    pub fn height(mut self, height: Pixels) -> Self {
+        self.height = Some(height);
+        self
     }
 
     pub fn density(mut self, density: Density) -> Self {
@@ -206,6 +213,9 @@ impl RenderOnce for Button {
 
         if self.full_width {
             root = root.w_full().justify_start();
+        }
+        if let Some(h) = self.height {
+            root = root.h(h);
         }
         if let Some(fill) = fill {
             root = root.bg(fill);

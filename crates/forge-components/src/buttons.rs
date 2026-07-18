@@ -194,7 +194,7 @@ impl RenderOnce for Button {
         let (pad_v, pad_h) = if icon_only {
             (spacing(Spacing::Xs, d), spacing(Spacing::Xs, d))
         } else {
-            (px(5.0), px(12.0))
+            (px(4.0), px(12.0))
         };
 
         let glyph_size = if icon_only { FONT_MD } else { FONT_XS };

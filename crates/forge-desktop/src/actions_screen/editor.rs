@@ -657,12 +657,13 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn toggle_step_menu(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_menu_open = if self.step_menu_open == Some(i) {
-            None
+    fn toggle_step_menu(&mut self, i: usize, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.step_menu_open == Some(i) {
+            self.step_menu_open = None;
         } else {
-            Some(i)
-        };
+            self.step_menu_open = Some(i);
+            self.menu_click_pos = Some(position);
+        }
         cx.notify();
     }
 
@@ -1221,8 +1222,9 @@ impl ScreenActionsView {
         let id = action.id;
         let menu_open = self.header_menu_open;
         let view = cx.entity();
-        let header_menu = menu_button(Icon::DotsVertical, menu_open, palette)
+        let header_menu = menu_button(Icon::DotsVertical, menu_open.is_some(), palette)
             .placement(MenuPlacement::BottomRight)
+            .open_at(menu_open)
             .items(vec![
                 menu_item(
                     SharedString::from("actions-header-menu-dup"),
@@ -1257,7 +1259,9 @@ impl ScreenActionsView {
             ])
             .on_toggle(
                 SharedString::from("actions-header-menu-trigger"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_header_menu(cx)),
+                cx.listener(|this, ev: &ClickEvent, _, cx| {
+                    this.toggle_header_menu(ev.position(), cx)
+                }),
             )
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_header_menu(cx));
@@ -1305,13 +1309,17 @@ impl ScreenActionsView {
         col.into_any_element()
     }
 
-    fn toggle_header_menu(&mut self, cx: &mut Context<Self>) {
-        self.header_menu_open = !self.header_menu_open;
+    fn toggle_header_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.header_menu_open = if self.header_menu_open.is_some() {
+            None
+        } else {
+            Some(position)
+        };
         cx.notify();
     }
 
     fn close_header_menu(&mut self, cx: &mut Context<Self>) {
-        self.header_menu_open = false;
+        self.header_menu_open = None;
         cx.notify();
     }
 
@@ -1320,7 +1328,7 @@ impl ScreenActionsView {
             return;
         };
         let action = detail.action.clone();
-        self.header_menu_open = false;
+        self.header_menu_open = None;
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<std::path::PathBuf, String>>();
         self.rt_handle.spawn(async move {
             let _ = tx.send(export_action_to_chosen_file(action).await);
@@ -1375,7 +1383,7 @@ impl ScreenActionsView {
         });
         name.update(cx, |f, cx| f.focus(window, cx));
         let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
-        self.header_menu_open = false;
+        self.header_menu_open = None;
         self.edit_modal = Some(EditActionForm {
             id,
             name,
@@ -1503,7 +1511,7 @@ impl ScreenActionsView {
             .as_ref()
             .map(|d| d.action.name.clone())
             .unwrap_or_else(|| tr!("action_editor_this_action"));
-        self.header_menu_open = false;
+        self.header_menu_open = None;
         self.history_modal = Some(HistoryModal {
             action_id: id,
             action_name: action_name.into(),
@@ -2180,6 +2188,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let menu_open = self.step_menu_open == Some(i);
+        let menu_pos = if menu_open { self.menu_click_pos } else { None };
         let view = cx.entity();
 
         let move_up = step_icon_btn(
@@ -2199,6 +2208,7 @@ impl ScreenActionsView {
 
         let menu = menu_button(Icon::DotsVertical, menu_open, palette)
             .placement(MenuPlacement::BottomRight)
+            .open_at(menu_pos)
             .items(vec![
                 menu_item(
                     SharedString::from(format!("actions-step-edit-{i}")),
@@ -2245,7 +2255,9 @@ impl ScreenActionsView {
             ])
             .on_toggle(
                 SharedString::from(format!("actions-step-menu-{i}")),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_step_menu(i, cx)),
+                cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                    this.toggle_step_menu(i, ev.position(), cx)
+                }),
             )
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_step_menu(cx));

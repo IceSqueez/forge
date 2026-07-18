@@ -10,8 +10,8 @@ use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo, TriggerInstanceRepo};
 use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, Point, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -159,12 +159,13 @@ pub struct ScreenActionsView {
     add_modal: Option<AddActionForm>,
     edit_modal: Option<EditActionForm>,
     history_modal: Option<HistoryModal>,
-    header_menu_open: bool,
+    header_menu_open: Option<Point<Pixels>>,
     pending_delete: Option<ActionId>,
     detail: Option<ActionDetail>,
     telemetry: Option<ActionTelemetry>,
     sub_form: Option<EditSubActionForm>,
     step_menu_open: Option<usize>,
+    menu_click_pos: Option<Point<Pixels>>,
     grid_picker: Option<GridPickerForm>,
     add_trigger: Option<AddTriggerForm>,
     nav_path: Vec<nav::NavFrame>,
@@ -212,12 +213,13 @@ impl ScreenActionsView {
             add_modal: None,
             edit_modal: None,
             history_modal: None,
-            header_menu_open: false,
+            header_menu_open: None,
             pending_delete: None,
             detail: None,
             telemetry: None,
             sub_form: None,
             step_menu_open: None,
+            menu_click_pos: None,
             grid_picker: None,
             add_trigger: None,
             nav_path: Vec::new(),

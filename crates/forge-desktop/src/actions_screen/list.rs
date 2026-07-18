@@ -9,7 +9,10 @@ use forge_components::{
     primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, ExecutionMode, Queue};
-use gpui::{AnyElement, App, ClickEvent, Context, Entity, Rgba, SharedString, Window, div, px};
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, Rgba, SharedString, Window, div,
+    px,
+};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -124,12 +127,13 @@ impl ScreenActionsView {
         }
     }
 
-    fn toggle_menu(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        self.menu_open = if self.menu_open == Some(id) {
-            None
+    fn toggle_menu(&mut self, id: ActionId, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.menu_open == Some(id) {
+            self.menu_open = None;
         } else {
-            Some(id)
-        };
+            self.menu_open = Some(id);
+            self.menu_click_pos = Some(position);
+        }
         cx.notify();
     }
 
@@ -796,9 +800,11 @@ impl ScreenActionsView {
         };
         let next_enabled = !action.enabled;
         let view = cx.entity();
+        let menu_pos = if menu_open { self.menu_click_pos } else { None };
 
         menu_button(Icon::DotsVertical, menu_open, palette)
             .placement(MenuPlacement::BottomRight)
+            .open_at(menu_pos)
             .items(vec![
                 menu_item(
                     SharedString::from(format!("actions-menu-rename-{id}")),
@@ -837,7 +843,9 @@ impl ScreenActionsView {
             ])
             .on_toggle(
                 SharedString::from(format!("actions-menu-trigger-{id}")),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_menu(id, cx)),
+                cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                    this.toggle_menu(id, ev.position(), cx)
+                }),
             )
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_menu(cx));

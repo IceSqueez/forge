@@ -281,6 +281,7 @@ impl MenuInk {
 pub struct MenuButton {
     trigger_icon: Icon,
     open: bool,
+    anchor_at: Option<Point<Pixels>>,
     placement: MenuPlacement,
     items: Vec<MenuItem>,
     trigger_id: ElementId,
@@ -296,6 +297,7 @@ pub fn menu_button(trigger_icon: Icon, open: bool, palette: &ForgePalette) -> Me
     MenuButton {
         trigger_icon,
         open,
+        anchor_at: None,
         placement: MenuPlacement::BottomRight,
         items: Vec::new(),
         trigger_id: ElementId::Name(SharedString::new_static("forge-menu-trigger")),
@@ -318,6 +320,12 @@ impl MenuButton {
     #[must_use]
     pub fn placement(mut self, placement: MenuPlacement) -> Self {
         self.placement = placement;
+        self
+    }
+
+    #[must_use]
+    pub fn open_at(mut self, position: Option<Point<Pixels>>) -> Self {
+        self.anchor_at = position;
         self
     }
 
@@ -406,11 +414,19 @@ impl RenderOnce for MenuButton {
             .anchor(Anchor::TopLeft)
             .child(div().w(viewport.width).h(viewport.height).child(backdrop));
 
-        let panel_layer = anchored()
-            .anchor(anchor_corner)
-            .offset(offset)
-            .snap_to_window()
-            .child(panel);
+        let panel_layer = match self.anchor_at {
+            Some(position) => anchored()
+                .position_mode(AnchoredPositionMode::Window)
+                .position(position)
+                .anchor(anchor_corner)
+                .snap_to_window()
+                .child(panel),
+            None => anchored()
+                .anchor(anchor_corner)
+                .offset(offset)
+                .snap_to_window()
+                .child(panel),
+        };
 
         root = root.child(
             deferred(div().child(backdrop_layer).child(panel_layer)).with_priority(MENU_PRIORITY),

@@ -507,6 +507,7 @@ impl QueueScheduler {
             Queue {
                 id: *queue_id,
                 name: name.clone(),
+                description: String::new(),
                 blocking,
             },
             Arc::clone(engine),
@@ -580,6 +581,7 @@ mod tests {
         Queue {
             id,
             name: "default".to_string(),
+            description: String::new(),
             blocking: false,
         }
     }
@@ -588,6 +590,7 @@ mod tests {
         Queue {
             id,
             name: "serial".to_string(),
+            description: String::new(),
             blocking: true,
         }
     }
@@ -1126,6 +1129,7 @@ mod tests {
         let renamed = Queue {
             id: q_id,
             name: "renamed".to_string(),
+            description: String::new(),
             blocking: false,
         };
         let outcome = sched.reconfigure(renamed).await.unwrap();
@@ -1294,6 +1298,7 @@ mod tests {
             .reconfigure(Queue {
                 id: QueueId::new(),
                 name: "ghost".to_string(),
+                description: String::new(),
                 blocking: false,
             })
             .await

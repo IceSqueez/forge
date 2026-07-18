@@ -16,6 +16,7 @@ fn make_queue(name: &str, blocking: bool) -> Queue {
     Queue {
         id: QueueId::new(),
         name: name.to_owned(),
+        description: String::new(),
         blocking,
     }
 }

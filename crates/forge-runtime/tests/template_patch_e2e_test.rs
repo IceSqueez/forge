@@ -50,6 +50,7 @@ fn make_queue(id: QueueId) -> Queue {
     Queue {
         id,
         name: "test".into(),
+        description: String::new(),
         blocking: false,
     }
 }

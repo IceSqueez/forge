@@ -43,6 +43,7 @@ fn nonblocking(id: QueueId) -> Queue {
     Queue {
         id,
         name: "default".to_string(),
+        description: String::new(),
         blocking: false,
     }
 }

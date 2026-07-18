@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct Queue {
     pub id: QueueId,
     pub name: String,
+    pub description: String,
     pub blocking: bool,
 }
 
@@ -18,6 +19,7 @@ mod tests {
         let q = Queue {
             id: QueueId::new(),
             name: "Default".to_string(),
+            description: "Catch-all".to_string(),
             blocking: false,
         };
         let json = serde_json::to_string(&q).unwrap();
@@ -30,6 +32,7 @@ mod tests {
         let q = Queue {
             id: QueueId::new(),
             name: "Slow".to_string(),
+            description: String::new(),
             blocking: true,
         };
         let json = serde_json::to_string(&q).unwrap();

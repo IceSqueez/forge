@@ -41,6 +41,7 @@ const MODAL_WIDTH: Pixels = px(440.0);
 struct QueueRow {
     id: QueueId,
     name: String,
+    description: String,
     blocking: bool,
     concurrency: u32,
     paused: bool,
@@ -64,6 +65,7 @@ impl QueueRow {
 struct EditQueueModal {
     editing: Option<QueueId>,
     name_input: Entity<TextInput>,
+    desc_input: Entity<TextInput>,
     blocking: bool,
     saving: bool,
     _name_sub: Subscription,
@@ -256,7 +258,7 @@ impl QueuesView {
     }
 
     fn open_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let modal = Self::build_modal(None, "", false, cx);
+        let modal = Self::build_modal(None, "", "", false, cx);
         modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         cx.notify();
@@ -267,8 +269,9 @@ impl QueuesView {
             return;
         };
         let name = q.name.clone();
+        let description = q.description.clone();
         let blocking = q.blocking;
-        let modal = Self::build_modal(Some(id), &name, blocking, cx);
+        let modal = Self::build_modal(Some(id), &name, &description, blocking, cx);
         modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         cx.notify();
@@ -277,15 +280,23 @@ impl QueuesView {
     fn build_modal(
         editing: Option<QueueId>,
         name_seed: &str,
+        desc_seed: &str,
         blocking: bool,
         cx: &mut Context<Self>,
     ) -> EditQueueModal {
         let palette = cx.palette();
         let name_seed = name_seed.to_owned();
+        let desc_seed = desc_seed.to_owned();
         let name_input = cx.new(|cx| {
             let mut ti =
                 TextInput::new(tr!("queues_create_name_placeholder"), cx).with_palette(palette);
             ti.set_content(name_seed, cx);
+            ti
+        });
+        let desc_input = cx.new(|cx| {
+            let mut ti =
+                TextInput::new(tr!("queues_create_desc_placeholder"), cx).with_palette(palette);
+            ti.set_content(desc_seed, cx);
             ti
         });
         let name_sub = cx.subscribe(
@@ -299,6 +310,7 @@ impl QueuesView {
         EditQueueModal {
             editing,
             name_input,
+            desc_input,
             blocking,
             saving: false,
             _name_sub: name_sub,
@@ -346,11 +358,13 @@ impl QueuesView {
             return;
         };
         let name = modal.name_input.read(cx).content().trim().to_owned();
+        let description = modal.desc_input.read(cx).content().trim().to_owned();
         let blocking = modal.blocking;
         let editing = modal.editing;
         let queue = Queue {
             id: editing.unwrap_or_else(QueueId::new),
             name,
+            description,
             blocking,
         };
         let id = queue.id;
@@ -413,18 +427,12 @@ impl QueuesView {
         let not_live = self.diverged.contains(&q.id);
 
         let border_color = if paused {
-            with_alpha(palette.warning, 0.20)
-        } else {
-            palette.border_regular
-        };
-        let hover_border = if paused {
             with_alpha(palette.warning, 0.35)
         } else {
             palette.border_input
         };
 
         div()
-            .id(("queue-card", index))
             .w_full()
             .h_full()
             .flex()
@@ -434,7 +442,6 @@ impl QueuesView {
             .border(BORDER_THIN)
             .border_color(border_color)
             .bg(palette.elevated)
-            .hover(move |s| s.border_color(hover_border))
             .child(self.card_header(index, q, paused, not_live, palette, cx))
             .child(self.card_metrics(q, paused, palette))
             .child(self.running_panel(q, paused, palette, density))
@@ -468,13 +475,12 @@ impl QueuesView {
             name_row = name_row.child(not_live_badge(palette));
         }
 
-        let desc_text = default_description(&q.name);
-        let desc = (!desc_text.is_empty()).then(|| {
+        let desc = (!q.description.is_empty()).then(|| {
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(DESC_FS)
                 .text_color(palette.text_muted)
-                .child(desc_text)
+                .child(q.description.clone())
         });
 
         let left = div()
@@ -782,6 +788,21 @@ impl QueuesView {
             )
             .child(div().child(modal_state.name_input.clone()));
 
+        let desc_field = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(SharedString::from(
+                        tr!("queues_create_desc_label").to_uppercase(),
+                    )),
+            )
+            .child(div().child(modal_state.desc_input.clone()));
+
         let toggle_label = div()
             .flex_1()
             .flex()
@@ -822,6 +843,7 @@ impl QueuesView {
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
             .child(name_field)
+            .child(desc_field)
             .child(blocking_row);
 
         let saveable = self.modal_saveable(cx);
@@ -1357,6 +1379,7 @@ async fn load_queues(
             QueueRow {
                 id: q.id,
                 name: q.name,
+                description: q.description,
                 blocking: q.blocking,
                 concurrency,
                 paused,
@@ -1370,16 +1393,6 @@ async fn load_queues(
         .collect();
 
     Ok(rows)
-}
-
-fn default_description(name: &str) -> String {
-    match name {
-        "Default" => tr!("queues_desc_default"),
-        "Alerts" => tr!("queues_desc_alerts"),
-        "Background" => tr!("queues_desc_background"),
-        "Moderation" => tr!("queues_desc_moderation"),
-        _ => String::new(),
-    }
 }
 
 fn not_live_badge(palette: &ForgePalette) -> AnyElement {

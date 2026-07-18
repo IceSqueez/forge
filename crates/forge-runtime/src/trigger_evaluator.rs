@@ -394,6 +394,7 @@ mod tests {
         let queue = Queue {
             id: q_id,
             name: "default".into(),
+            description: String::new(),
             blocking: false,
         };
         let action = log_action(a_id, q_id);
@@ -458,6 +459,7 @@ mod tests {
         let queue = Queue {
             id: q_id,
             name: "default".into(),
+            description: String::new(),
             blocking: false,
         };
         let action = log_action(a_id, q_id);

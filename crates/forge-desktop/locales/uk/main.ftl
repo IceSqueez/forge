@@ -1188,6 +1188,8 @@ queues_menu_delete = Видалити…
 queues_create_title = Нова черга
 queues_create_name_label = Назва
 queues_create_name_placeholder = Назва черги (обовʼязково)
+queues_create_desc_label = Опис
+queues_create_desc_placeholder = Для чого ця черга
 queues_create_blocking_label = Послідовне виконання
 queues_create_blocking_desc = Виконувати по одній дії; наступні чекають своєї черги
 queues_create_btn = Створити
@@ -1234,10 +1236,6 @@ queues_overflow_more = +{ $count } ще
 
 ## Черги - описи вбудованих черг
 
-queues_desc_default = Черга за замовчуванням для дій без явного призначення черги
-queues_desc_alerts = Підписки, рейди, чіри · послідовно, щоб оверлеї не перекривалися
-queues_desc_background = Логування, аналітика, завдання без побічних ефектів · паралельно
-queues_desc_moderation = Авто-бани, таймаути, видалення повідомлень · на паузі для перевірки
 
 ## TTS дашборд - підписи карток рушіїв / бейдж пріоритету
 

@@ -1182,6 +1182,8 @@ queues_menu_delete = Delete…
 queues_create_title = New queue
 queues_create_name_label = Name
 queues_create_name_placeholder = Queue name (required)
+queues_create_desc_label = Description
+queues_create_desc_placeholder = What this queue is for
 queues_create_blocking_label = Serial execution
 queues_create_blocking_desc = Run one action at a time; later actions wait their turn
 queues_create_btn = Create
@@ -1228,10 +1230,6 @@ queues_overflow_more = +{ $count } more
 
 ## Queues - built-in queue descriptions
 
-queues_desc_default = Catch-all queue for actions without explicit queue assignment
-queues_desc_alerts = Subs, raids, cheers · serialized so overlays don't overlap
-queues_desc_background = Logging, analytics, side-effect-free tasks · parallel execution
-queues_desc_moderation = Auto-bans, timeouts, message deletions · paused for review
 
 ## TTS dashboard - engine card sublabels / priority badge
 

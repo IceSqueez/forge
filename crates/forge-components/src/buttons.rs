@@ -6,7 +6,7 @@ use gpui::{
 use crate::icons::{Icon, icon, icon_inherit};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, Radius, Spacing, radius, spacing,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_XS, Radius, Spacing, radius, spacing,
 };
 
 type ButtonClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -194,10 +194,10 @@ impl RenderOnce for Button {
         let (pad_v, pad_h) = if icon_only {
             (spacing(Spacing::Xs, d), spacing(Spacing::Xs, d))
         } else {
-            (spacing(Spacing::Xxs, d), spacing(Spacing::Sm, d))
+            (px(5.0), px(12.0))
         };
 
-        let glyph_size = if icon_only { FONT_MD } else { FONT_SM };
+        let glyph_size = if icon_only { FONT_MD } else { FONT_XS };
 
         let mut root = div()
             .flex()
@@ -208,7 +208,7 @@ impl RenderOnce for Button {
             .rounded(radius(Radius::Sm))
             .font_family(DEFAULT_BODY_FAMILY)
             .font_weight(self.weight)
-            .text_size(FONT_SM)
+            .text_size(FONT_XS)
             .text_color(text);
 
         if self.full_width {

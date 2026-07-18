@@ -468,9 +468,9 @@ impl GridPicker {
                     .child(items.len().to_string()),
             );
 
-        let mut rows = div().flex().flex_col().gap(GRID_CARD_GAP);
+        let mut rows = div().flex().flex_col().w_full().gap(GRID_CARD_GAP);
         for chunk in items.chunks(2) {
-            let mut pair = div().flex().gap(GRID_CARD_GAP);
+            let mut pair = div().flex().w_full().gap(GRID_CARD_GAP);
             for item in chunk {
                 pair = pair.child(self.render_card(item, accent, cx));
             }

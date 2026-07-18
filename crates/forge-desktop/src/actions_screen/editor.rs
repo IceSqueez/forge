@@ -126,11 +126,13 @@ fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<Str
         }
         "script.run.named" => {
             let script_name = step.config.get("script_name").map(as_str).unwrap_or("");
-            (
-                "script",
-                tr!("action_editor_kind_run_script"),
-                Some(script_name.to_owned()),
-            )
+            let target = step.config.get("target_var").map(as_str).unwrap_or("");
+            let detail = if target.is_empty() {
+                script_name.to_owned()
+            } else {
+                format!("{script_name} \u{2192} {}", wrap_var(target))
+            };
+            ("script", tr!("action_editor_kind_run_script"), Some(detail))
         }
         "soundboard.sound.play" => {
             let clip_id = step.config.get("clip_id").map(as_str).unwrap_or("");

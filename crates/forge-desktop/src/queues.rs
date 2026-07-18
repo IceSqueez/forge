@@ -64,6 +64,7 @@ impl QueueRow {
 
 struct EditQueueModal {
     editing: Option<QueueId>,
+    orig_name: String,
     name_input: Entity<TextInput>,
     desc_input: Entity<TextInput>,
     blocking: bool,
@@ -285,6 +286,7 @@ impl QueuesView {
         cx: &mut Context<Self>,
     ) -> EditQueueModal {
         let palette = cx.palette();
+        let orig_name = name_seed.to_owned();
         let name_seed = name_seed.to_owned();
         let desc_seed = desc_seed.to_owned();
         let name_input = cx.new(|cx| {
@@ -309,6 +311,7 @@ impl QueuesView {
         );
         EditQueueModal {
             editing,
+            orig_name,
             name_input,
             desc_input,
             blocking,
@@ -550,15 +553,6 @@ impl QueuesView {
                 )
                 .icon(Icon::Settings)
                 .into(),
-                menu_item(
-                    ("q-menu-rename", index),
-                    tr!("queues_menu_rename"),
-                    cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.open_configure(id, window, cx)
-                    }),
-                )
-                .icon(Icon::Edit)
-                .into(),
                 menu_divider(),
                 pause_resume,
                 menu_item(
@@ -770,7 +764,7 @@ impl QueuesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let title = if modal_state.editing.is_some() {
-            tr!("queues_edit_title")
+            tr!("queues_edit_title", name = modal_state.orig_name.clone())
         } else {
             tr!("queues_create_title")
         };
@@ -797,12 +791,25 @@ impl QueuesView {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(SharedString::from(
-                        tr!("queues_create_desc_label").to_uppercase(),
-                    )),
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_faint)
+                            .child(SharedString::from(
+                                tr!("queues_create_desc_label").to_uppercase(),
+                            )),
+                    )
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_muted)
+                            .child(SharedString::from(tr!("queues_create_desc_optional"))),
+                    ),
             )
             .child(div().child(modal_state.desc_input.clone()));
 
@@ -851,7 +858,7 @@ impl QueuesView {
 
         let saveable = self.modal_saveable(cx);
         let save_label = if modal_state.editing.is_some() {
-            tr!("common_save")
+            tr!("queues_edit_btn")
         } else {
             tr!("queues_create_btn")
         };
@@ -874,7 +881,7 @@ impl QueuesView {
             .child(save);
 
         let card = modal(title, body, palette)
-            .header_icon(Icon::Notebook, palette.brand)
+            .header_icon(Icon::Stack2, palette.bits)
             .subtitle(tr!("queues_create_subtitle"))
             .width(MODAL_WIDTH)
             .footer(footer)

@@ -1190,13 +1190,15 @@ queues_create_name_label = Назва
 queues_create_name_placeholder = Назва черги (обовʼязково)
 queues_create_desc_label = Опис
 queues_create_desc_placeholder = Для чого ця черга
+queues_create_desc_optional = (необовʼязково)
 queues_create_blocking_label = Послідовне виконання
 queues_create_blocking_desc = Виконувати по одній дії; наступні чекають своєї черги
-queues_create_btn = Створити
+queues_create_btn = Створити чергу
 queues_create_cancel = Скасувати
-queues_edit_title = Налаштування черги
+queues_edit_btn = Зберегти зміни
+queues_edit_title = Налаштування { $name }
 queues_create_subtitle = Як дії виконуються в цій черзі
-queues_create_kbd_hint = Enter - зберегти · Esc - скасувати
+queues_create_kbd_hint = Esc - скасувати
 
 ## Черги - метрики картки
 

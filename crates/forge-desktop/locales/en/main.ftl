@@ -1184,13 +1184,15 @@ queues_create_name_label = Name
 queues_create_name_placeholder = Queue name (required)
 queues_create_desc_label = Description
 queues_create_desc_placeholder = What this queue is for
+queues_create_desc_optional = (optional)
 queues_create_blocking_label = Serial execution
 queues_create_blocking_desc = Run one action at a time; later actions wait their turn
-queues_create_btn = Create
+queues_create_btn = Create queue
 queues_create_cancel = Cancel
-queues_edit_title = Configure queue
+queues_edit_btn = Save changes
+queues_edit_title = Configure { $name }
 queues_create_subtitle = How actions run in this queue
-queues_create_kbd_hint = Enter to save · Esc to cancel
+queues_create_kbd_hint = Esc to cancel
 
 ## Queues - card metrics
 

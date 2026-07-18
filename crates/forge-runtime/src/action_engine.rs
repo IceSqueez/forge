@@ -205,6 +205,7 @@ impl ActionEngine {
             json!({
                 "action_id": action.id.to_string(),
                 "action_name": action.name,
+                "sub_action_count": action.sub_actions.len(),
             }),
             req.trigger_event_id,
         );

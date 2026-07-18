@@ -34,8 +34,9 @@ pub struct EventItem {
     pub source: EventSource,
     pub kind: SharedString,
     pub summary: SharedString,
-    pub result_tag: Option<SharedString>,
     pub caused_by: Option<SharedString>,
+    pub sub_action_count: Option<u32>,
+    pub total_ms: Option<f64>,
     pub is_error: bool,
     pub user_login: SharedString,
     pub user_platform: SharedString,
@@ -112,8 +113,13 @@ impl EventLog {
         let kind = event.kind.clone();
         let is_error = kind.contains("error") || kind.contains("fail");
         let summary = Self::summarize(event);
-        let result_tag = Self::result_tag(event);
         let caused_by = event.caused_by.map(|id| SharedString::from(id.to_string()));
+        let p = &event.payload;
+        let sub_action_count = p
+            .get("sub_action_count")
+            .and_then(serde_json::Value::as_u64)
+            .map(|n| n as u32);
+        let total_ms = p.get("total_ms").and_then(serde_json::Value::as_f64);
         let (user_login, user_platform) = Self::acting_user(event);
         Some(EventItem {
             id: event.id.to_string().into(),
@@ -121,24 +127,13 @@ impl EventLog {
             source: event.source,
             kind: kind.into(),
             summary: summary.into(),
-            result_tag,
             caused_by,
+            sub_action_count,
+            total_ms,
             is_error,
             user_login: user_login.into(),
             user_platform: user_platform.into(),
         })
-    }
-
-    fn result_tag(event: &Event) -> Option<SharedString> {
-        let p = &event.payload;
-        match event.kind.as_str() {
-            "chat.send" => Some(SharedString::from("sent")),
-            "action.done" => p
-                .get("total_ms")
-                .and_then(serde_json::Value::as_f64)
-                .map(|ms| SharedString::from(format!("{ms:.2}ms"))),
-            _ => None,
-        }
     }
 
     pub(crate) fn summarize(event: &Event) -> String {

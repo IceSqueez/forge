@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use forge_components::{
@@ -312,11 +313,49 @@ impl EventFeedView {
             .child(actions)
     }
 
+    fn outcome_tag(
+        item: &EventItem,
+        downstream: &HashMap<gpui::SharedString, u32>,
+        matched: &HashSet<gpui::SharedString>,
+    ) -> Option<gpui::SharedString> {
+        let acted = downstream.get(&item.id).copied().unwrap_or(0);
+        let actions_tag = |n: u32| -> gpui::SharedString {
+            if n == 1 {
+                "\u{2192} 1 action".into()
+            } else {
+                format!("\u{2192} {n} actions").into()
+            }
+        };
+        match item.kind.as_ref() {
+            "chat.send" => Some("sent".into()),
+            "command.matched" => Some("\u{2192} trigger".into()),
+            "action.start" => item.sub_action_count.map(|n| {
+                if n == 1 {
+                    "1 sub-action".into()
+                } else {
+                    format!("{n} sub-actions").into()
+                }
+            }),
+            "action.done" => item.total_ms.map(|ms| format!("{ms:.2}ms").into()),
+            k if is_chat_message_kind(k) => {
+                if acted > 0 {
+                    Some(actions_tag(acted))
+                } else if matched.contains(&item.id) {
+                    Some("\u{2192} trigger".into())
+                } else {
+                    Some("no match".into())
+                }
+            }
+            _ => (acted > 0).then(|| actions_tag(acted)),
+        }
+    }
+
     fn render_row(
         &self,
         idx: usize,
         item: &EventItem,
         selected: bool,
+        tag: Option<gpui::SharedString>,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
@@ -386,7 +425,7 @@ impl EventFeedView {
             .child(source_badge)
             .child(type_cell)
             .child(summary)
-            .children(item.result_tag.clone().map(|tag| {
+            .children(tag.map(|tag| {
                 div()
                     .flex_none()
                     .whitespace_nowrap()
@@ -423,20 +462,40 @@ impl EventFeedView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let filter = self.active_filter;
-        let visible: Vec<EventItem> = self
-            .log
-            .read(cx)
-            .items()
-            .iter()
-            .filter(|item| item.matches(filter))
-            .cloned()
-            .collect();
+        let (visible, downstream, matched) = {
+            let log = self.log.read(cx);
+            let mut downstream: HashMap<gpui::SharedString, u32> = HashMap::new();
+            let mut matched: HashSet<gpui::SharedString> = HashSet::new();
+            for item in log.items() {
+                match item.kind.as_ref() {
+                    "action.start" => {
+                        if let Some(cb) = &item.caused_by {
+                            *downstream.entry(cb.clone()).or_default() += 1;
+                        }
+                    }
+                    "command.matched" => {
+                        if let Some(cb) = &item.caused_by {
+                            matched.insert(cb.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let visible: Vec<EventItem> = log
+                .items()
+                .iter()
+                .filter(|item| item.matches(filter))
+                .cloned()
+                .collect();
+            (visible, downstream, matched)
+        };
 
         let empty = visible.is_empty();
         let mut list = div().w_full().flex().flex_col();
         for (idx, item) in visible.iter().enumerate() {
             let is_sel = selected_id == Some(&item.id);
-            list = list.child(self.render_row(idx, item, is_sel, palette, cx));
+            let tag = Self::outcome_tag(item, &downstream, &matched);
+            list = list.child(self.render_row(idx, item, is_sel, tag, palette, cx));
         }
 
         let empty_note = empty.then(|| {

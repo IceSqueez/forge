@@ -899,20 +899,30 @@ impl QueuesView {
                 "q-modal-save",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
             );
+        let hint = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(palette.text_faint)
+            .child(SharedString::from(tr!("queues_create_kbd_hint")));
+        let buttons = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(cancel)
+            .child(save);
         let footer = div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .child(cancel)
-            .child(save);
+            .child(hint)
+            .child(buttons);
 
         let card = modal(title, body, palette)
             .header_icon(Icon::Stack2, palette.bits)
             .subtitle(tr!("queues_create_subtitle"))
             .width(MODAL_WIDTH)
             .footer(footer)
-            .kbd_hint(tr!("queues_create_kbd_hint"))
             .on_close(
                 "q-modal-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),

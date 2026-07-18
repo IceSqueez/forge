@@ -1233,7 +1233,10 @@ impl ScreenActionsView {
         } else {
             (palette.text_faint, tr!("action_editor_disabled"))
         };
+        let pill_id = action.id;
+        let pill_enabled = action.enabled;
         let pill = div()
+            .id("actions-editor-status-pill")
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, Density::Cozy))
@@ -1241,6 +1244,12 @@ impl ScreenActionsView {
             .px(px(6.0))
             .rounded(PILL_RADIUS)
             .bg(palette.surface_overlay)
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                if event.click_count() >= 2 {
+                    this.set_enabled(pill_id, !pill_enabled, cx);
+                }
+            }))
             .child(status_dot(pill_color, PILL_DOT))
             .child(
                 div()

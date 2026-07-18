@@ -138,7 +138,7 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn set_enabled(&mut self, id: ActionId, enabled: bool, cx: &mut Context<Self>) {
+    pub(super) fn set_enabled(&mut self, id: ActionId, enabled: bool, cx: &mut Context<Self>) {
         self.menu_open = None;
         cx.notify();
         let repo = Arc::clone(&self.action_repo);

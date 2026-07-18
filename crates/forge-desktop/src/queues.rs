@@ -820,25 +820,23 @@ impl QueuesView {
             )
             .child(div().child(modal_state.desc_input.clone()));
 
-        let concurrency_field = div()
+        let concurrency_box = div()
+            .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(SharedString::from(
-                        tr!("queues_concurrency_label").to_uppercase(),
-                    )),
-            )
+            .gap(px(4.0))
+            .py(px(10.0))
+            .px(px(12.0))
+            .rounded(px(7.0))
+            .border(BORDER_THIN)
+            .border_color(palette.border_input)
+            .bg(palette.shell)
             .child(
                 div()
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Sm, density))
+                    .gap(px(14.0))
                     .child(
                         div().flex_1().child(
                             slider(
@@ -857,11 +855,11 @@ impl QueuesView {
                     )
                     .child(
                         div()
-                            .w(px(24.0))
+                            .w(px(28.0))
                             .flex()
                             .justify_end()
                             .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(STAT_VALUE_FS)
+                            .text_size(FONT_SM)
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(palette.text_primary)
                             .child(concurrency.to_string()),
@@ -870,10 +868,25 @@ impl QueuesView {
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
+                    .text_size(DESC_FS)
                     .text_color(palette.text_muted)
                     .child(concurrency_hint),
             );
+
+        let concurrency_field = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(SharedString::from(
+                        tr!("queues_concurrency_label").to_uppercase(),
+                    )),
+            )
+            .child(concurrency_box);
 
         let body = div()
             .flex()

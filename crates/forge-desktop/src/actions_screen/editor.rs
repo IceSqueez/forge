@@ -4,9 +4,9 @@ use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup,
     GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuPlacement,
-    ModalSize, OverlayPosition, Radius, SheetPosition, Spacing, TextInput, ghost_button_with_icon,
-    icon, icon_inherit, menu_button, menu_divider, menu_item, modal, overlay, primary_button,
-    radius, row_card, secondary_button, side_sheet, spacing, status_dot, toggle, tr,
+    ModalSize, OverlayPosition, Radius, Spacing, TextInput, ghost_button_with_icon, icon,
+    icon_inherit, menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius,
+    row_card, secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -2493,11 +2493,8 @@ impl ScreenActionsView {
 
         let body = div()
             .id("actions-sub-scroll")
-            .flex_1()
-            .min_h(px(0.0))
+            .max_h(SUB_MODAL_MAX_H)
             .overflow_y_scroll()
-            .py(spacing(Spacing::Md, Density::Cozy))
-            .px(spacing(Spacing::Md, Density::Cozy))
             .child(fields_col);
 
         let cancel = secondary_button(tr!("common_cancel"), palette).on_click(
@@ -2508,49 +2505,27 @@ impl ScreenActionsView {
             "actions-sub-submit",
             cx.listener(|this, _: &ClickEvent, _, cx| this.submit_sub_action(cx)),
         );
-        let buttons = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(cancel)
-            .child(save);
-
         let footer = div()
             .w_full()
             .flex()
             .items_center()
-            .justify_between()
-            .py(px(12.0))
-            .px(px(16.0))
-            .border_t(HALF_BORDER)
-            .border_color(palette.border_regular)
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("actions_esc_hint")),
-            )
-            .child(buttons);
+            .justify_end()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(cancel)
+            .child(save);
 
-        let content = div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .child(body)
-            .child(footer);
-
-        let sheet = side_sheet(SUB_SHEET_W, content, palette)
-            .position(SheetPosition::Right)
-            .header(tr!("actions_sub_modal_edit_title"))
+        let card = modal(tr!("actions_sub_modal_edit_title"), body, palette)
+            .size(ModalSize::Md)
+            .footer(footer)
+            .kbd_hint(tr!("actions_esc_hint"))
             .on_close(
                 "actions-sub-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
             );
 
         let view = cx.entity();
-        overlay(sheet, palette)
-            .position(OverlayPosition::Right(SUB_SHEET_W))
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
             .on_dismiss("actions-sub-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel_sub_action(cx));
             })

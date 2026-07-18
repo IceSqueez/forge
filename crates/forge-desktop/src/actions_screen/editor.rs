@@ -1795,7 +1795,7 @@ impl ScreenActionsView {
         let error_color = if errors > 0 {
             palette.random
         } else {
-            palette.text_primary
+            palette.success
         };
         let error_hint: Option<SharedString> = if errors == 0 {
             Some(tr!("action_stat_no_errors").into())

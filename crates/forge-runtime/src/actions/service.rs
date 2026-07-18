@@ -5,7 +5,7 @@ use forge_storage::{
     ActionRepo, ActionTelemetry, HistoryRepo, QueueRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo,
 };
-use forge_types::{ActionId, ClipId, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, ClipId, ExecutionContext, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
 use super::types::{ActionDetail, ActionSummary};
@@ -89,6 +89,14 @@ impl ActionsService {
             trigger_instances,
             sub_action_avg_ms,
         })
+    }
+
+    pub async fn recent_runs(
+        &self,
+        id: ActionId,
+        limit: u32,
+    ) -> Result<Vec<ExecutionContext>, StorageError> {
+        self.history.recent_for_action(id, limit).await
     }
 
     pub async fn load_telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {

@@ -261,8 +261,22 @@ jobs:
           codesign --verify --verbose "$APP_BUNDLE"
 
           OUT="${{ inputs.bin_name }}-${{ env.VERSION }}+${{ github.run_number }}-${{ matrix.asset_name }}.dmg"
-          hdiutil create -volname "${APP_NAME}" -srcfolder "$APP_BUNDLE" \
-            -ov -format UDZO "$OUT"
+
+          # hdiutil's -srcfolder auto-sizing under-provisions the temporary
+          # image for a large universal binary and hits ENOSPC on the DMG
+          # itself (not the runner disk). Stage into an explicitly sized RW
+          # image with headroom, then convert to compressed UDZO.
+          APP_MB=$(du -sm "$APP_BUNDLE" | cut -f1)
+          STAGE_MB=$(( APP_MB + 300 ))
+          STAGING="staging.dmg"
+          rm -f "$STAGING" "$OUT"
+          hdiutil create -size "${STAGE_MB}m" -fs HFS+ -volname "${APP_NAME}" -ov "$STAGING"
+          MOUNT_DIR="$(mktemp -d)"
+          hdiutil attach "$STAGING" -mountpoint "$MOUNT_DIR" -nobrowse -noverify
+          ditto "$APP_BUNDLE" "$MOUNT_DIR/${APP_BUNDLE}"
+          hdiutil detach "$MOUNT_DIR" || hdiutil detach "$MOUNT_DIR" -force
+          hdiutil convert "$STAGING" -format UDZO -o "$OUT"
+          rm -f "$STAGING"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

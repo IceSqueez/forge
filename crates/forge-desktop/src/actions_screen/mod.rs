@@ -119,6 +119,13 @@ struct AddActionForm {
     _name_sub: Subscription,
 }
 
+struct EditActionForm {
+    id: ActionId,
+    name: Entity<TextInput>,
+    description: Entity<TextArea>,
+    _name_sub: Subscription,
+}
+
 pub struct ScreenActionsView {
     action_repo: Arc<dyn ActionRepo>,
     queue_repo: Arc<dyn QueueRepo>,
@@ -137,6 +144,8 @@ pub struct ScreenActionsView {
     menu_open: Option<ActionId>,
     renaming: Option<Renaming>,
     add_modal: Option<AddActionForm>,
+    edit_modal: Option<EditActionForm>,
+    header_menu_open: bool,
     pending_delete: Option<ActionId>,
     detail: Option<ActionDetail>,
     telemetry: Option<ActionTelemetry>,
@@ -185,6 +194,8 @@ impl ScreenActionsView {
             menu_open: None,
             renaming: None,
             add_modal: None,
+            edit_modal: None,
+            header_menu_open: false,
             pending_delete: None,
             detail: None,
             telemetry: None,
@@ -386,6 +397,10 @@ impl Render for ScreenActionsView {
             .add_modal
             .as_ref()
             .map(|form| self.render_add_modal(form, &palette, cx));
+        let edit_modal = self
+            .edit_modal
+            .as_ref()
+            .map(|form| self.render_edit_modal(form, &palette, cx));
         let delete_modal = self
             .pending_delete
             .map(|id| self.render_delete_confirm(id, &palette, cx));
@@ -419,6 +434,7 @@ impl Render for ScreenActionsView {
             .child(header)
             .child(body)
             .children(add_modal)
+            .children(edit_modal)
             .children(delete_modal)
             .children(sub_modal)
             .children(grid_picker)

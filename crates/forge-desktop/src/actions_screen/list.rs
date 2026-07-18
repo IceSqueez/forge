@@ -258,7 +258,7 @@ impl ScreenActionsView {
         );
     }
 
-    fn request_delete(&mut self, id: ActionId, cx: &mut Context<Self>) {
+    pub(super) fn request_delete(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.pending_delete = Some(id);
         self.menu_open = None;
         cx.notify();

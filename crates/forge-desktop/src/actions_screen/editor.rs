@@ -3,10 +3,10 @@ use crate::presentation::ActivePresentation;
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup,
-    GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, MenuPlacement, OverlayPosition,
-    Radius, SheetPosition, Spacing, TextInput, ghost_button_with_icon, icon, icon_inherit,
-    menu_button, menu_divider, menu_item, overlay, primary_button, radius, row_card,
-    secondary_button, side_sheet, spacing, status_dot, toggle, tr,
+    GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuPlacement,
+    ModalSize, OverlayPosition, Radius, SheetPosition, Spacing, TextInput, ghost_button_with_icon,
+    icon, icon_inherit, menu_button, menu_divider, menu_item, modal, overlay, primary_button,
+    radius, row_card, secondary_button, side_sheet, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -1236,6 +1236,37 @@ impl ScreenActionsView {
             .child(title_row)
             .child(desc_line);
 
+        let id = action.id;
+        let menu_open = self.header_menu_open;
+        let view = cx.entity();
+        let header_menu = menu_button(Icon::DotsVertical, menu_open, palette)
+            .placement(MenuPlacement::BottomRight)
+            .items(vec![
+                menu_item(
+                    SharedString::from("actions-header-menu-dup"),
+                    tr!("action_editor_duplicate"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.duplicate(id, cx)),
+                )
+                .icon(Icon::Copy)
+                .into(),
+                menu_divider(),
+                menu_item(
+                    SharedString::from("actions-header-menu-del"),
+                    tr!("action_editor_menu_delete"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
+                )
+                .icon(Icon::Eraser)
+                .color(palette.random)
+                .into(),
+            ])
+            .on_toggle(
+                SharedString::from("actions-header-menu-trigger"),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_header_menu(cx)),
+            )
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_header_menu(cx));
+            });
+
         let btn_row = div()
             .flex()
             .items_center()
@@ -1248,16 +1279,14 @@ impl ScreenActionsView {
                     ),
             )
             .child(
-                ghost_button_with_icon(Icon::Copy, tr!("action_editor_duplicate"), palette)
-                    .on_click(
-                        "actions-editor-dup",
-                        cx.listener(|this, _: &ClickEvent, _, cx| {
-                            if let Some(id) = this.selected {
-                                this.duplicate(id, cx);
-                            }
-                        }),
-                    ),
-            );
+                ghost_button_with_icon(Icon::Pencil, tr!("action_editor_edit"), palette).on_click(
+                    "actions-editor-edit",
+                    cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.open_edit_modal(window, cx)
+                    }),
+                ),
+            )
+            .child(header_menu);
 
         let header_row = div()
             .flex()
@@ -1275,6 +1304,158 @@ impl ScreenActionsView {
             col = col.child(self.render_stats_row(telemetry, palette));
         }
         col.into_any_element()
+    }
+
+    fn toggle_header_menu(&mut self, cx: &mut Context<Self>) {
+        self.header_menu_open = !self.header_menu_open;
+        cx.notify();
+    }
+
+    fn close_header_menu(&mut self, cx: &mut Context<Self>) {
+        self.header_menu_open = false;
+        cx.notify();
+    }
+
+    fn open_edit_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(detail) = self.detail.as_ref() else {
+            return;
+        };
+        let action = &detail.action;
+        let id = action.id;
+        let seed_name = action.name.clone();
+        let seed_desc = action.description.clone().unwrap_or_default();
+        let palette = cx.palette();
+        let name = cx.new(|cx| {
+            let mut input =
+                TextInput::new(tr!("actions_name_placeholder"), cx).with_palette(palette);
+            input.set_content(seed_name, cx);
+            input
+        });
+        let description = cx.new(|cx| {
+            let mut area =
+                TextArea::new(tr!("actions_description_placeholder"), cx).with_palette(palette);
+            area.set_content(seed_desc, cx);
+            area
+        });
+        name.update(cx, |f, cx| f.focus(window, cx));
+        let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
+        self.header_menu_open = false;
+        self.edit_modal = Some(EditActionForm {
+            id,
+            name,
+            description,
+            _name_sub: name_sub,
+        });
+        cx.notify();
+    }
+
+    fn cancel_edit_modal(&mut self, cx: &mut Context<Self>) {
+        self.edit_modal = None;
+        cx.notify();
+    }
+
+    fn submit_edit_modal(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.edit_modal.as_ref() else {
+            return;
+        };
+        let name = form.name.read(cx).content().trim().to_owned();
+        if name.is_empty() {
+            return;
+        }
+        let description = form.description.read(cx).content().trim().to_owned();
+        let id = form.id;
+        let Some(detail) = self.detail.as_ref() else {
+            self.edit_modal = None;
+            cx.notify();
+            return;
+        };
+        if detail.action.id != id {
+            return;
+        }
+        let mut action = detail.action.clone();
+        action.name = name;
+        action.description = (!description.is_empty()).then_some(description);
+        self.edit_modal = None;
+        cx.notify();
+        self.persist_action(action, cx);
+    }
+
+    pub(super) fn render_edit_modal(
+        &self,
+        form: &EditActionForm,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let valid = !form.name.read(cx).content().trim().is_empty();
+
+        let name_section = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("actions_modal_section_name")),
+            )
+            .child(div().child(form.name.clone()));
+
+        let desc_section = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("actions_modal_section_description")),
+            )
+            .child(div().child(form.description.clone()));
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(name_section)
+            .child(desc_section);
+
+        let cancel = secondary_button(tr!("actions_modal_cancel_btn"), palette).on_click(
+            "actions-edit-modal-cancel",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_edit_modal(cx)),
+        );
+        let save = primary_button(tr!("action_editor_edit_save_btn"), palette)
+            .disabled(!valid)
+            .on_click(
+                "actions-edit-modal-save",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_edit_modal(cx)),
+            );
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(cancel)
+            .child(save);
+
+        let card = modal(tr!("action_editor_edit_modal_title"), body, palette)
+            .size(ModalSize::Md)
+            .footer(footer)
+            .kbd_hint(tr!("actions_esc_hint"))
+            .on_close(
+                "actions-edit-modal-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_edit_modal(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("actions-edit-modal-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_edit_modal(cx));
+            })
+            .into_any_element()
     }
 
     fn render_stats_row(&self, telemetry: &ActionTelemetry, palette: &ForgePalette) -> AnyElement {

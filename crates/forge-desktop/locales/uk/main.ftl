@@ -352,6 +352,7 @@ actions_esc_hint = ESC - скасувати
 ## Дії - модальне вікно нової дії
 
 actions_modal_new_action_title = Нова дія
+actions_modal_edit_action_title = Редагувати дію
 actions_modal_section_name = НАЗВА
 actions_modal_section_group = ГРУПА
 actions_modal_section_queue = ЧЕРГА
@@ -366,6 +367,7 @@ actions_modal_bypass_desc = Завжди виконувати, навіть як
 actions_modal_random_pick_label = Випадковий вибір
 actions_modal_random_pick_desc = Виконувати ОДИН випадковий крок замість усіх.
 actions_modal_create_btn = Створити дію
+actions_modal_save_btn = Зберегти зміни
 actions_modal_cancel_btn = Скасувати
 
 ## Дії - модальне вікно кроку

@@ -352,6 +352,7 @@ actions_esc_hint = ESC to cancel
 ## Actions - add-action modal
 
 actions_modal_new_action_title = New action
+actions_modal_edit_action_title = Edit action
 actions_modal_section_name = NAME
 actions_modal_section_group = GROUP
 actions_modal_section_queue = QUEUE
@@ -366,6 +367,7 @@ actions_modal_bypass_desc = Always run even if queue is paused.
 actions_modal_random_pick_label = Random pick
 actions_modal_random_pick_desc = Run ONE random sub-action per trigger instead of all.
 actions_modal_create_btn = Create action
+actions_modal_save_btn = Save changes
 actions_modal_cancel_btn = Cancel
 
 ## Actions - add-sub-action modal / step chips

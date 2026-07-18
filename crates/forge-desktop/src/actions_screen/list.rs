@@ -338,27 +338,67 @@ impl ScreenActionsView {
         );
     }
 
-    fn open_add_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_action_modal(
+        &mut self,
+        base: Option<Action>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let palette = cx.palette();
-        let name =
-            cx.new(|cx| TextInput::new(tr!("actions_name_placeholder"), cx).with_palette(palette));
-        let group =
-            cx.new(|cx| TextInput::new(tr!("actions_group_placeholder"), cx).with_palette(palette));
+        let seed_name = base.as_ref().map(|a| a.name.clone()).unwrap_or_default();
+        let seed_group = base
+            .as_ref()
+            .and_then(|a| a.group.clone())
+            .unwrap_or_default();
+        let seed_desc = base
+            .as_ref()
+            .and_then(|a| a.description.clone())
+            .unwrap_or_default();
+        let name = cx.new(|cx| {
+            let mut input =
+                TextInput::new(tr!("actions_name_placeholder"), cx).with_palette(palette);
+            input.set_content(seed_name, cx);
+            input
+        });
+        let group = cx.new(|cx| {
+            let mut input =
+                TextInput::new(tr!("actions_group_placeholder"), cx).with_palette(palette);
+            input.set_content(seed_group, cx);
+            input
+        });
         let description = cx.new(|cx| {
-            TextArea::new(tr!("actions_description_placeholder"), cx).with_palette(palette)
+            let mut area =
+                TextArea::new(tr!("actions_description_placeholder"), cx).with_palette(palette);
+            area.set_content(seed_desc, cx);
+            area
         });
         name.update(cx, |f, cx| f.focus(window, cx));
         let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
-        self.add_modal = Some(AddActionForm {
+        let (editing, enabled, concurrent, bypass_pause, random_pick, preselect_queue) = match &base
+        {
+            Some(a) => (
+                Some(a.id),
+                a.enabled,
+                a.concurrent,
+                a.bypass_pause,
+                a.execution_mode == ExecutionMode::RandomPick,
+                Some(a.queue_id),
+            ),
+            None => (None, true, false, false, false, None),
+        };
+        self.action_modal = Some(ActionForm {
+            editing,
+            base,
             name,
             group,
             description,
             queues: Vec::new(),
             selected_queue: 0,
-            enabled: true,
-            concurrent: false,
-            bypass_pause: false,
-            random_pick: false,
+            preselect_queue,
+            enabled,
+            concurrent,
+            bypass_pause,
+            random_pick,
             _name_sub: name_sub,
         });
         cx.notify();
@@ -381,58 +421,62 @@ impl ScreenActionsView {
     }
 
     fn apply_queue_options(&mut self, queues: Vec<Queue>, cx: &mut Context<Self>) {
-        if let Some(form) = self.add_modal.as_mut() {
+        if let Some(form) = self.action_modal.as_mut() {
+            let default_id = queues.iter().find(|q| q.name == "Default").map(|q| q.id);
             form.queues = queues
                 .into_iter()
                 .map(|q| (q.id, SharedString::from(q.name)))
                 .collect();
-            form.selected_queue = 0;
+            let target = form.preselect_queue.or(default_id);
+            form.selected_queue = target
+                .and_then(|id| form.queues.iter().position(|(qid, _)| *qid == id))
+                .unwrap_or(0);
             cx.notify();
         }
     }
 
-    fn cancel_add_modal(&mut self, cx: &mut Context<Self>) {
-        self.add_modal = None;
+    fn cancel_action_modal(&mut self, cx: &mut Context<Self>) {
+        self.action_modal = None;
         cx.notify();
     }
 
     fn select_queue(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(form) = self.add_modal.as_mut() {
+        if let Some(form) = self.action_modal.as_mut() {
             form.selected_queue = index;
             cx.notify();
         }
     }
 
     fn toggle_modal_enabled(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.add_modal.as_mut() {
+        if let Some(form) = self.action_modal.as_mut() {
             form.enabled = !form.enabled;
             cx.notify();
         }
     }
 
     fn toggle_modal_concurrent(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.add_modal.as_mut() {
+        if let Some(form) = self.action_modal.as_mut() {
             form.concurrent = !form.concurrent;
             cx.notify();
         }
     }
 
     fn toggle_modal_bypass(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.add_modal.as_mut() {
+        if let Some(form) = self.action_modal.as_mut() {
             form.bypass_pause = !form.bypass_pause;
             cx.notify();
         }
     }
 
     fn toggle_modal_random(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.add_modal.as_mut() {
+        if let Some(form) = self.action_modal.as_mut() {
             form.random_pick = !form.random_pick;
             cx.notify();
         }
     }
 
-    fn submit_add_modal(&mut self, cx: &mut Context<Self>) {
-        let Some(form) = self.add_modal.as_ref() else {
+    fn submit_action_modal(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.action_modal.as_ref() else {
             return;
         };
         let name = form.name.read(cx).content().trim().to_owned();
@@ -450,20 +494,35 @@ impl ScreenActionsView {
         } else {
             ExecutionMode::Sequential
         };
-        let action = Action {
-            id: ActionId::new(),
-            name,
-            group: (!group_name.is_empty()).then_some(group_name),
-            queue_id,
-            enabled: form.enabled,
-            concurrent: form.concurrent,
-            bypass_pause: form.bypass_pause,
-            execution_mode,
-            description: (!description.is_empty()).then_some(description),
-            sub_actions: Vec::new(),
+        let group = (!group_name.is_empty()).then_some(group_name);
+        let description = (!description.is_empty()).then_some(description);
+        let action = match form.base.clone() {
+            Some(mut existing) => {
+                existing.name = name;
+                existing.group = group;
+                existing.queue_id = queue_id;
+                existing.enabled = form.enabled;
+                existing.concurrent = form.concurrent;
+                existing.bypass_pause = form.bypass_pause;
+                existing.execution_mode = execution_mode;
+                existing.description = description;
+                existing
+            }
+            None => Action {
+                id: ActionId::new(),
+                name,
+                group,
+                queue_id,
+                enabled: form.enabled,
+                concurrent: form.concurrent,
+                bypass_pause: form.bypass_pause,
+                execution_mode,
+                description,
+                sub_actions: Vec::new(),
+            },
         };
         let new_id = action.id;
-        self.add_modal = None;
+        self.action_modal = None;
         cx.notify();
 
         let repo = Arc::clone(&self.action_repo);
@@ -560,7 +619,9 @@ impl ScreenActionsView {
             primary_button_with_icon(Icon::Plus, tr!("actions_modal_new_action_title"), palette)
                 .on_click(
                     "actions-new",
-                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_add_modal(window, cx)),
+                    cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.open_action_modal(None, window, cx)
+                    }),
                 );
 
         let cluster = div()
@@ -849,9 +910,9 @@ impl ScreenActionsView {
         )
     }
 
-    pub(super) fn render_add_modal(
+    pub(super) fn render_action_modal(
         &self,
-        form: &AddActionForm,
+        form: &ActionForm,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -981,13 +1042,19 @@ impl ScreenActionsView {
 
         let cancel = secondary_button(tr!("actions_modal_cancel_btn"), palette).on_click(
             "actions-modal-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_add_modal(cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_action_modal(cx)),
         );
-        let create = primary_button(tr!("actions_modal_create_btn"), palette)
+        let editing = form.editing.is_some();
+        let submit_label = if editing {
+            tr!("actions_modal_save_btn")
+        } else {
+            tr!("actions_modal_create_btn")
+        };
+        let create = primary_button(submit_label, palette)
             .disabled(!valid)
             .on_click(
                 "actions-modal-create",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_add_modal(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_action_modal(cx)),
             );
         let footer = div()
             .w_full()
@@ -998,20 +1065,25 @@ impl ScreenActionsView {
             .child(cancel)
             .child(create);
 
-        let card = modal(tr!("actions_modal_new_action_title"), body, palette)
+        let modal_title = if editing {
+            tr!("actions_modal_edit_action_title")
+        } else {
+            tr!("actions_modal_new_action_title")
+        };
+        let card = modal(modal_title, body, palette)
             .size(ModalSize::Md)
             .footer(footer)
             .kbd_hint(tr!("actions_esc_hint"))
             .on_close(
                 "actions-modal-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_add_modal(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_action_modal(cx)),
             );
 
         let view = cx.entity();
         overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("actions-modal-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_add_modal(cx));
+                view.update(cx, |this, cx| this.cancel_action_modal(cx));
             })
             .into_any_element()
     }

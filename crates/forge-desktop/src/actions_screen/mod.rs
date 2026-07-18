@@ -114,23 +114,19 @@ struct Renaming {
     _sub: Subscription,
 }
 
-struct AddActionForm {
+struct ActionForm {
+    editing: Option<ActionId>,
+    base: Option<Action>,
     name: Entity<TextInput>,
     group: Entity<TextInput>,
     description: Entity<TextArea>,
     queues: Vec<(QueueId, SharedString)>,
     selected_queue: usize,
+    preselect_queue: Option<QueueId>,
     enabled: bool,
     concurrent: bool,
     bypass_pause: bool,
     random_pick: bool,
-    _name_sub: Subscription,
-}
-
-struct EditActionForm {
-    id: ActionId,
-    name: Entity<TextInput>,
-    description: Entity<TextArea>,
     _name_sub: Subscription,
 }
 
@@ -158,8 +154,7 @@ pub struct ScreenActionsView {
     hovered: Option<ActionId>,
     menu_open: Option<ActionId>,
     renaming: Option<Renaming>,
-    add_modal: Option<AddActionForm>,
-    edit_modal: Option<EditActionForm>,
+    action_modal: Option<ActionForm>,
     history_modal: Option<HistoryModal>,
     header_menu_open: Option<Point<Pixels>>,
     pending_delete: Option<ActionId>,
@@ -213,8 +208,7 @@ impl ScreenActionsView {
             hovered: None,
             menu_open: None,
             renaming: None,
-            add_modal: None,
-            edit_modal: None,
+            action_modal: None,
             history_modal: None,
             header_menu_open: None,
             pending_delete: None,
@@ -417,14 +411,10 @@ impl Render for ScreenActionsView {
             .child(tree)
             .child(editor);
 
-        let add_modal = self
-            .add_modal
+        let action_modal = self
+            .action_modal
             .as_ref()
-            .map(|form| self.render_add_modal(form, &palette, cx));
-        let edit_modal = self
-            .edit_modal
-            .as_ref()
-            .map(|form| self.render_edit_modal(form, &palette, cx));
+            .map(|form| self.render_action_modal(form, &palette, cx));
         let history_modal = self
             .history_modal
             .as_ref()
@@ -456,8 +446,7 @@ impl Render for ScreenActionsView {
             .bg(palette.base)
             .child(header)
             .child(body)
-            .children(add_modal)
-            .children(edit_modal)
+            .children(action_modal)
             .children(history_modal)
             .children(delete_modal)
             .children(sub_modal)

@@ -488,7 +488,7 @@ impl ScriptEditorView {
             cx.notify();
             return;
         }
-        cx.emit(NavRequested(Screen::Actions));
+        cx.emit(NavRequested(Screen::Actions(None)));
     }
 
     fn confirm_discard(&mut self, cx: &mut Context<Self>) {
@@ -499,7 +499,7 @@ impl ScriptEditorView {
         match nav {
             PendingNav::SelectScript(id) => self.open_script(id, cx),
             PendingNav::NewScript => self.new_script(cx),
-            PendingNav::GoBack => cx.emit(NavRequested(Screen::Actions)),
+            PendingNav::GoBack => cx.emit(NavRequested(Screen::Actions(None))),
         }
         cx.notify();
     }

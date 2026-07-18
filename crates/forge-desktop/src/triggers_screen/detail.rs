@@ -3,8 +3,8 @@ use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, Icon, InputEvent, Radius, Spacing,
-    TextInput, ghost_button_with_icon, icon, primary_button, radius, spacing, status_dot, toggle,
-    tr,
+    TextInput, ghost_button_with_icon, icon, primary_button, radius, row_card, spacing, status_dot,
+    toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -424,7 +424,7 @@ impl TriggersRegistryView {
             .flex_col()
             .child(self.render_config_section(detail, palette, cx))
             .child(self.render_cooldown_section(detail, palette, cx))
-            .child(self.render_used_in_section(detail, palette))
+            .child(self.render_used_in_section(detail, palette, cx))
             .into_any_element()
     }
 
@@ -692,7 +692,12 @@ impl TriggersRegistryView {
             .into_any_element()
     }
 
-    fn render_used_in_section(&self, detail: &TriggerDetail, palette: &ForgePalette) -> AnyElement {
+    fn render_used_in_section(
+        &self,
+        detail: &TriggerDetail,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let count = detail.used_in.len();
         let label = if count > 0 {
             tr!("triggers_sheet_section_used_in_count", count = count as i64)
@@ -721,28 +726,28 @@ impl TriggersRegistryView {
                 .into_any_element()
         } else {
             let mut col = div().flex().flex_col().gap(px(3.0));
-            for (_, name) in &detail.used_in {
+            for (action_id, name) in &detail.used_in {
+                let action_id = *action_id;
+                let title = div()
+                    .min_w(px(0.0))
+                    .overflow_hidden()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(USED_FS)
+                    .text_color(palette.text_primary)
+                    .child(name.clone());
                 col = col.child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .items_center()
-                        .gap(spacing(Spacing::Xs, Density::Cozy))
-                        .py(USED_ROW_PAD_V)
-                        .px(USED_ROW_PAD_H)
-                        .rounded(radius(Radius::Sm))
-                        .bg(palette.shell)
-                        .child(icon(Icon::Bolt, ROW_GLYPH, palette.brand))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .overflow_hidden()
-                                .font_family(DEFAULT_MONO_FAMILY)
-                                .text_size(USED_FS)
-                                .text_color(palette.text_primary)
-                                .child(name.clone()),
-                        ),
+                    row_card(title, palette)
+                        .leading(icon(Icon::Bolt, ROW_GLYPH, palette.brand))
+                        .idle_background(palette.shell)
+                        .bordered(palette.border_regular, HALF_BORDER, radius(Radius::Sm))
+                        .padding_xy(USED_ROW_PAD_V, USED_ROW_PAD_H)
+                        .on_click(
+                            SharedString::from(format!("triggers-used-in-{action_id}")),
+                            cx.listener(move |_this, _: &ClickEvent, _, cx| {
+                                cx.emit(NavRequested(Screen::Actions(Some(action_id))))
+                            }),
+                        )
+                        .into_any_element(),
                 );
             }
             col.into_any_element()

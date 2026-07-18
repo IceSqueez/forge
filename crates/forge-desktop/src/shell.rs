@@ -294,7 +294,8 @@ impl AppShell {
                 cx.new(|cx| ServerConsoleView::new(server, rt_handle, credentials, cx))
                     .into()
             }
-            Screen::Actions => {
+            Screen::Actions(preselect) => {
+                let preselect = *preselect;
                 let action_repo = handles.backend.action_repo();
                 let queue_repo = handles.backend.queue_repo();
                 let actions_service = Arc::new(forge_runtime::actions::ActionsService::new(
@@ -319,6 +320,7 @@ impl AppShell {
                         trigger_registry,
                         rt_handle,
                         bus,
+                        preselect,
                         cx,
                     )
                 });
@@ -334,10 +336,14 @@ impl AppShell {
                 let registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
                 let preselect = *preselect;
-                cx.new(|cx| {
+                let view = cx.new(|cx| {
                     TriggersRegistryView::new(repo, action_repo, registry, rt_handle, preselect, cx)
+                });
+                cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
                 })
-                .into()
+                .detach();
+                view.into()
             }
             Screen::Scripts => {
                 let backend = handles.backend.clone();
@@ -377,7 +383,7 @@ impl AppShell {
     }
 
     fn go_actions(&mut self, _: &GoActions, _: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Screen::Actions, cx);
+        self.navigate(Screen::Actions(None), cx);
     }
 
     fn go_triggers(&mut self, _: &GoTriggers, _: &mut Window, cx: &mut Context<Self>) {

@@ -1,11 +1,11 @@
 use forge_platform_core::BuiltinId;
-use forge_types::TriggerInstanceId;
+use forge_types::{ActionId, TriggerInstanceId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Home,
     Chat,
-    Actions,
+    Actions(Option<ActionId>),
     Triggers(Option<TriggerInstanceId>),
     Queues,
     EventFeed,
@@ -22,6 +22,9 @@ pub enum Screen {
 
 impl Screen {
     pub fn same_nav(&self, other: &Screen) -> bool {
-        matches!((self, other), (Screen::Triggers(_), Screen::Triggers(_))) || self == other
+        matches!(
+            (self, other),
+            (Screen::Triggers(_), Screen::Triggers(_)) | (Screen::Actions(_), Screen::Actions(_))
+        ) || self == other
     }
 }

@@ -2,11 +2,16 @@ use forge_components::{ForgePalette, TextInput, ToastKind, search_input, tr};
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
-use gpui::{App, Context, Entity, Pixels, Point, Rgba, Subscription, Window, div, prelude::*, px};
+use gpui::{
+    App, Context, Entity, EventEmitter, Pixels, Point, Rgba, Subscription, Window, div, prelude::*,
+    px,
+};
 use std::future::Future;
 use std::sync::Arc;
 
 use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
+use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 
 mod config_form;
@@ -309,6 +314,8 @@ impl TriggersRegistryView {
         cx.notify();
     }
 }
+
+impl EventEmitter<NavRequested> for TriggersRegistryView {}
 
 impl Render for TriggersRegistryView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

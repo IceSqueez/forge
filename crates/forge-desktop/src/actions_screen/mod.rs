@@ -187,6 +187,7 @@ impl ScreenActionsView {
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
         bus: Arc<EventBus>,
+        preselect: Option<ActionId>,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -208,7 +209,7 @@ impl ScreenActionsView {
             filter: ActionsFilter::All,
             search: String::new(),
             search_field,
-            selected: None,
+            selected: preselect,
             hovered: None,
             menu_open: None,
             renaming: None,

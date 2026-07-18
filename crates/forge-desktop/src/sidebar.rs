@@ -145,7 +145,7 @@ impl SidebarNav {
             NavEntry::SectionLeaf {
                 icon: Icon::Bolt,
                 label: NavText::Key("nav_item_actions"),
-                screen: Screen::Actions,
+                screen: Screen::Actions(None),
             },
             NavEntry::SectionLeaf {
                 icon: Icon::TargetArrow,

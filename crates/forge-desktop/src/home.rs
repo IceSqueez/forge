@@ -193,7 +193,7 @@ impl HomeView {
                 .density(density)
                 .on_click(
                     "home-new-action",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::Actions, cx)),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::Actions(None), cx)),
                 );
 
         let buttons = div()
@@ -1021,7 +1021,7 @@ impl Render for HomeView {
                 stat_label: tr!("home_card_automation_stat_label", fired = fired.clone()),
                 hint: tr!("home_card_automation_hint"),
                 warn: false,
-                target: Screen::Actions,
+                target: Screen::Actions(None),
             },
             JumpCard {
                 id: "home-jump-connections",

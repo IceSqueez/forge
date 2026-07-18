@@ -6,11 +6,16 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{DEFAULT_BODY_FAMILY, Density, FONT_XS, Radius, Spacing, radius, spacing};
+use crate::tokens::{DEFAULT_BODY_FAMILY, Density, Spacing, spacing};
 
 type ChipClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 const CHIP_DOT: Pixels = px(5.0);
+const CHIP_GAP: Pixels = px(5.0);
+const CHIP_PAD_Y: Pixels = px(3.0);
+const CHIP_PAD_X: Pixels = px(9.0);
+const CHIP_RADIUS: Pixels = px(11.0);
+const CHIP_FS: Pixels = px(11.0);
 
 #[derive(Clone, Copy)]
 pub enum ChipGlyph {
@@ -78,15 +83,15 @@ impl Chip {
 impl RenderOnce for Chip {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let text_color = self.text_color;
-        let gap = spacing(Spacing::Xxs, self.density);
+        let _ = self.density;
 
         let mut root = div()
             .flex()
             .items_center()
-            .gap(gap)
-            .py(spacing(Spacing::Xxs, self.density))
-            .px(spacing(Spacing::Sm, self.density))
-            .rounded(radius(Radius::Pill));
+            .gap(CHIP_GAP)
+            .py(CHIP_PAD_Y)
+            .px(CHIP_PAD_X)
+            .rounded(CHIP_RADIUS);
 
         if let Some(background) = self.background {
             root = root.bg(background);
@@ -95,18 +100,18 @@ impl RenderOnce for Chip {
         match self.glyph {
             ChipGlyph::None => {}
             ChipGlyph::Dot(color) => root = root.child(status_dot(color, CHIP_DOT)),
-            ChipGlyph::Icon(glyph, color) => root = root.child(icon(glyph, FONT_XS, color)),
+            ChipGlyph::Icon(glyph, color) => root = root.child(icon(glyph, CHIP_FS, color)),
             ChipGlyph::DotIcon(dot_color, glyph) => {
                 root = root
                     .child(status_dot(dot_color, CHIP_DOT))
-                    .child(icon(glyph, FONT_XS, text_color));
+                    .child(icon(glyph, CHIP_FS, text_color));
             }
         }
 
         root = root.child(
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
+                .text_size(CHIP_FS)
                 .text_color(text_color)
                 .child(self.label),
         );

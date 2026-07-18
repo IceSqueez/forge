@@ -548,9 +548,26 @@ impl EventFeedView {
 
         let payload = self.payload_block(item, palette);
 
+        let caused_text: gpui::SharedString = item
+            .caused_by
+            .as_ref()
+            .and_then(|cid| {
+                let log = self.log.read(cx);
+                log.items().iter().find(|e| &e.id == cid).map(|e| {
+                    if e.summary.is_empty() {
+                        e.kind.clone()
+                    } else {
+                        e.summary.clone()
+                    }
+                })
+            })
+            .unwrap_or_else(|| gpui::SharedString::from("-"));
+
         let caused = div()
+            .w_full()
             .flex()
             .items_center()
+            .overflow_hidden()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .p(spacing(Spacing::Xs, Density::Cozy))
             .rounded(radius(Radius::Md))
@@ -561,17 +578,12 @@ impl EventFeedView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .min_w_0()
+                    .truncate()
+                    .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
-                    .child("-"),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.success)
-                    .child("-"),
+                    .child(caused_text),
             );
 
         let replay = div()

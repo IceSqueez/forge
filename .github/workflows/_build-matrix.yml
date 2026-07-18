@@ -60,6 +60,14 @@ jobs:
             libasound2-dev libdbus-1-dev libfontconfig1-dev pkg-config \
             libfuse2 desktop-file-utils
 
+      - name: Reclaim disk space (macOS)
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/*
+          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches/*
+          df -h /
+
       - name: Get Version
         id: get_version
         shell: bash
@@ -84,6 +92,8 @@ jobs:
               target/x86_64-apple-darwin/release/${{ inputs.bin_name }} \
               -output target/${{ matrix.target }}/release/${{ inputs.bin_name }}
             lipo -info target/${{ matrix.target }}/release/${{ inputs.bin_name }}
+            rm -rf target/aarch64-apple-darwin target/x86_64-apple-darwin
+            df -h /
           else
             cargo build --release --locked --target ${{ matrix.target }} -p ${{ inputs.package_name }}
           fi

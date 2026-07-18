@@ -27,6 +27,8 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
         enabled: enabled != 0,
         user_defined: user_defined != 0,
         platform_scope,
+        global_cooldown_secs: 0,
+        user_cooldown_secs: 0,
     })
 }
 

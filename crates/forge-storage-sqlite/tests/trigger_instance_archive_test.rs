@@ -56,6 +56,8 @@ fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstan
         enabled: true,
         user_defined,
         platform_scope: Default::default(),
+        global_cooldown_secs: 0,
+        user_cooldown_secs: 0,
     }
 }
 

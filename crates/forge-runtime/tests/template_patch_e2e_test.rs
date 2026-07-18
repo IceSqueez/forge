@@ -92,6 +92,8 @@ fn custom_instance(event_name: &str) -> TriggerInstance {
         enabled: true,
         user_defined: true,
         platform_scope: Default::default(),
+        global_cooldown_secs: 0,
+        user_cooldown_secs: 0,
     }
 }
 

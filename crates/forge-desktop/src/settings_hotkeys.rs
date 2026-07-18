@@ -1021,6 +1021,8 @@ async fn do_bind(
         enabled: true,
         user_defined: true,
         platform_scope: PlatformScope::default(),
+        global_cooldown_secs: 0,
+        user_cooldown_secs: 0,
     };
     backend
         .trigger_instance_repo()

@@ -1,12 +1,14 @@
+use std::collections::HashMap;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
 use forge_registry::{TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
-use forge_types::{TriggerConfig, Variant};
+use forge_types::{ArgStack, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
 use serde_json::json;
 use tracing::warn;
 
@@ -30,6 +32,8 @@ pub struct TriggerEvaluator {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
+    global_cooldowns: HashMap<TriggerInstanceId, Instant>,
+    user_cooldowns: HashMap<(TriggerInstanceId, String), Instant>,
 }
 
 impl TriggerEvaluator {
@@ -48,6 +52,8 @@ impl TriggerEvaluator {
             trigger_instances,
             scheduler,
             subscription,
+            global_cooldowns: HashMap::new(),
+            user_cooldowns: HashMap::new(),
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = Arc::clone(&cancel);
@@ -142,6 +148,11 @@ impl TriggerEvaluator {
                     continue;
                 }
 
+                let args = descriptor.build_arg_stack(&event);
+                if self.throttled(instance, &args) {
+                    continue;
+                }
+
                 if !command_emitted && instance.kind_id.ends_with(".command") {
                     self.bus.publish(Event::caused_by(
                         EventSource::Core,
@@ -155,7 +166,6 @@ impl TriggerEvaluator {
                     command_emitted = true;
                 }
 
-                let args = descriptor.build_arg_stack(&event);
                 let req = SchedulerRequest {
                     queue_id: action.queue_id,
                     action_id: action.id,
@@ -169,6 +179,47 @@ impl TriggerEvaluator {
             }
         }
     }
+
+    fn throttled(&mut self, instance: &TriggerInstance, args: &ArgStack) -> bool {
+        let user = arg_stack_user(args);
+
+        if instance.global_cooldown_secs > 0
+            && let Some(last) = self.global_cooldowns.get(&instance.id)
+            && last.elapsed() < Duration::from_secs(instance.global_cooldown_secs as u64)
+        {
+            return true;
+        }
+
+        if instance.user_cooldown_secs > 0
+            && let Some(user) = &user
+            && let Some(last) = self.user_cooldowns.get(&(instance.id, user.clone()))
+            && last.elapsed() < Duration::from_secs(instance.user_cooldown_secs as u64)
+        {
+            return true;
+        }
+
+        let now = Instant::now();
+        if instance.global_cooldown_secs > 0 {
+            self.global_cooldowns.insert(instance.id, now);
+        }
+        if instance.user_cooldown_secs > 0
+            && let Some(user) = user
+        {
+            self.user_cooldowns.insert((instance.id, user), now);
+        }
+        false
+    }
+}
+
+fn arg_stack_user(args: &ArgStack) -> Option<String> {
+    for key in ["user_id", "user_login", "user"] {
+        if let Some(Variant::String(s)) = args.get(key)
+            && !s.is_empty()
+        {
+            return Some(s.clone());
+        }
+    }
+    None
 }
 
 fn command_phrase(config: &TriggerConfig) -> String {
@@ -267,6 +318,8 @@ mod tests {
             enabled: true,
             user_defined: true,
             platform_scope: Default::default(),
+            global_cooldown_secs: 0,
+            user_cooldown_secs: 0,
         }
     }
 
@@ -468,6 +521,8 @@ mod tests {
             enabled: true,
             user_defined: true,
             platform_scope: scope,
+            global_cooldown_secs: 0,
+            user_cooldown_secs: 0,
         }
     }
 

@@ -1008,6 +1008,8 @@ impl ScreenActionsView {
             enabled: true,
             user_defined: true,
             platform_scope: PlatformScope::Any,
+            global_cooldown_secs: 0,
+            user_cooldown_secs: 0,
         };
         let repo = Arc::clone(&self.trigger_instance_repo);
         let service = Arc::clone(&self.actions_service);

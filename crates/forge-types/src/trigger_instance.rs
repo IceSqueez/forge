@@ -13,6 +13,10 @@ pub struct TriggerInstance {
     pub enabled: bool,
     pub user_defined: bool,
     pub platform_scope: PlatformScope,
+    #[serde(default)]
+    pub global_cooldown_secs: u32,
+    #[serde(default)]
+    pub user_cooldown_secs: u32,
 }
 
 #[cfg(test)]
@@ -35,6 +39,8 @@ mod tests {
             enabled: true,
             user_defined: false,
             platform_scope: Default::default(),
+            global_cooldown_secs: 0,
+            user_cooldown_secs: 0,
         };
         let json = serde_json::to_string(&instance).unwrap();
         let back: TriggerInstance = serde_json::from_str(&json).unwrap();
@@ -57,6 +63,8 @@ mod tests {
             enabled: true,
             user_defined: true,
             platform_scope: Default::default(),
+            global_cooldown_secs: 0,
+            user_cooldown_secs: 0,
         };
         let json = serde_json::to_string(&instance).unwrap();
         let back: TriggerInstance = serde_json::from_str(&json).unwrap();

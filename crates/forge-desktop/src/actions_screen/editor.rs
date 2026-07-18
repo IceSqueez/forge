@@ -345,6 +345,20 @@ fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
     segs
 }
 
+fn step_avg_badge(avg_ms: u64, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex_shrink_0()
+        .py(px(1.0))
+        .px(px(6.0))
+        .rounded(CHIP_RADIUS)
+        .bg(palette.surface_overlay)
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XXS)
+        .text_color(palette.success)
+        .child(tr!("action_step_avg_badge", count = avg_ms as i64))
+        .into_any_element()
+}
+
 fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     if s.is_empty() {
         return div()
@@ -1218,13 +1232,120 @@ impl ScreenActionsView {
                     ),
             );
 
-        div()
+        let header_row = div()
             .flex()
             .items_start()
             .justify_between()
             .child(header_left)
-            .child(btn_row)
+            .child(btn_row);
+
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, Density::Cozy))
+            .child(header_row);
+        if let Some(telemetry) = &self.telemetry {
+            col = col.child(self.render_stats_row(telemetry, palette));
+        }
+        col.into_any_element()
+    }
+
+    fn render_stats_row(&self, telemetry: &ActionTelemetry, palette: &ForgePalette) -> AnyElement {
+        let last_fired = fmt_relative_time(telemetry.last_fired_at);
+        let runs = fmt_number(telemetry.runs_today as f64, 0);
+        let avg = match telemetry.avg_duration_ms {
+            Some(ms) => tr!("action_stat_avg_ms", count = ms as i64),
+            None => tr!("action_stat_avg_none"),
+        };
+        let errors = telemetry.errors_7d;
+        let error_color = if errors > 0 {
+            palette.random
+        } else {
+            palette.text_primary
+        };
+        let error_hint: Option<SharedString> = if errors == 0 {
+            Some(tr!("action_stat_no_errors").into())
+        } else {
+            None
+        };
+
+        div()
+            .flex()
+            .gap(STAT_GAP)
+            .py(STAT_PAD_V)
+            .px(CARD_PAD_H)
+            .rounded(radius(Radius::Md))
+            .bg(palette.base)
+            .border(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .child(self.render_stat_cell(
+                tr!("action_stat_last_fired"),
+                last_fired,
+                palette.text_primary,
+                None,
+                palette,
+            ))
+            .child(self.render_stat_cell(
+                tr!("action_stat_runs_today"),
+                runs,
+                palette.text_primary,
+                None,
+                palette,
+            ))
+            .child(self.render_stat_cell(
+                tr!("action_stat_avg_time"),
+                avg,
+                palette.success,
+                None,
+                palette,
+            ))
+            .child(self.render_stat_cell(
+                tr!("action_stat_errors_7d"),
+                errors.to_string(),
+                error_color,
+                error_hint,
+                palette,
+            ))
             .into_any_element()
+    }
+
+    fn render_stat_cell(
+        &self,
+        label: impl Into<SharedString>,
+        value: impl Into<SharedString>,
+        value_color: Rgba,
+        hint: Option<SharedString>,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let mut cell = div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .gap(STAT_VALUE_GAP)
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(label.into()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(value_color)
+                    .child(value.into()),
+            );
+        if let Some(hint) = hint {
+            cell = cell.child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(hint),
+            );
+        }
+        cell.into_any_element()
     }
 
     fn render_triggers_section(
@@ -1473,12 +1594,28 @@ impl ScreenActionsView {
             .child(circle)
             .child(connector);
 
-        let title_el = div()
+        let title_text = div()
+            .flex_1()
             .font_family(DEFAULT_BODY_FAMILY)
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(title);
+        let avg_ms = if depth == 0 {
+            self.detail
+                .as_ref()
+                .and_then(|d| d.sub_action_avg_ms.get(i).copied().flatten())
+        } else {
+            None
+        };
+        let mut title_el = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(title_text);
+        if let Some(avg) = avg_ms {
+            title_el = title_el.child(step_avg_badge(avg, palette));
+        }
 
         let card = row_card(title_el, palette)
             .leading(icon(glyph, CARD_GLYPH, palette.text_secondary))

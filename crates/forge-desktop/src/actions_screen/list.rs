@@ -104,6 +104,7 @@ impl ScreenActionsView {
     fn select(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.selected = Some(id);
         self.detail = None;
+        self.telemetry = None;
         self.nav_path.clear();
         self.step_menu_open = None;
         self.sync_case_fields(cx);

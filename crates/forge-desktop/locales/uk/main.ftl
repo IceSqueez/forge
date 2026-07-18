@@ -507,6 +507,16 @@ action_editor_sub_count = { $count } кр.
 action_editor_enabled = Увімкнено
 action_editor_disabled = Вимкнено
 
+## Редактор дій - статистика виконання
+action_stat_last_fired = ОСТАННІЙ ЗАПУСК
+action_stat_runs_today = ЗАПУСКІВ · СЬОГОДНІ
+action_stat_avg_time = СЕР. ЧАС
+action_stat_errors_7d = ПОМИЛОК · 7д
+action_stat_avg_ms = { $count } мс
+action_stat_avg_none = -
+action_stat_no_errors = без помилок
+action_step_avg_badge = { $count } мс сер.
+
 ## Редактор дій - меню кроку
 
 action_editor_step_menu_edit = Редагувати крок…

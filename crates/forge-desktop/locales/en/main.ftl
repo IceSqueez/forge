@@ -507,6 +507,16 @@ action_editor_sub_count = { $count } sub
 action_editor_enabled = Enabled
 action_editor_disabled = Disabled
 
+## Action editor - execution stats
+action_stat_last_fired = LAST FIRED
+action_stat_runs_today = RUNS · TODAY
+action_stat_avg_time = AVG TIME
+action_stat_errors_7d = ERRORS · 7d
+action_stat_avg_ms = { $count } ms
+action_stat_avg_none = -
+action_stat_no_errors = no errors
+action_step_avg_badge = { $count } ms avg
+
 ## Action editor - step menu
 
 action_editor_step_menu_edit = Edit step…

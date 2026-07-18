@@ -1,13 +1,13 @@
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
-    ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, ToastKind, icon, overlay,
-    search_input, tr,
+    ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, ToastKind, fmt_number,
+    fmt_relative_time, icon, overlay, search_input, tr,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
-use forge_storage::{ActionRepo, QueueRepo};
+use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo};
 use forge_types::{Action, ActionId, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, Pixels, SharedString, Subscription,
@@ -58,6 +58,9 @@ const EMPTY_CARD_PAD_V: Pixels = px(18.0);
 const EMPTY_CARD_PAD_H: Pixels = px(12.0);
 const EMPTY_CARD_GLYPH: Pixels = px(16.0);
 const HALF_BORDER: Pixels = px(0.5);
+const STAT_GAP: Pixels = px(8.0);
+const STAT_PAD_V: Pixels = px(10.0);
+const STAT_VALUE_GAP: Pixels = px(3.0);
 const PANE_PAD_V: Pixels = px(18.0);
 const PANE_PAD_H: Pixels = px(22.0);
 const STEP_GAP: Pixels = px(6.0);
@@ -136,6 +139,7 @@ pub struct ScreenActionsView {
     add_modal: Option<AddActionForm>,
     pending_delete: Option<ActionId>,
     detail: Option<ActionDetail>,
+    telemetry: Option<ActionTelemetry>,
     sub_form: Option<EditSubActionForm>,
     step_menu_open: Option<usize>,
     grid_picker: Option<GridPickerForm>,
@@ -183,6 +187,7 @@ impl ScreenActionsView {
             add_modal: None,
             pending_delete: None,
             detail: None,
+            telemetry: None,
             sub_form: None,
             step_menu_open: None,
             grid_picker: None,
@@ -254,6 +259,7 @@ impl ScreenActionsView {
             } else {
                 self.selected = None;
                 self.detail = None;
+                self.telemetry = None;
                 self.nav_path.clear();
                 self.case_fields.clear();
             }
@@ -294,6 +300,18 @@ impl ScreenActionsView {
             Err(_) => {}
         })
         .detach();
+
+        let service = Arc::clone(&self.actions_service);
+        let (ttx, trx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = ttx.send(service.load_telemetry(id).await);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(telemetry)) = trx.await {
+                let _ = this.update(cx, |this, cx| this.apply_telemetry(id, telemetry, cx));
+            }
+        })
+        .detach();
     }
 
     fn apply_detail(&mut self, id: ActionId, detail: ActionDetail, cx: &mut Context<Self>) {
@@ -302,6 +320,19 @@ impl ScreenActionsView {
         }
         self.detail = Some(detail);
         self.sync_case_fields(cx);
+        cx.notify();
+    }
+
+    fn apply_telemetry(
+        &mut self,
+        id: ActionId,
+        telemetry: ActionTelemetry,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected != Some(id) {
+            return;
+        }
+        self.telemetry = Some(telemetry);
         cx.notify();
     }
 

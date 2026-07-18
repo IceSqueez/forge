@@ -379,7 +379,7 @@ impl GridPicker {
         let p = self.palette;
         let query = self.query.trim().to_owned();
         let searching = !query.is_empty();
-        let mut col = div().flex().flex_col();
+        let mut col = div().flex().flex_col().w_full();
 
         if searching {
             col = col.child(
@@ -499,9 +499,9 @@ impl GridPicker {
         let hovered = self.hovered.as_ref() == Some(&id);
         let dim = !matches!(item.state, GridPickerItemState::Normal);
         let border = if hovered && !dim {
-            p.border_regular
+            p.border_input
         } else {
-            p.surface_overlay
+            p.border_regular
         };
 
         let tile = div()
@@ -550,6 +550,7 @@ impl GridPicker {
         let desc = div()
             .truncate()
             .w_full()
+            .min_w(px(0.0))
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(GRID_META_FS)
             .text_color(p.text_muted)

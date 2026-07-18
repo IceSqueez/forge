@@ -12,8 +12,8 @@ use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Queue, QueueId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -27,6 +27,8 @@ const PANEL_GLYPH: Pixels = px(12.0);
 const MENU_GLYPH: Pixels = px(14.0);
 const HEADER_BTN_GLYPH: Pixels = px(13.0);
 const CARDS_PER_ROW: usize = 2;
+const STATS_FS: Pixels = px(11.5);
+const HEADER_PAD_V: Pixels = px(8.0);
 const MAX_PILLS: usize = 3;
 const SERIAL_CONCURRENCY: u32 = 1;
 const PARALLEL_CONCURRENCY: u32 = 8;
@@ -35,7 +37,6 @@ const MODAL_WIDTH: Pixels = px(440.0);
 struct QueueRow {
     id: QueueId,
     name: String,
-    desc: String,
     blocking: bool,
     concurrency: u32,
     paused: bool,
@@ -435,18 +436,21 @@ impl QueuesView {
             name_row = name_row.child(not_live_badge(palette));
         }
 
-        let desc = div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_muted)
-            .child(q.desc.clone());
+        let desc_text = default_description(&q.name);
+        let desc = (!desc_text.is_empty()).then(|| {
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.text_muted)
+                .child(desc_text)
+        });
 
         let left = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
             .child(name_row)
-            .child(desc);
+            .children(desc);
 
         div()
             .flex()
@@ -801,12 +805,57 @@ impl Render for QueuesView {
                 "q-new",
                 cx.listener(|this, _: &ClickEvent, window, cx| this.open_new(window, cx)),
             );
-        let header_actions = div()
+        let sep = || {
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(STATS_FS)
+                .text_color(palette.text_faint)
+                .child("\u{b7}")
+        };
+        let stat = |value: String, value_color: Rgba, label: SharedString| {
+            div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xxs, density))
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(STATS_FS)
+                        .text_color(value_color)
+                        .child(value),
+                )
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(STATS_FS)
+                        .text_color(palette.text_muted)
+                        .child(label),
+                )
+        };
+        let paused_count = self.queues.iter().filter(|q| q.paused).count();
+        let running_count = self.queues.len().saturating_sub(paused_count);
+        let stats = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(pause_all)
-            .child(new_queue);
+            .gap(spacing(Spacing::Sm, density))
+            .child(stat(
+                self.queues.len().to_string(),
+                palette.text_primary,
+                tr!("queues_stat_queues").into(),
+            ))
+            .child(sep())
+            .child(stat(
+                running_count.to_string(),
+                palette.success,
+                tr!("queues_stat_running").into(),
+            ))
+            .child(sep())
+            .child(stat(
+                paused_count.to_string(),
+                palette.warning,
+                tr!("queues_stat_paused").into(),
+            ));
 
         let header = breadcrumb(
             vec![
@@ -815,7 +864,34 @@ impl Render for QueuesView {
             ],
             &palette,
         )
-        .right(header_actions);
+        .right(stats);
+
+        let toolbar = div()
+            .w_full()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_between()
+            .py(HEADER_PAD_V)
+            .px(spacing(Spacing::Md, density))
+            .bg(palette.elevated)
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(STATS_FS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("queues_subtitle")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(pause_all)
+                    .child(new_queue),
+            );
 
         let feedback = self
             .feedback
@@ -862,6 +938,7 @@ impl Render for QueuesView {
             .flex_col()
             .bg(palette.base)
             .child(header)
+            .child(toolbar)
             .children(feedback)
             .child(scroll)
             .children(modal_overlay)
@@ -1174,7 +1251,6 @@ async fn load_queues(
             let paused = paused_ids.contains(&q.id);
             QueueRow {
                 id: q.id,
-                desc: default_description(&q.name),
                 name: q.name,
                 blocking: q.blocking,
                 concurrency,

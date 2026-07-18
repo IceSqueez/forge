@@ -14,14 +14,14 @@ fn decode_row(
     id_str: String,
     name: String,
     description: String,
-    blocking: i64,
+    concurrency: i64,
 ) -> Result<Queue, SqliteStorageError> {
     let id = parse_queue_id(&id_str)?;
     Ok(Queue {
         id,
         name,
         description,
-        blocking: blocking != 0,
+        concurrency: concurrency.max(1) as u32,
     })
 }
 
@@ -41,14 +41,14 @@ impl SqliteQueueRepo {
 impl QueueRepo for SqliteQueueRepo {
     async fn list(&self) -> Result<Vec<Queue>, StorageError> {
         let rows: Vec<QueueRow> =
-            sqlx::query_as("SELECT id, name, description, blocking FROM queues ORDER BY name")
+            sqlx::query_as("SELECT id, name, description, concurrency FROM queues ORDER BY name")
                 .fetch_all(&self.pool)
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
         rows.into_iter()
-            .map(|(id, name, description, blocking)| {
-                decode_row(id, name, description, blocking).map_err(StorageError::from)
+            .map(|(id, name, description, concurrency)| {
+                decode_row(id, name, description, concurrency).map_err(StorageError::from)
             })
             .collect()
     }
@@ -56,48 +56,51 @@ impl QueueRepo for SqliteQueueRepo {
     async fn get(&self, id: QueueId) -> Result<Option<Queue>, StorageError> {
         let id_str = id.to_string();
         let row: Option<QueueRow> =
-            sqlx::query_as("SELECT id, name, description, blocking FROM queues WHERE id = ?")
+            sqlx::query_as("SELECT id, name, description, concurrency FROM queues WHERE id = ?")
                 .bind(&id_str)
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
-        row.map(|(id, name, description, blocking)| {
-            decode_row(id, name, description, blocking).map_err(StorageError::from)
+        row.map(|(id, name, description, concurrency)| {
+            decode_row(id, name, description, concurrency).map_err(StorageError::from)
         })
         .transpose()
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<Queue>, StorageError> {
         let row: Option<QueueRow> =
-            sqlx::query_as("SELECT id, name, description, blocking FROM queues WHERE name = ?")
+            sqlx::query_as("SELECT id, name, description, concurrency FROM queues WHERE name = ?")
                 .bind(name)
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
-        row.map(|(id, name, description, blocking)| {
-            decode_row(id, name, description, blocking).map_err(StorageError::from)
+        row.map(|(id, name, description, concurrency)| {
+            decode_row(id, name, description, concurrency).map_err(StorageError::from)
         })
         .transpose()
     }
 
     async fn save(&self, queue: &Queue) -> Result<(), StorageError> {
         let id_str = queue.id.to_string();
-        let blocking: i64 = if queue.blocking { 1 } else { 0 };
+        let concurrency = i64::from(queue.concurrency.max(1));
+        let blocking: i64 = if queue.is_serial() { 1 } else { 0 };
 
         sqlx::query(
-            "INSERT INTO queues (id, name, description, blocking)
-             VALUES (?, ?, ?, ?)
+            "INSERT INTO queues (id, name, description, blocking, concurrency)
+             VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                  name        = excluded.name,
                  description = excluded.description,
-                 blocking    = excluded.blocking",
+                 blocking    = excluded.blocking,
+                 concurrency = excluded.concurrency",
         )
         .bind(&id_str)
         .bind(&queue.name)
         .bind(&queue.description)
         .bind(blocking)
+        .bind(concurrency)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;

@@ -12,12 +12,12 @@ async fn setup() -> SqliteBackend {
         .expect("open")
 }
 
-fn make_queue(name: &str, blocking: bool) -> Queue {
+fn make_queue(name: &str, concurrency: u32) -> Queue {
     Queue {
         id: QueueId::new(),
         name: name.to_owned(),
         description: String::new(),
-        blocking,
+        concurrency,
     }
 }
 
@@ -36,7 +36,7 @@ async fn default_queue_exists_after_migration() {
 #[tokio::test]
 async fn save_then_get_roundtrips_queue() {
     let backend = setup().await;
-    let queue = make_queue("priority", true);
+    let queue = make_queue("priority", 1);
     let id = queue.id;
     backend.queue_repo().save(&queue).await.expect("save");
     let got = backend.queue_repo().get(id).await.expect("get");
@@ -44,7 +44,7 @@ async fn save_then_get_roundtrips_queue() {
     let got = got.unwrap();
     assert_eq!(got.id, id);
     assert_eq!(got.name, "priority");
-    assert!(got.blocking);
+    assert_eq!(got.concurrency, 1);
 }
 
 #[tokio::test]
@@ -59,7 +59,7 @@ async fn get_by_name_finds_existing_queue() {
     let backend = setup().await;
     backend
         .queue_repo()
-        .save(&make_queue("slow", false))
+        .save(&make_queue("slow", 8))
         .await
         .expect("save");
     let got = backend
@@ -85,21 +85,21 @@ async fn get_by_name_missing_returns_none() {
 #[tokio::test]
 async fn save_updates_existing_queue() {
     let backend = setup().await;
-    let mut queue = make_queue("updatable", false);
+    let mut queue = make_queue("updatable", 8);
     let id = queue.id;
     backend.queue_repo().save(&queue).await.expect("save 1");
 
-    queue.blocking = true;
+    queue.concurrency = 1;
     backend.queue_repo().save(&queue).await.expect("save 2");
 
     let got = backend.queue_repo().get(id).await.expect("get").unwrap();
-    assert!(got.blocking);
+    assert_eq!(got.concurrency, 1);
 }
 
 #[tokio::test]
 async fn delete_existing_queue_returns_true() {
     let backend = setup().await;
-    let queue = make_queue("to_delete", false);
+    let queue = make_queue("to_delete", 8);
     let id = queue.id;
     backend.queue_repo().save(&queue).await.expect("save");
     assert!(backend.queue_repo().delete(id).await.expect("delete"));
@@ -123,12 +123,12 @@ async fn list_returns_all_queues_including_default() {
     let backend = setup().await;
     backend
         .queue_repo()
-        .save(&make_queue("q1", false))
+        .save(&make_queue("q1", 8))
         .await
         .expect("save q1");
     backend
         .queue_repo()
-        .save(&make_queue("q2", true))
+        .save(&make_queue("q2", 1))
         .await
         .expect("save q2");
     let all = backend.queue_repo().list().await.expect("list");

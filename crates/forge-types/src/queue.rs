@@ -6,7 +6,13 @@ pub struct Queue {
     pub id: QueueId,
     pub name: String,
     pub description: String,
-    pub blocking: bool,
+    pub concurrency: u32,
+}
+
+impl Queue {
+    pub fn is_serial(&self) -> bool {
+        self.concurrency <= 1
+    }
 }
 
 #[cfg(test)]
@@ -20,7 +26,7 @@ mod tests {
             id: QueueId::new(),
             name: "Default".to_string(),
             description: "Catch-all".to_string(),
-            blocking: false,
+            concurrency: 8,
         };
         let json = serde_json::to_string(&q).unwrap();
         let back: Queue = serde_json::from_str(&json).unwrap();
@@ -28,15 +34,16 @@ mod tests {
     }
 
     #[test]
-    fn queue_blocking_flag_persists() {
+    fn queue_concurrency_persists() {
         let q = Queue {
             id: QueueId::new(),
             name: "Slow".to_string(),
             description: String::new(),
-            blocking: true,
+            concurrency: 1,
         };
         let json = serde_json::to_string(&q).unwrap();
         let back: Queue = serde_json::from_str(&json).unwrap();
-        assert!(back.blocking);
+        assert_eq!(back.concurrency, 1);
+        assert!(back.is_serial());
     }
 }

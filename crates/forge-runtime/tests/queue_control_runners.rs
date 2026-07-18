@@ -44,7 +44,7 @@ fn nonblocking(id: QueueId) -> Queue {
         id,
         name: "default".to_string(),
         description: String::new(),
-        blocking: false,
+        concurrency: 8,
     }
 }
 

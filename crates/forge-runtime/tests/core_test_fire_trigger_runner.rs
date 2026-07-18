@@ -53,7 +53,7 @@ fn nonblocking(id: QueueId) -> Queue {
         id,
         name: "default".to_string(),
         description: String::new(),
-        blocking: false,
+        concurrency: 8,
     }
 }
 
@@ -62,7 +62,7 @@ fn blocking(id: QueueId) -> Queue {
         id,
         name: "serial".to_string(),
         description: String::new(),
-        blocking: true,
+        concurrency: 1,
     }
 }
 

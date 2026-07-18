@@ -5,8 +5,8 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, OverlayPosition,
     Radius, Spacing, TextInput, breadcrumb, icon, menu_button, menu_divider, menu_item, modal,
-    overlay, primary_button, primary_button_with_icon, radius, secondary_button, spacing, spinner,
-    toggle, tr, with_alpha,
+    overlay, primary_button, primary_button_with_icon, radius, secondary_button, slider, spacing,
+    spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -36,6 +36,8 @@ const DESC_FS: Pixels = px(11.0);
 const MAX_PILLS: usize = 3;
 const SERIAL_CONCURRENCY: u32 = 1;
 const PARALLEL_CONCURRENCY: u32 = 8;
+const MIN_CONCURRENCY: u32 = 1;
+const MAX_CONCURRENCY: u32 = 16;
 const MODAL_WIDTH: Pixels = px(440.0);
 
 struct QueueRow {
@@ -67,7 +69,7 @@ struct EditQueueModal {
     orig_name: String,
     name_input: Entity<TextInput>,
     desc_input: Entity<TextInput>,
-    blocking: bool,
+    concurrency: u32,
     saving: bool,
     _name_sub: Subscription,
 }
@@ -259,7 +261,7 @@ impl QueuesView {
     }
 
     fn open_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let modal = Self::build_modal(None, "", "", false, cx);
+        let modal = Self::build_modal(None, "", "", PARALLEL_CONCURRENCY, cx);
         modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         cx.notify();
@@ -271,8 +273,8 @@ impl QueuesView {
         };
         let name = q.name.clone();
         let description = q.description.clone();
-        let blocking = q.blocking;
-        let modal = Self::build_modal(Some(id), &name, &description, blocking, cx);
+        let concurrency = q.concurrency;
+        let modal = Self::build_modal(Some(id), &name, &description, concurrency, cx);
         modal.name_input.update(cx, |f, cx| f.focus(window, cx));
         self.modal = Some(modal);
         cx.notify();
@@ -282,7 +284,7 @@ impl QueuesView {
         editing: Option<QueueId>,
         name_seed: &str,
         desc_seed: &str,
-        blocking: bool,
+        concurrency: u32,
         cx: &mut Context<Self>,
     ) -> EditQueueModal {
         let palette = cx.palette();
@@ -314,7 +316,7 @@ impl QueuesView {
             orig_name,
             name_input,
             desc_input,
-            blocking,
+            concurrency: concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
             saving: false,
             _name_sub: name_sub,
         }
@@ -340,9 +342,9 @@ impl QueuesView {
         cx.notify();
     }
 
-    fn toggle_blocking(&mut self, cx: &mut Context<Self>) {
+    fn set_concurrency(&mut self, value: u32, cx: &mut Context<Self>) {
         if let Some(modal) = self.modal.as_mut() {
-            modal.blocking = !modal.blocking;
+            modal.concurrency = value.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
         }
         cx.notify();
     }
@@ -362,13 +364,13 @@ impl QueuesView {
         };
         let name = modal.name_input.read(cx).content().trim().to_owned();
         let description = modal.desc_input.read(cx).content().trim().to_owned();
-        let blocking = modal.blocking;
+        let concurrency = modal.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
         let editing = modal.editing;
         let queue = Queue {
             id: editing.unwrap_or_else(QueueId::new),
             name,
             description,
-            blocking,
+            concurrency,
         };
         let id = queue.id;
         let is_edit = editing.is_some();
@@ -769,7 +771,12 @@ impl QueuesView {
             tr!("queues_create_title")
         };
 
-        let blocking = modal_state.blocking;
+        let concurrency = modal_state.concurrency;
+        let concurrency_hint = if concurrency <= SERIAL_CONCURRENCY {
+            SharedString::from(tr!("queues_concurrency_serial"))
+        } else {
+            SharedString::from(tr!("queues_concurrency_parallel", count = concurrency))
+        };
         let name_field = div()
             .flex()
             .flex_col()
@@ -813,40 +820,60 @@ impl QueuesView {
             )
             .child(div().child(modal_state.desc_input.clone()));
 
-        let toggle_label = div()
-            .flex_1()
+        let concurrency_field = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
+            .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(SharedString::from(tr!("queues_create_blocking_label"))),
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(SharedString::from(
+                        tr!("queues_concurrency_label").to_uppercase(),
+                    )),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Sm, density))
+                    .child(
+                        div().flex_1().child(
+                            slider(
+                                concurrency as f32,
+                                MIN_CONCURRENCY as f32,
+                                MAX_CONCURRENCY as f32,
+                                palette,
+                            )
+                            .on_change(
+                                "q-modal-concurrency",
+                                cx.listener(|this, value: &f32, _, cx| {
+                                    this.set_concurrency(value.round() as u32, cx)
+                                }),
+                            ),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .w(px(24.0))
+                            .flex()
+                            .justify_end()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(STAT_VALUE_FS)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(palette.text_primary)
+                            .child(concurrency.to_string()),
+                    ),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
-                    .child(SharedString::from(tr!("queues_create_blocking_desc"))),
+                    .child(concurrency_hint),
             );
-        let blocking_row = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.surface_overlay)
-            .child(toggle_label)
-            .child(toggle(blocking, palette).on_click(
-                "q-modal-blocking",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_blocking(cx)),
-            ));
 
         let body = div()
             .flex()
@@ -854,7 +881,7 @@ impl QueuesView {
             .gap(spacing(Spacing::Sm, density))
             .child(name_field)
             .child(desc_field)
-            .child(blocking_row);
+            .child(concurrency_field);
 
         let saveable = self.modal_saveable(cx);
         let save_label = if modal_state.editing.is_some() {
@@ -1380,17 +1407,13 @@ async fn load_queues(
         .into_iter()
         .map(|q| {
             let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
-            let concurrency = if q.blocking {
-                SERIAL_CONCURRENCY
-            } else {
-                PARALLEL_CONCURRENCY
-            };
+            let concurrency = q.concurrency.max(1);
             let paused = paused_ids.contains(&q.id);
             QueueRow {
                 id: q.id,
                 name: q.name,
                 description: q.description,
-                blocking: q.blocking,
+                blocking: concurrency == SERIAL_CONCURRENCY,
                 concurrency,
                 paused,
                 pending: 0,

@@ -86,7 +86,7 @@ struct QueueSlot {
     sender: mpsc::UnboundedSender<QueueTask>,
     state: Arc<RwLock<PauseState>>,
     name: String,
-    blocking: bool,
+    concurrency: u32,
     runner: JoinHandle<()>,
     inflight: InflightTracker,
 }
@@ -241,26 +241,22 @@ impl QueueScheduler {
         let state = Arc::new(RwLock::new(PauseState { paused: false }));
         let inflight = InflightTracker::default();
         let name = queue.name.clone();
-        let blocking = queue.blocking;
+        let concurrency = queue.concurrency.max(1);
 
-        let runner = if blocking {
-            let sem = Arc::new(Semaphore::new(1));
-            tokio::spawn(Self::run_blocking(task_rx, engine, sem, inflight.clone()))
-        } else {
-            tokio::spawn(Self::run_nonblocking(task_rx, engine, inflight.clone()))
-        };
+        let sem = Arc::new(Semaphore::new(concurrency as usize));
+        let runner = tokio::spawn(Self::run_bounded(task_rx, engine, sem, inflight.clone()));
 
         QueueSlot {
             sender: task_tx,
             state,
             name,
-            blocking,
+            concurrency,
             runner,
             inflight,
         }
     }
 
-    async fn run_blocking(
+    async fn run_bounded(
         mut rx: mpsc::UnboundedReceiver<QueueTask>,
         engine: Arc<ActionEngineHandle>,
         sem: Arc<Semaphore>,
@@ -272,31 +268,6 @@ impl QueueScheduler {
                 Err(_) => break,
             };
 
-            let req = ExecutionRequest {
-                action_id: task.action_id,
-                trigger_event_id: task.trigger_event_id,
-                initial_args: task.initial_args,
-            };
-
-            let cancel = CancelSignal::new();
-            let id = inflight.register(cancel.clone());
-            let (done_tx, done_rx) = oneshot::channel::<()>();
-
-            if engine.dispatch_tracked(req, cancel, done_tx).await.is_ok() {
-                let _ = done_rx.await;
-            }
-
-            inflight.complete(id);
-            drop(permit);
-        }
-    }
-
-    async fn run_nonblocking(
-        mut rx: mpsc::UnboundedReceiver<QueueTask>,
-        engine: Arc<ActionEngineHandle>,
-        inflight: InflightTracker,
-    ) {
-        while let Some(task) = rx.recv().await {
             let req = ExecutionRequest {
                 action_id: task.action_id,
                 trigger_event_id: task.trigger_event_id,
@@ -317,6 +288,7 @@ impl QueueScheduler {
                     let _ = done_rx.await;
                 }
                 inflight_ref.complete(id);
+                drop(permit);
             });
         }
     }
@@ -365,12 +337,12 @@ impl QueueScheduler {
                 }
                 SchedulerCommand::Reconfigure(queue, reply) => {
                     let outcome = match slots.get_mut(&queue.id) {
-                        Some(slot) if slot.blocking == queue.blocking => {
+                        Some(slot) if slot.concurrency == queue.concurrency => {
                             slot.name = queue.name;
                             MembershipOutcome::Applied
                         }
                         Some(old) => {
-                            // A blocking-flip rebuilds the runner, but must carry pause
+                            // A concurrency change rebuilds the runner, but must carry pause
                             // state forward, else a config edit silently resumes a paused
                             // queue with no event.
                             let was_paused = old.state.read().await.paused;
@@ -482,7 +454,7 @@ impl QueueScheduler {
         bus: &Arc<EventBus>,
         engine: &Arc<ActionEngineHandle>,
     ) -> Result<(), SchedulerError> {
-        let (was_paused, name, blocking) = {
+        let (was_paused, name, concurrency) = {
             let slot = slots
                 .get(queue_id)
                 .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
@@ -499,7 +471,7 @@ impl QueueScheduler {
             (
                 slot.state.read().await.paused,
                 slot.name.clone(),
-                slot.blocking,
+                slot.concurrency,
             )
         };
 
@@ -508,7 +480,7 @@ impl QueueScheduler {
                 id: *queue_id,
                 name: name.clone(),
                 description: String::new(),
-                blocking,
+                concurrency,
             },
             Arc::clone(engine),
         );
@@ -582,7 +554,7 @@ mod tests {
             id,
             name: "default".to_string(),
             description: String::new(),
-            blocking: false,
+            concurrency: 8,
         }
     }
 
@@ -591,7 +563,7 @@ mod tests {
             id,
             name: "serial".to_string(),
             description: String::new(),
-            blocking: true,
+            concurrency: 1,
         }
     }
 
@@ -1130,7 +1102,7 @@ mod tests {
             id: q_id,
             name: "renamed".to_string(),
             description: String::new(),
-            blocking: false,
+            concurrency: 8,
         };
         let outcome = sched.reconfigure(renamed).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
@@ -1299,7 +1271,7 @@ mod tests {
                 id: QueueId::new(),
                 name: "ghost".to_string(),
                 description: String::new(),
-                blocking: false,
+                concurrency: 8,
             })
             .await
             .unwrap();

@@ -417,8 +417,14 @@ impl QueuesView {
         } else {
             palette.border_regular
         };
+        let hover_border = if paused {
+            with_alpha(palette.warning, 0.35)
+        } else {
+            palette.border_input
+        };
 
         div()
+            .id(("queue-card", index))
             .w_full()
             .h_full()
             .flex()
@@ -428,6 +434,7 @@ impl QueuesView {
             .border(BORDER_THIN)
             .border_color(border_color)
             .bg(palette.elevated)
+            .hover(move |s| s.border_color(hover_border))
             .child(self.card_header(index, q, paused, not_live, palette, cx))
             .child(self.card_metrics(q, paused, palette))
             .child(self.running_panel(q, paused, palette, density))
@@ -1287,7 +1294,7 @@ fn card_button(
     match fill {
         Some(bg) => btn = btn.bg(bg),
         None => {
-            let hover = palette.elevated;
+            let hover = palette.surface_overlay;
             btn = btn
                 .border(BORDER_THIN)
                 .border_color(palette.border_regular)

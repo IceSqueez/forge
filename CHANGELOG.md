@@ -1,7 +1,73 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [0.3.0-beta.4] - 2026-07-17
+## [0.3.0-beta.5] - 2026-07-18
+### 🐛 Bug Fixes
+- *(actions)* Color the zero-error stat green
+- *(components)* Match ghost button idle text to the design
+- *(actions)* Light the add-row button border on hover
+- *(components)* Keep grid picker cards a uniform height
+- *(actions)* Match step icon glyphs and colors to the design
+- *(components)* Make paired grid cards equal width
+- *(actions)* Edit sub-actions in a centered modal instead of a side sheet
+- *(components)* Fill grid width for equal cards and correct card hover border
+- *(actions)* Give the header action buttons a uniform height
+- *(components)* Anchor dropdown menus at the click position
+- *(chat)* Anchor drawer and trigger row menus at the click position
+- *(components)* Pin grid picker row width so cards are equal
+- *(components)* Give every grid card a fixed width so lone cards match
+- *(triggers)* Widen search, show filter divider, space the used column
+- *(components)* Match button font and padding to the design
+- *(components)* Reduce button vertical padding to match the design
+- *(queues)* Show header summary, subtitle, and queue descriptions
+- *(queues)* Match card layout to design with wired menu and spinners
+- *(queues)* Make card and button hover feedback visible
+- *(queues)* Use border hover on ghost buttons to match design
+- *(queues)* Reserve description line when a queue has none
+- *(queues)* Align configure modal with design, drop rename item
+- *(queues)* Place esc hint inline with footer buttons
+- *(queues)* Wrap concurrency slider in a bordered surface box
+- *(queues)* Widen configure modal to md size to match design
+- *(events)* Align feed header, toolbar icons, and row density with design
+- *(events)* Chip dots, row text sizes, hover, summary and inspector overflow
+- *(events)* Resolve caused-by event, add outcome tags, size chips to design
+- *(triggers)* Compact row height and full-row click target
+
+### 🚀 Features
+- *(actions)* Surface execution stats and per-step timing on detail
+- *(actions)* Humanize sub-action step summaries
+- *(actions)* Add edit modal and header overflow menu
+- *(actions)* Export an action to a json file
+- *(actions)* Expose recent run history on the actions service
+- *(actions)* Add a run-history modal for the selected action
+- *(script)* Bind named-script return value to an output variable
+- *(actions)* Show named-script output variable in step summary
+- *(components)* Resolve file-text, dice, script, and edit icon names
+- *(actions)* Open step edit on card click with category-colored icons
+- *(actions)* Toggle action enabled by double-clicking the status pill
+- *(actions)* Add triggers from the full kind catalog
+- *(actions)* Open the action row menu via right-click
+- *(actions)* Make trigger cards hover, navigate, and show the unlink icon
+- *(actions)* Preselect the trigger when navigating to the registry
+- *(triggers)* Enforce per-trigger global and per-user cooldowns
+- *(storage)* Persist trigger cooldown columns
+- *(triggers)* Edit and display trigger cooldowns
+- *(actions)* Configure a sub-action before adding it
+- *(actions)* Configure or reuse a trigger when adding it
+- *(triggers)* Use one cooldown field with a global or per-user toggle
+- *(triggers)* Add a save button to the trigger detail form
+- *(triggers)* Navigate to a used-in action from the trigger detail
+- *(queues)* Add editable per-queue description
+- *(queues)* Replace serial toggle with concurrency slider
+- *(events)* Derive outcome tags from downstream causation counts
+
+### 🚜 Refactor
+- *(actions)* Unify add and edit into one action modal
+
+## [0.3.0-beta.4] - 2026-07-18
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### ⚡ Performance
 - *(chat)* Memoize drawer summaries and virtualize the message list
 
@@ -22,6 +88,13 @@ All notable changes to this project will be documented in this file.
 - *(ui)* Keep the chat input pinned and scroll the message list
 - *(chat)* Top-anchor the message list so short chats fill from the top
 - *(ui)* Make the composer platform divider visible
+- *(home)* Color the section header icons
+- *(ci)* Install fontconfig dev library for linux builds
+- *(ci)* Free macOS runner disk before packaging the dmg
+- *(ci)* Stage macos dmg in a sized image to avoid hdiutil enospc
+
+### 📚 Documentation
+- *(release)* Release v0.3.0-beta.4
 
 ### 🚀 Features
 - *(desktop)* Enumerate soundboard devices and tts engines live
@@ -52,6 +125,7 @@ All notable changes to this project will be documented in this file.
 - *(chat)* Render reply messages with a quoted parent
 - *(chat)* Isolate uptime rerender and add a user moderation menu
 - *(chat)* Reply to a message from the user context menu
+- *(home)* Turn the stream-health icon red when offline
 
 ### 🚜 Refactor
 - *(desktop)* Move oauth connect flow to its own module
@@ -59,6 +133,7 @@ All notable changes to this project will be documented in this file.
 
 ### 🛠️ Build
 - *(deps)* Migrate gpui to git dependency at tag v1.11.3
+- Stop caching release builds to free runner disk and cache budget
 
 ### 🧪 Testing
 - *(platform)* Cover kick and youtube health-delta bridges

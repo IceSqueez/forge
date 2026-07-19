@@ -23,6 +23,11 @@ const KEY_CONTEXT: &str = "ForgeTextArea";
 
 const DEFAULT_AREA_HEIGHT: Pixels = px(130.0);
 
+const GUTTER_W: Pixels = px(48.0);
+const GUTTER_PAD_R: Pixels = px(8.0);
+const GUTTER_ACCENT_W: Pixels = px(2.0);
+const GUTTER_MARK: &str = "\u{25cf}";
+
 actions!(
     forge_text_area,
     [
@@ -140,6 +145,8 @@ pub struct TextArea {
     height: Pixels,
     on_surface: bool,
     syntax: SyntaxMode,
+    gutter: bool,
+    gutter_marks: Vec<usize>,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
@@ -166,6 +173,8 @@ impl TextArea {
             height: DEFAULT_AREA_HEIGHT,
             on_surface: false,
             syntax: SyntaxMode::None,
+            gutter: false,
+            gutter_marks: Vec::new(),
         }
     }
 
@@ -212,6 +221,20 @@ impl TextArea {
     pub fn on_surface(mut self) -> Self {
         self.on_surface = true;
         self
+    }
+
+    pub fn with_gutter(mut self) -> Self {
+        self.gutter = true;
+        self
+    }
+
+    pub fn set_gutter_marks(&mut self, lines: Vec<usize>, cx: &mut Context<Self>) {
+        self.gutter_marks = lines;
+        cx.notify();
+    }
+
+    fn gutter_width(&self) -> Pixels {
+        if self.gutter { GUTTER_W } else { px(0.0) }
     }
 
     pub fn content(&self) -> &str {
@@ -472,7 +495,7 @@ impl TextArea {
         else {
             return 0;
         };
-        let x = position.x - bounds.left();
+        let x = position.x - bounds.left() - self.gutter_width();
         let mut y = position.y - bounds.top() + self.scroll_offset;
         if y < px(0.0) {
             y = px(0.0);
@@ -604,13 +627,14 @@ impl EntityInputHandler for TextArea {
         let range = range_from_utf16(&self.content, &range_utf16);
         let start = layout.point_for_offset(range.start)?;
         let lh = layout.line_height;
+        let gutter_w = self.gutter_width();
         Some(Bounds::from_corners(
             point(
-                bounds.left() + start.x,
+                bounds.left() + gutter_w + start.x,
                 bounds.top() + start.y - self.scroll_offset,
             ),
             point(
-                bounds.left() + start.x,
+                bounds.left() + gutter_w + start.x,
                 bounds.top() + start.y - self.scroll_offset + lh,
             ),
         ))
@@ -971,9 +995,11 @@ impl Element for AreaElement {
             syntax_runs.as_deref(),
         );
 
+        let gutter_w = if input.gutter { GUTTER_W } else { px(0.0) };
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let wrap_width = if bounds.size.width > px(0.0) {
-            Some(bounds.size.width)
+        let text_width = bounds.size.width - gutter_w;
+        let wrap_width = if text_width > px(0.0) {
+            Some(text_width)
         } else {
             None
         };
@@ -1032,7 +1058,7 @@ impl Element for AreaElement {
             fill(
                 Bounds::new(
                     point(
-                        bounds.left() + caret.x,
+                        bounds.left() + gutter_w + caret.x,
                         bounds.top() + caret.y - scroll_offset,
                     ),
                     size(px(1.5), line_height),
@@ -1070,10 +1096,21 @@ impl Element for AreaElement {
             return;
         };
 
+        let (gutter, gutter_marks, faint, warning) = {
+            let input = self.input.read(cx);
+            (
+                input.gutter,
+                input.gutter_marks.clone(),
+                input.palette.text_faint,
+                input.palette.warning,
+            )
+        };
+        let gutter_w = if gutter { GUTTER_W } else { px(0.0) };
+
         // Paint selection backgrounds first, then the glyphs, per paragraph.
         for (i, line) in layout.lines.iter().enumerate() {
             let origin = point(
-                bounds.left(),
+                bounds.left() + gutter_w,
                 bounds.top() + layout.para_tops[i] - scroll_offset,
             );
             let _ = line.paint_background(
@@ -1092,6 +1129,51 @@ impl Element for AreaElement {
                 window,
                 cx,
             );
+        }
+
+        if gutter {
+            let style = window.text_style();
+            let font = style.font();
+            let font_size = style.font_size.to_pixels(window.rem_size());
+            for i in 0..layout.para_tops.len() {
+                let y = bounds.top() + layout.para_tops[i] - scroll_offset;
+                let marked = gutter_marks.contains(&i);
+                let (label, color): (SharedString, Hsla) = if marked {
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(bounds.left(), y),
+                            size(GUTTER_ACCENT_W, layout.line_height),
+                        ),
+                        warning,
+                    ));
+                    (GUTTER_MARK.into(), warning.into())
+                } else {
+                    ((i + 1).to_string().into(), faint.into())
+                };
+                let run = TextRun {
+                    len: label.len(),
+                    font: font.clone(),
+                    color,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                let shaped = window.text_system().shape_line(
+                    label,
+                    font_size,
+                    std::slice::from_ref(&run),
+                    None,
+                );
+                let x = bounds.left() + GUTTER_W - GUTTER_PAD_R - shaped.width();
+                let _ = shaped.paint(
+                    point(x, y),
+                    layout.line_height,
+                    TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                );
+            }
         }
 
         if focus_handle.is_focused(window)

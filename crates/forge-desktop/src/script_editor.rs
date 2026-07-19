@@ -44,10 +44,7 @@ const GLYPH_PIN: Pixels = px(12.0);
 const GLYPH_RETURNS: Pixels = px(11.0);
 
 const CODE_LINE_H_PX: f32 = 18.0;
-const CODE_LINE_H: Pixels = px(CODE_LINE_H_PX);
 const CODE_PAD_V_PX: f32 = 6.0;
-const GUTTER_W: Pixels = px(38.0);
-const GUTTER_PAD_R: Pixels = px(14.0);
 
 const DIVIDER_W: Pixels = px(0.5);
 const DIVIDER_H: Pixels = px(16.0);
@@ -268,6 +265,7 @@ impl ScriptEditorView {
                 .with_palette(palette)
                 .mono()
                 .rhai_highlight()
+                .with_gutter()
                 .with_font_size(FONT_XS)
                 .with_height(code_field_height(""))
         });
@@ -404,7 +402,7 @@ impl ScriptEditorView {
         });
     }
 
-    fn recompute_diagnostics(&mut self, body: &str) {
+    fn recompute_diagnostics(&mut self, body: &str, cx: &mut Context<Self>) {
         let diags = collect_annotation_diagnostics(body);
         self.type_check = if diags.is_empty() {
             None
@@ -416,6 +414,9 @@ impl ScriptEditorView {
             .into_iter()
             .map(|d| SharedString::from(format!("Ln {} · {}", d.line + 1, d.message)))
             .collect();
+        let marks = self.problem_lines.clone();
+        self.code_input
+            .update(cx, |area, cx| area.set_gutter_marks(marks, cx));
     }
 
     fn current_dirty(&self, cx: &App) -> bool {
@@ -514,7 +515,7 @@ impl ScriptEditorView {
                     area.set_content(body.clone(), cx);
                     area.set_height(height, cx);
                 });
-                self.recompute_diagnostics(&body);
+                self.recompute_diagnostics(&body, cx);
                 self.open = Some(OpenScript {
                     id: record.id,
                     original_body: body,
@@ -538,7 +539,7 @@ impl ScriptEditorView {
             area.set_content(original.clone(), cx);
             area.set_height(height, cx);
         });
-        self.recompute_diagnostics(&original);
+        self.recompute_diagnostics(&original, cx);
     }
 
     fn confirm_discard(&mut self, cx: &mut Context<Self>) {
@@ -575,7 +576,7 @@ impl ScriptEditorView {
         let height = code_field_height(&content);
         self.code_input
             .update(cx, |area, cx| area.set_height(height, cx));
-        self.recompute_diagnostics(&content);
+        self.recompute_diagnostics(&content, cx);
         if let Some(open) = self.open.as_mut() {
             open.record.contract = parse_contract(&content).unwrap_or_default();
         }
@@ -890,7 +891,7 @@ impl ScriptEditorView {
                     area.set_content(body.clone(), cx);
                     area.set_height(height, cx);
                 });
-                self.recompute_diagnostics(&body);
+                self.recompute_diagnostics(&body, cx);
                 self.open = Some(OpenScript {
                     id,
                     original_body: body,
@@ -1073,7 +1074,7 @@ impl ScriptEditorView {
                 area.set_content(formatted.clone(), cx);
                 area.set_height(height, cx);
             });
-            self.recompute_diagnostics(&formatted);
+            self.recompute_diagnostics(&formatted, cx);
         }
         cx.notify();
     }
@@ -1829,39 +1830,8 @@ impl ScriptEditorView {
         &self,
         palette: &ForgePalette,
         density: Density,
-        cx: &Context<Self>,
+        _cx: &Context<Self>,
     ) -> AnyElement {
-        let content = self.code_input.read(cx).content();
-        let line_count = content.lines().count().max(1);
-
-        let mut gutter = div()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .w(GUTTER_W)
-            .pt(px(CODE_PAD_V_PX))
-            .pr(GUTTER_PAD_R);
-        for n in 1..=line_count {
-            let cell = div()
-                .h(CODE_LINE_H)
-                .flex()
-                .justify_end()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS);
-            let cell = if self.problem_lines.contains(&(n - 1)) {
-                cell.border_l(px(2.0))
-                    .border_color(palette.warning)
-                    .bg(with_alpha(palette.warning, 0.10))
-                    .text_color(palette.warning)
-                    .child("\u{25cf}")
-            } else {
-                cell.text_color(palette.text_faint).child(n.to_string())
-            };
-            gutter = gutter.child(cell);
-        }
-
-        let editor = div().flex_1().min_w_0().child(self.code_input.clone());
-
         div()
             .id("script-code-scroll")
             .flex_1()
@@ -1871,11 +1841,8 @@ impl ScriptEditorView {
             .child(
                 div()
                     .w_full()
-                    .flex()
-                    .flex_row()
                     .py(spacing(Spacing::Xs, density))
-                    .child(gutter)
-                    .child(editor),
+                    .child(self.code_input.clone()),
             )
             .into_any_element()
     }

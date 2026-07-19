@@ -221,7 +221,6 @@ pub struct ScriptEditorView {
     scripts: Vec<ScriptEntry>,
     selected: Option<ScriptId>,
     open: Option<OpenScript>,
-    variables: Vec<(SharedString, SharedString)>,
     loading: bool,
 
     list_width: Pixels,
@@ -314,7 +313,6 @@ impl ScriptEditorView {
             scripts: Vec::new(),
             selected: None,
             open: None,
-            variables: Vec::new(),
             loading: false,
             list_width: LEFT_PANE_W,
             details_width: DETAILS_PANE_W,
@@ -511,17 +509,6 @@ impl ScriptEditorView {
         match result {
             Ok(record) => {
                 let body = record.body.clone();
-                let contract = parse_contract(&body).unwrap_or_default();
-                self.variables = contract
-                    .inputs
-                    .iter()
-                    .map(|i| {
-                        (
-                            SharedString::from(format!("%{}%", i.name)),
-                            SharedString::from(i.kind.label().to_lowercase()),
-                        )
-                    })
-                    .collect();
                 let height = code_field_height(&body);
                 self.code_input.update(cx, |area, cx| {
                     area.set_content(body.clone(), cx);
@@ -589,6 +576,9 @@ impl ScriptEditorView {
         self.code_input
             .update(cx, |area, cx| area.set_height(height, cx));
         self.recompute_diagnostics(&content);
+        if let Some(open) = self.open.as_mut() {
+            open.record.contract = parse_contract(&content).unwrap_or_default();
+        }
         cx.notify();
     }
 
@@ -895,7 +885,6 @@ impl ScriptEditorView {
                 });
                 let id = record.id;
                 self.selected = Some(id);
-                self.variables.clear();
                 let height = code_field_height(&body);
                 self.code_input.update(cx, |area, cx| {
                     area.set_content(body.clone(), cx);
@@ -955,7 +944,6 @@ impl ScriptEditorView {
                 if self.selected == Some(id) {
                     self.selected = None;
                     self.open = None;
-                    self.variables.clear();
                     self.code_input.update(cx, |area, cx| {
                         area.set_content("", cx);
                         area.set_height(code_field_height(""), cx);
@@ -1220,6 +1208,26 @@ impl ScriptEditorView {
                     .text_color(palette.text_primary)
                     .child(name),
             );
+        if let Some(linked) = self.find_entry(open.id).and_then(|e| e.linked.as_ref()) {
+            name_row = name_row.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .py(px(1.0))
+                    .px(px(6.0))
+                    .rounded(px(8.0))
+                    .bg(palette.surface_overlay)
+                    .child(icon(Icon::ExternalLink, px(10.0), palette.brand))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(px(9.5))
+                            .text_color(palette.brand)
+                            .child(linked.name.clone()),
+                    ),
+            );
+        }
         if self.current_dirty(cx) {
             name_row = name_row.child(status_dot(palette.warning, FILE_BAR_DIRTY_DOT));
         }
@@ -1576,26 +1584,6 @@ impl ScriptEditorView {
             }
         }
 
-        let mut vars = div()
-            .flex()
-            .flex_col()
-            .child(section_label(tr!("script_editor_vars_label"), palette));
-        if self.variables.is_empty() {
-            vars = vars.child(
-                div()
-                    .py(spacing(Spacing::Xxs, Density::Cozy))
-                    .px(spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child("-"),
-            );
-        } else {
-            for (name, ty) in &self.variables {
-                vars = vars.child(variable_row(name.clone(), ty.clone(), palette));
-            }
-        }
-
         let scroll = div()
             .id("script-left-scroll")
             .flex_1()
@@ -1603,8 +1591,7 @@ impl ScriptEditorView {
             .overflow_y_scroll()
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Xs, density))
-            .child(scripts)
-            .child(vars);
+            .child(scripts);
 
         let pane = div()
             .flex_none()
@@ -2506,38 +2493,6 @@ impl Render for ScriptEditorView {
             .child(body)
             .children(overlay)
     }
-}
-
-fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .pt(spacing(Spacing::Sm, Density::Cozy))
-        .pb(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XXS)
-        .text_color(palette.text_muted)
-        .child(label.into())
-}
-
-fn variable_row(name: SharedString, ty: SharedString, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
-        .child(div().text_color(palette.warning).child(name))
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .justify_end()
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(ty),
-        )
 }
 
 fn variant_kind_display(kind: VariantKind) -> &'static str {

@@ -1655,7 +1655,6 @@ script_editor_api_reference = API reference
 script_editor_scripts_label = SCRIPTS
 script_editor_search_placeholder = Search scripts…
 script_editor_new_script = New script
-script_editor_vars_label = VARIABLES IN SCOPE
 script_editor_no_scripts = No scripts yet
 script_editor_group_action = Action scripts
 script_editor_group_standalone = Standalone

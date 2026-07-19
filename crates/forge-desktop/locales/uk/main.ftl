@@ -1676,7 +1676,6 @@ script_editor_api_reference = Довідка API
 script_editor_scripts_label = СКРИПТИ
 script_editor_search_placeholder = Пошук скриптів…
 script_editor_new_script = Новий скрипт
-script_editor_vars_label = ЗМІННІ В КОНТЕКСТІ
 script_editor_no_scripts = Скриптів ще немає
 script_editor_group_action = Скрипти дій
 script_editor_group_standalone = Окремі

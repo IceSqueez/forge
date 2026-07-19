@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
 };
@@ -44,10 +46,10 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::Code {
                 key: "expression",
                 label: "Expression",
-                placeholder: "%command.name%",
+                language: CodeLanguage::Rhai,
             },
             FormField::CaseList {
                 key: "cases",

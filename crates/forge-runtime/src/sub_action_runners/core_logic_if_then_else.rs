@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -53,10 +55,10 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::Code {
                 key: "condition",
                 label: "Condition",
-                placeholder: "%user.is_subscriber% == true",
+                language: CodeLanguage::Rhai,
             },
             FormField::Toggle {
                 key: "treat_undefined_as_false",

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChainExecutor, ChainSignal, ControlSignal, FormField, RegistryError, RunContext, StopMark,
-    SubActionCategory, SubActionRunner,
+    ChainExecutor, ChainSignal, CodeLanguage, ControlSignal, FormField, RegistryError, RunContext,
+    StopMark, SubActionCategory, SubActionRunner,
 };
 use forge_types::{
     ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
@@ -123,10 +123,10 @@ impl SubActionRunner for CoreLogicLoopRunner {
                 label: "Array Variable",
                 placeholder: "my_list",
             },
-            FormField::Text {
+            FormField::Code {
                 key: "while_condition",
                 label: "While Condition",
-                placeholder: "%global.running% == true",
+                language: CodeLanguage::Rhai,
             },
             FormField::Integer {
                 key: "max_iterations",

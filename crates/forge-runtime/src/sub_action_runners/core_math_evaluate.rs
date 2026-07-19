@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_script::{EngineConfig, MathEvaluator};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -63,10 +65,10 @@ impl SubActionRunner for CoreMathEvaluateRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::Code {
                 key: "expression",
                 label: "Expression",
-                placeholder: "(%kills% * 100) / %deaths%",
+                language: CodeLanguage::Rhai,
             },
             FormField::Text {
                 key: "into_var",

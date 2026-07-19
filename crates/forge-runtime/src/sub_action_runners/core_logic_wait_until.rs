@@ -2,7 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 use tokio::time::Instant;
@@ -61,10 +63,10 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::Code {
                 key: "condition",
                 label: "Condition",
-                placeholder: "%global.ready% == true",
+                language: CodeLanguage::Rhai,
             },
             FormField::Integer {
                 key: "poll_interval_ms",

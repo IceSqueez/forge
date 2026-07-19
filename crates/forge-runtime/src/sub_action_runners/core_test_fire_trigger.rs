@@ -140,10 +140,10 @@ impl SubActionRunner for CoreTestFireTriggerRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DynamicSelect {
                 key: "trigger_instance_id",
                 label: "Trigger Instance",
-                placeholder: "",
+                options_key: "trigger_instance.ids",
             },
             FormField::TextArea {
                 key: "override_outputs",

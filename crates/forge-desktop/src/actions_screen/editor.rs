@@ -2630,10 +2630,32 @@ impl ScreenActionsView {
         } else {
             palette.success
         };
-        let error_hint: Option<SharedString> = if errors == 0 {
-            Some(tr!("action_stat_no_errors").into())
-        } else {
-            None
+
+        let (exec_value, exec_color, exec_hint, exec_hint_color): (
+            SharedString,
+            Rgba,
+            Option<SharedString>,
+            Rgba,
+        ) = match &self.last_outcome {
+            Some(ExecutionOutcome::Success) => (
+                "0".into(),
+                palette.text_primary,
+                Some(tr!("action_stat_no_errors").into()),
+                palette.text_muted,
+            ),
+            Some(ExecutionOutcome::Failed(message)) => (
+                tr!("action_editor_run_history_outcome_failed").into(),
+                palette.random,
+                Some(message.clone().into()),
+                palette.random,
+            ),
+            Some(ExecutionOutcome::Cancelled) => (
+                "-".into(),
+                palette.text_muted,
+                Some(tr!("action_stat_cancelled").into()),
+                palette.text_muted,
+            ),
+            None => ("-".into(), palette.text_muted, None, palette.text_muted),
         };
 
         div()
@@ -2650,6 +2672,7 @@ impl ScreenActionsView {
                 last_fired,
                 palette.text_primary,
                 None,
+                palette.text_muted,
                 palette,
             ))
             .child(self.render_runs_stat_cell(runs, palette, cx))
@@ -2658,13 +2681,23 @@ impl ScreenActionsView {
                 avg,
                 palette.success,
                 None,
+                palette.text_muted,
+                palette,
+            ))
+            .child(self.render_stat_cell(
+                tr!("action_stat_execution"),
+                exec_value,
+                exec_color,
+                exec_hint,
+                exec_hint_color,
                 palette,
             ))
             .child(self.render_stat_cell(
                 tr!("action_stat_errors_7d"),
                 errors.to_string(),
                 error_color,
-                error_hint,
+                None,
+                palette.text_muted,
                 palette,
             ))
             .into_any_element()
@@ -2676,6 +2709,7 @@ impl ScreenActionsView {
         value: impl Into<SharedString>,
         value_color: Rgba,
         hint: Option<SharedString>,
+        hint_color: Rgba,
         palette: &ForgePalette,
     ) -> AnyElement {
         let mut cell = div()
@@ -2702,7 +2736,7 @@ impl ScreenActionsView {
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
-                    .text_color(palette.text_muted)
+                    .text_color(hint_color)
                     .child(hint),
             );
         }

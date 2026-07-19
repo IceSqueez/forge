@@ -109,6 +109,7 @@ impl ScreenActionsView {
         self.selected = Some(id);
         self.detail = None;
         self.telemetry = None;
+        self.last_outcome = None;
         self.nav_path.clear();
         self.step_menu_open = None;
         self.sync_case_fields(cx);

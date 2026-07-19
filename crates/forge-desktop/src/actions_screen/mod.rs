@@ -14,7 +14,9 @@ use forge_storage::{
     TriggerInstanceRepo,
 };
 use forge_tts_core::TtsRegistry;
-use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep, TriggerInstanceId};
+use forge_types::{
+    Action, ActionId, ExecutionContext, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId,
+};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
     SharedString, Subscription, Window, div, prelude::*, px,
@@ -177,6 +179,7 @@ pub struct ScreenActionsView {
     pending_delete: Option<ActionId>,
     detail: Option<ActionDetail>,
     telemetry: Option<ActionTelemetry>,
+    last_outcome: Option<ExecutionOutcome>,
     sub_form: Option<EditSubActionForm>,
     step_menu_open: Option<usize>,
     menu_click_pos: Option<Point<Pixels>>,
@@ -242,6 +245,7 @@ impl ScreenActionsView {
             pending_delete: None,
             detail: None,
             telemetry: None,
+            last_outcome: None,
             sub_form: None,
             step_menu_open: None,
             menu_click_pos: None,
@@ -323,6 +327,7 @@ impl ScreenActionsView {
                 self.selected = None;
                 self.detail = None;
                 self.telemetry = None;
+                self.last_outcome = None;
                 self.nav_path.clear();
                 self.case_fields.clear();
             }
@@ -375,6 +380,19 @@ impl ScreenActionsView {
             }
         })
         .detach();
+
+        let service = Arc::clone(&self.actions_service);
+        let (otx, orx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = otx.send(service.recent_runs(id, 1).await);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(runs)) = orx.await {
+                let outcome = runs.into_iter().next().map(|ctx| ctx.outcome);
+                let _ = this.update(cx, |this, cx| this.apply_last_outcome(id, outcome, cx));
+            }
+        })
+        .detach();
     }
 
     fn apply_detail(&mut self, id: ActionId, detail: ActionDetail, cx: &mut Context<Self>) {
@@ -396,6 +414,19 @@ impl ScreenActionsView {
             return;
         }
         self.telemetry = Some(telemetry);
+        cx.notify();
+    }
+
+    fn apply_last_outcome(
+        &mut self,
+        id: ActionId,
+        outcome: Option<ExecutionOutcome>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected != Some(id) {
+            return;
+        }
+        self.last_outcome = outcome;
         cx.notify();
     }
 

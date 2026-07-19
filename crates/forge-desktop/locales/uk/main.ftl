@@ -529,7 +529,9 @@ action_stat_avg_time = СЕР. ЧАС
 action_stat_errors_7d = ПОМИЛОК · 7д
 action_stat_avg_ms = { $count } мс
 action_stat_avg_none = -
+action_stat_execution = ВИКОНАННЯ
 action_stat_no_errors = без помилок
+action_stat_cancelled = скасовано
 action_step_avg_badge = { $count } мс сер.
 
 ## Редактор дій - історія запусків

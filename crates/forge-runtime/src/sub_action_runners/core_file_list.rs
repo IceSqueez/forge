@@ -2,9 +2,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use time::OffsetDateTime;
 
 pub struct CoreFileListRunner {
@@ -32,7 +37,7 @@ impl SubActionRunner for CoreFileListRunner {
     }
 
     fn summary(&self) -> &str {
-        "Enumerate a sandboxed directory; stores entry names in a global array"
+        "Enumerate a sandboxed directory; stores entry names in a variable array"
     }
 
     fn search_text(&self) -> &str {
@@ -102,6 +107,17 @@ impl SubActionRunner for CoreFileListRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "into_var".to_owned(),
+                kind: VariantKind::Array,
+                label: "Directory entries".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -141,27 +157,28 @@ impl SubActionRunner for CoreFileListRunner {
         )
         .await;
 
-        let outcome = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
-            Err(reason) => SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
+            Err(reason) => (
+                SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+                None,
+            ),
             Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
-                Err(_) => {
-                    SubActionOutcome::Failed(format!("directory not found: {interpolated_path}"))
-                }
-                Ok(meta) if !meta.is_dir() => {
-                    SubActionOutcome::Failed(format!("not a directory: {interpolated_path}"))
-                }
+                Err(_) => (
+                    SubActionOutcome::Failed(format!("directory not found: {interpolated_path}")),
+                    None,
+                ),
+                Ok(meta) if !meta.is_dir() => (
+                    SubActionOutcome::Failed(format!("not a directory: {interpolated_path}")),
+                    None,
+                ),
                 Ok(_) => {
                     match collect_entries(&abs_path, &pattern, recursive, include_dirs).await {
-                        Err(reason) => SubActionOutcome::Failed(reason),
+                        Err(reason) => (SubActionOutcome::Failed(reason), None),
                         Ok(entries) => {
                             let array =
                                 Variant::Array(entries.into_iter().map(Variant::String).collect());
-                            match self.globals.set(&into_var, array, false).await {
-                                Ok(()) => SubActionOutcome::Success,
-                                Err(e) => {
-                                    SubActionOutcome::Failed(format!("global write failed: {e}"))
-                                }
-                            }
+                            let stack = ctx.arg_stack.clone().set(into_var, array);
+                            (SubActionOutcome::Success, Some(stack))
                         }
                     }
                 }
@@ -180,7 +197,7 @@ impl SubActionRunner for CoreFileListRunner {
                 duration_ms,
                 outcome,
             },
-            None,
+            produced,
         )
     }
 }
@@ -281,7 +298,8 @@ mod tests {
 
     // A traversal path must surface the sandbox-rejection outcome rather than
     // reach tokio::fs::metadata (which would yield a "directory not found"
-    // message), and must write no global entry.
+    // message), and must produce no scope stack. The empty-`writes` assertion
+    // guards against the output ever resurfacing as a globals write.
     #[tokio::test]
     async fn list_rejects_parent_traversal_before_touching_disk() {
         let globals = Arc::new(RecordingGlobals::default());
@@ -295,11 +313,16 @@ mod tests {
 
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        let outcome = runner.execute(&cfg, &ctx).await.0.outcome;
+        let (telemetry, produced) = runner.execute(&cfg, &ctx).await;
 
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(msg) if msg.contains("sandbox rejected")),
-            "expected sandbox rejection, got {outcome:?}"
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("sandbox rejected")),
+            "expected sandbox rejection, got {:?}",
+            telemetry.outcome
+        );
+        assert!(
+            produced.is_none(),
+            "a rejected path must not produce a scope stack"
         );
         assert!(
             globals.writes.lock().unwrap().is_empty(),

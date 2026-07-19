@@ -1,24 +1,17 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use rand::RngExt;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 use time::OffsetDateTime;
 
-pub struct CoreRandomPickRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
-
-impl CoreRandomPickRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
-    }
-}
+pub struct CoreRandomPickRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreRandomPickRunner {
@@ -35,7 +28,7 @@ impl SubActionRunner for CoreRandomPickRunner {
     }
 
     fn summary(&self) -> &str {
-        "Pick a random element from a list and store it in a global"
+        "Pick a random element from a list and store it in a variable"
     }
 
     fn search_text(&self) -> &str {
@@ -76,6 +69,17 @@ impl SubActionRunner for CoreRandomPickRunner {
         Ok(())
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "into_var".to_owned(),
+                kind: VariantKind::String,
+                label: "Picked item".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -102,8 +106,11 @@ impl SubActionRunner for CoreRandomPickRunner {
             .unwrap_or("picked")
             .to_owned();
 
-        let outcome = if items.is_empty() {
-            SubActionOutcome::Failed("items list must not be empty".to_owned())
+        let (outcome, produced) = if items.is_empty() {
+            (
+                SubActionOutcome::Failed("items list must not be empty".to_owned()),
+                None,
+            )
         } else {
             let weights: Vec<f64> = match config.get("weights") {
                 Some(Variant::Array(arr)) => arr.iter().filter_map(|v| v.as_float()).collect(),
@@ -132,25 +139,11 @@ impl SubActionRunner for CoreRandomPickRunner {
             };
 
             match idx {
-                Err(msg) => SubActionOutcome::Failed(msg),
+                Err(msg) => (SubActionOutcome::Failed(msg), None),
                 Ok(i) => {
                     let picked = items[i].clone();
-                    match self.globals.set(&into_var, picked.clone(), false).await {
-                        Ok(()) => {
-                            ctx.publisher.publish(Event::caused_by(
-                                EventSource::Core,
-                                "global.set",
-                                serde_json::json!({
-                                    "key": into_var,
-                                    "source": "random_pick",
-                                    "new_value": picked.to_string(),
-                                }),
-                                ctx.parent_event_id,
-                            ));
-                            SubActionOutcome::Success
-                        }
-                        Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
-                    }
+                    let stack = ctx.arg_stack.clone().set(into_var, picked);
+                    (SubActionOutcome::Success, Some(stack))
                 }
             }
         };
@@ -167,7 +160,7 @@ impl SubActionRunner for CoreRandomPickRunner {
                 duration_ms,
                 outcome,
             },
-            None,
+            produced,
         )
     }
 }
@@ -176,62 +169,12 @@ impl SubActionRunner for CoreRandomPickRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_events::EventPublisher;
-    use forge_storage::{GlobalEntry, StorageError};
+    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
-    use std::sync::Mutex;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
-    }
-
-    #[derive(Default)]
-    struct RecordingGlobals {
-        writes: Mutex<Vec<(String, Variant, bool)>>,
-    }
-
-    impl RecordingGlobals {
-        fn last(&self) -> Option<(String, Variant, bool)> {
-            self.writes.lock().unwrap().last().cloned()
-        }
-        fn count(&self) -> usize {
-            self.writes.lock().unwrap().len()
-        }
-    }
-
-    #[async_trait]
-    impl GlobalsRepo for RecordingGlobals {
-        async fn get(&self, _name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(None)
-        }
-        async fn set(
-            &self,
-            name: &str,
-            value: Variant,
-            persisted: bool,
-        ) -> Result<(), StorageError> {
-            self.writes
-                .lock()
-                .unwrap()
-                .push((name.to_owned(), value, persisted));
-            Ok(())
-        }
-        async fn delete(&self, _name: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(vec![])
-        }
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
-            Ok(Variant::Int(0))
-        }
     }
 
     fn str_array(items: &[&str]) -> Variant {
@@ -250,108 +193,93 @@ mod tests {
         c
     }
 
-    async fn run(runner: &CoreRandomPickRunner, cfg: &SubActionConfig) -> SubActionOutcome {
+    async fn run(
+        runner: &CoreRandomPickRunner,
+        cfg: &SubActionConfig,
+    ) -> (SubActionOutcome, Option<ArgStack>) {
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        runner.execute(cfg, &ctx).await.0.outcome
+        let (telemetry, produced) = runner.execute(cfg, &ctx).await;
+        (telemetry.outcome, produced)
     }
 
     #[tokio::test]
-    async fn pick_result_is_always_an_element_of_the_list() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomPickRunner::new(globals.clone());
-        let cfg = cfg(str_array(&["a", "b", "c"]), "r");
-        for _ in 0..200 {
-            assert!(matches!(
-                run(&runner, &cfg).await,
-                SubActionOutcome::Success
-            ));
-            let picked = globals.last().unwrap().1;
-            assert!(
-                matches!(&picked, Variant::String(s) if ["a", "b", "c"].contains(&s.as_str())),
-                "picked outside list: {picked:?}"
-            );
+    async fn pick_produces_member_of_source_list() {
+        // Both the array form and the newline-delimited string form must yield
+        // an element of the source set, bound to the target var in the scope.
+        let cases = [
+            (str_array(&["a", "b", "c"]), ["a", "b", "c"]),
+            (Variant::String("x\ny\nz".to_owned()), ["x", "y", "z"]),
+        ];
+        for (items, expected_set) in cases {
+            let runner = CoreRandomPickRunner;
+            let cfg = cfg(items, "chosen");
+            for _ in 0..200 {
+                let (outcome, produced) = run(&runner, &cfg).await;
+                assert!(matches!(outcome, SubActionOutcome::Success));
+                let picked = produced.unwrap().get("chosen").unwrap().clone();
+                assert!(
+                    matches!(&picked, Variant::String(s) if expected_set.contains(&s.as_str())),
+                    "picked outside source set: {picked:?}"
+                );
+            }
         }
     }
 
     #[tokio::test]
-    async fn pick_single_element_list_stores_that_element_unpersisted() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomPickRunner::new(globals.clone());
-        run(&runner, &cfg(str_array(&["only"]), "r")).await;
-        let (key, value, persisted) = globals.last().unwrap();
-        assert_eq!(key, "r");
-        assert_eq!(value, Variant::String("only".to_owned()));
-        assert!(!persisted, "random output must not be persisted");
-    }
-
-    #[tokio::test]
-    async fn pick_empty_list_fails_without_panic() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomPickRunner::new(globals.clone());
-        let outcome = run(&runner, &cfg(Variant::Array(vec![]), "r")).await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(globals.count(), 0);
-    }
-
-    #[tokio::test]
-    async fn pick_never_selects_a_zero_weight_element() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomPickRunner::new(globals.clone());
-        let mut cfg = cfg(str_array(&["never", "always"]), "r");
+    async fn pick_respects_zero_weight_never_selecting_it() {
+        let runner = CoreRandomPickRunner;
+        let mut cfg = cfg(str_array(&["never", "always"]), "chosen");
         cfg.insert(
             "weights".to_owned(),
             Variant::Array(vec![Variant::Float(0.0), Variant::Float(1.0)]),
         );
         for _ in 0..100 {
-            assert!(matches!(
-                run(&runner, &cfg).await,
-                SubActionOutcome::Success
-            ));
+            let (outcome, produced) = run(&runner, &cfg).await;
+            assert!(matches!(outcome, SubActionOutcome::Success));
             assert_eq!(
-                globals.last().unwrap().1,
-                Variant::String("always".to_owned())
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn pick_weights_length_mismatch_fails() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomPickRunner::new(globals.clone());
-        let mut cfg = cfg(str_array(&["a", "b"]), "r");
-        cfg.insert(
-            "weights".to_owned(),
-            Variant::Array(vec![Variant::Float(1.0)]),
-        );
-        let outcome = run(&runner, &cfg).await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(globals.count(), 0);
-    }
-
-    #[tokio::test]
-    async fn pick_parses_newline_delimited_string_items() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomPickRunner::new(globals.clone());
-        let cfg = cfg(Variant::String("x\ny\nz".to_owned()), "r");
-        for _ in 0..100 {
-            assert!(matches!(
-                run(&runner, &cfg).await,
-                SubActionOutcome::Success
-            ));
-            let picked = globals.last().unwrap().1;
-            assert!(
-                matches!(&picked, Variant::String(s) if ["x", "y", "z"].contains(&s.as_str())),
-                "picked outside parsed list: {picked:?}"
+                produced.unwrap().get("chosen"),
+                Some(&Variant::String("always".to_owned()))
             );
         }
     }
 
     #[tokio::test]
     async fn pick_defaults_target_var_to_picked_when_blank() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomPickRunner::new(globals.clone());
-        run(&runner, &cfg(str_array(&["only"]), "")).await;
-        assert_eq!(globals.last().unwrap().0, "picked");
+        let runner = CoreRandomPickRunner;
+        let (outcome, produced) = run(&runner, &cfg(str_array(&["only"]), "")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert!(produced.unwrap().get("picked").is_some());
+    }
+
+    #[tokio::test]
+    async fn pick_failure_paths_produce_no_stack() {
+        let empty = cfg(Variant::Array(vec![]), "chosen");
+
+        let mut mismatch = cfg(str_array(&["a", "b"]), "chosen");
+        mismatch.insert(
+            "weights".to_owned(),
+            Variant::Array(vec![Variant::Float(1.0)]),
+        );
+
+        let mut all_zero = cfg(str_array(&["a", "b"]), "chosen");
+        all_zero.insert(
+            "weights".to_owned(),
+            Variant::Array(vec![Variant::Float(0.0), Variant::Float(0.0)]),
+        );
+
+        let runner = CoreRandomPickRunner;
+        for (label, cfg) in [
+            ("empty items", empty),
+            ("weights length mismatch", mismatch),
+            ("all-zero weights", all_zero),
+        ] {
+            let (outcome, produced) = run(&runner, &cfg).await;
+            assert!(
+                matches!(outcome, SubActionOutcome::Failed(_)),
+                "{label} must fail"
+            );
+            assert!(produced.is_none(), "{label} must not produce a scope stack");
+        }
     }
 }

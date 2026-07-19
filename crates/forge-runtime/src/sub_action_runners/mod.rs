@@ -250,8 +250,8 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreFileListRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreRandomIntRunner::new(Arc::clone(&globals))))?;
     reg.register(Box::new(CoreRandomFloatRunner::new(Arc::clone(&globals))))?;
-    reg.register(Box::new(CoreRandomBoolRunner::new(Arc::clone(&globals))))?;
-    reg.register(Box::new(CoreRandomPickRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreRandomBoolRunner))?;
+    reg.register(Box::new(CoreRandomPickRunner))?;
     reg.register(Box::new(CoreMathEvaluateRunner::new()))?;
     reg.register(Box::new(TwitchChatSendMessageRunner::new(Arc::clone(
         &globals,

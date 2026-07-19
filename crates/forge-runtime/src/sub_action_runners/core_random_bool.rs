@@ -1,21 +1,14 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use time::OffsetDateTime;
 
-pub struct CoreRandomBoolRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
-
-impl CoreRandomBoolRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
-    }
-}
+pub struct CoreRandomBoolRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreRandomBoolRunner {
@@ -32,7 +25,7 @@ impl SubActionRunner for CoreRandomBoolRunner {
     }
 
     fn summary(&self) -> &str {
-        "Generate a weighted random boolean and store it in a global"
+        "Generate a weighted random boolean and store it in a variable"
     }
 
     fn search_text(&self) -> &str {
@@ -74,6 +67,17 @@ impl SubActionRunner for CoreRandomBoolRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "into_var".to_owned(),
+                kind: VariantKind::Bool,
+                label: "Random boolean".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -94,27 +98,7 @@ impl SubActionRunner for CoreRandomBoolRunner {
             .to_owned();
 
         let value = rand::random_bool(probability);
-
-        let outcome = match self
-            .globals
-            .set(&into_var, Variant::Bool(value), false)
-            .await
-        {
-            Ok(()) => {
-                ctx.publisher.publish(Event::caused_by(
-                    EventSource::Core,
-                    "global.set",
-                    serde_json::json!({
-                        "key": into_var,
-                        "source": "random_bool",
-                        "new_value": value,
-                    }),
-                    ctx.parent_event_id,
-                ));
-                SubActionOutcome::Success
-            }
-            Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
-        };
+        let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Bool(value));
 
         let duration_ms = (OffsetDateTime::now_utc() - started_at)
             .whole_milliseconds()
@@ -126,9 +110,9 @@ impl SubActionRunner for CoreRandomBoolRunner {
                 kind: "core.random.bool".to_owned(),
                 started_at,
                 duration_ms,
-                outcome,
+                outcome: SubActionOutcome::Success,
             },
-            None,
+            Some(new_stack),
         )
     }
 }
@@ -137,59 +121,12 @@ impl SubActionRunner for CoreRandomBoolRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_events::EventPublisher;
-    use forge_storage::{GlobalEntry, StorageError};
+    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
-    use std::sync::Mutex;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
-    }
-
-    #[derive(Default)]
-    struct RecordingGlobals {
-        writes: Mutex<Vec<(String, Variant, bool)>>,
-    }
-
-    impl RecordingGlobals {
-        fn last(&self) -> Option<(String, Variant, bool)> {
-            self.writes.lock().unwrap().last().cloned()
-        }
-    }
-
-    #[async_trait]
-    impl GlobalsRepo for RecordingGlobals {
-        async fn get(&self, _name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(None)
-        }
-        async fn set(
-            &self,
-            name: &str,
-            value: Variant,
-            persisted: bool,
-        ) -> Result<(), StorageError> {
-            self.writes
-                .lock()
-                .unwrap()
-                .push((name.to_owned(), value, persisted));
-            Ok(())
-        }
-        async fn delete(&self, _name: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(vec![])
-        }
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
-            Ok(Variant::Int(0))
-        }
     }
 
     fn cfg(probability_true: f64, into: &str) -> SubActionConfig {
@@ -202,42 +139,34 @@ mod tests {
         c
     }
 
-    async fn run(runner: &CoreRandomBoolRunner, cfg: &SubActionConfig) -> SubActionOutcome {
+    async fn run(
+        runner: &CoreRandomBoolRunner,
+        cfg: &SubActionConfig,
+    ) -> (SubActionOutcome, Option<ArgStack>) {
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        runner.execute(cfg, &ctx).await.0.outcome
+        let (telemetry, produced) = runner.execute(cfg, &ctx).await;
+        (telemetry.outcome, produced)
     }
 
     #[tokio::test]
-    async fn bool_probability_edges_are_deterministic_and_clamped() {
+    async fn bool_probability_edges_produce_deterministic_clamped_value() {
         // 1.0 / 0.0 are the in-range deterministic boundaries; 2.0 / -1.0 are
-        // out of range and would panic in `random_bool` without the clamp.
+        // out of range and would panic in `random_bool` without the clamp. The
+        // produced value now lives in the per-run scope, not GlobalsRepo.
         for (probability, expected) in [(1.0, true), (0.0, false), (2.0, true), (-1.0, false)] {
-            let globals = Arc::new(RecordingGlobals::default());
-            let runner = CoreRandomBoolRunner::new(globals.clone());
-            let cfg = cfg(probability, "r");
+            let runner = CoreRandomBoolRunner;
+            let cfg = cfg(probability, "flag");
             for _ in 0..50 {
-                assert!(matches!(
-                    run(&runner, &cfg).await,
-                    SubActionOutcome::Success
-                ));
+                let (outcome, produced) = run(&runner, &cfg).await;
+                assert!(matches!(outcome, SubActionOutcome::Success));
+                let stack = produced.unwrap();
                 assert_eq!(
-                    globals.last().unwrap().1,
-                    Variant::Bool(expected),
+                    stack.get("flag"),
+                    Some(&Variant::Bool(expected)),
                     "probability={probability}"
                 );
             }
         }
-    }
-
-    #[tokio::test]
-    async fn bool_writes_non_persisted_bool_global_under_target_var() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomBoolRunner::new(globals.clone());
-        run(&runner, &cfg(1.0, "flag")).await;
-        let (key, value, persisted) = globals.last().unwrap();
-        assert_eq!(key, "flag");
-        assert!(!persisted, "random output must not be persisted");
-        assert!(matches!(value, Variant::Bool(_)));
     }
 }

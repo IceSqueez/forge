@@ -2,10 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use time::OffsetDateTime;
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
@@ -35,7 +39,7 @@ impl SubActionRunner for CoreFileReadRunner {
     }
 
     fn summary(&self) -> &str {
-        "Read a text file into a global variable"
+        "Read a text file into a variable"
     }
 
     fn search_text(&self) -> &str {
@@ -85,6 +89,17 @@ impl SubActionRunner for CoreFileReadRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "target_var".to_owned(),
+                kind: VariantKind::String,
+                label: "File contents".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -110,37 +125,25 @@ impl SubActionRunner for CoreFileReadRunner {
         .await;
 
         let abs_path = PathBuf::from(&interpolated_path);
-        let outcome = match tokio::fs::metadata(&abs_path).await {
-            Ok(meta) if meta.len() > MAX_FILE_BYTES => SubActionOutcome::Failed(format!(
-                "file exceeds {MAX_FILE_BYTES} byte cap: {} bytes",
-                meta.len()
-            )),
+        let (outcome, produced) = match tokio::fs::metadata(&abs_path).await {
+            Ok(meta) if meta.len() > MAX_FILE_BYTES => (
+                SubActionOutcome::Failed(format!(
+                    "file exceeds {MAX_FILE_BYTES} byte cap: {} bytes",
+                    meta.len()
+                )),
+                None,
+            ),
             Ok(_) => match tokio::fs::read_to_string(&abs_path).await {
                 Ok(contents) => {
-                    match self
-                        .globals
-                        .set(&target_var, Variant::String(contents), false)
-                        .await
-                    {
-                        Ok(()) => {
-                            ctx.publisher.publish(Event::caused_by(
-                                EventSource::Core,
-                                "global.set",
-                                serde_json::json!({
-                                    "key": target_var,
-                                    "source": "read_file",
-                                    "path": interpolated_path,
-                                }),
-                                ctx.parent_event_id,
-                            ));
-                            SubActionOutcome::Success
-                        }
-                        Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
-                    }
+                    let stack = ctx
+                        .arg_stack
+                        .clone()
+                        .set(target_var, Variant::String(contents));
+                    (SubActionOutcome::Success, Some(stack))
                 }
-                Err(e) => SubActionOutcome::Failed(format!("read failed: {e}")),
+                Err(e) => (SubActionOutcome::Failed(format!("read failed: {e}")), None),
             },
-            Err(e) => SubActionOutcome::Failed(format!("stat failed: {e}")),
+            Err(e) => (SubActionOutcome::Failed(format!("stat failed: {e}")), None),
         };
 
         let duration_ms = (OffsetDateTime::now_utc() - started_at)
@@ -155,7 +158,7 @@ impl SubActionRunner for CoreFileReadRunner {
                 duration_ms,
                 outcome,
             },
-            None,
+            produced,
         )
     }
 }

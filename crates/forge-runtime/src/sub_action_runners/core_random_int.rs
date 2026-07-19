@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use rand::RngExt;
 use time::OffsetDateTime;
 
@@ -60,7 +64,7 @@ impl SubActionRunner for CoreRandomIntRunner {
     }
 
     fn summary(&self) -> &str {
-        "Generate a random integer in [min, max] and store it in a global"
+        "Generate a random integer in [min, max] and store it in a variable"
     }
 
     fn search_text(&self) -> &str {
@@ -108,6 +112,17 @@ impl SubActionRunner for CoreRandomIntRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "target_var".to_owned(),
+                kind: VariantKind::Int,
+                label: "Random integer".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -123,33 +138,16 @@ impl SubActionRunner for CoreRandomIntRunner {
             .unwrap_or_default()
             .to_owned();
 
-        let outcome = match (min, max) {
-            (Err(e), _) | (Ok(_), Err(e)) => SubActionOutcome::Failed(e),
-            (Ok(min), Ok(max)) if min > max => {
-                SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})"))
-            }
+        let (outcome, produced) = match (min, max) {
+            (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),
+            (Ok(min), Ok(max)) if min > max => (
+                SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})")),
+                None,
+            ),
             (Ok(min), Ok(max)) => {
                 let value = rand::rng().random_range(min..=max);
-                match self
-                    .globals
-                    .set(&target_var, Variant::Int(value), false)
-                    .await
-                {
-                    Ok(()) => {
-                        ctx.publisher.publish(Event::caused_by(
-                            EventSource::Core,
-                            "global.set",
-                            serde_json::json!({
-                                "key": target_var,
-                                "source": "random_int",
-                                "new_value": value,
-                            }),
-                            ctx.parent_event_id,
-                        ));
-                        SubActionOutcome::Success
-                    }
-                    Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
-                }
+                let stack = ctx.arg_stack.clone().set(target_var, Variant::Int(value));
+                (SubActionOutcome::Success, Some(stack))
             }
         };
 
@@ -165,7 +163,7 @@ impl SubActionRunner for CoreRandomIntRunner {
                 duration_ms,
                 outcome,
             },
-            None,
+            produced,
         )
     }
 }

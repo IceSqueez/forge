@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use rand::RngExt;
 use time::OffsetDateTime;
 
@@ -61,7 +65,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
     }
 
     fn summary(&self) -> &str {
-        "Generate a random float in [min, max] and store it in a global"
+        "Generate a random float in [min, max] and store it in a variable"
     }
 
     fn search_text(&self) -> &str {
@@ -109,6 +113,17 @@ impl SubActionRunner for CoreRandomFloatRunner {
         }
     }
 
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "into_var".to_owned(),
+                kind: VariantKind::Float,
+                label: "Random float".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
+    }
+
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -124,33 +139,16 @@ impl SubActionRunner for CoreRandomFloatRunner {
             .unwrap_or_default()
             .to_owned();
 
-        let outcome = match (min, max) {
-            (Err(e), _) | (Ok(_), Err(e)) => SubActionOutcome::Failed(e),
-            (Ok(min), Ok(max)) if min > max => {
-                SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})"))
-            }
+        let (outcome, produced) = match (min, max) {
+            (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),
+            (Ok(min), Ok(max)) if min > max => (
+                SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})")),
+                None,
+            ),
             (Ok(min), Ok(max)) => {
                 let value = rand::rng().random_range(min..=max);
-                match self
-                    .globals
-                    .set(&into_var, Variant::Float(value), false)
-                    .await
-                {
-                    Ok(()) => {
-                        ctx.publisher.publish(Event::caused_by(
-                            EventSource::Core,
-                            "global.set",
-                            serde_json::json!({
-                                "key": into_var,
-                                "source": "random_float",
-                                "new_value": value,
-                            }),
-                            ctx.parent_event_id,
-                        ));
-                        SubActionOutcome::Success
-                    }
-                    Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
-                }
+                let stack = ctx.arg_stack.clone().set(into_var, Variant::Float(value));
+                (SubActionOutcome::Success, Some(stack))
             }
         };
 
@@ -166,7 +164,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
                 duration_ms,
                 outcome,
             },
-            None,
+            produced,
         )
     }
 }
@@ -175,7 +173,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use forge_events::EventPublisher;
+    use forge_events::{Event, EventPublisher};
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::EventId;
     use std::sync::Mutex;
@@ -185,15 +183,16 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
+    // The runner keeps a GlobalsRepo handle for INPUT interpolation only; it
+    // must never write its output back to globals. This mock records every
+    // `set` so tests can assert the output path leaves `count()` at zero -
+    // a live regression guard against the old write-to-globals behavior.
     #[derive(Default)]
     struct RecordingGlobals {
         writes: Mutex<Vec<(String, Variant, bool)>>,
     }
 
     impl RecordingGlobals {
-        fn last(&self) -> Option<(String, Variant, bool)> {
-            self.writes.lock().unwrap().last().cloned()
-        }
         fn count(&self) -> usize {
             self.writes.lock().unwrap().len()
         }
@@ -233,46 +232,26 @@ mod tests {
         }
     }
 
-    struct FailingGlobals;
-    #[async_trait]
-    impl GlobalsRepo for FailingGlobals {
-        async fn get(&self, _name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(None)
-        }
-        async fn set(&self, _n: &str, _v: Variant, _p: bool) -> Result<(), StorageError> {
-            Err(StorageError::Connection {
-                reason: "backend down".to_owned(),
-            })
-        }
-        async fn delete(&self, _name: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(vec![])
-        }
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
-            Ok(Variant::Int(0))
-        }
-    }
-
-    fn cfg(min: f64, max: f64, into: &str) -> SubActionConfig {
+    fn cfg_v(min: Variant, max: Variant, into: &str) -> SubActionConfig {
         let mut c = SubActionConfig::new();
-        c.insert("min".to_owned(), Variant::Float(min));
-        c.insert("max".to_owned(), Variant::Float(max));
+        c.insert("min".to_owned(), min);
+        c.insert("max".to_owned(), max);
         c.insert("into_var".to_owned(), Variant::String(into.to_owned()));
         c
     }
 
-    async fn run(runner: &CoreRandomFloatRunner, cfg: &SubActionConfig) -> SubActionOutcome {
+    fn cfg(min: f64, max: f64, into: &str) -> SubActionConfig {
+        cfg_v(Variant::Float(min), Variant::Float(max), into)
+    }
+
+    async fn run(
+        runner: &CoreRandomFloatRunner,
+        cfg: &SubActionConfig,
+    ) -> (SubActionOutcome, Option<ArgStack>) {
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        runner.execute(cfg, &ctx).await.0.outcome
+        let (telemetry, produced) = runner.execute(cfg, &ctx).await;
+        (telemetry.outcome, produced)
     }
 
     #[tokio::test]
@@ -281,49 +260,45 @@ mod tests {
         let runner = CoreRandomFloatRunner::new(globals.clone());
         let cfg = cfg(2.0, 5.0, "r");
         for _ in 0..200 {
-            assert!(matches!(
-                run(&runner, &cfg).await,
-                SubActionOutcome::Success
-            ));
-            match globals.last().unwrap().1 {
-                Variant::Float(f) => assert!((2.0..=5.0).contains(&f), "out of bounds: {f}"),
-                other => panic!("expected Float, got {other:?}"),
+            let (outcome, produced) = run(&runner, &cfg).await;
+            assert!(matches!(outcome, SubActionOutcome::Success));
+            match produced.unwrap().get("r") {
+                Some(Variant::Float(f)) => {
+                    assert!((2.0..=5.0).contains(f), "out of bounds: {f}")
+                }
+                other => panic!("expected Float in scope, got {other:?}"),
             }
         }
+        assert_eq!(globals.count(), 0, "output must not be written to globals");
     }
 
     #[tokio::test]
     async fn float_min_equals_max_yields_that_exact_value() {
         let globals = Arc::new(RecordingGlobals::default());
         let runner = CoreRandomFloatRunner::new(globals.clone());
-        run(&runner, &cfg(3.5, 3.5, "r")).await;
-        assert_eq!(globals.last().unwrap().1, Variant::Float(3.5));
+        let (_outcome, produced) = run(&runner, &cfg(3.5, 3.5, "r")).await;
+        assert_eq!(produced.unwrap().get("r"), Some(&Variant::Float(3.5)));
     }
 
     #[tokio::test]
-    async fn float_min_greater_than_max_fails_and_writes_nothing() {
+    async fn float_failure_paths_produce_no_stack_and_write_nothing() {
         let globals = Arc::new(RecordingGlobals::default());
         let runner = CoreRandomFloatRunner::new(globals.clone());
-        let outcome = run(&runner, &cfg(5.0, 1.0, "r")).await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(globals.count(), 0);
-    }
-
-    #[tokio::test]
-    async fn float_writes_non_persisted_float_global_under_target_var() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreRandomFloatRunner::new(globals.clone());
-        run(&runner, &cfg(0.0, 1.0, "my_var")).await;
-        let (key, value, persisted) = globals.last().unwrap();
-        assert_eq!(key, "my_var");
-        assert!(!persisted, "random output must not be persisted");
-        assert!(matches!(value, Variant::Float(_)));
-    }
-
-    #[tokio::test]
-    async fn float_global_write_failure_reports_failed_outcome() {
-        let runner = CoreRandomFloatRunner::new(Arc::new(FailingGlobals));
-        let outcome = run(&runner, &cfg(0.0, 1.0, "r")).await;
-        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+        let cases = [
+            ("min greater than max", cfg(5.0, 1.0, "r")),
+            (
+                "unparseable min",
+                cfg_v(Variant::String("abc".to_owned()), Variant::Float(1.0), "r"),
+            ),
+        ];
+        for (label, cfg) in cases {
+            let (outcome, produced) = run(&runner, &cfg).await;
+            assert!(
+                matches!(outcome, SubActionOutcome::Failed(_)),
+                "{label} must fail"
+            );
+            assert!(produced.is_none(), "{label} must not produce a scope stack");
+        }
+        assert_eq!(globals.count(), 0, "failures must not write globals");
     }
 }

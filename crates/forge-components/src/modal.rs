@@ -6,8 +6,8 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_XS, ModalSize,
-    Radius, Spacing, modal_width, radius, spacing,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing,
+    modal_width, radius, spacing,
 };
 
 const HEADER_TILE: Pixels = px(28.0);
@@ -31,7 +31,6 @@ pub struct Modal {
     header_icon: Option<(Icon, Rgba)>,
     size: ModalSize,
     width_override: Option<Pixels>,
-    kbd_hint: Option<SharedString>,
     close_id: Option<ElementId>,
     on_close: Option<CloseHandler>,
     card_bg: Rgba,
@@ -41,7 +40,7 @@ pub struct Modal {
     title_color: Rgba,
     subtitle_color: Rgba,
     close_color: Rgba,
-    kbd_color: Rgba,
+    close_hover: Rgba,
 }
 
 pub fn modal(
@@ -57,7 +56,6 @@ pub fn modal(
         header_icon: None,
         size: ModalSize::Md,
         width_override: None,
-        kbd_hint: None,
         close_id: None,
         on_close: None,
         card_bg: palette.elevated,
@@ -67,7 +65,7 @@ pub fn modal(
         title_color: palette.text_primary,
         subtitle_color: palette.text_muted,
         close_color: palette.text_faint,
-        kbd_color: palette.text_faint,
+        close_hover: palette.surface_overlay,
     }
 }
 
@@ -102,9 +100,9 @@ impl Modal {
         self
     }
 
+    /// Retained for call-site compatibility; keyboard hints are no longer rendered.
     #[must_use]
-    pub fn kbd_hint(mut self, hint: impl Into<SharedString>) -> Self {
-        self.kbd_hint = Some(hint.into());
+    pub fn kbd_hint(self, _hint: impl Into<SharedString>) -> Self {
         self
     }
 
@@ -168,13 +166,19 @@ impl Modal {
         row = row.child(titles);
 
         if let (Some(id), Some(handler)) = (self.close_id.take(), self.on_close.take()) {
+            let hover = self.close_hover;
             row = row.child(
                 div()
                     .id(id)
                     .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .py(pad(Spacing::Xxs))
                     .px(pad(Spacing::Xs))
+                    .rounded(radius(Radius::Sm))
                     .cursor_pointer()
+                    .hover(move |s| s.bg(hover))
                     .on_click(handler)
                     .child(icon(Icon::X, FONT_MD, self.close_color)),
             );
@@ -184,13 +188,9 @@ impl Modal {
     }
 
     fn render_footer(&mut self) -> Option<AnyElement> {
-        let footer = self.footer.take();
-        let kbd = self.kbd_hint.take();
-        if footer.is_none() && kbd.is_none() {
-            return None;
-        }
+        let footer = self.footer.take()?;
 
-        let mut band = div()
+        let band = div()
             .w_full()
             .flex()
             .flex_col()
@@ -199,20 +199,8 @@ impl Modal {
             .px(pad(Spacing::Md))
             .bg(self.footer_bg)
             .border(BORDER_THIN)
-            .border_color(self.border);
-
-        if let Some(actions) = footer {
-            band = band.child(actions);
-        }
-        if let Some(hint) = kbd {
-            band = band.child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(self.kbd_color)
-                    .child(hint),
-            );
-        }
+            .border_color(self.border)
+            .child(footer);
 
         Some(band.into_any_element())
     }

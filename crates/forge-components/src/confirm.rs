@@ -15,8 +15,6 @@ const HEADER_GAP: Pixels = px(12.0);
 const ICON_TILE: Pixels = px(36.0);
 const ICON_TILE_GLYPH: Pixels = px(18.0);
 const ICON_TILE_ALPHA: f32 = 0.12;
-const ESC_GLYPH: Pixels = px(12.0);
-const ESC_GAP: Pixels = px(5.0);
 const ACTIONS_GAP: Pixels = px(8.0);
 const ACCENT_HOVER_ALPHA: f32 = 0.92;
 
@@ -43,7 +41,6 @@ pub struct ConfirmModal {
     title: SharedString,
     message: SharedString,
     item_name: Option<SharedString>,
-    esc_hint: Option<SharedString>,
     tone: ConfirmTone,
     palette: ForgePalette,
     confirm: Option<(ElementId, SharedString, ActionHandler)>,
@@ -60,7 +57,6 @@ pub fn confirm_modal(
         title: title.into(),
         message: message.into(),
         item_name: None,
-        esc_hint: None,
         tone,
         palette: *palette,
         confirm: None,
@@ -75,9 +71,9 @@ impl ConfirmModal {
         self
     }
 
+    /// Retained for call-site compatibility; the Esc hint is no longer rendered.
     #[must_use]
-    pub fn esc_hint(mut self, phrase: impl Into<SharedString>) -> Self {
-        self.esc_hint = Some(phrase.into());
+    pub fn esc_hint(self, _phrase: impl Into<SharedString>) -> Self {
         self
     }
 
@@ -135,7 +131,6 @@ impl RenderOnce for ConfirmModal {
             title,
             message,
             item_name,
-            esc_hint,
             tone,
             palette,
             confirm,
@@ -198,28 +193,6 @@ impl RenderOnce for ConfirmModal {
             .child(header)
             .child(hint);
 
-        let esc = esc_hint.map(|phrase| {
-            div()
-                .flex()
-                .items_center()
-                .gap(ESC_GAP)
-                .child(icon(Icon::Keyboard, ESC_GLYPH, palette.text_faint))
-                .child(
-                    div()
-                        .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_faint)
-                        .child("Esc"),
-                )
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_faint)
-                        .child(phrase),
-                )
-        });
-
         let has_actions = cancel.is_some() || confirm.is_some();
         let mut actions = div().flex().items_center().gap(ACTIONS_GAP);
         if let Some((id, label, handler)) = cancel {
@@ -246,20 +219,17 @@ impl RenderOnce for ConfirmModal {
             .border_color(palette.border_regular)
             .child(body);
 
-        if esc.is_some() || has_actions {
+        if has_actions {
             card = card.child(
                 div()
                     .w_full()
                     .flex()
                     .items_center()
-                    .justify_between()
+                    .justify_end()
                     .py(spacing(Spacing::Sm, Density::Cozy))
                     .px(spacing(Spacing::Lg, Density::Cozy))
                     .border_t(BORDER_THIN)
                     .border_color(palette.border_regular)
-                    .child(
-                        esc.map_or_else(|| div().into_any_element(), IntoElement::into_any_element),
-                    )
                     .child(actions),
             );
         }

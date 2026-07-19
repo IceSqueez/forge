@@ -19,8 +19,6 @@ const ICON_TILE_GLYPH: Pixels = px(20.0);
 const ICON_TILE_ALPHA: f32 = 0.12;
 const SECTION_STACK_GAP: Pixels = px(8.0);
 const BULLET_GLYPH: Pixels = px(14.0);
-const ESC_GLYPH: Pixels = px(12.0);
-const ESC_GAP: Pixels = px(5.0);
 const ACTIONS_GAP: Pixels = px(8.0);
 const CHIP_PAD_Y: Pixels = px(1.0);
 const ACCENT_HOVER_ALPHA: f32 = 0.92;
@@ -93,7 +91,6 @@ pub struct TypeToConfirm {
     bullets: Vec<BulletItem>,
     confirm_label: SharedString,
     cancel_label: SharedString,
-    esc_hint: Option<SharedString>,
     palette: ForgePalette,
     matched: bool,
     _input_sub: Subscription,
@@ -149,7 +146,6 @@ pub fn type_to_confirm(
         bullets: Vec::new(),
         confirm_label: SharedString::new_static("Confirm"),
         cancel_label: SharedString::new_static("Cancel"),
-        esc_hint: None,
         palette,
         matched,
         _input_sub: sub,
@@ -210,9 +206,9 @@ impl TypeToConfirm {
         self
     }
 
+    /// Retained for call-site compatibility; the Esc hint is no longer rendered.
     #[must_use]
-    pub fn esc_hint(mut self, phrase: impl Into<SharedString>) -> Self {
-        self.esc_hint = Some(phrase.into());
+    pub fn esc_hint(self, _phrase: impl Into<SharedString>) -> Self {
         self
     }
 
@@ -386,30 +382,6 @@ impl Render for TypeToConfirm {
             .child(instruction)
             .child(self.input.clone());
 
-        let esc = match &self.esc_hint {
-            Some(phrase) => div()
-                .flex()
-                .items_center()
-                .gap(ESC_GAP)
-                .child(icon(Icon::Keyboard, ESC_GLYPH, p.text_faint))
-                .child(
-                    div()
-                        .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(p.text_faint)
-                        .child("Esc"),
-                )
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(p.text_faint)
-                        .child(format!(" {phrase}")),
-                )
-                .into_any_element(),
-            None => div().into_any_element(),
-        };
-
         let cancel_entity = entity.clone();
         let cancel = secondary_button(self.cancel_label.clone(), &p).on_click(
             "type-to-confirm-cancel",
@@ -434,13 +406,12 @@ impl Render for TypeToConfirm {
             .w_full()
             .flex()
             .items_center()
-            .justify_between()
+            .justify_end()
             .py(sp(Spacing::Sm))
             .px(sp(Spacing::Lg))
             .bg(p.shell)
             .border_t(BORDER_THIN)
             .border_color(p.border_regular)
-            .child(esc)
             .child(
                 div()
                     .flex()

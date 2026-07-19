@@ -46,9 +46,6 @@ const GRID_CARD_NAME_FS: Pixels = px(12.5);
 const GRID_CARD_ROW_MB: Pixels = px(6.0);
 const GRID_META_FS: Pixels = px(11.0);
 const GRID_FOOTER_PAD_V: Pixels = px(8.0);
-const GRID_KBD_PAD_V: Pixels = px(1.0);
-const GRID_KBD_PAD_H: Pixels = px(5.0);
-const GRID_KBD_RADIUS: Pixels = px(3.0);
 const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
 const GRID_BADGE_FS: Pixels = px(9.0);
@@ -609,30 +606,6 @@ impl GridPicker {
                     .text_size(FONT_XXS)
                     .text_color(p.text_faint)
                     .child(self.config.footer_hint.clone()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xxs, Density::Cozy))
-                    .child(
-                        div()
-                            .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(FONT_XXS)
-                            .text_color(p.text_faint)
-                            .py(GRID_KBD_PAD_V)
-                            .px(GRID_KBD_PAD_H)
-                            .rounded(GRID_KBD_RADIUS)
-                            .bg(p.surface_overlay)
-                            .child("Esc"),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_XXS)
-                            .text_color(p.text_faint)
-                            .child("to cancel"),
-                    ),
             )
             .into_any_element()
     }

@@ -1298,6 +1298,7 @@ impl ScreenActionsView {
                             kind_id,
                             config,
                             enabled: true,
+                            continue_on_error: false,
                             label: None,
                         });
                     },

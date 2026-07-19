@@ -131,6 +131,7 @@ fn step(kind: &str, config: SubActionConfig) -> SubActionStep {
         kind_id: kind.to_owned(),
         config,
         enabled: true,
+        continue_on_error: false,
         label: None,
     }
 }

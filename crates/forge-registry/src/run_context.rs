@@ -95,6 +95,7 @@ mod tests {
             kind_id: "core.log.write".to_owned(),
             config: SubActionConfig::new(),
             enabled: true,
+            continue_on_error: false,
             label: None,
         }]
     }

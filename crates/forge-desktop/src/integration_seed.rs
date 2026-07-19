@@ -160,6 +160,7 @@ fn quick(
             kind_id: kind_id.to_owned(),
             config: std::collections::BTreeMap::new(),
             enabled: true,
+            continue_on_error: false,
             label: None,
         },
         picker,

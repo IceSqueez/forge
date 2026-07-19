@@ -328,6 +328,7 @@ mod tests {
                     ("message".to_owned(), Variant::String("hello".to_owned())),
                 ]),
                 enabled: true,
+                continue_on_error: false,
                 label: None,
             }],
         }

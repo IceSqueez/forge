@@ -69,6 +69,7 @@ fn build_shoutout_step(login: &str) -> SubActionStep {
         kind_id: "twitch.channel.send_shoutout".to_owned(),
         config,
         enabled: true,
+        continue_on_error: false,
         label: Some(format!("Shoutout {login}")),
     }
 }
@@ -84,6 +85,7 @@ fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
         kind_id: "twitch.chat.send_whisper".to_owned(),
         config,
         enabled: true,
+        continue_on_error: false,
         label: Some(format!("Whisper {login}")),
     }
 }
@@ -99,6 +101,7 @@ fn build_timeout_step(login: &str, seconds: i64) -> SubActionStep {
         kind_id: "twitch.moderation.timeout_user".to_owned(),
         config,
         enabled: true,
+        continue_on_error: false,
         label: Some(format!("Timeout {login}")),
     }
 }
@@ -113,6 +116,7 @@ fn build_ban_step(login: &str) -> SubActionStep {
         kind_id: "twitch.moderation.ban_user".to_owned(),
         config,
         enabled: true,
+        continue_on_error: false,
         label: Some(format!("Ban {login}")),
     }
 }
@@ -128,6 +132,7 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
         kind_id: "twitch.chat.reply".to_owned(),
         config,
         enabled: true,
+        continue_on_error: false,
         label: Some(format!("Reply to {username}")),
     }
 }

@@ -114,6 +114,7 @@ async fn spawn_pipeline() -> PipelineFixture {
                 c
             },
             enabled: true,
+            continue_on_error: false,
             label: None,
         }],
     };

@@ -606,6 +606,7 @@ mod tests {
                     Variant::String("Main Scene".to_owned()),
                 )]),
                 enabled: true,
+                continue_on_error: false,
                 label: None,
             },
             picker: Some(PickerKind::Scene),

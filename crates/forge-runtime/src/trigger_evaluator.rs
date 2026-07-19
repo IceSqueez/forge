@@ -299,6 +299,7 @@ mod tests {
                     c
                 },
                 enabled: true,
+                continue_on_error: false,
                 label: None,
             }],
         }

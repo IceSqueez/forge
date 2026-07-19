@@ -546,6 +546,7 @@ mod tests {
                 kind_id: "core.log.write".to_owned(),
                 config: std::collections::BTreeMap::new(),
                 enabled: true,
+                continue_on_error: false,
                 label: None,
             }],
         }
@@ -1307,6 +1308,7 @@ mod tests {
                 kind_id: "core.logic.wait".to_owned(),
                 config,
                 enabled: true,
+                continue_on_error: false,
                 label: None,
             }],
         }

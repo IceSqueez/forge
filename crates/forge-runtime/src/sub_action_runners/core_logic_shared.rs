@@ -30,6 +30,10 @@ pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
                 .get("enabled")
                 .and_then(Variant::as_bool)
                 .unwrap_or(true);
+            let continue_on_error = obj
+                .get("continue_on_error")
+                .and_then(Variant::as_bool)
+                .unwrap_or(false);
             let label = obj
                 .get("label")
                 .and_then(Variant::as_str)
@@ -38,6 +42,7 @@ pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
                 kind_id,
                 config,
                 enabled,
+                continue_on_error,
                 label,
             })
         })

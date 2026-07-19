@@ -133,6 +133,7 @@ fn action(id: ActionId, queue_id: QueueId, enabled: bool, set_global: &str) -> A
             kind_id: "core.globals.set".to_owned(),
             config,
             enabled: true,
+            continue_on_error: false,
             label: None,
         }],
     }

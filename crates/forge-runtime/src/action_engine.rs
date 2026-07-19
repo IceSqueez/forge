@@ -347,6 +347,8 @@ async fn run_quick_action_loop(
             }
         };
 
+        crate::chain::publish_subaction_done(publisher.as_ref(), run_event_id, &telemetry);
+
         let outcome = match &telemetry.outcome {
             SubActionOutcome::Success => "success",
             SubActionOutcome::Failed(_) => "failed",
@@ -374,6 +376,16 @@ pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemet
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
         outcome: SubActionOutcome::Skipped(format!("unknown kind_id: {kind_id}")),
+    }
+}
+
+pub(crate) fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
+    SubActionTelemetry {
+        index,
+        kind: kind_id.to_owned(),
+        started_at: OffsetDateTime::now_utc(),
+        duration_ms: 0,
+        outcome: SubActionOutcome::Skipped("disabled".to_owned()),
     }
 }
 
@@ -576,6 +588,7 @@ mod tests {
                     kind_id: kind.to_owned(),
                     config: BTreeMap::new(),
                     enabled: true,
+                    continue_on_error: false,
                     label: None,
                 }],
             };
@@ -641,6 +654,7 @@ mod tests {
             kind_id: "test.record".to_owned(),
             config: overrides,
             enabled: true,
+            continue_on_error: false,
             label: None,
         };
 

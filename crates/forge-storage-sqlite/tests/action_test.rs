@@ -168,6 +168,7 @@ async fn sub_actions_json_survives_roundtrip() {
             ("message".to_owned(), Variant::String("hello".to_owned())),
         ]),
         enabled: true,
+        continue_on_error: false,
         label: None,
     }];
     let id = action.id;

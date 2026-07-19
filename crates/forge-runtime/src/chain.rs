@@ -11,7 +11,34 @@ use serde_json::json;
 use tracing::warn;
 
 use crate::Config;
-use crate::action_engine::skipped_telemetry;
+use crate::action_engine::{disabled_telemetry, skipped_telemetry};
+
+pub(crate) fn publish_subaction_done(
+    publisher: &dyn EventPublisher,
+    caused_by: EventId,
+    telemetry: &SubActionTelemetry,
+) {
+    let (outcome, message) = match &telemetry.outcome {
+        SubActionOutcome::Success => ("success", None),
+        SubActionOutcome::Failed(m) => ("failed", Some(m.as_str())),
+        SubActionOutcome::Skipped(m) => ("skipped", Some(m.as_str())),
+    };
+    let mut payload = json!({
+        "step_index": telemetry.index,
+        "kind": telemetry.kind,
+        "outcome": outcome,
+        "duration_ms": telemetry.duration_ms,
+    });
+    if let Some(msg) = message {
+        payload["message"] = json!(msg);
+    }
+    publisher.publish(Event::caused_by(
+        EventSource::Core,
+        "subaction.done",
+        payload,
+        caused_by,
+    ));
+}
 
 pub struct ChainEngine {
     registry: Arc<SubActionRegistry>,
@@ -92,6 +119,9 @@ impl ChainEngine {
 
         for (index, step) in steps.iter().enumerate() {
             if !step.enabled {
+                let tel = disabled_telemetry(index, &step.kind_id);
+                publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
+                telemetry.push(tel);
                 continue;
             }
             if cancel.is_cancelled() {
@@ -142,6 +172,8 @@ impl ChainEngine {
                 current = new_stack;
             }
 
+            publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
+
             let failure = match &tel.outcome {
                 SubActionOutcome::Failed(m) => Some(m.clone()),
                 _ => None,
@@ -149,7 +181,9 @@ impl ChainEngine {
             telemetry.push(tel);
             telemetry.extend(nested);
 
-            if let Some(msg) = failure {
+            if let Some(msg) = failure
+                && !step.continue_on_error
+            {
                 return ChainRun {
                     signal: ChainSignal::Error(msg),
                     arg_stack: current,
@@ -201,35 +235,41 @@ impl ChainEngine {
         let futures: Vec<_> = steps
             .iter()
             .enumerate()
-            .filter(|(_, step)| step.enabled)
             .map(|(index, step)| {
-                let run_event = Event::caused_by(
-                    EventSource::Core,
-                    "subaction.run",
-                    json!({ "step_index": index, "kind": step.kind_id }),
-                    parent_event_id,
-                );
-                let run_event_id = run_event.id;
-                self.publisher.publish(run_event);
-
+                let cancel = cancel.clone();
                 // Concurrent siblings share no sequential ordering, so a control
-                // signal one raised has no defined enclosing chain to drain it;
+                // signal one raises has no defined enclosing chain to drain it;
                 // each gets its own never-read cell rather than racing on a shared one.
                 // Each also gets its own telemetry sink, drained once its future
                 // settles, so a composite sibling's nested rows stay with it.
-                let nested_sink = TelemetrySink::new();
-                let run_ctx = RunContext {
-                    arg_stack,
-                    index,
-                    parent_event_id: run_event_id,
-                    publisher: self.publisher.as_ref(),
-                    executor,
-                    cancel: cancel.clone(),
-                    control: ControlCell::new(),
-                    telemetry: nested_sink.clone(),
-                };
-
                 async move {
+                    if !step.enabled {
+                        let tel = disabled_telemetry(index, &step.kind_id);
+                        publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
+                        return (tel, Vec::new(), None);
+                    }
+
+                    let run_event = Event::caused_by(
+                        EventSource::Core,
+                        "subaction.run",
+                        json!({ "step_index": index, "kind": step.kind_id }),
+                        parent_event_id,
+                    );
+                    let run_event_id = run_event.id;
+                    self.publisher.publish(run_event);
+
+                    let nested_sink = TelemetrySink::new();
+                    let run_ctx = RunContext {
+                        arg_stack,
+                        index,
+                        parent_event_id: run_event_id,
+                        publisher: self.publisher.as_ref(),
+                        executor,
+                        cancel: cancel.clone(),
+                        control: ControlCell::new(),
+                        telemetry: nested_sink.clone(),
+                    };
+
                     let (tel, _) = match self.registry.get(&step.kind_id) {
                         Some(runner) => {
                             let resolved = effective_config(&runner.default_config(), &step.config);
@@ -243,7 +283,14 @@ impl ChainEngine {
                             (skipped_telemetry(index, &step.kind_id), None)
                         }
                     };
-                    (tel, nested_sink.drain())
+
+                    publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
+
+                    let failure = match (&tel.outcome, step.continue_on_error) {
+                        (SubActionOutcome::Failed(m), false) => Some(m.clone()),
+                        _ => None,
+                    };
+                    (tel, nested_sink.drain(), failure)
                 }
             })
             .collect();
@@ -252,11 +299,9 @@ impl ChainEngine {
 
         let mut telemetry = Vec::new();
         let mut first_failure: Option<String> = None;
-        for (tel, nested) in results {
-            if first_failure.is_none()
-                && let SubActionOutcome::Failed(msg) = &tel.outcome
-            {
-                first_failure = Some(msg.clone());
+        for (tel, nested, failure) in results {
+            if first_failure.is_none() {
+                first_failure = failure;
             }
             telemetry.push(tel);
             telemetry.extend(nested);
@@ -437,8 +482,80 @@ mod tests {
             kind_id: kind.to_owned(),
             config: BTreeMap::new(),
             enabled: true,
+            continue_on_error: false,
             label: None,
         }
+    }
+
+    fn flagged_step(kind: &str) -> SubActionStep {
+        SubActionStep {
+            continue_on_error: true,
+            ..step(kind)
+        }
+    }
+
+    fn disabled_step(kind: &str) -> SubActionStep {
+        SubActionStep {
+            enabled: false,
+            ..step(kind)
+        }
+    }
+
+    /// Publisher that records every emitted event so a test can inspect the
+    /// `subaction.run` / `subaction.done` stream and its causation links.
+    struct CapturingPublisher {
+        events: Arc<Mutex<Vec<Event>>>,
+    }
+
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    fn capturing_engine(
+        reg: Arc<SubActionRegistry>,
+        max_nesting_depth: u32,
+    ) -> (Arc<ChainEngine>, Arc<Mutex<Vec<Event>>>) {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let publisher: Arc<dyn EventPublisher> = Arc::new(CapturingPublisher {
+            events: Arc::clone(&events),
+        });
+        let eng = Arc::new(ChainEngine::new(
+            reg,
+            publisher,
+            Config {
+                max_nesting_depth,
+                ..Default::default()
+            },
+        ));
+        (eng, events)
+    }
+
+    /// Reads `subaction.done` events (kind, step_index, outcome string, caused_by).
+    fn done_events(events: &Arc<Mutex<Vec<Event>>>) -> Vec<(usize, String, Option<EventId>)> {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "subaction.done")
+            .map(|e| {
+                let idx = e.payload["step_index"].as_u64().unwrap() as usize;
+                let outcome = e.payload["outcome"].as_str().unwrap().to_owned();
+                (idx, outcome, e.caused_by)
+            })
+            .collect()
+    }
+
+    /// Maps each executed step index to the id of its `subaction.run` event.
+    fn run_ids(events: &Arc<Mutex<Vec<Event>>>) -> BTreeMap<usize, EventId> {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "subaction.run")
+            .map(|e| (e.payload["step_index"].as_u64().unwrap() as usize, e.id))
+            .collect()
     }
 
     // ---- Depth bound (invariant 1) -------------------------------------------
@@ -624,21 +741,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_step_is_neither_executed_nor_recorded() {
+    async fn disabled_step_is_recorded_as_skipped_at_its_real_index_but_not_executed() {
+        // New contract: a disabled step is NOT run, but it DOES push a
+        // Skipped("disabled") telemetry row keeping its positional index so the
+        // row sits between its executed neighbours rather than vanishing.
         let runs = Arc::new(AtomicUsize::new(0));
-        let mut r = scripted("seq.disabled", SubActionOutcome::Success);
-        r.runs = Arc::clone(&runs);
-        let eng = engine(registry(vec![Box::new(r)]), 8);
+        let mut mid = scripted("seq.disabled", SubActionOutcome::Success);
+        mid.runs = Arc::clone(&runs);
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted("seq.before", SubActionOutcome::Success)),
+                Box::new(mid),
+                Box::new(scripted("seq.after", SubActionOutcome::Success)),
+            ]),
+            8,
+        );
 
-        let disabled = SubActionStep {
-            kind_id: "seq.disabled".to_owned(),
-            config: BTreeMap::new(),
-            enabled: false,
-            label: None,
-        };
         let run = eng
             .run_sequential(
-                &[disabled],
+                &[
+                    step("seq.before"),
+                    disabled_step("seq.disabled"),
+                    step("seq.after"),
+                ],
                 &ArgStack::new(),
                 EventId::new(),
                 &CancelSignal::new(),
@@ -646,7 +771,14 @@ mod tests {
             .await;
 
         assert_eq!(run.signal, ChainSignal::Completed);
-        assert!(run.telemetry.is_empty());
+        assert_eq!(run.telemetry.len(), 3);
+        assert_eq!(run.telemetry[0].kind, "seq.before");
+        assert_eq!(run.telemetry[1].index, 1);
+        assert_eq!(run.telemetry[1].kind, "seq.disabled");
+        assert!(
+            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m == "disabled"),
+        );
+        assert_eq!(run.telemetry[2].kind, "seq.after");
         assert_eq!(runs.load(Ordering::Relaxed), 0);
     }
 
@@ -701,5 +833,242 @@ mod tests {
 
         assert_eq!(run.signal, ChainSignal::Completed);
         assert_eq!(run.telemetry.len(), 2);
+    }
+
+    // ---- continue_on_error (sequential) --------------------------------------
+
+    #[tokio::test]
+    async fn sequential_flagged_step_failure_lets_later_steps_run_and_chain_completes() {
+        let downstream_runs = Arc::new(AtomicUsize::new(0));
+        let first = scripted("seq.flagfail", SubActionOutcome::Failed("boom".to_owned()));
+        let mut second = scripted("seq.after", SubActionOutcome::Success);
+        second.runs = Arc::clone(&downstream_runs);
+
+        let eng = engine(registry(vec![Box::new(first), Box::new(second)]), 8);
+        let run = eng
+            .run_sequential(
+                &[flagged_step("seq.flagfail"), step("seq.after")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(run.telemetry.len(), 2);
+        assert!(
+            matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m == "boom"),
+            "flagged failure is still recorded as a Failed row",
+        );
+        assert_eq!(run.telemetry[1].outcome, SubActionOutcome::Success);
+        assert_eq!(
+            downstream_runs.load(Ordering::Relaxed),
+            1,
+            "step after a flagged failure must still execute",
+        );
+    }
+
+    #[tokio::test]
+    async fn sequential_unflagged_failure_after_a_flagged_one_still_halts() {
+        // Boundary between the two flags in one chain: the flagged failure is
+        // tolerated, but a later un-flagged failure halts at its own row.
+        let third_runs = Arc::new(AtomicUsize::new(0));
+        let mut third = scripted("seq.tail", SubActionOutcome::Success);
+        third.runs = Arc::clone(&third_runs);
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted(
+                    "seq.flagfail",
+                    SubActionOutcome::Failed("tolerated".to_owned()),
+                )),
+                Box::new(scripted(
+                    "seq.hardfail",
+                    SubActionOutcome::Failed("halt".to_owned()),
+                )),
+                Box::new(third),
+            ]),
+            8,
+        );
+        let run = eng
+            .run_sequential(
+                &[
+                    flagged_step("seq.flagfail"),
+                    step("seq.hardfail"),
+                    step("seq.tail"),
+                ],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Error("halt".to_owned()));
+        assert_eq!(run.telemetry.len(), 2);
+        assert_eq!(third_runs.load(Ordering::Relaxed), 0);
+    }
+
+    // ---- continue_on_error (concurrent) --------------------------------------
+
+    #[tokio::test]
+    async fn concurrent_flagged_failure_does_not_become_the_chain_failure() {
+        // Index 0 fails but is flagged; index 1 fails un-flagged. The first
+        // NON-flagged failure in step order wins, so the flagged earlier one is
+        // skipped over.
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted(
+                    "c.flagfail",
+                    SubActionOutcome::Failed("flagged".to_owned()),
+                )),
+                Box::new(scripted(
+                    "c.hardfail",
+                    SubActionOutcome::Failed("real".to_owned()),
+                )),
+            ]),
+            8,
+        );
+        let run = eng
+            .run_concurrent(
+                &[flagged_step("c.flagfail"), step("c.hardfail")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Error("real".to_owned()));
+        assert_eq!(run.telemetry.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn concurrent_all_failures_flagged_completes_the_chain() {
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted("c.a", SubActionOutcome::Failed("a".to_owned()))),
+                Box::new(scripted("c.b", SubActionOutcome::Failed("b".to_owned()))),
+            ]),
+            8,
+        );
+        let run = eng
+            .run_concurrent(
+                &[flagged_step("c.a"), flagged_step("c.b")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(run.telemetry.len(), 2);
+    }
+
+    // ---- subaction.done observability ----------------------------------------
+
+    #[tokio::test]
+    async fn subaction_done_outcome_string_reflects_each_step_outcome() {
+        // One chain exercising all three outcome strings: an executed success,
+        // a flagged executed failure (so the chain reaches every step), and a
+        // disabled step surfaced as skipped.
+        let eng_reg = registry(vec![
+            Box::new(scripted("d.ok", SubActionOutcome::Success)),
+            Box::new(scripted(
+                "d.fail",
+                SubActionOutcome::Failed("nope".to_owned()),
+            )),
+            Box::new(scripted("d.off", SubActionOutcome::Success)),
+        ]);
+        let (eng, events) = capturing_engine(eng_reg, 8);
+        eng.run_sequential(
+            &[step("d.ok"), flagged_step("d.fail"), disabled_step("d.off")],
+            &ArgStack::new(),
+            EventId::new(),
+            &CancelSignal::new(),
+        )
+        .await;
+
+        let mut done = done_events(&events);
+        done.sort_by_key(|(idx, _, _)| *idx);
+        let outcomes: Vec<(usize, &str)> = done.iter().map(|(i, o, _)| (*i, o.as_str())).collect();
+        assert_eq!(
+            outcomes,
+            vec![(0, "success"), (1, "failed"), (2, "skipped")],
+        );
+
+        // The failed step's done payload carries its message.
+        let failed_msg = events
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|e| e.kind == "subaction.done" && e.payload["outcome"] == "failed")
+            .and_then(|e| e.payload["message"].as_str().map(str::to_owned));
+        assert_eq!(failed_msg.as_deref(), Some("nope"));
+    }
+
+    #[tokio::test]
+    async fn subaction_done_links_run_id_for_executed_and_parent_for_disabled() {
+        let (eng, events) = capturing_engine(
+            registry(vec![
+                Box::new(scripted("l.ok", SubActionOutcome::Success)),
+                Box::new(scripted("l.off", SubActionOutcome::Success)),
+            ]),
+            8,
+        );
+        let parent = EventId::new();
+        eng.run_sequential(
+            &[step("l.ok"), disabled_step("l.off")],
+            &ArgStack::new(),
+            parent,
+            &CancelSignal::new(),
+        )
+        .await;
+
+        let runs = run_ids(&events);
+        // The executed step emits a subaction.run; the disabled one does not.
+        assert!(runs.contains_key(&0));
+        assert!(
+            !runs.contains_key(&1),
+            "disabled step must not emit subaction.run"
+        );
+
+        for (idx, _outcome, caused_by) in done_events(&events) {
+            match idx {
+                0 => assert_eq!(
+                    caused_by,
+                    Some(runs[&0]),
+                    "executed step's done is caused by its own run event",
+                ),
+                1 => assert_eq!(
+                    caused_by,
+                    Some(parent),
+                    "disabled step's done is caused by the parent event",
+                ),
+                other => panic!("unexpected step index {other}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_disabled_step_emits_skipped_done_with_parent_causation_and_no_run() {
+        // The concurrent driver has its own disabled-step branch (an early
+        // return inside each future); guard it independently of the sequential one.
+        let (eng, events) = capturing_engine(
+            registry(vec![Box::new(scripted("c.off", SubActionOutcome::Success))]),
+            8,
+        );
+        let parent = EventId::new();
+        eng.run_concurrent(
+            &[disabled_step("c.off")],
+            &ArgStack::new(),
+            parent,
+            &CancelSignal::new(),
+        )
+        .await;
+
+        assert!(
+            run_ids(&events).is_empty(),
+            "disabled concurrent step must not emit subaction.run",
+        );
+        let done = done_events(&events);
+        assert_eq!(done, vec![(0, "skipped".to_owned(), Some(parent))]);
     }
 }

@@ -223,6 +223,7 @@ fn target_with_steps(kinds: &[&str]) -> Action {
                 kind_id: (*k).to_owned(),
                 config: SubActionConfig::new(),
                 enabled: true,
+                continue_on_error: false,
                 label: None,
             })
             .collect(),

@@ -176,6 +176,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
                 kind_id: "test.gate".to_owned(),
                 config: SubActionConfig::new(),
                 enabled: true,
+                continue_on_error: false,
                 label: None,
             }],
         ))

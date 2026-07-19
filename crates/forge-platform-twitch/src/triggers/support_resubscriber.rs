@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SupportResubscriberDescriptor;
 
@@ -106,6 +109,50 @@ impl TriggerKindDescriptor for SupportResubscriberDescriptor {
             )
             .set("sub_streak_months".to_owned(), Variant::Int(streak_months))
             .set("sub_message".to_owned(), Variant::String(message))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "sub_tier".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Subscription tier".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "sub_cumulative_months".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Cumulative months".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 24 }),
+                    },
+                    DeclaredVariable {
+                        name: "sub_streak_months".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Streak months".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 24 }),
+                    },
+                    DeclaredVariable {
+                        name: "sub_message".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Resub message".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                ],
+            }
+        })
     }
 }
 

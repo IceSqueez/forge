@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct UnbanRequestCreatedDescriptor;
 
@@ -84,6 +87,32 @@ impl TriggerKindDescriptor for UnbanRequestCreatedDescriptor {
             .set("unban.request_id".to_owned(), Variant::String(request_id))
             .set("unban.target.login".to_owned(), Variant::String(user_login))
             .set("unban.reason_text".to_owned(), Variant::String(reason_text))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "unban.request_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Unban request ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "unban.target.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Target user login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "unban.reason_text".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Requester reason".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                ],
+            }
+        })
     }
 }
 

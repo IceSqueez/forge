@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct AdBreakStartedDescriptor;
 
@@ -98,6 +101,38 @@ impl TriggerKindDescriptor for AdBreakStartedDescriptor {
                 "requester_login".to_owned(),
                 Variant::String(requester_login),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "ad_break.duration_seconds".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Ad break duration (seconds)".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 180 }),
+                    },
+                    DeclaredVariable {
+                        name: "ad_break.is_automatic".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Automatic ad break".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "ad_break.started_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Ad break start time".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "requester_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Requester login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                ],
+            }
+        })
     }
 }
 

@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct WarningSentDescriptor;
 
@@ -121,6 +124,50 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
             )
             .set("warning.reason".to_owned(), Variant::String(reason))
             .set("warning.chat_rules_cited".to_owned(), chat_rules_cited)
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "warning.target.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Warned user login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "warning.target.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Warned user ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "warning.target.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Warned user display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    DeclaredVariable {
+                        name: "warning.moderator.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "warning.reason".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Warning reason".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "warning.chat_rules_cited".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Cited chat rules".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

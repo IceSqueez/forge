@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChannelFollowDescriptor;
 
@@ -92,6 +95,38 @@ impl TriggerKindDescriptor for ChannelFollowDescriptor {
             .set("user_id".to_owned(), Variant::String(user_id))
             .set("user_name".to_owned(), Variant::String(user_name))
             .set("followed_at".to_owned(), Variant::String(followed_at))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Follower login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Follower ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Follower display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    DeclaredVariable {
+                        name: "followed_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Followed at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

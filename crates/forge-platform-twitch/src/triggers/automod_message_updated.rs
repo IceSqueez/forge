@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct AutomodMessageUpdatedDescriptor;
 
@@ -144,6 +147,44 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
                 "moderator_login".to_owned(),
                 Variant::String(moderator_login),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "automod.message_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Automod message ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "automod.status".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Automod status".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "message_text".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Message text".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    DeclaredVariable {
+                        name: "moderator_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                ],
+            }
+        })
     }
 }
 

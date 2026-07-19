@@ -2,9 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig};
+use forge_types::{ArgStack, PlatformId, TriggerConfig, VariableSchema};
 
-use super::charity_started::build_charity_lifecycle_arg_stack;
+use super::charity_started::{build_charity_lifecycle_arg_stack, build_charity_lifecycle_schema};
 
 pub(crate) struct CharityProgressDescriptor;
 
@@ -62,6 +62,9 @@ impl TriggerKindDescriptor for CharityProgressDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_charity_lifecycle_arg_stack(event)
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(build_charity_lifecycle_schema())
     }
 }
 

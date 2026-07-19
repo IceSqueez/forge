@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct AutomodMessageHeldDescriptor;
 
@@ -107,6 +110,56 @@ impl TriggerKindDescriptor for AutomodMessageHeldDescriptor {
             .set("user_login".to_owned(), Variant::String(user_login))
             .set("user_id".to_owned(), Variant::String(user_id))
             .set("message_text".to_owned(), Variant::String(message_text))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "automod.message_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Automod message ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "automod.category".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Automod category".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "automod.level".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Automod level".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 4 }),
+                    },
+                    DeclaredVariable {
+                        name: "held_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Held at".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "message_text".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Message text".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                ],
+            }
+        })
     }
 }
 

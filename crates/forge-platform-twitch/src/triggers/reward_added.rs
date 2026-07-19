@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct RewardAddedDescriptor;
 
@@ -91,6 +94,47 @@ impl TriggerKindDescriptor for RewardAddedDescriptor {
             .set("reward.cost".to_owned(), Variant::Int(cost))
             .set("reward.prompt".to_owned(), Variant::String(prompt))
             .set("reward.is_enabled".to_owned(), Variant::Bool(is_enabled))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "reward.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "reward.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "reward.cost".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Reward cost".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                    DeclaredVariable {
+                        name: "reward.prompt".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward prompt".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "reward.is_enabled".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Reward enabled".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

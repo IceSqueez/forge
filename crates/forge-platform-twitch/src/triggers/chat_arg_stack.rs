@@ -1,5 +1,7 @@
 use forge_events::Event;
-use forge_types::{ArgStack, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, SynthesisHint, VariableSchema, Variant, VariantKind,
+};
 
 pub(super) fn base_chat_args(event: &Event) -> ArgStack {
     let message_text = event
@@ -41,6 +43,43 @@ pub(super) fn base_chat_args(event: &Event) -> ArgStack {
         .set("user_id".to_owned(), Variant::String(user_id))
         .set("channel".to_owned(), Variant::String(channel))
         .set("user_color".to_owned(), Variant::String(color))
+}
+
+pub(super) fn base_chat_schema() -> VariableSchema {
+    VariableSchema {
+        variables: vec![
+            DeclaredVariable {
+                name: "message_text".to_owned(),
+                kind: VariantKind::String,
+                label: "Chat message text".to_owned(),
+                synthesis: Some(SynthesisHint::Message),
+            },
+            DeclaredVariable {
+                name: "user_login".to_owned(),
+                kind: VariantKind::String,
+                label: "User login".to_owned(),
+                synthesis: Some(SynthesisHint::Username),
+            },
+            DeclaredVariable {
+                name: "user_id".to_owned(),
+                kind: VariantKind::String,
+                label: "User ID".to_owned(),
+                synthesis: None,
+            },
+            DeclaredVariable {
+                name: "channel".to_owned(),
+                kind: VariantKind::String,
+                label: "Channel login".to_owned(),
+                synthesis: None,
+            },
+            DeclaredVariable {
+                name: "user_color".to_owned(),
+                kind: VariantKind::String,
+                label: "Username color".to_owned(),
+                synthesis: None,
+            },
+        ],
+    }
 }
 
 #[cfg(test)]

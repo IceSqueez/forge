@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SupportGiftSubDescriptor;
 
@@ -112,6 +115,50 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
             )
             .set("recipient_id".to_owned(), Variant::String(recipient_id))
             .set("sub_tier".to_owned(), Variant::String(tier))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "gifter_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "gifter_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "gifter_is_anonymous".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Anonymous gifter".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "recipient_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Recipient login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "recipient_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Recipient ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "sub_tier".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Subscription tier".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

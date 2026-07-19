@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct PredictionStartedDescriptor;
 
@@ -90,6 +92,38 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
                 Variant::String(started_at),
             )
             .set("prediction.locks_at".to_owned(), Variant::String(locks_at))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "prediction.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.started_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Started at".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.locks_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Locks at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

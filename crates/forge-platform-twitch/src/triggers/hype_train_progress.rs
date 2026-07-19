@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct HypeTrainProgressDescriptor;
 
@@ -124,6 +127,53 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
             .set("hype.goal".to_owned(), Variant::Int(goal))
             .set("hype.progress".to_owned(), Variant::Int(progress))
             .set("hype.total".to_owned(), Variant::Int(total))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "hype.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Hype Train ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "hype.level".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Hype Train level".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 20 }),
+                    },
+                    DeclaredVariable {
+                        name: "hype.goal".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Level goal".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                    DeclaredVariable {
+                        name: "hype.progress".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Current progress".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                    DeclaredVariable {
+                        name: "hype.total".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Total points".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                ],
+            }
+        })
     }
 }
 

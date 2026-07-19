@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct StreamOnlineDescriptor;
 
@@ -104,6 +107,44 @@ impl TriggerKindDescriptor for StreamOnlineDescriptor {
                 Variant::String(broadcaster_login),
             )
             .set("broadcaster_id".to_owned(), Variant::String(broadcaster_id))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "stream_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Stream ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "stream_type".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Stream type".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "started_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Started at".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "broadcaster_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Broadcaster login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "broadcaster_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Broadcaster ID".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

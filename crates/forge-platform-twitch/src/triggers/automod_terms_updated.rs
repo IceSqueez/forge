@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct AutomodTermsUpdatedDescriptor;
 
@@ -79,6 +82,26 @@ impl TriggerKindDescriptor for AutomodTermsUpdatedDescriptor {
                 Variant::String(moderator_login),
             )
             .set("automod.action".to_owned(), Variant::String(action))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "moderator_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "automod.action".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Automod terms action".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

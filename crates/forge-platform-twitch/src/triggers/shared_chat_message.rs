@@ -2,9 +2,12 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
-use super::chat_arg_stack::base_chat_args;
+use super::chat_arg_stack::{base_chat_args, base_chat_schema};
 
 pub(crate) struct SharedChatMessageDescriptor;
 
@@ -91,6 +94,22 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
                 "chat.from_channel.display_name".to_owned(),
                 Variant::String(from_display_name),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        let mut schema = base_chat_schema();
+        schema.variables.push(DeclaredVariable {
+            name: "chat.from_channel.login".to_owned(),
+            kind: VariantKind::String,
+            label: "Source channel login".to_owned(),
+            synthesis: Some(SynthesisHint::Username),
+        });
+        schema.variables.push(DeclaredVariable {
+            name: "chat.from_channel.display_name".to_owned(),
+            kind: VariantKind::String,
+            label: "Source channel display name".to_owned(),
+            synthesis: Some(SynthesisHint::DisplayName),
+        });
+        Some(schema)
     }
 }
 

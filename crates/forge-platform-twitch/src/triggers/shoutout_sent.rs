@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ShoutoutSentDescriptor;
 
@@ -94,6 +97,38 @@ impl TriggerKindDescriptor for ShoutoutSentDescriptor {
             )
             .set("viewer_count".to_owned(), Variant::Int(viewer_count))
             .set("started_at".to_owned(), Variant::String(started_at))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "to_broadcaster_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Target channel login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "to_broadcaster_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Target channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "viewer_count".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Viewer count".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 500 }),
+                    },
+                    DeclaredVariable {
+                        name: "started_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Started at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

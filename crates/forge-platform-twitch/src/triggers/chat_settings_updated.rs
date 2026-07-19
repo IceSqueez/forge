@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChatSettingsUpdatedDescriptor;
 
@@ -113,6 +116,56 @@ impl TriggerKindDescriptor for ChatSettingsUpdatedDescriptor {
                 "settings.follower_mode_duration_minutes".to_owned(),
                 Variant::Int(follower_mode_duration_minutes),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "settings.emote_mode".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Emote-only mode".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "settings.follower_mode".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Follower-only mode".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "settings.slow_mode".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Slow mode".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "settings.subscriber_mode".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Subscriber-only mode".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "settings.unique_chat_mode".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Unique chat mode".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "settings.slow_mode_wait_time_seconds".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Slow mode wait (seconds)".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 120 }),
+                    },
+                    DeclaredVariable {
+                        name: "settings.follower_mode_duration_minutes".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Follower mode duration (minutes)".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 10080 }),
+                    },
+                ],
+            }
+        })
     }
 }
 

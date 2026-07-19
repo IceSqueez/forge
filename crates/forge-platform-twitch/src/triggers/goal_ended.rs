@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct GoalEndedDescriptor;
 
@@ -99,6 +102,56 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
             .set("goal.target_amount".to_owned(), Variant::Int(target_amount))
             .set("goal.is_achieved".to_owned(), Variant::Bool(is_achieved))
             .set("goal.ended_at".to_owned(), Variant::String(ended_at))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "goal.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Goal ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "goal.type".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Goal type".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "goal.current_amount".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Current amount".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                    DeclaredVariable {
+                        name: "goal.target_amount".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Target amount".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                    DeclaredVariable {
+                        name: "goal.is_achieved".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Goal achieved".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "goal.ended_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Ended at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

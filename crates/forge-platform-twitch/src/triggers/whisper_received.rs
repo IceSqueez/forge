@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 use regex::Regex;
 
 pub(crate) struct WhisperReceivedDescriptor;
@@ -188,6 +191,50 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
                 Variant::String(user_display_name),
             )
             .set("user.color".to_owned(), Variant::String(user_color))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "whisper.text".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Whisper text".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    DeclaredVariable {
+                        name: "whisper.thread_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Whisper thread ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    DeclaredVariable {
+                        name: "user.color".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender name color".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

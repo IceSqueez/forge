@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SharedChatSessionEndedDescriptor;
 
@@ -85,6 +88,32 @@ impl TriggerKindDescriptor for SharedChatSessionEndedDescriptor {
             )
             .set("host_login".to_owned(), Variant::String(host_login))
             .set("host_id".to_owned(), Variant::String(host_id))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "shared_chat.session_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Shared chat session ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "host_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Host channel login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "host_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Host channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

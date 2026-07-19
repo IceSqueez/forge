@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct PredictionLockedDescriptor;
 
@@ -84,6 +86,32 @@ impl TriggerKindDescriptor for PredictionLockedDescriptor {
                 "prediction.locked_at".to_owned(),
                 Variant::String(locked_at),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "prediction.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.locked_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Locked at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct CharityDonationDescriptor;
 
@@ -147,6 +150,53 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
                 "charity.user.display_name".to_owned(),
                 Variant::String(user_display_name),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "charity.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Charity campaign ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "charity.name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Charity name".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "charity.amount_cents".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Donation amount (cents)".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                    DeclaredVariable {
+                        name: "charity.currency_code".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Currency code".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "charity.user.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Donor login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "charity.user.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Donor display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                ],
+            }
+        })
     }
 }
 

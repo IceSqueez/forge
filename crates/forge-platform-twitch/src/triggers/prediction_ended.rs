@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct PredictionEndedDescriptor;
 
@@ -96,6 +98,44 @@ impl TriggerKindDescriptor for PredictionEndedDescriptor {
             )
             .set("prediction.status".to_owned(), Variant::String(status))
             .set("prediction.ended_at".to_owned(), Variant::String(ended_at))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "prediction.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.winning_outcome_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Winning outcome ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.status".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction status".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.ended_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Ended at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

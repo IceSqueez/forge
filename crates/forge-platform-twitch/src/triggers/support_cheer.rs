@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SupportCheerDescriptor;
 
@@ -130,6 +133,44 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
             .set("cheer_is_anonymous".to_owned(), Variant::Bool(is_anonymous))
             .set("user_login".to_owned(), Variant::String(user_login))
             .set("user_id".to_owned(), Variant::String(user_id))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "bits_amount".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Bits amount".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 10000 }),
+                    },
+                    DeclaredVariable {
+                        name: "cheer_message".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Cheer message".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    DeclaredVariable {
+                        name: "cheer_is_anonymous".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Anonymous cheer".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User ID".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

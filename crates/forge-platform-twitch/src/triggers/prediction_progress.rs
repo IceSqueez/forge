@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct PredictionProgressDescriptor;
 
@@ -75,6 +77,26 @@ impl TriggerKindDescriptor for PredictionProgressDescriptor {
         ArgStack::new()
             .set("prediction.id".to_owned(), Variant::String(prediction_id))
             .set("prediction.title".to_owned(), Variant::String(title))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "prediction.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Prediction title".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

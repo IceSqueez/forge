@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct AutomaticRewardRedeemedDescriptor;
 
@@ -94,6 +97,47 @@ impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
             .set("user_id".to_owned(), Variant::String(user_id))
             .set("reward.type".to_owned(), Variant::String(reward_type))
             .set("reward.cost".to_owned(), Variant::Int(reward_cost))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "redemption.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Redemption ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "reward.type".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward type".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "reward.cost".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Reward cost".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                ],
+            }
+        })
     }
 }
 

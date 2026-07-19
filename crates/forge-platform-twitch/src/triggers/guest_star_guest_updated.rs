@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct GuestStarGuestUpdatedDescriptor;
 
@@ -141,6 +144,44 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
             .set("guest_star.state".to_owned(), Variant::String(state))
             .set("guest.login".to_owned(), Variant::String(guest_login))
             .set("guest.id".to_owned(), Variant::String(guest_id))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "guest_star.session_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest Star session ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "guest_star.slot_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest Star slot ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "guest_star.state".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest state".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "guest.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "guest.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest ID".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

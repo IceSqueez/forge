@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct PollEndedDescriptor;
 
@@ -87,6 +89,38 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
             .set("poll.title".to_owned(), Variant::String(title))
             .set("poll.status".to_owned(), Variant::String(status))
             .set("poll.ended_at".to_owned(), Variant::String(ended_at))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "poll.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Poll ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "poll.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Poll title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "poll.status".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Poll status".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "poll.ended_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Ended at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

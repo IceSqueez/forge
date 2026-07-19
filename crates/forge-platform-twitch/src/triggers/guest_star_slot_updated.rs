@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct GuestStarSlotUpdatedDescriptor;
 
@@ -97,6 +100,44 @@ impl TriggerKindDescriptor for GuestStarSlotUpdatedDescriptor {
                 Variant::Bool(host_audio_enabled),
             )
             .set("slot.volume".to_owned(), Variant::Int(volume))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "session.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest Star session ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "slot.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Slot ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "slot.host_video_enabled".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Host video enabled".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "slot.host_audio_enabled".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Host audio enabled".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "slot.volume".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Slot volume".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
+                    },
+                ],
+            }
+        })
     }
 }
 

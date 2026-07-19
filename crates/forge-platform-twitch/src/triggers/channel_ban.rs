@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChannelBanDescriptor;
 
@@ -110,6 +113,50 @@ impl TriggerKindDescriptor for ChannelBanDescriptor {
             )
             .set("reason".to_owned(), Variant::String(reason))
             .set("banned_at".to_owned(), Variant::String(banned_at))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned user login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned user ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned user display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    DeclaredVariable {
+                        name: "moderator_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "reason".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Ban reason".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "banned_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

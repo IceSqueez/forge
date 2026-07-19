@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct GuestStarSettingsUpdatedDescriptor;
 
@@ -85,6 +88,32 @@ impl TriggerKindDescriptor for GuestStarSettingsUpdatedDescriptor {
                 "guest_star.is_moderator_send_live_enabled".to_owned(),
                 Variant::Bool(is_moderator_send_live_enabled),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "guest_star.slot_count".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Slot count".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 6 }),
+                    },
+                    DeclaredVariable {
+                        name: "guest_star.group_layout".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Group layout".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "guest_star.is_moderator_send_live_enabled".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Moderator can send live".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

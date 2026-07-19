@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChannelPointsRedemptionDescriptor;
 
@@ -233,6 +236,83 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
             .set("reward.title".to_owned(), Variant::String(reward_title))
             .set("reward.cost".to_owned(), Variant::Int(reward_cost))
             .set("reward.prompt".to_owned(), Variant::String(reward_prompt))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "redemption.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Redemption ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "redemption.status".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Redemption status".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_input".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User input".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    DeclaredVariable {
+                        name: "redeemed_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Redeemed at".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "user_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "user_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    DeclaredVariable {
+                        name: "reward.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "reward.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "reward.cost".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Reward cost".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1000000,
+                        }),
+                    },
+                    DeclaredVariable {
+                        name: "reward.prompt".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward prompt".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

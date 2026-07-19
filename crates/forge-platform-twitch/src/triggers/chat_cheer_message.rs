@@ -2,9 +2,12 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
-use super::chat_arg_stack::base_chat_args;
+use super::chat_arg_stack::{base_chat_args, base_chat_schema};
 
 pub(crate) struct ChatCheerMessageDescriptor;
 
@@ -148,6 +151,16 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
             .unwrap_or(0);
 
         base_chat_args(event).set("cheer.bits".to_owned(), Variant::Int(bits))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        let mut schema = base_chat_schema();
+        schema.variables.push(DeclaredVariable {
+            name: "cheer.bits".to_owned(),
+            kind: VariantKind::Int,
+            label: "Bits cheered".to_owned(),
+            synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 10000 }),
+        });
+        Some(schema)
     }
 }
 

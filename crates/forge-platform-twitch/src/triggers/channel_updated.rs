@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct ChannelUpdatedDescriptor;
 
@@ -93,6 +95,38 @@ impl TriggerKindDescriptor for ChannelUpdatedDescriptor {
                 Variant::String(category_name),
             )
             .set("channel.language".to_owned(), Variant::String(language))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "channel.title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Channel title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "channel.category_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Category ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "channel.category_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Category name".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "channel.language".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Broadcast language".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

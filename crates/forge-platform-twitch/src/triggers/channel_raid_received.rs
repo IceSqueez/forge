@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChannelRaidReceivedDescriptor;
 
@@ -98,6 +101,38 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
                 "raider_display_name".to_owned(),
                 Variant::String(from_display_name),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "raid_viewer_count".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Raid viewer count".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 500 }),
+                    },
+                    DeclaredVariable {
+                        name: "raider_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Raider login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "raider_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Raider ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "raider_display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Raider display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                ],
+            }
+        })
     }
 }
 

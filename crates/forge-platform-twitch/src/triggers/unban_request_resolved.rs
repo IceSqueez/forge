@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct UnbanRequestResolvedDescriptor;
 
@@ -106,6 +109,44 @@ impl TriggerKindDescriptor for UnbanRequestResolvedDescriptor {
                 "unban.resolution_text".to_owned(),
                 Variant::String(resolution_text),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "unban.request_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Unban request ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "unban.target.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Target user login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "unban.resolution".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Resolution status".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "unban.moderator.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Resolving moderator login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    DeclaredVariable {
+                        name: "unban.resolution_text".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Resolution note".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                ],
+            }
+        })
     }
 }
 

@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct GuestStarSessionBeganDescriptor;
 
@@ -82,6 +84,26 @@ impl TriggerKindDescriptor for GuestStarSessionBeganDescriptor {
                 "guest_star.started_at".to_owned(),
                 Variant::String(started_at),
             )
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some({
+            VariableSchema {
+                variables: vec![
+                    DeclaredVariable {
+                        name: "guest_star.session_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest Star session ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "guest_star.started_at".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Session started at".to_owned(),
+                        synthesis: None,
+                    },
+                ],
+            }
+        })
     }
 }
 

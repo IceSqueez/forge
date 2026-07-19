@@ -3,7 +3,7 @@
 Event-driven stream automation with multi-engine TTS - a single Rust desktop app for Linux, Windows, and macOS.
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
-[![Rust 1.96.0+](https://img.shields.io/badge/rust-1.96.0%2B-orange)](https://www.rust-lang.org/)
+[![Rust 1.97.1+](https://img.shields.io/badge/rust-1.97.1%2B-orange)](https://www.rust-lang.org/)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](#installing-releases)
 
 [![Latest Release](https://img.shields.io/github/v/release/IceSqueez/forge?include_prereleases&logo=github&label=Latest&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
@@ -91,7 +91,7 @@ Binary releases for Linux, Windows, and macOS are on [GitHub Releases](https://g
 
 ## Building from source
 
-**Requires Rust 1.96.0 or later** - [install via rustup](https://rustup.rs/).
+**Requires Rust 1.97.1 or later** - [install via rustup](https://rustup.rs/).
 
 Linux also needs: `sudo apt-get install build-essential pkg-config libssl-dev` (Debian/Ubuntu).
 

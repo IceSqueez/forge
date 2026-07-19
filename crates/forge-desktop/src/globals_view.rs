@@ -988,7 +988,7 @@ impl GlobalsView {
             .child(self.row_action(
                 ("globals-delete", idx),
                 Icon::X,
-                palette.text_faint,
+                palette.text_secondary,
                 palette.random,
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.request_delete(delete_name.clone(), cx)

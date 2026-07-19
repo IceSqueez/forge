@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct RewardRedeemedDescriptor;
 
@@ -103,6 +106,49 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
             .set("user_id".to_owned(), Variant::String(user_id))
             .set("username".to_owned(), Variant::String(username))
             .set("user_input".to_owned(), Variant::String(user_input))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "redemption_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Redemption ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "reward_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Reward ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "reward_title".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Reward title".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "user_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Redeeming user ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "username".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Redeeming username".to_owned(),
+                    synthesis: Some(SynthesisHint::Username),
+                },
+                DeclaredVariable {
+                    name: "user_input".to_owned(),
+                    kind: VariantKind::String,
+                    label: "User input text".to_owned(),
+                    synthesis: Some(SynthesisHint::Message),
+                },
+            ],
+        })
     }
 }
 

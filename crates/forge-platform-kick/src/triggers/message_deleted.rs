@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct MessageDeletedDescriptor;
 
@@ -77,6 +79,25 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
         ArgStack::new()
             .set("message_id".to_owned(), Variant::String(message_id))
             .set("deleted_by_id".to_owned(), Variant::String(deleted_by_id))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "message_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Deleted message ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "deleted_by_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Moderator user ID".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

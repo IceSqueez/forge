@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct BanDescriptor;
 
@@ -91,6 +94,37 @@ impl TriggerKindDescriptor for BanDescriptor {
             )
             .set("duration_secs".to_owned(), Variant::String(duration_secs))
             .set("reason".to_owned(), Variant::String(reason))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "banned_user_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Banned user ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "banned_username".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Banned username".to_owned(),
+                    synthesis: Some(SynthesisHint::Username),
+                },
+                DeclaredVariable {
+                    name: "duration_secs".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Ban duration (seconds)".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "reason".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Ban reason".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

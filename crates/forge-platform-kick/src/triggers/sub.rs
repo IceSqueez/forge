@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SubDescriptor;
 
@@ -93,6 +96,37 @@ impl TriggerKindDescriptor for SubDescriptor {
             .set("username".to_owned(), Variant::String(username))
             .set("months".to_owned(), Variant::String(months))
             .set("tier".to_owned(), Variant::String(tier))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "user_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Subscriber user ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "username".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Subscriber username".to_owned(),
+                    synthesis: Some(SynthesisHint::Username),
+                },
+                DeclaredVariable {
+                    name: "months".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Subscribed months".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "tier".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Subscription tier".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

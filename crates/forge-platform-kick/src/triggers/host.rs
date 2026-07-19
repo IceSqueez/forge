@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct HostDescriptor;
 
@@ -75,6 +78,25 @@ impl TriggerKindDescriptor for HostDescriptor {
         ArgStack::new()
             .set("host_username".to_owned(), Variant::String(host_username))
             .set("viewer_count".to_owned(), Variant::String(viewer_count))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "host_username".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Hosting channel username".to_owned(),
+                    synthesis: Some(SynthesisHint::Username),
+                },
+                DeclaredVariable {
+                    name: "viewer_count".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Viewer count".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

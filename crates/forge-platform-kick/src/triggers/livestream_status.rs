@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct LivestreamStatusDescriptor;
 
@@ -88,6 +90,37 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
             .set("stream_title".to_owned(), Variant::String(stream_title))
             .set("category_id".to_owned(), Variant::String(category_id))
             .set("category_name".to_owned(), Variant::String(category_name))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "is_live".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Is live".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "stream_title".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Stream title".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "category_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Category ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "category_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Category name".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

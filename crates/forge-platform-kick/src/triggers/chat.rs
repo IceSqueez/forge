@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChatDescriptor;
 
@@ -92,6 +95,55 @@ impl TriggerKindDescriptor for ChatDescriptor {
             .set("content".to_owned(), Variant::String(content))
             .set("color".to_owned(), Variant::String(color))
             .set("reply_to_id".to_owned(), Variant::String(reply_to_id))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "message_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Message ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "sender_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender user ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "username".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender username".to_owned(),
+                    synthesis: Some(SynthesisHint::Username),
+                },
+                DeclaredVariable {
+                    name: "display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "content".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Message content".to_owned(),
+                    synthesis: Some(SynthesisHint::Message),
+                },
+                DeclaredVariable {
+                    name: "color".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender name color".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "reply_to_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Replied-to message ID".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

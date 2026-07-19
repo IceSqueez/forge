@@ -525,6 +525,7 @@ impl EventFeedView {
             .track_scroll(&self.list_scroll)
             .on_scroll_wheel(cx.listener(Self::on_wheel))
             .bg(palette.base)
+            .pt(spacing(Spacing::Sm, density))
             .child(list)
             .children(empty_note)
     }

@@ -1895,6 +1895,11 @@ script_editor_api_search_placeholder = Пошук модулів…
 
 script_editor_details_heading = ДЕТАЛІ
 script_editor_signature_heading = СИГНАТУРА
+script_editor_details_type = Тип
+script_editor_details_linked = Пов'язано з
+script_editor_type_action = Скрипти дій
+script_editor_type_standalone = Окремі
+script_editor_open_action = Відкрити дію
 script_editor_details_lines = Рядки
 script_editor_details_edited = Змінено
 script_editor_details_returns = повертає

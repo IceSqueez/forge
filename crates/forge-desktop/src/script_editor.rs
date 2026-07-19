@@ -15,7 +15,9 @@ use forge_script::{
     validate_syntax,
 };
 use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
-use forge_types::{Action, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind};
+use forge_types::{
+    Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
+};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
     MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -23,6 +25,7 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
 const LEFT_PANE_W: Pixels = px(200.0);
@@ -102,6 +105,7 @@ struct ScriptDetailsResizeDrag;
 struct ConsoleResizeDrag;
 
 struct LinkedAction {
+    id: ActionId,
     name: String,
 }
 
@@ -119,6 +123,7 @@ fn find_linked_action(actions: &[Action], script_name: &str) -> Option<LinkedAct
                 && step.config.get("script_name").and_then(|v| v.as_str()) == Some(script_name)
         });
         links.then(|| LinkedAction {
+            id: action.id,
             name: action.name.clone(),
         })
     })
@@ -237,6 +242,7 @@ pub struct ScriptEditorView {
     console_tab: ConsoleTab,
     console_collapsed: bool,
     problems: Vec<SharedString>,
+    problem_lines: Vec<usize>,
     type_check: TypeCheck,
 
     api_docs_open: bool,
@@ -324,6 +330,7 @@ impl ScriptEditorView {
             console_tab: ConsoleTab::Output,
             console_collapsed: false,
             problems: Vec::new(),
+            problem_lines: Vec::new(),
             type_check: None,
             api_docs_open: false,
             api_search,
@@ -406,6 +413,7 @@ impl ScriptEditorView {
         } else {
             Some(diags.len() as u32)
         };
+        self.problem_lines = diags.iter().map(|d| d.line).collect();
         self.problems = diags
             .into_iter()
             .map(|d| SharedString::from(format!("Ln {} · {}", d.line + 1, d.message)))
@@ -1310,6 +1318,37 @@ impl ScriptEditorView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_api_docs(cx)),
         );
 
+        let open_action = self
+            .open
+            .as_ref()
+            .and_then(|o| self.find_entry(o.id))
+            .and_then(|e| e.linked.as_ref())
+            .map(|linked| {
+                let action_id = linked.id;
+                let hover = palette.elevated;
+                div()
+                    .id("script-open-action")
+                    .flex()
+                    .items_center()
+                    .gap(px(5.0))
+                    .py(spacing(Spacing::Xxs, density))
+                    .px(spacing(Spacing::Xs, density))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(hover))
+                    .on_click(cx.listener(move |_this, _: &ClickEvent, _, cx| {
+                        cx.emit(NavRequested(Screen::Actions(Some(action_id))));
+                    }))
+                    .child(icon(Icon::ExternalLink, GLYPH_TOOLBAR, palette.brand))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.brand)
+                            .child(tr!("script_editor_open_action")),
+                    )
+            });
+
         let divider = div()
             .w(DIVIDER_W)
             .h(DIVIDER_H)
@@ -1324,7 +1363,8 @@ impl ScriptEditorView {
             .child(debug)
             .child(format)
             .child(divider)
-            .child(api);
+            .child(api)
+            .children(open_action);
 
         let sandbox = div()
             .flex()
@@ -1815,16 +1855,22 @@ impl ScriptEditorView {
             .pt(px(CODE_PAD_V_PX))
             .pr(GUTTER_PAD_R);
         for n in 1..=line_count {
-            gutter = gutter.child(
-                div()
-                    .h(CODE_LINE_H)
-                    .flex()
-                    .justify_end()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(n.to_string()),
-            );
+            let cell = div()
+                .h(CODE_LINE_H)
+                .flex()
+                .justify_end()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XS);
+            let cell = if self.problem_lines.contains(&(n - 1)) {
+                cell.border_l(px(2.0))
+                    .border_color(palette.warning)
+                    .bg(with_alpha(palette.warning, 0.10))
+                    .text_color(palette.warning)
+                    .child("\u{25cf}")
+            } else {
+                cell.text_color(palette.text_faint).child(n.to_string())
+            };
+            gutter = gutter.child(cell);
         }
 
         let editor = div().flex_1().min_w_0().child(self.code_input.clone());
@@ -2178,6 +2224,12 @@ impl ScriptEditorView {
         let line_count = record.body.lines().count();
         let edited = fmt_relative_time(Some(record.last_modified));
 
+        let linked = self.find_entry(open.id).and_then(|e| e.linked.as_ref());
+        let (type_label, type_color): (SharedString, Rgba) = match linked {
+            Some(_) => (tr!("script_editor_type_action").into(), palette.brand),
+            None => (tr!("script_editor_type_standalone").into(), palette.bits),
+        };
+
         let mut inner = div()
             .id("script-details-pane")
             .flex_1()
@@ -2189,6 +2241,24 @@ impl ScriptEditorView {
                 false,
                 palette,
             ))
+            .child(detail_row(
+                tr!("script_editor_details_type"),
+                div().text_color(type_color).child(type_label),
+                palette,
+            ));
+
+        if let Some(linked) = linked {
+            inner = inner.child(detail_row(
+                tr!("script_editor_details_linked"),
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_color(palette.text_primary)
+                    .child(SharedString::from(linked.name.clone())),
+                palette,
+            ));
+        }
+
+        inner = inner
             .child(detail_row(
                 tr!("script_editor_details_lines"),
                 div()

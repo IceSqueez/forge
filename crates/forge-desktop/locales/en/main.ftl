@@ -1870,6 +1870,11 @@ script_editor_api_search_placeholder = Search modules…
 
 script_editor_details_heading = DETAILS
 script_editor_signature_heading = SIGNATURE
+script_editor_details_type = Type
+script_editor_details_linked = Linked to
+script_editor_type_action = Action scripts
+script_editor_type_standalone = Standalone
+script_editor_open_action = Open action
 script_editor_details_lines = Lines
 script_editor_details_edited = Edited
 script_editor_details_returns = returns

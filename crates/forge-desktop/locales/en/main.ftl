@@ -564,9 +564,25 @@ actions_step_continue_on_error_hint = Keep running later steps if this one fails
 
 ## Action editor - test run
 
-action_editor_test_fired = Test trigger fired
-action_editor_test_no_match = Test event did not match this trigger
 action_editor_test_failed = Test trigger failed: { $error }
+action_editor_test_run_title = Test run · { $name }
+action_editor_test_run_subtitle = Runs the action with a simulated trigger event
+action_editor_test_run_empty = No sub-actions to run.
+action_editor_test_run_default_error = Step execution failed
+action_editor_test_run_status_queued = queued
+action_editor_test_run_status_running = running…
+action_editor_test_run_status_failed = failed
+action_editor_test_run_status_skipped = skipped
+action_editor_test_run_status_ms = { $ms } ms
+action_editor_test_run_failed_banner = Run failed at step { $step } · { $name }
+action_editor_test_run_completed = Completed { $count } steps · { $errors } errors
+action_editor_test_run_nomatch = Trigger did not match · the action did not run
+action_editor_test_run_foot_simulating = Simulating…
+action_editor_test_run_foot_finished = Run finished
+action_editor_test_run_foot_halted = Halted on error
+action_editor_test_run_foot_nomatch = Trigger did not match
+action_editor_test_run_again = Run again
+action_editor_test_run_close = Close
 
 ## Action editor - sub-action / trigger pickers
 

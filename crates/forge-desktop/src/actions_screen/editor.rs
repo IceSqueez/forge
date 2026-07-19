@@ -72,7 +72,7 @@ async fn pick_file_path() -> Option<String> {
     Some(handle.path().to_string_lossy().into_owned())
 }
 
-fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
+pub(super) fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
             s.as_str()
@@ -237,7 +237,7 @@ fn sub_category_slug(cat: SubActionCategory) -> &'static str {
     }
 }
 
-fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> Rgba {
+pub(super) fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> Rgba {
     match cat {
         SubActionCategory::Chat | SubActionCategory::Twitch => palette.brand,
         SubActionCategory::Tts | SubActionCategory::Audio => palette.success,
@@ -261,7 +261,7 @@ fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn step_glyph(
+pub(super) fn step_glyph(
     kind_id: &str,
     fallback_icon: &str,
     fallback_color: Option<Rgba>,
@@ -841,43 +841,6 @@ impl ScreenActionsView {
 
     fn close_step_menu(&mut self, cx: &mut Context<Self>) {
         self.step_menu_open = None;
-        cx.notify();
-    }
-
-    fn test_run(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected else {
-            return;
-        };
-        let service = Arc::clone(&self.actions_service);
-        let registry = Arc::clone(&self.trigger_registry);
-        let bus = Arc::clone(&self.bus);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ =
-                tx.send(super::test_trigger::run_test_trigger(&service, &registry, &bus, id).await);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(true)) => {
-                let _ = this.update(cx, |_, cx| {
-                    cx.push_toast(ToastKind::Success, tr!("action_editor_test_fired"));
-                });
-            }
-            Ok(Ok(false)) => {
-                let _ = this.update(cx, |_, cx| {
-                    cx.push_toast(ToastKind::Warn, tr!("action_editor_test_no_match"));
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |_, cx| {
-                    cx.push_toast(
-                        ToastKind::Error,
-                        tr!("action_editor_test_failed", error = message.as_str()),
-                    );
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
         cx.notify();
     }
 
@@ -2157,7 +2120,7 @@ impl ScreenActionsView {
                     .height(HEADER_ACTION_H)
                     .on_click(
                         "actions-editor-test",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.test_run(cx)),
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.start_test_run(cx)),
                     ),
             )
             .child(

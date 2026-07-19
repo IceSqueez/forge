@@ -29,6 +29,7 @@ mod branch;
 mod editor;
 mod list;
 mod nav;
+mod test_run;
 mod test_trigger;
 
 const LEFT_PANEL_W: Pixels = px(290.0);
@@ -179,6 +180,7 @@ pub struct ScreenActionsView {
     renaming: Option<Renaming>,
     action_modal: Option<ActionForm>,
     history_modal: Option<HistoryModal>,
+    test_run: Option<test_run::TestRunModal>,
     header_menu_open: Option<Point<Pixels>>,
     pending_delete: Option<ActionId>,
     detail: Option<ActionDetail>,
@@ -249,6 +251,7 @@ impl ScreenActionsView {
             renaming: None,
             action_modal: None,
             history_modal: None,
+            test_run: None,
             header_menu_open: None,
             pending_delete: None,
             detail: None,
@@ -542,6 +545,10 @@ impl Render for ScreenActionsView {
             .history_modal
             .as_ref()
             .map(|state| self.render_history_modal(state, &palette, cx));
+        let test_run_modal = self
+            .test_run
+            .as_ref()
+            .map(|state| self.render_test_run_modal(state, &palette, cx));
         let delete_modal = self
             .pending_delete
             .map(|id| self.render_delete_confirm(id, &palette, cx));
@@ -575,6 +582,7 @@ impl Render for ScreenActionsView {
             .child(body)
             .children(action_modal)
             .children(history_modal)
+            .children(test_run_modal)
             .children(delete_modal)
             .children(sub_modal)
             .children(grid_picker)

@@ -564,9 +564,25 @@ actions_step_continue_on_error_hint = Виконувати наступні кр
 
 ## Редактор дій - тестовий запуск
 
-action_editor_test_fired = Тестовий тригер спрацював
-action_editor_test_no_match = Тестова подія не збіглася з цим тригером
 action_editor_test_failed = Не вдалося запустити тестовий тригер: { $error }
+action_editor_test_run_title = Тестовий запуск · { $name }
+action_editor_test_run_subtitle = Виконує дію зі змодельованою подією тригера
+action_editor_test_run_empty = Немає підпунктів для виконання.
+action_editor_test_run_default_error = Виконання кроку не вдалося
+action_editor_test_run_status_queued = у черзі
+action_editor_test_run_status_running = виконується…
+action_editor_test_run_status_failed = помилка
+action_editor_test_run_status_skipped = пропущено
+action_editor_test_run_status_ms = { $ms } мс
+action_editor_test_run_failed_banner = Збій на кроці { $step } · { $name }
+action_editor_test_run_completed = Виконано кроків: { $count } · помилок: { $errors }
+action_editor_test_run_nomatch = Тригер не збігся · дію не виконано
+action_editor_test_run_foot_simulating = Моделювання…
+action_editor_test_run_foot_finished = Запуск завершено
+action_editor_test_run_foot_halted = Зупинено через помилку
+action_editor_test_run_foot_nomatch = Тригер не збігся
+action_editor_test_run_again = Запустити знову
+action_editor_test_run_close = Закрити
 
 ## Редактор дій - вибір підпункту / тригера
 

@@ -1035,6 +1035,13 @@ impl GlobalsView {
         if let Some(rename) = self.renaming.as_ref().filter(|r| &r.original == name) {
             return div()
                 .w_full()
+                .flex()
+                .items_center()
+                .px(px(4.0))
+                .rounded(radius(Radius::Sm))
+                .bg(palette.shell)
+                .border(BORDER_THIN)
+                .border_color(palette.border_active)
                 .on_mouse_down_out(
                     cx.listener(|this, _: &MouseDownEvent, _, cx| this.commit_rename(cx)),
                 )

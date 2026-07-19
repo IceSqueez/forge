@@ -16,6 +16,34 @@ impl CoreRandomFloatRunner {
     pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
         Self { globals }
     }
+
+    async fn resolve_bound(
+        &self,
+        config: &SubActionConfig,
+        ctx: &RunContext<'_>,
+        key: &str,
+        default: f64,
+    ) -> Result<f64, String> {
+        let raw = match config.get(key) {
+            Some(Variant::Float(n)) => return Ok(*n),
+            Some(Variant::Int(n)) => return Ok(*n as f64),
+            Some(Variant::String(s)) => s.clone(),
+            _ => return Ok(default),
+        };
+        if raw.trim().is_empty() {
+            return Ok(default);
+        }
+        let resolved = super::interpolate::interpolate_with_globals(
+            &raw,
+            ctx.arg_stack,
+            self.globals.as_ref(),
+        )
+        .await;
+        resolved
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| format!("{key} is not a valid number: {resolved:?}"))
+    }
 }
 
 #[async_trait]
@@ -46,8 +74,8 @@ impl SubActionRunner for CoreRandomFloatRunner {
 
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert("min".to_owned(), Variant::Float(0.0));
-        cfg.insert("max".to_owned(), Variant::Float(1.0));
+        cfg.insert("min".to_owned(), Variant::String("0.0".to_owned()));
+        cfg.insert("max".to_owned(), Variant::String("1.0".to_owned()));
         cfg.insert("into_var".to_owned(), Variant::String(String::new()));
         cfg
     }
@@ -88,37 +116,41 @@ impl SubActionRunner for CoreRandomFloatRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let started_at = OffsetDateTime::now_utc();
 
-        let min = config.get("min").and_then(|v| v.as_float()).unwrap_or(0.0);
-        let max = config.get("max").and_then(|v| v.as_float()).unwrap_or(1.0);
+        let min = self.resolve_bound(config, ctx, "min", 0.0).await;
+        let max = self.resolve_bound(config, ctx, "max", 1.0).await;
         let into_var = config
             .get("into_var")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
 
-        let outcome = if min > max {
-            SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})"))
-        } else {
-            let value = rand::rng().random_range(min..=max);
-            match self
-                .globals
-                .set(&into_var, Variant::Float(value), false)
-                .await
-            {
-                Ok(()) => {
-                    ctx.publisher.publish(Event::caused_by(
-                        EventSource::Core,
-                        "global.set",
-                        serde_json::json!({
-                            "key": into_var,
-                            "source": "random_float",
-                            "new_value": value,
-                        }),
-                        ctx.parent_event_id,
-                    ));
-                    SubActionOutcome::Success
+        let outcome = match (min, max) {
+            (Err(e), _) | (Ok(_), Err(e)) => SubActionOutcome::Failed(e),
+            (Ok(min), Ok(max)) if min > max => {
+                SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})"))
+            }
+            (Ok(min), Ok(max)) => {
+                let value = rand::rng().random_range(min..=max);
+                match self
+                    .globals
+                    .set(&into_var, Variant::Float(value), false)
+                    .await
+                {
+                    Ok(()) => {
+                        ctx.publisher.publish(Event::caused_by(
+                            EventSource::Core,
+                            "global.set",
+                            serde_json::json!({
+                                "key": into_var,
+                                "source": "random_float",
+                                "new_value": value,
+                            }),
+                            ctx.parent_event_id,
+                        ));
+                        SubActionOutcome::Success
+                    }
+                    Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
                 }
-                Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
             }
         };
 

@@ -55,6 +55,7 @@ const GRID_FOOTER_PAD_V: Pixels = px(8.0);
 const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
 const GRID_BADGE_FS: Pixels = px(9.0);
+const GRID_CARD_GROUP: &str = "forge-grid-card";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GridPickerItemState {
@@ -119,7 +120,6 @@ pub struct GridPicker {
     search: Entity<TextInput>,
     query: String,
     rail: RailSel,
-    hovered: Option<SharedString>,
     favorites: HashSet<SharedString>,
     groups: Vec<GridPickerGroup>,
     config: GridPickerConfig,
@@ -151,7 +151,6 @@ impl GridPicker {
             search,
             query: String::new(),
             rail: RailSel::All,
-            hovered: None,
             favorites,
             groups,
             config,
@@ -210,18 +209,6 @@ impl GridPicker {
     fn set_rail(&mut self, rail: RailSel, cx: &mut Context<Self>) {
         self.rail = rail;
         cx.notify();
-    }
-
-    fn set_hover(&mut self, id: SharedString, hovered: bool, cx: &mut Context<Self>) {
-        if hovered {
-            if self.hovered.as_ref() != Some(&id) {
-                self.hovered = Some(id);
-                cx.notify();
-            }
-        } else if self.hovered.as_ref() == Some(&id) {
-            self.hovered = None;
-            cx.notify();
-        }
     }
 
     fn emit_picked(&mut self, id: SharedString, cx: &mut Context<Self>) {
@@ -547,13 +534,7 @@ impl GridPicker {
     ) -> AnyElement {
         let p = self.palette;
         let id = item.id.clone();
-        let hovered = self.hovered.as_ref() == Some(&id);
         let dim = !matches!(item.state, GridPickerItemState::Normal);
-        let border = if hovered && !dim {
-            p.border_input
-        } else {
-            p.border_regular
-        };
 
         let tile = div()
             .flex_none()
@@ -606,10 +587,15 @@ impl GridPicker {
                 badge(p.surface_overlay, p.text_faint, "off", true, GRID_BADGE_FS)
                     .into_any_element()
             }
-            GridPickerItemState::Normal => {
-                let tint = if hovered { accent } else { p.text_faint };
-                icon(Icon::Plus, GRID_CARD_ICON, tint).into_any_element()
-            }
+            GridPickerItemState::Normal => div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(p.text_faint)
+                .group_hover(GRID_CARD_GROUP, move |s| s.text_color(accent))
+                .child(icon_inherit(Icon::Plus, GRID_CARD_ICON))
+                .into_any_element(),
         };
 
         let top = div()
@@ -640,7 +626,7 @@ impl GridPicker {
             .px(GRID_CARD_PAD_H)
             .rounded(radius(Radius::Md))
             .border(BORDER_ACCENT)
-            .border_color(border)
+            .border_color(p.border_regular)
             .bg(p.shell)
             .child(top)
             .child(desc);
@@ -649,13 +635,11 @@ impl GridPicker {
             return card.opacity(0.5).into_any_element();
         }
 
-        let hover_id = id.clone();
         let pick_id = id.clone();
         card.id(id)
+            .group(GRID_CARD_GROUP)
             .cursor_pointer()
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                this.set_hover(hover_id.clone(), *hovered, cx)
-            }))
+            .hover(|s| s.border_color(p.border_input))
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.emit_picked(pick_id.clone(), cx)

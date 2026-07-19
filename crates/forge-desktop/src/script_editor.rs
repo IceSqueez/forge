@@ -1180,8 +1180,8 @@ impl ScriptEditorView {
             .items_center()
             .child(run)
             .child(save)
-            .child(format)
             .child(debug)
+            .child(format)
             .child(divider)
             .child(api);
 
@@ -1213,7 +1213,7 @@ impl ScriptEditorView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child("Timeout: 500ms"),
+                    .child("Timeout: 500 ms"),
             );
 
         div()

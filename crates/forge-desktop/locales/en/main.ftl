@@ -1641,7 +1641,7 @@ globals_inspect_edit = Edit value
 ## Script Editor - page / toolbar
 
 script_editor_breadcrumb = Script Editor
-script_editor_run = Run
+script_editor_run = Test run
 script_editor_save = Save
 script_editor_format = Format
 script_editor_api_docs = API docs

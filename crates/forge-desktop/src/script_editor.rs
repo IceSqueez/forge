@@ -14,7 +14,9 @@ use forge_script::{
     MethodDescriptor, RunResult, content_hash, format_script, parse_contract, run_inline,
     validate_syntax,
 };
-use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
+use forge_storage::{
+    DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
+};
 use forge_types::{
     Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
 };
@@ -210,6 +212,7 @@ pub struct ScriptEditorView {
     scripts: Vec<ScriptEntry>,
     selected: Option<ScriptId>,
     open: Option<OpenScript>,
+    telemetry: Option<ScriptTelemetry>,
     loading: bool,
 
     list_width: Pixels,
@@ -303,6 +306,7 @@ impl ScriptEditorView {
             scripts: Vec::new(),
             selected: None,
             open: None,
+            telemetry: None,
             loading: false,
             list_width: LEFT_PANE_W,
             details_width: DETAILS_PANE_W,
@@ -506,11 +510,13 @@ impl ScriptEditorView {
                     area.set_content(body.clone(), cx);
                 });
                 self.recompute_diagnostics(&body, cx);
+                let id = record.id;
                 self.open = Some(OpenScript {
-                    id: record.id,
+                    id,
                     original_body: body,
                     record,
                 });
+                self.load_telemetry(id, cx);
             }
             Err(e) => {
                 tracing::warn!(error = %e, "script open failed");
@@ -518,6 +524,26 @@ impl ScriptEditorView {
             }
         }
         cx.notify();
+    }
+
+    fn load_telemetry(&mut self, id: ScriptId, cx: &mut Context<Self>) {
+        self.telemetry = None;
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(repo.telemetry(id).await.ok());
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| {
+                    if this.open.as_ref().is_some_and(|o| o.id == id) {
+                        this.telemetry = result;
+                        cx.notify();
+                    }
+                });
+            }
+        })
+        .detach();
     }
 
     fn revert_current(&mut self, cx: &mut Context<Self>) {
@@ -2211,6 +2237,40 @@ impl ScriptEditorView {
             }
         }
 
+        let (runs_value, avg_value): (SharedString, SharedString) = match &self.telemetry {
+            Some(t) => (
+                tr!("script_editor_stat_runs_value", n = t.runs_today as i64).into(),
+                t.avg_duration_ms.map_or_else(
+                    || "-".into(),
+                    |ms| tr!("script_editor_stat_avg_value", n = ms as i64).into(),
+                ),
+            ),
+            None => ("-".into(), "-".into()),
+        };
+        inner = inner
+            .child(details_heading(
+                tr!("script_editor_run_stats_heading"),
+                true,
+                palette,
+            ))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.0))
+                    .child(mini_stat(
+                        tr!("script_editor_stat_runs"),
+                        runs_value,
+                        palette.text_primary,
+                        palette,
+                    ))
+                    .child(mini_stat(
+                        tr!("script_editor_stat_avg"),
+                        avg_value,
+                        palette.success,
+                        palette,
+                    )),
+            );
+
         let pane = div()
             .flex_none()
             .w(self.details_width)
@@ -2461,6 +2521,40 @@ fn details_heading(
     } else {
         heading.pb(spacing(Spacing::Sm, Density::Cozy))
     }
+}
+
+fn mini_stat(
+    label: impl Into<SharedString>,
+    value: impl Into<SharedString>,
+    value_color: Rgba,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    div()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .bg(palette.base)
+        .border(BORDER_THIN)
+        .border_color(palette.surface_overlay)
+        .rounded(px(7.0))
+        .py(px(7.0))
+        .px(px(9.0))
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(px(9.0))
+                .text_color(palette.text_faint)
+                .pb(px(3.0))
+                .child(label.into()),
+        )
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(FONT_XS)
+                .text_color(value_color)
+                .child(value.into()),
+        )
 }
 
 fn detail_row(

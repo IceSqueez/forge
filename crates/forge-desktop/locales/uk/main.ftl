@@ -1902,6 +1902,11 @@ script_editor_open_action = Відкрити дію
 script_editor_details_lines = Рядки
 script_editor_details_edited = Змінено
 script_editor_details_returns = повертає
+script_editor_run_stats_heading = СТАТИСТИКА
+script_editor_stat_runs = ЗАПУСКИ
+script_editor_stat_avg = СЕРЕДНЄ
+script_editor_stat_runs_value = { $n } сьогодні
+script_editor_stat_avg_value = { $n } мс
 
 ## Widget - layout chrome
 

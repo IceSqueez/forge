@@ -1877,6 +1877,11 @@ script_editor_open_action = Open action
 script_editor_details_lines = Lines
 script_editor_details_edited = Edited
 script_editor_details_returns = returns
+script_editor_run_stats_heading = RUN STATS
+script_editor_stat_runs = RUNS
+script_editor_stat_avg = AVG
+script_editor_stat_runs_value = { $n } today
+script_editor_stat_avg_value = { $n } ms
 
 ## Widget - layout chrome
 

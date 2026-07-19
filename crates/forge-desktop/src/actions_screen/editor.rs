@@ -66,6 +66,11 @@ async fn export_action_to_chosen_file(action: Action) -> Result<std::path::PathB
     Ok(path)
 }
 
+async fn pick_file_path() -> Option<String> {
+    let handle = rfd::AsyncFileDialog::new().pick_file().await?;
+    Some(handle.path().to_string_lossy().into_owned())
+}
+
 fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
@@ -379,6 +384,7 @@ fn build_input_field(
     label: &str,
     placeholder: &'static str,
     integer: bool,
+    browse: bool,
     gate: Option<String>,
     config: &SubActionConfig,
     palette: ForgePalette,
@@ -399,6 +405,7 @@ fn build_input_field(
         key: key.to_owned(),
         label: label.to_owned(),
         integer,
+        browse,
         gate,
         input,
     }
@@ -423,16 +430,20 @@ fn push_form_field(
             label,
             placeholder,
             false,
+            false,
             gate,
             config,
             palette,
             cx,
         )),
         FormField::TextArea { key, label } => out.push(build_input_field(
-            key, label, "", false, gate, config, palette, cx,
+            key, label, "", false, false, gate, config, palette, cx,
         )),
         FormField::Integer { key, label, .. } => out.push(build_input_field(
-            key, label, "0", true, gate, config, palette, cx,
+            key, label, "0", true, false, gate, config, palette, cx,
+        )),
+        FormField::FilePicker { key, label } => out.push(build_input_field(
+            key, label, "", false, true, gate, config, palette, cx,
         )),
         FormField::Select {
             key,
@@ -2102,6 +2113,24 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    fn browse_sub_field(&mut self, input: Entity<TextInput>, cx: &mut Context<Self>) {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(pick_file_path().await);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Some(path)) = rx.await {
+                let _ = this.update(cx, |_, cx| {
+                    input.update(cx, |input, cx| {
+                        input.set_content(path, cx);
+                        cx.notify();
+                    });
+                });
+            }
+        })
+        .detach();
+    }
+
     fn open_edit_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
@@ -2951,12 +2980,41 @@ impl ScreenActionsView {
         for field in &form.fields {
             match field {
                 SubFormField::Input {
-                    label, gate, input, ..
+                    key,
+                    label,
+                    browse,
+                    gate,
+                    input,
+                    ..
                 } => {
                     if !gate_on(gate) {
                         continue;
                     }
                     rendered_any = true;
+                    let control: AnyElement = if *browse {
+                        let target_input = input.clone();
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(spacing(Spacing::Xs, Density::Cozy))
+                            .child(div().flex_1().child(input.clone()))
+                            .child(
+                                ghost_button_with_icon(
+                                    Icon::Folder,
+                                    tr!("actions_sub_file_browse"),
+                                    palette,
+                                )
+                                .on_click(
+                                    SharedString::from(format!("actions-sub-browse-{key}")),
+                                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                        this.browse_sub_field(target_input.clone(), cx)
+                                    }),
+                                ),
+                            )
+                            .into_any_element()
+                    } else {
+                        input.clone().into_any_element()
+                    };
                     fields_col = fields_col.child(
                         div()
                             .flex()
@@ -2969,7 +3027,7 @@ impl ScreenActionsView {
                                     .text_color(palette.text_faint)
                                     .child(label.clone()),
                             )
-                            .child(input.clone()),
+                            .child(control),
                     );
                 }
                 SubFormField::Bool {

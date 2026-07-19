@@ -1,6 +1,6 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::file_sandbox::resolve_sandboxed;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
@@ -35,7 +35,7 @@ impl SubActionRunner for CoreFileReadRunner {
     }
 
     fn summary(&self) -> &str {
-        "Read a text file from the assets sandbox into a global variable"
+        "Read a text file into a global variable"
     }
 
     fn search_text(&self) -> &str {
@@ -55,10 +55,9 @@ impl SubActionRunner for CoreFileReadRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::FilePicker {
                 key: "path",
-                label: "File Path (relative to assets/)",
-                placeholder: "greeting.txt",
+                label: "File Path",
             },
             FormField::Text {
                 key: "target_var",
@@ -110,40 +109,38 @@ impl SubActionRunner for CoreFileReadRunner {
         )
         .await;
 
-        let outcome = match resolve_sandboxed(&interpolated_path) {
-            Err(reason) => SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
-            Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
-                Ok(meta) if meta.len() > MAX_FILE_BYTES => SubActionOutcome::Failed(format!(
-                    "file exceeds {MAX_FILE_BYTES} byte cap: {} bytes",
-                    meta.len()
-                )),
-                Ok(_) => match tokio::fs::read_to_string(&abs_path).await {
-                    Ok(contents) => {
-                        match self
-                            .globals
-                            .set(&target_var, Variant::String(contents), false)
-                            .await
-                        {
-                            Ok(()) => {
-                                ctx.publisher.publish(Event::caused_by(
-                                    EventSource::Core,
-                                    "global.set",
-                                    serde_json::json!({
-                                        "key": target_var,
-                                        "source": "read_file",
-                                        "path": interpolated_path,
-                                    }),
-                                    ctx.parent_event_id,
-                                ));
-                                SubActionOutcome::Success
-                            }
-                            Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
+        let abs_path = PathBuf::from(&interpolated_path);
+        let outcome = match tokio::fs::metadata(&abs_path).await {
+            Ok(meta) if meta.len() > MAX_FILE_BYTES => SubActionOutcome::Failed(format!(
+                "file exceeds {MAX_FILE_BYTES} byte cap: {} bytes",
+                meta.len()
+            )),
+            Ok(_) => match tokio::fs::read_to_string(&abs_path).await {
+                Ok(contents) => {
+                    match self
+                        .globals
+                        .set(&target_var, Variant::String(contents), false)
+                        .await
+                    {
+                        Ok(()) => {
+                            ctx.publisher.publish(Event::caused_by(
+                                EventSource::Core,
+                                "global.set",
+                                serde_json::json!({
+                                    "key": target_var,
+                                    "source": "read_file",
+                                    "path": interpolated_path,
+                                }),
+                                ctx.parent_event_id,
+                            ));
+                            SubActionOutcome::Success
                         }
+                        Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
                     }
-                    Err(e) => SubActionOutcome::Failed(format!("read failed: {e}")),
-                },
-                Err(e) => SubActionOutcome::Failed(format!("stat failed: {e}")),
+                }
+                Err(e) => SubActionOutcome::Failed(format!("read failed: {e}")),
             },
+            Err(e) => SubActionOutcome::Failed(format!("stat failed: {e}")),
         };
 
         let duration_ms = (OffsetDateTime::now_utc() - started_at)

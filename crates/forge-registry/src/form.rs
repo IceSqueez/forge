@@ -19,6 +19,10 @@ pub enum FormField {
         key: &'static str,
         label: &'static str,
     },
+    FilePicker {
+        key: &'static str,
+        label: &'static str,
+    },
     /// Static enum-like choices. Use `DynamicSelect` for runtime-supplied option lists.
     Select {
         key: &'static str,

@@ -573,6 +573,7 @@ enum SubFormField {
         key: String,
         label: String,
         integer: bool,
+        browse: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
     },

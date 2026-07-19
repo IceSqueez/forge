@@ -514,6 +514,7 @@ action_editor_section_sub_actions = SUB-ACTIONS · { $count }
 action_editor_section_sub_actions_label = SUB-ACTIONS
 action_editor_sub_actions_count = { $count } sub-actions
 action_editor_config_label = CONFIGURATION
+actions_sub_file_browse = Browse
 action_editor_sub_count = { $count } sub
 action_editor_enabled = Enabled
 action_editor_disabled = Disabled

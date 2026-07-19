@@ -514,6 +514,7 @@ action_editor_section_sub_actions = ПІДПУНКТИ · { $count }
 action_editor_section_sub_actions_label = ПІДПУНКТИ
 action_editor_sub_actions_count = { $count } підпунктів
 action_editor_config_label = КОНФІГУРАЦІЯ
+actions_sub_file_browse = Огляд
 action_editor_sub_count = { $count } кр.
 action_editor_enabled = Увімкнено
 action_editor_disabled = Вимкнено

@@ -26,6 +26,8 @@ mod nav;
 mod test_trigger;
 
 const LEFT_PANEL_W: Pixels = px(290.0);
+const LEFT_PANEL_MIN: Pixels = px(220.0);
+const LEFT_PANEL_MAX: Pixels = px(480.0);
 const ROW_HEIGHT: Pixels = px(30.0);
 const RIGHT_SLOT_W: Pixels = px(46.0);
 const ROW_INDENT: Pixels = px(32.0);
@@ -94,6 +96,8 @@ enum ActionsFilter {
     Points,
 }
 
+struct ActionsTreeResizeDrag;
+
 struct ActionSummary {
     id: ActionId,
     name: String,
@@ -145,6 +149,7 @@ pub struct ScreenActionsView {
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     bus: Arc<EventBus>,
+    tree_width: Pixels,
     loading: bool,
     groups: Vec<ActionGroup>,
     filter: ActionsFilter,
@@ -199,6 +204,7 @@ impl ScreenActionsView {
             trigger_registry,
             rt_handle,
             bus,
+            tree_width: LEFT_PANEL_W,
             loading: true,
             groups: Vec::new(),
             filter: ActionsFilter::All,
@@ -225,6 +231,13 @@ impl ScreenActionsView {
         };
         view.reload(cx);
         view
+    }
+
+    fn set_tree_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        if self.tree_width != width {
+            self.tree_width = width;
+            cx.notify();
+        }
     }
 
     fn reload(&self, cx: &mut Context<Self>) {

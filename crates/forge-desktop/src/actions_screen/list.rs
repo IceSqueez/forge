@@ -4,9 +4,10 @@ use crate::toasts::PushToast;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
-    Spacing, TextArea, TextInput, ToastAction, ToastKind, breadcrumb, chip, confirm_modal,
-    context_menu, icon, menu_divider, menu_item, modal, overlay, primary_button,
-    primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
+    ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, ToastAction, ToastKind, breadcrumb,
+    chip, confirm_modal, context_menu, icon, install_resize, menu_divider, menu_item, modal,
+    overlay, primary_button, primary_button_with_icon, secondary_button, spacing, status_dot,
+    toggle, tr,
 };
 use forge_types::{Action, ActionId, ExecutionMode, Queue};
 use gpui::{
@@ -677,19 +678,39 @@ impl ScreenActionsView {
             }
         }
 
-        div()
+        let inner = div()
             .id("actions-tree")
-            .w(LEFT_PANEL_W)
+            .flex_1()
+            .min_h(px(0.0))
+            .py(spacing(Spacing::Xs, Density::Cozy))
+            .overflow_y_scroll()
+            .child(col)
+            .children(self.render_row_context_menu(palette, cx));
+
+        let panel = div()
+            .w(self.tree_width)
             .flex_none()
             .h_full()
-            .py(spacing(Spacing::Xs, Density::Cozy))
+            .flex()
+            .flex_col()
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular)
-            .overflow_y_scroll()
-            .child(col)
-            .children(self.render_row_context_menu(palette, cx))
-            .into_any_element()
+            .child(inner);
+
+        install_resize(
+            panel,
+            ActionsTreeResizeDrag,
+            "actions-tree-resize",
+            ResizeEdge::Right,
+            ResizeRange {
+                min: LEFT_PANEL_MIN,
+                max: LEFT_PANEL_MAX,
+            },
+            palette,
+            cx.listener(|this, width: &Pixels, _, cx| this.set_tree_width(*width, cx)),
+        )
+        .into_any_element()
     }
 
     fn render_group_header(

@@ -17,9 +17,7 @@ use forge_script::{
 use forge_storage::{
     DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
 };
-use forge_types::{
-    Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
-};
+use forge_types::{Action, ActionId, ArgStack, ScriptId, ScriptInput, Variant, VariantKind};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
     MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -504,8 +502,9 @@ impl ScriptEditorView {
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(record) => {
+            Ok(mut record) => {
                 let body = record.body.clone();
+                record.contract = parse_contract(&body).unwrap_or_default();
                 self.code_input.update(cx, |area, cx| {
                     area.set_content(body.clone(), cx);
                 });
@@ -860,12 +859,13 @@ impl ScriptEditorView {
             let now = OffsetDateTime::now_utc();
             let name = format!("script_{}", now.unix_timestamp());
             let body = "// @return string\n\n\"hello from forge\"".to_owned();
+            let contract = parse_contract(&body).unwrap_or_default();
             let record = ScriptRecord {
                 id: ScriptId::new(),
                 name,
                 body_hash: content_hash(&body),
                 body,
-                contract: ScriptContract::default(),
+                contract,
                 enabled: true,
                 created_at: now,
                 last_modified: now,
@@ -887,8 +887,9 @@ impl ScriptEditorView {
 
     fn apply_new_script(&mut self, result: Result<ScriptRecord, String>, cx: &mut Context<Self>) {
         match result {
-            Ok(record) => {
+            Ok(mut record) => {
                 let body = record.body.clone();
+                record.contract = parse_contract(&body).unwrap_or_default();
                 self.scripts.push(ScriptEntry {
                     id: record.id,
                     name: record.name.clone(),
@@ -906,6 +907,7 @@ impl ScriptEditorView {
                     original_body: body,
                     record,
                 });
+                self.load_telemetry(id, cx);
             }
             Err(e) => {
                 tracing::warn!(error = %e, "new script creation failed");

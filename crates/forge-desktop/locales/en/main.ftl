@@ -543,6 +543,10 @@ action_editor_run_history_duration_ms = { $count } ms
 action_editor_run_history_outcome_success = Success
 action_editor_run_history_outcome_failed = Failed
 action_editor_run_history_outcome_cancelled = Cancelled
+action_editor_run_history_step_ok = ok
+action_editor_run_history_step_failed = failed
+action_editor_run_history_step_skipped = skipped
+action_editor_run_history_step_nested = ↳
 
 ## Action editor - step menu
 

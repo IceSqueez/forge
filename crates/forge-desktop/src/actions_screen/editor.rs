@@ -18,8 +18,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_types::{
-    ExecutionContext, ExecutionOutcome, PlatformScope, SubActionConfig, SubActionStep,
-    TriggerInstance, TriggerInstanceId, Variant,
+    ExecutionContext, ExecutionOutcome, PlatformScope, SubActionConfig, SubActionOutcome,
+    SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId, Variant,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -2501,7 +2501,115 @@ impl ScreenActionsView {
                     .child(message),
             );
         }
+        if !ctx.telemetry.is_empty() {
+            let mut steps = div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .pt(spacing(Spacing::Xxs, Density::Cozy))
+                .mt(spacing(Spacing::Xxs, Density::Cozy))
+                .pl(HISTORY_ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
+                .border_t(HALF_BORDER)
+                .border_color(palette.border_regular);
+            for step in &ctx.telemetry {
+                steps = steps.child(self.render_telemetry_row(step, palette));
+            }
+            card = card.child(steps);
+        }
         card.into_any_element()
+    }
+
+    fn render_telemetry_row(
+        &self,
+        step: &SubActionTelemetry,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let nested = step.is_nested();
+        let (status_color, status_label, message) = match &step.outcome {
+            SubActionOutcome::Success => (
+                palette.success,
+                tr!("action_editor_run_history_step_ok"),
+                None,
+            ),
+            SubActionOutcome::Failed(message) => (
+                palette.random,
+                tr!("action_editor_run_history_step_failed"),
+                Some(message.clone()),
+            ),
+            SubActionOutcome::Skipped(message) => (
+                palette.text_muted,
+                tr!("action_editor_run_history_step_skipped"),
+                Some(message.clone()),
+            ),
+        };
+
+        let marker = if nested {
+            tr!("action_editor_run_history_step_nested").to_string()
+        } else {
+            format!("#{}", step.index + 1)
+        };
+
+        let line = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .w(spacing(Spacing::Lg, Density::Cozy))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(marker),
+            )
+            .child(status_dot(status_color, HISTORY_STEP_DOT))
+            .child(
+                div()
+                    .flex_1()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_secondary)
+                    .child(step.kind.clone()),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(tr!(
+                        "action_editor_run_history_duration_ms",
+                        count = step.duration_ms as i64
+                    )),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(status_color)
+                    .child(status_label),
+            );
+
+        let mut row = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy));
+        if nested {
+            row = row.pl(HISTORY_STEP_NEST_INDENT);
+        }
+        row = row.child(line);
+        if let Some(text) = message {
+            row = row.child(
+                div()
+                    .pl(spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(status_color)
+                    .child(text),
+            );
+        }
+        row.into_any_element()
     }
 
     fn render_stats_row(

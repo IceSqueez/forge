@@ -79,6 +79,8 @@ const SUB_MODAL_MAX_H: Pixels = px(440.0);
 const SUB_AREA_FIELD_H: Pixels = px(150.0);
 const HISTORY_MAX_H: Pixels = px(360.0);
 const HISTORY_ROW_DOT: Pixels = px(7.0);
+const HISTORY_STEP_DOT: Pixels = px(5.0);
+const HISTORY_STEP_NEST_INDENT: Pixels = px(14.0);
 const HISTORY_EMPTY_GLYPH: Pixels = px(26.0);
 
 const CHIP_RADIUS: Pixels = px(6.0);

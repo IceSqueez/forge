@@ -3,7 +3,9 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+};
 use forge_script::{
     Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
     load_script_engine_config, load_script_http_config,
@@ -71,9 +73,10 @@ impl SubActionRunner for ScriptRunInlineRunner {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::TextArea {
+        vec![FormField::Code {
             key: "body",
             label: "Script Body",
+            language: CodeLanguage::Rhai,
         }]
     }
 

@@ -78,16 +78,9 @@ pub(crate) fn fold_config_field<V: 'static>(
             on_committed,
             cx,
         )),
-        FormField::TextArea { key, .. } => out.push(build_config_input(
-            key,
-            "",
-            false,
-            gate,
-            config,
-            palette,
-            on_committed,
-            cx,
-        )),
+        FormField::TextArea { key, .. } | FormField::Code { key, .. } => out.push(
+            build_config_input(key, "", false, gate, config, palette, on_committed, cx),
+        ),
         FormField::Integer { key, .. } => out.push(build_config_input(
             key,
             "0",

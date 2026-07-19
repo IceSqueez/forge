@@ -1,3 +1,9 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeLanguage {
+    Rhai,
+    Json,
+}
+
 #[derive(Debug, Clone)]
 pub enum FormField {
     Text {
@@ -8,6 +14,12 @@ pub enum FormField {
     TextArea {
         key: &'static str,
         label: &'static str,
+    },
+    /// Multi-line editor with syntax highlighting for the named language.
+    Code {
+        key: &'static str,
+        label: &'static str,
+        language: CodeLanguage,
     },
     Integer {
         key: &'static str,

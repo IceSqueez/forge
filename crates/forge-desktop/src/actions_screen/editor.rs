@@ -13,8 +13,8 @@ use forge_components::{
     primary_button, radius, row_card, secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
-    FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
-    TriggerRegistry,
+    CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
+    TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_types::{
     ExecutionContext, ExecutionOutcome, PlatformScope, SubActionConfig, SubActionStep,
@@ -411,6 +411,42 @@ fn build_input_field(
     }
 }
 
+fn build_area_field(
+    key: &str,
+    label: &str,
+    gate: Option<String>,
+    syntax: Option<CodeLanguage>,
+    config: &SubActionConfig,
+    palette: ForgePalette,
+    cx: &mut Context<ScreenActionsView>,
+) -> SubFormField {
+    let seed = config
+        .get(key)
+        .map(nav::variant_to_display_str)
+        .unwrap_or_default();
+    let area = cx.new(|cx| {
+        let mut area = TextArea::new("", cx)
+            .with_palette(palette)
+            .with_height(SUB_AREA_FIELD_H);
+        area = match syntax {
+            Some(CodeLanguage::Rhai) => area.rhai_highlight().with_gutter().mono(),
+            Some(CodeLanguage::Json) => area.json_highlight().with_gutter().mono(),
+            None => area,
+        };
+        if !seed.is_empty() {
+            area.set_content(seed, cx);
+        }
+        area
+    });
+    SubFormField::Area {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        gate,
+        syntax,
+        area,
+    }
+}
+
 fn push_form_field(
     spec: &FormField,
     gate: Option<String>,
@@ -436,8 +472,21 @@ fn push_form_field(
             palette,
             cx,
         )),
-        FormField::TextArea { key, label } => out.push(build_input_field(
-            key, label, "", false, false, gate, config, palette, cx,
+        FormField::TextArea { key, label } => out.push(build_area_field(
+            key, label, gate, None, config, palette, cx,
+        )),
+        FormField::Code {
+            key,
+            label,
+            language,
+        } => out.push(build_area_field(
+            key,
+            label,
+            gate,
+            Some(*language),
+            config,
+            palette,
+            cx,
         )),
         FormField::Integer { key, label, .. } => out.push(build_input_field(
             key, label, "0", true, false, gate, config, palette, cx,
@@ -1176,6 +1225,15 @@ impl ScreenActionsView {
                     } else {
                         overrides.push((key.clone(), Variant::String(text)));
                     }
+                }
+                SubFormField::Area {
+                    key, gate, area, ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    let text = area.read(cx).content().to_owned();
+                    overrides.push((key.clone(), Variant::String(text)));
                 }
                 SubFormField::Select {
                     key,
@@ -3028,6 +3086,50 @@ impl ScreenActionsView {
                                     .child(label.clone()),
                             )
                             .child(control),
+                    );
+                }
+                SubFormField::Area {
+                    label,
+                    gate,
+                    syntax,
+                    area,
+                    ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    rendered_any = true;
+                    let lang_tag = syntax.map(|lang| match lang {
+                        CodeLanguage::Rhai => "rhai",
+                        CodeLanguage::Json => "json",
+                    });
+                    let mut header = div()
+                        .flex()
+                        .items_center()
+                        .gap(spacing(Spacing::Xs, Density::Cozy))
+                        .child(
+                            div()
+                                .font_family(DEFAULT_MONO_FAMILY)
+                                .text_size(FONT_XXS)
+                                .text_color(palette.text_faint)
+                                .child(label.clone()),
+                        );
+                    if let Some(tag) = lang_tag {
+                        header = header.child(
+                            div()
+                                .font_family(DEFAULT_MONO_FAMILY)
+                                .text_size(FONT_XXS)
+                                .text_color(palette.text_muted)
+                                .child(tag),
+                        );
+                    }
+                    fields_col = fields_col.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(spacing(Spacing::Xxs, Density::Cozy))
+                            .child(header)
+                            .child(area.clone()),
                     );
                 }
                 SubFormField::Bool {

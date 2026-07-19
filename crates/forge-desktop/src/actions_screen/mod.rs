@@ -6,7 +6,7 @@ use forge_components::{
     ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, TextArea, TextInput, ToastKind,
     fmt_number, fmt_relative_time, icon, overlay, search_input, tr,
 };
-use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{
@@ -75,6 +75,7 @@ const STEP_CARD_PAD_V: Pixels = px(10.0);
 const STEP_CARD_PAD_H: Pixels = px(12.0);
 const HEADER_ACTION_H: Pixels = px(28.0);
 const SUB_MODAL_MAX_H: Pixels = px(440.0);
+const SUB_AREA_FIELD_H: Pixels = px(150.0);
 const HISTORY_MAX_H: Pixels = px(360.0);
 const HISTORY_ROW_DOT: Pixels = px(7.0);
 const HISTORY_EMPTY_GLYPH: Pixels = px(26.0);
@@ -576,6 +577,13 @@ enum SubFormField {
         browse: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
+    },
+    Area {
+        key: String,
+        label: String,
+        gate: Option<String>,
+        syntax: Option<CodeLanguage>,
+        area: Entity<TextArea>,
     },
     Bool {
         key: String,

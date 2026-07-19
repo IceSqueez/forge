@@ -300,7 +300,7 @@ impl TriggersRegistryView {
         };
         let palette = cx.palette();
         let seed = instance.name.clone();
-        let editor = inline_edit(seed, palette, window, cx);
+        let editor = inline_edit(seed, palette, NAME_FS, window, cx);
         let sub = cx.subscribe(
             &editor,
             |this, _e, event: &InlineEditEvent, cx| match event {
@@ -741,8 +741,7 @@ impl TriggersRegistryView {
                 .w(COL_NAME)
                 .flex_none()
                 .overflow_hidden()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .font_weight(FontWeight::MEDIUM)
+                .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(NAME_FS)
                 .text_color(name_color)
                 .cursor_pointer()

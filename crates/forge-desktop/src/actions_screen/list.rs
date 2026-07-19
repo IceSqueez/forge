@@ -186,7 +186,7 @@ impl ScreenActionsView {
         };
         let palette = cx.palette();
         let seed = action.name.clone();
-        let editor = inline_edit(seed, palette, window, cx);
+        let editor = inline_edit(seed, palette, FONT_XS, window, cx);
         let sub = cx.subscribe(
             &editor,
             |this, _e, event: &InlineEditEvent, cx| match event {
@@ -788,7 +788,7 @@ impl ScreenActionsView {
                 .flex_1()
                 .min_w(px(0.0))
                 .overflow_hidden()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(name_color)
                 .cursor_pointer()

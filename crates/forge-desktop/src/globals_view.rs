@@ -370,7 +370,7 @@ impl GlobalsView {
 
     fn start_rename(&mut self, name: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let editor = inline_edit(name.to_string(), palette, window, cx);
+        let editor = inline_edit(name.to_string(), palette, FONT_XS, window, cx);
         let sub = cx.subscribe(
             &editor,
             |this, _e, event: &InlineEditEvent, cx| match event {

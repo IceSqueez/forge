@@ -1,11 +1,11 @@
 use gpui::{
-    Context, Entity, EventEmitter, Focusable, MouseDownEvent, Subscription, Window, div,
+    Context, Entity, EventEmitter, Focusable, MouseDownEvent, Pixels, Subscription, Window, div,
     prelude::*, px,
 };
 
 use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{BORDER_THIN, FONT_XS, Radius, radius};
+use crate::tokens::{BORDER_THIN, Radius, radius};
 
 pub enum InlineEditEvent {
     Commit(String),
@@ -28,22 +28,23 @@ impl EventEmitter<InlineEditEvent> for InlineEdit {}
 pub fn inline_edit<V: 'static>(
     seed: impl Into<String>,
     palette: ForgePalette,
+    font_size: Pixels,
     window: &mut Window,
     cx: &mut Context<V>,
 ) -> Entity<InlineEdit> {
-    let editor = cx.new(|cx| InlineEdit::new(seed.into(), palette, cx));
+    let editor = cx.new(|cx| InlineEdit::new(seed.into(), palette, font_size, cx));
     editor.update(cx, |this, cx| this.arm(window, cx));
     editor
 }
 
 impl InlineEdit {
-    fn new(seed: String, palette: ForgePalette, cx: &mut Context<Self>) -> Self {
+    fn new(seed: String, palette: ForgePalette, font_size: Pixels, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             let mut ti = TextInput::new("", cx)
                 .with_palette(palette)
                 .plain()
                 .mono()
-                .with_font_size(FONT_XS);
+                .with_font_size(font_size);
             ti.set_content(seed, cx);
             ti
         });

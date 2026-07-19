@@ -1,9 +1,11 @@
+use std::collections::HashSet;
+
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
-    Rgba, SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, MouseButton,
+    MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
 };
 
-use crate::icons::{Icon, icon};
+use crate::icons::{Icon, icon, icon_inherit};
 use crate::palette::ForgePalette;
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
@@ -12,8 +14,8 @@ use crate::tokens::{
     Radius, Spacing, radius, spacing,
 };
 
-const GRID_W: Pixels = px(660.0);
-const GRID_H: Pixels = px(600.0);
+const GRID_W: Pixels = px(880.0);
+const GRID_H: Pixels = px(640.0);
 const GRID_BAND_PAD_H: Pixels = px(16.0);
 const GRID_TILE: Pixels = px(30.0);
 const GRID_TILE_RADIUS: Pixels = px(7.0);
@@ -25,18 +27,22 @@ const GRID_SEARCH_PAD_T: Pixels = px(11.0);
 const GRID_SEARCH_PAD_B: Pixels = px(9.0);
 const GRID_SEARCH_ICON: Pixels = px(14.0);
 const GRID_SEARCH_FS: Pixels = px(13.0);
-const GRID_CHIPS_PAD_V: Pixels = px(9.0);
-const GRID_CHIP_PAD_V: Pixels = px(4.0);
-const GRID_CHIP_PAD_H: Pixels = px(10.0);
-const GRID_CHIP_DOT: Pixels = px(5.0);
+const RAIL_W: Pixels = px(184.0);
+const RAIL_PAD_V: Pixels = px(10.0);
+const RAIL_PAD_H: Pixels = px(10.0);
+const RAIL_GAP: Pixels = px(2.0);
+const RAIL_ENTRY_GAP: Pixels = px(8.0);
+const RAIL_ENTRY_PAD_V: Pixels = px(6.0);
+const RAIL_ENTRY_PAD_H: Pixels = px(8.0);
+const RAIL_LEAD_SLOT: Pixels = px(14.0);
+const RAIL_DOT: Pixels = px(6.0);
+const RAIL_STAR: Pixels = px(12.0);
 const GRID_BODY_PAD_V: Pixels = px(13.0);
 const GRID_GROUP_GAP: Pixels = px(14.0);
 const GRID_GROUP_HEADER_MB: Pixels = px(8.0);
 const GRID_GROUP_FS: Pixels = px(9.5);
 const GRID_GROUP_DOT: Pixels = px(5.0);
 const GRID_CARD_GAP: Pixels = px(8.0);
-const GRID_CONTENT_W: Pixels = px(628.0);
-const GRID_CARD_W: Pixels = px(310.0);
 const GRID_CARD_PAD_V: Pixels = px(11.0);
 const GRID_CARD_PAD_H: Pixels = px(12.0);
 const GRID_CARD_TILE: Pixels = px(26.0);
@@ -66,8 +72,8 @@ pub struct GridPickerItem {
     pub state: GridPickerItemState,
 }
 
-/// A `scope` of `"all"` is folded under the built-in "All" chip and never mints its own
-/// chip (used for a leading always-visible band).
+/// A `scope` of `"all"` is folded under the built-in "All" rail entry and never mints its
+/// own entry (used for a leading always-visible band).
 pub struct GridPickerGroup {
     pub label: SharedString,
     pub dot_color: Rgba,
@@ -91,20 +97,30 @@ pub struct GridPickerConfig {
     pub subtitle: GridPickerSubtitle,
     pub footer_hint: SharedString,
     pub search_placeholder: SharedString,
-    pub scope_cap: Option<usize>,
+    pub favorites_label: SharedString,
+    pub favorites_empty: SharedString,
 }
 
 #[derive(Debug, Clone)]
 pub enum GridPickerEvent {
     Picked(SharedString),
+    FavoriteToggled(SharedString),
     Dismissed,
+}
+
+#[derive(Clone, PartialEq)]
+enum RailSel {
+    All,
+    Favorites,
+    Group(SharedString),
 }
 
 pub struct GridPicker {
     search: Entity<TextInput>,
     query: String,
-    scope: Option<SharedString>,
+    rail: RailSel,
     hovered: Option<SharedString>,
+    favorites: HashSet<SharedString>,
     groups: Vec<GridPickerGroup>,
     config: GridPickerConfig,
     palette: ForgePalette,
@@ -117,6 +133,7 @@ impl GridPicker {
     pub fn new(
         config: GridPickerConfig,
         groups: Vec<GridPickerGroup>,
+        favorites: HashSet<SharedString>,
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -133,8 +150,9 @@ impl GridPicker {
         Self {
             search,
             query: String::new(),
-            scope: None,
+            rail: RailSel::All,
             hovered: None,
+            favorites,
             groups,
             config,
             palette,
@@ -146,6 +164,11 @@ impl GridPicker {
     /// the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.search.update(cx, |f, cx| f.focus(window, cx));
+    }
+
+    pub fn set_favorites(&mut self, favorites: HashSet<SharedString>, cx: &mut Context<Self>) {
+        self.favorites = favorites;
+        cx.notify();
     }
 
     fn on_search_event(
@@ -184,8 +207,8 @@ impl GridPicker {
         cx.notify();
     }
 
-    fn set_scope(&mut self, scope: Option<SharedString>, cx: &mut Context<Self>) {
-        self.scope = scope;
+    fn set_rail(&mut self, rail: RailSel, cx: &mut Context<Self>) {
+        self.rail = rail;
         cx.notify();
     }
 
@@ -205,22 +228,27 @@ impl GridPicker {
         cx.emit(GridPickerEvent::Picked(id));
     }
 
+    fn toggle_favorite(&mut self, id: SharedString, cx: &mut Context<Self>) {
+        if self.favorites.contains(&id) {
+            self.favorites.remove(&id);
+        } else {
+            self.favorites.insert(id.clone());
+        }
+        cx.emit(GridPickerEvent::FavoriteToggled(id));
+        cx.notify();
+    }
+
     fn emit_dismiss(&mut self, cx: &mut Context<Self>) {
         cx.emit(GridPickerEvent::Dismissed);
     }
 
-    fn scope_chips(&self) -> Vec<(SharedString, String, Rgba)> {
+    fn scope_entries(&self) -> Vec<(SharedString, String, Rgba)> {
         let mut seen: Vec<(SharedString, String, Rgba)> = Vec::new();
         for g in &self.groups {
             if g.scope.as_ref() == "all" || seen.iter().any(|(id, _, _)| id == &g.scope) {
                 continue;
             }
             seen.push((g.scope.clone(), scope_label(&g.label), g.dot_color));
-            if let Some(cap) = self.config.scope_cap
-                && seen.len() >= cap
-            {
-                break;
-            }
         }
         seen
     }
@@ -326,49 +354,63 @@ impl GridPicker {
             .into_any_element()
     }
 
-    fn render_chips(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_rail(&self, accent: Rgba, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let mut row = div()
-            .id("forge-grid-chips")
+        let star: AnyElement = icon(Icon::Star, RAIL_STAR, accent).into_any_element();
+        let mut col = div()
+            .id("forge-grid-rail")
+            .flex_none()
+            .w(RAIL_W)
             .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .overflow_x_scroll()
-            .child(grid_scope_chip(
-                "forge-grid-scope-all",
+            .flex_col()
+            .gap(RAIL_GAP)
+            .py(RAIL_PAD_V)
+            .px(RAIL_PAD_H)
+            .overflow_y_scroll()
+            .border_r(BORDER_ACCENT)
+            .border_color(p.surface_overlay)
+            .child(grid_rail_entry(
+                "forge-grid-rail-all",
                 "All",
                 None,
-                self.scope.is_none(),
+                matches!(self.rail, RailSel::All),
                 &p,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.set_scope(None, cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::All, cx)),
+            ))
+            .child(grid_rail_entry(
+                "forge-grid-rail-fav",
+                self.config.favorites_label.clone(),
+                Some(star),
+                matches!(self.rail, RailSel::Favorites),
+                &p,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::Favorites, cx)),
             ));
 
-        for (id, label, dot) in self.scope_chips() {
-            let active = self.scope.as_ref() == Some(&id);
-            let scope_id = id.clone();
-            row = row.child(grid_scope_chip(
-                SharedString::from(format!("forge-grid-scope-{id}")),
+        for (scope_id, label, dot) in self.scope_entries() {
+            let active = matches!(&self.rail, RailSel::Group(s) if s == &scope_id);
+            let sid = scope_id.clone();
+            let lead: AnyElement = div()
+                .flex_none()
+                .size(RAIL_DOT)
+                .rounded(radius(Radius::Pill))
+                .bg(dot)
+                .into_any_element();
+            col = col.child(grid_rail_entry(
+                SharedString::from(format!("forge-grid-rail-{scope_id}")),
                 label,
-                Some(dot),
+                Some(lead),
                 active,
                 &p,
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.set_scope(Some(scope_id.clone()), cx)
+                    this.set_rail(RailSel::Group(sid.clone()), cx)
                 }),
             ));
         }
 
-        div()
-            .flex_none()
-            .py(GRID_CHIPS_PAD_V)
-            .px(GRID_BAND_PAD_H)
-            .border_b(BORDER_ACCENT)
-            .border_color(p.surface_overlay)
-            .child(row)
-            .into_any_element()
+        col.into_any_element()
     }
 
-    fn render_body(
+    fn render_cards(
         &self,
         accent: Rgba,
         visible: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)>,
@@ -395,6 +437,15 @@ impl GridPicker {
         }
 
         if visible.is_empty() {
+            let favorites_empty = matches!(self.rail, RailSel::Favorites) && !searching;
+            let (glyph, message): (Icon, SharedString) = if favorites_empty {
+                (Icon::Star, self.config.favorites_empty.clone())
+            } else {
+                (
+                    Icon::Search,
+                    SharedString::from(format!("Nothing matches \u{201c}{query}\u{201d}")),
+                )
+            };
             col = col.child(
                 div()
                     .w_full()
@@ -403,13 +454,13 @@ impl GridPicker {
                     .items_center()
                     .gap(spacing(Spacing::Sm, Density::Cozy))
                     .py(GRID_EMPTY_PAD_V)
-                    .child(icon(Icon::Search, GRID_EMPTY_GLYPH, p.text_faint))
+                    .child(icon(glyph, GRID_EMPTY_GLYPH, p.text_faint))
                     .child(
                         div()
                             .font_family(DEFAULT_BODY_FAMILY)
                             .text_size(FONT_XS)
                             .text_color(p.text_muted)
-                            .child(format!("Nothing matches \u{201c}{query}\u{201d}")),
+                            .child(message),
                     ),
             );
         }
@@ -421,6 +472,7 @@ impl GridPicker {
         div()
             .id("forge-grid-body")
             .flex_1()
+            .min_w(px(0.0))
             .min_h(px(0.0))
             .overflow_y_scroll()
             .py(GRID_BODY_PAD_V)
@@ -467,9 +519,9 @@ impl GridPicker {
                     .child(items.len().to_string()),
             );
 
-        let mut rows = div().flex().flex_col().w(GRID_CONTENT_W).gap(GRID_CARD_GAP);
+        let mut rows = div().flex().flex_col().w_full().gap(GRID_CARD_GAP);
         for chunk in items.chunks(2) {
-            let mut pair = div().flex().w(GRID_CONTENT_W).gap(GRID_CARD_GAP);
+            let mut pair = div().flex().w_full().gap(GRID_CARD_GAP);
             for item in chunk {
                 pair = pair.child(self.render_card(item, accent, cx));
             }
@@ -523,6 +575,29 @@ impl GridPicker {
             .text_color(p.text_primary)
             .child(item.name.clone());
 
+        let fav = self.favorites.contains(&id);
+        let star_glyph = if fav { Icon::StarFilled } else { Icon::Star };
+        let star_tint = if fav { accent } else { p.text_faint };
+        let star_hover_tint = if fav { accent } else { p.text_muted };
+        let toggle_id = id.clone();
+        let star = div()
+            .id(SharedString::from(format!("forge-grid-star-{id}")))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(px(2.0))
+            .cursor_pointer()
+            .text_color(star_tint)
+            .hover(move |s| s.text_color(star_hover_tint))
+            .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
+                cx.stop_propagation()
+            })
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.toggle_favorite(toggle_id.clone(), cx)
+            }))
+            .child(icon_inherit(star_glyph, GRID_CARD_ICON));
+
         let trailing: AnyElement = match item.state {
             GridPickerItemState::Added => {
                 badge(p.surface_overlay, p.success, "added", true, GRID_BADGE_FS).into_any_element()
@@ -544,6 +619,7 @@ impl GridPicker {
             .pb(GRID_CARD_ROW_MB)
             .child(tile)
             .child(name)
+            .child(star)
             .child(trailing);
 
         let desc = div()
@@ -556,8 +632,8 @@ impl GridPicker {
             .child(item.desc.clone());
 
         let card = div()
-            .flex_none()
-            .w(GRID_CARD_W)
+            .flex_1()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .py(GRID_CARD_PAD_V)
@@ -621,15 +697,22 @@ impl Render for GridPicker {
         let visible: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)> = self
             .groups
             .iter()
-            .filter(|g| searching || self.scope.is_none() || self.scope.as_ref() == Some(&g.scope))
+            .filter(|g| {
+                searching
+                    || matches!(self.rail, RailSel::All | RailSel::Favorites)
+                    || matches!(&self.rail, RailSel::Group(s) if s == &g.scope)
+            })
             .map(|g| {
                 let items: Vec<&GridPickerItem> = g
                     .items
                     .iter()
                     .filter(|it| {
-                        !searching
+                        let matches_query = !searching
                             || it.name.to_lowercase().contains(&query)
-                            || it.desc.to_lowercase().contains(&query)
+                            || it.desc.to_lowercase().contains(&query);
+                        let matches_fav = !matches!(self.rail, RailSel::Favorites)
+                            || self.favorites.contains(&it.id);
+                        matches_query && matches_fav
                     })
                     .collect();
                 (g, items)
@@ -637,6 +720,14 @@ impl Render for GridPicker {
             .filter(|(_, items)| !items.is_empty())
             .collect();
         let total: usize = visible.iter().map(|(_, items)| items.len()).sum();
+
+        let body = div()
+            .flex_1()
+            .min_h(px(0.0))
+            .w_full()
+            .flex()
+            .child(self.render_rail(accent, cx))
+            .child(self.render_cards(accent, visible, total, cx));
 
         div()
             .w(GRID_W)
@@ -650,8 +741,7 @@ impl Render for GridPicker {
             .border_color(p.border_regular)
             .child(self.render_header(accent, cx))
             .child(self.render_search(cx))
-            .children((!searching).then(|| self.render_chips(cx)))
-            .child(self.render_body(accent, visible, total, cx))
+            .child(body)
             .child(self.render_footer())
     }
 }
@@ -664,56 +754,51 @@ fn scope_label(group_label: &str) -> String {
         .to_owned()
 }
 
-fn grid_scope_chip(
+fn grid_rail_entry(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
-    dot: Option<Rgba>,
+    lead: Option<AnyElement>,
     active: bool,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    let (bg, text_color, border): (Rgba, Rgba, Rgba) = if active {
-        (
-            palette.surface_overlay,
-            palette.text_primary,
-            palette.border_regular,
-        )
+    let (bg, text_color): (Rgba, Rgba) = if active {
+        (palette.surface_overlay, palette.text_primary)
     } else {
-        (
-            gpui::transparent_black().into(),
-            palette.text_secondary,
-            gpui::transparent_black().into(),
-        )
+        (gpui::transparent_black().into(), palette.text_secondary)
     };
-    let mut chip = div()
-        .id(id.into())
+    let hover_bg = palette.surface_overlay;
+    let lead_slot = div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(GRID_CHIP_DOT)
-        .py(GRID_CHIP_PAD_V)
-        .px(GRID_CHIP_PAD_H)
-        .rounded(radius(Radius::Pill))
-        .border(BORDER_ACCENT)
-        .border_color(border)
+        .justify_center()
+        .size(RAIL_LEAD_SLOT)
+        .children(lead);
+
+    div()
+        .id(id.into())
+        .flex()
+        .items_center()
+        .gap(RAIL_ENTRY_GAP)
+        .w_full()
+        .py(RAIL_ENTRY_PAD_V)
+        .px(RAIL_ENTRY_PAD_H)
+        .rounded(radius(Radius::Sm))
         .bg(bg)
         .cursor_pointer()
-        .on_click(handler);
-    if let Some(dot) = dot {
-        chip = chip.child(
+        .hover(move |s| s.bg(hover_bg))
+        .on_click(handler)
+        .child(lead_slot)
+        .child(
             div()
-                .flex_none()
-                .size(GRID_CHIP_DOT)
-                .rounded(radius(Radius::Pill))
-                .bg(dot),
-        );
-    }
-    chip.child(
-        div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(GRID_META_FS)
-            .text_color(text_color)
-            .child(label.into()),
-    )
-    .into_any_element()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(GRID_META_FS)
+                .text_color(text_color)
+                .child(label.into()),
+        )
+        .into_any_element()
 }

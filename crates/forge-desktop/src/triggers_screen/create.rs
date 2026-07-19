@@ -54,9 +54,11 @@ impl TriggersRegistryView {
             ),
             footer_hint: tr!("triggers_create_footer_hint").into(),
             search_placeholder: tr!("triggers_create_search_types", count = count as i64).into(),
-            scope_cap: Some(8),
+            favorites_label: tr!("picker_favorites").into(),
+            favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
+        let favorites = self.favorites.clone();
+        let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_create_picker_event);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.menu_open = None;
@@ -83,6 +85,15 @@ impl TriggersRegistryView {
                 if let Some(kind_id) = kind_id {
                     self.enter_fill(kind_id, cx);
                 }
+            }
+            GridPickerEvent::FavoriteToggled(id) => {
+                if self.favorites.contains(id) {
+                    self.favorites.remove(id);
+                } else {
+                    self.favorites.insert(id.clone());
+                }
+                let favorites = self.favorites.clone();
+                self.persist_favorites(favorites, cx);
             }
             GridPickerEvent::Dismissed => self.cancel_create(cx),
         }

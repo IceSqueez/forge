@@ -87,6 +87,7 @@ tabler_icons! {
     CircleX => "circle-x.svg",
     ArrowBackUp => "arrow-back-up.svg",
     Star => "star.svg",
+    StarFilled => "star-filled.svg",
     TargetArrow => "target-arrow.svg",
     Flag => "flag.svg",
     LayoutSidebar => "layout-sidebar.svg",

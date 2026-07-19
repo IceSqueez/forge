@@ -20,6 +20,7 @@ mod integration_detail;
 mod integration_seed;
 mod integrations;
 mod oauth_connect;
+mod picker_favorites;
 mod platforms;
 mod presentation;
 mod queue_health;

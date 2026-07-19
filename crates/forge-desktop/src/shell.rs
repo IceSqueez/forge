@@ -4,7 +4,7 @@ use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_events::EventPublisher;
 use forge_platform_core::BuiltinId;
 use forge_runtime::dashboard::compute_stats;
-use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo};
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, FocusHandle, Window, deferred,
     div, prelude::*,
@@ -309,6 +309,7 @@ impl AppShell {
                 let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
                 let soundboard_repo = handles.backend.soundboard_clips_repo();
                 let globals_repo = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
+                let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let tts_registry = handles.tts_registry.clone();
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
@@ -323,6 +324,7 @@ impl AppShell {
                         script_repo,
                         soundboard_repo,
                         globals_repo,
+                        settings_repo,
                         tts_registry,
                         sub_action_registry,
                         trigger_registry,
@@ -342,10 +344,19 @@ impl AppShell {
                 let repo = handles.backend.trigger_instance_repo();
                 let action_repo = handles.backend.action_repo();
                 let registry = handles.trigger_registry.clone();
+                let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
                 let preselect = *preselect;
                 let view = cx.new(|cx| {
-                    TriggersRegistryView::new(repo, action_repo, registry, rt_handle, preselect, cx)
+                    TriggersRegistryView::new(
+                        repo,
+                        action_repo,
+                        registry,
+                        settings_repo,
+                        rt_handle,
+                        preselect,
+                        cx,
+                    )
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);

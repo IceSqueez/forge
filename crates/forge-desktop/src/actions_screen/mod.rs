@@ -10,8 +10,8 @@ use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_storage::{
-    ActionRepo, ActionTelemetry, GlobalsRepo, QueueRepo, ScriptRepo, SoundboardClipsRepo,
-    TriggerInstanceRepo,
+    ActionRepo, ActionTelemetry, GlobalsRepo, QueueRepo, ScriptRepo, SettingsRepo,
+    SoundboardClipsRepo, TriggerInstanceRepo, reserved_keys,
 };
 use forge_tts_core::TtsRegistry;
 use forge_types::{
@@ -157,6 +157,9 @@ pub struct ScreenActionsView {
     script_repo: Arc<dyn ScriptRepo>,
     soundboard_repo: Arc<dyn SoundboardClipsRepo>,
     globals_repo: Arc<dyn GlobalsRepo>,
+    settings_repo: Arc<dyn SettingsRepo>,
+    sub_action_favorites: HashSet<SharedString>,
+    trigger_favorites: HashSet<SharedString>,
     tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
     sub_action_registry: Arc<SubActionRegistry>,
     trigger_registry: Arc<TriggerRegistry>,
@@ -202,6 +205,7 @@ impl ScreenActionsView {
         script_repo: Arc<dyn ScriptRepo>,
         soundboard_repo: Arc<dyn SoundboardClipsRepo>,
         globals_repo: Arc<dyn GlobalsRepo>,
+        settings_repo: Arc<dyn SettingsRepo>,
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
@@ -223,6 +227,9 @@ impl ScreenActionsView {
             script_repo,
             soundboard_repo,
             globals_repo,
+            settings_repo,
+            sub_action_favorites: HashSet::new(),
+            trigger_favorites: HashSet::new(),
             tts_registry,
             sub_action_registry,
             trigger_registry,
@@ -257,7 +264,55 @@ impl ScreenActionsView {
             _search_sub: search_sub,
         };
         view.reload(cx);
+        view.load_favorites(cx);
         view
+    }
+
+    fn load_favorites(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.settings_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<(Option<String>, Option<String>)>();
+        self.rt_handle.spawn(async move {
+            let subs = repo
+                .get_string(reserved_keys::PICKER_FAVORITES_SUB_ACTIONS_KEY)
+                .await
+                .ok()
+                .flatten();
+            let trigs = repo
+                .get_string(reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY)
+                .await
+                .ok()
+                .flatten();
+            let _ = tx.send((subs, trigs));
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok((subs, trigs)) = rx.await {
+                let _ = this.update(cx, |this, _cx| {
+                    this.sub_action_favorites = crate::picker_favorites::parse(subs);
+                    this.trigger_favorites = crate::picker_favorites::parse(trigs);
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn persist_favorites(
+        &self,
+        key: &'static str,
+        favorites: HashSet<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        let repo = Arc::clone(&self.settings_repo);
+        let json = crate::picker_favorites::encode(&favorites);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(repo.set_string(key, &json).await.map_err(|e| e.to_string()));
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Err(message)) = rx.await {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+        })
+        .detach();
     }
 
     fn set_tree_width(&mut self, width: Pixels, cx: &mut Context<Self>) {

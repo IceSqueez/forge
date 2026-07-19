@@ -37,6 +37,8 @@ pub mod reserved_keys {
     pub const AUDIO_OUTPUT_DEVICE_ID_KEY: &str = "audio.output_device_id";
     pub const CHAT_HISTORY_STORE_LIMIT_KEY: &str = "chat_history.store_limit";
     pub const CHAT_HISTORY_DISPLAY_LIMIT_KEY: &str = "chat_history.display_limit";
+    pub const PICKER_FAVORITES_SUB_ACTIONS_KEY: &str = "picker.favorites.sub_actions";
+    pub const PICKER_FAVORITES_TRIGGERS_KEY: &str = "picker.favorites.triggers";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -1,11 +1,12 @@
 use forge_components::{ForgePalette, InlineEdit, TextInput, ToastKind, search_input, tr};
 use forge_registry::TriggerRegistry;
-use forge_storage::{ActionRepo, TriggerInstanceRepo};
+use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
 use gpui::{
-    App, Context, Entity, EventEmitter, Pixels, Point, Rgba, Subscription, Window, div, prelude::*,
-    px,
+    App, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString, Subscription, Window,
+    div, prelude::*, px,
 };
+use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -195,6 +196,8 @@ pub struct TriggersRegistryView {
     repo: Arc<dyn TriggerInstanceRepo>,
     action_repo: Arc<dyn ActionRepo>,
     registry: Arc<TriggerRegistry>,
+    settings_repo: Arc<dyn SettingsRepo>,
+    favorites: HashSet<SharedString>,
     rt_handle: tokio::runtime::Handle,
     detail_width: Pixels,
     loading: bool,
@@ -220,6 +223,7 @@ impl TriggersRegistryView {
         repo: Arc<dyn TriggerInstanceRepo>,
         action_repo: Arc<dyn ActionRepo>,
         registry: Arc<TriggerRegistry>,
+        settings_repo: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,
         preselect: Option<TriggerInstanceId>,
         cx: &mut Context<Self>,
@@ -233,6 +237,8 @@ impl TriggersRegistryView {
             repo,
             action_repo,
             registry,
+            settings_repo,
+            favorites: HashSet::new(),
             rt_handle,
             detail_width: detail::DETAIL_SHEET_W,
             loading: true,
@@ -253,7 +259,52 @@ impl TriggersRegistryView {
             _search_sub: search_sub,
         };
         view.reload(cx);
+        view.load_favorites(cx);
         view
+    }
+
+    fn load_favorites(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.settings_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+        self.rt_handle.spawn(async move {
+            let raw = repo
+                .get_string(reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY)
+                .await
+                .ok()
+                .flatten();
+            let _ = tx.send(raw);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(raw) = rx.await {
+                let _ = this.update(cx, |this, _cx| {
+                    this.favorites = crate::picker_favorites::parse(raw);
+                });
+            }
+        })
+        .detach();
+    }
+
+    pub(super) fn persist_favorites(
+        &self,
+        favorites: HashSet<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        let repo = Arc::clone(&self.settings_repo);
+        let json = crate::picker_favorites::encode(&favorites);
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(
+                repo.set_string(reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY, &json)
+                    .await
+                    .map_err(|e| e.to_string()),
+            );
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Err(message)) = rx.await {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+        })
+        .detach();
     }
 
     fn set_detail_width(&mut self, width: Pixels, cx: &mut Context<Self>) {

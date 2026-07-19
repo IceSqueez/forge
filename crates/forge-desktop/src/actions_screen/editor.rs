@@ -1334,9 +1334,11 @@ impl ScreenActionsView {
             },
             footer_hint: tr!("action_editor_picker_footer_hint").into(),
             search_placeholder: tr!("action_editor_picker_search", count = count as i64).into(),
-            scope_cap: Some(7),
+            favorites_label: tr!("picker_favorites").into(),
+            favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
+        let favorites = self.sub_action_favorites.clone();
+        let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_grid_picker_event);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.step_menu_open = None;
@@ -1364,6 +1366,19 @@ impl ScreenActionsView {
                 {
                     self.grid_pick_step(kind_id, cx);
                 }
+            }
+            GridPickerEvent::FavoriteToggled(id) => {
+                if self.sub_action_favorites.contains(id) {
+                    self.sub_action_favorites.remove(id);
+                } else {
+                    self.sub_action_favorites.insert(id.clone());
+                }
+                let favorites = self.sub_action_favorites.clone();
+                self.persist_favorites(
+                    reserved_keys::PICKER_FAVORITES_SUB_ACTIONS_KEY,
+                    favorites,
+                    cx,
+                );
             }
             GridPickerEvent::Dismissed => self.cancel_grid_picker(cx),
         }
@@ -1472,9 +1487,11 @@ impl ScreenActionsView {
             },
             footer_hint: tr!("action_editor_trigger_picker_footer_hint").into(),
             search_placeholder: tr!("triggers_search_placeholder").into(),
-            scope_cap: Some(6),
+            favorites_label: tr!("picker_favorites").into(),
+            favorites_empty: tr!("picker_favorites_empty").into(),
         };
-        let picker = cx.new(|cx| GridPicker::new(config, groups, palette, cx));
+        let favorites = self.trigger_favorites.clone();
+        let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_trigger_picker_event);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.add_trigger = Some(AddTriggerStage::Pick(AddTriggerPicker {
@@ -1504,6 +1521,15 @@ impl ScreenActionsView {
                 } else if let Some(kind_id) = picker.picks_kind.get(id).cloned() {
                     self.enter_trigger_fill(action_id, kind_id, cx);
                 }
+            }
+            GridPickerEvent::FavoriteToggled(id) => {
+                if self.trigger_favorites.contains(id) {
+                    self.trigger_favorites.remove(id);
+                } else {
+                    self.trigger_favorites.insert(id.clone());
+                }
+                let favorites = self.trigger_favorites.clone();
+                self.persist_favorites(reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY, favorites, cx);
             }
             GridPickerEvent::Dismissed => self.cancel_trigger_picker(cx),
         }

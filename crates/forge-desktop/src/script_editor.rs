@@ -3,8 +3,9 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
-    Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, hover_reveal,
-    icon, modal, overlay, primary_button, radius, spacing, tr, with_alpha,
+    Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, fmt_relative_time,
+    ghost_button, hover_reveal, icon, modal, overlay, primary_button, radius, spacing, status_dot,
+    tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher, EventsError};
 use forge_runtime::{EventBus, ScriptRegistry};
@@ -22,7 +23,6 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::presentation::ActivePresentation;
-use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
 const LEFT_PANE_W: Pixels = px(200.0);
@@ -38,6 +38,9 @@ const GUTTER_PAD_R: Pixels = px(14.0);
 
 const DIVIDER_W: Pixels = px(0.5);
 const DIVIDER_H: Pixels = px(16.0);
+
+const FILE_BAR_DIRTY_DOT: Pixels = px(5.0);
+const FILE_BAR_STATUS_DOT: Pixels = px(6.0);
 
 const GLYPH_RUN: Pixels = px(11.0);
 const GLYPH_TOOLBAR: Pixels = px(13.0);
@@ -151,7 +154,6 @@ struct ConsoleLine {
 enum PendingNav {
     SelectScript(ScriptId),
     NewScript,
-    GoBack,
 }
 
 struct RunInput {
@@ -502,15 +504,6 @@ impl ScriptEditorView {
         self.recompute_diagnostics(&original);
     }
 
-    fn go_back(&mut self, cx: &mut Context<Self>) {
-        if self.current_dirty(cx) {
-            self.pending_nav = Some(PendingNav::GoBack);
-            cx.notify();
-            return;
-        }
-        cx.emit(NavRequested(Screen::Actions(None)));
-    }
-
     fn confirm_discard(&mut self, cx: &mut Context<Self>) {
         let Some(nav) = self.pending_nav.take() else {
             return;
@@ -519,7 +512,6 @@ impl ScriptEditorView {
         match nav {
             PendingNav::SelectScript(id) => self.open_script(id, cx),
             PendingNav::NewScript => self.new_script(cx),
-            PendingNav::GoBack => cx.emit(NavRequested(Screen::Actions(None))),
         }
         cx.notify();
     }
@@ -1067,23 +1059,11 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    fn page_header(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let mut crumbs = vec![BreadcrumbCrumb::link(
-            tr!("nav_actions"),
-            "script-crumb-actions",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.go_back(cx)),
-        )];
-        match self.selected.and_then(|id| self.find_entry(id)) {
-            Some(entry) => {
-                let label = if self.current_dirty(cx) {
-                    format!("{} ●", entry.name)
-                } else {
-                    entry.name.clone()
-                };
-                crumbs.push(BreadcrumbCrumb::leaf(label));
-            }
-            None => crumbs.push(BreadcrumbCrumb::leaf("-")),
-        }
+    fn page_header(&self, palette: &ForgePalette) -> AnyElement {
+        let crumbs = vec![
+            BreadcrumbCrumb::leaf(tr!("script_editor_breadcrumb_automation")),
+            BreadcrumbCrumb::leaf(tr!("nav_script_editor")),
+        ];
 
         let (status_icon, status_color, status_text): (Icon, Rgba, String) = match self.type_check {
             None => (
@@ -1131,6 +1111,83 @@ impl ScriptEditorView {
             );
 
         breadcrumb(crumbs, palette).right(right).into_any_element()
+    }
+
+    fn file_bar(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let open = self.open.as_ref()?;
+        let name = open.record.name.clone();
+        let edited = format!(
+            "{} {}",
+            tr!("script_editor_edited_prefix"),
+            fmt_relative_time(Some(open.record.last_modified))
+        );
+
+        let (status_color, status_text): (Rgba, String) = match self.type_check {
+            None => (palette.success, tr!("script_editor_type_check_passed")),
+            Some(n) => (
+                palette.warning,
+                tr!("script_editor_type_check_errors", count = n as i64),
+            ),
+        };
+
+        let mut name_row = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(name),
+            );
+        if self.current_dirty(cx) {
+            name_row = name_row.child(status_dot(palette.warning, FILE_BAR_DIRTY_DOT));
+        }
+
+        let status = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(status_dot(status_color, FILE_BAR_STATUS_DOT))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(status_color)
+                    .child(status_text),
+            );
+
+        Some(
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Sm, density))
+                .py(spacing(Spacing::Xs, density))
+                .px(spacing(Spacing::Md, density))
+                .bg(palette.base)
+                .border_b(BORDER_THIN)
+                .border_color(palette.surface_overlay)
+                .child(icon(Icon::FileCode, GLYPH_FILE, palette.brand))
+                .child(name_row)
+                .child(status)
+                .child(div().flex_1())
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child(edited),
+                )
+                .into_any_element(),
+        )
     }
 
     fn toolbar(
@@ -2069,7 +2126,8 @@ impl Render for ScriptEditorView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header = self.page_header(&palette, cx);
+        let header = self.page_header(&palette);
+        let file_bar = self.file_bar(&palette, density, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let left = self.left_pane(&palette, density, cx);
         let code = self.code_area(&palette, density, cx);
@@ -2082,6 +2140,8 @@ impl Render for ScriptEditorView {
             .flex()
             .flex_col()
             .bg(palette.base)
+            .children(file_bar)
+            .child(toolbar)
             .child(code)
             .child(console);
 
@@ -2113,7 +2173,6 @@ impl Render for ScriptEditorView {
             .flex_col()
             .bg(palette.base)
             .child(header)
-            .child(toolbar)
             .child(body)
             .children(overlay)
     }

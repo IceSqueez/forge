@@ -1662,6 +1662,8 @@ globals_inspect_edit = Редагувати значення
 ## Редактор скриптів - сторінка / панель інструментів
 
 script_editor_breadcrumb = Редактор скриптів
+script_editor_breadcrumb_automation = Автоматизація
+script_editor_edited_prefix = змінено
 script_editor_run = Тестовий запуск
 script_editor_save = Зберегти
 script_editor_format = Форматувати

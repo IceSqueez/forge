@@ -1,7 +1,100 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-beta.6] - 2026-07-19
+### ⚠️ BREAKING CHANGES
+- **actions**: random/file sub-action results no longer persist as globals
+- **actions**: fields no longer resolve globals; use a Get Global step
+
+### 🐛 Bug Fixes
+- *(globals)* Compact rows, icon-only export, single-line header
+- *(globals)* Match delete-button hover to action rows
+- *(actions)* Reveal step and trigger controls on row hover
+- *(globals)* Size type pill to content so value gets a gap
+- *(globals)* Unify edit and delete idle icon color
+- *(widgets)* Drop modal keyboard hints, add close-button hover
+- *(scripts)* Rename run to test run, reorder toolbar, space timeout
+- *(scripts)* Drop test run tab, show problems only when present
+- *(widgets)* Add hover to side sheet close, thin resize line to 1px
+- *(events)* Add top gap between toolbar and event list
+- *(globals)* Compact inline rename, commit on blur
+- *(scripts)* Live signature, linked badge, drop variables-in-scope
+- *(scripts)* Make code editor fill the pane borderlessly
+- *(widgets)* Scroll text area with the mouse wheel while editing
+- *(scripts)* Derive signature from body so new scripts show it
+- *(globals)* Mono rename field, commit on click outside
+- *(globals)* Mark the active inline rename field with surface and border
+- *(globals)* Focus inline rename field after it renders
+- *(widgets)* Unify row-name font to mono so inline edit matches
+- *(actions)* Shrink description field to three rows
+- *(scripts)* Keep subtitle visible during inline rename
+- *(actions)* Interpolate random float bounds instead of dropping typed values
+- *(actions)* Stop full picker relayout on card hover
+- *(actions)* Virtualize picker card grid, restore star and plus icons
+- *(actions)* Compact picker rows, sort rail, polish card chrome
+
+### 🚀 Features
+- *(globals)* Inspect complex values in a read-only modal
+- *(globals)* Syntax-highlight json in the value inspector
+- *(widgets)* Optional json syntax highlighting in text area
+- *(scripts)* Rhai syntax highlighting in the code editor
+- *(scripts)* Redesign library sidebar to match design
+- *(scripts)* Add file bar and set breadcrumb to automation scripts
+- *(scripts)* Add details panel with signature from contract
+- *(widgets)* Support vertical edges in resize handle
+- *(actions)* Make the action list panel resizable
+- *(triggers)* Make the trigger detail panel resizable
+- *(scripts)* Make list, details, and output panels resizable
+- *(scripts)* Compute per-script status and linked action, show health
+- *(scripts)* Group sidebar by action and standalone with status
+- *(scripts)* Details type and link, open action button, problem markers
+- *(scripts)* Integrate line-number gutter into the code editor
+- *(storage)* Add script execution telemetry table and repo methods
+- *(scripts)* Record script execution telemetry on each run
+- *(scripts)* Show run stats cards in the details panel
+- *(scripts)* Record test runs and refresh run stats after a run
+- *(widgets)* Blink the text caret and add mono text input
+- *(widgets)* Shared inline edit component, adopt it in globals
+- *(actions)* Adopt inline edit component and double-click rename
+- *(triggers)* Inline edit, double-click and right-click menu
+- *(scripts)* Inline edit, right-click menu, drop delete button
+- *(globals)* Right-click menu with rename, persist and delete
+- *(storage)* Persist queue paused flag
+- *(queues)* Restore paused state at scheduler startup
+- *(queues)* Persist pause and add delete with reassign to default
+- *(widgets)* Add trash icon, use it for queue delete
+- *(actions)* Render sub-action select fields as option dropdowns
+- *(actions)* Pick target global from dropdown in globals sub-actions
+- *(actions)* Pick read-file path via dialog, drop assets sandbox
+- *(actions)* Accept interpolated expressions for random int bounds
+- *(actions)* Render textarea fields multi-line, add rhai code editor
+- *(actions)* Highlight condition and expression fields, pick fire-trigger target
+- *(actions)* Pick tts engine from dropdown in speak and alias sub-actions
+- *(actions)* Add date-time picker for time sub-action fields
+- *(actions)* Show per-step outcomes in run history modal
+- *(registry)* Add declarative variable-schema surfaces for triggers and runners
+- *(actions)* Add last-run execution stat, drop no-errors from 7-day errors
+- *(actions)* Default execution stat to no-errors before first run
+- *(actions)* [**breaking**] Produce sub-action outputs into run scope, not globals
+- *(actions)* Add favorites and category rail to add-step picker
+- *(actions)* Add per-step continue-on-error, skip records, done events
+- *(twitch)* Declare trigger output variable schemas
+- *(obs)* Declare trigger output variable schemas
+- *(vtube)* Declare trigger output variable schemas
+- *(kick)* Declare trigger output variable schemas
+- *(midi)* Declare trigger output variable schemas
+- *(platforms)* Declare youtube and hotkey trigger output schemas
+
+### 🚜 Refactor
+- *(actions)* [**breaking**] Interpolate sub-action fields from scope only
+
+### 🧪 Testing
+- *(desktop)* Cover picker favorites parse/encode persistence
+
 ## [0.3.0-beta.5] - 2026-07-18
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(actions)* Color the zero-error stat green
 - *(components)* Match ghost button idle text to the design
@@ -32,6 +125,9 @@ All notable changes to this project will be documented in this file.
 - *(events)* Chip dots, row text sizes, hover, summary and inspector overflow
 - *(events)* Resolve caused-by event, add outcome tags, size chips to design
 - *(triggers)* Compact row height and full-row click target
+
+### 📚 Documentation
+- *(release)* Release v0.3.0-beta.5
 
 ### 🚀 Features
 - *(actions)* Surface execution stats and per-step timing on detail

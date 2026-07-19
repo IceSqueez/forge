@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct MidiNoteOffDescriptor;
 
@@ -138,6 +140,37 @@ impl TriggerKindDescriptor for MidiNoteOffDescriptor {
             stack = stack.set("midi.port".to_owned(), Variant::String(p.to_owned()));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "midi.note".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Note number".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 127 }),
+                },
+                DeclaredVariable {
+                    name: "midi.velocity".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Velocity".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 127 }),
+                },
+                DeclaredVariable {
+                    name: "midi.channel".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Channel".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 15 }),
+                },
+                DeclaredVariable {
+                    name: "midi.port".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Port name".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

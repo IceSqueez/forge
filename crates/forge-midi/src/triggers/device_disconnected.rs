@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct MidiDeviceDisconnectedDescriptor;
 
@@ -97,6 +99,25 @@ impl TriggerKindDescriptor for MidiDeviceDisconnectedDescriptor {
             );
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "midi.device.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Device name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "midi.device.direction".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Direction".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

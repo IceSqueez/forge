@@ -1674,10 +1674,8 @@ script_editor_shared = Shared
 script_editor_sandbox_label = Sandbox:
 script_editor_sandbox_enabled = enabled
 script_editor_problems_tab = Problems
-script_editor_test_run_tab = Test run
 script_editor_console_cleared = Console cleared.
 script_editor_no_problems = No problems.
-script_editor_no_test_run = No test run yet.
 script_editor_rename_placeholder = Script name
 
 ## Script Editor - run modal

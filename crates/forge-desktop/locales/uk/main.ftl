@@ -1695,10 +1695,8 @@ script_editor_shared = Спільні
 script_editor_sandbox_label = Пісочниця:
 script_editor_sandbox_enabled = увімкнено
 script_editor_problems_tab = Проблеми
-script_editor_test_run_tab = Тестовий запуск
 script_editor_console_cleared = Консоль очищено.
 script_editor_no_problems = Проблем немає.
-script_editor_no_test_run = Тестових запусків ще немає.
 script_editor_rename_placeholder = Назва скрипта
 
 ## Редактор скриптів - модальне вікно запуску

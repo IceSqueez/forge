@@ -111,7 +111,6 @@ struct RenameState {
 enum ConsoleTab {
     Output,
     Problems,
-    TestRun,
 }
 
 #[derive(Clone, Copy)]
@@ -1733,60 +1732,42 @@ impl ScriptEditorView {
             );
 
         let problems_active = self.console_tab == ConsoleTab::Problems;
-        let problems = div()
-            .id("console-tab-problems")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.set_console_tab(ConsoleTab::Problems, cx)
-            }))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(if problems_active {
-                        palette.text_primary
-                    } else {
-                        palette.text_muted
-                    })
-                    .child(tr!("script_editor_problems_tab")),
-            )
-            .child(badge(
-                palette.surface_overlay,
-                palette.warning,
-                self.problems.len().to_string(),
-                true,
-                FONT_XXS,
-            ));
-
-        let test_active = self.console_tab == ConsoleTab::TestRun;
-        let test = div()
-            .id("console-tab-test")
-            .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.set_console_tab(ConsoleTab::TestRun, cx)
-            }))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(if test_active {
-                        palette.text_primary
-                    } else {
-                        palette.text_muted
-                    })
-                    .child(tr!("script_editor_test_run_tab")),
-            );
+        let problems = (!self.problems.is_empty()).then(|| {
+            div()
+                .id("console-tab-problems")
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .cursor_pointer()
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.set_console_tab(ConsoleTab::Problems, cx)
+                }))
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XS)
+                        .text_color(if problems_active {
+                            palette.text_primary
+                        } else {
+                            palette.text_muted
+                        })
+                        .child(tr!("script_editor_problems_tab")),
+                )
+                .child(badge(
+                    palette.surface_overlay,
+                    palette.warning,
+                    self.problems.len().to_string(),
+                    true,
+                    FONT_XXS,
+                ))
+        });
 
         let tabs = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Md, density))
             .child(output)
-            .child(problems)
-            .child(test);
+            .children(problems);
 
         let collapse_glyph = if self.console_collapsed {
             Icon::ChevronUp
@@ -1866,9 +1847,6 @@ impl ScriptEditorView {
                     }
                     b
                 }
-            }
-            ConsoleTab::TestRun => {
-                body.child(muted_line(tr!("script_editor_no_test_run"), palette))
             }
         }
         .into_any_element()

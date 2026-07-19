@@ -1,5 +1,5 @@
 use forge_events::Event;
-use forge_types::{ArgStack, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 use crate::category::TriggerCategory;
 use crate::evaluator::EventFilter;
@@ -20,4 +20,7 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn event_filter(&self) -> EventFilter;
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool;
     fn build_arg_stack(&self, event: &Event) -> ArgStack;
+    fn output_schema(&self) -> Option<VariableSchema> {
+        None
+    }
 }

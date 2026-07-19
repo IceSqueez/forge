@@ -6,6 +6,7 @@ pub use forge_types::SubActionConfig;
 use crate::category::SubActionCategory;
 use crate::error::RegistryError;
 use crate::form::FormField;
+use crate::io::SubActionIo;
 use crate::run_context::RunContext;
 
 #[async_trait]
@@ -24,4 +25,7 @@ pub trait SubActionRunner: Send + Sync {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>);
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo::default()
+    }
 }

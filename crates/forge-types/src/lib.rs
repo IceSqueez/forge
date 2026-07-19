@@ -1,4 +1,5 @@
 pub mod action;
+pub mod data_flow;
 pub mod execution;
 pub mod ids;
 pub mod platform;
@@ -14,6 +15,7 @@ pub mod unified_chat;
 pub mod variant;
 
 pub use action::{Action, ExecutionMode};
+pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
     SubActionTelemetry,

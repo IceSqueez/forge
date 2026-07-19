@@ -356,8 +356,9 @@ impl ScreenActionsView {
             input
         });
         let description = cx.new(|cx| {
-            let mut area =
-                TextArea::new(tr!("actions_description_placeholder"), cx).with_palette(palette);
+            let mut area = TextArea::new(tr!("actions_description_placeholder"), cx)
+                .with_palette(palette)
+                .with_height(px(72.0));
             area.set_content(seed_desc, cx);
             area
         });

@@ -1811,50 +1811,45 @@ impl ScriptEditorView {
             None => (tr!("script_editor_manual_run").into(), palette.text_faint),
         };
 
-        let middle: AnyElement = if renaming {
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    self.rename
-                        .as_ref()
-                        .map(|r| r.editor.clone().into_any_element())
-                        .unwrap_or_else(|| div().into_any_element()),
-                )
-                .into_any_element()
+        let name_line: AnyElement = if renaming {
+            self.rename
+                .as_ref()
+                .map(|r| r.editor.clone().into_any_element())
+                .unwrap_or_else(|| div().into_any_element())
         } else {
             div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(text_color)
-                        .truncate()
-                        .cursor_pointer()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                if event.click_count >= 2 {
-                                    this.start_rename(id, window, cx);
-                                }
-                            }),
-                        )
-                        .child(entry.name.clone()),
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(text_color)
+                .truncate()
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        if event.click_count >= 2 {
+                            this.start_rename(id, window, cx);
+                        }
+                    }),
                 )
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XXS)
-                        .text_color(subtitle_color)
-                        .truncate()
-                        .child(subtitle),
-                )
+                .child(entry.name.clone())
                 .into_any_element()
         };
+
+        let middle = div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .child(name_line)
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(subtitle_color)
+                    .truncate()
+                    .child(subtitle),
+            )
+            .into_any_element();
 
         let trailing = div()
             .flex_none()

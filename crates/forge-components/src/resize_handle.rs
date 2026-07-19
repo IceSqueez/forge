@@ -12,6 +12,14 @@ const RESIZE_HIT_W: Pixels = px(8.0);
 pub enum ResizeEdge {
     Left,
     Right,
+    Top,
+    Bottom,
+}
+
+impl ResizeEdge {
+    fn is_horizontal(self) -> bool {
+        matches!(self, ResizeEdge::Left | ResizeEdge::Right)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -39,23 +47,54 @@ pub fn install_resize<T: 'static>(
     palette: &ForgePalette,
     handler: impl Fn(&Pixels, &mut Window, &mut App) + 'static,
 ) -> Div {
-    let line = div()
-        .w(RESIZE_VISUAL_W)
-        .h_full()
-        .bg(palette.border_input)
-        .group_hover(id, {
-            let hover = palette.border_active;
-            move |s| s.bg(hover)
-        });
+    let horizontal = edge.is_horizontal();
+    let mut line = div().bg(palette.border_input).group_hover(id, {
+        let hover = palette.border_active;
+        move |s| s.bg(hover)
+    });
+    line = if horizontal {
+        line.w(RESIZE_VISUAL_W).h_full()
+    } else {
+        line.h(RESIZE_VISUAL_W).w_full()
+    };
 
-    let mut strip = div().absolute().top_0().h_full().w(RESIZE_HIT_W).flex();
+    let mut strip = div().absolute().flex();
     strip = match edge {
-        ResizeEdge::Left => strip.left_0().justify_start(),
-        ResizeEdge::Right => strip.right_0().justify_end(),
+        ResizeEdge::Left => strip
+            .top_0()
+            .left_0()
+            .h_full()
+            .w(RESIZE_HIT_W)
+            .justify_start(),
+        ResizeEdge::Right => strip
+            .top_0()
+            .right_0()
+            .h_full()
+            .w(RESIZE_HIT_W)
+            .justify_end(),
+        ResizeEdge::Top => strip
+            .left_0()
+            .top_0()
+            .w_full()
+            .h(RESIZE_HIT_W)
+            .flex_col()
+            .justify_start(),
+        ResizeEdge::Bottom => strip
+            .left_0()
+            .bottom_0()
+            .w_full()
+            .h(RESIZE_HIT_W)
+            .flex_col()
+            .justify_end(),
+    };
+    let cursor = if horizontal {
+        CursorStyle::ResizeLeftRight
+    } else {
+        CursorStyle::ResizeUpDown
     };
     let strip = strip
         .group(id)
-        .cursor(CursorStyle::ResizeLeftRight)
+        .cursor(cursor)
         .id(id)
         .on_drag(marker, |_, _, _, cx| cx.new(|_| ResizeGhost))
         .child(line);
@@ -63,10 +102,11 @@ pub fn install_resize<T: 'static>(
     panel
         .relative()
         .on_drag_move(move |e: &DragMoveEvent<T>, window, cx| {
-            let cursor_x = e.event.position.x;
             let raw = match edge {
-                ResizeEdge::Left => e.bounds.right() - cursor_x,
-                ResizeEdge::Right => cursor_x - e.bounds.left(),
+                ResizeEdge::Left => e.bounds.right() - e.event.position.x,
+                ResizeEdge::Right => e.event.position.x - e.bounds.left(),
+                ResizeEdge::Top => e.bounds.bottom() - e.event.position.y,
+                ResizeEdge::Bottom => e.event.position.y - e.bounds.top(),
             };
             handler(&raw.clamp(range.min, range.max), window, cx);
         })

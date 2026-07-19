@@ -19,7 +19,7 @@ use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
     App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    Subscription, Window, div, prelude::*, px, svg,
 };
 
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
@@ -134,6 +134,7 @@ pub struct GlobalsView {
     search_query: String,
     editor: Option<EditorState>,
     pending_delete: Option<SharedString>,
+    inspecting: Option<Global>,
     renaming: Option<RenameState>,
     _globals_obs: Subscription,
     _search_sub: Subscription,
@@ -162,6 +163,7 @@ impl GlobalsView {
             search_query: String::new(),
             editor: None,
             pending_delete: None,
+            inspecting: None,
             renaming: None,
             _globals_obs: globals_obs,
             _search_sub: search_sub,
@@ -943,7 +945,7 @@ impl GlobalsView {
             px(9.5),
         ));
 
-        let value_cell = value_preview(g, palette);
+        let value_cell = self.value_cell(idx, g, palette, cx);
 
         let modified_cell = div()
             .font_family(DEFAULT_BODY_FAMILY)
@@ -978,7 +980,7 @@ impl GlobalsView {
             .gap(px(2.0))
             .child(self.row_action(
                 ("globals-edit", idx),
-                Icon::Pencil,
+                Icon::Edit,
                 palette.text_secondary,
                 with_alpha(palette.brand, ACTION_HOVER_ALPHA),
                 cx.listener(move |this, _: &ClickEvent, window, cx| {
@@ -1040,6 +1042,69 @@ impl GlobalsView {
             )
             .child(name.clone())
             .into_any_element()
+    }
+
+    fn value_cell(
+        &self,
+        idx: usize,
+        g: &Global,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let complex = matches!(g.kind(), VariantKind::Array | VariantKind::Object);
+        let text = match &g.value {
+            Variant::String(s) => format!("\"{s}\""),
+            other => other.to_string(),
+        };
+        let mut cell = div().flex().items_center().gap(px(4.0)).child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.text_primary)
+                .child(text),
+        );
+        if complex {
+            let group: SharedString = format!("globals-inspect-{idx}").into();
+            let hover_bg = palette.surface_overlay;
+            let idle = palette.text_faint;
+            let active = palette.brand;
+            let target = g.clone();
+            cell = cell.child(
+                div()
+                    .id(("globals-inspect", idx))
+                    .group(group.clone())
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .p(px(2.0))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(hover_bg))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.open_inspect(target.clone(), cx);
+                    }))
+                    .child(
+                        svg()
+                            .flex_none()
+                            .size(VALUE_ICON)
+                            .path(Icon::ExternalLink.path())
+                            .text_color(idle)
+                            .group_hover(group, move |s| s.text_color(active)),
+                    ),
+            );
+        }
+        cell.into_any_element()
+    }
+
+    fn open_inspect(&mut self, g: Global, cx: &mut Context<Self>) {
+        self.inspecting = Some(g);
+        cx.notify();
+    }
+
+    fn close_inspect(&mut self, cx: &mut Context<Self>) {
+        self.inspecting = None;
+        cx.notify();
     }
 
     fn row_action(
@@ -1310,6 +1375,117 @@ impl GlobalsView {
                 view.update(cx, |this, cx| this.cancel_delete(cx));
             })
     }
+
+    fn render_inspect(
+        &self,
+        g: &Global,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let kind = g.kind();
+        let (count_key, count) = inspect_count(&g.value);
+        let subtitle = tr!(count_key, kind = kind_word(kind), count = count as i64);
+
+        let json = serde_json::to_string_pretty(&variant_to_json(&g.value)).unwrap_or_default();
+        let mut listing = div().flex().flex_col();
+        for (i, line) in json.lines().enumerate() {
+            let content: SharedString = if line.is_empty() {
+                "\u{00A0}".into()
+            } else {
+                line.to_owned().into()
+            };
+            listing = listing.child(
+                div()
+                    .flex()
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(34.0))
+                            .pr(px(12.0))
+                            .flex()
+                            .justify_end()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_faint)
+                            .child(format!("{}", i + 1)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_primary)
+                            .child(content),
+                    ),
+            );
+        }
+        let code = div()
+            .w_full()
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .rounded(radius(Radius::Md))
+            .py(px(10.0))
+            .px(px(12.0))
+            .child(listing);
+        let body = div()
+            .id("globals-inspect-scroll")
+            .w_full()
+            .max_h(px(400.0))
+            .overflow_y_scroll()
+            .child(code);
+
+        let hint = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(palette.text_faint)
+            .child(tr!("globals_inspect_snapshot"));
+        let close = secondary_button(tr!("globals_inspect_close"), palette).on_click(
+            "globals-inspect-close-btn",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.close_inspect(cx)),
+        );
+        let edit_name = g.name.clone();
+        let edit = primary_button_with_icon(Icon::Edit, tr!("globals_inspect_edit"), palette)
+            .on_click(
+                "globals-inspect-edit-btn",
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.inspecting = None;
+                    this.open_edit(edit_name.clone(), window, cx);
+                }),
+            );
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(hint)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, Density::Cozy))
+                    .child(close)
+                    .child(edit),
+            );
+
+        let card = modal(g.name.clone(), body, palette)
+            .subtitle(subtitle)
+            .header_icon(Icon::Code, variant_kind_color(kind, palette))
+            .size(ModalSize::Md)
+            .footer(footer)
+            .on_close(
+                "globals-inspect-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.close_inspect(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("globals-inspect-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.close_inspect(cx));
+            })
+            .into_any_element()
+    }
 }
 
 impl Render for GlobalsView {
@@ -1329,6 +1505,10 @@ impl Render for GlobalsView {
             .editor
             .as_ref()
             .map(|ed| self.render_editor_boxed(ed, &palette, cx));
+        let inspect_overlay = self
+            .inspecting
+            .clone()
+            .map(|g| self.render_inspect(&g, &palette, cx));
 
         div()
             .size_full()
@@ -1340,6 +1520,7 @@ impl Render for GlobalsView {
             .child(table)
             .children(delete_overlay)
             .children(editor_overlay)
+            .children(inspect_overlay)
     }
 }
 
@@ -1373,24 +1554,12 @@ fn section(
         .child(control)
 }
 
-fn value_preview(g: &Global, palette: &ForgePalette) -> impl IntoElement + use<> {
-    let kind = g.kind();
-    let complex = matches!(kind, VariantKind::Array | VariantKind::Object);
-    let text = match &g.value {
-        Variant::String(s) => format!("\"{s}\""),
-        other => other.to_string(),
-    };
-    let mut cell = div().flex().items_center().gap(px(4.0)).child(
-        div()
-            .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_primary)
-            .child(text),
-    );
-    if complex {
-        cell = cell.child(icon(Icon::ExternalLink, VALUE_ICON, palette.text_faint));
+fn inspect_count(value: &Variant) -> (&'static str, usize) {
+    match value {
+        Variant::Array(items) => ("globals_inspect_subtitle_items", items.len()),
+        Variant::Object(map) => ("globals_inspect_subtitle_keys", map.len()),
+        _ => ("globals_inspect_subtitle_keys", 0),
     }
-    cell
 }
 
 async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<PathBuf, String> {

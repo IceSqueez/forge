@@ -1651,6 +1651,14 @@ globals_error_name_taken = Глобальна змінна з такою наз�
 globals_delete_confirm_title = Видалити глобальну змінну
 globals_delete_confirm_body = Це назавжди видалить змінну та її значення.
 
+## Глобальні - інспектор значення
+
+globals_inspect_subtitle_items = { $kind } · { $count } елем. · лише читання
+globals_inspect_subtitle_keys = { $kind } · { $count } ключів · лише читання
+globals_inspect_snapshot = Знімок поточного значення · оновлюється при наступному читанні
+globals_inspect_close = Закрити
+globals_inspect_edit = Редагувати значення
+
 ## Редактор скриптів - сторінка / панель інструментів
 
 script_editor_breadcrumb = Редактор скриптів

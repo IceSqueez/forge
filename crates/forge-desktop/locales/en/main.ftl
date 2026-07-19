@@ -1630,6 +1630,14 @@ globals_error_name_taken = A global with this name already exists
 globals_delete_confirm_title = Delete global variable
 globals_delete_confirm_body = This permanently removes the variable and its value.
 
+## Globals - value inspector modal
+
+globals_inspect_subtitle_items = { $kind } · { $count } items · read-only
+globals_inspect_subtitle_keys = { $kind } · { $count } keys · read-only
+globals_inspect_snapshot = Live value snapshot · updates on next read
+globals_inspect_close = Close
+globals_inspect_edit = Edit value
+
 ## Script Editor - page / toolbar
 
 script_editor_breadcrumb = Script Editor

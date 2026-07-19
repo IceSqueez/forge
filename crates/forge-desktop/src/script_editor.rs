@@ -1002,11 +1002,14 @@ impl ScriptEditorView {
             InputEvent::Cancelled => this.cancel_rename(cx),
             InputEvent::Changed(_) => cx.notify(),
         });
-        input.update(cx, |f, cx| f.focus(window, cx));
+        let focus_target = input.clone();
         self.rename = Some(RenameState {
             target: id,
             input,
             _sub: sub,
+        });
+        cx.defer_in(window, move |_this, window, cx| {
+            focus_target.update(cx, |f, cx| f.focus(window, cx));
         });
         cx.notify();
     }

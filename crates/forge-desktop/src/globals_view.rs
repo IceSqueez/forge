@@ -390,12 +390,15 @@ impl GlobalsView {
         let focus_sub = cx.on_focus_out(&focus_handle, window, |this, _event, _window, cx| {
             this.commit_rename(cx);
         });
-        input.update(cx, |f, cx| f.focus(window, cx));
+        let focus_target = input.clone();
         self.renaming = Some(RenameState {
             original: name,
             input,
             _sub: sub,
             _focus_sub: focus_sub,
+        });
+        cx.defer_in(window, move |_this, window, cx| {
+            focus_target.update(cx, |f, cx| f.focus(window, cx));
         });
         cx.notify();
     }

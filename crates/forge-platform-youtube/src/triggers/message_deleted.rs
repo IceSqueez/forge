@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct ChatMessageDeletedDescriptor;
 
@@ -88,6 +90,31 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
                 "chat.moderator.channel_id".to_owned(),
                 Variant::String(moderator_channel_id),
             )
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "chat.message_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Deleted message ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "chat.target_user.channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Deleted message author channel ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "chat.moderator.channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Moderator channel ID".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SupportNewMemberDescriptor;
 
@@ -81,6 +84,25 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
                 "member_level_name".to_owned(),
                 Variant::String(member_level_name),
             )
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "user_display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "New member display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "member_level_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Membership level name".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

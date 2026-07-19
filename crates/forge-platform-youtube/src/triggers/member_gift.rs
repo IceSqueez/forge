@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChannelMemberGiftDescriptor;
 
@@ -94,6 +97,37 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
                 "gifter.display_name".to_owned(),
                 Variant::String(gifter_display_name),
             )
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "gift.count".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Memberships gifted count".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 100 }),
+                },
+                DeclaredVariable {
+                    name: "gift.level_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Membership level name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "gifter.channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Gifter channel ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "gifter.display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Gifter display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+            ],
+        })
     }
 }
 

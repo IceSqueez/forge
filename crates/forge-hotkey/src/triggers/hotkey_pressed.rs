@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct HotkeyPressedDescriptor;
 
@@ -99,6 +101,31 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
             stack = stack.set("hotkey.timestamp_us".to_owned(), Variant::Int(ts as i64));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "hotkey.combo".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Hotkey combo".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "hotkey.id".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Hotkey ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "hotkey.timestamp_us".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Timestamp (microseconds)".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

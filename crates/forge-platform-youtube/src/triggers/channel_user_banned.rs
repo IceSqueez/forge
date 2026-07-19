@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChannelUserBannedDescriptor;
 
@@ -154,6 +157,46 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                 "ban.duration_seconds".to_owned(),
                 Variant::Int(ban_duration_seconds),
             )
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "ban.target.display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Banned user display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "ban.target.channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Banned user channel ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "ban.moderator.channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Moderator channel ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "ban.type".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Ban type".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "ban.duration_seconds".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Ban duration in seconds".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt {
+                        min: 0,
+                        max: 86_400,
+                    }),
+                },
+            ],
+        })
     }
 }
 

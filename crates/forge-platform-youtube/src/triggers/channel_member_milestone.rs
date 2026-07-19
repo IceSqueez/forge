@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SupportMemberMilestoneDescriptor;
 
@@ -84,6 +87,31 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
             )
             .set("member_month".to_owned(), Variant::Int(member_month))
             .set("message_text".to_owned(), Variant::String(message_text))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "user_display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Member display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "member_month".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Membership length in months".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 120 }),
+                },
+                DeclaredVariable {
+                    name: "message_text".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Milestone message text".to_owned(),
+                    synthesis: Some(SynthesisHint::Message),
+                },
+            ],
+        })
     }
 }
 

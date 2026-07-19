@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct ChatMessageDescriptor;
 
@@ -85,6 +88,31 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
                 Variant::String(user_display_name),
             )
             .set("channel_id".to_owned(), Variant::String(channel_id))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "message_text".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Message text".to_owned(),
+                    synthesis: Some(SynthesisHint::Message),
+                },
+                DeclaredVariable {
+                    name: "user_display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender channel ID".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

@@ -2,7 +2,10 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
+    VariantKind,
+};
 
 pub(crate) struct SupportSuperStickerDescriptor;
 
@@ -91,6 +94,40 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
             .set("sticker_id".to_owned(), Variant::String(sticker_id))
             .set("amount_micros".to_owned(), Variant::Int(amount_micros))
             .set("currency".to_owned(), Variant::String(currency))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "user_display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "sticker_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sticker ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "amount_micros".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Amount in micros".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt {
+                        min: 2_000_000,
+                        max: 500_000_000,
+                    }),
+                },
+                DeclaredVariable {
+                    name: "currency".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Currency code".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct ChannelBroadcastStartedDescriptor;
 
@@ -78,6 +80,25 @@ impl TriggerKindDescriptor for ChannelBroadcastStartedDescriptor {
                 Variant::String(broadcast_title),
             )
             .set("broadcast_id".to_owned(), Variant::String(broadcast_id))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "broadcast_title".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Broadcast title".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "broadcast_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Broadcast ID".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

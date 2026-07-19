@@ -2,7 +2,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub(crate) struct ChannelBroadcastTitleChangedDescriptor;
 
@@ -75,6 +77,25 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
         ArgStack::new()
             .set("stream.title_old".to_owned(), Variant::String(title_old))
             .set("stream.title_new".to_owned(), Variant::String(title_new))
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "stream.title_old".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Previous broadcast title".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "stream.title_new".to_owned(),
+                    kind: VariantKind::String,
+                    label: "New broadcast title".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

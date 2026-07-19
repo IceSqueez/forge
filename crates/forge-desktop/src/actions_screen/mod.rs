@@ -3,8 +3,8 @@ use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
-    ForgePalette, GridPicker, Icon, OverlayPosition, TextArea, TextInput, ToastKind, fmt_number,
-    fmt_relative_time, icon, overlay, search_input, tr,
+    ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, TextArea, TextInput, ToastKind,
+    fmt_number, fmt_relative_time, icon, overlay, search_input, tr,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
@@ -114,7 +114,7 @@ struct ActionGroup {
 
 struct Renaming {
     id: ActionId,
-    field: Entity<TextInput>,
+    editor: Entity<InlineEdit>,
     _sub: Subscription,
 }
 

@@ -3,11 +3,11 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
-    ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, ToastAction, ToastKind, breadcrumb,
-    chip, confirm_modal, context_menu, icon, install_resize, menu_divider, menu_item, modal,
-    overlay, primary_button, primary_button_with_icon, secondary_button, spacing, status_dot,
-    toggle, tr,
+    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, ModalSize,
+    OverlayPosition, ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, ToastAction, ToastKind,
+    breadcrumb, chip, confirm_modal, context_menu, icon, inline_edit, install_resize, menu_divider,
+    menu_item, modal, overlay, primary_button, primary_button_with_icon, secondary_button, spacing,
+    status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, ExecutionMode, Queue};
 use gpui::{
@@ -186,38 +186,26 @@ impl ScreenActionsView {
         };
         let palette = cx.palette();
         let seed = action.name.clone();
-        let field = cx.new(|cx| {
-            let mut input = TextInput::new(tr!("actions_rename_placeholder"), cx)
-                .with_palette(palette)
-                .static_chrome(palette.brand, Radius::Sm);
-            input.set_content(seed, cx);
-            input
-        });
-        field.update(cx, |f, cx| f.focus(window, cx));
-        let sub = cx.subscribe(&field, Self::on_rename_event);
+        let editor = inline_edit(seed, palette, window, cx);
+        let sub = cx.subscribe(
+            &editor,
+            |this, _e, event: &InlineEditEvent, cx| match event {
+                InlineEditEvent::Commit(next) => this.commit_rename(next.clone(), cx),
+                InlineEditEvent::Cancel => this.cancel_rename(cx),
+            },
+        );
         self.menu_open = None;
         self.renaming = Some(Renaming {
             id,
-            field,
+            editor,
             _sub: sub,
         });
         cx.notify();
     }
 
-    fn on_rename_event(
-        &mut self,
-        _field: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            InputEvent::Submitted(text) => self.commit_rename(text.to_string(), cx),
-            InputEvent::Cancelled => {
-                self.renaming = None;
-                cx.notify();
-            }
-            InputEvent::Changed(_) => {}
-        }
+    fn cancel_rename(&mut self, cx: &mut Context<Self>) {
+        self.renaming = None;
+        cx.notify();
     }
 
     fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
@@ -794,7 +782,7 @@ impl ScreenActionsView {
             Some(renaming) => div()
                 .flex_1()
                 .min_w(px(0.0))
-                .child(renaming.field.clone())
+                .child(renaming.editor.clone())
                 .into_any_element(),
             None => div()
                 .flex_1()
@@ -803,6 +791,15 @@ impl ScreenActionsView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(name_color)
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        if event.click_count >= 2 {
+                            this.start_rename(id, window, cx);
+                        }
+                    }),
+                )
                 .child(action.name.clone())
                 .into_any_element(),
         };

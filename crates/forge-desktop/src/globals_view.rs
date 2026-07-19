@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
-    App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString,
+    App, ClickEvent, Context, Entity, Focusable, MouseButton, MouseDownEvent, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px, svg,
 };
 
@@ -122,6 +122,7 @@ struct RenameState {
     original: SharedString,
     input: Entity<TextInput>,
     _sub: Subscription,
+    _focus_sub: Subscription,
 }
 
 pub struct GlobalsView {
@@ -372,7 +373,10 @@ impl GlobalsView {
         let palette = cx.palette();
         let seed = name.clone();
         let input = cx.new(|cx| {
-            let mut ti = TextInput::new("", cx).with_palette(palette);
+            let mut ti = TextInput::new("", cx)
+                .with_palette(palette)
+                .plain()
+                .with_font_size(FONT_XS);
             ti.set_content(seed.to_string(), cx);
             ti
         });
@@ -381,11 +385,16 @@ impl GlobalsView {
             InputEvent::Cancelled => this.cancel_rename(cx),
             InputEvent::Changed(_) => {}
         });
+        let focus_handle = input.read(cx).focus_handle(cx);
+        let focus_sub = cx.on_focus_out(&focus_handle, window, |this, _event, _window, cx| {
+            this.commit_rename(cx);
+        });
         input.update(cx, |f, cx| f.focus(window, cx));
         self.renaming = Some(RenameState {
             original: name,
             input,
             _sub: sub,
+            _focus_sub: focus_sub,
         });
         cx.notify();
     }

@@ -55,10 +55,10 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DynamicSelect {
                 key: "key",
                 label: "Variable Name",
-                placeholder: "my_list",
+                options_key: "global.names",
             },
             FormField::Text {
                 key: "value",

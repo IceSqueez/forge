@@ -52,10 +52,10 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DynamicSelect {
                 key: "key",
                 label: "Variable Name",
-                placeholder: "counter",
+                options_key: "global.names",
             },
             FormField::Integer {
                 key: "amount",

@@ -52,10 +52,10 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
+        vec![FormField::DynamicSelect {
             key: "key",
             label: "Variable Name",
-            placeholder: "my_flag",
+            options_key: "global.names",
         }]
     }
 

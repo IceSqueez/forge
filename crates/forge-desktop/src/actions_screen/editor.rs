@@ -874,6 +874,7 @@ impl ScreenActionsView {
         let ti_repo = Arc::clone(&self.trigger_instance_repo);
         let script_repo = Arc::clone(&self.script_repo);
         let soundboard_repo = Arc::clone(&self.soundboard_repo);
+        let globals_repo = Arc::clone(&self.globals_repo);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
@@ -919,6 +920,15 @@ impl ScreenActionsView {
                     clips
                         .into_iter()
                         .map(|c| (c.id.to_string(), c.name))
+                        .collect(),
+                );
+            }
+            if let Ok(globals) = globals_repo.list().await {
+                map.insert(
+                    "global.names".to_owned(),
+                    globals
+                        .into_iter()
+                        .map(|g| (g.name.clone(), g.name))
                         .collect(),
                 );
             }

@@ -50,10 +50,10 @@ impl SubActionRunner for CoreGlobalsDeleteRunner {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
+        vec![FormField::DynamicSelect {
             key: "name",
             label: "Variable Name",
-            placeholder: "counter",
+            options_key: "global.names",
         }]
     }
 

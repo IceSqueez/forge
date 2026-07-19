@@ -16,7 +16,7 @@ const HEADER_TILE_GAP: Pixels = px(10.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const CLOSE_HIT: Pixels = px(32.0);
 const DIVIDER_H: Pixels = px(1.0);
-const RESIZE_VISUAL_W: Pixels = px(2.0);
+const RESIZE_VISUAL_W: Pixels = px(1.0);
 const RESIZE_HIT_W: Pixels = px(8.0);
 
 /// A constant group name is safe: side sheets are singular on screen (no hover-group collision).
@@ -222,6 +222,7 @@ impl SideSheet {
         row = row.child(titles);
 
         if let (Some(id), Some(handler)) = (self.close_id.take(), self.on_close.take()) {
+            let hover = self.tile_bg;
             row = row.child(
                 div()
                     .id(id)
@@ -230,7 +231,9 @@ impl SideSheet {
                     .items_center()
                     .justify_center()
                     .size(CLOSE_HIT)
+                    .rounded(radius(Radius::Sm))
                     .cursor_pointer()
+                    .hover(move |s| s.bg(hover))
                     .on_click(handler)
                     .child(icon(Icon::X, FONT_MD, self.close_color)),
             );

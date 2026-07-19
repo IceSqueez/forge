@@ -15,7 +15,8 @@ use forge_script::{
     validate_syntax,
 };
 use forge_storage::{
-    DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
+    DataProvider, ExecutionStatus, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
+    SettingsRepo,
 };
 use forge_types::{Action, ActionId, ArgStack, ScriptId, ScriptInput, Variant, VariantKind};
 use gpui::{
@@ -759,11 +760,23 @@ impl ScriptEditorView {
         let globals = Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>;
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let publisher = Arc::clone(&self.bus) as Arc<dyn EventPublisher>;
+        let scripts = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
+            let started_at = OffsetDateTime::now_utc();
             let result = run_inline(body, args, globals, settings, publisher, script_id)
                 .await
                 .map_err(|e| e.to_string());
+            if let Ok(r) = &result {
+                let status = if r.error_count == 0 {
+                    ExecutionStatus::Success
+                } else {
+                    ExecutionStatus::Error
+                };
+                let _ = scripts
+                    .record_execution(script_id, started_at, r.duration_ms as u64, status)
+                    .await;
+            }
             let _ = tx.send(result);
         });
         cx.spawn(async move |this, cx| {
@@ -783,6 +796,9 @@ impl ScriptEditorView {
                     LogTag::Stats,
                     format_run_stats(r.duration_ms, r.error_count),
                 );
+                if let Some(id) = self.open.as_ref().map(|o| o.id) {
+                    self.load_telemetry(id, cx);
+                }
             }
             Err(e) => {
                 if let Some(modal) = self.run_modal.as_mut() {

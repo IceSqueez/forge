@@ -196,6 +196,7 @@ pub struct TriggersRegistryView {
     action_repo: Arc<dyn ActionRepo>,
     registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
+    detail_width: Pixels,
     loading: bool,
     instances: Vec<TriggerInstanceRow>,
     selected: Option<TriggerInstanceId>,
@@ -233,6 +234,7 @@ impl TriggersRegistryView {
             action_repo,
             registry,
             rt_handle,
+            detail_width: detail::DETAIL_SHEET_W,
             loading: true,
             instances: Vec::new(),
             selected: preselect,
@@ -252,6 +254,13 @@ impl TriggersRegistryView {
         };
         view.reload(cx);
         view
+    }
+
+    fn set_detail_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        if self.detail_width != width {
+            self.detail_width = width;
+            cx.notify();
+        }
     }
 
     fn reload(&self, cx: &mut Context<Self>) {

@@ -2,15 +2,17 @@ use super::config_form::{fold_config_field, overlay_field_values, sparse_overrid
 use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, Icon, InputEvent, Radius, Spacing,
-    TextInput, ghost_button_with_icon, icon, primary_button, radius, row_card, spacing, status_dot,
-    toggle, tr,
+    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, Icon, InputEvent, Radius,
+    ResizeEdge, ResizeRange, Spacing, TextInput, ghost_button_with_icon, icon, install_resize,
+    primary_button, radius, row_card, spacing, status_dot, toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
 use std::collections::HashMap;
 
-const SHEET_W: Pixels = px(420.0);
+pub(super) const DETAIL_SHEET_W: Pixels = px(420.0);
+const DETAIL_SHEET_MIN: Pixels = px(320.0);
+const DETAIL_SHEET_MAX: Pixels = px(640.0);
 const HALF_BORDER: Pixels = px(0.5);
 const TILE: Pixels = px(30.0);
 const TILE_RADIUS: Pixels = px(8.0);
@@ -24,6 +26,8 @@ const CFG_VAL_FS: Pixels = px(11.5);
 const USED_FS: Pixels = px(12.0);
 const CFG_KEY_W: Pixels = px(110.0);
 const REVERT_W: Pixels = px(22.0);
+struct TriggerDetailResizeDrag;
+
 const HEADER_PAD_V: Pixels = px(12.0);
 const HEADER_PAD_H: Pixels = px(16.0);
 const BODY_PAD_V: Pixels = px(14.0);
@@ -275,13 +279,13 @@ impl TriggersRegistryView {
     ) -> AnyElement {
         match self.detail.as_ref().filter(|d| d.instance.id == id) {
             Some(detail) => self.render_detail_panel(detail, palette, cx),
-            None => self.render_detail_loading(palette),
+            None => self.render_detail_loading(palette, cx),
         }
     }
 
-    fn detail_shell(&self, palette: &ForgePalette) -> gpui::Div {
-        div()
-            .w(SHEET_W)
+    fn detail_shell(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> gpui::Div {
+        let panel = div()
+            .w(self.detail_width)
             .flex_none()
             .h_full()
             .flex()
@@ -289,11 +293,24 @@ impl TriggersRegistryView {
             .min_h(px(0.0))
             .bg(palette.base)
             .border_l(HALF_BORDER)
-            .border_color(palette.border_regular)
+            .border_color(palette.border_regular);
+
+        install_resize(
+            panel,
+            TriggerDetailResizeDrag,
+            "triggers-detail-resize",
+            ResizeEdge::Left,
+            ResizeRange {
+                min: DETAIL_SHEET_MIN,
+                max: DETAIL_SHEET_MAX,
+            },
+            palette,
+            cx.listener(|this, width: &Pixels, _, cx| this.set_detail_width(*width, cx)),
+        )
     }
 
-    fn render_detail_loading(&self, palette: &ForgePalette) -> AnyElement {
-        self.detail_shell(palette)
+    fn render_detail_loading(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        self.detail_shell(palette, cx)
             .child(
                 div()
                     .flex_1()
@@ -314,7 +331,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        self.detail_shell(palette)
+        self.detail_shell(palette, cx)
             .child(self.render_detail_header(detail, palette, cx))
             .child(self.render_detail_body(detail, palette, cx))
             .child(self.render_detail_footer(detail, palette, cx))

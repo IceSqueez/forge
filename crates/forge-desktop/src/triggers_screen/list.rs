@@ -3,14 +3,14 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition,
-    Radius, Spacing, TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal,
-    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, overlay,
-    primary_button, primary_button_with_icon, secondary_button, spacing, status_dot, toggle, tr,
+    Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, OverlayPosition, Spacing,
+    TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal, context_menu,
+    ghost_button_with_icon, icon, inline_edit, menu_divider, menu_item, overlay,
+    primary_button_with_icon, spacing, status_dot, toggle, tr,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Point, Rgba,
-    SharedString, Window, div, px,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
+    Pixels, Point, Rgba, SharedString, Window, div, px,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -147,18 +147,14 @@ impl TriggersRegistryView {
         }
     }
 
-    fn toggle_menu(
+    fn open_row_menu(
         &mut self,
         id: TriggerInstanceId,
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        if self.menu_open == Some(id) {
-            self.menu_open = None;
-        } else {
-            self.menu_open = Some(id);
-            self.menu_click_pos = Some(position);
-        }
+        self.menu_open = Some(id);
+        self.menu_click_pos = Some(position);
         cx.notify();
     }
 
@@ -304,45 +300,26 @@ impl TriggersRegistryView {
         };
         let palette = cx.palette();
         let seed = instance.name.clone();
-        let field = cx.new(|cx| {
-            let mut input = TextInput::new("Name", cx)
-                .with_palette(palette)
-                .static_chrome(palette.brand, Radius::Sm);
-            input.set_content(seed, cx);
-            input
-        });
-        field.update(cx, |f, cx| f.focus(window, cx));
-        let sub = cx.subscribe(&field, Self::on_rename_event);
+        let editor = inline_edit(seed, palette, window, cx);
+        let sub = cx.subscribe(
+            &editor,
+            |this, _e, event: &InlineEditEvent, cx| match event {
+                InlineEditEvent::Commit(next) => this.commit_rename(next.clone(), cx),
+                InlineEditEvent::Cancel => this.cancel_rename(cx),
+            },
+        );
         self.menu_open = None;
         self.rename = Some(RenameForm {
             id,
-            field,
+            editor,
             _sub: sub,
         });
         cx.notify();
     }
 
-    fn on_rename_event(
-        &mut self,
-        _field: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            InputEvent::Submitted(text) => self.commit_rename(text.to_string(), cx),
-            InputEvent::Cancelled => {
-                self.rename = None;
-                cx.notify();
-            }
-            InputEvent::Changed(_) => {}
-        }
-    }
-
-    fn submit_rename(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.rename.as_ref() {
-            let name = form.field.read(cx).content().to_string();
-            self.commit_rename(name, cx);
-        }
+    fn cancel_rename(&mut self, cx: &mut Context<Self>) {
+        self.rename = None;
+        cx.notify();
     }
 
     fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
@@ -753,15 +730,41 @@ impl TriggersRegistryView {
                 .into_any_element()
         };
 
-        let select_region = div()
+        let renaming = self.rename.as_ref().is_some_and(|r| r.id == id);
+        let name_cell: AnyElement = match self.rename.as_ref().filter(|r| r.id == id) {
+            Some(rename) => div()
+                .w(COL_NAME)
+                .flex_none()
+                .child(rename.editor.clone())
+                .into_any_element(),
+            None => div()
+                .w(COL_NAME)
+                .flex_none()
+                .overflow_hidden()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(NAME_FS)
+                .text_color(name_color)
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        if event.click_count >= 2 {
+                            this.start_rename(id, window, cx);
+                        }
+                    }),
+                )
+                .child(instance.name.clone())
+                .into_any_element(),
+        };
+
+        let mut select_region = div()
             .id(SharedString::from(format!("triggers-row-select-{id}")))
             .flex_1()
             .flex()
             .items_center()
             .pl(ROW_PAD_L)
             .py(ROW_PAD_V)
-            .cursor_pointer()
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)))
             .child(
                 div()
                     .w(COL_DOT)
@@ -770,17 +773,7 @@ impl TriggersRegistryView {
                     .items_center()
                     .child(status_dot(dot_color, ROW_DOT)),
             )
-            .child(
-                div()
-                    .w(COL_NAME)
-                    .flex_none()
-                    .overflow_hidden()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(NAME_FS)
-                    .text_color(name_color)
-                    .child(instance.name.clone()),
-            )
+            .child(name_cell)
             .child(div().flex_1().min_w(px(0.0)).child(kind))
             .child(
                 div()
@@ -791,6 +784,11 @@ impl TriggersRegistryView {
                     .pr(USED_CELL_GAP)
                     .child(used),
             );
+        if !renaming {
+            select_region = select_region
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
+        }
 
         let on_cell = div().w(COL_ON).flex_none().flex().justify_center().child(
             toggle(instance.enabled, palette).on_click(
@@ -799,12 +797,7 @@ impl TriggersRegistryView {
             ),
         );
 
-        let menu_cell = div()
-            .w(COL_MENU)
-            .flex_none()
-            .flex()
-            .justify_end()
-            .child(self.render_row_menu(instance, palette, cx));
+        let menu_cell = div().w(COL_MENU).flex_none();
 
         let content = div()
             .w_full()
@@ -826,57 +819,58 @@ impl TriggersRegistryView {
             .on_hover(
                 cx.listener(move |this, hovered: &bool, _, cx| this.set_hover(id, *hovered, cx)),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                    this.open_row_menu(id, ev.position, cx)
+                }),
+            )
             .child(div().w(STRIPE_W).flex_none().bg(stripe_color))
             .child(content)
             .into_any_element()
     }
 
-    fn render_row_menu(
+    pub(super) fn render_row_context_menu(
         &self,
-        instance: &TriggerInstanceRow,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let id = instance.id;
-        let menu_open = self.menu_open == Some(id);
-        let menu_pos = if menu_open { self.menu_click_pos } else { None };
+    ) -> Option<AnyElement> {
+        let id = self.menu_open?;
+        let position = self.menu_click_pos?;
+        let instance = self.find(id)?;
         let block_delete = instance.used_in_count > 0;
         let view = cx.entity();
 
-        menu_button(Icon::DotsVertical, menu_open, palette)
-            .placement(MenuPlacement::BottomRight)
-            .open_at(menu_pos)
-            .items(vec![
-                menu_item(
-                    SharedString::from(format!("triggers-menu-rename-{id}")),
-                    tr!("triggers_menu_rename"),
-                    cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.start_rename(id, window, cx)
-                    }),
-                )
-                .icon(Icon::Pencil)
-                .into(),
-                menu_divider(),
-                menu_item(
-                    SharedString::from(format!("triggers-menu-delete-{id}")),
-                    tr!("triggers_menu_delete"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
-                )
-                .icon(Icon::Eraser)
-                .color(palette.random)
-                .disabled(block_delete)
-                .into(),
-            ])
-            .on_toggle(
-                SharedString::from(format!("triggers-menu-trigger-{id}")),
-                cx.listener(move |this, ev: &ClickEvent, _, cx| {
-                    this.toggle_menu(id, ev.position(), cx)
+        let items = vec![
+            menu_item(
+                SharedString::from(format!("triggers-menu-rename-{id}")),
+                tr!("triggers_menu_rename"),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.start_rename(id, window, cx)
                 }),
             )
-            .on_dismiss(move |_window, cx| {
-                view.update(cx, |this, cx| this.close_menu(cx));
-            })
-            .into_any_element()
+            .icon(Icon::Pencil)
+            .into(),
+            menu_divider(),
+            menu_item(
+                SharedString::from(format!("triggers-menu-delete-{id}")),
+                tr!("triggers_menu_delete"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
+            )
+            .icon(Icon::Eraser)
+            .color(palette.random)
+            .disabled(block_delete)
+            .into(),
+        ];
+
+        Some(
+            context_menu(position, palette)
+                .items(items)
+                .on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_menu(cx));
+                })
+                .into_any_element(),
+        )
     }
 
     fn render_empty(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
@@ -1026,73 +1020,6 @@ impl TriggersRegistryView {
             .position(OverlayPosition::Center)
             .on_dismiss("triggers-delete-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel_delete(cx));
-            })
-            .into_any_element()
-    }
-
-    pub(super) fn render_rename_modal(
-        &self,
-        form: &RenameForm,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let valid = !form.field.read(cx).content().trim().is_empty();
-
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("triggers_create_section_name")),
-            )
-            .child(div().child(form.field.clone()));
-
-        let cancel = secondary_button(tr!("common_cancel"), palette).on_click(
-            "triggers-rename-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.rename = None;
-                cx.notify();
-            }),
-        );
-        let save = primary_button(tr!("common_save"), palette)
-            .disabled(!valid)
-            .on_click(
-                "triggers-rename-save",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_rename(cx)),
-            );
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_end()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(cancel)
-            .child(save);
-
-        let card = modal(tr!("triggers_rename_title"), body, palette)
-            .size(ModalSize::Sm)
-            .footer(footer)
-            .kbd_hint(tr!("triggers_rename_kbd_hint"))
-            .on_close(
-                "triggers-rename-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.rename = None;
-                    cx.notify();
-                }),
-            );
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("triggers-rename-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| {
-                    this.rename = None;
-                    cx.notify();
-                });
             })
             .into_any_element()
     }

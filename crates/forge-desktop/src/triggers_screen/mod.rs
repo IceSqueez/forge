@@ -1,4 +1,4 @@
-use forge_components::{ForgePalette, TextInput, ToastKind, search_input, tr};
+use forge_components::{ForgePalette, InlineEdit, TextInput, ToastKind, search_input, tr};
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
@@ -187,7 +187,7 @@ enum UsageFilter {
 
 struct RenameForm {
     id: TriggerInstanceId,
-    field: Entity<TextInput>,
+    editor: Entity<InlineEdit>,
     _sub: Subscription,
 }
 
@@ -351,10 +351,7 @@ impl Render for TriggersRegistryView {
         let delete_modal = self
             .pending_delete
             .map(|id| self.render_delete_confirm(id, &palette, cx));
-        let rename_modal = self
-            .rename
-            .as_ref()
-            .map(|form| self.render_rename_modal(form, &palette, cx));
+        let row_menu = self.render_row_context_menu(&palette, cx);
         let create_overlay = self
             .create
             .as_ref()
@@ -370,7 +367,7 @@ impl Render for TriggersRegistryView {
             .child(body)
             .children(disable_modal)
             .children(delete_modal)
-            .children(rename_modal)
+            .children(row_menu)
             .children(create_overlay)
     }
 }

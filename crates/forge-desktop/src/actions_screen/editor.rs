@@ -7,10 +7,10 @@ use crate::triggers_screen::{
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup,
-    GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuPlacement,
-    ModalSize, OverlayPosition, Radius, Spacing, TextInput, ghost_button_with_icon, icon,
-    menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius, row_card,
-    secondary_button, spacing, status_dot, toggle, tr,
+    GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuItem,
+    MenuPlacement, ModalSize, OverlayPosition, Radius, Spacing, TextInput, context_menu,
+    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, overlay,
+    primary_button, radius, row_card, secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
     FormField, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -409,6 +409,7 @@ fn push_form_field(
     gate: Option<String>,
     config: &SubActionConfig,
     palette: ForgePalette,
+    options_map: &HashMap<String, Vec<(String, String)>>,
     out: &mut Vec<SubFormField>,
     cx: &mut Context<ScreenActionsView>,
 ) {
@@ -433,10 +434,47 @@ fn push_form_field(
         FormField::Integer { key, label, .. } => out.push(build_input_field(
             key, label, "0", true, gate, config, palette, cx,
         )),
-        FormField::Select { key, label, .. } | FormField::DynamicSelect { key, label, .. } => out
-            .push(build_input_field(
-                key, label, "", false, gate, config, palette, cx,
-            )),
+        FormField::Select {
+            key,
+            label,
+            options,
+        } => {
+            let selected = config
+                .get(*key)
+                .map(nav::variant_to_display_str)
+                .unwrap_or_default();
+            let options = options
+                .iter()
+                .map(|opt| ((*opt).to_owned(), (*opt).to_owned()))
+                .collect();
+            out.push(SubFormField::Select {
+                key: (*key).to_owned(),
+                label: (*label).to_owned(),
+                options_key: None,
+                options,
+                gate,
+                selected,
+            });
+        }
+        FormField::DynamicSelect {
+            key,
+            label,
+            options_key,
+        } => {
+            let selected = config
+                .get(*key)
+                .map(nav::variant_to_display_str)
+                .unwrap_or_default();
+            let options = options_map.get(*options_key).cloned().unwrap_or_default();
+            out.push(SubFormField::Select {
+                key: (*key).to_owned(),
+                label: (*label).to_owned(),
+                options_key: Some((*options_key).to_owned()),
+                options,
+                gate,
+                selected,
+            });
+        }
         FormField::Toggle { key, label } => {
             let value = matches!(config.get(*key), Some(Variant::Bool(true)));
             out.push(SubFormField::Bool {
@@ -459,7 +497,15 @@ fn push_form_field(
                 gate: gate.clone(),
                 value,
             });
-            push_form_field(inner, Some((*key).to_owned()), config, palette, out, cx);
+            push_form_field(
+                inner,
+                Some((*key).to_owned()),
+                config,
+                palette,
+                options_map,
+                out,
+                cx,
+            );
         }
     }
 }
@@ -779,9 +825,10 @@ impl ScreenActionsView {
             .get(kind_id)
             .map(|r| r.config_fields())?;
         let palette = cx.palette();
+        let options_map = self.select_options.clone();
         let mut fields: Vec<SubFormField> = Vec::new();
         for spec in &specs {
-            push_form_field(spec, None, config, palette, &mut fields, cx);
+            push_form_field(spec, None, config, palette, &options_map, &mut fields, cx);
         }
         Some(fields)
     }
@@ -801,7 +848,10 @@ impl ScreenActionsView {
             kind_id,
             target: SubFormTarget::Edit(i),
             fields,
+            select_menu_open: None,
+            select_menu_pos: None,
         });
+        self.fetch_select_options(cx);
         cx.notify();
     }
 
@@ -816,6 +866,241 @@ impl ScreenActionsView {
             }
         }
         cx.notify();
+    }
+
+    fn fetch_select_options(&self, cx: &mut Context<Self>) {
+        let action_repo = Arc::clone(&self.action_repo);
+        let queue_repo = Arc::clone(&self.queue_repo);
+        let ti_repo = Arc::clone(&self.trigger_instance_repo);
+        let script_repo = Arc::clone(&self.script_repo);
+        let soundboard_repo = Arc::clone(&self.soundboard_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
+            if let Ok(actions) = action_repo.list().await {
+                map.insert(
+                    "action.ids".to_owned(),
+                    actions
+                        .into_iter()
+                        .map(|a| (a.id.to_string(), a.name))
+                        .collect(),
+                );
+            }
+            if let Ok(queues) = queue_repo.list().await {
+                map.insert(
+                    "queue.ids".to_owned(),
+                    queues
+                        .into_iter()
+                        .map(|q| (q.id.to_string(), q.name))
+                        .collect(),
+                );
+            }
+            if let Ok(instances) = ti_repo.list_all().await {
+                map.insert(
+                    "trigger_instance.ids".to_owned(),
+                    instances
+                        .into_iter()
+                        .map(|ti| (ti.id.to_string(), ti.name))
+                        .collect(),
+                );
+            }
+            if let Ok(scripts) = script_repo.list().await {
+                map.insert(
+                    "script.names".to_owned(),
+                    scripts
+                        .into_iter()
+                        .map(|s| (s.name.clone(), s.name))
+                        .collect(),
+                );
+            }
+            if let Ok(clips) = soundboard_repo.list().await {
+                map.insert(
+                    "soundboard.clip_ids".to_owned(),
+                    clips
+                        .into_iter()
+                        .map(|c| (c.id.to_string(), c.name))
+                        .collect(),
+                );
+            }
+            let _ = tx.send(map);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(map) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_select_options(map, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn apply_select_options(
+        &mut self,
+        map: HashMap<String, Vec<(String, String)>>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(form) = self.sub_form.as_mut() {
+            for field in &mut form.fields {
+                if let SubFormField::Select {
+                    options_key: Some(ok),
+                    options,
+                    ..
+                } = field
+                    && let Some(opts) = map.get(ok)
+                {
+                    *options = opts.clone();
+                }
+            }
+        }
+        self.select_options = map;
+        cx.notify();
+    }
+
+    fn open_select_menu(&mut self, key: String, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        if let Some(form) = self.sub_form.as_mut() {
+            if form.select_menu_open.as_deref() == Some(key.as_str()) {
+                form.select_menu_open = None;
+            } else {
+                form.select_menu_open = Some(key);
+                form.select_menu_pos = Some(pos);
+            }
+        }
+        cx.notify();
+    }
+
+    fn close_select_menu(&mut self, cx: &mut Context<Self>) {
+        if let Some(form) = self.sub_form.as_mut() {
+            form.select_menu_open = None;
+        }
+        cx.notify();
+    }
+
+    fn pick_select_option(&mut self, key: String, value: String, cx: &mut Context<Self>) {
+        if let Some(form) = self.sub_form.as_mut() {
+            for field in &mut form.fields {
+                if let SubFormField::Select {
+                    key: k, selected, ..
+                } = field
+                    && *k == key
+                {
+                    *selected = value.clone();
+                }
+            }
+            form.select_menu_open = None;
+        }
+        cx.notify();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_select_field(
+        &self,
+        key: &str,
+        label: &str,
+        options: &[(String, String)],
+        selected: &str,
+        is_open: bool,
+        menu_pos: Option<Point<Pixels>>,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let selected_label = options
+            .iter()
+            .find(|(value, _)| value == selected)
+            .map(|(_, label)| label.clone());
+        let (display, display_color): (String, Rgba) = match selected_label {
+            Some(label) => (label, palette.text_primary),
+            None if !selected.is_empty() => (selected.to_owned(), palette.text_primary),
+            None => (tr!("actions_sub_select_placeholder"), palette.text_faint),
+        };
+
+        let key_open = key.to_owned();
+        let border_color = if is_open {
+            palette.brand
+        } else {
+            palette.border_input
+        };
+        let hover_border = palette.brand;
+        let trigger = div()
+            .id(SharedString::from(format!("actions-sub-select-{key}")))
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .py(px(6.0))
+            .px(px(10.0))
+            .rounded(radius(Radius::Sm))
+            .border(BORDER_THIN)
+            .border_color(border_color)
+            .bg(palette.shell)
+            .cursor_pointer()
+            .hover(move |s| s.border_color(hover_border))
+            .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                this.open_select_menu(key_open.clone(), ev.position(), cx)
+            }))
+            .child(
+                div()
+                    .flex_1()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(display_color)
+                    .child(display),
+            )
+            .child(icon(Icon::ChevronDown, FONT_SM, palette.text_faint));
+
+        let menu: Option<AnyElement> = if is_open {
+            menu_pos.map(|pos| {
+                let mut items: Vec<MenuItem> = Vec::new();
+                if options.is_empty() {
+                    items.push(
+                        menu_item(
+                            SharedString::from(format!("actions-sub-select-{key}-empty")),
+                            tr!("actions_sub_select_empty"),
+                            |_, _, _| {},
+                        )
+                        .disabled(true)
+                        .into(),
+                    );
+                } else {
+                    for (i, (value, opt_label)) in options.iter().enumerate() {
+                        let field_key = key.to_owned();
+                        let value = value.clone();
+                        items.push(
+                            menu_item(
+                                SharedString::from(format!("actions-sub-select-{key}-opt-{i}")),
+                                opt_label.clone(),
+                                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                    this.pick_select_option(field_key.clone(), value.clone(), cx)
+                                }),
+                            )
+                            .into(),
+                        );
+                    }
+                }
+                let view = cx.entity();
+                context_menu(pos, palette)
+                    .items(items)
+                    .on_dismiss(move |_window, cx| {
+                        view.update(cx, |this, cx| this.close_select_menu(cx));
+                    })
+                    .into_any_element()
+            })
+        } else {
+            None
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(label.to_owned()),
+            )
+            .child(trigger)
+            .children(menu)
+            .into_any_element()
     }
 
     fn cancel_sub_action(&mut self, cx: &mut Context<Self>) {
@@ -870,6 +1155,17 @@ impl ScreenActionsView {
                     } else {
                         overrides.push((key.clone(), Variant::String(text)));
                     }
+                }
+                SubFormField::Select {
+                    key,
+                    gate,
+                    selected,
+                    ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    overrides.push((key.clone(), Variant::String(selected.clone())));
                 }
                 SubFormField::Hint { .. } => {}
             }
@@ -1005,7 +1301,10 @@ impl ScreenActionsView {
             kind_id,
             target: SubFormTarget::Add,
             fields,
+            select_menu_open: None,
+            select_menu_pos: None,
         });
+        self.fetch_select_options(cx);
         cx.notify();
     }
 
@@ -2695,6 +2994,29 @@ impl ScreenActionsView {
                                 }),
                             )),
                     );
+                }
+                SubFormField::Select {
+                    key,
+                    label,
+                    options,
+                    gate,
+                    selected,
+                    ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    rendered_any = true;
+                    fields_col = fields_col.child(self.render_select_field(
+                        key,
+                        label,
+                        options,
+                        selected,
+                        form.select_menu_open.as_deref() == Some(key.as_str()),
+                        form.select_menu_pos,
+                        palette,
+                        cx,
+                    ));
                 }
                 SubFormField::Hint { label } => {
                     rendered_any = true;

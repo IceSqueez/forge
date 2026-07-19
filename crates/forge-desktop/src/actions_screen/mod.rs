@@ -9,7 +9,9 @@ use forge_components::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
-use forge_storage::{ActionRepo, ActionTelemetry, QueueRepo, TriggerInstanceRepo};
+use forge_storage::{
+    ActionRepo, ActionTelemetry, QueueRepo, ScriptRepo, SoundboardClipsRepo, TriggerInstanceRepo,
+};
 use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
@@ -145,10 +147,13 @@ pub struct ScreenActionsView {
     queue_repo: Arc<dyn QueueRepo>,
     actions_service: Arc<ActionsService>,
     trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
+    script_repo: Arc<dyn ScriptRepo>,
+    soundboard_repo: Arc<dyn SoundboardClipsRepo>,
     sub_action_registry: Arc<SubActionRegistry>,
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     bus: Arc<EventBus>,
+    select_options: HashMap<String, Vec<(String, String)>>,
     tree_width: Pixels,
     loading: bool,
     groups: Vec<ActionGroup>,
@@ -183,6 +188,8 @@ impl ScreenActionsView {
         queue_repo: Arc<dyn QueueRepo>,
         actions_service: Arc<ActionsService>,
         trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
+        script_repo: Arc<dyn ScriptRepo>,
+        soundboard_repo: Arc<dyn SoundboardClipsRepo>,
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
@@ -200,10 +207,13 @@ impl ScreenActionsView {
             queue_repo,
             actions_service,
             trigger_instance_repo,
+            script_repo,
+            soundboard_repo,
             sub_action_registry,
             trigger_registry,
             rt_handle,
             bus,
+            select_options: HashMap::new(),
             tree_width: LEFT_PANEL_W,
             loading: true,
             groups: Vec::new(),
@@ -550,6 +560,8 @@ struct EditSubActionForm {
     kind_id: String,
     target: SubFormTarget,
     fields: Vec<SubFormField>,
+    select_menu_open: Option<String>,
+    select_menu_pos: Option<Point<Pixels>>,
 }
 
 enum SubFormField {
@@ -565,6 +577,14 @@ enum SubFormField {
         label: String,
         gate: Option<String>,
         value: bool,
+    },
+    Select {
+        key: String,
+        label: String,
+        options_key: Option<String>,
+        options: Vec<(String, String)>,
+        gate: Option<String>,
+        selected: String,
     },
     Hint {
         label: String,

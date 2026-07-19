@@ -4,7 +4,7 @@ use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_events::EventPublisher;
 use forge_platform_core::BuiltinId;
 use forge_runtime::dashboard::compute_stats;
-use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo};
+use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo};
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, FocusHandle, Window, deferred,
     div, prelude::*,
@@ -306,6 +306,8 @@ impl AppShell {
                     handles.backend.soundboard_clips_repo(),
                 ));
                 let trigger_instance_repo = handles.backend.trigger_instance_repo();
+                let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
+                let soundboard_repo = handles.backend.soundboard_clips_repo();
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
@@ -316,6 +318,8 @@ impl AppShell {
                         queue_repo,
                         actions_service,
                         trigger_instance_repo,
+                        script_repo,
+                        soundboard_repo,
                         sub_action_registry,
                         trigger_registry,
                         rt_handle,

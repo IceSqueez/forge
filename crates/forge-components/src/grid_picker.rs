@@ -2,10 +2,11 @@ use std::collections::HashSet;
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, MouseButton,
-    MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
+    MouseDownEvent, Pixels, Rgba, SharedString, Subscription, UniformListScrollHandle, Window, div,
+    prelude::*, px, uniform_list,
 };
 
-use crate::icons::{Icon, icon, icon_inherit};
+use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
@@ -38,8 +39,6 @@ const RAIL_LEAD_SLOT: Pixels = px(14.0);
 const RAIL_DOT: Pixels = px(6.0);
 const RAIL_STAR: Pixels = px(12.0);
 const GRID_BODY_PAD_V: Pixels = px(13.0);
-const GRID_GROUP_GAP: Pixels = px(14.0);
-const GRID_GROUP_HEADER_MB: Pixels = px(8.0);
 const GRID_GROUP_FS: Pixels = px(9.5);
 const GRID_GROUP_DOT: Pixels = px(5.0);
 const GRID_CARD_GAP: Pixels = px(8.0);
@@ -55,7 +54,11 @@ const GRID_FOOTER_PAD_V: Pixels = px(8.0);
 const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
 const GRID_BADGE_FS: Pixels = px(9.0);
-const GRID_CARD_GROUP: &str = "forge-grid-card";
+
+/// Fixed height of a single card box. All list rows are laid out at [`GRID_ROW_H`]
+/// (card height plus the inter-row gap) so `uniform_list` can virtualize them.
+const GRID_CARD_H: Pixels = px(72.0);
+const GRID_ROW_H: Pixels = px(80.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GridPickerItemState {
@@ -116,6 +119,29 @@ enum RailSel {
     Group(SharedString),
 }
 
+/// Flattened per-card payload; owned so it can move into the (`'static`) `uniform_list`
+/// render closure without borrowing the picker.
+#[derive(Clone)]
+struct CardData {
+    id: SharedString,
+    icon: Icon,
+    icon_color: Rgba,
+    name: SharedString,
+    desc: SharedString,
+    state: GridPickerItemState,
+    favorite: bool,
+}
+
+/// One virtualized list row: either a group header or a pair of side-by-side cards.
+enum PickerRow {
+    Header {
+        label: SharedString,
+        dot: Rgba,
+        count: usize,
+    },
+    Cards([Option<CardData>; 2]),
+}
+
 pub struct GridPicker {
     search: Entity<TextInput>,
     query: String,
@@ -124,6 +150,7 @@ pub struct GridPicker {
     groups: Vec<GridPickerGroup>,
     config: GridPickerConfig,
     palette: ForgePalette,
+    scroll: UniformListScrollHandle,
     _search_sub: Subscription,
 }
 
@@ -155,6 +182,7 @@ impl GridPicker {
             groups,
             config,
             palette,
+            scroll: UniformListScrollHandle::new(),
             _search_sub: search_sub,
         }
     }
@@ -407,11 +435,24 @@ impl GridPicker {
         let p = self.palette;
         let query = self.query.trim().to_owned();
         let searching = !query.is_empty();
-        let mut col = div().flex().flex_col().w_full();
+
+        let rows = self.flatten_rows(&visible);
+        let row_count = rows.len();
+
+        let mut col = div()
+            .id("forge-grid-body")
+            .flex_1()
+            .min_w(px(0.0))
+            .min_h(px(0.0))
+            .flex()
+            .flex_col()
+            .py(GRID_BODY_PAD_V)
+            .px(GRID_BAND_PAD_H);
 
         if searching {
             col = col.child(
                 div()
+                    .flex_none()
                     .pb(spacing(Spacing::Sm, Density::Cozy))
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(GRID_META_FS)
@@ -423,7 +464,7 @@ impl GridPicker {
             );
         }
 
-        if visible.is_empty() {
+        if row_count == 0 {
             let favorites_empty = matches!(self.rail, RailSel::Favorites) && !searching;
             let (glyph, message): (Icon, SharedString) = if favorites_empty {
                 (Icon::Star, self.config.favorites_empty.clone())
@@ -433,219 +474,77 @@ impl GridPicker {
                     SharedString::from(format!("Nothing matches \u{201c}{query}\u{201d}")),
                 )
             };
-            col = col.child(
-                div()
-                    .w_full()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap(spacing(Spacing::Sm, Density::Cozy))
-                    .py(GRID_EMPTY_PAD_V)
-                    .child(icon(glyph, GRID_EMPTY_GLYPH, p.text_faint))
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_XS)
-                            .text_color(p.text_muted)
-                            .child(message),
-                    ),
-            );
+            return col
+                .child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(spacing(Spacing::Sm, Density::Cozy))
+                        .py(GRID_EMPTY_PAD_V)
+                        .child(icon(glyph, GRID_EMPTY_GLYPH, p.text_faint))
+                        .child(
+                            div()
+                                .font_family(DEFAULT_BODY_FAMILY)
+                                .text_size(FONT_XS)
+                                .text_color(p.text_muted)
+                                .child(message),
+                        ),
+                )
+                .into_any_element();
         }
 
-        for (group, items) in &visible {
-            col = col.child(self.render_group(&group.label, group.dot_color, items, accent, cx));
-        }
+        let list = uniform_list(
+            "forge-grid-cards",
+            row_count,
+            cx.processor(move |_this, range: std::ops::Range<usize>, _window, cx| {
+                range
+                    .map(|ix| match &rows[ix] {
+                        PickerRow::Header { label, dot, count } => {
+                            render_header_row(label, *dot, *count, &p)
+                        }
+                        PickerRow::Cards(cards) => render_card_row(cards, accent, &p, cx),
+                    })
+                    .collect::<Vec<AnyElement>>()
+            }),
+        )
+        .flex_1()
+        .min_h(px(0.0))
+        .track_scroll(&self.scroll);
 
-        div()
-            .id("forge-grid-body")
-            .flex_1()
-            .min_w(px(0.0))
-            .min_h(px(0.0))
-            .overflow_y_scroll()
-            .py(GRID_BODY_PAD_V)
-            .px(GRID_BAND_PAD_H)
-            .child(col)
-            .into_any_element()
+        col.child(list).into_any_element()
     }
 
-    fn render_group(
-        &self,
-        label: &str,
-        dot_color: Rgba,
-        items: &[&GridPickerItem],
-        accent: Rgba,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let p = self.palette;
-        let header = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .pb(GRID_GROUP_HEADER_MB)
-            .child(
-                div()
-                    .flex_none()
-                    .size(GRID_GROUP_DOT)
-                    .rounded(radius(Radius::Pill))
-                    .bg(dot_color),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(GRID_GROUP_FS)
-                    .text_color(p.text_muted)
-                    .child(label.to_uppercase()),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(GRID_GROUP_FS)
-                    .text_color(p.text_faint)
-                    .child(items.len().to_string()),
-            );
-
-        let mut rows = div().flex().flex_col().w_full().gap(GRID_CARD_GAP);
-        for chunk in items.chunks(2) {
-            let mut pair = div().flex().w_full().gap(GRID_CARD_GAP);
-            for item in chunk {
-                pair = pair.child(self.render_card(item, accent, cx));
+    /// Flatten the visible (group x items) structure into fixed-height list rows: a header row
+    /// per group followed by one row per pair of cards.
+    fn flatten_rows(&self, visible: &[(&GridPickerGroup, Vec<&GridPickerItem>)]) -> Vec<PickerRow> {
+        let mut rows = Vec::new();
+        for (group, items) in visible {
+            rows.push(PickerRow::Header {
+                label: group.label.clone(),
+                dot: group.dot_color,
+                count: items.len(),
+            });
+            for chunk in items.chunks(2) {
+                let left = self.card_data(chunk[0]);
+                let right = chunk.get(1).map(|it| self.card_data(it));
+                rows.push(PickerRow::Cards([Some(left), right]));
             }
-            if chunk.len() == 1 {
-                pair = pair.child(div().flex_1());
-            }
-            rows = rows.child(pair);
         }
-
-        div()
-            .w_full()
-            .pb(GRID_GROUP_GAP)
-            .child(header)
-            .child(rows)
-            .into_any_element()
+        rows
     }
 
-    fn render_card(
-        &self,
-        item: &GridPickerItem,
-        accent: Rgba,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let p = self.palette;
-        let id = item.id.clone();
-        let dim = !matches!(item.state, GridPickerItemState::Normal);
-
-        let tile = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(GRID_CARD_TILE)
-            .rounded(GRID_CARD_TILE_RADIUS)
-            .bg(p.surface_overlay)
-            .child(icon(item.icon, GRID_CARD_ICON, item.icon_color));
-
-        let name = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .truncate()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .font_weight(FontWeight::MEDIUM)
-            .text_size(GRID_CARD_NAME_FS)
-            .text_color(p.text_primary)
-            .child(item.name.clone());
-
-        let fav = self.favorites.contains(&id);
-        let star_glyph = if fav { Icon::StarFilled } else { Icon::Star };
-        let star_tint = if fav { accent } else { p.text_faint };
-        let star_hover_tint = if fav { accent } else { p.text_muted };
-        let toggle_id = id.clone();
-        let star = div()
-            .id(SharedString::from(format!("forge-grid-star-{id}")))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .p(px(2.0))
-            .cursor_pointer()
-            .text_color(star_tint)
-            .hover(move |s| s.text_color(star_hover_tint))
-            .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
-                cx.stop_propagation()
-            })
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.toggle_favorite(toggle_id.clone(), cx)
-            }))
-            .child(icon_inherit(star_glyph, GRID_CARD_ICON));
-
-        let trailing: AnyElement = match item.state {
-            GridPickerItemState::Added => {
-                badge(p.surface_overlay, p.success, "added", true, GRID_BADGE_FS).into_any_element()
-            }
-            GridPickerItemState::Disabled => {
-                badge(p.surface_overlay, p.text_faint, "off", true, GRID_BADGE_FS)
-                    .into_any_element()
-            }
-            GridPickerItemState::Normal => div()
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(p.text_faint)
-                .group_hover(GRID_CARD_GROUP, move |s| s.text_color(accent))
-                .child(icon_inherit(Icon::Plus, GRID_CARD_ICON))
-                .into_any_element(),
-        };
-
-        let top = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .pb(GRID_CARD_ROW_MB)
-            .child(tile)
-            .child(name)
-            .child(star)
-            .child(trailing);
-
-        let desc = div()
-            .truncate()
-            .w_full()
-            .min_w(px(0.0))
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(GRID_META_FS)
-            .text_color(p.text_muted)
-            .child(item.desc.clone());
-
-        let card = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .py(GRID_CARD_PAD_V)
-            .px(GRID_CARD_PAD_H)
-            .rounded(radius(Radius::Md))
-            .border(BORDER_ACCENT)
-            .border_color(p.border_regular)
-            .bg(p.shell)
-            .child(top)
-            .child(desc);
-
-        if dim {
-            return card.opacity(0.5).into_any_element();
+    fn card_data(&self, item: &GridPickerItem) -> CardData {
+        CardData {
+            id: item.id.clone(),
+            icon: item.icon,
+            icon_color: item.icon_color,
+            name: item.name.clone(),
+            desc: item.desc.clone(),
+            state: item.state,
+            favorite: self.favorites.contains(&item.id),
         }
-
-        let pick_id = id.clone();
-        card.id(id)
-            .group(GRID_CARD_GROUP)
-            .cursor_pointer()
-            .hover(|s| s.border_color(p.border_input))
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.emit_picked(pick_id.clone(), cx)
-                }),
-            )
-            .into_any_element()
     }
 
     fn render_footer(&self) -> AnyElement {
@@ -728,6 +627,187 @@ impl Render for GridPicker {
             .child(body)
             .child(self.render_footer())
     }
+}
+
+fn render_header_row(
+    label: &SharedString,
+    dot: Rgba,
+    count: usize,
+    p: &ForgePalette,
+) -> AnyElement {
+    let inner = div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .child(
+            div()
+                .flex_none()
+                .size(GRID_GROUP_DOT)
+                .rounded(radius(Radius::Pill))
+                .bg(dot),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(GRID_GROUP_FS)
+                .text_color(p.text_muted)
+                .child(label.to_uppercase()),
+        )
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(GRID_GROUP_FS)
+                .text_color(p.text_faint)
+                .child(count.to_string()),
+        );
+
+    div()
+        .h(GRID_ROW_H)
+        .w_full()
+        .flex()
+        .items_center()
+        .child(inner)
+        .into_any_element()
+}
+
+fn render_card_row(
+    cards: &[Option<CardData>; 2],
+    accent: Rgba,
+    p: &ForgePalette,
+    cx: &mut Context<GridPicker>,
+) -> AnyElement {
+    let mut row = div()
+        .h(GRID_ROW_H)
+        .w_full()
+        .flex()
+        .items_start()
+        .gap(GRID_CARD_GAP);
+    if let Some(card) = &cards[0] {
+        row = row.child(render_card_el(card, accent, p, cx));
+    }
+    match &cards[1] {
+        Some(card) => row = row.child(render_card_el(card, accent, p, cx)),
+        None => row = row.child(div().flex_1()),
+    }
+    row.into_any_element()
+}
+
+fn render_card_el(
+    card: &CardData,
+    accent: Rgba,
+    p: &ForgePalette,
+    cx: &mut Context<GridPicker>,
+) -> AnyElement {
+    let dim = !matches!(card.state, GridPickerItemState::Normal);
+
+    let tile = div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(GRID_CARD_TILE)
+        .rounded(GRID_CARD_TILE_RADIUS)
+        .bg(p.surface_overlay)
+        .child(icon(card.icon, GRID_CARD_ICON, card.icon_color));
+
+    let name = div()
+        .flex_1()
+        .min_w(px(0.0))
+        .truncate()
+        .font_family(DEFAULT_BODY_FAMILY)
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(GRID_CARD_NAME_FS)
+        .text_color(p.text_primary)
+        .child(card.name.clone());
+
+    let star_glyph = if card.favorite {
+        Icon::StarFilled
+    } else {
+        Icon::Star
+    };
+    let star_tint = if card.favorite { accent } else { p.text_faint };
+    let star = div()
+        .id(SharedString::from(format!("forge-grid-star-{}", card.id)))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .p(px(2.0))
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
+            cx.stop_propagation()
+        })
+        .on_click(cx.listener({
+            let id = card.id.clone();
+            move |this, _: &ClickEvent, _, cx| this.toggle_favorite(id.clone(), cx)
+        }))
+        .child(icon(star_glyph, GRID_CARD_ICON, star_tint));
+
+    let trailing: AnyElement = match card.state {
+        GridPickerItemState::Added => {
+            badge(p.surface_overlay, p.success, "added", true, GRID_BADGE_FS).into_any_element()
+        }
+        GridPickerItemState::Disabled => {
+            badge(p.surface_overlay, p.text_faint, "off", true, GRID_BADGE_FS).into_any_element()
+        }
+        GridPickerItemState::Normal => div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(icon(Icon::Plus, GRID_CARD_ICON, p.text_faint))
+            .into_any_element(),
+    };
+
+    let top = div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .pb(GRID_CARD_ROW_MB)
+        .child(tile)
+        .child(name)
+        .child(star)
+        .child(trailing);
+
+    let desc = div()
+        .truncate()
+        .w_full()
+        .min_w(px(0.0))
+        .font_family(DEFAULT_BODY_FAMILY)
+        .text_size(GRID_META_FS)
+        .text_color(p.text_muted)
+        .child(card.desc.clone());
+
+    let base = div()
+        .flex_1()
+        .min_w(px(0.0))
+        .h(GRID_CARD_H)
+        .flex()
+        .flex_col()
+        .py(GRID_CARD_PAD_V)
+        .px(GRID_CARD_PAD_H)
+        .rounded(radius(Radius::Md))
+        .border(BORDER_ACCENT)
+        .border_color(p.border_regular)
+        .bg(p.shell)
+        .child(top)
+        .child(desc);
+
+    if dim {
+        return base.opacity(0.5).into_any_element();
+    }
+
+    let border_input = p.border_input;
+    base.id(card.id.clone())
+        .cursor_pointer()
+        .hover(move |s| s.border_color(border_input))
+        .on_click(cx.listener({
+            let id = card.id.clone();
+            move |this, _: &ClickEvent, _, cx| this.emit_picked(id.clone(), cx)
+        }))
+        .into_any_element()
 }
 
 fn scope_label(group_label: &str) -> String {

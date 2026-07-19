@@ -6,10 +6,10 @@ use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, ChatHistoryRepo,
     CredentialId, CredentialsRepo, DataProvider, EXPECTED_SCHEMA_VERSION, EventLogRepo,
-    GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, ImportMode, QueueRepo, ScriptRecord,
-    ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, TtsTriggerSettingsRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo,
+    ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, ImportMode, QueueRepo,
+    ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, TtsTriggerSettingsRepo, UserGlobalEntry, UserGlobalsRepo,
+    ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -355,6 +355,26 @@ impl ScriptRepo for SqliteBackend {
 
     async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
         self.script.list_enabled().await
+    }
+
+    async fn record_execution(
+        &self,
+        script_id: ScriptId,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
+    ) -> Result<(), StorageError> {
+        self.script
+            .record_execution(script_id, started_at, duration_ms, status)
+            .await
+    }
+
+    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
+        self.script.telemetry(id).await
+    }
+
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        self.script.prune_executions_before(cutoff).await
     }
 }
 

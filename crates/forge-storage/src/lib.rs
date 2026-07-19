@@ -29,7 +29,7 @@ pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
 pub use provider::{BundleRepo, DataProvider, EXPECTED_SCHEMA_VERSION};
 pub use queue::QueueRepo;
-pub use script::{ScriptRecord, ScriptRepo};
+pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{
     Language, SettingsRepo, UnknownLanguage, chat_history_display_limit, chat_history_store_limit,
     reserved_keys, set_chat_history_display_limit, set_chat_history_store_limit,

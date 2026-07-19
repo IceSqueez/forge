@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_storage::{ScriptRecord, ScriptRepo, StorageError};
+use forge_storage::{ExecutionStatus, ScriptRecord, ScriptRepo, ScriptTelemetry, StorageError};
 use forge_types::{ScriptContract, ScriptId};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -167,5 +167,77 @@ impl ScriptRepo for SqliteScriptRepo {
         rows.into_iter()
             .map(|r| decode_row(r).map_err(StorageError::from))
             .collect()
+    }
+
+    async fn record_execution(
+        &self,
+        script_id: ScriptId,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
+    ) -> Result<(), StorageError> {
+        let id_str = script_id.to_string();
+        let started_at_secs = started_at.unix_timestamp();
+        let duration_i64 = duration_ms as i64;
+        let status_str = match status {
+            ExecutionStatus::Success => "ok",
+            ExecutionStatus::Error => "err",
+        };
+        sqlx::query(
+            "INSERT INTO script_executions (script_id, started_at, duration_ms, status)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(id_str)
+        .bind(started_at_secs)
+        .bind(duration_i64)
+        .bind(status_str)
+        .execute(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
+        let id_str = id.to_string();
+        let now = OffsetDateTime::now_utc();
+        let start_of_today = now.replace_time(time::Time::MIDNIGHT).unix_timestamp();
+
+        type TelemetryRow = (Option<i64>, i64, Option<f64>);
+
+        let (last_run_raw, runs_today_raw, avg_dur_raw): TelemetryRow = sqlx::query_as(
+            "WITH \
+               lr AS (SELECT MAX(started_at) AS v \
+                      FROM script_executions WHERE script_id = ?), \
+               rt AS (SELECT COUNT(*) AS v \
+                      FROM script_executions \
+                      WHERE script_id = ? AND started_at >= ?), \
+               ad AS (SELECT AVG(duration_ms) AS v \
+                      FROM (SELECT duration_ms FROM script_executions \
+                            WHERE script_id = ? ORDER BY started_at DESC LIMIT 100)) \
+             SELECT lr.v, rt.v, ad.v FROM lr, rt, ad",
+        )
+        .bind(&id_str)
+        .bind(&id_str)
+        .bind(start_of_today)
+        .bind(&id_str)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(ScriptTelemetry {
+            last_run: last_run_raw.and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok()),
+            runs_today: runs_today_raw.max(0) as u64,
+            avg_duration_ms: avg_dur_raw.map(|v| v.round() as u64),
+        })
+    }
+
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        let cutoff_secs = cutoff.unix_timestamp();
+        let result = sqlx::query("DELETE FROM script_executions WHERE started_at < ?")
+            .bind(cutoff_secs)
+            .execute(&self.pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        Ok(result.rows_affected())
     }
 }

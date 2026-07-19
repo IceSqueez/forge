@@ -23,10 +23,10 @@ use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, ChatHistoryRepo,
-    CredentialId, CredentialsRepo, DataProvider, EventLogRepo, GlobalEntry, GlobalsRepo,
-    HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, TtsTriggerSettingsRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    CredentialId, CredentialsRepo, DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry,
+    GlobalsRepo, HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
+    TtsTriggerSettingsRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -257,6 +257,26 @@ impl ScriptRepo for TestDataProvider {
 
     async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
         self.script_repo.list_enabled().await
+    }
+
+    async fn record_execution(
+        &self,
+        script_id: ScriptId,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
+    ) -> Result<(), StorageError> {
+        self.script_repo
+            .record_execution(script_id, started_at, duration_ms, status)
+            .await
+    }
+
+    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
+        self.script_repo.telemetry(id).await
+    }
+
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        self.script_repo.prune_executions_before(cutoff).await
     }
 }
 

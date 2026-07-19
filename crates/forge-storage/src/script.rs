@@ -3,7 +3,14 @@ use forge_types::{ScriptContract, ScriptId};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::StorageError;
+use crate::{ExecutionStatus, StorageError};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScriptTelemetry {
+    pub last_run: Option<OffsetDateTime>,
+    pub runs_today: u64,
+    pub avg_duration_ms: Option<u64>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScriptRecord {
@@ -29,6 +36,16 @@ pub trait ScriptRepo: Send + Sync {
     async fn delete(&self, id: ScriptId) -> Result<bool, StorageError>;
     async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError>;
     async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError>;
+    async fn record_execution(
+        &self,
+        script_id: ScriptId,
+        started_at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
+    ) -> Result<(), StorageError>;
+    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError>;
+    /// Removes execution telemetry rows started before `cutoff`; returns rows removed.
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 
 #[cfg(test)]

@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct ExpressionStateChangedDescriptor;
 
@@ -76,6 +78,25 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
             stack = stack.set("vtube.expression.active".to_owned(), Variant::Bool(active));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "vtube.expression.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Expression name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "vtube.expression.active".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Expression active".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

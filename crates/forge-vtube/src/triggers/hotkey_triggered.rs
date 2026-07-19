@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct HotkeyTriggeredDescriptor;
 
@@ -72,6 +74,25 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
             stack = stack.set("vtube.hotkey.id".to_owned(), Variant::String(id.to_owned()));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "vtube.hotkey.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Hotkey name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "vtube.hotkey.id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Hotkey ID".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

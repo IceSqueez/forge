@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct ModelConfigChangedDescriptor;
 
@@ -69,6 +71,17 @@ impl TriggerKindDescriptor for ModelConfigChangedDescriptor {
             );
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![DeclaredVariable {
+                name: "vtube.model.name".to_owned(),
+                kind: VariantKind::String,
+                label: "Model name".to_owned(),
+                synthesis: None,
+            }],
+        })
     }
 }
 

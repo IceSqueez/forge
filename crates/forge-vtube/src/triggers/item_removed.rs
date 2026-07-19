@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct ItemRemovedDescriptor;
 
@@ -79,6 +81,25 @@ impl TriggerKindDescriptor for ItemRemovedDescriptor {
             );
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "vtube.item.instance_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Item instance ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "vtube.item.file_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Item file name".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct FaceLostDescriptor;
 
@@ -83,6 +85,25 @@ impl TriggerKindDescriptor for FaceLostDescriptor {
             );
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "vtube.tracking.left_hand_found".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Left hand tracked".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "vtube.tracking.right_hand_found".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Right hand tracked".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

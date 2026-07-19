@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct ProfileListChangedDescriptor;
 
@@ -71,6 +73,17 @@ impl TriggerKindDescriptor for ProfileListChangedDescriptor {
             stack = stack.set("obs.profile.all_names".to_owned(), Variant::Array(profiles));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![DeclaredVariable {
+                name: "obs.profile.all_names".to_owned(),
+                kind: VariantKind::Array,
+                label: "All profile names".to_owned(),
+                synthesis: None,
+            }],
+        })
     }
 }
 

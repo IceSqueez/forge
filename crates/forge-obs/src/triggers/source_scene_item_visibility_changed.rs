@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct SourceSceneItemVisibilityChangedDescriptor;
 
@@ -78,6 +80,31 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
             stack = stack.set("obs.source.is_enabled".to_owned(), Variant::Bool(visible));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "obs.scene.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Scene name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "obs.source.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Source name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "obs.source.is_enabled".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Source visible".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

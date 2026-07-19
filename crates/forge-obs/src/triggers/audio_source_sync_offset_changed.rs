@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 use super::audio_source_mute_changed::source_name_matches;
 
@@ -88,6 +90,28 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
             stack = stack.set("obs.source.sync_offset_ms".to_owned(), Variant::Int(ms));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "obs.source.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Source name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "obs.source.sync_offset_ms".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Sync offset (ms)".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt {
+                        min: -950,
+                        max: 20000,
+                    }),
+                },
+            ],
+        })
     }
 }
 

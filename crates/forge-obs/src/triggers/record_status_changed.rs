@@ -4,9 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
-use super::record_starting::build_record_arg_stack;
+use super::record_starting::{build_record_arg_stack, record_variables};
 
 pub struct RecordStatusChangedDescriptor;
 
@@ -72,5 +72,11 @@ impl TriggerKindDescriptor for RecordStatusChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_record_arg_stack(event)
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: record_variables(),
+        })
     }
 }

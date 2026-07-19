@@ -4,9 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
-use super::studio_enabled::build_studio_arg_stack;
+use super::studio_enabled::{build_studio_arg_stack, studio_variables};
 
 pub struct StudioDisabledDescriptor;
 
@@ -64,5 +64,11 @@ impl TriggerKindDescriptor for StudioDisabledDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_studio_arg_stack(event)
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: studio_variables(),
+        })
     }
 }

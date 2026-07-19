@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct FilterRemovedDescriptor;
 
@@ -63,6 +65,29 @@ impl TriggerKindDescriptor for FilterRemovedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_filter_source_arg_stack(event)
     }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: filter_source_variables(),
+        })
+    }
+}
+
+pub(crate) fn filter_source_variables() -> Vec<DeclaredVariable> {
+    vec![
+        DeclaredVariable {
+            name: "obs.source.name".to_owned(),
+            kind: VariantKind::String,
+            label: "Source name".to_owned(),
+            synthesis: None,
+        },
+        DeclaredVariable {
+            name: "obs.filter.name".to_owned(),
+            kind: VariantKind::String,
+            label: "Filter name".to_owned(),
+            synthesis: None,
+        },
+    ]
 }
 
 pub(crate) fn build_filter_source_arg_stack(event: &Event) -> ArgStack {

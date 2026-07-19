@@ -4,9 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
-use super::transition_started::build_transition_arg_stack;
+use super::transition_started::{build_transition_arg_stack, transition_variables};
 
 pub struct TransitionVideoEndedDescriptor;
 
@@ -64,5 +64,11 @@ impl TriggerKindDescriptor for TransitionVideoEndedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_transition_arg_stack(event)
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: transition_variables(),
+        })
     }
 }

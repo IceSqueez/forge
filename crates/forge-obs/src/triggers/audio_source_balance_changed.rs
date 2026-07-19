@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 use super::audio_source_mute_changed::source_name_matches;
 
@@ -88,6 +90,25 @@ impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
             stack = stack.set("obs.source.balance".to_owned(), Variant::Float(balance));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "obs.source.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Source name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "obs.source.balance".to_owned(),
+                    kind: VariantKind::Float,
+                    label: "Source balance".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

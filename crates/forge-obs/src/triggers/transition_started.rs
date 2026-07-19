@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct TransitionStartedDescriptor;
 
@@ -63,6 +65,21 @@ impl TriggerKindDescriptor for TransitionStartedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_transition_arg_stack(event)
     }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: transition_variables(),
+        })
+    }
+}
+
+pub(crate) fn transition_variables() -> Vec<DeclaredVariable> {
+    vec![DeclaredVariable {
+        name: "obs.transition.name".to_owned(),
+        kind: VariantKind::String,
+        label: "Transition name".to_owned(),
+        synthesis: None,
+    }]
 }
 
 pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {

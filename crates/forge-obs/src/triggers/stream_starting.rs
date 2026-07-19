@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct StreamStartingDescriptor;
 
@@ -63,6 +65,29 @@ impl TriggerKindDescriptor for StreamStartingDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_stream_arg_stack(event)
     }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: stream_variables(),
+        })
+    }
+}
+
+pub(crate) fn stream_variables() -> Vec<DeclaredVariable> {
+    vec![
+        DeclaredVariable {
+            name: "obs.stream.output_state".to_owned(),
+            kind: VariantKind::String,
+            label: "Streaming output state".to_owned(),
+            synthesis: None,
+        },
+        DeclaredVariable {
+            name: "obs.stream.is_active".to_owned(),
+            kind: VariantKind::Bool,
+            label: "Streaming active".to_owned(),
+            synthesis: None,
+        },
+    ]
 }
 
 pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {

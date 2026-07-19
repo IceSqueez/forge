@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct SceneCollectionChangingDescriptor;
 
@@ -69,6 +71,17 @@ impl TriggerKindDescriptor for SceneCollectionChangingDescriptor {
             );
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![DeclaredVariable {
+                name: "obs.collection".to_owned(),
+                kind: VariantKind::String,
+                label: "Scene collection name".to_owned(),
+                synthesis: None,
+            }],
+        })
     }
 }
 

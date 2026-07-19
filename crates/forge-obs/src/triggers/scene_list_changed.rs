@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct SceneListChangedDescriptor;
 
@@ -71,6 +73,17 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
             stack = stack.set("obs.scene_names".to_owned(), Variant::Array(scenes));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![DeclaredVariable {
+                name: "obs.scene_names".to_owned(),
+                kind: VariantKind::Array,
+                label: "All scene names".to_owned(),
+                synthesis: None,
+            }],
+        })
     }
 }
 

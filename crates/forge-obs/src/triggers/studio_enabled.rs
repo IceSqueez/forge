@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct StudioEnabledDescriptor;
 
@@ -63,6 +65,21 @@ impl TriggerKindDescriptor for StudioEnabledDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_studio_arg_stack(event)
     }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: studio_variables(),
+        })
+    }
+}
+
+pub(crate) fn studio_variables() -> Vec<DeclaredVariable> {
+    vec![DeclaredVariable {
+        name: "obs.studio.enabled".to_owned(),
+        kind: VariantKind::Bool,
+        label: "Studio mode enabled".to_owned(),
+        synthesis: None,
+    }]
 }
 
 pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {

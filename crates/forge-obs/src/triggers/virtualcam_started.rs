@@ -4,9 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
-use super::virtualcam_status_changed::build_virtualcam_arg_stack;
+use super::virtualcam_status_changed::{build_virtualcam_arg_stack, virtualcam_variables};
 
 pub struct VirtualcamStartedDescriptor;
 
@@ -64,6 +64,12 @@ impl TriggerKindDescriptor for VirtualcamStartedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_virtualcam_arg_stack(event)
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: virtualcam_variables(),
+        })
     }
 }
 

@@ -4,9 +4,11 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
-use super::filter_removed::build_filter_source_arg_stack;
+use super::filter_removed::{build_filter_source_arg_stack, filter_source_variables};
 
 pub struct FilterEnabledChangedDescriptor;
 
@@ -68,6 +70,17 @@ impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
             stack = stack.set("obs.filter.is_enabled".to_owned(), Variant::Bool(enabled));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        let mut variables = filter_source_variables();
+        variables.push(DeclaredVariable {
+            name: "obs.filter.is_enabled".to_owned(),
+            kind: VariantKind::Bool,
+            label: "Filter enabled".to_owned(),
+            synthesis: None,
+        });
+        Some(VariableSchema { variables })
     }
 }
 

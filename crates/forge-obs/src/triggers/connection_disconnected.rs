@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 pub struct ConnectionDisconnectedDescriptor;
 
@@ -66,6 +68,17 @@ impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
             stack = stack.set("obs.reason".to_owned(), Variant::String(reason.to_owned()));
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![DeclaredVariable {
+                name: "obs.reason".to_owned(),
+                kind: VariantKind::String,
+                label: "Disconnect reason".to_owned(),
+                synthesis: None,
+            }],
+        })
     }
 }
 

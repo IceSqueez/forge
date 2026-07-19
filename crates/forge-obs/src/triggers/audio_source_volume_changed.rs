@@ -4,7 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig, Variant};
+use forge_types::{
+    ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
+};
 
 use super::audio_source_mute_changed::source_name_matches;
 
@@ -98,6 +100,31 @@ impl TriggerKindDescriptor for AudioSourceVolumeChangedDescriptor {
             );
         }
         stack
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: vec![
+                DeclaredVariable {
+                    name: "obs.source.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Source name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "obs.source.volume_db".to_owned(),
+                    kind: VariantKind::Float,
+                    label: "Volume (dB)".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "obs.source.volume_multiplier".to_owned(),
+                    kind: VariantKind::Float,
+                    label: "Volume multiplier".to_owned(),
+                    synthesis: None,
+                },
+            ],
+        })
     }
 }
 

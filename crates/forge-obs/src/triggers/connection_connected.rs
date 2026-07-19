@@ -4,7 +4,7 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 pub struct ConnectionConnectedDescriptor;
 
@@ -62,6 +62,10 @@ impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
 
     fn build_arg_stack(&self, _event: &Event) -> ArgStack {
         ArgStack::new()
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema { variables: vec![] })
     }
 }
 

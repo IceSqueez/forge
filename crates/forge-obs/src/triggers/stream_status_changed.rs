@@ -4,9 +4,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
-use forge_types::{ArgStack, TriggerConfig};
+use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
-use super::stream_starting::build_stream_arg_stack;
+use super::stream_starting::{build_stream_arg_stack, stream_variables};
 
 pub struct StreamStatusChangedDescriptor;
 
@@ -64,5 +64,11 @@ impl TriggerKindDescriptor for StreamStatusChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         build_stream_arg_stack(event)
+    }
+
+    fn output_schema(&self) -> Option<VariableSchema> {
+        Some(VariableSchema {
+            variables: stream_variables(),
+        })
     }
 }

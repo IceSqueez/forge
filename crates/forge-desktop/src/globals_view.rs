@@ -935,7 +935,7 @@ impl GlobalsView {
 
         let name_cell = self.name_cell(&name, palette, cx);
 
-        let kind_pill = div().child(badge(
+        let kind_pill = div().flex().items_center().child(badge(
             palette.surface_overlay,
             variant_kind_color(kind, palette),
             kind_word(kind),

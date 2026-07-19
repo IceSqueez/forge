@@ -4,8 +4,8 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, SharedString, Style, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window,
-    WrappedLine, actions, div, fill, point, prelude::*, px, relative, size,
+    Pixels, Point, ScrollWheelEvent, SharedString, Style, TextAlign, TextRun, UTF16Selection,
+    UnderlineStyle, Window, WrappedLine, actions, div, fill, point, prelude::*, px, relative, size,
 };
 
 use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, with_alpha};
@@ -148,6 +148,9 @@ pub struct TextArea {
     gutter: bool,
     gutter_marks: Vec<usize>,
     fill: bool,
+    /// When true, prepaint keeps the caret in view (after edits/moves); a wheel
+    /// scroll clears it so the content can be scrolled away from the caret.
+    follow_caret: bool,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
@@ -177,6 +180,7 @@ impl TextArea {
             gutter: false,
             gutter_marks: Vec::new(),
             fill: false,
+            follow_caret: true,
         }
     }
 
@@ -436,6 +440,31 @@ impl TextArea {
         }
     }
 
+    fn on_scroll_wheel(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let line_height = self.font_size * 1.5;
+        let delta = event.delta.pixel_delta(line_height).y;
+        if delta == px(0.0) {
+            return;
+        }
+        let view_h = self.last_bounds.map_or(px(0.0), |b| b.size.height);
+        let total_h = self
+            .last_layout
+            .as_ref()
+            .map_or(px(0.0), |l| l.total_height);
+        let max_scroll = (total_h - view_h).max(px(0.0));
+        let next = (self.scroll_offset - delta).clamp(px(0.0), max_scroll);
+        if next != self.scroll_offset {
+            self.scroll_offset = next;
+            self.follow_caret = false;
+            cx.notify();
+        }
+    }
+
     fn current_line_bounds(&self) -> (usize, usize) {
         let cursor = self.cursor_offset();
         let start = self.content[..cursor]
@@ -483,6 +512,7 @@ impl TextArea {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
+        self.follow_caret = true;
         cx.notify();
     }
 
@@ -524,6 +554,7 @@ impl TextArea {
             self.selection_reversed = !self.selection_reversed;
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
+        self.follow_caret = true;
         cx.notify();
     }
 }
@@ -584,6 +615,7 @@ impl EntityInputHandler for TextArea {
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
+        self.follow_caret = true;
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -619,6 +651,7 @@ impl EntityInputHandler for TextArea {
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
 
+        self.follow_caret = true;
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -1041,7 +1074,9 @@ impl Element for AreaElement {
         } else {
             None
         };
-        if let Some(caret) = caret_point {
+        if input.follow_caret
+            && let Some(caret) = caret_point
+        {
             if caret.y - scroll_offset < px(0.0) {
                 scroll_offset = caret.y;
             }
@@ -1249,6 +1284,7 @@ impl Render for TextArea {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .w_full()
             .overflow_hidden()
             .font_family(self.font_family)

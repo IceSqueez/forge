@@ -8,7 +8,7 @@ use forge_script::{
     Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
     load_script_engine_config, load_script_http_config,
 };
-use forge_storage::{GlobalsRepo, SettingsRepo};
+use forge_storage::{ExecutionStatus, GlobalsRepo, ScriptRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -20,6 +20,7 @@ pub struct ScriptRunNamedRunner {
     globals: Arc<dyn GlobalsRepo>,
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
+    scripts: Arc<dyn ScriptRepo>,
 }
 
 impl ScriptRunNamedRunner {
@@ -28,12 +29,14 @@ impl ScriptRunNamedRunner {
         globals: Arc<dyn GlobalsRepo>,
         publisher: Arc<dyn EventPublisher>,
         settings: Arc<dyn SettingsRepo>,
+        scripts: Arc<dyn ScriptRepo>,
     ) -> Self {
         Self {
             registry,
             globals,
             publisher,
             settings,
+            scripts,
         }
     }
 }
@@ -222,6 +225,19 @@ impl SubActionRunner for ScriptRunNamedRunner {
                 SubActionOutcome::Failed(format!("script task panicked: {join_err}"))
             }
         };
+
+        let status = if matches!(outcome, SubActionOutcome::Success) {
+            ExecutionStatus::Success
+        } else {
+            ExecutionStatus::Error
+        };
+        if let Err(e) = self
+            .scripts
+            .record_execution(script_id, started_at, duration_ms, status)
+            .await
+        {
+            tracing::warn!(error = %e, "script_repo.record_execution failed");
+        }
 
         (
             SubActionTelemetry {

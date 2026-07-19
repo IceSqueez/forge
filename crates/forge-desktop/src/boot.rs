@@ -14,7 +14,8 @@ use forge_runtime::{
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
 use forge_storage::{
-    CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
+    CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
+    UserGlobalsRepo,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::Variant;
@@ -156,6 +157,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         scheduler_cell.clone(),
         backend.trigger_instance_repo(),
         backend.action_repo(),
+        Arc::clone(&backend) as Arc<dyn ScriptRepo>,
         Arc::clone(&cancel_registry),
         Config::default(),
     ) {

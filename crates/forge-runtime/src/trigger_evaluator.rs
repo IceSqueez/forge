@@ -362,6 +362,11 @@ mod tests {
         let publisher: Arc<dyn forge_events::EventPublisher> =
             Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
 
+        let script_repo = {
+            let mut m = forge_storage::script::MockScriptRepo::new();
+            m.expect_record_execution().returning(|_, _, _, _| Ok(()));
+            Arc::new(m) as Arc<dyn forge_storage::ScriptRepo>
+        };
         let mut sub_reg = SubActionRegistry::new();
         register_core_sub_actions(
             &mut sub_reg,
@@ -373,6 +378,7 @@ mod tests {
             crate::SchedulerCell::new(),
             trigger_instances,
             actions,
+            script_repo,
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
             crate::Config::default(),
         )

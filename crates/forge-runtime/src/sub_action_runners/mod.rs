@@ -150,7 +150,9 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_registry::{RegistryError, SubActionRegistry};
-use forge_storage::{ActionRepo, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo};
+use forge_storage::{
+    ActionRepo, GlobalsRepo, ScriptRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
+};
 
 use crate::SchedulerCell;
 use crate::action_cancel::ActionCancelRegistry;
@@ -170,6 +172,7 @@ pub fn register_core_sub_actions(
     scheduler: SchedulerCell,
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     actions: Arc<dyn ActionRepo>,
+    script_repo: Arc<dyn ScriptRepo>,
     cancel_registry: Arc<ActionCancelRegistry>,
     config: Config,
 ) -> Result<(), RegistryError> {
@@ -258,6 +261,7 @@ pub fn register_core_sub_actions(
         Arc::clone(&globals),
         Arc::clone(&publisher),
         Arc::clone(&settings),
+        Arc::clone(&script_repo),
     )))?;
     reg.register(Box::new(ScriptRunInlineRunner::new(
         Arc::clone(&scripts),

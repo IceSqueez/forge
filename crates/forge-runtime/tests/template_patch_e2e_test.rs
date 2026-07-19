@@ -110,6 +110,11 @@ fn build_core_registries(
     let publisher: Arc<dyn forge_events::EventPublisher> =
         Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
 
+    let script_repo = {
+        let mut m = forge_storage::script::MockScriptRepo::new();
+        m.expect_record_execution().returning(|_, _, _, _| Ok(()));
+        Arc::new(m) as Arc<dyn forge_storage::ScriptRepo>
+    };
     let mut sub_reg = SubActionRegistry::new();
     register_core_sub_actions(
         &mut sub_reg,
@@ -121,6 +126,7 @@ fn build_core_registries(
         forge_runtime::SchedulerCell::new(),
         trigger_instances,
         actions,
+        script_repo,
         Arc::new(forge_runtime::ActionCancelRegistry::new()),
         forge_runtime::Config::default(),
     )

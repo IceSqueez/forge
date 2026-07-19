@@ -15,9 +15,7 @@ use forge_script::{
     validate_syntax,
 };
 use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
-use forge_types::{
-    Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
-};
+use forge_types::{Action, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
     MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -103,9 +101,7 @@ struct ScriptsListResizeDrag;
 struct ScriptDetailsResizeDrag;
 struct ConsoleResizeDrag;
 
-#[allow(dead_code)]
 struct LinkedAction {
-    id: ActionId,
     name: String,
 }
 
@@ -113,7 +109,6 @@ struct ScriptEntry {
     id: ScriptId,
     name: String,
     status_ok: bool,
-    #[allow(dead_code)]
     linked: Option<LinkedAction>,
 }
 
@@ -124,7 +119,6 @@ fn find_linked_action(actions: &[Action], script_name: &str) -> Option<LinkedAct
                 && step.config.get("script_name").and_then(|v| v.as_str()) == Some(script_name)
         });
         links.then(|| LinkedAction {
-            id: action.id,
             name: action.name.clone(),
         })
     })
@@ -1489,12 +1483,56 @@ impl ScriptEditorView {
                     .child(tr!("script_editor_no_scripts")),
             );
         } else {
-            for entry in self
+            let filtered: Vec<&ScriptEntry> = self
                 .scripts
                 .iter()
                 .filter(|e| query.is_empty() || e.name.to_lowercase().contains(&query))
-            {
-                scripts = scripts.child(self.file_row(entry, palette, cx));
+                .collect();
+            let action: Vec<&ScriptEntry> = filtered
+                .iter()
+                .copied()
+                .filter(|e| e.linked.is_some())
+                .collect();
+            let standalone: Vec<&ScriptEntry> = filtered
+                .iter()
+                .copied()
+                .filter(|e| e.linked.is_none())
+                .collect();
+
+            if !action.is_empty() {
+                let mut group = div()
+                    .flex()
+                    .flex_col()
+                    .mb(spacing(Spacing::Sm, density))
+                    .child(self.group_header(
+                        Icon::Bolt,
+                        palette.brand,
+                        tr!("script_editor_group_action"),
+                        action.len(),
+                        palette,
+                    ));
+                for entry in &action {
+                    group = group.child(self.file_row(entry, palette.brand, palette, cx));
+                }
+                scripts = scripts.child(group);
+            }
+
+            if !standalone.is_empty() {
+                let mut group = div()
+                    .flex()
+                    .flex_col()
+                    .mb(spacing(Spacing::Sm, density))
+                    .child(self.group_header(
+                        Icon::FileCode,
+                        palette.bits,
+                        tr!("script_editor_group_standalone"),
+                        standalone.len(),
+                        palette,
+                    ));
+                for entry in &standalone {
+                    group = group.child(self.file_row(entry, palette.bits, palette, cx));
+                }
+                scripts = scripts.child(group);
             }
         }
 
@@ -1599,9 +1637,39 @@ impl ScriptEditorView {
             .into_any_element()
     }
 
+    fn group_header(
+        &self,
+        group_icon: Icon,
+        color: Rgba,
+        label: impl Into<SharedString>,
+        count: usize,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .pt(px(2.0))
+            .px(px(6.0))
+            .pb(px(6.0))
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_muted)
+            .child(icon(group_icon, px(11.0), color))
+            .child(div().child(label.into()))
+            .child(div().flex_1())
+            .child(
+                div()
+                    .text_color(palette.text_faint)
+                    .child(count.to_string()),
+            )
+            .into_any_element()
+    }
+
     fn file_row(
         &self,
         entry: &ScriptEntry,
+        group_color: Rgba,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1611,7 +1679,7 @@ impl ScriptEditorView {
         let group: SharedString = format!("script-row-{id}").into();
 
         let icon_color = if selected {
-            palette.brand
+            group_color
         } else {
             palette.text_faint
         };
@@ -1621,61 +1689,69 @@ impl ScriptEditorView {
             palette.text_secondary
         };
         let stripe = if selected {
-            palette.brand
+            group_color
         } else {
-            with_alpha(palette.brand, 0.0)
+            with_alpha(group_color, 0.0)
+        };
+        let status_color = if entry.status_ok {
+            palette.success
+        } else {
+            palette.warning
+        };
+        let (subtitle, subtitle_color): (SharedString, Rgba) = match &entry.linked {
+            Some(linked) => (linked.name.clone().into(), group_color),
+            None => (tr!("script_editor_manual_run").into(), palette.text_faint),
         };
 
-        let label: AnyElement = if renaming {
-            self.rename
-                .as_ref()
-                .map(|r| r.input.clone().into_any_element())
-                .unwrap_or_else(|| div().into_any_element())
+        let middle: AnyElement = if renaming {
+            div()
+                .flex_1()
+                .min_w_0()
+                .child(
+                    self.rename
+                        .as_ref()
+                        .map(|r| r.input.clone().into_any_element())
+                        .unwrap_or_else(|| div().into_any_element()),
+                )
+                .into_any_element()
         } else {
             div()
                 .flex_1()
                 .min_w_0()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(text_color)
-                .truncate()
-                .cursor_pointer()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                        if event.click_count >= 2 {
-                            this.start_rename(id, window, cx);
-                        }
-                    }),
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XS)
+                        .text_color(text_color)
+                        .truncate()
+                        .cursor_pointer()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                if event.click_count >= 2 {
+                                    this.start_rename(id, window, cx);
+                                }
+                            }),
+                        )
+                        .child(entry.name.clone()),
                 )
-                .child(entry.name.clone())
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(subtitle_color)
+                        .truncate()
+                        .child(subtitle),
+                )
                 .into_any_element()
         };
 
-        let mut row = div()
-            .id(SharedString::from(format!("script-file-{id}")))
-            .group(group.clone())
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .border_l(STRIPE_W)
-            .border_color(stripe)
-            .when(selected, |d| d.bg(palette.surface_overlay))
-            .child(icon(Icon::FileCode, GLYPH_FILE, icon_color))
-            .child(label);
-
+        let mut trailing = div().flex_none().flex().items_center().gap(px(4.0));
         if !renaming {
-            let hover_bg = palette.base;
-            row = row
-                .cursor_pointer()
-                .when(!selected, |d| d.hover(move |s| s.bg(hover_bg)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
-
             let delete_bg = palette.random;
-            row = row.child(hover_reveal(
+            trailing = trailing.child(hover_reveal(
                 div()
                     .id(SharedString::from(format!("script-delete-{id}")))
                     .flex()
@@ -1692,6 +1768,31 @@ impl ScriptEditorView {
                     .child(icon(Icon::X, GLYPH_ACTION, palette.text_faint)),
                 group.clone(),
             ));
+        }
+        trailing = trailing.child(status_dot(status_color, px(6.0)));
+
+        let mut row = div()
+            .id(SharedString::from(format!("script-file-{id}")))
+            .group(group.clone())
+            .flex()
+            .items_center()
+            .gap(px(9.0))
+            .py(px(7.0))
+            .px(px(8.0))
+            .rounded(radius(Radius::Sm))
+            .border_l(STRIPE_W)
+            .border_color(stripe)
+            .when(selected, |d| d.bg(palette.surface_overlay))
+            .child(icon(Icon::FileCode, px(13.0), icon_color))
+            .child(middle)
+            .child(trailing);
+
+        if !renaming {
+            let hover_bg = palette.base;
+            row = row
+                .cursor_pointer()
+                .when(!selected, |d| d.hover(move |s| s.bg(hover_bg)))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
         }
 
         row.into_any_element()

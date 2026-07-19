@@ -74,6 +74,7 @@ const STAT_VALUE_GAP: Pixels = px(3.0);
 const PANE_PAD_V: Pixels = px(18.0);
 const PANE_PAD_H: Pixels = px(22.0);
 const STEP_GAP: Pixels = px(6.0);
+const STEP_DISABLED_OPACITY: f32 = 0.55;
 const STEP_CARD_PAD_V: Pixels = px(10.0);
 const STEP_CARD_PAD_H: Pixels = px(12.0);
 const HEADER_ACTION_H: Pixels = px(28.0);
@@ -671,6 +672,7 @@ struct EditSubActionForm {
     kind_id: String,
     target: SubFormTarget,
     fields: Vec<SubFormField>,
+    continue_on_error: bool,
     select_menu_open: Option<String>,
     select_menu_pos: Option<Point<Pixels>>,
 }

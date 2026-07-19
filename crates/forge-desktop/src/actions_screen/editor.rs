@@ -907,6 +907,7 @@ impl ScreenActionsView {
         };
         let kind_id = step.kind_id.clone();
         let config = step.config.clone();
+        let continue_on_error = step.continue_on_error;
         let Some(fields) = self.build_sub_form_fields(&kind_id, &config, cx) else {
             return;
         };
@@ -915,10 +916,31 @@ impl ScreenActionsView {
             kind_id,
             target: SubFormTarget::Edit(i),
             fields,
+            continue_on_error,
             select_menu_open: None,
             select_menu_pos: None,
         });
         self.fetch_select_options(cx);
+        cx.notify();
+    }
+
+    fn toggle_sub_continue_on_error(&mut self, cx: &mut Context<Self>) {
+        if let Some(form) = self.sub_form.as_mut() {
+            form.continue_on_error = !form.continue_on_error;
+        }
+        cx.notify();
+    }
+
+    fn set_step_enabled(&mut self, i: usize, enabled: bool, cx: &mut Context<Self>) {
+        self.step_menu_open = None;
+        self.persist_chain_mutation(
+            move |chain| {
+                if let Some(step) = chain.get_mut(i) {
+                    step.enabled = enabled;
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 
@@ -1202,6 +1224,7 @@ impl ScreenActionsView {
         };
         let target = form.target;
         let kind_id = form.kind_id.clone();
+        let continue_on_error = form.continue_on_error;
         let bool_vals: HashMap<String, bool> = form
             .fields
             .iter()
@@ -1278,6 +1301,7 @@ impl ScreenActionsView {
                             for (key, value) in overrides {
                                 step.config.insert(key, value);
                             }
+                            step.continue_on_error = continue_on_error;
                         }
                     },
                     cx,
@@ -1414,6 +1438,7 @@ impl ScreenActionsView {
             kind_id,
             target: SubFormTarget::Add,
             fields,
+            continue_on_error: false,
             select_menu_open: None,
             select_menu_pos: None,
         });
@@ -3105,10 +3130,11 @@ impl ScreenActionsView {
             title_el = title_el.child(step_avg_badge(avg, palette));
         }
 
+        let enabled = step.enabled;
         let mut card = row_card(title_el, palette)
             .leading(icon(glyph, CARD_GLYPH, glyph_color))
             .meta(variable_text(&detail_str, palette))
-            .trailing(self.render_step_controls(i, total, palette, cx))
+            .trailing(self.render_step_controls(i, total, enabled, palette, cx))
             .idle_background(palette.elevated)
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
             .padding_xy(STEP_CARD_PAD_V, STEP_CARD_PAD_H)
@@ -3125,7 +3151,13 @@ impl ScreenActionsView {
             .items_start()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(left_col)
-            .child(div().flex_1().min_w(px(0.0)).child(card));
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .when(!enabled, |el| el.opacity(STEP_DISABLED_OPACITY))
+                    .child(card),
+            );
 
         let block: AnyElement = match self.render_branch_affordances(step, i, depth, palette, cx) {
             Some(branches) => {
@@ -3154,6 +3186,7 @@ impl ScreenActionsView {
         &self,
         i: usize,
         total: usize,
+        enabled: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -3214,6 +3247,19 @@ impl ScreenActionsView {
                 .disabled(i + 1 >= total)
                 .into(),
                 menu_divider(),
+                menu_item(
+                    SharedString::from(format!("actions-step-enabled-{i}")),
+                    if enabled {
+                        tr!("actions_step_disable")
+                    } else {
+                        tr!("actions_step_enable")
+                    },
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.set_step_enabled(i, !enabled, cx)
+                    }),
+                )
+                .icon(if enabled { Icon::EyeOff } else { Icon::Eye })
+                .into(),
                 menu_item(
                     SharedString::from(format!("actions-step-del-{i}")),
                     tr!("action_editor_step_menu_delete"),
@@ -3503,6 +3549,52 @@ impl ScreenActionsView {
                     .child(tr!("actions_sub_no_config")),
             );
         }
+
+        fields_col = fields_col.child(
+            div()
+                .w_full()
+                .mt(spacing(Spacing::Xs, Density::Cozy))
+                .pt(spacing(Spacing::Sm, Density::Cozy))
+                .border_t(HALF_BORDER)
+                .border_color(palette.border_regular)
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(spacing(Spacing::Sm, Density::Cozy))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(spacing(Spacing::Xs, Density::Cozy))
+                        .child(icon(Icon::AlertTriangle, CARD_GLYPH, palette.warning))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                                .child(
+                                    div()
+                                        .font_family(DEFAULT_BODY_FAMILY)
+                                        .text_size(FONT_XS)
+                                        .text_color(palette.text_primary)
+                                        .child(tr!("actions_step_continue_on_error")),
+                                )
+                                .child(
+                                    div()
+                                        .font_family(DEFAULT_BODY_FAMILY)
+                                        .text_size(FONT_XXS)
+                                        .text_color(palette.text_faint)
+                                        .child(tr!("actions_step_continue_on_error_hint")),
+                                ),
+                        ),
+                )
+                .child(toggle(form.continue_on_error, palette).on_click(
+                    "actions-sub-continue-on-error",
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.toggle_sub_continue_on_error(cx)
+                    }),
+                )),
+        );
 
         let body = div()
             .id("actions-sub-scroll")

@@ -557,6 +557,10 @@ action_editor_step_menu_duplicate = Дублювати
 action_editor_step_menu_move_top = Перемістити вгору
 action_editor_step_menu_move_bottom = Перемістити вниз
 action_editor_step_menu_delete = Видалити крок
+actions_step_disable = Вимкнути
+actions_step_enable = Увімкнути
+actions_step_continue_on_error = Продовжувати при помилці
+actions_step_continue_on_error_hint = Виконувати наступні кроки, навіть якщо цей впаде
 
 ## Редактор дій - тестовий запуск
 

@@ -557,6 +557,10 @@ action_editor_step_menu_duplicate = Duplicate
 action_editor_step_menu_move_top = Move to top
 action_editor_step_menu_move_bottom = Move to bottom
 action_editor_step_menu_delete = Delete step
+actions_step_disable = Disable
+actions_step_enable = Enable
+actions_step_continue_on_error = Continue on error
+actions_step_continue_on_error_hint = Keep running later steps if this one fails
 
 ## Action editor - test run
 

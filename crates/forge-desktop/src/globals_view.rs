@@ -1066,7 +1066,7 @@ impl GlobalsView {
         if complex {
             let group: SharedString = format!("globals-inspect-{idx}").into();
             let hover_bg = palette.surface_overlay;
-            let idle = palette.text_faint;
+            let idle = palette.text_secondary;
             let active = palette.brand;
             let target = g.clone();
             cell = cell.child(
@@ -1389,11 +1389,27 @@ impl GlobalsView {
         let json = serde_json::to_string_pretty(&variant_to_json(&g.value)).unwrap_or_default();
         let mut listing = div().flex().flex_col();
         for (i, line) in json.lines().enumerate() {
-            let content: SharedString = if line.is_empty() {
-                "\u{00A0}".into()
+            let mut code_line = div().flex_1().flex();
+            if line.is_empty() {
+                code_line = code_line.child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XS)
+                        .child("\u{00A0}"),
+                );
             } else {
-                line.to_owned().into()
-            };
+                for (text, hue) in json_line_runs(line, palette) {
+                    code_line = code_line.child(
+                        div()
+                            .flex_none()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(hue)
+                            .whitespace_nowrap()
+                            .child(SharedString::from(text)),
+                    );
+                }
+            }
             listing = listing.child(
                 div()
                     .flex()
@@ -1409,14 +1425,7 @@ impl GlobalsView {
                             .text_color(palette.text_faint)
                             .child(format!("{}", i + 1)),
                     )
-                    .child(
-                        div()
-                            .flex_1()
-                            .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_primary)
-                            .child(content),
-                    ),
+                    .child(code_line),
             );
         }
         let code = div()
@@ -1560,6 +1569,69 @@ fn inspect_count(value: &Variant) -> (&'static str, usize) {
         Variant::Object(map) => ("globals_inspect_subtitle_keys", map.len()),
         _ => ("globals_inspect_subtitle_keys", 0),
     }
+}
+
+/// Splits one line of pretty-printed JSON into colored spans: object keys, string
+/// values, numbers, and `true`/`false`/`null` literals each get their own hue;
+/// punctuation and whitespace fall back to the muted default.
+fn json_line_runs(line: &str, palette: &ForgePalette) -> Vec<(String, Rgba)> {
+    let chars: Vec<char> = line.chars().collect();
+    let n = chars.len();
+    let mut runs: Vec<(String, Rgba)> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        let c = chars[i];
+        if c.is_whitespace() {
+            let start = i;
+            while i < n && chars[i].is_whitespace() {
+                i += 1;
+            }
+            runs.push((chars[start..i].iter().collect(), palette.text_secondary));
+        } else if c == '"' {
+            let start = i;
+            i += 1;
+            while i < n {
+                match chars[i] {
+                    '\\' => i += 2,
+                    '"' => {
+                        i += 1;
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+            let mut j = i;
+            while j < n && chars[j].is_whitespace() {
+                j += 1;
+            }
+            let is_key = j < n && chars[j] == ':';
+            let hue = if is_key {
+                palette.info
+            } else {
+                palette.success
+            };
+            runs.push((chars[start..i.min(n)].iter().collect(), hue));
+        } else if c == '-' || c.is_ascii_digit() {
+            let start = i;
+            i += 1;
+            while i < n
+                && (chars[i].is_ascii_digit() || matches!(chars[i], '.' | 'e' | 'E' | '+' | '-'))
+            {
+                i += 1;
+            }
+            runs.push((chars[start..i].iter().collect(), palette.bits));
+        } else if let Some(word) = ["true", "false", "null"]
+            .into_iter()
+            .find(|w| chars[i..].starts_with(&w.chars().collect::<Vec<_>>()[..]))
+        {
+            runs.push((word.to_owned(), palette.brand));
+            i += word.chars().count();
+        } else {
+            runs.push((c.to_string(), palette.text_secondary));
+            i += 1;
+        }
+    }
+    runs
 }
 
 async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<PathBuf, String> {

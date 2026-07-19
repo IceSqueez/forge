@@ -238,7 +238,9 @@ impl QueueScheduler {
 
     fn make_queue_slot(queue: Queue, engine: Arc<ActionEngineHandle>) -> QueueSlot {
         let (task_tx, task_rx) = mpsc::unbounded_channel::<QueueTask>();
-        let state = Arc::new(RwLock::new(PauseState { paused: false }));
+        let state = Arc::new(RwLock::new(PauseState {
+            paused: queue.paused,
+        }));
         let inflight = InflightTracker::default();
         let name = queue.name.clone();
         let concurrency = queue.concurrency.max(1);
@@ -481,10 +483,10 @@ impl QueueScheduler {
                 name: name.clone(),
                 description: String::new(),
                 concurrency,
+                paused: was_paused,
             },
             Arc::clone(engine),
         );
-        rebuilt.state.write().await.paused = was_paused;
         slots.insert(*queue_id, rebuilt);
 
         bus.publish(Event::new(
@@ -555,6 +557,7 @@ mod tests {
             name: "default".to_string(),
             description: String::new(),
             concurrency: 8,
+            paused: false,
         }
     }
 
@@ -564,6 +567,7 @@ mod tests {
             name: "serial".to_string(),
             description: String::new(),
             concurrency: 1,
+            paused: false,
         }
     }
 
@@ -1103,6 +1107,7 @@ mod tests {
             name: "renamed".to_string(),
             description: String::new(),
             concurrency: 8,
+            paused: false,
         };
         let outcome = sched.reconfigure(renamed).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
@@ -1272,6 +1277,7 @@ mod tests {
                 name: "ghost".to_string(),
                 description: String::new(),
                 concurrency: 8,
+                paused: false,
             })
             .await
             .unwrap();

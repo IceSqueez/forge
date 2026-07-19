@@ -15,7 +15,7 @@ use forge_script::{
     validate_syntax,
 };
 use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
-use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
+use forge_types::{ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
     MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -28,7 +28,10 @@ use crate::sidebar::NavRequested;
 const LEFT_PANE_W: Pixels = px(200.0);
 const STRIPE_W: Pixels = px(2.0);
 const RIGHT_PANE_W: Pixels = px(220.0);
+const DETAILS_PANE_W: Pixels = px(232.0);
+const DETAILS_PANE_PAD: Pixels = px(14.0);
 const GLYPH_PIN: Pixels = px(12.0);
+const GLYPH_RETURNS: Pixels = px(11.0);
 
 const CODE_LINE_H_PX: f32 = 18.0;
 const CODE_LINE_H: Pixels = px(CODE_LINE_H_PX);
@@ -1989,6 +1992,60 @@ impl ScriptEditorView {
         pane.into_any_element()
     }
 
+    fn details_pane(&self, palette: &ForgePalette) -> AnyElement {
+        let Some(open) = self.open.as_ref() else {
+            return div().into_any_element();
+        };
+        let record = &open.record;
+        let line_count = record.body.lines().count();
+        let edited = fmt_relative_time(Some(record.last_modified));
+
+        let mut pane = div()
+            .id("script-details-pane")
+            .flex_none()
+            .w(DETAILS_PANE_W)
+            .h_full()
+            .overflow_y_scroll()
+            .bg(palette.shell)
+            .border_l(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .p(DETAILS_PANE_PAD)
+            .child(details_heading(
+                tr!("script_editor_details_heading"),
+                false,
+                palette,
+            ))
+            .child(detail_row(
+                tr!("script_editor_details_lines"),
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .child(line_count.to_string()),
+                palette,
+            ))
+            .child(detail_row(
+                tr!("script_editor_details_edited"),
+                SharedString::from(edited),
+                palette,
+            ));
+
+        let contract = &record.contract;
+        if !contract.inputs.is_empty() || contract.returns.is_some() {
+            pane = pane.child(details_heading(
+                tr!("script_editor_signature_heading"),
+                true,
+                palette,
+            ));
+            for input in &contract.inputs {
+                pane = pane.child(signature_input_row(input, palette));
+            }
+            if let Some(kind) = contract.returns {
+                pane = pane.child(signature_returns_row(kind, palette));
+            }
+        }
+
+        pane.into_any_element()
+    }
+
     fn run_modal_overlay(
         &self,
         palette: &ForgePalette,
@@ -2145,7 +2202,13 @@ impl Render for ScriptEditorView {
             .child(code)
             .child(console);
 
-        let right = self.api_docs_open.then(|| self.right_pane(&palette, cx));
+        let right = if self.api_docs_open {
+            Some(self.right_pane(&palette, cx))
+        } else if self.open.is_some() {
+            Some(self.details_pane(&palette))
+        } else {
+            None
+        };
 
         let body = div()
             .w_full()
@@ -2207,6 +2270,112 @@ fn variable_row(name: SharedString, ty: SharedString, palette: &ForgePalette) ->
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(ty),
+        )
+}
+
+fn variant_kind_display(kind: VariantKind) -> &'static str {
+    match kind {
+        VariantKind::Int => "Int",
+        VariantKind::Float => "Float",
+        VariantKind::Bool => "Bool",
+        VariantKind::String => "String",
+        VariantKind::Datetime => "Datetime",
+        VariantKind::Array => "Array",
+        VariantKind::Object => "Object",
+    }
+}
+
+fn details_heading(
+    label: impl Into<SharedString>,
+    signature: bool,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    let heading = div()
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XXS)
+        .text_color(palette.text_muted)
+        .child(label.into());
+    if signature {
+        heading
+            .pt(spacing(Spacing::Md, Density::Cozy))
+            .pb(spacing(Spacing::Xs, Density::Cozy))
+    } else {
+        heading.pb(spacing(Spacing::Sm, Density::Cozy))
+    }
+}
+
+fn detail_row(
+    label: impl Into<SharedString>,
+    value: impl IntoElement,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.text_faint)
+                .child(label.into()),
+        )
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.text_secondary)
+                .child(value),
+        )
+}
+
+fn signature_input_row(input: &ScriptInput, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XS)
+        .child(
+            div()
+                .text_color(palette.code_var)
+                .child(SharedString::from(input.name.clone())),
+        )
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .justify_end()
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(variant_kind_display(input.kind)),
+        )
+}
+
+fn signature_returns_row(kind: VariantKind, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .pt(spacing(Spacing::Xs, Density::Cozy))
+        .border_t(BORDER_THIN)
+        .border_color(palette.surface_overlay)
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XS)
+        .child(icon(Icon::ArrowBackUp, GLYPH_RETURNS, palette.text_faint))
+        .child(
+            div()
+                .text_color(palette.text_faint)
+                .child(tr!("script_editor_details_returns")),
+        )
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .justify_end()
+                .text_color(palette.code_str)
+                .child(variant_kind_display(kind)),
         )
 }
 

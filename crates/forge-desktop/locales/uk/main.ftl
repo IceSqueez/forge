@@ -1889,6 +1889,14 @@ settings_audio_persist_error = Не вдалося зберегти вибір �
 script_editor_api_no_matches = Збігів не знайдено
 script_editor_api_search_placeholder = Пошук модулів…
 
+## Script editor - details panel
+
+script_editor_details_heading = ДЕТАЛІ
+script_editor_signature_heading = СИГНАТУРА
+script_editor_details_lines = Рядки
+script_editor_details_edited = Змінено
+script_editor_details_returns = повертає
+
 ## Widget - layout chrome
 
 widget_layout_app_name = Forge

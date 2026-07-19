@@ -1864,6 +1864,14 @@ settings_audio_persist_error = Failed to save device selection: { $error }
 script_editor_api_no_matches = No matches
 script_editor_api_search_placeholder = Search modules…
 
+## Script editor - details panel
+
+script_editor_details_heading = DETAILS
+script_editor_signature_heading = SIGNATURE
+script_editor_details_lines = Lines
+script_editor_details_edited = Edited
+script_editor_details_returns = returns
+
 ## Widget - layout chrome
 
 widget_layout_app_name = Forge

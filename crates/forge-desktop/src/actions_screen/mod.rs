@@ -13,6 +13,7 @@ use forge_storage::{
     ActionRepo, ActionTelemetry, GlobalsRepo, QueueRepo, ScriptRepo, SoundboardClipsRepo,
     TriggerInstanceRepo,
 };
+use forge_tts_core::TtsRegistry;
 use forge_types::{Action, ActionId, ExecutionContext, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
@@ -20,7 +21,7 @@ use gpui::{
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 mod branch;
 mod editor;
@@ -152,6 +153,7 @@ pub struct ScreenActionsView {
     script_repo: Arc<dyn ScriptRepo>,
     soundboard_repo: Arc<dyn SoundboardClipsRepo>,
     globals_repo: Arc<dyn GlobalsRepo>,
+    tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
     sub_action_registry: Arc<SubActionRegistry>,
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
@@ -194,6 +196,7 @@ impl ScreenActionsView {
         script_repo: Arc<dyn ScriptRepo>,
         soundboard_repo: Arc<dyn SoundboardClipsRepo>,
         globals_repo: Arc<dyn GlobalsRepo>,
+        tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
@@ -214,6 +217,7 @@ impl ScreenActionsView {
             script_repo,
             soundboard_repo,
             globals_repo,
+            tts_registry,
             sub_action_registry,
             trigger_registry,
             rt_handle,

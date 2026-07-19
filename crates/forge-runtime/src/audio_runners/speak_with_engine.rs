@@ -56,10 +56,10 @@ impl SubActionRunner for SpeakWithEngineRunner {
                 key: "text",
                 label: "Text",
             },
-            FormField::Text {
+            FormField::DynamicSelect {
                 key: "engine_id",
                 label: "Engine ID",
-                placeholder: "e.g. piper, azure, elevenlabs",
+                options_key: "tts.engine_ids",
             },
         ]
     }

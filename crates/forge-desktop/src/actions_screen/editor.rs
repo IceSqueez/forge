@@ -935,6 +935,7 @@ impl ScreenActionsView {
         let script_repo = Arc::clone(&self.script_repo);
         let soundboard_repo = Arc::clone(&self.soundboard_repo);
         let globals_repo = Arc::clone(&self.globals_repo);
+        let tts_registry = self.tts_registry.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
@@ -990,6 +991,16 @@ impl ScreenActionsView {
                         .into_iter()
                         .map(|g| (g.name.clone(), g.name))
                         .collect(),
+                );
+            }
+            if let Some(registry) = tts_registry {
+                let ids = registry
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .engine_ids();
+                map.insert(
+                    "tts.engine_ids".to_owned(),
+                    ids.into_iter().map(|id| (id.0.clone(), id.0)).collect(),
                 );
             }
             let _ = tx.send(map);

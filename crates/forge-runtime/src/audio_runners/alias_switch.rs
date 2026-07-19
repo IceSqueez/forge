@@ -58,10 +58,10 @@ impl SubActionRunner for AliasSwitchRunner {
                 label: "Alias name",
                 placeholder: "e.g. %user% or viewer id",
             },
-            FormField::Text {
+            FormField::DynamicSelect {
                 key: "engine_id",
                 label: "Engine ID",
-                placeholder: "e.g. piper, azure",
+                options_key: "tts.engine_ids",
             },
             FormField::Text {
                 key: "voice_id",

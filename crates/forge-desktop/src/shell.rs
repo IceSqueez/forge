@@ -309,6 +309,7 @@ impl AppShell {
                 let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
                 let soundboard_repo = handles.backend.soundboard_clips_repo();
                 let globals_repo = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
+                let tts_registry = handles.tts_registry.clone();
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
@@ -322,6 +323,7 @@ impl AppShell {
                         script_repo,
                         soundboard_repo,
                         globals_repo,
+                        tts_registry,
                         sub_action_registry,
                         trigger_registry,
                         rt_handle,

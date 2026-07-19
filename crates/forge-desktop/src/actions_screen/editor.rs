@@ -2655,7 +2655,12 @@ impl ScreenActionsView {
                 Some(tr!("action_stat_cancelled").into()),
                 palette.text_muted,
             ),
-            None => ("-".into(), palette.text_muted, None, palette.text_muted),
+            None => (
+                "0".into(),
+                palette.text_primary,
+                Some(tr!("action_stat_no_errors").into()),
+                palette.text_muted,
+            ),
         };
 
         div()

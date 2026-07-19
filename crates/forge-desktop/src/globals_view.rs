@@ -376,6 +376,7 @@ impl GlobalsView {
             let mut ti = TextInput::new("", cx)
                 .with_palette(palette)
                 .plain()
+                .mono()
                 .with_font_size(FONT_XS);
             ti.set_content(seed.to_string(), cx);
             ti
@@ -1034,6 +1035,9 @@ impl GlobalsView {
         if let Some(rename) = self.renaming.as_ref().filter(|r| &r.original == name) {
             return div()
                 .w_full()
+                .on_mouse_down_out(
+                    cx.listener(|this, _: &MouseDownEvent, _, cx| this.commit_rename(cx)),
+                )
                 .child(rename.input.clone())
                 .into_any_element();
         }

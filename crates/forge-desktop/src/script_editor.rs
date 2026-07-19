@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
-    ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal,
-    fmt_relative_time, ghost_button, hover_reveal, icon, install_resize, modal, overlay,
-    primary_button, radius, spacing, status_dot, tr, with_alpha,
+    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
+    ModalSize, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextArea, TextInput,
+    badge, breadcrumb, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
+    inline_edit, install_resize, menu_divider, menu_item, modal, overlay, primary_button, radius,
+    spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher, EventsError};
 use forge_runtime::{EventBus, ScriptRegistry};
@@ -21,7 +22,7 @@ use forge_storage::{
 use forge_types::{Action, ActionId, ArgStack, ScriptId, ScriptInput, Variant, VariantKind};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
-    MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
+    MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
@@ -103,6 +104,7 @@ struct ScriptEntry {
     id: ScriptId,
     name: String,
     status_ok: bool,
+    enabled: bool,
     linked: Option<LinkedAction>,
 }
 
@@ -127,8 +129,13 @@ struct OpenScript {
 
 struct RenameState {
     target: ScriptId,
-    input: Entity<TextInput>,
+    editor: Entity<InlineEdit>,
     _sub: Subscription,
+}
+
+struct RowMenu {
+    id: ScriptId,
+    position: Point<Pixels>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -222,6 +229,7 @@ pub struct ScriptEditorView {
     _search_sub: Subscription,
 
     rename: Option<RenameState>,
+    row_menu: Option<RowMenu>,
     pending_delete: Option<ScriptId>,
     pending_nav: Option<PendingNav>,
 
@@ -313,6 +321,7 @@ impl ScriptEditorView {
             search,
             _search_sub: search_sub,
             rename: None,
+            row_menu: None,
             pending_delete: None,
             pending_nav: None,
             code_input,
@@ -433,6 +442,7 @@ impl ScriptEditorView {
                         .into_iter()
                         .map(|r| ScriptEntry {
                             status_ok: collect_annotation_diagnostics(&r.body).is_empty(),
+                            enabled: r.enabled,
                             linked: find_linked_action(&actions, &r.name),
                             id: r.id,
                             name: r.name,
@@ -910,6 +920,7 @@ impl ScriptEditorView {
                     id: record.id,
                     name: record.name.clone(),
                     status_ok: collect_annotation_diagnostics(&body).is_empty(),
+                    enabled: record.enabled,
                     linked: None,
                 });
                 let id = record.id;
@@ -935,6 +946,7 @@ impl ScriptEditorView {
 
     fn request_delete(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         self.pending_delete = Some(id);
+        self.row_menu = None;
         cx.notify();
     }
 
@@ -991,35 +1003,29 @@ impl ScriptEditorView {
             return;
         };
         let palette = cx.palette();
-        let input = cx.new(|cx| {
-            let mut ti =
-                TextInput::new(tr!("script_editor_rename_placeholder"), cx).with_palette(palette);
-            ti.set_content(current, cx);
-            ti
-        });
-        let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| match event {
-            InputEvent::Submitted(_) => this.commit_rename(cx),
-            InputEvent::Cancelled => this.cancel_rename(cx),
-            InputEvent::Changed(_) => cx.notify(),
-        });
-        let focus_target = input.clone();
+        let editor = inline_edit(current, palette, FONT_XS, window, cx);
+        let sub = cx.subscribe(
+            &editor,
+            |this, _e, event: &InlineEditEvent, cx| match event {
+                InlineEditEvent::Commit(next) => this.commit_rename(next.clone(), cx),
+                InlineEditEvent::Cancel => this.cancel_rename(cx),
+            },
+        );
+        self.row_menu = None;
         self.rename = Some(RenameState {
             target: id,
-            input,
+            editor,
             _sub: sub,
-        });
-        cx.defer_in(window, move |_this, window, cx| {
-            focus_target.update(cx, |f, cx| f.focus(window, cx));
         });
         cx.notify();
     }
 
-    fn commit_rename(&mut self, cx: &mut Context<Self>) {
+    fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
         let Some(state) = self.rename.take() else {
             return;
         };
         let id = state.target;
-        let name = state.input.read(cx).content().trim().to_owned();
+        let name = name.trim().to_owned();
         if name.is_empty() {
             cx.notify();
             return;
@@ -1089,6 +1095,54 @@ impl ScriptEditorView {
     fn cancel_rename(&mut self, cx: &mut Context<Self>) {
         self.rename = None;
         cx.notify();
+    }
+
+    fn open_row_menu(&mut self, id: ScriptId, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.row_menu = Some(RowMenu { id, position });
+        cx.notify();
+    }
+
+    fn close_row_menu(&mut self, cx: &mut Context<Self>) {
+        self.row_menu = None;
+        cx.notify();
+    }
+
+    fn set_enabled(&mut self, id: ScriptId, enabled: bool, cx: &mut Context<Self>) {
+        self.row_menu = None;
+        cx.notify();
+        let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let result = async {
+                let mut record = ScriptRepo::get(&*repo, id)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| "script not found".to_owned())?;
+                record.enabled = enabled;
+                ScriptRepo::save(&*repo, record)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+            .await;
+            let _ = tx.send(result);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(result) = rx.await {
+                let _ = this.update(cx, |this, cx| this.apply_enabled_set(result, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn apply_enabled_set(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+        match result {
+            Ok(()) => self.load_scripts(cx),
+            Err(e) => {
+                tracing::warn!(error = %e, "script enable toggle failed");
+                self.push_console(LogTag::Err, format!("Could not update script: {e}"));
+                cx.notify();
+            }
+        }
     }
 
     fn format(&mut self, cx: &mut Context<Self>) {
@@ -1731,7 +1785,6 @@ impl ScriptEditorView {
         let id = entry.id;
         let selected = self.selected == Some(id);
         let renaming = self.rename.as_ref().is_some_and(|r| r.target == id);
-        let group: SharedString = format!("script-row-{id}").into();
 
         let icon_color = if selected {
             group_color
@@ -1765,7 +1818,7 @@ impl ScriptEditorView {
                 .child(
                     self.rename
                         .as_ref()
-                        .map(|r| r.input.clone().into_any_element())
+                        .map(|r| r.editor.clone().into_any_element())
                         .unwrap_or_else(|| div().into_any_element()),
                 )
                 .into_any_element()
@@ -1803,32 +1856,15 @@ impl ScriptEditorView {
                 .into_any_element()
         };
 
-        let mut trailing = div().flex_none().flex().items_center().gap(px(4.0));
-        if !renaming {
-            let delete_bg = palette.random;
-            trailing = trailing.child(hover_reveal(
-                div()
-                    .id(SharedString::from(format!("script-delete-{id}")))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .p(px(2.0))
-                    .rounded(radius(Radius::Sm))
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(delete_bg))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        cx.stop_propagation();
-                        this.request_delete(id, cx);
-                    }))
-                    .child(icon(Icon::X, GLYPH_ACTION, palette.text_faint)),
-                group.clone(),
-            ));
-        }
-        trailing = trailing.child(status_dot(status_color, px(6.0)));
+        let trailing = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .child(status_dot(status_color, px(6.0)));
 
         let mut row = div()
             .id(SharedString::from(format!("script-file-{id}")))
-            .group(group.clone())
             .flex()
             .items_center()
             .gap(px(9.0))
@@ -1838,6 +1874,13 @@ impl ScriptEditorView {
             .border_l(STRIPE_W)
             .border_color(stripe)
             .when(selected, |d| d.bg(palette.surface_overlay))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    let position = e.position;
+                    this.open_row_menu(id, position, cx);
+                }),
+            )
             .child(icon(Icon::FileCode, px(13.0), icon_color))
             .child(middle)
             .child(trailing);
@@ -2067,6 +2110,62 @@ impl ScriptEditorView {
             }
         }
         .into_any_element()
+    }
+
+    fn render_row_context_menu(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let menu = self.row_menu.as_ref()?;
+        let id = menu.id;
+        let position = menu.position;
+        let entry = self.find_entry(id)?;
+        let enabled = entry.enabled;
+        let view = cx.entity();
+
+        let (toggle_label, toggle_icon) = if enabled {
+            (tr!("script_editor_disable_action"), Icon::EyeOff)
+        } else {
+            (tr!("script_editor_enable_action"), Icon::Eye)
+        };
+
+        let items = vec![
+            menu_item(
+                SharedString::from(format!("script-menu-rename-{id}")),
+                tr!("script_editor_rename_action"),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.start_rename(id, window, cx)
+                }),
+            )
+            .icon(Icon::Pencil)
+            .into(),
+            menu_item(
+                SharedString::from(format!("script-menu-enabled-{id}")),
+                toggle_label,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_enabled(id, !enabled, cx)),
+            )
+            .icon(toggle_icon)
+            .into(),
+            menu_divider(),
+            menu_item(
+                SharedString::from(format!("script-menu-delete-{id}")),
+                tr!("script_editor_delete_action"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
+            )
+            .icon(Icon::Eraser)
+            .color(palette.random)
+            .into(),
+        ];
+
+        Some(
+            context_menu(position, palette)
+                .items(items)
+                .on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_row_menu(cx));
+                })
+                .into_any_element(),
+        )
     }
 
     fn delete_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -2502,6 +2601,8 @@ impl Render for ScriptEditorView {
             None
         };
 
+        let row_menu = self.render_row_context_menu(&palette, cx);
+
         div()
             .size_full()
             .flex()
@@ -2510,6 +2611,7 @@ impl Render for ScriptEditorView {
             .child(header)
             .child(body)
             .children(overlay)
+            .children(row_menu)
     }
 }
 

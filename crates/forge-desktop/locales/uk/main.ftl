@@ -1701,6 +1701,7 @@ script_editor_rename_placeholder = Назва скрипта
 
 ## Редактор скриптів - модальне вікно запуску
 
+script_editor_health = { $ok }/{ $total } справні
 script_editor_type_check_passed = Перевірку типів пройдено
 script_editor_type_check_errors = { $count ->
     [one] { $count } помилка

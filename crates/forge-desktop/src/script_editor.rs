@@ -15,7 +15,9 @@ use forge_script::{
     validate_syntax,
 };
 use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
-use forge_types::{ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind};
+use forge_types::{
+    Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
+};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
     MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -101,9 +103,31 @@ struct ScriptsListResizeDrag;
 struct ScriptDetailsResizeDrag;
 struct ConsoleResizeDrag;
 
+#[allow(dead_code)]
+struct LinkedAction {
+    id: ActionId,
+    name: String,
+}
+
 struct ScriptEntry {
     id: ScriptId,
     name: String,
+    status_ok: bool,
+    #[allow(dead_code)]
+    linked: Option<LinkedAction>,
+}
+
+fn find_linked_action(actions: &[Action], script_name: &str) -> Option<LinkedAction> {
+    actions.iter().find_map(|action| {
+        let links = action.sub_actions.iter().any(|step| {
+            step.kind_id == "script.run.named"
+                && step.config.get("script_name").and_then(|v| v.as_str()) == Some(script_name)
+        });
+        links.then(|| LinkedAction {
+            id: action.id,
+            name: action.name.clone(),
+        })
+    })
 }
 
 struct OpenScript {
@@ -403,21 +427,25 @@ impl ScriptEditorView {
     fn load_scripts(&mut self, cx: &mut Context<Self>) {
         self.loading = true;
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let action_repo = self.backend.action_repo();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let result = repo
-                .list()
-                .await
-                .map(|records| {
-                    records
+            let result = match repo.list().await {
+                Ok(records) => {
+                    let actions = action_repo.list().await.unwrap_or_default();
+                    let entries = records
                         .into_iter()
                         .map(|r| ScriptEntry {
+                            status_ok: collect_annotation_diagnostics(&r.body).is_empty(),
+                            linked: find_linked_action(&actions, &r.name),
                             id: r.id,
                             name: r.name,
                         })
-                        .collect::<Vec<_>>()
-                })
-                .map_err(|e| e.to_string());
+                        .collect::<Vec<_>>();
+                    Ok(entries)
+                }
+                Err(e) => Err(e.to_string()),
+            };
             let _ = tx.send(result);
         });
         cx.spawn(async move |this, cx| {
@@ -856,12 +884,14 @@ impl ScriptEditorView {
     fn apply_new_script(&mut self, result: Result<ScriptRecord, String>, cx: &mut Context<Self>) {
         match result {
             Ok(record) => {
+                let body = record.body.clone();
                 self.scripts.push(ScriptEntry {
                     id: record.id,
                     name: record.name.clone(),
+                    status_ok: collect_annotation_diagnostics(&body).is_empty(),
+                    linked: None,
                 });
                 let id = record.id;
-                let body = record.body.clone();
                 self.selected = Some(id);
                 self.variables.clear();
                 let height = code_field_height(&body);
@@ -1109,50 +1139,47 @@ impl ScriptEditorView {
             BreadcrumbCrumb::leaf(tr!("nav_script_editor")),
         ];
 
-        let (status_icon, status_color, status_text): (Icon, Rgba, String) = match self.type_check {
-            None => (
-                Icon::CircleCheck,
-                palette.success,
-                tr!("script_editor_type_check_passed"),
-            ),
-            Some(n) => (
-                Icon::AlertTriangle,
-                palette.warning,
-                tr!("script_editor_type_check_errors", count = n as i64),
-            ),
-        };
-        let status = div()
+        let total = self.scripts.len();
+        let ok = self.scripts.iter().filter(|e| e.status_ok).count();
+
+        let mut right = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .text_color(status_color)
-            .child(icon(status_icon, GLYPH_STATUS, status_color))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(status_color)
-                    .child(status_text),
-            );
-        let right = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(status)
-            .child(
+            .gap(spacing(Spacing::Sm, Density::Cozy));
+
+        if total > 0 {
+            let health = div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .child(icon(Icon::CircleCheck, GLYPH_STATUS, palette.success))
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_muted)
+                        .child(tr!(
+                            "script_editor_health",
+                            ok = ok as i64,
+                            total = total as i64
+                        )),
+                );
+            right = right.child(health).child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child("·"),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_muted)
-                    .child("Rhai 1.25"),
             );
+        }
+
+        let right = right.child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_muted)
+                .child("Rhai 1.25"),
+        );
 
         breadcrumb(crumbs, palette).right(right).into_any_element()
     }

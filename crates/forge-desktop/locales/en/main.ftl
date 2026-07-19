@@ -1680,6 +1680,7 @@ script_editor_rename_placeholder = Script name
 
 ## Script Editor - run modal
 
+script_editor_health = { $ok }/{ $total } healthy
 script_editor_type_check_passed = Type-check passed
 script_editor_type_check_errors = { $count ->
     [one] { $count } error

@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, MouseButton,
-    MouseDownEvent, Pixels, Rgba, SharedString, Subscription, UniformListScrollHandle, Window, div,
-    prelude::*, px, uniform_list,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
+    ListAlignment, ListState, MouseButton, MouseDownEvent, Pixels, Rgba, SharedString,
+    Subscription, Window, div, list, prelude::*, px, relative,
 };
 
 use crate::icons::{Icon, icon};
@@ -55,10 +55,12 @@ const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
 const GRID_BADGE_FS: Pixels = px(9.0);
 
-/// Fixed height of a single card box. All list rows are laid out at [`GRID_ROW_H`]
-/// (card height plus the inter-row gap) so `uniform_list` can virtualize them.
+/// Card box height. Card rows are laid out at [`GRID_ROW_H`] (card plus inter-row gap); group
+/// headers use the shorter [`GRID_HEADER_ROW_H`]. The variable-height virtualized `list` measures
+/// each rendered row, so header rows no longer inflate to a full card row.
 const GRID_CARD_H: Pixels = px(72.0);
 const GRID_ROW_H: Pixels = px(80.0);
+const GRID_HEADER_ROW_H: Pixels = px(30.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GridPickerItemState {
@@ -76,8 +78,8 @@ pub struct GridPickerItem {
     pub state: GridPickerItemState,
 }
 
-/// A `scope` of `"all"` is folded under the built-in "All" rail entry and never mints its
-/// own entry (used for a leading always-visible band).
+/// A `scope` of `"all"` marks the leading always-visible band; it rails as a pinned entry
+/// right after Favorites instead of sorting alphabetically with the other groups.
 pub struct GridPickerGroup {
     pub label: SharedString,
     pub dot_color: Rgba,
@@ -119,8 +121,7 @@ enum RailSel {
     Group(SharedString),
 }
 
-/// Flattened per-card payload; owned so it can move into the (`'static`) `uniform_list`
-/// render closure without borrowing the picker.
+/// Flattened per-card payload; owned so a row can be rebuilt independently of the source group.
 #[derive(Clone)]
 struct CardData {
     id: SharedString,
@@ -150,7 +151,9 @@ pub struct GridPicker {
     groups: Vec<GridPickerGroup>,
     config: GridPickerConfig,
     palette: ForgePalette,
-    scroll: UniformListScrollHandle,
+    rows: Vec<PickerRow>,
+    match_total: usize,
+    list_state: ListState,
     _search_sub: Subscription,
 }
 
@@ -174,7 +177,7 @@ impl GridPicker {
         });
         let search_sub = cx.subscribe(&search, Self::on_search_event);
 
-        Self {
+        let mut picker = Self {
             search,
             query: String::new(),
             rail: RailSel::All,
@@ -182,8 +185,65 @@ impl GridPicker {
             groups,
             config,
             palette,
-            scroll: UniformListScrollHandle::new(),
+            rows: Vec::new(),
+            match_total: 0,
+            list_state: ListState::new(0, ListAlignment::Top, px(320.0)),
             _search_sub: search_sub,
+        };
+        picker.rebuild_rows(true);
+        picker
+    }
+
+    /// Recompute the filtered, flattened list rows from the current query/rail/favorites and sync
+    /// the `ListState` item count. `reset_scroll` (or a change in row count) scrolls back to the top;
+    /// a favorites toggle that leaves the row count unchanged preserves the scroll position.
+    fn rebuild_rows(&mut self, reset_scroll: bool) {
+        let searching = !self.query.trim().is_empty();
+        let query = self.query.trim().to_lowercase();
+
+        let mut rows: Vec<PickerRow> = Vec::new();
+        let mut total = 0usize;
+        for group in &self.groups {
+            let show_group = searching
+                || matches!(self.rail, RailSel::All | RailSel::Favorites)
+                || matches!(&self.rail, RailSel::Group(s) if s == &group.scope);
+            if !show_group {
+                continue;
+            }
+            let items: Vec<&GridPickerItem> = group
+                .items
+                .iter()
+                .filter(|it| {
+                    let matches_query = !searching
+                        || it.name.to_lowercase().contains(&query)
+                        || it.desc.to_lowercase().contains(&query);
+                    let matches_fav =
+                        !matches!(self.rail, RailSel::Favorites) || self.favorites.contains(&it.id);
+                    matches_query && matches_fav
+                })
+                .collect();
+            if items.is_empty() {
+                continue;
+            }
+            total += items.len();
+            rows.push(PickerRow::Header {
+                label: group.label.clone(),
+                dot: group.dot_color,
+                count: items.len(),
+            });
+            for chunk in items.chunks(2) {
+                let left = self.card_data(chunk[0]);
+                let right = chunk.get(1).map(|it| self.card_data(it));
+                rows.push(PickerRow::Cards([Some(left), right]));
+            }
+        }
+
+        let count_changed = rows.len() != self.list_state.item_count();
+        let new_count = rows.len();
+        self.rows = rows;
+        self.match_total = total;
+        if reset_scroll || count_changed {
+            self.list_state.reset(new_count);
         }
     }
 
@@ -195,6 +255,7 @@ impl GridPicker {
 
     pub fn set_favorites(&mut self, favorites: HashSet<SharedString>, cx: &mut Context<Self>) {
         self.favorites = favorites;
+        self.rebuild_rows(false);
         cx.notify();
     }
 
@@ -207,6 +268,7 @@ impl GridPicker {
         match event {
             InputEvent::Changed(text) => {
                 self.query = text.to_string();
+                self.rebuild_rows(true);
                 let border = if self.query.trim().is_empty() {
                     self.palette.border_regular
                 } else {
@@ -225,6 +287,7 @@ impl GridPicker {
 
     fn clear_search(&mut self, cx: &mut Context<Self>) {
         self.query.clear();
+        self.rebuild_rows(true);
         let field = self.search.clone();
         let border = self.palette.border_regular;
         field.update(cx, |input, cx| {
@@ -236,6 +299,7 @@ impl GridPicker {
 
     fn set_rail(&mut self, rail: RailSel, cx: &mut Context<Self>) {
         self.rail = rail;
+        self.rebuild_rows(true);
         cx.notify();
     }
 
@@ -249,6 +313,7 @@ impl GridPicker {
         } else {
             self.favorites.insert(id.clone());
         }
+        self.rebuild_rows(false);
         cx.emit(GridPickerEvent::FavoriteToggled(id));
         cx.notify();
     }
@@ -265,7 +330,15 @@ impl GridPicker {
             }
             seen.push((g.scope.clone(), scope_label(&g.label), g.dot_color));
         }
+        seen.sort_by_key(|(_, label, _)| label.to_lowercase());
         seen
+    }
+
+    fn leading_band_entry(&self) -> Option<(SharedString, String, Rgba)> {
+        self.groups
+            .iter()
+            .find(|g| g.scope.as_ref() == "all")
+            .map(|g| (g.scope.clone(), scope_label(&g.label), g.dot_color))
     }
 
     fn render_header(&self, accent: Rgba, cx: &mut Context<Self>) -> AnyElement {
@@ -321,7 +394,9 @@ impl GridPicker {
             .id("forge-grid-close")
             .flex_none()
             .p(px(4.0))
+            .rounded(radius(Radius::Sm))
             .cursor_pointer()
+            .hover(move |s| s.bg(p.surface_overlay))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.emit_dismiss(cx)))
             .child(icon(Icon::X, GRID_CLOSE_ICON, p.text_faint));
 
@@ -387,7 +462,14 @@ impl GridPicker {
             .child(grid_rail_entry(
                 "forge-grid-rail-all",
                 "All",
-                None,
+                Some(
+                    div()
+                        .flex_none()
+                        .size(RAIL_DOT)
+                        .rounded(radius(Radius::Pill))
+                        .bg(p.text_muted)
+                        .into_any_element(),
+                ),
                 matches!(self.rail, RailSel::All),
                 &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::All, cx)),
@@ -400,6 +482,27 @@ impl GridPicker {
                 &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::Favorites, cx)),
             ));
+
+        if let Some((scope_id, label, dot)) = self.leading_band_entry() {
+            let active = matches!(&self.rail, RailSel::Group(s) if s == &scope_id);
+            let sid = scope_id.clone();
+            let lead: AnyElement = div()
+                .flex_none()
+                .size(RAIL_DOT)
+                .rounded(radius(Radius::Pill))
+                .bg(dot)
+                .into_any_element();
+            col = col.child(grid_rail_entry(
+                SharedString::from(format!("forge-grid-rail-{scope_id}")),
+                label,
+                Some(lead),
+                active,
+                &p,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.set_rail(RailSel::Group(sid.clone()), cx)
+                }),
+            ));
+        }
 
         for (scope_id, label, dot) in self.scope_entries() {
             let active = matches!(&self.rail, RailSel::Group(s) if s == &scope_id);
@@ -425,19 +528,11 @@ impl GridPicker {
         col.into_any_element()
     }
 
-    fn render_cards(
-        &self,
-        accent: Rgba,
-        visible: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)>,
-        total: usize,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_cards(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let query = self.query.trim().to_owned();
         let searching = !query.is_empty();
-
-        let rows = self.flatten_rows(&visible);
-        let row_count = rows.len();
+        let total = self.match_total;
 
         let mut col = div()
             .id("forge-grid-body")
@@ -464,7 +559,7 @@ impl GridPicker {
             );
         }
 
-        if row_count == 0 {
+        if self.rows.is_empty() {
             let favorites_empty = matches!(self.rail, RailSel::Favorites) && !searching;
             let (glyph, message): (Icon, SharedString) = if favorites_empty {
                 (Icon::Star, self.config.favorites_empty.clone())
@@ -495,44 +590,25 @@ impl GridPicker {
                 .into_any_element();
         }
 
-        let list = uniform_list(
-            "forge-grid-cards",
-            row_count,
-            cx.processor(move |_this, range: std::ops::Range<usize>, _window, cx| {
-                range
-                    .map(|ix| match &rows[ix] {
-                        PickerRow::Header { label, dot, count } => {
-                            render_header_row(label, *dot, *count, &p)
-                        }
-                        PickerRow::Cards(cards) => render_card_row(cards, accent, &p, cx),
-                    })
-                    .collect::<Vec<AnyElement>>()
-            }),
+        let list = list(
+            self.list_state.clone(),
+            cx.processor(|this, ix, _window, cx| this.render_list_row(ix, cx)),
         )
         .flex_1()
-        .min_h(px(0.0))
-        .track_scroll(&self.scroll);
+        .min_h(px(0.0));
 
         col.child(list).into_any_element()
     }
 
-    /// Flatten the visible (group x items) structure into fixed-height list rows: a header row
-    /// per group followed by one row per pair of cards.
-    fn flatten_rows(&self, visible: &[(&GridPickerGroup, Vec<&GridPickerItem>)]) -> Vec<PickerRow> {
-        let mut rows = Vec::new();
-        for (group, items) in visible {
-            rows.push(PickerRow::Header {
-                label: group.label.clone(),
-                dot: group.dot_color,
-                count: items.len(),
-            });
-            for chunk in items.chunks(2) {
-                let left = self.card_data(chunk[0]);
-                let right = chunk.get(1).map(|it| self.card_data(it));
-                rows.push(PickerRow::Cards([Some(left), right]));
-            }
+    /// Render a single virtualized list row by index. The variable-height `list` measures the
+    /// returned element, so headers render short and card rows render at the full card height.
+    fn render_list_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        let accent = self.config.accent;
+        match &self.rows[ix] {
+            PickerRow::Header { label, dot, count } => render_header_row(label, *dot, *count, &p),
+            PickerRow::Cards(cards) => render_card_row(cards, accent, &p, cx),
         }
-        rows
     }
 
     fn card_data(&self, item: &GridPickerItem) -> CardData {
@@ -574,35 +650,6 @@ impl Render for GridPicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
         let accent = self.config.accent;
-        let searching = !self.query.trim().is_empty();
-        let query = self.query.trim().to_lowercase();
-
-        let visible: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)> = self
-            .groups
-            .iter()
-            .filter(|g| {
-                searching
-                    || matches!(self.rail, RailSel::All | RailSel::Favorites)
-                    || matches!(&self.rail, RailSel::Group(s) if s == &g.scope)
-            })
-            .map(|g| {
-                let items: Vec<&GridPickerItem> = g
-                    .items
-                    .iter()
-                    .filter(|it| {
-                        let matches_query = !searching
-                            || it.name.to_lowercase().contains(&query)
-                            || it.desc.to_lowercase().contains(&query);
-                        let matches_fav = !matches!(self.rail, RailSel::Favorites)
-                            || self.favorites.contains(&it.id);
-                        matches_query && matches_fav
-                    })
-                    .collect();
-                (g, items)
-            })
-            .filter(|(_, items)| !items.is_empty())
-            .collect();
-        let total: usize = visible.iter().map(|(_, items)| items.len()).sum();
 
         let body = div()
             .flex_1()
@@ -610,7 +657,7 @@ impl Render for GridPicker {
             .w_full()
             .flex()
             .child(self.render_rail(accent, cx))
-            .child(self.render_cards(accent, visible, total, cx));
+            .child(self.render_cards(cx));
 
         div()
             .w(GRID_W)
@@ -664,10 +711,11 @@ fn render_header_row(
         );
 
     div()
-        .h(GRID_ROW_H)
+        .h(GRID_HEADER_ROW_H)
         .w_full()
         .flex()
-        .items_center()
+        .items_end()
+        .pb(px(6.0))
         .child(inner)
         .into_any_element()
 }
@@ -678,20 +726,25 @@ fn render_card_row(
     p: &ForgePalette,
     cx: &mut Context<GridPicker>,
 ) -> AnyElement {
-    let mut row = div()
+    let row = div()
         .h(GRID_ROW_H)
         .w_full()
         .flex()
         .items_start()
         .gap(GRID_CARD_GAP);
-    if let Some(card) = &cards[0] {
-        row = row.child(render_card_el(card, accent, p, cx));
+    match cards {
+        [Some(left), Some(right)] => row
+            .child(render_card_el(left, accent, p, cx))
+            .child(render_card_el(right, accent, p, cx)),
+        [Some(left), None] => row.child(
+            div()
+                .w(relative(0.5))
+                .flex()
+                .child(render_card_el(left, accent, p, cx)),
+        ),
+        _ => row,
     }
-    match &cards[1] {
-        Some(card) => row = row.child(render_card_el(card, accent, p, cx)),
-        None => row = row.child(div().flex_1()),
-    }
-    row.into_any_element()
+    .into_any_element()
 }
 
 fn render_card_el(
@@ -745,20 +798,21 @@ fn render_card_el(
         }))
         .child(icon(star_glyph, GRID_CARD_ICON, star_tint));
 
-    let trailing: AnyElement = match card.state {
-        GridPickerItemState::Added => {
-            badge(p.surface_overlay, p.success, "added", true, GRID_BADGE_FS).into_any_element()
-        }
-        GridPickerItemState::Disabled => {
-            badge(p.surface_overlay, p.text_faint, "off", true, GRID_BADGE_FS).into_any_element()
-        }
-        GridPickerItemState::Normal => div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(icon(Icon::Plus, GRID_CARD_ICON, p.text_faint))
+    let trailing: Option<AnyElement> = match card.state {
+        GridPickerItemState::Added => Some(
+            badge(p.surface_overlay, p.success, "added", true, GRID_BADGE_FS).into_any_element(),
+        ),
+        GridPickerItemState::Disabled => Some(
+            badge(
+                p.surface_overlay,
+                p.text_primary,
+                "off",
+                true,
+                GRID_BADGE_FS,
+            )
             .into_any_element(),
+        ),
+        GridPickerItemState::Normal => None,
     };
 
     let top = div()
@@ -769,7 +823,7 @@ fn render_card_el(
         .child(tile)
         .child(name)
         .child(star)
-        .child(trailing);
+        .children(trailing);
 
     let desc = div()
         .truncate()

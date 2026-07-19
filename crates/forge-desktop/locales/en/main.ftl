@@ -1602,6 +1602,9 @@ globals_col_reads_writes = READS · WRITES
 globals_col_persist = PERSIST
 globals_col_actions = ACTIONS
 globals_rename_taken = Name '{ $name }' is already taken
+globals_menu_rename = Rename
+globals_menu_persist = Persist
+globals_menu_session_only = Session only
 globals_toast_error = Globals: { $message }
 
 ## Globals - variant editor modal

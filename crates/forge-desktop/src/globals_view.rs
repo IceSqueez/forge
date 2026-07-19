@@ -9,9 +9,10 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
     OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge,
-    breadcrumb, chip, confirm_modal, data_table, fmt_relative_time, hover_reveal, icon,
-    inline_edit, modal, overlay, primary_button, primary_button_with_icon, radius, search_input,
-    secondary_button, spacing, status_dot, toggle, tr, with_alpha,
+    breadcrumb, chip, confirm_modal, context_menu, data_table, fmt_relative_time, hover_reveal,
+    icon, inline_edit, menu_divider, menu_item, modal, overlay, primary_button,
+    primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
+    tr, with_alpha,
 };
 use std::path::PathBuf;
 
@@ -136,8 +137,14 @@ pub struct GlobalsView {
     pending_delete: Option<SharedString>,
     inspecting: Option<Global>,
     renaming: Option<RenameState>,
+    row_menu: Option<RowMenu>,
     _globals_obs: Subscription,
     _search_sub: Subscription,
+}
+
+struct RowMenu {
+    name: SharedString,
+    position: gpui::Point<gpui::Pixels>,
 }
 
 impl GlobalsView {
@@ -165,6 +172,7 @@ impl GlobalsView {
             pending_delete: None,
             inspecting: None,
             renaming: None,
+            row_menu: None,
             _globals_obs: globals_obs,
             _search_sub: search_sub,
         };
@@ -1026,6 +1034,7 @@ impl GlobalsView {
         }
 
         let rename_target = name.clone();
+        let menu_target = name.clone();
         div()
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(FONT_XS)
@@ -1039,8 +1048,112 @@ impl GlobalsView {
                     }
                 }),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    this.open_row_menu(menu_target.clone(), event.position, cx);
+                }),
+            )
             .child(name.clone())
             .into_any_element()
+    }
+
+    fn open_row_menu(
+        &mut self,
+        name: SharedString,
+        position: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.row_menu = Some(RowMenu { name, position });
+        cx.notify();
+    }
+
+    fn close_row_menu(&mut self, cx: &mut Context<Self>) {
+        if self.row_menu.is_some() {
+            self.row_menu = None;
+            cx.notify();
+        }
+    }
+
+    fn render_row_context_menu(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let menu = self.row_menu.as_ref()?;
+        let name = menu.name.clone();
+        let persisted = self
+            .globals
+            .read(cx)
+            .entries()
+            .iter()
+            .any(|g| g.name == name && g.persisted);
+        let view = cx.entity();
+
+        let rename_name = name.clone();
+        let rename_view = view.clone();
+        let persist_name = name.clone();
+        let persist_view = view.clone();
+        let delete_name = name.clone();
+        let delete_view = view.clone();
+        let persist_label = if persisted {
+            tr!("globals_menu_session_only")
+        } else {
+            tr!("globals_menu_persist")
+        };
+
+        let items = vec![
+            menu_item(
+                "globals-menu-rename",
+                tr!("globals_menu_rename"),
+                move |_e, window, cx| {
+                    let name = rename_name.clone();
+                    rename_view.update(cx, |this, cx| {
+                        this.close_row_menu(cx);
+                        this.start_rename(name, window, cx);
+                    });
+                },
+            )
+            .icon(Icon::Pencil)
+            .into(),
+            menu_item(
+                "globals-menu-persist",
+                persist_label,
+                move |_e, _window, cx| {
+                    let name = persist_name.clone();
+                    persist_view.update(cx, |this, cx| {
+                        this.close_row_menu(cx);
+                        this.toggle_persist(name, cx);
+                    });
+                },
+            )
+            .icon(Icon::Pin)
+            .into(),
+            menu_divider(),
+            menu_item(
+                "globals-menu-delete",
+                tr!("common_delete"),
+                move |_e, _window, cx| {
+                    let name = delete_name.clone();
+                    delete_view.update(cx, |this, cx| {
+                        this.close_row_menu(cx);
+                        this.request_delete(name, cx);
+                    });
+                },
+            )
+            .icon(Icon::X)
+            .color(palette.random)
+            .into(),
+        ];
+
+        Some(
+            context_menu(menu.position, palette)
+                .items(items)
+                .on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_row_menu(cx));
+                })
+                .into_any_element(),
+        )
     }
 
     fn value_cell(
@@ -1529,6 +1642,7 @@ impl Render for GlobalsView {
             .children(delete_overlay)
             .children(editor_overlay)
             .children(inspect_overlay)
+            .children(self.render_row_context_menu(&palette, cx))
     }
 }
 

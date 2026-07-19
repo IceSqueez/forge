@@ -1623,6 +1623,9 @@ globals_col_reads_writes = ЧИТАНЬ · ЗАПИСІВ
 globals_col_persist = ЗБЕРІГАТИ
 globals_col_actions = ДІЇ
 globals_rename_taken = Назву '{ $name }' вже зайнято
+globals_menu_rename = Перейменувати
+globals_menu_persist = Зберігати
+globals_menu_session_only = Лише сесія
 globals_toast_error = Глобальні змінні: { $message }
 
 ## Глобальні змінні - редактор значень

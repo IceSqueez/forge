@@ -7,18 +7,18 @@ use forge_components::confirm::ConfirmTone;
 use forge_components::tokens::ModalSize;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
-    TextArea, TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal,
-    data_table, fmt_relative_time, hover_reveal, icon, modal, overlay, primary_button,
-    primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
-    tr, with_alpha,
+    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
+    OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge,
+    breadcrumb, chip, confirm_modal, data_table, fmt_relative_time, hover_reveal, icon,
+    inline_edit, modal, overlay, primary_button, primary_button_with_icon, radius, search_input,
+    secondary_button, spacing, status_dot, toggle, tr, with_alpha,
 };
 use std::path::PathBuf;
 
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
-    App, ClickEvent, Context, Entity, Focusable, MouseButton, MouseDownEvent, Rgba, SharedString,
+    App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px, svg,
 };
 
@@ -120,9 +120,8 @@ impl EditorState {
 
 struct RenameState {
     original: SharedString,
-    input: Entity<TextInput>,
+    editor: Entity<InlineEdit>,
     _sub: Subscription,
-    _focus_sub: Subscription,
 }
 
 pub struct GlobalsView {
@@ -371,45 +370,29 @@ impl GlobalsView {
 
     fn start_rename(&mut self, name: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let seed = name.clone();
-        let input = cx.new(|cx| {
-            let mut ti = TextInput::new("", cx)
-                .with_palette(palette)
-                .plain()
-                .mono()
-                .with_font_size(FONT_XS);
-            ti.set_content(seed.to_string(), cx);
-            ti
-        });
-        let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| match event {
-            InputEvent::Submitted(_) => this.commit_rename(cx),
-            InputEvent::Cancelled => this.cancel_rename(cx),
-            InputEvent::Changed(_) => {}
-        });
-        let focus_handle = input.read(cx).focus_handle(cx);
-        let focus_sub = cx.on_focus_out(&focus_handle, window, |this, _event, _window, cx| {
-            this.commit_rename(cx);
-        });
-        let focus_target = input.clone();
+        let editor = inline_edit(name.to_string(), palette, window, cx);
+        let sub = cx.subscribe(
+            &editor,
+            |this, _e, event: &InlineEditEvent, cx| match event {
+                InlineEditEvent::Commit(next) => this.commit_rename(next.clone(), cx),
+                InlineEditEvent::Cancel => this.cancel_rename(cx),
+            },
+        );
         self.renaming = Some(RenameState {
             original: name,
-            input,
+            editor,
             _sub: sub,
-            _focus_sub: focus_sub,
-        });
-        cx.defer_in(window, move |_this, window, cx| {
-            focus_target.update(cx, |f, cx| f.focus(window, cx));
         });
         cx.notify();
     }
 
-    fn commit_rename(&mut self, cx: &mut Context<Self>) {
+    fn commit_rename(&mut self, next: String, cx: &mut Context<Self>) {
         let Some(rename) = self.renaming.take() else {
             return;
         };
         cx.notify();
         let old = rename.original.to_string();
-        let next = rename.input.read(cx).content().trim().to_owned();
+        let next = next.trim().to_owned();
         if next.is_empty() || next == old {
             return;
         }
@@ -1038,17 +1021,7 @@ impl GlobalsView {
         if let Some(rename) = self.renaming.as_ref().filter(|r| &r.original == name) {
             return div()
                 .w_full()
-                .flex()
-                .items_center()
-                .px(px(4.0))
-                .rounded(radius(Radius::Sm))
-                .bg(palette.shell)
-                .border(BORDER_THIN)
-                .border_color(palette.border_active)
-                .on_mouse_down_out(
-                    cx.listener(|this, _: &MouseDownEvent, _, cx| this.commit_rename(cx)),
-                )
-                .child(rename.input.clone())
+                .child(rename.editor.clone())
                 .into_any_element();
         }
 

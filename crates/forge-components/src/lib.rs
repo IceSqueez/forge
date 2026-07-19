@@ -9,6 +9,7 @@ pub mod fonts;
 pub mod footer;
 pub mod grid_picker;
 pub mod icons;
+pub mod inline_edit;
 pub mod input_bar;
 pub mod locale;
 pub mod menu;
@@ -49,6 +50,7 @@ pub use grid_picker::{
     GridPickerItemState, GridPickerSubtitle,
 };
 pub use icons::{Icon, IconAssets, icon, icon_inherit, spinner};
+pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
 pub use locale::{
     ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,

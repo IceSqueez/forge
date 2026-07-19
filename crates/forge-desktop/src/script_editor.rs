@@ -3,9 +3,9 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
-    Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, fmt_relative_time,
-    ghost_button, hover_reveal, icon, modal, overlay, primary_button, radius, spacing, status_dot,
-    tr, with_alpha,
+    ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal,
+    fmt_relative_time, ghost_button, hover_reveal, icon, install_resize, modal, overlay,
+    primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher, EventsError};
 use forge_runtime::{EventBus, ScriptRegistry};
@@ -26,9 +26,16 @@ use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
 
 const LEFT_PANE_W: Pixels = px(200.0);
+const LIST_MIN_W: Pixels = px(180.0);
+const LIST_MAX_W: Pixels = px(360.0);
 const STRIPE_W: Pixels = px(2.0);
 const RIGHT_PANE_W: Pixels = px(220.0);
 const DETAILS_PANE_W: Pixels = px(232.0);
+const DETAILS_MIN_W: Pixels = px(200.0);
+const DETAILS_MAX_W: Pixels = px(420.0);
+const CONSOLE_INIT_H: Pixels = px(160.0);
+const CONSOLE_MIN_H: Pixels = px(80.0);
+const CONSOLE_MAX_H: Pixels = px(400.0);
 const DETAILS_PANE_PAD: Pixels = px(14.0);
 const GLYPH_PIN: Pixels = px(12.0);
 const GLYPH_RETURNS: Pixels = px(11.0);
@@ -89,6 +96,10 @@ fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Va
         )),
     }
 }
+
+struct ScriptsListResizeDrag;
+struct ScriptDetailsResizeDrag;
+struct ConsoleResizeDrag;
 
 struct ScriptEntry {
     id: ScriptId,
@@ -190,6 +201,10 @@ pub struct ScriptEditorView {
     variables: Vec<(SharedString, SharedString)>,
     loading: bool,
 
+    list_width: Pixels,
+    details_width: Pixels,
+    console_height: Pixels,
+
     search: Entity<TextInput>,
     _search_sub: Subscription,
 
@@ -277,6 +292,9 @@ impl ScriptEditorView {
             open: None,
             variables: Vec::new(),
             loading: false,
+            list_width: LEFT_PANE_W,
+            details_width: DETAILS_PANE_W,
+            console_height: CONSOLE_INIT_H,
             search,
             _search_sub: search_sub,
             rename: None,
@@ -1061,6 +1079,30 @@ impl ScriptEditorView {
         cx.notify();
     }
 
+    fn set_list_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        let clamped = width.clamp(LIST_MIN_W, LIST_MAX_W);
+        if self.list_width != clamped {
+            self.list_width = clamped;
+            cx.notify();
+        }
+    }
+
+    fn set_details_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        let clamped = width.clamp(DETAILS_MIN_W, DETAILS_MAX_W);
+        if self.details_width != clamped {
+            self.details_width = clamped;
+            cx.notify();
+        }
+    }
+
+    fn set_console_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
+        let clamped = height.clamp(CONSOLE_MIN_H, CONSOLE_MAX_H);
+        if self.console_height != clamped {
+            self.console_height = clamped;
+            cx.notify();
+        }
+    }
+
     fn page_header(&self, palette: &ForgePalette) -> AnyElement {
         let crumbs = vec![
             BreadcrumbCrumb::leaf(tr!("script_editor_breadcrumb_automation")),
@@ -1459,10 +1501,9 @@ impl ScriptEditorView {
             .child(scripts)
             .child(vars);
 
-        div()
-            .id("script-left-pane")
+        let pane = div()
             .flex_none()
-            .w(LEFT_PANE_W)
+            .w(self.list_width)
             .h_full()
             .flex()
             .flex_col()
@@ -1471,8 +1512,21 @@ impl ScriptEditorView {
             .border_color(palette.surface_overlay)
             .child(header)
             .child(scroll)
-            .child(self.new_script_button(palette, density, cx))
-            .into_any_element()
+            .child(self.new_script_button(palette, density, cx));
+
+        install_resize(
+            pane,
+            ScriptsListResizeDrag,
+            "scripts-list-resize",
+            ResizeEdge::Right,
+            ResizeRange {
+                min: LIST_MIN_W,
+                max: LIST_MAX_W,
+            },
+            palette,
+            cx.listener(|this, width: &Pixels, _, cx| this.set_list_width(*width, cx)),
+        )
+        .into_any_element()
     }
 
     fn new_script_button(
@@ -1673,7 +1727,7 @@ impl ScriptEditorView {
     ) -> AnyElement {
         let header = self.console_header(palette, density, cx);
 
-        let mut console = div()
+        let console = div()
             .w_full()
             .flex()
             .flex_col()
@@ -1683,10 +1737,25 @@ impl ScriptEditorView {
             .border_color(palette.surface_overlay)
             .child(header);
 
-        if !self.console_collapsed {
-            console = console.child(self.console_body(palette, density));
+        if self.console_collapsed {
+            return console.into_any_element();
         }
-        console.into_any_element()
+
+        let console = console.child(self.console_body(palette, density));
+
+        install_resize(
+            console,
+            ConsoleResizeDrag,
+            "scripts-console-resize",
+            ResizeEdge::Top,
+            ResizeRange {
+                min: CONSOLE_MIN_H,
+                max: CONSOLE_MAX_H,
+            },
+            palette,
+            cx.listener(|this, height: &Pixels, _, cx| this.set_console_height(*height, cx)),
+        )
+        .into_any_element()
     }
 
     fn console_header(
@@ -1809,9 +1878,12 @@ impl ScriptEditorView {
 
     fn console_body(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let body = div()
+            .id("script-console-scroll")
             .w_full()
             .flex()
             .flex_col()
+            .h(self.console_height)
+            .overflow_y_scroll()
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
@@ -1970,7 +2042,7 @@ impl ScriptEditorView {
         pane.into_any_element()
     }
 
-    fn details_pane(&self, palette: &ForgePalette) -> AnyElement {
+    fn details_pane(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let Some(open) = self.open.as_ref() else {
             return div().into_any_element();
         };
@@ -1978,15 +2050,11 @@ impl ScriptEditorView {
         let line_count = record.body.lines().count();
         let edited = fmt_relative_time(Some(record.last_modified));
 
-        let mut pane = div()
+        let mut inner = div()
             .id("script-details-pane")
-            .flex_none()
-            .w(DETAILS_PANE_W)
-            .h_full()
+            .flex_1()
+            .min_h_0()
             .overflow_y_scroll()
-            .bg(palette.shell)
-            .border_l(BORDER_THIN)
-            .border_color(palette.surface_overlay)
             .p(DETAILS_PANE_PAD)
             .child(details_heading(
                 tr!("script_editor_details_heading"),
@@ -2008,20 +2076,43 @@ impl ScriptEditorView {
 
         let contract = &record.contract;
         if !contract.inputs.is_empty() || contract.returns.is_some() {
-            pane = pane.child(details_heading(
+            inner = inner.child(details_heading(
                 tr!("script_editor_signature_heading"),
                 true,
                 palette,
             ));
             for input in &contract.inputs {
-                pane = pane.child(signature_input_row(input, palette));
+                inner = inner.child(signature_input_row(input, palette));
             }
             if let Some(kind) = contract.returns {
-                pane = pane.child(signature_returns_row(kind, palette));
+                inner = inner.child(signature_returns_row(kind, palette));
             }
         }
 
-        pane.into_any_element()
+        let pane = div()
+            .flex_none()
+            .w(self.details_width)
+            .h_full()
+            .flex()
+            .flex_col()
+            .bg(palette.shell)
+            .border_l(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .child(inner);
+
+        install_resize(
+            pane,
+            ScriptDetailsResizeDrag,
+            "scripts-details-resize",
+            ResizeEdge::Left,
+            ResizeRange {
+                min: DETAILS_MIN_W,
+                max: DETAILS_MAX_W,
+            },
+            palette,
+            cx.listener(|this, width: &Pixels, _, cx| this.set_details_width(*width, cx)),
+        )
+        .into_any_element()
     }
 
     fn run_modal_overlay(
@@ -2183,7 +2274,7 @@ impl Render for ScriptEditorView {
         let right = if self.api_docs_open {
             Some(self.right_pane(&palette, cx))
         } else if self.open.is_some() {
-            Some(self.details_pane(&palette))
+            Some(self.details_pane(&palette, cx))
         } else {
             None
         };

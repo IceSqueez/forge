@@ -35,6 +35,12 @@ pub enum FormField {
         key: &'static str,
         label: &'static str,
     },
+    /// Free-text field (interpolates `%var%`) paired with a calendar+time picker
+    /// button; the picked value is written as an RFC 3339 string.
+    DateTime {
+        key: &'static str,
+        label: &'static str,
+    },
     /// Static enum-like choices. Use `DynamicSelect` for runtime-supplied option lists.
     Select {
         key: &'static str,

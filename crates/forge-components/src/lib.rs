@@ -5,6 +5,7 @@ pub mod chat_row;
 pub mod chip;
 pub mod confirm;
 pub mod data;
+pub mod date_time_picker;
 pub mod fonts;
 pub mod footer;
 pub mod grid_picker;
@@ -43,6 +44,7 @@ pub use chat_row::{
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use data::{ColumnWidth, DataRow, DataTable, data_table, hover_reveal};
+pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use grid_picker::{
@@ -61,7 +63,7 @@ pub use menu::{
     menu_button, menu_divider, menu_header, menu_item,
 };
 pub use modal::{Modal, modal};
-pub use overlay::{Overlay, OverlayPosition, overlay};
+pub use overlay::{AnchoredPopover, Overlay, OverlayPosition, anchored_popover, overlay};
 pub use palette::{
     CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,
     bg_danger_soft, bg_warn_soft, with_alpha,

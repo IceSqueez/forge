@@ -5,12 +5,13 @@ use crate::triggers_screen::{
     render_config_row, sparse_overrides,
 };
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup,
-    GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuItem,
-    MenuPlacement, ModalSize, OverlayPosition, Radius, Spacing, TextInput, context_menu,
-    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, overlay,
-    primary_button, radius, row_card, secondary_button, spacing, status_dot, toggle, tr,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DateTimePicker, DateTimePickerEvent,
+    DateTimePickerLabels, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
+    GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
+    GridPickerSubtitle, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition,
+    Radius, Spacing, TextInput, anchored_popover, context_menu, ghost_button_with_icon, icon,
+    menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius, row_card,
+    secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
     CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
@@ -385,6 +386,7 @@ fn build_input_field(
     placeholder: &'static str,
     integer: bool,
     browse: bool,
+    datetime: bool,
     gate: Option<String>,
     config: &SubActionConfig,
     palette: ForgePalette,
@@ -406,6 +408,7 @@ fn build_input_field(
         label: label.to_owned(),
         integer,
         browse,
+        datetime,
         gate,
         input,
     }
@@ -467,6 +470,7 @@ fn push_form_field(
             placeholder,
             false,
             false,
+            false,
             gate,
             config,
             palette,
@@ -489,10 +493,13 @@ fn push_form_field(
             cx,
         )),
         FormField::Integer { key, label, .. } => out.push(build_input_field(
-            key, label, "0", true, false, gate, config, palette, cx,
+            key, label, "0", true, false, false, gate, config, palette, cx,
         )),
         FormField::FilePicker { key, label } => out.push(build_input_field(
-            key, label, "", false, true, gate, config, palette, cx,
+            key, label, "", false, true, false, gate, config, palette, cx,
+        )),
+        FormField::DateTime { key, label } => out.push(build_input_field(
+            key, label, "", false, false, true, gate, config, palette, cx,
         )),
         FormField::Select {
             key,
@@ -2200,6 +2207,69 @@ impl ScreenActionsView {
         .detach();
     }
 
+    fn open_datetime_picker(
+        &mut self,
+        target_input: Entity<TextInput>,
+        pos: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let palette = cx.palette();
+        let initial = target_input.read(cx).content().to_owned();
+        let labels = DateTimePickerLabels {
+            now: tr!("actions_sub_datetime_now").into(),
+            set: tr!("actions_sub_datetime_set").into(),
+            cancel: tr!("common_cancel").into(),
+        };
+        let picker = cx.new(|cx| DateTimePicker::new(Some(initial.as_str()), labels, palette, cx));
+        let sub = cx.subscribe(&picker, Self::on_datetime_event);
+        self.datetime_picker = Some(DateTimePickerForm {
+            picker,
+            target_input,
+            pos,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    fn on_datetime_event(
+        &mut self,
+        _picker: Entity<DateTimePicker>,
+        event: &DateTimePickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            DateTimePickerEvent::Picked(value) => {
+                if let Some(form) = self.datetime_picker.take() {
+                    let value = value.to_string();
+                    form.target_input.update(cx, |input, cx| {
+                        input.set_content(value, cx);
+                        cx.notify();
+                    });
+                }
+                cx.notify();
+            }
+            DateTimePickerEvent::Dismissed => self.close_datetime_picker(cx),
+        }
+    }
+
+    fn close_datetime_picker(&mut self, cx: &mut Context<Self>) {
+        self.datetime_picker = None;
+        cx.notify();
+    }
+
+    pub(super) fn render_datetime_popover(
+        &self,
+        form: &DateTimePickerForm,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let view = cx.entity();
+        anchored_popover(form.pos, form.picker.clone())
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_datetime_picker(cx));
+            })
+            .into_any_element()
+    }
+
     fn open_edit_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
@@ -3052,6 +3122,7 @@ impl ScreenActionsView {
                     key,
                     label,
                     browse,
+                    datetime,
                     gate,
                     input,
                     ..
@@ -3077,6 +3148,31 @@ impl ScreenActionsView {
                                     SharedString::from(format!("actions-sub-browse-{key}")),
                                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                                         this.browse_sub_field(target_input.clone(), cx)
+                                    }),
+                                ),
+                            )
+                            .into_any_element()
+                    } else if *datetime {
+                        let target_input = input.clone();
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(spacing(Spacing::Xs, Density::Cozy))
+                            .child(div().flex_1().child(input.clone()))
+                            .child(
+                                ghost_button_with_icon(
+                                    Icon::Calendar,
+                                    tr!("actions_sub_datetime_pick"),
+                                    palette,
+                                )
+                                .on_click(
+                                    SharedString::from(format!("actions-sub-datetime-{key}")),
+                                    cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                                        this.open_datetime_picker(
+                                            target_input.clone(),
+                                            ev.position(),
+                                            cx,
+                                        )
                                     }),
                                 ),
                             )

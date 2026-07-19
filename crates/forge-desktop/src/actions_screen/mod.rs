@@ -3,8 +3,8 @@ use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
-    ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, TextArea, TextInput, ToastKind,
-    fmt_number, fmt_relative_time, icon, overlay, search_input, tr,
+    DateTimePicker, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, TextArea,
+    TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay, search_input, tr,
 };
 use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
@@ -180,6 +180,7 @@ pub struct ScreenActionsView {
     menu_click_pos: Option<Point<Pixels>>,
     grid_picker: Option<GridPickerForm>,
     add_trigger: Option<AddTriggerStage>,
+    datetime_picker: Option<DateTimePickerForm>,
     nav_path: Vec<nav::NavFrame>,
     /// Keyed by `(step_index, case_index)` within the current chain.
     case_fields: BTreeMap<(usize, usize), CaseField>,
@@ -244,6 +245,7 @@ impl ScreenActionsView {
             menu_click_pos: None,
             grid_picker: None,
             add_trigger: None,
+            datetime_picker: None,
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
             _search_sub: search_sub,
@@ -471,6 +473,10 @@ impl Render for ScreenActionsView {
             .add_trigger
             .as_ref()
             .map(|stage| self.render_add_trigger(stage, &palette, cx));
+        let datetime_popover = self
+            .datetime_picker
+            .as_ref()
+            .map(|form| self.render_datetime_popover(form, cx));
         div()
             .size_full()
             .flex()
@@ -484,6 +490,7 @@ impl Render for ScreenActionsView {
             .children(sub_modal)
             .children(grid_picker)
             .children(trigger_grid)
+            .children(datetime_popover)
     }
 }
 
@@ -536,6 +543,13 @@ struct GridPickerForm {
     _sub: Subscription,
 }
 
+struct DateTimePickerForm {
+    picker: Entity<DateTimePicker>,
+    target_input: Entity<TextInput>,
+    pos: Point<Pixels>,
+    _sub: Subscription,
+}
+
 enum AddTriggerStage {
     Pick(AddTriggerPicker),
     Fill(AddTriggerFill),
@@ -579,6 +593,7 @@ enum SubFormField {
         label: String,
         integer: bool,
         browse: bool,
+        datetime: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
     },

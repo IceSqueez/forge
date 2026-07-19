@@ -2,9 +2,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    Animation, AnimationExt, App, Div, ElementId, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, RenderOnce, Rgba,
-    SharedString, Styled, Window, deferred, div,
+    Anchor, AnchoredPositionMode, Animation, AnimationExt, AnyElement, App, Div, ElementId,
+    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, Styled, Window, anchored,
+    deferred, div, point, px,
 };
 
 use crate::palette::{ForgePalette, with_alpha};
@@ -219,6 +220,59 @@ impl RenderOnce for Overlay {
                 .with_priority(OVERLAY_PRIORITY)
                 .into_any_element(),
         }
+    }
+}
+
+#[derive(IntoElement)]
+pub struct AnchoredPopover {
+    position: Point<Pixels>,
+    content: AnyElement,
+    on_dismiss: Option<DismissHandler>,
+}
+
+/// A free-floating panel anchored at a window-space position with a full-window
+/// backdrop that dismisses on outside click. Unlike [`overlay`] it is not centred
+/// and carries no scrim tint.
+pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> AnchoredPopover {
+    AnchoredPopover {
+        position,
+        content: content.into_any_element(),
+        on_dismiss: None,
+    }
+}
+
+impl AnchoredPopover {
+    #[must_use]
+    pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_dismiss = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for AnchoredPopover {
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let viewport = window.viewport_size();
+        let mut backdrop = div().size_full().occlude();
+        if let Some(dismiss) = self.on_dismiss.clone() {
+            backdrop =
+                backdrop.on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
+                    dismiss(window, cx);
+                });
+        }
+        let backdrop_layer = anchored()
+            .position_mode(AnchoredPositionMode::Window)
+            .position(point(px(0.0), px(0.0)))
+            .anchor(Anchor::TopLeft)
+            .child(div().w(viewport.width).h(viewport.height).child(backdrop));
+
+        let panel_layer = anchored()
+            .position_mode(AnchoredPositionMode::Window)
+            .position(self.position)
+            .anchor(Anchor::TopLeft)
+            .snap_to_window()
+            .child(self.content);
+
+        deferred(div().child(backdrop_layer).child(panel_layer)).with_priority(OVERLAY_PRIORITY)
     }
 }
 

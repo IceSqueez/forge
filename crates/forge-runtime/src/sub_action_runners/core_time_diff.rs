@@ -62,15 +62,13 @@ impl SubActionRunner for CoreTimeDiffRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DateTime {
                 key: "from",
                 label: "From (datetime or %var%)",
-                placeholder: "%start_time%",
             },
-            FormField::Text {
+            FormField::DateTime {
                 key: "to",
                 label: "To (datetime or %var%)",
-                placeholder: "%now%",
             },
             FormField::Select {
                 key: "unit",

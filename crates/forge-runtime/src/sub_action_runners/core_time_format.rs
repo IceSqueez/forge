@@ -68,10 +68,9 @@ impl SubActionRunner for CoreTimeFormatRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DateTime {
                 key: "source",
                 label: "Source (datetime or %var%)",
-                placeholder: "%now%",
             },
             FormField::Text {
                 key: "format_string",

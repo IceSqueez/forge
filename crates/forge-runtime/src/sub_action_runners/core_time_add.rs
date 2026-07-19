@@ -78,10 +78,9 @@ impl SubActionRunner for CoreTimeAddRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DateTime {
                 key: "base",
                 label: "Base Datetime (or %var%)",
-                placeholder: "%now%",
             },
             FormField::Integer {
                 key: "add_amount",

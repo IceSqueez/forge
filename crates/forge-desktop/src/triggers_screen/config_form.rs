@@ -95,16 +95,9 @@ pub(crate) fn fold_config_field<V: 'static>(
         FormField::Select { key, .. } | FormField::DynamicSelect { key, .. } => out.push(
             build_config_input(key, "", false, gate, config, palette, on_committed, cx),
         ),
-        FormField::FilePicker { key, .. } => out.push(build_config_input(
-            key,
-            "",
-            false,
-            gate,
-            config,
-            palette,
-            on_committed,
-            cx,
-        )),
+        FormField::FilePicker { key, .. } | FormField::DateTime { key, .. } => out.push(
+            build_config_input(key, "", false, gate, config, palette, on_committed, cx),
+        ),
         FormField::Toggle { key, .. } => {
             let value = matches!(config.get(*key), Some(Variant::Bool(true)));
             out.push(ConfigField::Bool {

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
-    Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, icon, modal,
-    overlay, primary_button, radius, spacing, tr, with_alpha,
+    Spacing, TextArea, TextInput, badge, breadcrumb, confirm_modal, ghost_button, hover_reveal,
+    icon, modal, overlay, primary_button, radius, spacing, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher, EventsError};
 use forge_runtime::{EventBus, ScriptRegistry};
@@ -16,8 +16,8 @@ use forge_script::{
 use forge_storage::{DataProvider, GlobalsRepo, ScriptRecord, ScriptRepo, SettingsRepo};
 use forge_types::{ArgStack, ScriptContract, ScriptId, Variant, VariantKind};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
+    MouseDownEvent, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
@@ -186,6 +186,9 @@ pub struct ScriptEditorView {
     variables: Vec<(SharedString, SharedString)>,
     loading: bool,
 
+    search: Entity<TextInput>,
+    _search_sub: Subscription,
+
     rename: Option<RenameState>,
     pending_delete: Option<ScriptId>,
     pending_nav: Option<PendingNav>,
@@ -232,6 +235,20 @@ impl ScriptEditorView {
             }
         });
 
+        let search = cx.new(|cx| {
+            TextInput::new(tr!("script_editor_search_placeholder"), cx)
+                .with_palette(palette)
+                .with_font_size(FONT_XS)
+                .leading_icon(Icon::Search, palette.text_faint)
+                .on_surface()
+                .static_chrome(palette.surface_overlay, Radius::Sm)
+        });
+        let search_sub = cx.subscribe(&search, |_this, _f, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event {
+                cx.notify();
+            }
+        });
+
         let api_search = cx.new(|cx| {
             TextInput::new(tr!("script_editor_api_search_placeholder"), cx)
                 .with_palette(palette)
@@ -256,6 +273,8 @@ impl ScriptEditorView {
             open: None,
             variables: Vec::new(),
             loading: false,
+            search,
+            _search_sub: search_sub,
             rename: None,
             pending_delete: None,
             pending_nav: None,
@@ -1294,8 +1313,43 @@ impl ScriptEditorView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut scripts = div().flex().flex_col().child(scripts_header(palette, cx));
+        let query = self.search.read(cx).content().trim().to_lowercase();
 
+        let title_row = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(13.0))
+                    .text_color(palette.text_primary)
+                    .child(tr!("nav_script_editor")),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(self.scripts.len().to_string()),
+            );
+
+        let header = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
+            .border_b(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .child(title_row)
+            .child(self.search.clone());
+
+        let mut scripts = div().flex().flex_col();
         if self.scripts.is_empty() {
             scripts = scripts.child(
                 div()
@@ -1307,7 +1361,11 @@ impl ScriptEditorView {
                     .child(tr!("script_editor_no_scripts")),
             );
         } else {
-            for entry in &self.scripts {
+            for entry in self
+                .scripts
+                .iter()
+                .filter(|e| query.is_empty() || e.name.to_lowercase().contains(&query))
+            {
                 scripts = scripts.child(self.file_row(entry, palette, cx));
             }
         }
@@ -1332,19 +1390,72 @@ impl ScriptEditorView {
             }
         }
 
+        let scroll = div()
+            .id("script-left-scroll")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Xs, density))
+            .child(scripts)
+            .child(vars);
+
         div()
             .id("script-left-pane")
             .flex_none()
             .w(LEFT_PANE_W)
             .h_full()
-            .overflow_y_scroll()
+            .flex()
+            .flex_col()
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.surface_overlay)
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Xs, density))
-            .child(scripts)
-            .child(vars)
+            .child(header)
+            .child(scroll)
+            .child(self.new_script_button(palette, density, cx))
+            .into_any_element()
+    }
+
+    fn new_script_button(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let brand = palette.brand;
+        let hover_bg = palette.surface_overlay;
+        div()
+            .flex_none()
+            .p(spacing(Spacing::Sm, density))
+            .border_t(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .child(
+                div()
+                    .id("script-new")
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .py(spacing(Spacing::Xs, density))
+                    .px(spacing(Spacing::Sm, density))
+                    .rounded(px(8.0))
+                    .border(BORDER_THIN)
+                    .border_color(palette.border_input)
+                    .bg(palette.base)
+                    .cursor_pointer()
+                    .hover(move |s| s.border_color(brand).bg(hover_bg))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.new_script(cx)))
+                    .child(icon(Icon::Plus, GLYPH_ACTION, palette.brand))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(FONT_XS)
+                            .text_color(palette.brand)
+                            .child(tr!("script_editor_new_script")),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -1357,16 +1468,22 @@ impl ScriptEditorView {
         let id = entry.id;
         let selected = self.selected == Some(id);
         let renaming = self.rename.as_ref().is_some_and(|r| r.target == id);
+        let group: SharedString = format!("script-row-{id}").into();
 
         let icon_color = if selected {
             palette.brand
         } else {
-            palette.info
+            palette.text_faint
         };
         let text_color = if selected {
-            palette.brand
+            palette.text_primary
         } else {
             palette.text_secondary
+        };
+        let stripe = if selected {
+            palette.brand
+        } else {
+            with_alpha(palette.brand, 0.0)
         };
 
         let label: AnyElement = if renaming {
@@ -1377,56 +1494,64 @@ impl ScriptEditorView {
         } else {
             div()
                 .flex_1()
+                .min_w_0()
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XS)
                 .text_color(text_color)
+                .truncate()
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        if event.click_count >= 2 {
+                            this.start_rename(id, window, cx);
+                        }
+                    }),
+                )
                 .child(entry.name.clone())
                 .into_any_element()
         };
 
         let mut row = div()
             .id(SharedString::from(format!("script-file-{id}")))
+            .group(group.clone())
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .py(spacing(Spacing::Xxs, Density::Cozy))
             .px(spacing(Spacing::Xs, Density::Cozy))
             .rounded(radius(Radius::Sm))
-            .when(selected, |d| {
-                d.bg(palette.elevated)
-                    .border_l(STRIPE_W)
-                    .border_color(palette.brand)
-            })
+            .border_l(STRIPE_W)
+            .border_color(stripe)
+            .when(selected, |d| d.bg(palette.surface_overlay))
             .child(icon(Icon::FileCode, GLYPH_FILE, icon_color))
             .child(label);
 
         if !renaming {
+            let hover_bg = palette.base;
             row = row
                 .cursor_pointer()
-                .hover(|s| s.bg(palette.elevated))
+                .when(!selected, |d| d.hover(move |s| s.bg(hover_bg)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
-        }
 
-        if selected && !renaming {
-            row = row
-                .child(
-                    div()
-                        .id(SharedString::from(format!("script-rename-{id}")))
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            this.start_rename(id, window, cx)
-                        }))
-                        .child(icon(Icon::Pencil, GLYPH_ACTION, palette.text_faint)),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!("script-delete-{id}")))
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.request_delete(id, cx)
-                        }))
-                        .child(icon(Icon::CircleX, GLYPH_ACTION, palette.text_faint)),
-                );
+            let delete_bg = palette.random;
+            row = row.child(hover_reveal(
+                div()
+                    .id(SharedString::from(format!("script-delete-{id}")))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .p(px(2.0))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(delete_bg))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.request_delete(id, cx);
+                    }))
+                    .child(icon(Icon::X, GLYPH_ACTION, palette.text_faint)),
+                group.clone(),
+            ));
         }
 
         row.into_any_element()
@@ -2003,23 +2128,6 @@ fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into())
-}
-
-fn scripts_header(palette: &ForgePalette, cx: &mut Context<ScriptEditorView>) -> impl IntoElement {
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .justify_between()
-        .child(section_label(tr!("script_editor_scripts_label"), palette))
-        .child(
-            div()
-                .id("script-new")
-                .cursor_pointer()
-                .pr(spacing(Spacing::Xs, Density::Cozy))
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.new_script(cx)))
-                .child(icon(Icon::Plus, GLYPH_ACTION, palette.text_faint)),
-        )
 }
 
 fn variable_row(name: SharedString, ty: SharedString, palette: &ForgePalette) -> impl IntoElement {

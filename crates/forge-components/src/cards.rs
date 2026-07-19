@@ -263,6 +263,7 @@ pub struct RowCard {
     density: Density,
     pad_v: Option<Pixels>,
     pad_h: Option<Pixels>,
+    reveal_trailing_group: Option<SharedString>,
     id: Option<ElementId>,
     on_click: Option<RowClick>,
 }
@@ -288,6 +289,7 @@ pub fn row_card(title: impl IntoElement, palette: &ForgePalette) -> RowCard {
         density: Density::default(),
         pad_v: None,
         pad_h: None,
+        reveal_trailing_group: None,
         id: None,
         on_click: None,
     }
@@ -351,6 +353,14 @@ impl RowCard {
         self
     }
 
+    /// Keeps the trailing element hidden (its width still reserved) until the pointer
+    /// enters the row, then reveals it. `group` must be unique per rendered row.
+    #[must_use]
+    pub fn trailing_reveal(mut self, group: impl Into<SharedString>) -> Self {
+        self.reveal_trailing_group = Some(group.into());
+        self
+    }
+
     pub fn on_click(
         mut self,
         id: impl Into<ElementId>,
@@ -408,7 +418,19 @@ impl RenderOnce for RowCard {
         }
         root = root.child(div().flex_1().child(title_col));
         if let Some(trailing) = self.trailing {
-            root = root.child(div().flex().items_center().child(trailing));
+            let slot = match &self.reveal_trailing_group {
+                Some(group) => {
+                    root = root.group(group.clone());
+                    div()
+                        .flex()
+                        .items_center()
+                        .invisible()
+                        .group_hover(group.clone(), |s| s.visible())
+                        .child(trailing)
+                }
+                None => div().flex().items_center().child(trailing),
+            };
+            root = root.child(slot);
         }
 
         match (self.id, self.on_click) {

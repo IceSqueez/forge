@@ -2290,6 +2290,9 @@ impl ScreenActionsView {
         row_card(title, palette)
             .leading(leading)
             .trailing(unlink)
+            .trailing_reveal(SharedString::from(format!(
+                "actions-trigger-row-{instance_id}"
+            )))
             .idle_background(palette.elevated)
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
             .on_click(
@@ -2451,7 +2454,7 @@ impl ScreenActionsView {
             title_el = title_el.child(step_avg_badge(avg, palette));
         }
 
-        let card = row_card(title_el, palette)
+        let mut card = row_card(title_el, palette)
             .leading(icon(glyph, CARD_GLYPH, glyph_color))
             .meta(variable_text(&detail_str, palette))
             .trailing(self.render_step_controls(i, total, palette, cx))
@@ -2462,6 +2465,9 @@ impl ScreenActionsView {
                 SharedString::from(format!("actions-step-card-{i}")),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.open_edit_sub_action(i, cx)),
             );
+        if self.step_menu_open != Some(i) {
+            card = card.trailing_reveal(SharedString::from(format!("actions-step-row-{i}")));
+        }
 
         let step_row = div()
             .flex()

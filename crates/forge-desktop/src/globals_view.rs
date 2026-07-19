@@ -979,8 +979,8 @@ impl GlobalsView {
             .child(self.row_action(
                 ("globals-edit", idx),
                 Icon::Pencil,
-                palette.brand,
-                palette,
+                palette.text_secondary,
+                with_alpha(palette.brand, ACTION_HOVER_ALPHA),
                 cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.open_edit(edit_name.clone(), window, cx)
                 }),
@@ -988,8 +988,8 @@ impl GlobalsView {
             .child(self.row_action(
                 ("globals-delete", idx),
                 Icon::X,
+                palette.text_faint,
                 palette.random,
-                palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.request_delete(delete_name.clone(), cx)
                 }),
@@ -1046,11 +1046,10 @@ impl GlobalsView {
         &self,
         id: impl Into<gpui::ElementId>,
         glyph: Icon,
-        hover: Rgba,
-        palette: &ForgePalette,
+        idle: Rgba,
+        hover_bg: Rgba,
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
     ) -> impl IntoElement {
-        let wash = with_alpha(hover, ACTION_HOVER_ALPHA);
         div()
             .id(id.into())
             .flex()
@@ -1059,9 +1058,9 @@ impl GlobalsView {
             .p(px(4.0))
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
-            .hover(move |s| s.bg(wash))
+            .hover(move |s| s.bg(hover_bg))
             .on_click(handler)
-            .child(icon(glyph, FONT_XS, palette.text_secondary))
+            .child(icon(glyph, FONT_XS, idle))
     }
 
     fn render_editor(

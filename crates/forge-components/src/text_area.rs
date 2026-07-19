@@ -115,6 +115,7 @@ pub enum SyntaxMode {
     #[default]
     None,
     Json,
+    Rhai,
 }
 
 /// Subscribe to [`InputEvent`] for edits - only `Changed` is emitted (a text area has no submit).
@@ -195,6 +196,11 @@ impl TextArea {
 
     pub fn json_highlight(mut self) -> Self {
         self.syntax = SyntaxMode::Json;
+        self
+    }
+
+    pub fn rhai_highlight(mut self) -> Self {
+        self.syntax = SyntaxMode::Rhai;
         self
     }
 
@@ -776,6 +782,104 @@ fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
     runs
 }
 
+fn is_rhai_keyword(word: &str) -> bool {
+    matches!(
+        word,
+        "fn" | "let"
+            | "const"
+            | "if"
+            | "else"
+            | "return"
+            | "for"
+            | "in"
+            | "while"
+            | "loop"
+            | "break"
+            | "continue"
+            | "true"
+            | "false"
+            | "switch"
+            | "import"
+            | "as"
+            | "throw"
+            | "private"
+    )
+}
+
+/// Byte-length foreground runs for a Rhai buffer: keywords, strings, numbers,
+/// line comments, and call-position identifiers each get their design hue; other
+/// identifiers stay primary and punctuation/whitespace stay muted.
+fn rhai_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let n = chars.len();
+    let total = text.len();
+    let byte_at = |i: usize| if i < n { chars[i].0 } else { total };
+    let mut runs: Vec<(usize, Hsla)> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        let c = chars[i].1;
+        let start = i;
+        let hue: Hsla = if c == '/' && i + 1 < n && chars[i + 1].1 == '/' {
+            while i < n && chars[i].1 != '\n' {
+                i += 1;
+            }
+            palette.code_comment.into()
+        } else if c == '"' {
+            i += 1;
+            while i < n {
+                match chars[i].1 {
+                    '\\' => i += 2,
+                    '"' => {
+                        i += 1;
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+            i = i.min(n);
+            palette.code_str.into()
+        } else if c.is_ascii_digit() {
+            i += 1;
+            while i < n
+                && (chars[i].1.is_ascii_digit() || matches!(chars[i].1, '.' | '_' | 'e' | 'E'))
+            {
+                i += 1;
+            }
+            palette.code_num.into()
+        } else if c.is_alphabetic() || c == '_' {
+            i += 1;
+            while i < n && (chars[i].1.is_alphanumeric() || chars[i].1 == '_') {
+                i += 1;
+            }
+            let word: String = chars[start..i].iter().map(|(_, ch)| *ch).collect();
+            let mut j = i;
+            while j < n && chars[j].1 == ' ' {
+                j += 1;
+            }
+            if is_rhai_keyword(&word) {
+                palette.code_keyword.into()
+            } else if j < n && chars[j].1 == '(' {
+                palette.code_fn.into()
+            } else {
+                palette.text_primary.into()
+            }
+        } else if c.is_whitespace() {
+            while i < n && chars[i].1.is_whitespace() {
+                i += 1;
+            }
+            palette.text_secondary.into()
+        } else {
+            i += 1;
+            palette.text_secondary.into()
+        };
+        let len = byte_at(i) - byte_at(start);
+        if len > 0 {
+            runs.push((len, hue));
+        }
+    }
+    runs
+}
+
 struct AreaElement {
     input: Entity<TextArea>,
 }
@@ -853,6 +957,7 @@ impl Element for AreaElement {
         } else {
             match input.syntax {
                 SyntaxMode::Json => Some(json_syntax_runs(&content, &palette)),
+                SyntaxMode::Rhai => Some(rhai_syntax_runs(&content, &palette)),
                 SyntaxMode::None => None,
             }
         };

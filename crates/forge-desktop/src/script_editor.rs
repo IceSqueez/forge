@@ -222,6 +222,7 @@ impl ScriptEditorView {
             TextArea::new("// write your rhai script", cx)
                 .with_palette(palette)
                 .mono()
+                .rhai_highlight()
                 .with_font_size(FONT_XS)
                 .with_height(code_field_height(""))
         });

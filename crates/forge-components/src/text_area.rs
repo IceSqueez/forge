@@ -21,6 +21,32 @@ use crate::tokens::{
 
 const KEY_CONTEXT: &str = "ForgeTextArea";
 
+const CARET_BLINK_MS: u64 = 530;
+
+fn spawn_caret_blink(cx: &mut Context<TextArea>) {
+    cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(CARET_BLINK_MS))
+                .await;
+            let alive = this
+                .update(cx, |this, cx| {
+                    if this.focused_cached {
+                        this.blink_visible = !this.blink_visible;
+                        cx.notify();
+                    } else {
+                        this.blink_visible = true;
+                    }
+                })
+                .is_ok();
+            if !alive {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
 const DEFAULT_AREA_HEIGHT: Pixels = px(130.0);
 
 const GUTTER_W: Pixels = px(48.0);
@@ -151,12 +177,15 @@ pub struct TextArea {
     /// When true, prepaint keeps the caret in view (after edits/moves); a wheel
     /// scroll clears it so the content can be scrolled away from the caret.
     follow_caret: bool,
+    blink_visible: bool,
+    focused_cached: bool,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
 
 impl TextArea {
     pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
+        spawn_caret_blink(cx);
         Self {
             focus_handle: cx.focus_handle(),
             content: SharedString::default(),
@@ -181,6 +210,8 @@ impl TextArea {
             gutter_marks: Vec::new(),
             fill: false,
             follow_caret: true,
+            blink_visible: true,
+            focused_cached: false,
         }
     }
 
@@ -513,6 +544,7 @@ impl TextArea {
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
         self.follow_caret = true;
+        self.blink_visible = true;
         cx.notify();
     }
 
@@ -555,6 +587,7 @@ impl TextArea {
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
         self.follow_caret = true;
+        self.blink_visible = true;
         cx.notify();
     }
 }
@@ -616,6 +649,7 @@ impl EntityInputHandler for TextArea {
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
         self.follow_caret = true;
+        self.blink_visible = true;
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -652,6 +686,7 @@ impl EntityInputHandler for TextArea {
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
 
         self.follow_caret = true;
+        self.blink_visible = true;
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -1219,6 +1254,7 @@ impl Element for AreaElement {
         }
 
         if focus_handle.is_focused(window)
+            && self.input.read(cx).blink_visible
             && let Some(cursor) = prepaint.cursor.take()
         {
             window.paint_quad(cursor);
@@ -1241,6 +1277,7 @@ impl Focusable for TextArea {
 impl Render for TextArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focused = self.focus_handle.is_focused(window);
+        self.focused_cached = focused;
         let border_color = if self.read_only {
             self.palette.disabled
         } else if focused {

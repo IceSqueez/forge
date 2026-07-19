@@ -11,10 +11,37 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, with_alpha};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, Radius, Spacing, radius, spacing,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, Radius,
+    Spacing, radius, spacing,
 };
 
 const KEY_CONTEXT: &str = "ForgeTextInput";
+
+const CARET_BLINK_MS: u64 = 530;
+
+fn spawn_caret_blink(cx: &mut Context<TextInput>) {
+    cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(CARET_BLINK_MS))
+                .await;
+            let alive = this
+                .update(cx, |this, cx| {
+                    if this.focused_cached {
+                        this.blink_visible = !this.blink_visible;
+                        cx.notify();
+                    } else {
+                        this.blink_visible = true;
+                    }
+                })
+                .is_ok();
+            if !alive {
+                break;
+            }
+        }
+    })
+    .detach();
+}
 
 actions!(
     forge_text_input,
@@ -87,12 +114,16 @@ pub struct TextInput {
     on_surface: bool,
     static_chrome: Option<(Rgba, Radius)>,
     plain: bool,
+    mono: bool,
+    blink_visible: bool,
+    focused_cached: bool,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
 
 impl TextInput {
     pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
+        spawn_caret_blink(cx);
         Self {
             focus_handle: cx.focus_handle(),
             content: SharedString::default(),
@@ -113,12 +144,21 @@ impl TextInput {
             on_surface: false,
             static_chrome: None,
             plain: false,
+            mono: false,
+            blink_visible: true,
+            focused_cached: false,
         }
     }
 
     #[must_use]
     pub fn plain(mut self) -> Self {
         self.plain = true;
+        self
+    }
+
+    #[must_use]
+    pub fn mono(mut self) -> Self {
+        self.mono = true;
         self
     }
 
@@ -320,6 +360,7 @@ impl TextInput {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
+        self.blink_visible = true;
         cx.notify();
     }
 
@@ -363,6 +404,7 @@ impl TextInput {
             self.selection_reversed = !self.selection_reversed;
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
+        self.blink_visible = true;
         cx.notify();
     }
 
@@ -466,6 +508,7 @@ impl EntityInputHandler for TextInput {
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
+        self.blink_visible = true;
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -501,6 +544,7 @@ impl EntityInputHandler for TextInput {
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
 
+        self.blink_visible = true;
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -767,6 +811,7 @@ impl Element for TextElement {
         );
 
         if focus_handle.is_focused(window)
+            && self.input.read(cx).blink_visible
             && let Some(cursor) = prepaint.cursor.take()
         {
             window.paint_quad(cursor);
@@ -789,6 +834,7 @@ impl Focusable for TextInput {
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focused = self.focus_handle.is_focused(window);
+        self.focused_cached = focused;
         let (border_color, corner) = match self.static_chrome {
             Some((border, corner)) => (border, corner),
             None => {
@@ -848,8 +894,13 @@ impl Render for TextInput {
                 .border_color(border_color)
                 .rounded(radius(corner));
         }
+        let font_family = if self.mono {
+            DEFAULT_MONO_FAMILY
+        } else {
+            DEFAULT_BODY_FAMILY
+        };
         let field = field
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(font_family)
             .text_size(self.font_size)
             .text_color(text_color)
             .line_height(self.font_size * 1.5);

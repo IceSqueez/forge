@@ -9,9 +9,9 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
     TextArea, TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal,
-    data_table, fmt_relative_time, ghost_button_with_icon, hover_reveal, icon, modal, overlay,
-    primary_button, primary_button_with_icon, radius, search_input, secondary_button, spacing,
-    status_dot, toggle, tr, with_alpha,
+    data_table, fmt_relative_time, hover_reveal, icon, modal, overlay, primary_button,
+    primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
+    tr, with_alpha,
 };
 use std::path::PathBuf;
 
@@ -746,7 +746,10 @@ impl GlobalsView {
             ));
 
         breadcrumb(
-            vec![BreadcrumbCrumb::leaf(tr!("globals_breadcrumb"))],
+            vec![
+                BreadcrumbCrumb::leaf(tr!("globals_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("globals_breadcrumb_globals")),
+            ],
             palette,
         )
         .right(cluster)
@@ -803,12 +806,18 @@ impl GlobalsView {
             .child(search)
             .child(chip_row);
 
-        let export = ghost_button_with_icon(Icon::Download, tr!("globals_export_btn"), palette)
-            .density(density)
-            .on_click(
-                "globals-export",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)),
-            );
+        let export_hover = palette.surface_overlay;
+        let export = div()
+            .id("globals-export")
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(px(5.0))
+            .rounded(radius(Radius::Sm))
+            .cursor_pointer()
+            .hover(move |s| s.bg(export_hover))
+            .child(icon(Icon::Download, px(14.0), palette.success))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
         let new_btn =
             primary_button_with_icon(Icon::Plus, tr!("globals_editor_title_create"), palette)
                 .density(density)
@@ -890,7 +899,7 @@ impl GlobalsView {
                 .map(|(idx, g)| self.build_row(idx, g, palette, cx))
                 .collect();
             data_table(palette, headers, widths, data_rows)
-                .density(density)
+                .density(Density::Compact)
                 .into_any_element()
         };
 
@@ -931,7 +940,7 @@ impl GlobalsView {
             variant_kind_color(kind, palette),
             kind_word(kind),
             true,
-            FONT_XXS,
+            px(9.5),
         ));
 
         let value_cell = value_preview(g, palette);

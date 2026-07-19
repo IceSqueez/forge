@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{DEFAULT_MONO_FAMILY, Density, FONT_XS, Spacing, spacing};
+use crate::tokens::{DEFAULT_MONO_FAMILY, Density, FONT_XXS, Spacing, spacing};
 
 /// `Flex(n)` claims a share of leftover row width proportional to `n` (`Flex(8)`
 /// beside `Flex(7)` splits 8:7), ignoring cell content's intrinsic width.
@@ -141,7 +141,8 @@ impl RenderOnce for DataTable {
                 .map(move |(label, width)| {
                     let label_el = div()
                         .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_XS)
+                        .text_size(FONT_XXS)
+                        .whitespace_nowrap()
                         .text_color(header_ink)
                         .child(label);
                     column_cell(width, label_el)

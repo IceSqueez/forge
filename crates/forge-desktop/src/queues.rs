@@ -643,7 +643,7 @@ impl QueuesView {
                     tr!("queues_menu_delete"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
                 )
-                .icon(Icon::CircleX)
+                .icon(Icon::Trash)
                 .color(palette.random)
                 .disabled(is_default)
                 .into(),

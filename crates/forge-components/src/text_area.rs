@@ -147,6 +147,7 @@ pub struct TextArea {
     syntax: SyntaxMode,
     gutter: bool,
     gutter_marks: Vec<usize>,
+    fill: bool,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
@@ -175,6 +176,7 @@ impl TextArea {
             syntax: SyntaxMode::None,
             gutter: false,
             gutter_marks: Vec::new(),
+            fill: false,
         }
     }
 
@@ -225,6 +227,11 @@ impl TextArea {
 
     pub fn with_gutter(mut self) -> Self {
         self.gutter = true;
+        self
+    }
+
+    pub fn fill(mut self) -> Self {
+        self.fill = true;
         self
     }
 
@@ -1217,7 +1224,7 @@ impl Render for TextArea {
             self.palette.shell
         };
 
-        div()
+        let field = div()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
@@ -1243,19 +1250,27 @@ impl Render for TextArea {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .w_full()
-            .h(self.height)
             .overflow_hidden()
-            .px(spacing(Spacing::Sm, self.density))
-            .py(spacing(Spacing::Xs, self.density))
-            .bg(surface)
-            .border(BORDER_THIN)
-            .border_color(border_color)
-            .rounded(radius(Radius::Md))
             .font_family(self.font_family)
             .text_size(self.font_size)
             .text_color(text_color)
-            .line_height(self.font_size * 1.5)
-            .child(AreaElement { input: cx.entity() })
+            .line_height(self.font_size * 1.5);
+        let field = if self.fill {
+            field
+                .flex_1()
+                .min_h_0()
+                .py(spacing(Spacing::Xs, self.density))
+        } else {
+            field
+                .h(self.height)
+                .px(spacing(Spacing::Sm, self.density))
+                .py(spacing(Spacing::Xs, self.density))
+                .bg(surface)
+                .border(BORDER_THIN)
+                .border_color(border_color)
+                .rounded(radius(Radius::Md))
+        };
+        field.child(AreaElement { input: cx.entity() })
     }
 }
 

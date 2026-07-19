@@ -43,9 +43,6 @@ const DETAILS_PANE_PAD: Pixels = px(14.0);
 const GLYPH_PIN: Pixels = px(12.0);
 const GLYPH_RETURNS: Pixels = px(11.0);
 
-const CODE_LINE_H_PX: f32 = 18.0;
-const CODE_PAD_V_PX: f32 = 6.0;
-
 const DIVIDER_W: Pixels = px(0.5);
 const DIVIDER_H: Pixels = px(16.0);
 
@@ -58,11 +55,6 @@ const GLYPH_STATUS: Pixels = px(12.0);
 const GLYPH_FILE: Pixels = px(12.0);
 const GLYPH_TAB: Pixels = px(12.0);
 const GLYPH_ACTION: Pixels = px(12.0);
-
-fn code_field_height(content: &str) -> Pixels {
-    let lines = content.lines().count().max(1) as f32;
-    px(lines * CODE_LINE_H_PX + CODE_PAD_V_PX * 2.0)
-}
 
 fn now_timestamp() -> String {
     let now = OffsetDateTime::now_utc();
@@ -267,7 +259,7 @@ impl ScriptEditorView {
                 .rhai_highlight()
                 .with_gutter()
                 .with_font_size(FONT_XS)
-                .with_height(code_field_height(""))
+                .fill()
         });
         let code_sub = cx.subscribe(&code_input, |this, _area, event: &InputEvent, cx| {
             if let InputEvent::Changed(_) = event {
@@ -510,10 +502,8 @@ impl ScriptEditorView {
         match result {
             Ok(record) => {
                 let body = record.body.clone();
-                let height = code_field_height(&body);
                 self.code_input.update(cx, |area, cx| {
                     area.set_content(body.clone(), cx);
-                    area.set_height(height, cx);
                 });
                 self.recompute_diagnostics(&body, cx);
                 self.open = Some(OpenScript {
@@ -534,10 +524,8 @@ impl ScriptEditorView {
         let Some(original) = self.open.as_ref().map(|o| o.original_body.clone()) else {
             return;
         };
-        let height = code_field_height(&original);
         self.code_input.update(cx, |area, cx| {
             area.set_content(original.clone(), cx);
-            area.set_height(height, cx);
         });
         self.recompute_diagnostics(&original, cx);
     }
@@ -573,9 +561,6 @@ impl ScriptEditorView {
 
     fn on_code_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.code_input.read(cx).content().to_owned();
-        let height = code_field_height(&content);
-        self.code_input
-            .update(cx, |area, cx| area.set_height(height, cx));
         self.recompute_diagnostics(&content, cx);
         if let Some(open) = self.open.as_mut() {
             open.record.contract = parse_contract(&content).unwrap_or_default();
@@ -886,10 +871,8 @@ impl ScriptEditorView {
                 });
                 let id = record.id;
                 self.selected = Some(id);
-                let height = code_field_height(&body);
                 self.code_input.update(cx, |area, cx| {
                     area.set_content(body.clone(), cx);
-                    area.set_height(height, cx);
                 });
                 self.recompute_diagnostics(&body, cx);
                 self.open = Some(OpenScript {
@@ -947,7 +930,6 @@ impl ScriptEditorView {
                     self.open = None;
                     self.code_input.update(cx, |area, cx| {
                         area.set_content("", cx);
-                        area.set_height(code_field_height(""), cx);
                     });
                 }
                 self.load_scripts(cx);
@@ -1069,10 +1051,8 @@ impl ScriptEditorView {
         let source = self.code_input.read(cx).content().to_owned();
         let formatted = format_script(&source);
         if formatted != source {
-            let height = code_field_height(&formatted);
             self.code_input.update(cx, |area, cx| {
                 area.set_content(formatted.clone(), cx);
-                area.set_height(height, cx);
             });
             self.recompute_diagnostics(&formatted, cx);
         }
@@ -1826,24 +1806,14 @@ impl ScriptEditorView {
         row.into_any_element()
     }
 
-    fn code_area(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        _cx: &Context<Self>,
-    ) -> AnyElement {
+    fn code_area(&self, palette: &ForgePalette) -> AnyElement {
         div()
-            .id("script-code-scroll")
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .flex()
+            .flex_col()
             .bg(palette.base)
-            .child(
-                div()
-                    .w_full()
-                    .py(spacing(Spacing::Xs, density))
-                    .child(self.code_input.clone()),
-            )
+            .child(self.code_input.clone())
             .into_any_element()
     }
 
@@ -2408,7 +2378,7 @@ impl Render for ScriptEditorView {
         let file_bar = self.file_bar(&palette, density, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let left = self.left_pane(&palette, density, cx);
-        let code = self.code_area(&palette, density, cx);
+        let code = self.code_area(&palette);
         let console = self.console(&palette, density, cx);
 
         let centre = div()

@@ -110,6 +110,13 @@ impl AreaLayout {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum SyntaxMode {
+    #[default]
+    None,
+    Json,
+}
+
 /// Subscribe to [`InputEvent`] for edits - only `Changed` is emitted (a text area has no submit).
 pub struct TextArea {
     focus_handle: FocusHandle,
@@ -131,6 +138,7 @@ pub struct TextArea {
     read_only: bool,
     height: Pixels,
     on_surface: bool,
+    syntax: SyntaxMode,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
@@ -156,6 +164,7 @@ impl TextArea {
             read_only: false,
             height: DEFAULT_AREA_HEIGHT,
             on_surface: false,
+            syntax: SyntaxMode::None,
         }
     }
 
@@ -181,6 +190,11 @@ impl TextArea {
 
     pub fn mono(mut self) -> Self {
         self.font_family = DEFAULT_MONO_FAMILY;
+        self
+    }
+
+    pub fn json_highlight(mut self) -> Self {
+        self.syntax = SyntaxMode::Json;
         self
     }
 
@@ -607,6 +621,44 @@ impl EntityInputHandler for TextArea {
     }
 }
 
+/// Splits every run overlapping `[start, end)` at those boundaries, then runs `f`
+/// over the pieces that fall inside the range, so a selection/marked attribute can
+/// be layered on top of already-colored foreground runs.
+fn apply_range(runs: &mut Vec<TextRun>, start: usize, end: usize, f: impl Fn(&mut TextRun)) {
+    let mut out: Vec<TextRun> = Vec::with_capacity(runs.len() + 2);
+    let mut pos = 0usize;
+    for run in runs.drain(..) {
+        let run_start = pos;
+        let run_end = pos + run.len;
+        pos = run_end;
+        if run_end <= start || run_start >= end || run.len == 0 {
+            out.push(run);
+            continue;
+        }
+        let a = start.max(run_start);
+        let b = end.min(run_end);
+        if a > run_start {
+            out.push(TextRun {
+                len: a - run_start,
+                ..run.clone()
+            });
+        }
+        let mut mid = TextRun {
+            len: b - a,
+            ..run.clone()
+        };
+        f(&mut mid);
+        out.push(mid);
+        if run_end > b {
+            out.push(TextRun {
+                len: run_end - b,
+                ..run
+            });
+        }
+    }
+    *runs = out;
+}
+
 fn build_runs(
     text: &SharedString,
     base_color: Hsla,
@@ -614,63 +666,114 @@ fn build_runs(
     selection: &Range<usize>,
     selection_bg: Hsla,
     marked_range: Option<&Range<usize>>,
+    syntax: Option<&[(usize, Hsla)]>,
 ) -> Vec<TextRun> {
-    let base = TextRun {
-        len: text.len(),
-        font,
-        color: base_color,
+    let make = |len: usize, color: Hsla| TextRun {
+        len,
+        font: font.clone(),
+        color,
         background_color: None,
         underline: None,
         strikethrough: None,
     };
 
+    let mut runs: Vec<TextRun> = match syntax {
+        Some(spans) if !spans.is_empty() => spans
+            .iter()
+            .map(|(len, color)| make(*len, *color))
+            .collect(),
+        _ => vec![make(text.len(), base_color)],
+    };
+
     if let Some(marked) = marked_range {
-        return vec![
-            TextRun {
-                len: marked.start,
-                ..base.clone()
-            },
-            TextRun {
-                len: marked.end - marked.start,
-                underline: Some(UnderlineStyle {
-                    color: Some(base.color),
-                    thickness: px(1.0),
-                    wavy: false,
-                }),
-                ..base.clone()
-            },
-            TextRun {
-                len: text.len() - marked.end,
-                ..base
-            },
-        ]
-        .into_iter()
-        .filter(|run| run.len > 0)
-        .collect();
+        apply_range(&mut runs, marked.start, marked.end, |run| {
+            run.underline = Some(UnderlineStyle {
+                color: Some(run.color),
+                thickness: px(1.0),
+                wavy: false,
+            });
+        });
+    } else if !selection.is_empty() && selection.end <= text.len() {
+        apply_range(&mut runs, selection.start, selection.end, |run| {
+            run.background_color = Some(selection_bg);
+        });
     }
 
-    if !selection.is_empty() && selection.end <= text.len() {
-        return vec![
-            TextRun {
-                len: selection.start,
-                ..base.clone()
-            },
-            TextRun {
-                len: selection.end - selection.start,
-                background_color: Some(selection_bg),
-                ..base.clone()
-            },
-            TextRun {
-                len: text.len() - selection.end,
-                ..base
-            },
-        ]
-        .into_iter()
-        .filter(|run| run.len > 0)
-        .collect();
-    }
+    runs.into_iter().filter(|run| run.len > 0).collect()
+}
 
-    vec![base]
+fn json_literal_at(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    for word in ["true", "false", "null"] {
+        let wl = word.len();
+        if i + wl <= chars.len() && word.chars().enumerate().all(|(k, wc)| chars[i + k].1 == wc) {
+            return Some(wl);
+        }
+    }
+    None
+}
+
+/// Byte-length foreground runs covering the whole buffer: object keys, string
+/// values, numbers, and `true`/`false`/`null` literals each get their design hue;
+/// everything else (punctuation, whitespace) stays the primary text color.
+fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let n = chars.len();
+    let total = text.len();
+    let byte_at = |i: usize| if i < n { chars[i].0 } else { total };
+    let mut runs: Vec<(usize, Hsla)> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        let c = chars[i].1;
+        let start = i;
+        let hue: Hsla = if c.is_whitespace() {
+            while i < n && chars[i].1.is_whitespace() {
+                i += 1;
+            }
+            palette.text_secondary.into()
+        } else if c == '"' {
+            i += 1;
+            while i < n {
+                match chars[i].1 {
+                    '\\' => i += 2,
+                    '"' => {
+                        i += 1;
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+            i = i.min(n);
+            let mut j = i;
+            while j < n && chars[j].1.is_whitespace() {
+                j += 1;
+            }
+            if j < n && chars[j].1 == ':' {
+                palette.info.into()
+            } else {
+                palette.success.into()
+            }
+        } else if c == '-' || c.is_ascii_digit() {
+            i += 1;
+            while i < n
+                && (chars[i].1.is_ascii_digit()
+                    || matches!(chars[i].1, '.' | 'e' | 'E' | '+' | '-'))
+            {
+                i += 1;
+            }
+            palette.bits.into()
+        } else if let Some(word_len) = json_literal_at(&chars, i) {
+            i += word_len;
+            palette.brand.into()
+        } else {
+            i += 1;
+            palette.text_primary.into()
+        };
+        let len = byte_at(i) - byte_at(start);
+        if len > 0 {
+            runs.push((len, hue));
+        }
+    }
+    runs
 }
 
 struct AreaElement {
@@ -745,6 +848,14 @@ impl Element for AreaElement {
         } else {
             selected_range.clone()
         };
+        let syntax_runs = if content.is_empty() {
+            None
+        } else {
+            match input.syntax {
+                SyntaxMode::Json => Some(json_syntax_runs(&content, &palette)),
+                SyntaxMode::None => None,
+            }
+        };
         let runs = build_runs(
             &display_text,
             base_color,
@@ -752,6 +863,7 @@ impl Element for AreaElement {
             &selection,
             with_alpha(palette.brand, 0.25).into(),
             marked_range.as_ref(),
+            syntax_runs.as_deref(),
         );
 
         let font_size = style.font_size.to_pixels(window.rem_size());

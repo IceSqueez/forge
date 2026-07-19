@@ -484,7 +484,10 @@ impl GlobalsView {
 
         let area_seed = prefill.and_then(|g| json_seed(&g.value));
         let value_area = cx.new(|cx| {
-            let mut ta = TextArea::new("[1, 2, 3]", cx).with_palette(palette);
+            let mut ta = TextArea::new("[1, 2, 3]", cx)
+                .with_palette(palette)
+                .mono()
+                .json_highlight();
             if let Some(seed) = area_seed {
                 ta.set_content(seed, cx);
             }

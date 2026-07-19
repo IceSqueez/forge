@@ -105,32 +105,20 @@ impl SubActionRunner for CoreUsersIncrementVarRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let started_at = OffsetDateTime::now_utc();
 
-        let resolve = |template: &str| {
-            let template = template.to_owned();
-            async move {
-                super::interpolate::interpolate_with_globals(
-                    &template,
-                    ctx.arg_stack,
-                    self.globals.as_ref(),
-                )
-                .await
-            }
-        };
+        let resolve = |template: &str| ctx.arg_stack.interpolate(template);
 
         let user_id = resolve(
             config
                 .get("user_login")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default(),
-        )
-        .await;
+        );
         let var_name = resolve(
             config
                 .get("var_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default(),
-        )
-        .await;
+        );
         let amount = config.get("amount").and_then(|v| v.as_int()).unwrap_or(1);
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
 

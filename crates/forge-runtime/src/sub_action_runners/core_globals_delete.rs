@@ -78,12 +78,7 @@ impl SubActionRunner for CoreGlobalsDeleteRunner {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        let resolved_name = super::interpolate::interpolate_with_globals(
-            name_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let resolved_name = ctx.arg_stack.interpolate(name_template);
 
         let outcome = match self.globals.delete(&resolved_name).await {
             Ok(_existed) => {

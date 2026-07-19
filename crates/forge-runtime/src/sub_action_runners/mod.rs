@@ -243,19 +243,17 @@ pub fn register_core_sub_actions(
         user_globals,
     )))?;
     reg.register(Box::new(CoreLogicWaitRunner))?;
-    reg.register(Box::new(CoreLogWriteRunner::new(Arc::clone(&globals))))?;
-    reg.register(Box::new(CoreFileReadRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreLogWriteRunner))?;
+    reg.register(Box::new(CoreFileReadRunner))?;
     reg.register(Box::new(CoreFileWriteRunner::new(Arc::clone(&globals))))?;
-    reg.register(Box::new(CoreFileDeleteRunner::new(Arc::clone(&globals))))?;
-    reg.register(Box::new(CoreFileListRunner::new(Arc::clone(&globals))))?;
-    reg.register(Box::new(CoreRandomIntRunner::new(Arc::clone(&globals))))?;
-    reg.register(Box::new(CoreRandomFloatRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreFileDeleteRunner))?;
+    reg.register(Box::new(CoreFileListRunner))?;
+    reg.register(Box::new(CoreRandomIntRunner))?;
+    reg.register(Box::new(CoreRandomFloatRunner))?;
     reg.register(Box::new(CoreRandomBoolRunner))?;
     reg.register(Box::new(CoreRandomPickRunner))?;
     reg.register(Box::new(CoreMathEvaluateRunner::new()))?;
-    reg.register(Box::new(TwitchChatSendMessageRunner::new(Arc::clone(
-        &globals,
-    ))))?;
+    reg.register(Box::new(TwitchChatSendMessageRunner))?;
     reg.register(Box::new(ScriptRunNamedRunner::new(
         Arc::clone(&scripts),
         Arc::clone(&globals),
@@ -311,7 +309,6 @@ pub fn register_core_sub_actions(
     ] {
         reg.register(Box::new(CoreHttpRunner::new(
             method,
-            Arc::clone(&globals),
             Arc::clone(&settings),
             Arc::clone(&egress),
         )))?;

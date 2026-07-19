@@ -88,12 +88,7 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
             .unwrap_or_default();
         let amount = config.get("amount").and_then(|v| v.as_int()).unwrap_or(1);
 
-        let resolved_key = super::interpolate::interpolate_with_globals(
-            key_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let resolved_key = ctx.arg_stack.interpolate(key_template);
 
         let outcome = match self.globals.incr(&resolved_key, -amount).await {
             Ok(new_val) => {

@@ -126,18 +126,8 @@ impl SubActionRunner for CoreFileWriteRunner {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let interpolated_path = super::interpolate::interpolate_with_globals(
-            path_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
-        let content = super::interpolate::interpolate_with_globals(
-            content_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let interpolated_path = ctx.arg_stack.interpolate(path_template);
+        let content = ctx.arg_stack.interpolate(content_template);
 
         let outcome = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
             Err(reason) => SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),

@@ -1,12 +1,10 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
     FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
     SubActionRunner,
 };
-use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
@@ -14,15 +12,7 @@ use time::OffsetDateTime;
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
 
-pub struct CoreFileReadRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
-
-impl CoreFileReadRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
-    }
-}
+pub struct CoreFileReadRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreFileReadRunner {
@@ -117,12 +107,7 @@ impl SubActionRunner for CoreFileReadRunner {
             .unwrap_or_default()
             .to_owned();
 
-        let interpolated_path = super::interpolate::interpolate_with_globals(
-            path_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let interpolated_path = ctx.arg_stack.interpolate(path_template);
 
         let abs_path = PathBuf::from(&interpolated_path);
         let (outcome, produced) = match tokio::fs::metadata(&abs_path).await {

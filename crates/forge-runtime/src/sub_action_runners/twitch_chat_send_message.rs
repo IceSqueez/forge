@@ -1,21 +1,10 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-pub struct TwitchChatSendMessageRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
-
-impl TwitchChatSendMessageRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
-    }
-}
+pub struct TwitchChatSendMessageRunner;
 
 #[async_trait]
 impl SubActionRunner for TwitchChatSendMessageRunner {
@@ -89,18 +78,8 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             .and_then(|v| v.as_str())
             .unwrap_or("twitch");
 
-        let message = super::interpolate::interpolate_with_globals(
-            message_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
-        let target = super::interpolate::interpolate_with_globals(
-            target_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let message = ctx.arg_stack.interpolate(message_template);
+        let target = ctx.arg_stack.interpolate(target_template);
 
         ctx.publisher.publish(Event::caused_by(
             EventSource::Core,

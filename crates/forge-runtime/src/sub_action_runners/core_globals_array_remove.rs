@@ -101,18 +101,8 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let resolved_key = super::interpolate::interpolate_with_globals(
-            key_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
-        let raw_value = super::interpolate::interpolate_with_globals(
-            value_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let resolved_key = ctx.arg_stack.interpolate(key_template);
+        let raw_value = ctx.arg_stack.interpolate(value_template);
         let target = super::interpolate::parse_variant(&raw_value);
 
         let outcome = match self.globals.get(&resolved_key).await {

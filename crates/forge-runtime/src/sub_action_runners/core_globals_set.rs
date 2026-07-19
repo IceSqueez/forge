@@ -95,18 +95,8 @@ impl SubActionRunner for CoreGlobalsSetRunner {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        let name = super::interpolate::interpolate_with_globals(
-            name_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
-        let raw = super::interpolate::interpolate_with_globals(
-            value_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let name = ctx.arg_stack.interpolate(name_template);
+        let raw = ctx.arg_stack.interpolate(value_template);
         let variant = parse_variant(&raw);
         let persisted = config
             .get("persisted")

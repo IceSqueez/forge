@@ -1,52 +1,35 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_registry::{
     FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
     SubActionRunner,
 };
-use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 use rand::RngExt;
 use time::OffsetDateTime;
 
-pub struct CoreRandomIntRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
+pub struct CoreRandomIntRunner;
 
-impl CoreRandomIntRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
+fn resolve_bound(
+    config: &SubActionConfig,
+    ctx: &RunContext<'_>,
+    key: &str,
+    default: i64,
+) -> Result<i64, String> {
+    let raw = match config.get(key) {
+        Some(Variant::Int(n)) => return Ok(*n),
+        Some(Variant::String(s)) => s.clone(),
+        _ => return Ok(default),
+    };
+    if raw.trim().is_empty() {
+        return Ok(default);
     }
-
-    async fn resolve_bound(
-        &self,
-        config: &SubActionConfig,
-        ctx: &RunContext<'_>,
-        key: &str,
-        default: i64,
-    ) -> Result<i64, String> {
-        let raw = match config.get(key) {
-            Some(Variant::Int(n)) => return Ok(*n),
-            Some(Variant::String(s)) => s.clone(),
-            _ => return Ok(default),
-        };
-        if raw.trim().is_empty() {
-            return Ok(default);
-        }
-        let resolved = super::interpolate::interpolate_with_globals(
-            &raw,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
-        resolved
-            .trim()
-            .parse::<i64>()
-            .map_err(|_| format!("{key} is not a valid integer: {resolved:?}"))
-    }
+    let resolved = ctx.arg_stack.interpolate(&raw);
+    resolved
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| format!("{key} is not a valid integer: {resolved:?}"))
 }
 
 #[async_trait]
@@ -130,8 +113,8 @@ impl SubActionRunner for CoreRandomIntRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let started_at = OffsetDateTime::now_utc();
 
-        let min = self.resolve_bound(config, ctx, "min", 1).await;
-        let max = self.resolve_bound(config, ctx, "max", 100).await;
+        let min = resolve_bound(config, ctx, "min", 1);
+        let max = resolve_bound(config, ctx, "max", 100);
         let target_var = config
             .get("target_var")
             .and_then(|v| v.as_str())

@@ -1,23 +1,12 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, LogLevel, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
 use time::OffsetDateTime;
 use tracing::{debug, error, info, trace, warn};
 
-pub struct CoreLogWriteRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
-
-impl CoreLogWriteRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
-    }
-}
+pub struct CoreLogWriteRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreLogWriteRunner {
@@ -87,12 +76,7 @@ impl SubActionRunner for CoreLogWriteRunner {
             .unwrap_or_default();
 
         let level = parse_level(level_str);
-        let message = super::interpolate::interpolate_with_globals(
-            message_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let message = ctx.arg_stack.interpolate(message_template);
 
         match level {
             LogLevel::Trace => trace!(target: "forge::action", message = message.as_str()),

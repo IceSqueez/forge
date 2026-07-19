@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_storage::{GlobalsRepo, SettingsRepo, reserved_keys};
+use forge_storage::{SettingsRepo, reserved_keys};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -12,7 +12,6 @@ use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
 
 pub struct CoreHttpRunner {
     method: HttpMethod,
-    globals: Arc<dyn GlobalsRepo>,
     settings: Arc<dyn SettingsRepo>,
     client: Arc<EgressClient>,
 }
@@ -20,13 +19,11 @@ pub struct CoreHttpRunner {
 impl CoreHttpRunner {
     pub fn new(
         method: HttpMethod,
-        globals: Arc<dyn GlobalsRepo>,
         settings: Arc<dyn SettingsRepo>,
         client: Arc<EgressClient>,
     ) -> Self {
         Self {
             method,
-            globals,
             settings,
             client,
         }
@@ -70,24 +67,6 @@ impl CoreHttpRunner {
                 has_body: true,
             },
         }
-    }
-
-    async fn interpolate(&self, template: &str, arg_stack: &ArgStack) -> String {
-        super::interpolate::interpolate_with_globals(template, arg_stack, self.globals.as_ref())
-            .await
-    }
-
-    async fn interpolate_map(
-        &self,
-        raw: BTreeMap<String, String>,
-        arg_stack: &ArgStack,
-    ) -> BTreeMap<String, String> {
-        let mut out = BTreeMap::new();
-        for (key, value) in raw {
-            let resolved = self.interpolate(&value, arg_stack).await;
-            out.insert(key, resolved);
-        }
-        out
     }
 
     async fn allow_local(&self) -> bool {
@@ -231,14 +210,11 @@ impl SubActionRunner for CoreHttpRunner {
             .get("url")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let url = self.interpolate(url_template, ctx.arg_stack).await;
+        let url = ctx.arg_stack.interpolate(url_template);
 
-        let mut headers = self
-            .interpolate_map(config_string_map(config, "headers"), ctx.arg_stack)
-            .await;
-        let query_params = self
-            .interpolate_map(config_string_map(config, "query_params"), ctx.arg_stack)
-            .await;
+        let mut headers = interpolate_map(config_string_map(config, "headers"), ctx.arg_stack);
+        let query_params =
+            interpolate_map(config_string_map(config, "query_params"), ctx.arg_stack);
 
         let timeout_ms = config
             .get("timeout_ms")
@@ -260,7 +236,7 @@ impl SubActionRunner for CoreHttpRunner {
                 .get("body")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
-            let body = self.interpolate(body_template, ctx.arg_stack).await;
+            let body = ctx.arg_stack.interpolate(body_template);
             let has_explicit_content_type = headers
                 .keys()
                 .any(|k| k.eq_ignore_ascii_case("content-type"));
@@ -315,6 +291,15 @@ impl SubActionRunner for CoreHttpRunner {
             updated_stack,
         )
     }
+}
+
+fn interpolate_map(
+    raw: BTreeMap<String, String>,
+    arg_stack: &ArgStack,
+) -> BTreeMap<String, String> {
+    raw.into_iter()
+        .map(|(key, value)| (key, arg_stack.interpolate(&value)))
+        .collect()
 }
 
 fn config_string_map(config: &SubActionConfig, key: &str) -> BTreeMap<String, String> {
@@ -409,7 +394,6 @@ mod tests {
     fn runner(method: HttpMethod, dp: &Arc<SqliteBackend>) -> CoreHttpRunner {
         CoreHttpRunner::new(
             method,
-            Arc::clone(dp) as Arc<dyn GlobalsRepo>,
             Arc::clone(dp) as Arc<dyn SettingsRepo>,
             Arc::new(EgressClient::new().unwrap()),
         )

@@ -1,26 +1,16 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
     FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
     SubActionRunner,
 };
-use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 use time::OffsetDateTime;
 
-pub struct CoreFileListRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
-
-impl CoreFileListRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
-    }
-}
+pub struct CoreFileListRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreFileListRunner {
@@ -150,12 +140,7 @@ impl SubActionRunner for CoreFileListRunner {
             .unwrap_or("file.entries")
             .to_owned();
 
-        let interpolated_path = super::interpolate::interpolate_with_globals(
-            path_template,
-            ctx.arg_stack,
-            self.globals.as_ref(),
-        )
-        .await;
+        let interpolated_path = ctx.arg_stack.interpolate(path_template);
 
         let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
             Err(reason) => (
@@ -252,58 +237,21 @@ async fn collect_entries(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_storage::{GlobalEntry, StorageError};
     use forge_types::EventId;
-    use std::sync::Mutex;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
     }
 
-    #[derive(Default)]
-    struct RecordingGlobals {
-        writes: Mutex<Vec<String>>,
-    }
-
-    #[async_trait]
-    impl GlobalsRepo for RecordingGlobals {
-        async fn get(&self, _name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(None)
-        }
-        async fn set(&self, name: &str, _value: Variant, _p: bool) -> Result<(), StorageError> {
-            self.writes.lock().unwrap().push(name.to_owned());
-            Ok(())
-        }
-        async fn delete(&self, _name: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(vec![])
-        }
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
-            Ok(Variant::Int(0))
-        }
-    }
-
     // A traversal path must surface the sandbox-rejection outcome rather than
     // reach tokio::fs::metadata (which would yield a "directory not found"
-    // message), and must produce no scope stack. The empty-`writes` assertion
-    // guards against the output ever resurfacing as a globals write.
+    // message), and must produce no scope stack.
     #[tokio::test]
     async fn list_rejects_parent_traversal_before_touching_disk() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreFileListRunner::new(globals.clone());
         let mut cfg = SubActionConfig::new();
         cfg.insert("path".to_owned(), Variant::String("../".to_owned()));
         cfg.insert(
@@ -313,7 +261,7 @@ mod tests {
 
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        let (telemetry, produced) = runner.execute(&cfg, &ctx).await;
+        let (telemetry, produced) = CoreFileListRunner.execute(&cfg, &ctx).await;
 
         assert!(
             matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("sandbox rejected")),
@@ -323,10 +271,6 @@ mod tests {
         assert!(
             produced.is_none(),
             "a rejected path must not produce a scope stack"
-        );
-        assert!(
-            globals.writes.lock().unwrap().is_empty(),
-            "no global must be written when the sandbox rejects the path"
         );
     }
 }

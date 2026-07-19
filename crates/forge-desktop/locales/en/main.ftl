@@ -1178,6 +1178,8 @@ queues_menu_pause = Pause
 queues_menu_resume = Resume
 queues_menu_drain = Drain queue
 queues_menu_delete = Delete…
+queues_delete_confirm_title = Delete queue
+queues_delete_confirm_body = Actions in this queue move to Default. This cannot be undone.
 
 ## Queues - new queue modal
 

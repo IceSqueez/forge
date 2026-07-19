@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use forge_components::confirm::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextInput, breadcrumb, icon, menu_button, menu_divider,
-    menu_item, modal, overlay, primary_button, primary_button_with_icon, radius, secondary_button,
-    slider, spacing, spinner, tr, with_alpha,
+    OverlayPosition, Radius, Spacing, TextInput, breadcrumb, confirm_modal, icon, menu_button,
+    menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon, radius,
+    secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -78,6 +79,7 @@ pub struct QueuesView {
     loading: bool,
     feedback: Option<SharedString>,
     modal: Option<EditQueueModal>,
+    pending_delete: Option<QueueId>,
     menu_open: Option<QueueId>,
     menu_click_pos: Option<Point<Pixels>>,
     diverged: HashSet<QueueId>,
@@ -107,6 +109,7 @@ impl QueuesView {
             loading: true,
             feedback: None,
             modal: None,
+            pending_delete: None,
             menu_open: None,
             menu_click_pos: None,
             diverged: HashSet::new(),
@@ -219,12 +222,33 @@ impl QueuesView {
         });
     }
 
+    fn persist_paused(&self, id: QueueId, paused: bool) {
+        let queue_repo = Arc::clone(&self.queue_repo);
+        self.rt_handle.spawn(async move {
+            match queue_repo.get(id).await {
+                Ok(Some(mut queue)) => {
+                    if queue.paused != paused {
+                        queue.paused = paused;
+                        if let Err(err) = queue_repo.save(&queue).await {
+                            eprintln!("forge-desktop: queue pause persist failed: {err}");
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    eprintln!("forge-desktop: queue pause persist load failed: {err}");
+                }
+            }
+        });
+    }
+
     fn pause(&mut self, id: QueueId, cx: &mut Context<Self>) {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.paused = true;
             q.paused_since_min = Some(0);
         }
         self.dispatch_pause(id);
+        self.persist_paused(id, true);
         cx.notify();
     }
 
@@ -234,6 +258,7 @@ impl QueuesView {
             q.paused_since_min = None;
         }
         self.dispatch_resume(id);
+        self.persist_paused(id, false);
         cx.notify();
     }
 
@@ -244,6 +269,7 @@ impl QueuesView {
             self.feedback = Some(tr!("queues_drain_feedback", name = q.name.as_str()).into());
         }
         self.dispatch_drain(id);
+        self.persist_paused(id, true);
         cx.notify();
     }
 
@@ -255,8 +281,49 @@ impl QueuesView {
                 q.paused_since_min = Some(0);
             }
         }
+        for id in &ids {
+            self.persist_paused(*id, true);
+        }
         self.dispatch_pause_all(ids);
         cx.notify();
+    }
+
+    fn request_delete(&mut self, id: QueueId, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        self.pending_delete = Some(id);
+        cx.notify();
+    }
+
+    fn cancel_delete(&mut self, cx: &mut Context<Self>) {
+        self.pending_delete = None;
+        cx.notify();
+    }
+
+    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
+        let Some(deleted_id) = self.pending_delete.take() else {
+            return;
+        };
+        cx.notify();
+
+        let queue_repo = Arc::clone(&self.queue_repo);
+        let action_repo = Arc::clone(&self.action_repo);
+        let scheduler = self.scheduler.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        self.rt_handle.spawn(async move {
+            let outcome = delete_queue(queue_repo, action_repo, scheduler, deleted_id).await;
+            let _ = tx.send(outcome);
+        });
+
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(())) => {
+                let _ = this.update(cx, |this, cx| this.reload(cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
     }
 
     fn open_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -358,22 +425,29 @@ impl QueuesView {
         if !self.modal_saveable(cx) {
             return;
         }
-        let Some(modal) = self.modal.as_mut() else {
+        let Some(modal) = self.modal.as_ref() else {
             return;
         };
         let name = modal.name_input.read(cx).content().trim().to_owned();
         let description = modal.desc_input.read(cx).content().trim().to_owned();
         let concurrency = modal.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
         let editing = modal.editing;
+        let paused = editing
+            .and_then(|id| self.queues.iter().find(|q| q.id == id))
+            .map(|q| q.paused)
+            .unwrap_or(false);
         let queue = Queue {
             id: editing.unwrap_or_else(QueueId::new),
             name,
             description,
             concurrency,
+            paused,
         };
         let id = queue.id;
         let is_edit = editing.is_some();
-        modal.saving = true;
+        if let Some(modal) = self.modal.as_mut() {
+            modal.saving = true;
+        }
         cx.notify();
 
         let queue_repo = Arc::clone(&self.queue_repo);
@@ -567,7 +641,7 @@ impl QueuesView {
                 menu_item(
                     ("q-menu-delete", index),
                     tr!("queues_menu_delete"),
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.close_menu(cx)),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
                 )
                 .icon(Icon::CircleX)
                 .color(palette.random)
@@ -949,6 +1023,39 @@ impl QueuesView {
             .into_any_element()
     }
 
+    fn render_delete_confirm(
+        &self,
+        name: SharedString,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let card = confirm_modal(
+            tr!("queues_delete_confirm_title"),
+            tr!("queues_delete_confirm_body"),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .item_name(name)
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
+        .on_cancel(
+            "queues-delete-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
+        )
+        .on_confirm(
+            "queues-delete-confirm",
+            tr!("common_delete"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
+        );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("queues-delete-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_delete(cx));
+            })
+    }
+
     fn feedback_banner(
         &self,
         message: SharedString,
@@ -1121,6 +1228,11 @@ impl Render for QueuesView {
             .as_ref()
             .map(|modal_state| self.render_modal(modal_state, &palette, density, cx));
 
+        let delete_overlay = self.pending_delete.and_then(|id| {
+            let name = self.queues.iter().find(|q| q.id == id)?.name.clone();
+            Some(self.render_delete_confirm(SharedString::from(name), &palette, cx))
+        });
+
         div()
             .size_full()
             .flex()
@@ -1131,6 +1243,7 @@ impl Render for QueuesView {
             .children(feedback)
             .child(scroll)
             .children(modal_overlay)
+            .children(delete_overlay)
     }
 }
 
@@ -1448,6 +1561,39 @@ async fn load_queues(
         .collect();
 
     Ok(rows)
+}
+
+async fn delete_queue(
+    queue_repo: Arc<dyn QueueRepo>,
+    action_repo: Arc<dyn ActionRepo>,
+    scheduler: QueueSchedulerHandle,
+    deleted_id: QueueId,
+) -> Result<(), String> {
+    let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
+    let Some(default) = queues.into_iter().find(|q| q.name == "Default") else {
+        return Err("default queue missing".to_string());
+    };
+    let default_id = default.id;
+    if deleted_id == default_id {
+        return Ok(());
+    }
+
+    let actions = action_repo.list().await.map_err(|e| e.to_string())?;
+    for mut action in actions {
+        if action.queue_id == deleted_id {
+            action.queue_id = default_id;
+            action_repo.save(&action).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    queue_repo
+        .delete(deleted_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Err(err) = scheduler.deregister(deleted_id).await {
+        eprintln!("forge-desktop: queue deregister failed: {err}");
+    }
+    Ok(())
 }
 
 fn not_live_badge(palette: &ForgePalette) -> AnyElement {

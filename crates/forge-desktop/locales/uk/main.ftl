@@ -1184,6 +1184,8 @@ queues_menu_pause = Пауза
 queues_menu_resume = Продовжити
 queues_menu_drain = Спустошити чергу
 queues_menu_delete = Видалити…
+queues_delete_confirm_title = Видалити чергу
+queues_delete_confirm_body = Дії з цієї черги перейдуть до черги Default. Це не можна скасувати.
 
 ## Черги - модальне вікно нової черги
 

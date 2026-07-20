@@ -881,6 +881,7 @@ tts_dash_test_speaker_name = Тест
 
 tts_dash_now_speaking_header = ЗАРАЗ ГОВОРИТЬ
 tts_dash_no_speaking = -
+tts_dash_last_drop = Останній запит відхилено: { $reason }
 
 ## TTS Dashboard - черга
 
@@ -897,6 +898,7 @@ tts_dash_stat_filtered = Відфільтровано
 tts_dash_stat_avg_latency = Сер. затримка
 tts_dash_engines_header = РУШІЇ
 tts_dash_engines_none = Немає доступних рушіїв
+tts_dash_engine_no_voices = голоси не встановлено
 
 ## TTS Engines - список
 

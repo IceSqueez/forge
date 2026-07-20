@@ -33,6 +33,7 @@ pub struct SpeakState {
     now_speaking: Option<NowSpeaking>,
     queue: Vec<QueueItem>,
     stats: SessionStats,
+    last_drop: Option<String>,
 }
 
 impl SpeakState {
@@ -47,7 +48,12 @@ impl SpeakState {
                 filtered: 0,
                 avg_latency_ms: None,
             },
+            last_drop: None,
         }
+    }
+
+    pub fn last_drop(&self) -> Option<&str> {
+        self.last_drop.as_deref()
     }
 
     /// Returns whether the cache changed, so the bridge repaints only on a real update.
@@ -80,6 +86,7 @@ impl SpeakState {
                 duration_secs,
             } => {
                 self.queue.retain(|item| item.request_id != request_id);
+                self.last_drop = None;
                 self.now_speaking = Some(NowSpeaking {
                     viewer_name,
                     engine_voice: if voice_id.0.is_empty() {
@@ -98,13 +105,15 @@ impl SpeakState {
                 self.stats.spoken = self.stats.spoken.saturating_add(1);
                 true
             }
-            SpeakEvent::Failed { .. } => {
+            SpeakEvent::Failed { error, .. } => {
                 self.now_speaking = None;
+                self.last_drop = Some(error);
                 true
             }
-            SpeakEvent::Skipped { .. } => {
+            SpeakEvent::Skipped { reason, .. } => {
                 self.now_speaking = None;
                 self.stats.skipped = self.stats.skipped.saturating_add(1);
+                self.last_drop = Some(reason);
                 true
             }
             SpeakEvent::Rejected { .. } => {

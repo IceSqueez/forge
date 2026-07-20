@@ -80,6 +80,7 @@ pub struct TtsView {
     triggers: Entity<TtsTriggersView>,
     cloud: Entity<CloudTtsEnginesView>,
     tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
+    speak: Option<SpeakQueueHandle>,
 }
 
 impl TtsView {
@@ -132,7 +133,13 @@ impl TtsView {
         let credentials: Arc<dyn CredentialsRepo> =
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
         let cloud = cx.new(|cx| {
-            CloudTtsEnginesView::new(tts_registry.clone(), credentials, rt_handle, speak, cx)
+            CloudTtsEnginesView::new(
+                tts_registry.clone(),
+                credentials,
+                rt_handle,
+                speak.clone(),
+                cx,
+            )
         });
         Self {
             section: TtsSection::Dashboard,
@@ -143,6 +150,7 @@ impl TtsView {
             triggers,
             cloud,
             tts_registry,
+            speak,
         }
     }
 
@@ -152,16 +160,20 @@ impl TtsView {
     }
 
     fn render_header(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
-        let engine_count = self
+        let registered = self
             .tts_registry
             .as_ref()
-            .map(|r| {
-                r.read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .engine_ids()
-                    .len()
-            })
-            .unwrap_or(0);
+            .map(|r| r.read().unwrap_or_else(|e| e.into_inner()).engine_ids())
+            .unwrap_or_default();
+        let voices = self
+            .speak
+            .as_ref()
+            .map(|h| h.available_voices())
+            .unwrap_or_default();
+        let engine_count = registered
+            .iter()
+            .filter(|id| voices.iter().any(|v| v.engine_id == **id))
+            .count();
         let chip = div()
             .flex()
             .items_center()

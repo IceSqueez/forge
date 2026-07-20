@@ -879,6 +879,7 @@ tts_dash_test_speaker_name = Test
 
 tts_dash_now_speaking_header = NOW SPEAKING
 tts_dash_no_speaking = -
+tts_dash_last_drop = Last request dropped: { $reason }
 
 ## TTS Dashboard - queue
 
@@ -895,6 +896,7 @@ tts_dash_stat_filtered = Filtered
 tts_dash_stat_avg_latency = Avg latency
 tts_dash_engines_header = ENGINES
 tts_dash_engines_none = No engines available
+tts_dash_engine_no_voices = no voices installed
 
 ## TTS Engines - list
 

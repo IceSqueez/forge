@@ -67,6 +67,7 @@ const ENGINE_NAME_MB: Pixels = px(3.0);
 struct TtsRailResizeDrag;
 
 struct EngineStatus {
+    id: String,
     name: String,
     meta: String,
     warn: bool,
@@ -443,18 +444,25 @@ impl TtsDashboardView {
                     .child(tr!("tts_dash_engines_none")),
             );
         }
+        let voices = self
+            .speak
+            .as_ref()
+            .map(|h| h.available_voices())
+            .unwrap_or_default();
         for eng in &self.engines {
-            let color = if eng.warn {
+            let voice_count = voices.iter().filter(|v| v.engine_id.0 == eng.id).count();
+            let voiceless = voice_count == 0;
+            let color = if eng.warn || voiceless {
                 palette.warning
             } else {
                 palette.success
             };
-            content = content.child(engine_card(
-                eng.name.clone(),
-                eng.meta.clone(),
-                color,
-                palette,
-            ));
+            let meta = if voiceless {
+                format!("{} \u{b7} {}", eng.meta, tr!("tts_dash_engine_no_voices"))
+            } else {
+                eng.meta.clone()
+            };
+            content = content.child(engine_card(eng.name.clone(), meta, color, palette));
         }
 
         let panel = div()
@@ -532,9 +540,15 @@ impl Render for TtsDashboardView {
         let now = self.speak_state.read(cx).now_speaking_snapshot();
         let queue = self.speak_state.read(cx).queue_snapshot();
         let stats = self.speak_state.read(cx).stats_snapshot();
+        let last_drop = self
+            .speak_state
+            .read(cx)
+            .last_drop()
+            .map(|reason| reason.to_owned());
 
         let control_strip = self.control_strip(paused, &palette, cx);
-        let now_speaking = now_speaking_panel(now.as_ref(), &palette, density);
+        let now_speaking =
+            now_speaking_panel(now.as_ref(), last_drop.as_deref(), &palette, density);
         let queue_section = queue_section(&queue, &palette, density);
         let right_pane = self.right_pane(&stats, &palette, cx);
 
@@ -573,6 +587,7 @@ impl Render for TtsDashboardView {
 
 fn now_speaking_panel(
     now: Option<&NowSpeaking>,
+    last_drop: Option<&str>,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -647,18 +662,30 @@ fn now_speaking_panel(
                         .child(progress),
                 )
         }
-        None => div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(header)
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("tts_dash_no_speaking")),
-            ),
+        None => {
+            let mut idle = div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xs, density))
+                .child(header)
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_SM)
+                        .text_color(palette.text_muted)
+                        .child(tr!("tts_dash_no_speaking")),
+                );
+            if let Some(reason) = last_drop {
+                idle = idle.child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(FONT_XXS)
+                        .text_color(palette.warning)
+                        .child(tr!("tts_dash_last_drop", reason = reason)),
+                );
+            }
+            idle
+        }
     };
 
     div()
@@ -956,6 +983,7 @@ fn load_engine_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<Engine
             name: engine_label(&id.0),
             meta: engine_kind(&id.0).to_owned(),
             warn: false,
+            id: id.0,
         })
         .collect()
 }

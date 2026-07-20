@@ -134,6 +134,7 @@ fn action(id: ActionId, queue_id: QueueId, enabled: bool, set_global: &str) -> A
             config,
             enabled: true,
             continue_on_error: false,
+            condition: None,
             label: None,
         }],
     }

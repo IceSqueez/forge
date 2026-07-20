@@ -13,6 +13,8 @@ pub struct SubActionStep {
     pub enabled: bool,
     #[serde(default)]
     pub continue_on_error: bool,
+    #[serde(default)]
+    pub condition: Option<String>,
     pub label: Option<String>,
 }
 
@@ -34,6 +36,7 @@ mod tests {
                 config,
                 enabled: true,
                 continue_on_error: false,
+                condition: None,
                 label: Some("greet".to_string()),
             },
             SubActionStep {
@@ -41,6 +44,7 @@ mod tests {
                 config: BTreeMap::new(),
                 enabled: false,
                 continue_on_error: true,
+                condition: None,
                 label: None,
             },
         ];

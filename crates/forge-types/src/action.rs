@@ -65,6 +65,7 @@ mod tests {
                     config: send_config,
                     enabled: true,
                     continue_on_error: false,
+                    condition: None,
                     label: None,
                 },
                 SubActionStep {
@@ -72,6 +73,7 @@ mod tests {
                     config: log_config,
                     enabled: true,
                     continue_on_error: false,
+                    condition: None,
                     label: None,
                 },
             ],

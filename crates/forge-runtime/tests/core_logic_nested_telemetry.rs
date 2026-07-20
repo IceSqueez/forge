@@ -41,11 +41,12 @@ fn engine() -> Arc<ChainEngine> {
     reg.register(Box::new(CoreLogicSwitchCaseRunner)).unwrap();
     reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::clone(&gate))))
         .unwrap();
-    reg.register(Box::new(CoreLogicLoopRunner::new(gate)))
+    reg.register(Box::new(CoreLogicLoopRunner::new(Arc::clone(&gate))))
         .unwrap();
     Arc::new(ChainEngine::new(
         Arc::new(reg),
         Arc::new(NullPublisher),
+        gate,
         Config::default(),
     ))
 }
@@ -67,6 +68,7 @@ fn step(kind: &str, config: SubActionConfig) -> SubActionStep {
         config,
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: None,
     }
 }

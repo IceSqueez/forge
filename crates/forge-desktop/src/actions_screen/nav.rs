@@ -42,6 +42,10 @@ pub(super) fn decode_chain_value(value: Option<&Variant>) -> Vec<SubActionStep> 
                 .get("continue_on_error")
                 .and_then(Variant::as_bool)
                 .unwrap_or(false);
+            let condition = obj
+                .get("condition")
+                .and_then(Variant::as_str)
+                .map(str::to_owned);
             let label = obj
                 .get("label")
                 .and_then(Variant::as_str)
@@ -51,6 +55,7 @@ pub(super) fn decode_chain_value(value: Option<&Variant>) -> Vec<SubActionStep> 
                 config,
                 enabled,
                 continue_on_error,
+                condition,
                 label,
             })
         })
@@ -69,6 +74,9 @@ pub(super) fn encode_chain(steps: &[SubActionStep]) -> Variant {
                 "continue_on_error".to_owned(),
                 Variant::Bool(step.continue_on_error),
             );
+            if let Some(condition) = &step.condition {
+                obj.insert("condition".to_owned(), Variant::String(condition.clone()));
+            }
             if let Some(label) = &step.label {
                 obj.insert("label".to_owned(), Variant::String(label.clone()));
             }

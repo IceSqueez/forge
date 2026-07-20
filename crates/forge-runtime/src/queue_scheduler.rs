@@ -547,6 +547,7 @@ mod tests {
                 config: std::collections::BTreeMap::new(),
                 enabled: true,
                 continue_on_error: false,
+                condition: None,
                 label: None,
             }],
         }
@@ -1309,6 +1310,7 @@ mod tests {
                 config,
                 enabled: true,
                 continue_on_error: false,
+                condition: None,
                 label: None,
             }],
         }

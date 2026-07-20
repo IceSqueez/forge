@@ -70,6 +70,7 @@ fn build_shoutout_step(login: &str) -> SubActionStep {
         config,
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: Some(format!("Shoutout {login}")),
     }
 }
@@ -86,6 +87,7 @@ fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
         config,
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: Some(format!("Whisper {login}")),
     }
 }
@@ -102,6 +104,7 @@ fn build_timeout_step(login: &str, seconds: i64) -> SubActionStep {
         config,
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: Some(format!("Timeout {login}")),
     }
 }
@@ -117,6 +120,7 @@ fn build_ban_step(login: &str) -> SubActionStep {
         config,
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: Some(format!("Ban {login}")),
     }
 }
@@ -133,6 +137,7 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
         config,
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: Some(format!("Reply to {username}")),
     }
 }

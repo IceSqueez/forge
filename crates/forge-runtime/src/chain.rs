@@ -11,7 +11,10 @@ use serde_json::json;
 use tracing::warn;
 
 use crate::Config;
-use crate::action_engine::{disabled_telemetry, skipped_telemetry};
+use crate::action_engine::{
+    condition_failed_telemetry, condition_skipped_telemetry, disabled_telemetry, skipped_telemetry,
+};
+use crate::condition::ConditionGate;
 
 pub(crate) fn publish_subaction_done(
     publisher: &dyn EventPublisher,
@@ -43,7 +46,14 @@ pub(crate) fn publish_subaction_done(
 pub struct ChainEngine {
     registry: Arc<SubActionRegistry>,
     publisher: Arc<dyn EventPublisher>,
+    gate: Arc<ConditionGate>,
     config: Config,
+}
+
+enum ConditionVerdict {
+    Run,
+    Skip,
+    Fail(String),
 }
 
 pub struct ChainRun {
@@ -56,12 +66,29 @@ impl ChainEngine {
     pub fn new(
         registry: Arc<SubActionRegistry>,
         publisher: Arc<dyn EventPublisher>,
+        gate: Arc<ConditionGate>,
         config: Config,
     ) -> Self {
         Self {
             registry,
             publisher,
+            gate,
             config,
+        }
+    }
+
+    async fn check_condition(&self, step: &SubActionStep, scope: &ArgStack) -> ConditionVerdict {
+        let Some(cond) = step.condition.as_deref() else {
+            return ConditionVerdict::Run;
+        };
+        if cond.trim().is_empty() {
+            return ConditionVerdict::Run;
+        }
+        let expr = scope.interpolate(cond);
+        match self.gate.evaluate(&expr).await {
+            Ok(true) => ConditionVerdict::Run,
+            Ok(false) => ConditionVerdict::Skip,
+            Err(e) => ConditionVerdict::Fail(format!("condition evaluation failed: {e}")),
         }
     }
 
@@ -130,6 +157,29 @@ impl ChainEngine {
                     arg_stack: current,
                     telemetry,
                 };
+            }
+
+            match self.check_condition(step, &current).await {
+                ConditionVerdict::Run => {}
+                ConditionVerdict::Skip => {
+                    let tel = condition_skipped_telemetry(index, &step.kind_id);
+                    publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
+                    telemetry.push(tel);
+                    continue;
+                }
+                ConditionVerdict::Fail(msg) => {
+                    let tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
+                    publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
+                    telemetry.push(tel);
+                    if !step.continue_on_error {
+                        return ChainRun {
+                            signal: ChainSignal::Error(msg),
+                            arg_stack: current,
+                            telemetry,
+                        };
+                    }
+                    continue;
+                }
             }
 
             let run_event = Event::caused_by(
@@ -247,6 +297,25 @@ impl ChainEngine {
                         let tel = disabled_telemetry(index, &step.kind_id);
                         publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                         return (tel, Vec::new(), None);
+                    }
+
+                    match self.check_condition(step, arg_stack).await {
+                        ConditionVerdict::Run => {}
+                        ConditionVerdict::Skip => {
+                            let tel = condition_skipped_telemetry(index, &step.kind_id);
+                            publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
+                            return (tel, Vec::new(), None);
+                        }
+                        ConditionVerdict::Fail(msg) => {
+                            let tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
+                            publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
+                            let failure = if step.continue_on_error {
+                                None
+                            } else {
+                                Some(msg)
+                            };
+                            return (tel, Vec::new(), failure);
+                        }
                     }
 
                     let run_event = Event::caused_by(
@@ -467,14 +536,12 @@ mod tests {
 
     fn engine(reg: Arc<SubActionRegistry>, max_nesting_depth: u32) -> Arc<ChainEngine> {
         let publisher: Arc<dyn EventPublisher> = Arc::new(NoopPublisher);
-        Arc::new(ChainEngine::new(
-            reg,
-            publisher,
-            Config {
-                max_nesting_depth,
-                ..Default::default()
-            },
-        ))
+        let config = Config {
+            max_nesting_depth,
+            ..Default::default()
+        };
+        let gate = Arc::new(ConditionGate::new(&config));
+        Arc::new(ChainEngine::new(reg, publisher, gate, config))
     }
 
     fn step(kind: &str) -> SubActionStep {
@@ -483,6 +550,7 @@ mod tests {
             config: BTreeMap::new(),
             enabled: true,
             continue_on_error: false,
+            condition: None,
             label: None,
         }
     }
@@ -497,6 +565,13 @@ mod tests {
     fn disabled_step(kind: &str) -> SubActionStep {
         SubActionStep {
             enabled: false,
+            ..step(kind)
+        }
+    }
+
+    fn step_if(kind: &str, condition: &str) -> SubActionStep {
+        SubActionStep {
+            condition: Some(condition.to_owned()),
             ..step(kind)
         }
     }
@@ -521,14 +596,12 @@ mod tests {
         let publisher: Arc<dyn EventPublisher> = Arc::new(CapturingPublisher {
             events: Arc::clone(&events),
         });
-        let eng = Arc::new(ChainEngine::new(
-            reg,
-            publisher,
-            Config {
-                max_nesting_depth,
-                ..Default::default()
-            },
-        ));
+        let config = Config {
+            max_nesting_depth,
+            ..Default::default()
+        };
+        let gate = Arc::new(ConditionGate::new(&config));
+        let eng = Arc::new(ChainEngine::new(reg, publisher, gate, config));
         (eng, events)
     }
 
@@ -1070,5 +1143,262 @@ mod tests {
         );
         let done = done_events(&events);
         assert_eq!(done, vec![(0, "skipped".to_owned(), Some(parent))]);
+    }
+
+    // ---- per-step condition gate ---------------------------------------------
+
+    #[tokio::test]
+    async fn condition_verdict_controls_whether_the_step_runs() {
+        // A single gated step: the boolean verdict decides execution. Empty,
+        // whitespace-only, and absent conditions are all "always run".
+        for (condition, should_run) in [
+            (Some("1 == 1"), true),  // true -> run
+            (Some("1 == 2"), false), // false -> skip
+            (Some(""), true),        // empty -> run
+            (Some("   "), true),     // whitespace-only -> run
+            (None, true),            // absent -> run
+        ] {
+            let runs = Arc::new(AtomicUsize::new(0));
+            let mut r = scripted("g.step", SubActionOutcome::Success);
+            r.runs = Arc::clone(&runs);
+            let eng = engine(registry(vec![Box::new(r)]), 8);
+
+            let the_step = match condition {
+                Some(c) => step_if("g.step", c),
+                None => step("g.step"),
+            };
+            let run = eng
+                .run_sequential(
+                    &[the_step],
+                    &ArgStack::new(),
+                    EventId::new(),
+                    &CancelSignal::new(),
+                )
+                .await;
+
+            assert_eq!(run.signal, ChainSignal::Completed, "cond {condition:?}");
+            assert_eq!(run.telemetry.len(), 1);
+            assert_eq!(
+                runs.load(Ordering::Relaxed),
+                should_run as usize,
+                "cond {condition:?}"
+            );
+            if should_run {
+                assert_eq!(run.telemetry[0].outcome, SubActionOutcome::Success);
+            } else {
+                assert!(
+                    matches!(&run.telemetry[0].outcome, SubActionOutcome::Skipped(m) if m == "condition"),
+                    "false condition skips with \"condition\" reason, got {:?}",
+                    run.telemetry[0].outcome,
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn false_condition_skips_at_real_index_and_later_steps_still_run() {
+        let gated_runs = Arc::new(AtomicUsize::new(0));
+        let after_runs = Arc::new(AtomicUsize::new(0));
+        let mut gated = scripted("c.gated", SubActionOutcome::Success);
+        gated.runs = Arc::clone(&gated_runs);
+        let mut after = scripted("c.after", SubActionOutcome::Success);
+        after.runs = Arc::clone(&after_runs);
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted("c.before", SubActionOutcome::Success)),
+                Box::new(gated),
+                Box::new(after),
+            ]),
+            8,
+        );
+        let run = eng
+            .run_sequential(
+                &[
+                    step("c.before"),
+                    step_if("c.gated", "1 == 2"),
+                    step("c.after"),
+                ],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(run.telemetry.len(), 3);
+        assert_eq!(run.telemetry[1].index, 1);
+        assert_eq!(run.telemetry[1].kind, "c.gated");
+        assert!(
+            matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m == "condition"),
+        );
+        assert_eq!(gated_runs.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            after_runs.load(Ordering::Relaxed),
+            1,
+            "step after a skipped one must still run",
+        );
+    }
+
+    #[tokio::test]
+    async fn condition_eval_error_halts_sequential_chain_unless_step_is_flagged() {
+        // "1 + 1" evaluates to an Int, not a Bool -> the gate errors, yielding a
+        // Failed row and no subaction.run. Un-flagged halts; flagged tolerates.
+        for (flagged, expect_after_runs, expect_completed) in
+            [(false, 0usize, false), (true, 1usize, true)]
+        {
+            let gated_runs = Arc::new(AtomicUsize::new(0));
+            let after_runs = Arc::new(AtomicUsize::new(0));
+            let mut gated = scripted("e.gated", SubActionOutcome::Success);
+            gated.runs = Arc::clone(&gated_runs);
+            let mut after = scripted("e.after", SubActionOutcome::Success);
+            after.runs = Arc::clone(&after_runs);
+            let eng = engine(registry(vec![Box::new(gated), Box::new(after)]), 8);
+            let gated_step = SubActionStep {
+                condition: Some("1 + 1".to_owned()),
+                continue_on_error: flagged,
+                ..step("e.gated")
+            };
+            let run = eng
+                .run_sequential(
+                    &[gated_step, step("e.after")],
+                    &ArgStack::new(),
+                    EventId::new(),
+                    &CancelSignal::new(),
+                )
+                .await;
+
+            assert!(
+                matches!(&run.telemetry[0].outcome, SubActionOutcome::Failed(m) if m.contains("condition evaluation failed")),
+                "flagged={flagged}: gated row must be a condition-eval failure, got {:?}",
+                run.telemetry[0].outcome,
+            );
+            assert_eq!(
+                gated_runs.load(Ordering::Relaxed),
+                0,
+                "flagged={flagged}: a condition error must not run the subaction",
+            );
+            assert_eq!(
+                after_runs.load(Ordering::Relaxed),
+                expect_after_runs,
+                "flagged={flagged}",
+            );
+            if expect_completed {
+                assert_eq!(run.signal, ChainSignal::Completed, "flagged={flagged}");
+            } else {
+                assert!(
+                    matches!(&run.signal, ChainSignal::Error(m) if m.contains("condition evaluation failed")),
+                    "flagged={flagged}: {:?}",
+                    run.signal,
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn condition_is_interpolated_against_scope_before_evaluation() {
+        // A producer writes `n` into scope; the gated step's condition references
+        // `%n%`. Same condition string, different produced value -> run vs skip.
+        // Without interpolation `n` would be an unknown identifier and the gate
+        // would error for BOTH, so run-vs-skip proves scope-before-eval.
+        for (produced, should_run) in [(7i64, true), (3i64, false)] {
+            let gated_runs = Arc::new(AtomicUsize::new(0));
+            let mut producer = scripted("s.producer", SubActionOutcome::Success);
+            producer.set_binding = Some(("n".to_owned(), Variant::Int(produced)));
+            let mut gated = scripted("s.gated", SubActionOutcome::Success);
+            gated.runs = Arc::clone(&gated_runs);
+            let eng = engine(registry(vec![Box::new(producer), Box::new(gated)]), 8);
+            let run = eng
+                .run_sequential(
+                    &[step("s.producer"), step_if("s.gated", "%n% == 7")],
+                    &ArgStack::new(),
+                    EventId::new(),
+                    &CancelSignal::new(),
+                )
+                .await;
+
+            assert_eq!(run.signal, ChainSignal::Completed, "produced={produced}");
+            assert_eq!(
+                gated_runs.load(Ordering::Relaxed),
+                should_run as usize,
+                "produced={produced}",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_false_condition_skips_step_without_running_it() {
+        let gated_runs = Arc::new(AtomicUsize::new(0));
+        let mut gated = scripted("cc.gated", SubActionOutcome::Success);
+        gated.runs = Arc::clone(&gated_runs);
+        let eng = engine(
+            registry(vec![
+                Box::new(scripted("cc.ok", SubActionOutcome::Success)),
+                Box::new(gated),
+            ]),
+            8,
+        );
+        let run = eng
+            .run_concurrent(
+                &[step("cc.ok"), step_if("cc.gated", "1 == 2")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(gated_runs.load(Ordering::Relaxed), 0);
+        let gated_row = run
+            .telemetry
+            .iter()
+            .find(|t| t.kind == "cc.gated")
+            .expect("gated step must have a telemetry row");
+        assert_eq!(gated_row.index, 1);
+        assert!(matches!(&gated_row.outcome, SubActionOutcome::Skipped(m) if m == "condition"),);
+    }
+
+    #[tokio::test]
+    async fn concurrent_condition_eval_error_fails_chain_unless_flagged() {
+        for (flagged, expect_completed) in [(false, false), (true, true)] {
+            let eng = engine(
+                registry(vec![
+                    Box::new(scripted("ce.ok", SubActionOutcome::Success)),
+                    Box::new(scripted("ce.gated", SubActionOutcome::Success)),
+                ]),
+                8,
+            );
+            let gated = SubActionStep {
+                condition: Some("1 + 1".to_owned()),
+                continue_on_error: flagged,
+                ..step("ce.gated")
+            };
+            let run = eng
+                .run_concurrent(
+                    &[step("ce.ok"), gated],
+                    &ArgStack::new(),
+                    EventId::new(),
+                    &CancelSignal::new(),
+                )
+                .await;
+
+            let gated_row = run
+                .telemetry
+                .iter()
+                .find(|t| t.kind == "ce.gated")
+                .expect("gated step must have a telemetry row");
+            assert!(
+                matches!(&gated_row.outcome, SubActionOutcome::Failed(m) if m.contains("condition evaluation failed")),
+                "flagged={flagged}",
+            );
+            if expect_completed {
+                assert_eq!(run.signal, ChainSignal::Completed, "flagged={flagged}");
+            } else {
+                assert!(
+                    matches!(&run.signal, ChainSignal::Error(m) if m.contains("condition evaluation failed")),
+                    "flagged={flagged}: {:?}",
+                    run.signal,
+                );
+            }
+        }
     }
 }

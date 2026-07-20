@@ -296,6 +296,7 @@ fn action_with(steps: Vec<&str>) -> Action {
                 config: SubActionConfig::new(),
                 enabled: true,
                 continue_on_error: false,
+                condition: None,
                 label: None,
             })
             .collect(),

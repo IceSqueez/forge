@@ -607,6 +607,7 @@ mod tests {
                 )]),
                 enabled: true,
                 continue_on_error: false,
+                condition: None,
                 label: None,
             },
             picker: Some(PickerKind::Scene),

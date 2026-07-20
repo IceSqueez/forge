@@ -124,10 +124,13 @@ impl ActionEngine {
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = Arc::clone(&cancel);
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+        let config = Config::default();
+        let gate = Arc::new(crate::condition::ConditionGate::new(&config));
         let chain_engine = Arc::new(ChainEngine::new(
             Arc::clone(&sub_action_registry),
             publisher,
-            Config::default(),
+            gate,
+            config,
         ));
         let engine = Self {
             bus: Arc::clone(&bus),
@@ -389,6 +392,30 @@ pub(crate) fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTeleme
     }
 }
 
+pub(crate) fn condition_skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
+    SubActionTelemetry {
+        index,
+        kind: kind_id.to_owned(),
+        started_at: OffsetDateTime::now_utc(),
+        duration_ms: 0,
+        outcome: SubActionOutcome::Skipped("condition".to_owned()),
+    }
+}
+
+pub(crate) fn condition_failed_telemetry(
+    index: usize,
+    kind_id: &str,
+    message: String,
+) -> SubActionTelemetry {
+    SubActionTelemetry {
+        index,
+        kind: kind_id.to_owned(),
+        started_at: OffsetDateTime::now_utc(),
+        duration_ms: 0,
+        outcome: SubActionOutcome::Failed(message),
+    }
+}
+
 pub fn spawn_action_engine(
     bus: Arc<EventBus>,
     actions: Arc<dyn ActionRepo>,
@@ -589,6 +616,7 @@ mod tests {
                     config: BTreeMap::new(),
                     enabled: true,
                     continue_on_error: false,
+                    condition: None,
                     label: None,
                 }],
             };
@@ -655,6 +683,7 @@ mod tests {
             config: overrides,
             enabled: true,
             continue_on_error: false,
+            condition: None,
             label: None,
         };
 

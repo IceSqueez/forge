@@ -96,6 +96,7 @@ mod tests {
             config: SubActionConfig::new(),
             enabled: true,
             continue_on_error: false,
+            condition: None,
             label: None,
         }]
     }

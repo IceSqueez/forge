@@ -76,6 +76,7 @@ fn log_action(id: ActionId, queue_id: QueueId) -> Action {
             },
             enabled: true,
             continue_on_error: false,
+            condition: None,
             label: None,
         }],
     }
@@ -339,6 +340,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
             },
             enabled: true,
             continue_on_error: false,
+            condition: None,
             label: None,
         }],
     };

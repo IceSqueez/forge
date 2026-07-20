@@ -169,6 +169,7 @@ async fn sub_actions_json_survives_roundtrip() {
         ]),
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: None,
     }];
     let id = action.id;

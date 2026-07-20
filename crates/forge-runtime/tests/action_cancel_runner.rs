@@ -177,6 +177,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
                 config: SubActionConfig::new(),
                 enabled: true,
                 continue_on_error: false,
+                condition: None,
                 label: None,
             }],
         ))

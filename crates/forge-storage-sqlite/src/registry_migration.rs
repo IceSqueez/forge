@@ -125,6 +125,7 @@ fn convert_sub_action_entry(entry: &serde_json::Value) -> SubActionStep {
         config,
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: None,
     }
 }
@@ -270,6 +271,7 @@ fn unknown_sub_action(tag: &str) -> SubActionStep {
         config: BTreeMap::new(),
         enabled: true,
         continue_on_error: false,
+        condition: None,
         label: None,
     }
 }

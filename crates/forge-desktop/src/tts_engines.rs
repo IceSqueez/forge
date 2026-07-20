@@ -815,7 +815,7 @@ impl TtsEnginesView {
             .items_center()
             .justify_center()
             .rounded(radius(Radius::Sm))
-            .bg(avatar_color(&voice.name, palette))
+            .bg(crate::tts::name_accent(&voice.name, palette))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
@@ -1052,22 +1052,6 @@ fn voice_initial(name: &str) -> String {
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_default()
-}
-
-fn avatar_color(name: &str, palette: &ForgePalette) -> Rgba {
-    let accents = [
-        palette.brand,
-        palette.info,
-        palette.success,
-        palette.warning,
-        palette.bits,
-        palette.accent_teal,
-        palette.accent_pink_light,
-    ];
-    let hash = name
-        .bytes()
-        .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
-    accents[hash % accents.len()]
 }
 
 fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> {

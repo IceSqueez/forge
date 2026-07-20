@@ -2,20 +2,22 @@ use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange,
     Spacing, TextInput, badge, confirm_modal, icon, install_resize, overlay, radius, slider,
-    spacing, status_dot, tr,
+    spacing, status_dot, tooltip_builder, tr,
 };
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::SettingsRepo;
-use forge_tts_core::TtsRegistry;
+use forge_tts_core::{TtsRegistry, TtsVoice};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba,
+    SharedString, Subscription, Window, bounce, div, ease_in_out, prelude::*, px, relative,
 };
 
 use crate::presentation::ActivePresentation;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
+use crate::tts::name_accent;
 
 const VOL_SLIDER_W: Pixels = px(90.0);
 const TEST_INPUT_W: Pixels = px(160.0);
@@ -28,9 +30,39 @@ const PAUSE_GLYPH: Pixels = px(13.0);
 const STRIP_BTN_GLYPH: Pixels = px(13.0);
 const SPEAK_BTN_GLYPH: Pixels = px(11.0);
 const EQ_BAR_W: Pixels = px(2.0);
+const EQ_BAR_GAP: Pixels = px(2.0);
 const EQ_BAR_MAX_H: Pixels = px(11.0);
 const EQ_BAR_HEIGHTS: [f32; 4] = [5.0, 11.0, 7.0, 9.0];
+const EQ_MIN_SCALE: f32 = 0.35;
 const VOLUME_GLYPH: Pixels = px(14.0);
+
+const NOW_HEADER_MB: Pixels = px(8.0);
+const NOW_ROW_GAP: Pixels = px(10.0);
+const NOW_TILE: Pixels = px(32.0);
+const NOW_TILE_RADIUS: Pixels = px(8.0);
+const NOW_TILE_GLYPH: Pixels = px(16.0);
+const NOW_NAME_GAP: Pixels = px(6.0);
+const NOW_NAME_MB: Pixels = px(2.0);
+const NOW_NAME_FONT: Pixels = px(12.5);
+const NOW_PILL_FONT: Pixels = px(9.5);
+const NOW_MSG_FONT: Pixels = px(12.0);
+const NOW_MSG_LINE_HEIGHT: f32 = 1.45;
+const PROGRESS_GAP: Pixels = px(8.0);
+const PROGRESS_MT: Pixels = px(7.0);
+const PROGRESS_FONT: Pixels = px(10.0);
+const PROGRESS_BAR_H: Pixels = px(3.0);
+const PROGRESS_BAR_RADIUS: Pixels = px(2.0);
+
+const QUEUE_ROW_PAD_V: Pixels = px(9.0);
+const QUEUE_ROW_GAP: Pixels = px(10.0);
+const QUEUE_INDEX_FONT: Pixels = px(11.0);
+const QUEUE_GRIP_GLYPH: Pixels = px(13.0);
+const QUEUE_NAME_GAP: Pixels = px(6.0);
+const QUEUE_NAME_FONT: Pixels = px(12.0);
+const QUEUE_PREVIEW_FONT: Pixels = px(10.0);
+const QUEUE_MSG_FONT: Pixels = px(11.0);
+const QUEUE_DUR_FONT: Pixels = px(10.0);
+const QUEUE_ACTION_GLYPH: Pixels = px(13.0);
 
 const TOOLBAR_PAD_V: Pixels = px(9.0);
 const BTN_PAD_V: Pixels = px(5.0);
@@ -157,6 +189,14 @@ impl TtsDashboardView {
 
     fn skip(&mut self, _cx: &mut Context<Self>) {
         self.dispatch(SpeakCommand::Skip);
+    }
+
+    fn play_now(&mut self, request_id: RequestId, _cx: &mut Context<Self>) {
+        self.dispatch(SpeakCommand::PlayNow(request_id));
+    }
+
+    fn remove_queued(&mut self, request_id: RequestId, _cx: &mut Context<Self>) {
+        self.dispatch(SpeakCommand::RemoveQueued(request_id));
     }
 
     fn arm_stop_all(&mut self, cx: &mut Context<Self>) {
@@ -539,6 +579,204 @@ impl TtsDashboardView {
                 view.update(cx, |this, cx| this.cancel_stop_all(cx));
             })
     }
+
+    fn queue_section(
+        &self,
+        queue: &[QueueItem],
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let count = queue.len();
+        let count_badge = badge(
+            palette.surface_overlay,
+            palette.text_muted,
+            count.to_string(),
+            false,
+            COUNT_BADGE_FONT,
+        );
+        let title = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(tr!("tts_dash_queue_header")),
+            )
+            .child(count_badge);
+        let mut header = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .py(HEADER_PAD_V)
+            .px(spacing(Spacing::Md, density))
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(title);
+        if !queue.is_empty() {
+            let total: u32 = queue.iter().map(|item| item.duration_secs).sum();
+            header = header.child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("tts_dash_queue_total", secs = total as i64)),
+            );
+        }
+
+        let list: AnyElement = if queue.is_empty() {
+            div()
+                .w_full()
+                .p(spacing(Spacing::Md, density))
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_SM)
+                        .text_color(palette.text_muted)
+                        .child(tr!("tts_dash_queue_empty")),
+                )
+                .into_any_element()
+        } else {
+            let mut col = div().w_full().flex().flex_col();
+            for (index, item) in queue.iter().enumerate() {
+                col = col.child(self.queue_item_row(index, item, palette, density, cx));
+            }
+            col.into_any_element()
+        };
+
+        div()
+            .w_full()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_col()
+            .child(header)
+            .child(
+                div()
+                    .id("tts-queue-scroll")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .child(list),
+            )
+            .into_any_element()
+    }
+
+    fn queue_item_row(
+        &self,
+        index: usize,
+        item: &QueueItem,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let pos = div()
+            .w(QUEUE_POS_W)
+            .flex_shrink_0()
+            .text_center()
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(QUEUE_INDEX_FONT)
+            .text_color(palette.text_faint)
+            .child(format!("{}", index + 1));
+
+        let grip = icon(
+            Icon::GripVertical,
+            QUEUE_GRIP_GLYPH,
+            palette.text_extreme_faint,
+        );
+
+        let mut name_row = div().flex().items_center().gap(QUEUE_NAME_GAP).child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(QUEUE_NAME_FONT)
+                .text_color(name_accent(&item.viewer_name, palette))
+                .child(item.viewer_name.clone()),
+        );
+        if item.is_high_priority {
+            let label = item
+                .bits_amount
+                .map(|b| tr!("tts_dash_priority_bits", amount = b as i64))
+                .unwrap_or_else(|| tr!("tts_dash_priority_high"));
+            name_row = name_row.child(badge(palette.warning, palette.shell, label, true, FONT_XS));
+        }
+        if !item.engine_voice.is_empty() {
+            name_row = name_row.child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(QUEUE_PREVIEW_FONT)
+                    .text_color(palette.text_faint)
+                    .child(item.engine_voice.clone()),
+            );
+        }
+
+        let content = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(name_row)
+            .child(
+                div()
+                    .truncate()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(QUEUE_MSG_FONT)
+                    .text_color(palette.text_muted)
+                    .child(item.text.clone()),
+            );
+
+        let duration = div()
+            .flex_shrink_0()
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(QUEUE_DUR_FONT)
+            .text_color(palette.text_faint)
+            .child(format!("~{}", fmt_clock(item.duration_secs)));
+
+        let play_id = item.request_id.clone();
+        let play_btn = div()
+            .id(("tts-q-play", index))
+            .flex_shrink_0()
+            .cursor_pointer()
+            .tooltip(tooltip_builder(tr!("tts_dash_play_now"), palette))
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.play_now(play_id.clone(), cx)),
+            )
+            .child(icon(Icon::PlayerPlay, QUEUE_ACTION_GLYPH, palette.success));
+
+        let remove_id = item.request_id.clone();
+        let remove_btn = div()
+            .id(("tts-q-remove", index))
+            .flex_shrink_0()
+            .cursor_pointer()
+            .tooltip(tooltip_builder(tr!("tts_dash_remove_queued"), palette))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.remove_queued(remove_id.clone(), cx)
+            }))
+            .child(icon(Icon::X, QUEUE_ACTION_GLYPH, palette.text_faint));
+
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(QUEUE_ROW_GAP)
+            .py(QUEUE_ROW_PAD_V)
+            .px(spacing(Spacing::Md, density))
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(pos)
+            .child(grip)
+            .child(content)
+            .child(duration)
+            .child(play_btn)
+            .child(remove_btn)
+            .into_any_element()
+    }
 }
 
 impl Render for TtsDashboardView {
@@ -556,10 +794,25 @@ impl Render for TtsDashboardView {
             .last_drop()
             .map(|reason| reason.to_owned());
 
+        let voices = self
+            .speak
+            .as_ref()
+            .map(|h| h.available_voices())
+            .unwrap_or_default();
+        let now_voice = now
+            .as_ref()
+            .and_then(|ns| resolve_now_voice(&ns.engine_id, &ns.voice_id, &voices));
+
         let control_strip = self.control_strip(paused, &palette, cx);
-        let now_speaking =
-            now_speaking_panel(now.as_ref(), last_drop.as_deref(), &palette, density);
-        let queue_section = queue_section(&queue, &palette, density);
+        let now_speaking = now_speaking_panel(
+            now.as_ref(),
+            now_voice,
+            last_drop.as_deref(),
+            paused,
+            &palette,
+            density,
+        );
+        let queue_section = self.queue_section(&queue, &palette, density, cx);
         let right_pane = self.right_pane(&stats, &palette, cx);
 
         let left_col = div()
@@ -595,25 +848,63 @@ impl Render for TtsDashboardView {
     }
 }
 
+fn eq_bars(animate: bool, color: Rgba) -> impl IntoElement {
+    let mut bars = div().flex().items_end().gap(EQ_BAR_GAP).h(EQ_BAR_MAX_H);
+    for (i, base) in EQ_BAR_HEIGHTS.iter().enumerate() {
+        let base = *base;
+        let bar = div().w(EQ_BAR_W).h(px(base)).rounded(px(1.0)).bg(color);
+        let child: AnyElement = if animate {
+            bar.with_animation(
+                ("tts-eq-bar", i),
+                Animation::new(Duration::from_secs_f32(0.5 + i as f32 * 0.15))
+                    .repeat()
+                    .with_easing(bounce(ease_in_out)),
+                move |el, delta| el.h(px(base * (EQ_MIN_SCALE + (1.0 - EQ_MIN_SCALE) * delta))),
+            )
+            .into_any_element()
+        } else {
+            bar.into_any_element()
+        };
+        bars = bars.child(child);
+    }
+    bars
+}
+
+fn fmt_clock(secs: u32) -> String {
+    format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+fn resolve_now_voice(engine_id: &str, voice_id: &str, voices: &[TtsVoice]) -> Option<SharedString> {
+    if engine_id.is_empty() && voice_id.is_empty() {
+        return None;
+    }
+    let name = voices
+        .iter()
+        .find(|v| v.id.0 == voice_id)
+        .map(|v| v.name.clone())
+        .unwrap_or_else(|| voice_id.to_owned());
+    Some(format!("{} \u{b7} {}", engine_label(engine_id), name).into())
+}
+
 fn now_speaking_panel(
     now: Option<&NowSpeaking>,
+    now_voice: Option<SharedString>,
     last_drop: Option<&str>,
+    paused: bool,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    let bar_color = if now.is_some() {
+    let animate = now.is_some() && !paused;
+    let bar_color = if animate {
         palette.success
     } else {
         palette.text_faint
     };
-    let mut bars = div().flex().items_end().gap(px(1.0)).h(EQ_BAR_MAX_H);
-    for h in EQ_BAR_HEIGHTS {
-        bars = bars.child(div().w(EQ_BAR_W).h(px(h)).rounded(px(1.0)).bg(bar_color));
-    }
     let header = div()
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
+        .mb(NOW_HEADER_MB)
         .child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
@@ -621,56 +912,107 @@ fn now_speaking_panel(
                 .text_color(palette.text_muted)
                 .child(tr!("tts_dash_now_speaking_header")),
         )
-        .child(bars);
+        .child(eq_bars(animate, bar_color));
 
     let body = match now {
         Some(ns) => {
-            let progress = format!(
-                "{}:{:02} / {}:{:02}",
-                ns.elapsed_secs / 60,
-                ns.elapsed_secs % 60,
-                ns.total_secs / 60,
-                ns.total_secs % 60
-            );
-            div()
+            let tile = div()
+                .w(NOW_TILE)
+                .h(NOW_TILE)
+                .flex_shrink_0()
                 .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xs, density))
-                .child(header)
+                .items_center()
+                .justify_center()
+                .rounded(NOW_TILE_RADIUS)
+                .bg(palette.surface_overlay)
+                .child(icon(Icon::Message2Share, NOW_TILE_GLYPH, palette.brand));
+
+            let mut name_row = div()
+                .flex()
+                .items_center()
+                .gap(NOW_NAME_GAP)
+                .mb(NOW_NAME_MB)
                 .child(
                     div()
-                        .flex()
-                        .items_center()
-                        .gap(spacing(Spacing::Xs, density))
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(NOW_NAME_FONT)
+                        .text_color(name_accent(&ns.viewer_name, palette))
+                        .child(ns.viewer_name.clone()),
+                );
+            if let Some(voice) = now_voice {
+                name_row = name_row.child(badge(
+                    palette.surface_overlay,
+                    palette.text_muted,
+                    voice,
+                    true,
+                    NOW_PILL_FONT,
+                ));
+            }
+
+            let message = div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(NOW_MSG_FONT)
+                .line_height(relative(NOW_MSG_LINE_HEIGHT))
+                .text_color(palette.text_primary)
+                .child(ns.text.clone());
+
+            let frac = if ns.total_secs > 0 {
+                (ns.elapsed_secs as f32 / ns.total_secs as f32).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let progress = div()
+                .flex()
+                .items_center()
+                .gap(PROGRESS_GAP)
+                .mt(PROGRESS_MT)
+                .child(
+                    div()
+                        .font_family(DEFAULT_MONO_FAMILY)
+                        .text_size(PROGRESS_FONT)
+                        .text_color(palette.text_muted)
+                        .child(fmt_clock(ns.elapsed_secs)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .h(PROGRESS_BAR_H)
+                        .rounded(PROGRESS_BAR_RADIUS)
+                        .bg(palette.surface_overlay)
                         .child(
                             div()
-                                .font_family(DEFAULT_BODY_FAMILY)
-                                .text_size(FONT_SM)
-                                .text_color(palette.success)
-                                .child(ns.viewer_name.clone()),
-                        )
-                        .child(
-                            div()
-                                .font_family(DEFAULT_MONO_FAMILY)
-                                .text_size(FONT_SM)
-                                .text_color(palette.text_muted)
-                                .child(ns.engine_voice.clone()),
+                                .h_full()
+                                .w(relative(frac))
+                                .rounded(PROGRESS_BAR_RADIUS)
+                                .bg(palette.success),
                         ),
                 )
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_primary)
-                        .child(ns.text.clone()),
-                )
-                .child(
-                    div()
                         .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_SM)
+                        .text_size(PROGRESS_FONT)
                         .text_color(palette.text_muted)
-                        .child(progress),
-                )
+                        .child(fmt_clock(ns.total_secs)),
+                );
+
+            let info = div()
+                .flex_1()
+                .min_w(px(0.0))
+                .flex()
+                .flex_col()
+                .child(name_row)
+                .child(message)
+                .child(progress);
+
+            div().flex().flex_col().child(header).child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(NOW_ROW_GAP)
+                    .child(tile)
+                    .child(info),
+            )
         }
         None => {
             let mut idle = div()
@@ -706,165 +1048,6 @@ fn now_speaking_panel(
         .border_b(BORDER_THIN)
         .border_color(palette.border_regular)
         .child(body)
-        .into_any_element()
-}
-
-fn queue_section(queue: &[QueueItem], palette: &ForgePalette, density: Density) -> AnyElement {
-    let count = queue.len();
-    let count_badge = badge(
-        palette.surface_overlay,
-        palette.text_muted,
-        count.to_string(),
-        false,
-        COUNT_BADGE_FONT,
-    );
-    let title = div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, density))
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(FONT_XS)
-                .text_color(palette.text_primary)
-                .child(tr!("tts_dash_queue_header")),
-        )
-        .child(count_badge);
-    let mut header = div()
-        .w_full()
-        .flex()
-        .items_center()
-        .justify_between()
-        .py(HEADER_PAD_V)
-        .px(spacing(Spacing::Md, density))
-        .border_b(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(title);
-    if !queue.is_empty() {
-        let total: u32 = queue.iter().map(|item| item.duration_secs).sum();
-        header = header.child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(tr!("tts_dash_queue_total", secs = total as i64)),
-        );
-    }
-
-    let list: AnyElement = if queue.is_empty() {
-        div()
-            .w_full()
-            .p(spacing(Spacing::Md, density))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("tts_dash_queue_empty")),
-            )
-            .into_any_element()
-    } else {
-        let mut col = div().w_full().flex().flex_col();
-        for (index, item) in queue.iter().enumerate() {
-            col = col.child(queue_item_row(index, item, palette, density));
-        }
-        col.into_any_element()
-    };
-
-    div()
-        .w_full()
-        .flex_1()
-        .min_h(px(0.0))
-        .flex()
-        .flex_col()
-        .child(header)
-        .child(
-            div()
-                .id("tts-queue-scroll")
-                .flex_1()
-                .min_h(px(0.0))
-                .overflow_y_scroll()
-                .child(list),
-        )
-        .into_any_element()
-}
-
-fn queue_item_row(
-    index: usize,
-    item: &QueueItem,
-    palette: &ForgePalette,
-    density: Density,
-) -> AnyElement {
-    let pos = div()
-        .w(QUEUE_POS_W)
-        .flex_shrink_0()
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_SM)
-        .text_color(palette.text_muted)
-        .child(format!("{}", index + 1));
-
-    let mut name_row = div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, density))
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.success)
-                .child(item.viewer_name.clone()),
-        );
-    if item.is_high_priority {
-        let label = item
-            .bits_amount
-            .map(|b| tr!("tts_dash_priority_bits", amount = b as i64))
-            .unwrap_or_else(|| tr!("tts_dash_priority_high"));
-        name_row = name_row.child(badge(palette.warning, palette.shell, label, true, FONT_XS));
-    }
-    if !item.engine_voice.is_empty() {
-        name_row = name_row.child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(item.engine_voice.clone()),
-        );
-    }
-
-    let content = div()
-        .flex_1()
-        .min_w(px(0.0))
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, density))
-        .child(name_row)
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(item.text.clone()),
-        );
-
-    let duration = div()
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_SM)
-        .text_color(palette.text_muted)
-        .child(format!("0:{:02}", item.duration_secs));
-
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, density))
-        .py(spacing(Spacing::Xs, density))
-        .px(spacing(Spacing::Md, density))
-        .border_b(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(pos)
-        .child(content)
-        .child(duration)
         .into_any_element()
 }
 

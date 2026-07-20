@@ -336,6 +336,7 @@ pub(crate) async fn run_actor(
                             &last_successful,
                             &mut current_playback,
                             &mut progress_ticker,
+                            &task_deps.voice_catalog,
                         );
                         master_volume_bits.store(config.master_volume.to_bits(), Ordering::Relaxed);
                     }
@@ -353,6 +354,7 @@ pub(crate) async fn run_actor(
                         &last_successful,
                         &mut current_playback,
                         &mut progress_ticker,
+                        &task_deps.voice_catalog,
                     ),
                 }
             }
@@ -574,6 +576,59 @@ fn stop_active(
     );
 }
 
+fn take_from_queues(
+    high_queue: &mut VecDeque<SpeakRequest>,
+    normal_queue: &mut VecDeque<SpeakRequest>,
+    request_id: &RequestId,
+) -> Option<SpeakRequest> {
+    if let Some(pos) = high_queue.iter().position(|r| &r.request_id == request_id) {
+        return high_queue.remove(pos);
+    }
+    if let Some(pos) = normal_queue
+        .iter()
+        .position(|r| &r.request_id == request_id)
+    {
+        return normal_queue.remove(pos);
+    }
+    None
+}
+
+fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -> (String, u32) {
+    let estimated_secs = ((req.text.chars().count() as u32) / 15).max(1);
+    let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
+    let preview = match resolve_with_overrides(&guard, req, catalog) {
+        ResolveResult::Speak {
+            voice_id,
+            engine_id,
+            ..
+        } => {
+            let name = catalog
+                .iter()
+                .find(|v| v.id == voice_id)
+                .map(|v| v.name.clone())
+                .unwrap_or_else(|| voice_id.0.clone());
+            format!("{} \u{b7} {}", engine_label(&engine_id.0), name)
+        }
+        ResolveResult::Skip { .. } => String::new(),
+    };
+    (preview, estimated_secs)
+}
+
+fn engine_label(id: &str) -> String {
+    match id {
+        "piper" => "Piper",
+        "espeak-ng" => "eSpeak-NG",
+        "sapi" => "Microsoft SAPI 5",
+        "nsspeech" => "Apple AVSpeech",
+        "azure" => "Azure Speech",
+        "elevenlabs" => "ElevenLabs",
+        "openai" => "OpenAI TTS",
+        "polly" => "Amazon Polly",
+        other => return other.to_owned(),
+    }
+    .to_owned()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_command(
     cmd: SpeakCommand,
@@ -589,6 +644,7 @@ fn handle_command(
     last_successful: &Option<SpeakRequest>,
     current_playback: &mut Option<CurrentPlayback>,
     progress_ticker: &mut Option<tokio::time::Interval>,
+    voice_catalog: &[TtsVoice],
 ) {
     match cmd {
         SpeakCommand::Enqueue(req) => {
@@ -628,6 +684,7 @@ fn handle_command(
             }
             *per_user_counts.entry(req.viewer_id.clone()).or_insert(0) += 1;
             let total_after = total + 1;
+            let (voice_preview, estimated_secs) = enqueue_preview(&req, deps, voice_catalog);
             match req.priority {
                 Priority::High => high_queue.push_back(req.clone()),
                 Priority::Normal => normal_queue.push_back(req.clone()),
@@ -638,6 +695,8 @@ fn handle_command(
                 viewer_name: req.viewer_name.clone(),
                 text: req.text.clone(),
                 is_high_priority: matches!(req.priority, Priority::High),
+                voice_preview,
+                estimated_secs,
             });
             publish(
                 deps.event_bus.as_ref(),
@@ -659,6 +718,41 @@ fn handle_command(
             );
             let total = high_queue.len() + normal_queue.len();
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+        }
+        SpeakCommand::PlayNow(request_id) => {
+            if let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) {
+                high_queue.push_front(req);
+                stop_active(
+                    "promoted by user",
+                    deps,
+                    event_tx,
+                    active_request_id,
+                    current_playback,
+                    progress_ticker,
+                );
+                let total = high_queue.len() + normal_queue.len();
+                let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+            }
+        }
+        SpeakCommand::RemoveQueued(request_id) => {
+            if let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) {
+                if let Some(count) = per_user_counts.get_mut(&req.viewer_id) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        per_user_counts.remove(&req.viewer_id);
+                    }
+                }
+                let _ = event_tx.send(SpeakEvent::Removed {
+                    request_id: request_id.clone(),
+                });
+                publish(
+                    deps.event_bus.as_ref(),
+                    "speak.removed",
+                    serde_json::json!({ "request_id": request_id.0 }),
+                );
+                let total = high_queue.len() + normal_queue.len();
+                let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+            }
         }
         SpeakCommand::Clear => {
             stop_active(
@@ -759,6 +853,7 @@ fn handle_command(
                 replay.request_id = RequestId::new();
                 replay.priority = Priority::High;
                 let total = high_queue.len() + normal_queue.len() + 1;
+                let (voice_preview, estimated_secs) = enqueue_preview(&replay, deps, voice_catalog);
                 high_queue.push_back(replay.clone());
                 let _ = event_tx.send(SpeakEvent::Enqueued {
                     request_id: replay.request_id.clone(),
@@ -766,6 +861,8 @@ fn handle_command(
                     viewer_name: replay.viewer_name.clone(),
                     text: replay.text.clone(),
                     is_high_priority: true,
+                    voice_preview,
+                    estimated_secs,
                 });
                 let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
             }
@@ -924,6 +1021,7 @@ mod tests {
             &last,
             &mut current_playback,
             &mut progress_ticker,
+            &[],
         );
     }
 

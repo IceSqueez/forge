@@ -121,6 +121,7 @@ tabler_icons! {
     Network => "network.svg",
     Cloud => "cloud.svg",
     Cpu => "cpu.svg",
+    GripVertical => "grip-vertical.svg",
 }
 
 impl Icon {
@@ -219,6 +220,7 @@ impl Icon {
             "arrow-bar-down" | "arrow-to-bottom" => Icon::ArrowBarDown,
             "cloud" => Icon::Cloud,
             "cpu" | "chip" | "processor" => Icon::Cpu,
+            "grip-vertical" | "grip" => Icon::GripVertical,
             _ => Icon::InfoCircle,
         }
     }

@@ -63,6 +63,8 @@ pub struct SpeakRequest {
 pub enum SpeakCommand {
     Enqueue(SpeakRequest),
     Skip,
+    PlayNow(RequestId),
+    RemoveQueued(RequestId),
     Clear,
     /// Drops every pending item but lets the in-flight synthesis/playback finish.
     /// `Clear` also abandons the active item; `ClearPending` deliberately does not.
@@ -109,6 +111,8 @@ pub enum SpeakEvent {
         viewer_name: String,
         text: String,
         is_high_priority: bool,
+        voice_preview: String,
+        estimated_secs: u32,
     },
     Started {
         request_id: RequestId,
@@ -134,6 +138,9 @@ pub enum SpeakEvent {
     Skipped {
         request_id: RequestId,
         reason: String,
+    },
+    Removed {
+        request_id: RequestId,
     },
     Rejected {
         request_id: RequestId,

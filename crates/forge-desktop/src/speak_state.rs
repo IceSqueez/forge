@@ -4,7 +4,8 @@ use forge_speak_queue::{RequestId, SpeakEvent};
 pub struct NowSpeaking {
     pub request_id: RequestId,
     pub viewer_name: String,
-    pub engine_voice: String,
+    pub engine_id: String,
+    pub voice_id: String,
     pub text: String,
     pub elapsed_secs: u32,
     pub total_secs: u32,
@@ -65,14 +66,16 @@ impl SpeakState {
                 viewer_name,
                 text,
                 is_high_priority,
+                voice_preview,
+                estimated_secs,
                 ..
             } => {
                 self.queue.push(QueueItem {
                     request_id,
                     viewer_name,
-                    engine_voice: String::new(),
+                    engine_voice: voice_preview,
                     text,
-                    duration_secs: 0,
+                    duration_secs: estimated_secs,
                     is_high_priority,
                     bits_amount: None,
                 });
@@ -91,11 +94,8 @@ impl SpeakState {
                 self.now_speaking = Some(NowSpeaking {
                     request_id,
                     viewer_name,
-                    engine_voice: if voice_id.0.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{}/{}", engine_id.0, voice_id.0)
-                    },
+                    engine_id: engine_id.0,
+                    voice_id: voice_id.0,
                     text,
                     elapsed_secs: 0,
                     total_secs: duration_secs,
@@ -127,6 +127,11 @@ impl SpeakState {
                 self.stats.skipped = self.stats.skipped.saturating_add(1);
                 self.last_drop = Some(reason);
                 true
+            }
+            SpeakEvent::Removed { request_id } => {
+                let before = self.queue.len();
+                self.queue.retain(|item| item.request_id != request_id);
+                self.queue.len() != before
             }
             SpeakEvent::Rejected { .. } => {
                 self.stats.filtered = self.stats.filtered.saturating_add(1);

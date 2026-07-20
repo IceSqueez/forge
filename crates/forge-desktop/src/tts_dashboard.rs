@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange,
-    Spacing, TextInput, badge, confirm_modal, icon, icon_inherit, install_resize, overlay, radius,
-    slider, spacing, status_dot, tr,
+    Spacing, TextInput, badge, confirm_modal, icon, install_resize, overlay, radius, slider,
+    spacing, status_dot, tr,
 };
 use std::sync::{Arc, RwLock};
 
@@ -371,7 +371,7 @@ impl TtsDashboardView {
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border).text_color(hover_text))
             .on_click(handler)
-            .child(icon_inherit(glyph, STRIP_BTN_GLYPH))
+            .child(icon(glyph, STRIP_BTN_GLYPH, text_color))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)

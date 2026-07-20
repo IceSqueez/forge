@@ -73,7 +73,7 @@ impl SubActionRunner for CoreFileListRunner {
             },
             FormField::Text {
                 key: "into_var",
-                label: "Target Variable",
+                label: "Output Variable",
                 placeholder: "file.entries",
             },
         ]

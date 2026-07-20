@@ -58,7 +58,7 @@ impl SubActionRunner for CoreGlobalsGetRunner {
             },
             FormField::Text {
                 key: "into_arg",
-                label: "Output Argument",
+                label: "Output Variable",
                 placeholder: "result",
             },
         ]

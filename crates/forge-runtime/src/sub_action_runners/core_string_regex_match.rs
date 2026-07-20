@@ -60,7 +60,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
             },
             FormField::Text {
                 key: "into_var",
-                label: "Match Result Variable (bool)",
+                label: "Output Variable (bool)",
                 placeholder: "regex.matched",
             },
             FormField::Text {

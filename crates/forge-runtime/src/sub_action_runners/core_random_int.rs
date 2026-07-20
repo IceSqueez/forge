@@ -80,7 +80,7 @@ impl SubActionRunner for CoreRandomIntRunner {
             },
             FormField::Text {
                 key: "target_var",
-                label: "Target Variable",
+                label: "Output Variable",
                 placeholder: "random_result",
             },
         ]

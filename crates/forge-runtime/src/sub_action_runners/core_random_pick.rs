@@ -59,7 +59,7 @@ impl SubActionRunner for CoreRandomPickRunner {
             },
             FormField::Text {
                 key: "into_var",
-                label: "Target Variable",
+                label: "Output Variable",
                 placeholder: "picked",
             },
         ]

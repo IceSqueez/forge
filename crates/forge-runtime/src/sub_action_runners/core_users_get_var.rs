@@ -74,7 +74,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
             },
             FormField::Text {
                 key: "into_var",
-                label: "Output Argument",
+                label: "Output Variable",
                 placeholder: "result",
             },
             FormField::Text {

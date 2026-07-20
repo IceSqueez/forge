@@ -81,7 +81,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
             },
             FormField::Text {
                 key: "into_var",
-                label: "Target Variable",
+                label: "Output Variable",
                 placeholder: "random_result",
             },
         ]

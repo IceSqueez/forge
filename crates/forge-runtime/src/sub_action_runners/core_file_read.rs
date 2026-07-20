@@ -57,15 +57,15 @@ impl SubActionRunner for CoreFileReadRunner {
                 key: "path",
                 label: "File Path",
             },
-            FormField::Text {
-                key: "target_var",
-                label: "Target Variable",
-                placeholder: "file_contents",
-            },
             FormField::Select {
                 key: "read_as",
                 label: "Read As",
                 options: &["Lines array", "Whole file", "JSON"],
+            },
+            FormField::Text {
+                key: "target_var",
+                label: "Output Variable",
+                placeholder: "file_contents",
             },
         ]
     }

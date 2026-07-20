@@ -883,6 +883,7 @@ tts_dash_no_speaking = -
 ## TTS Dashboard - queue
 
 tts_dash_queue_header = Up next
+tts_dash_queue_total = ~{ $secs }s total
 tts_dash_queue_empty = Queue is empty
 
 ## TTS Dashboard - session stats

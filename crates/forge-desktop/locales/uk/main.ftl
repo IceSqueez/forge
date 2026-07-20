@@ -885,6 +885,7 @@ tts_dash_no_speaking = -
 ## TTS Dashboard - черга
 
 tts_dash_queue_header = Наступний
+tts_dash_queue_total = ~{ $secs }с усього
 tts_dash_queue_empty = Черга порожня
 
 ## TTS Dashboard - статистика сесії

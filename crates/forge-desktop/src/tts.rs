@@ -1,8 +1,8 @@
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    Spacing, breadcrumb, spacing, status_dot, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, FONT_XS, ForgePalette, breadcrumb,
+    status_dot, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider};
@@ -23,6 +23,9 @@ use crate::voice_aliases::VoiceAliasesView;
 const TAB_PAD_V: Pixels = px(7.0);
 const TAB_PAD_H: Pixels = px(14.0);
 const TAB_INDICATOR_H: Pixels = px(2.0);
+const TAB_GAP: Pixels = px(2.0);
+const TAB_BAR_PAD_T: Pixels = px(8.0);
+const TAB_BAR_PAD_H: Pixels = px(14.0);
 const ENGINES_READY_DOT: Pixels = px(7.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,7 +184,6 @@ impl TtsView {
     fn render_tab_bar(
         &self,
         palette: &ForgePalette,
-        density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let mut bar = div()
@@ -189,8 +191,10 @@ impl TtsView {
             .flex_shrink_0()
             .flex()
             .flex_row()
-            .gap(spacing(Spacing::Xxs, density))
-            .bg(palette.shell)
+            .gap(TAB_GAP)
+            .pt(TAB_BAR_PAD_T)
+            .px(TAB_BAR_PAD_H)
+            .bg(palette.elevated)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular);
         for section in TtsSection::ALL {
@@ -225,11 +229,10 @@ impl TtsView {
 
         div()
             .id(section.key())
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
             .py(TAB_PAD_V)
             .px(TAB_PAD_H)
+            .border_b(TAB_INDICATOR_H)
+            .border_color(indicator)
             .cursor_pointer()
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.select_section(section, cx)),
@@ -238,11 +241,10 @@ impl TtsView {
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .font_weight(weight)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(fg)
                     .child(section.label()),
             )
-            .child(div().w_full().h(TAB_INDICATOR_H).bg(indicator))
     }
 
     fn render_content(&self) -> AnyElement {
@@ -260,10 +262,9 @@ impl TtsView {
 impl Render for TtsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
-        let density = cx.density();
 
         let header = self.render_header(&palette);
-        let tab_bar = self.render_tab_bar(&palette, density, cx);
+        let tab_bar = self.render_tab_bar(&palette, cx);
         let content = self.render_content();
 
         div()

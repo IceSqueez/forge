@@ -1,23 +1,26 @@
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge, card,
-    confirm_modal, icon, overlay, radius, slider, spacing, status_dot, tr,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange,
+    Spacing, TextInput, badge, confirm_modal, icon, icon_inherit, install_resize, overlay, radius,
+    slider, spacing, status_dot, tr,
 };
 use std::sync::{Arc, RwLock};
 
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_tts_core::TtsRegistry;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
 
 const VOL_SLIDER_W: Pixels = px(90.0);
-const TEST_INPUT_W: Pixels = px(180.0);
-const RIGHT_PANE_W: Pixels = px(236.0);
+const TEST_INPUT_W: Pixels = px(160.0);
+const RAIL_DEFAULT_W: Pixels = px(240.0);
+const RAIL_MIN_W: Pixels = px(200.0);
+const RAIL_MAX_W: Pixels = px(400.0);
 const QUEUE_POS_W: Pixels = px(14.0);
 const ENGINE_DOT: Pixels = px(7.0);
 const PAUSE_GLYPH: Pixels = px(13.0);
@@ -28,6 +31,40 @@ const EQ_BAR_MAX_H: Pixels = px(11.0);
 const EQ_BAR_HEIGHTS: [f32; 4] = [5.0, 11.0, 7.0, 9.0];
 const VOLUME_GLYPH: Pixels = px(14.0);
 const SEED_VOLUME: f32 = 0.72;
+
+const TOOLBAR_PAD_V: Pixels = px(9.0);
+const BTN_PAD_V: Pixels = px(5.0);
+const SOLID_BTN_PAD_H: Pixels = px(12.0);
+const GHOST_BTN_PAD_H: Pixels = px(11.0);
+const BTN_GAP: Pixels = px(5.0);
+const STRIP_GAP: Pixels = px(8.0);
+const VOL_GAP: Pixels = px(7.0);
+const VOL_PCT_FONT: Pixels = px(11.0);
+const VOL_PCT_W: Pixels = px(32.0);
+const TEST_PAD_V: Pixels = px(4.0);
+const TEST_PAD_H: Pixels = px(10.0);
+const TEST_GAP: Pixels = px(6.0);
+const TEST_ICON: Pixels = px(12.0);
+const TEST_FONT: Pixels = px(11.5);
+const BTN_FONT: Pixels = px(12.0);
+const NOW_PAD_V: Pixels = px(14.0);
+const NOW_LABEL_FONT: Pixels = px(10.0);
+const HEADER_PAD_V: Pixels = px(9.0);
+const COUNT_BADGE_FONT: Pixels = px(10.0);
+const RAIL_PAD: Pixels = px(14.0);
+const RAIL_LABEL_FONT: Pixels = px(10.0);
+const RAIL_LABEL_MB: Pixels = px(8.0);
+const RAIL_SECTION_MT: Pixels = px(16.0);
+const STAT_PAD_V: Pixels = px(5.0);
+const STAT_LABEL_FONT: Pixels = px(11.5);
+const STAT_VALUE_FONT: Pixels = px(13.0);
+const ENGINE_PAD_V: Pixels = px(9.0);
+const ENGINE_PAD_H: Pixels = px(11.0);
+const ENGINE_NAME_FONT: Pixels = px(11.5);
+const ENGINE_META_FONT: Pixels = px(10.0);
+const ENGINE_NAME_MB: Pixels = px(3.0);
+
+struct TtsRailResizeDrag;
 
 struct EngineStatus {
     name: String,
@@ -40,6 +77,7 @@ pub struct TtsDashboardView {
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     volume: f32,
+    rail_width: Pixels,
     engines: Vec<EngineStatus>,
     pending_stop_all: bool,
     test_input: Entity<TextInput>,
@@ -56,8 +94,12 @@ impl TtsDashboardView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let test_input =
-            cx.new(|cx| TextInput::new(tr!("tts_dash_test_placeholder"), cx).with_palette(palette));
+        let test_input = cx.new(|cx| {
+            TextInput::new(tr!("tts_dash_test_placeholder"), cx)
+                .with_palette(palette)
+                .plain()
+                .with_font_size(TEST_FONT)
+        });
         let test_sub = cx.subscribe(
             &test_input,
             |this, _input, event: &InputEvent, cx| match event {
@@ -73,6 +115,7 @@ impl TtsDashboardView {
             speak,
             rt_handle,
             volume: SEED_VOLUME,
+            rail_width: RAIL_DEFAULT_W,
             engines: load_engine_roster(registry.as_ref()),
             pending_stop_all: false,
             test_input,
@@ -137,6 +180,11 @@ impl TtsDashboardView {
         cx.notify();
     }
 
+    fn set_rail_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        self.rail_width = width;
+        cx.notify();
+    }
+
     fn speak_test(&mut self, cx: &mut Context<Self>) {
         let text = self.test_input.read(cx).content().trim().to_owned();
         if text.is_empty() {
@@ -154,11 +202,8 @@ impl TtsDashboardView {
         &self,
         paused: bool,
         palette: &ForgePalette,
-        density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let gap = spacing(Spacing::Xs, density);
-
         let (pause_label, pause_glyph, btn_bg) = if paused {
             (
                 tr!("tts_dash_resume_btn"),
@@ -172,9 +217,9 @@ impl TtsDashboardView {
             .id("tts-pause")
             .flex()
             .items_center()
-            .gap(gap)
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Sm, density))
+            .gap(BTN_GAP)
+            .py(BTN_PAD_V)
+            .px(SOLID_BTN_PAD_H)
             .rounded(radius(Radius::Sm))
             .bg(btn_bg)
             .cursor_pointer()
@@ -183,32 +228,42 @@ impl TtsDashboardView {
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(BTN_FONT)
                     .text_color(palette.shell)
                     .child(pause_label),
             );
 
         let skip_btn = self.ghost_strip_button(
             "tts-skip",
-            (Icon::PlayerSkipForward, palette.text_secondary),
+            Icon::PlayerSkipForward,
+            palette.text_secondary,
+            palette.text_primary,
             tr!("tts_dash_skip_btn"),
             palette,
-            density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.skip(cx)),
         );
         let stop_btn = self.ghost_strip_button(
             "tts-stop",
-            (Icon::PlayerStop, palette.random),
+            Icon::PlayerStop,
+            palette.random,
+            palette.random,
             tr!("tts_dash_stop_all_btn"),
             palette,
-            density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.arm_stop_all(cx)),
         );
 
+        let divider = div()
+            .w(px(1.0))
+            .h(px(16.0))
+            .mx(px(4.0))
+            .bg(palette.border_regular);
+
         let vol_pct = (self.volume * 100.0).round() as u32;
         let vol_text = div()
+            .w(VOL_PCT_W)
             .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_SM)
+            .text_size(VOL_PCT_FONT)
             .text_color(palette.text_muted)
             .child(format!("{vol_pct}%"));
         let vol_slider =
@@ -221,7 +276,7 @@ impl TtsDashboardView {
         let volume_row = div()
             .flex()
             .items_center()
-            .gap(gap)
+            .gap(VOL_GAP)
             .child(icon(Icon::Volume, VOLUME_GLYPH, palette.text_muted))
             .child(vol_slider)
             .child(vol_text);
@@ -229,20 +284,32 @@ impl TtsDashboardView {
         let left = div()
             .flex()
             .items_center()
-            .gap(gap)
+            .gap(STRIP_GAP)
             .child(pause_btn)
             .child(skip_btn)
             .child(stop_btn)
+            .child(divider)
             .child(volume_row);
 
-        let test_input = div().w(TEST_INPUT_W).child(self.test_input.clone());
+        let test_field = div()
+            .flex()
+            .items_center()
+            .gap(TEST_GAP)
+            .py(TEST_PAD_V)
+            .px(TEST_PAD_H)
+            .rounded(radius(Radius::Sm))
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(icon(Icon::TestPipe, TEST_ICON, palette.text_faint))
+            .child(div().w(TEST_INPUT_W).child(self.test_input.clone()));
         let speak_btn = div()
             .id("tts-speak")
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Sm, density))
+            .gap(BTN_GAP)
+            .py(BTN_PAD_V)
+            .px(SOLID_BTN_PAD_H)
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
@@ -251,63 +318,64 @@ impl TtsDashboardView {
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(BTN_FONT)
                     .text_color(palette.shell)
                     .child(tr!("tts_dash_speak_btn")),
             );
         let right = div()
             .flex()
             .items_center()
-            .gap(gap)
-            .child(test_input)
+            .gap(STRIP_GAP)
+            .child(test_field)
             .child(speak_btn);
 
-        let inner = div()
+        div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
+            .py(TOOLBAR_PAD_V)
+            .px(spacing(Spacing::Md, Density::Cozy))
+            .bg(palette.elevated)
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
             .child(left)
-            .child(right);
-
-        card(inner, palette)
-            .split_radius(px(0.0), px(0.0))
-            .padding_xy(spacing(Spacing::Xs, density), spacing(Spacing::Md, density))
-            .full_width()
+            .child(right)
             .into_any_element()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn ghost_strip_button(
         &self,
         id: &'static str,
-        look: (Icon, Rgba),
+        glyph: Icon,
+        text_color: Rgba,
+        hover_text: Rgba,
         label: impl Into<SharedString>,
         palette: &ForgePalette,
-        density: Density,
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
     ) -> AnyElement {
-        let (glyph, text_color) = look;
-        let hover = palette.elevated;
+        let hover_border = palette.border_input;
         div()
             .id(id)
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Sm, density))
+            .gap(BTN_GAP)
+            .py(BTN_PAD_V)
+            .px(GHOST_BTN_PAD_H)
             .rounded(radius(Radius::Sm))
-            .bg(palette.surface_overlay)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
+            .text_color(text_color)
             .cursor_pointer()
-            .hover(move |s| s.bg(hover))
+            .hover(move |s| s.border_color(hover_border).text_color(hover_text))
             .on_click(handler)
-            .child(icon(glyph, STRIP_BTN_GLYPH, text_color))
+            .child(icon_inherit(glyph, STRIP_BTN_GLYPH))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(text_color)
+                    .text_size(BTN_FONT)
                     .child(label.into()),
             )
             .into_any_element()
@@ -317,24 +385,26 @@ impl TtsDashboardView {
         &self,
         stats: &SessionStats,
         palette: &ForgePalette,
-        density: Density,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let latency = stats
             .avg_latency_ms
             .map(|ms| format!("{ms}ms"))
             .unwrap_or_else(|| "-".to_owned());
 
-        let stats_col = div()
+        let mut content = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(rail_header(tr!("tts_dash_session_header"), palette))
+            .child(rail_header(
+                tr!("tts_dash_session_header"),
+                px(0.0),
+                palette,
+            ))
             .child(stat_row(
                 tr!("tts_dash_stat_spoken"),
                 stats.spoken.to_string(),
                 palette.brand,
                 palette,
-                density,
                 true,
             ))
             .child(stat_row(
@@ -342,7 +412,6 @@ impl TtsDashboardView {
                 stats.skipped.to_string(),
                 palette.warning,
                 palette,
-                density,
                 true,
             ))
             .child(stat_row(
@@ -350,7 +419,6 @@ impl TtsDashboardView {
                 stats.filtered.to_string(),
                 palette.random,
                 palette,
-                density,
                 true,
             ))
             .child(stat_row(
@@ -358,16 +426,19 @@ impl TtsDashboardView {
                 latency,
                 palette.success,
                 palette,
-                density,
                 false,
+            ))
+            .child(rail_header(
+                tr!("tts_dash_engines_header"),
+                RAIL_SECTION_MT,
+                palette,
             ));
 
-        let mut engines = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
         if self.engines.is_empty() {
-            engines = engines.child(
+            content = content.child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .text_size(STAT_LABEL_FONT)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_dash_engines_none")),
             );
@@ -378,23 +449,16 @@ impl TtsDashboardView {
             } else {
                 palette.success
             };
-            engines = engines.child(engine_card(
+            content = content.child(engine_card(
                 eng.name.clone(),
                 eng.meta.clone(),
                 color,
                 palette,
-                density,
             ));
         }
-        let engines_col = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(rail_header(tr!("tts_dash_engines_header"), palette))
-            .child(engines);
 
-        div()
-            .w(RIGHT_PANE_W)
+        let panel = div()
+            .w(self.rail_width)
             .flex_shrink_0()
             .h_full()
             .flex()
@@ -408,17 +472,23 @@ impl TtsDashboardView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
-                    .p(spacing(Spacing::Sm, density))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(spacing(Spacing::Sm, density))
-                            .child(stats_col)
-                            .child(engines_col),
-                    ),
-            )
-            .into_any_element()
+                    .p(RAIL_PAD)
+                    .child(content),
+            );
+
+        install_resize(
+            panel,
+            TtsRailResizeDrag,
+            "tts-rail-resize",
+            ResizeEdge::Left,
+            ResizeRange {
+                min: RAIL_MIN_W,
+                max: RAIL_MAX_W,
+            },
+            palette,
+            cx.listener(|this, width: &Pixels, _, cx| this.set_rail_width(*width, cx)),
+        )
+        .into_any_element()
     }
 
     fn render_stop_confirm(
@@ -463,10 +533,10 @@ impl Render for TtsDashboardView {
         let queue = self.speak_state.read(cx).queue_snapshot();
         let stats = self.speak_state.read(cx).stats_snapshot();
 
-        let control_strip = self.control_strip(paused, &palette, density, cx);
+        let control_strip = self.control_strip(paused, &palette, cx);
         let now_speaking = now_speaking_panel(now.as_ref(), &palette, density);
         let queue_section = queue_section(&queue, &palette, density);
-        let right_pane = self.right_pane(&stats, &palette, density);
+        let right_pane = self.right_pane(&stats, &palette, cx);
 
         let left_col = div()
             .flex_1()
@@ -522,7 +592,7 @@ fn now_speaking_panel(
         .child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
+                .text_size(NOW_LABEL_FONT)
                 .text_color(palette.text_muted)
                 .child(tr!("tts_dash_now_speaking_header")),
         )
@@ -591,45 +661,59 @@ fn now_speaking_panel(
             ),
     };
 
-    card(body, palette)
-        .split_radius(px(0.0), px(0.0))
-        .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Md, density))
-        .full_width()
+    div()
+        .w_full()
+        .py(NOW_PAD_V)
+        .px(spacing(Spacing::Md, density))
+        .bg(palette.elevated)
+        .border_b(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .child(body)
         .into_any_element()
 }
 
 fn queue_section(queue: &[QueueItem], palette: &ForgePalette, density: Density) -> AnyElement {
     let count = queue.len();
-    let count_pill = div()
-        .px(spacing(Spacing::Xs, density))
-        .rounded(radius(Radius::Pill))
-        .bg(palette.surface_overlay)
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(count.to_string()),
-        );
-    let header = div()
-        .w_full()
+    let count_badge = badge(
+        palette.surface_overlay,
+        palette.text_muted,
+        count.to_string(),
+        false,
+        COUNT_BADGE_FONT,
+    );
+    let title = div()
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
-        .py(spacing(Spacing::Xs, density))
-        .px(spacing(Spacing::Md, density))
-        .border_b(BORDER_THIN)
-        .border_color(palette.border_regular)
         .child(
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(tr!("tts_dash_queue_header")),
         )
-        .child(count_pill);
+        .child(count_badge);
+    let mut header = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .justify_between()
+        .py(HEADER_PAD_V)
+        .px(spacing(Spacing::Md, density))
+        .border_b(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .child(title);
+    if !queue.is_empty() {
+        let total: u32 = queue.iter().map(|item| item.duration_secs).sum();
+        header = header.child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(tr!("tts_dash_queue_total", secs = total as i64)),
+        );
+    }
 
     let list: AnyElement = if queue.is_empty() {
         div()
@@ -747,10 +831,16 @@ fn queue_item_row(
         .into_any_element()
 }
 
-fn rail_header(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+fn rail_header(
+    label: impl Into<SharedString>,
+    margin_top: Pixels,
+    palette: &ForgePalette,
+) -> impl IntoElement {
     div()
+        .mt(margin_top)
+        .mb(RAIL_LABEL_MB)
         .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
+        .text_size(RAIL_LABEL_FONT)
         .text_color(palette.text_muted)
         .child(label.into())
 }
@@ -760,7 +850,6 @@ fn stat_row(
     value: String,
     value_color: Rgba,
     palette: &ForgePalette,
-    density: Density,
     border_bottom: bool,
 ) -> impl IntoElement {
     let mut row = div()
@@ -768,19 +857,20 @@ fn stat_row(
         .flex()
         .items_center()
         .justify_between()
-        .py(spacing(Spacing::Xxs, density))
+        .py(STAT_PAD_V)
         .child(
             div()
                 .flex_1()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .text_size(STAT_LABEL_FONT)
                 .text_color(palette.text_muted)
                 .child(label.into()),
         )
         .child(
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(STAT_VALUE_FONT)
                 .text_color(value_color)
                 .child(value),
         );
@@ -797,40 +887,45 @@ fn engine_card(
     meta: impl Into<SharedString>,
     status_color: Rgba,
     palette: &ForgePalette,
-    density: Density,
 ) -> impl IntoElement {
     let name = name.into();
     let meta = meta.into();
-    card(
+    let body = div()
+        .flex()
+        .flex_col()
+        .gap(ENGINE_NAME_MB)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .flex_1()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(ENGINE_NAME_FONT)
+                        .text_color(palette.text_primary)
+                        .child(name),
+                )
+                .child(status_dot(status_color, ENGINE_DOT)),
+        )
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(ENGINE_META_FONT)
+                .text_color(palette.text_faint)
+                .child(meta),
+        );
+    div().mb(px(6.0)).child(
         div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .flex_1()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(name),
-                    )
-                    .child(status_dot(status_color, ENGINE_DOT)),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(meta),
-            ),
-        palette,
+            .py(ENGINE_PAD_V)
+            .px(ENGINE_PAD_H)
+            .rounded(radius(Radius::Md))
+            .bg(palette.elevated)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(body),
     )
-    .padding_xy(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
-    .full_width()
 }
 
 fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {

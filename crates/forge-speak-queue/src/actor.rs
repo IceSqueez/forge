@@ -228,18 +228,6 @@ fn resolve_with_overrides(
     resolver.resolve(&req.viewer_id, &req.viewer_name, catalog)
 }
 
-fn apply_gain(mut buf: PcmBuffer, gain: f32) -> PcmBuffer {
-    if (gain - 1.0_f32).abs() < f32::EPSILON {
-        return buf;
-    }
-    buf.samples = buf
-        .samples
-        .iter()
-        .map(|&s| (s as f32 * gain).clamp(i16::MIN as f32, i16::MAX as f32) as i16)
-        .collect();
-    buf
-}
-
 fn publish(bus: &dyn EventPublisher, kind: &str, payload: serde_json::Value) {
     bus.publish(Event::new(EventSource::Audio, kind, payload));
 }
@@ -486,7 +474,7 @@ async fn handle_synth_result(
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
         }
         SynthOutcome::Speak {
-            pcm,
+            mut pcm,
             voice_id,
             engine_id,
         } => {
@@ -509,8 +497,8 @@ async fn handle_synth_result(
                 }),
             );
             let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
-            let adjusted = apply_gain(pcm, config.master_volume * engine_gain);
-            match deps.audio_sink.play_controlled(adjusted).await {
+            pcm.apply_gain(config.master_volume * engine_gain);
+            match deps.audio_sink.play_controlled(pcm).await {
                 Ok(playback) => {
                     let mut ticker = tokio::time::interval(Duration::from_secs(1));
                     ticker.tick().await;

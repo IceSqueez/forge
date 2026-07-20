@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_audio::{CpalSink, DeviceId, NullAudioEventSink, NullSink};
+use forge_audio::{NullAudioEventSink, NullSink};
 use forge_events::EventPublisher;
 use forge_platform_core::paths;
 use forge_runtime::EventBus;
@@ -58,35 +58,6 @@ async fn find_piper_binary() -> Option<PathBuf> {
         }
     }
     None
-}
-
-async fn resolve_audio_output_device(backend: &Arc<dyn DataProvider>) -> Option<DeviceId> {
-    let devices = match forge_audio::list_output_devices() {
-        Ok(devices) => devices,
-        Err(e) => {
-            eprintln!("forge-desktop: failed to enumerate audio output devices: {e}");
-            return None;
-        }
-    };
-    if devices.is_empty() {
-        return None;
-    }
-
-    let stored = match backend.audio_output_device_id().await {
-        Ok(id) => id,
-        Err(e) => {
-            eprintln!("forge-desktop: failed to read stored audio output device preference: {e}");
-            None
-        }
-    };
-
-    if let Some(stored_id) = stored
-        && let Some(found) = devices.iter().find(|d| d.id.as_str() == stored_id)
-    {
-        return Some(found.id.clone());
-    }
-
-    forge_audio::pick_default_output_device(&devices)
 }
 
 async fn register_local_engines(registry: &mut TtsRegistry) {
@@ -271,26 +242,29 @@ pub async fn build_speak_queue(
     let pipeline = PipelineConfigHandle::new(load_pipeline(backend).await);
     let disabled_engines = load_disabled_engines(backend).await;
 
-    let audio_sink: Arc<dyn forge_audio::AudioSink> = match resolve_audio_output_device(backend)
-        .await
-    {
-        Some(device_id) => {
-            eprintln!(
-                "forge-desktop: speak queue audio sink ready on device {}",
-                device_id.0
-            );
-            Arc::new(CpalSink::new(
-                device_id,
-                None,
-                None,
-                Arc::new(NullAudioEventSink),
-            ))
-        }
-        None => {
-            eprintln!("forge-desktop: no audio output device found; speak queue using NullSink");
-            Arc::new(NullSink)
+    let stored_device_id = match backend.audio_output_device_id().await {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("forge-desktop: failed to read stored audio output device preference: {e}");
+            None
         }
     };
+    let audio_sink: Arc<dyn forge_audio::AudioSink> =
+        match forge_audio::resolve_output_device(stored_device_id).await {
+            Ok(device_id) => {
+                eprintln!(
+                    "forge-desktop: speak queue audio sink ready on device {}",
+                    device_id.0
+                );
+                forge_audio::build_cpal_sink(device_id, Arc::new(NullAudioEventSink))
+            }
+            Err(e) => {
+                eprintln!(
+                    "forge-desktop: no audio output device found; speak queue using NullSink: {e}"
+                );
+                Arc::new(NullSink)
+            }
+        };
 
     let deps = QueueDeps {
         registry: Arc::clone(&registry),

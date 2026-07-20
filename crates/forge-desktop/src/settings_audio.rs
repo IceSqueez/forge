@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_audio::{DeviceInfo, list_output_devices, refresh_output_devices};
+use forge_audio::{DeviceId, DeviceInfo, list_output_devices, refresh_output_devices};
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     Radius, Spacing, icon, radius, spacing, tr, with_alpha,
@@ -505,12 +505,18 @@ impl Render for SettingsAudioView {
 }
 
 fn resolve_selected_idx(devices: &[DeviceRow], want_id: Option<&str>) -> usize {
-    if let Some(id) = want_id
-        && let Some(idx) = devices.iter().position(|d| d.id == id)
-    {
-        return idx;
-    }
-    devices.iter().position(|d| d.is_default).unwrap_or(0)
+    let infos: Vec<DeviceInfo> = devices
+        .iter()
+        .map(|d| DeviceInfo {
+            id: DeviceId::new(d.id.clone()),
+            name: d.name.clone(),
+            is_default: d.is_default,
+        })
+        .collect();
+    let resolved = forge_audio::resolve_device(want_id.map(str::to_string), &infos);
+    resolved
+        .and_then(|id| devices.iter().position(|d| d.id == id.as_str()))
+        .unwrap_or(0)
 }
 
 async fn enumerate_devices(uncached: bool) -> Result<Vec<DeviceRow>, String> {
@@ -542,7 +548,7 @@ async fn enumerate_devices_and_preference(
 
 async fn play_test_tone(device_id: Option<String>) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        use forge_audio::{AudioSink, CpalSink, DeviceId, NullAudioEventSink, PcmBuffer};
+        use forge_audio::{AudioSink, CpalSink, NullAudioEventSink, PcmBuffer};
 
         const SAMPLE_RATE: u32 = 22_050;
         const DURATION_MS: u32 = 200;
@@ -557,9 +563,9 @@ async fn play_test_tone(device_id: Option<String>) -> Result<(), String> {
             .collect();
 
         let buf = PcmBuffer::new(samples, SAMPLE_RATE, 1);
-        let id = device_id
-            .map(DeviceId::new)
-            .unwrap_or_else(|| DeviceId::new("default".to_string()));
+        let devices = forge_audio::list_output_devices().map_err(|e| e.to_string())?;
+        let id = forge_audio::resolve_device(device_id, &devices)
+            .ok_or_else(|| "no output device available".to_string())?;
         let sink = CpalSink::new(id, Some(SAMPLE_RATE), Some(1), Arc::new(NullAudioEventSink));
         let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
         rt.block_on(sink.play(buf)).map_err(|e| e.to_string())

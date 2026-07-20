@@ -9,6 +9,7 @@ pub mod events;
 pub mod fan_out;
 pub mod handle;
 pub mod pcm;
+pub mod route;
 pub mod sink;
 
 pub use cpal_sink::CpalSink;
@@ -22,4 +23,7 @@ pub use events::{AudioEvent, AudioEventSink, NullAudioEventSink};
 pub use fan_out::{fan_out, fan_out_stoppable};
 pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use pcm::PcmBuffer;
+pub use route::{
+    DevicePreference, build_cpal_sink, fan_out_targets, resolve_device, resolve_output_device,
+};
 pub use sink::{AudioSink, NullSink};

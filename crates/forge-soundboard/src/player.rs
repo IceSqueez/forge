@@ -239,20 +239,13 @@ impl SoundboardPlayer {
         };
 
         let gain = clip.volume * f32::from_bits(self.master_gain_bits.load(Ordering::Relaxed));
-        let scaled: Vec<i16> = buffer
-            .samples
-            .iter()
-            .map(|&s| {
-                let v = s as f32 * gain;
-                v.clamp(i16::MIN as f32, i16::MAX as f32) as i16
-            })
-            .collect();
+        let mut buffer = buffer;
+        buffer.apply_gain(gain);
 
         let sample_rate = buffer.sample_rate.max(1) as u64;
         let channels = buffer.channels.max(1) as u64;
-        let frames = (scaled.len() as u64) / channels;
+        let frames = (buffer.samples.len() as u64) / channels;
         let duration_ms = frames.saturating_mul(1000) / sample_rate;
-        let buffer = PcmBuffer::new(scaled, buffer.sample_rate, buffer.channels);
 
         self.event_sink.emit(AudioEvent::PlaybackStarted {
             clip_id: Some(clip_id),
@@ -282,21 +275,17 @@ impl SoundboardPlayer {
         }
     }
 
-    /// Builds the main output sink plus, when `also_headphones` is on and the
-    /// resolved device is not already the system default, a second sink to the
-    /// default device. The headphone leg is best-effort: a build failure there is
-    /// logged and skipped rather than failing the whole play request.
     async fn build_sinks(
         &self,
         device: &OutputDevice,
         also_headphones: bool,
     ) -> Result<Vec<Arc<dyn AudioSink>>, AudioError> {
-        let main = self.sink_factory.build(device).await?;
-        let mut sinks = vec![main];
-
-        if also_headphones && !matches!(device, OutputDevice::Default) {
-            match self.sink_factory.build(&OutputDevice::Default).await {
-                Ok(headphones) => sinks.push(headphones),
+        let targets = forge_audio::fan_out_targets(device, also_headphones);
+        let mut sinks = Vec::with_capacity(targets.len());
+        for (idx, target) in targets.iter().enumerate() {
+            match self.sink_factory.build(target).await {
+                Ok(sink) => sinks.push(sink),
+                Err(e) if idx == 0 => return Err(e),
                 Err(e) => {
                     tracing::warn!(error = %e, "also_headphones fan-out sink build failed, playing to primary device only");
                 }

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_audio::{
-    AudioError, AudioSink, CpalSink, DeviceId, NullAudioEventSink, list_output_devices,
-    pick_default_output_device,
+    AudioError, AudioSink, DeviceId, NullAudioEventSink, build_cpal_sink, list_output_devices,
+    resolve_device,
 };
 use forge_types::OutputDevice;
 
@@ -18,32 +18,11 @@ impl AudioSinkFactory for CpalSinkFactory {
         let device_id = tokio::task::spawn_blocking(move || resolve_device_id(&device))
             .await
             .map_err(|e| AudioError::Host(e.to_string()))??;
-        Ok(Arc::new(CpalSink::new(
-            device_id,
-            None,
-            None,
-            Arc::new(NullAudioEventSink),
-        )))
+        Ok(build_cpal_sink(device_id, Arc::new(NullAudioEventSink)))
     }
 }
 
 fn resolve_device_id(device: &OutputDevice) -> Result<DeviceId, AudioError> {
-    match device {
-        OutputDevice::Default => {
-            let devices = list_output_devices()?;
-            pick_default_output_device(&devices).ok_or(AudioError::NoDefaultDevice)
-        }
-        OutputDevice::ByName { name } => {
-            let devices = list_output_devices()?;
-            if let Some(d) = devices.iter().find(|d| &d.name == name) {
-                return Ok(d.id.clone());
-            }
-            tracing::warn!(
-                "output device '{}' not found, falling back to default",
-                name
-            );
-            pick_default_output_device(&devices).ok_or(AudioError::NoDefaultDevice)
-        }
-        OutputDevice::ById { id } => Ok(DeviceId::new(id)),
-    }
+    let devices = list_output_devices()?;
+    resolve_device(device, &devices).ok_or(AudioError::NoDefaultDevice)
 }

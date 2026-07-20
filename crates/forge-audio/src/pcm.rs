@@ -35,6 +35,15 @@ impl PcmBuffer {
         let frames = self.frame_count() as u64;
         frames * 1000 / u64::from(self.sample_rate)
     }
+
+    pub fn apply_gain(&mut self, gain: f32) {
+        if (gain - 1.0_f32).abs() < f32::EPSILON {
+            return;
+        }
+        for s in &mut self.samples {
+            *s = (*s as f32 * gain).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        }
+    }
 }
 
 #[cfg(test)]

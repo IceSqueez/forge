@@ -849,10 +849,11 @@ fn render_card_el(
         .child(top)
         .child(desc);
 
-    if dim {
+    if matches!(card.state, GridPickerItemState::Added) {
         return base.opacity(0.5).into_any_element();
     }
 
+    let base = if dim { base.opacity(0.5) } else { base };
     let border_input = p.border_input;
     base.id(card.id.clone())
         .cursor_pointer()

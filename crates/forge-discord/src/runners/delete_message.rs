@@ -117,6 +117,8 @@ impl SubActionRunner for DeleteMessageRunner {
         if message_id.trim().is_empty() {
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "discord.webhook.delete_message".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -134,6 +136,8 @@ impl SubActionRunner for DeleteMessageRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "discord.webhook.delete_message".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

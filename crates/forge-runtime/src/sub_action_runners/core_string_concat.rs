@@ -108,6 +108,8 @@ impl SubActionRunner for CoreStringConcatRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.concat".to_owned(),
                 started_at,

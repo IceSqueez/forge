@@ -184,6 +184,8 @@ impl SubActionRunner for ScriptRunInlineRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "script.run.inline".to_owned(),
                 started_at,
                 duration_ms,

@@ -17,7 +17,10 @@ async fn setup() -> SqliteBackend {
 fn make_ctx(action_id: ActionId, event_id: EventId) -> ExecutionContext {
     ExecutionContext {
         action_id,
-        metadata: ExecutionMetadata::Trigger { event_id },
+        metadata: ExecutionMetadata::Trigger {
+            event_id,
+            trigger_kind: None,
+        },
         arg_stack_snapshot: BTreeMap::new(),
         started_at: OffsetDateTime::now_utc(),
         completed_at: Some(OffsetDateTime::now_utc()),
@@ -43,7 +46,7 @@ async fn save_then_recent_for_action_roundtrips() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].action_id, action_id);
     assert!(
-        matches!(&records[0].metadata, ExecutionMetadata::Trigger { event_id: eid } if *eid == event_id)
+        matches!(&records[0].metadata, ExecutionMetadata::Trigger { event_id: eid, .. } if *eid == event_id)
     );
     assert_eq!(records[0].outcome, ExecutionOutcome::Success);
 }
@@ -116,7 +119,10 @@ fn make_ctx_at(
 ) -> ExecutionContext {
     ExecutionContext {
         action_id,
-        metadata: ExecutionMetadata::Trigger { event_id },
+        metadata: ExecutionMetadata::Trigger {
+            event_id,
+            trigger_kind: None,
+        },
         arg_stack_snapshot: BTreeMap::new(),
         started_at,
         completed_at: Some(started_at),
@@ -134,7 +140,7 @@ async fn surviving_event_ids(backend: &SqliteBackend, action_id: ActionId) -> Ve
         .expect("recent_for_action")
         .into_iter()
         .filter_map(|c| match c.metadata {
-            ExecutionMetadata::Trigger { event_id } => Some(event_id),
+            ExecutionMetadata::Trigger { event_id, .. } => Some(event_id),
             ExecutionMetadata::QuickAction { .. } => None,
         })
         .collect()

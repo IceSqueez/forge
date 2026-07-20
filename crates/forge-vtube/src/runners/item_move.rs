@@ -221,6 +221,8 @@ impl SubActionRunner for ItemMoveRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "vtube.item.move".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

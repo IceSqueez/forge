@@ -162,6 +162,8 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.globals.array_remove".to_owned(),
                 started_at,

@@ -85,6 +85,8 @@ impl SubActionRunner for QueryRecordStatusRunner {
                 }
                 (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: "obs.record.get_status".to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -96,6 +98,8 @@ impl SubActionRunner for QueryRecordStatusRunner {
             }
             Err(e) => (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "obs.record.get_status".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,

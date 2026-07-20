@@ -131,6 +131,8 @@ impl SubActionRunner for CoreStringSplitRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.split".to_owned(),
                 started_at,

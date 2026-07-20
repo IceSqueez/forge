@@ -119,6 +119,8 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
                 .max(0) as u64;
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     index: ctx.index,
                     kind: "core.string.regex_match".to_owned(),
                     started_at,
@@ -163,6 +165,8 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.regex_match".to_owned(),
                 started_at,

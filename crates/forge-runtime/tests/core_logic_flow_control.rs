@@ -82,6 +82,8 @@ impl SubActionRunner for AlwaysFailRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "test.always_fail".to_owned(),
                 started_at: OffsetDateTime::now_utc(),

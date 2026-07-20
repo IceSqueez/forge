@@ -117,6 +117,8 @@ impl SubActionRunner for DeleteMessageRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

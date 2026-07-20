@@ -163,6 +163,8 @@ impl SubActionRunner for SpeakRunner {
                 .max(0) as u64;
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     index: ctx.index,
                     kind: "tts.speak.text".to_owned(),
                     started_at,
@@ -190,6 +192,8 @@ impl SubActionRunner for SpeakRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "tts.speak.text".to_owned(),
                 started_at,

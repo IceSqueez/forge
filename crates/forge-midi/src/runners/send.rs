@@ -268,6 +268,8 @@ impl SubActionRunner for MidiSendRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "midi.send".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
@@ -287,6 +289,8 @@ fn failed(
 ) -> (SubActionTelemetry, Option<ArgStack>) {
     (
         SubActionTelemetry {
+            args_in: ::std::collections::BTreeMap::new(),
+            produced: ::std::collections::BTreeMap::new(),
             kind: "midi.send".to_owned(),
             started_at,
             duration_ms: start.elapsed().as_millis() as u64,

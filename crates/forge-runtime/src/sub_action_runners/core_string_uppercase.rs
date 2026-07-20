@@ -85,6 +85,8 @@ impl SubActionRunner for CoreStringUppercaseRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.uppercase".to_owned(),
                 started_at,

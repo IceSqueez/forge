@@ -123,6 +123,8 @@ impl SubActionRunner for ScriptRunNamedRunner {
             let duration_ms = wall_start.elapsed().as_millis() as u64;
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "script.run.named".to_owned(),
                     started_at,
                     duration_ms,
@@ -243,6 +245,8 @@ impl SubActionRunner for ScriptRunNamedRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "script.run.named".to_owned(),
                 started_at,
                 duration_ms,

@@ -89,6 +89,8 @@ impl SubActionRunner for CoreUrlOpenRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.url.open".to_owned(),
                 started_at,

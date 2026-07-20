@@ -125,6 +125,8 @@ impl SubActionRunner for SetVisibleRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "obs.sources.set_visible".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

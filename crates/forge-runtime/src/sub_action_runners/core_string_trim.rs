@@ -100,6 +100,8 @@ impl SubActionRunner for CoreStringTrimRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.trim".to_owned(),
                 started_at,

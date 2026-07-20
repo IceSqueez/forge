@@ -94,6 +94,8 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "obs.scenes.switch_current".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

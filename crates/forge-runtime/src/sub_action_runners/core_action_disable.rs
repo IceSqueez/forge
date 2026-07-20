@@ -105,6 +105,8 @@ impl SubActionRunner for CoreActionDisableRunner {
             .max(0) as u64;
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.action.disable".to_owned(),
                 started_at,

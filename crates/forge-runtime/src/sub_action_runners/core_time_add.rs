@@ -163,6 +163,8 @@ impl SubActionRunner for CoreTimeAddRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.time.add".to_owned(),
                 started_at,
@@ -184,6 +186,8 @@ fn fail(
         .max(0) as u64;
     (
         SubActionTelemetry {
+            args_in: ::std::collections::BTreeMap::new(),
+            produced: ::std::collections::BTreeMap::new(),
             index,
             kind: "core.time.add".to_owned(),
             started_at,

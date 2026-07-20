@@ -101,6 +101,8 @@ impl SubActionRunner for CoreStringLengthRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.length".to_owned(),
                 started_at,

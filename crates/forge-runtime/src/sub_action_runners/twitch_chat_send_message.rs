@@ -97,6 +97,8 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "twitch.chat.send_message".to_owned(),
                 started_at,

@@ -98,6 +98,8 @@ impl SubActionRunner for ShieldModeOnRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: ON_KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
@@ -177,6 +179,8 @@ impl SubActionRunner for ShieldModeOffRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: OFF_KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

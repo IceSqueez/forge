@@ -46,6 +46,7 @@ pub struct SchedulerRequest {
     pub queue_id: QueueId,
     pub action_id: ActionId,
     pub trigger_event_id: EventId,
+    pub trigger_kind: Option<String>,
     pub initial_args: ArgStack,
     pub bypass_pause: bool,
 }
@@ -137,6 +138,7 @@ struct PauseState {
 struct QueueTask {
     action_id: ActionId,
     trigger_event_id: EventId,
+    trigger_kind: Option<String>,
     initial_args: ArgStack,
 }
 
@@ -273,6 +275,7 @@ impl QueueScheduler {
             let req = ExecutionRequest {
                 action_id: task.action_id,
                 trigger_event_id: task.trigger_event_id,
+                trigger_kind: task.trigger_kind,
                 initial_args: task.initial_args,
             };
 
@@ -413,6 +416,7 @@ impl QueueScheduler {
         let task = QueueTask {
             action_id: req.action_id,
             trigger_event_id: req.trigger_event_id,
+            trigger_kind: req.trigger_kind,
             initial_args: req.initial_args,
         };
 
@@ -614,6 +618,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -659,6 +664,7 @@ mod tests {
                     queue_id: q_id,
                     action_id: *a_id,
                     trigger_event_id: EventId::new(),
+                    trigger_kind: None,
                     initial_args: ArgStack::new(),
                     bypass_pause: false,
                 })
@@ -711,6 +717,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -763,6 +770,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: true,
             })
@@ -804,6 +812,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -898,6 +907,7 @@ mod tests {
                 queue_id: unknown_q,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -944,6 +954,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -989,6 +1000,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1045,6 +1057,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1120,6 +1133,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1180,6 +1194,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1229,6 +1244,7 @@ mod tests {
                 queue_id: q_id,
                 action_id: a_id,
                 trigger_event_id: EventId::new(),
+                trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
             })
@@ -1327,6 +1343,7 @@ mod tests {
             queue_id,
             action_id,
             trigger_event_id: EventId::new(),
+            trigger_kind: None,
             initial_args: ArgStack::new(),
             bypass_pause: false,
         }

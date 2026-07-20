@@ -140,6 +140,8 @@ impl SubActionRunner for CreateRewardRunner {
             let outcome = SubActionOutcome::Failed("title is empty after interpolation".to_owned());
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -156,6 +158,8 @@ impl SubActionRunner for CreateRewardRunner {
                 let outcome = SubActionOutcome::Failed("cost must be at least 1".to_owned());
                 return (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -171,6 +175,8 @@ impl SubActionRunner for CreateRewardRunner {
                 ));
                 return (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -213,6 +219,8 @@ impl SubActionRunner for CreateRewardRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

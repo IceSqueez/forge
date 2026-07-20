@@ -102,6 +102,7 @@ pub(super) async fn dispatch_test_run(
     action_id: ActionId,
     queue_id: QueueId,
     bypass_pause: bool,
+    trigger_kind: Option<String>,
     initial_args: ArgStack,
 ) -> Result<(), String> {
     let root = Event::new(
@@ -116,6 +117,7 @@ pub(super) async fn dispatch_test_run(
             queue_id,
             action_id,
             trigger_event_id,
+            trigger_kind,
             initial_args,
             bypass_pause,
         })

@@ -126,6 +126,8 @@ impl SubActionRunner for AliasSwitchRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "tts.alias.switch_active".to_owned(),
                 started_at,

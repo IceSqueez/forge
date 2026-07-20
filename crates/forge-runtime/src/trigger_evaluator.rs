@@ -170,6 +170,7 @@ impl TriggerEvaluator {
                     queue_id: action.queue_id,
                     action_id: action.id,
                     trigger_event_id: event.id,
+                    trigger_kind: Some(instance.kind_id.clone()),
                     initial_args: args,
                     bypass_pause: action.bypass_pause,
                 };

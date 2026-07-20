@@ -128,6 +128,8 @@ impl SubActionRunner for ServerBroadcastRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "server.broadcast".to_owned(),
                 started_at,

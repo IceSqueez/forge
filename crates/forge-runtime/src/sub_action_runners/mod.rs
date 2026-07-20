@@ -65,7 +65,7 @@ mod core_users_increment_var;
 mod core_users_set_var;
 mod core_users_shared;
 mod file_sandbox;
-mod interpolate;
+pub(crate) mod interpolate;
 mod os_ports;
 mod script_emit_event;
 mod script_run_inline;

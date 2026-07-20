@@ -85,6 +85,8 @@ impl SubActionRunner for CoreStringTitlecaseRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.titlecase".to_owned(),
                 started_at,

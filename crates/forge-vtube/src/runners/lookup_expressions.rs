@@ -82,6 +82,8 @@ impl SubActionRunner for LookupExpressionsRunner {
                 }
                 (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: "vtube.lookup.expressions".to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -93,6 +95,8 @@ impl SubActionRunner for LookupExpressionsRunner {
             }
             Err(e) => (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "vtube.lookup.expressions".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,

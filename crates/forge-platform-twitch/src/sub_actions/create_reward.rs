@@ -306,6 +306,8 @@ impl SubActionRunner for CreateRewardRunner {
         if title.is_empty() {
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -318,6 +320,8 @@ impl SubActionRunner for CreateRewardRunner {
         if title.chars().count() > MAX_TITLE_CHARS {
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -335,6 +339,8 @@ impl SubActionRunner for CreateRewardRunner {
             _ => {
                 return (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -406,6 +412,8 @@ impl SubActionRunner for CreateRewardRunner {
                     .set("reward.id".to_owned(), Variant::String(reward_id));
                 (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -417,6 +425,8 @@ impl SubActionRunner for CreateRewardRunner {
             }
             Err(outcome) => (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,

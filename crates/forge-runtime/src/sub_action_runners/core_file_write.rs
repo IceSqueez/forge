@@ -160,6 +160,8 @@ impl SubActionRunner for CoreFileWriteRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.file.write".to_owned(),
                 started_at,

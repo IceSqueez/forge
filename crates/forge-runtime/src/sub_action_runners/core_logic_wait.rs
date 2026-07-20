@@ -75,6 +75,8 @@ impl SubActionRunner for CoreLogicWaitRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.logic.wait".to_owned(),
                 started_at,

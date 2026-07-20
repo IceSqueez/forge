@@ -198,8 +198,9 @@ impl ScreenActionsView {
                 })
                 .collect();
 
-            let (initial_args, note) = match selected.and_then(|i| detail.trigger_instances.get(i))
-            {
+            let selected_inst = selected.and_then(|i| detail.trigger_instances.get(i));
+            let trigger_kind = selected_inst.map(|inst| inst.kind_id.clone());
+            let (initial_args, note) = match selected_inst {
                 Some(inst) => match self
                     .trigger_registry
                     .get(&inst.kind_id)
@@ -217,11 +218,13 @@ impl ScreenActionsView {
                 bypass_pause,
                 rows,
                 triggers,
+                trigger_kind,
                 initial_args,
                 note,
             )
         };
-        let (action_name, queue_id, bypass_pause, rows, triggers, initial_args, note) = prepared;
+        let (action_name, queue_id, bypass_pause, rows, triggers, trigger_kind, initial_args, note) =
+            prepared;
 
         let subscription = self.bus.subscribe();
         let bridge = cx.spawn(async move |this, cx| {
@@ -249,6 +252,7 @@ impl ScreenActionsView {
                     id,
                     queue_id,
                     bypass_pause,
+                    trigger_kind,
                     initial_args,
                 )
                 .await,

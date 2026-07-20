@@ -118,6 +118,8 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.globals.decrement".to_owned(),
                 started_at,

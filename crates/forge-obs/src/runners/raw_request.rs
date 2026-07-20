@@ -117,6 +117,8 @@ impl SubActionRunner for RawRequestRunner {
                     Err(e) => {
                         return (
                             SubActionTelemetry {
+                                args_in: ::std::collections::BTreeMap::new(),
+                                produced: ::std::collections::BTreeMap::new(),
                                 kind: "obs.misc.raw_request".to_owned(),
                                 started_at,
                                 duration_ms: start.elapsed().as_millis() as u64,
@@ -132,6 +134,8 @@ impl SubActionRunner for RawRequestRunner {
                 Err(e) => {
                     return (
                         SubActionTelemetry {
+                            args_in: ::std::collections::BTreeMap::new(),
+                            produced: ::std::collections::BTreeMap::new(),
                             kind: "obs.misc.raw_request".to_owned(),
                             started_at,
                             duration_ms: start.elapsed().as_millis() as u64,
@@ -153,6 +157,8 @@ impl SubActionRunner for RawRequestRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "obs.misc.raw_request".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

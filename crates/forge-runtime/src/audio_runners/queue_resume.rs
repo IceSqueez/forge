@@ -73,6 +73,8 @@ impl SubActionRunner for QueueResumeRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "tts.queue.resume".to_owned(),
                 started_at,

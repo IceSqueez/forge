@@ -131,6 +131,8 @@ impl SubActionRunner for CoreStringReplaceRunner {
                 .max(0) as u64;
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     index: ctx.index,
                     kind: "core.string.replace".to_owned(),
                     started_at,
@@ -149,6 +151,8 @@ impl SubActionRunner for CoreStringReplaceRunner {
                     .max(0) as u64;
                 return (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         index: ctx.index,
                         kind: "core.string.replace".to_owned(),
                         started_at,
@@ -167,6 +171,8 @@ impl SubActionRunner for CoreStringReplaceRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.replace".to_owned(),
                 started_at,

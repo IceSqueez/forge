@@ -35,6 +35,7 @@ pub struct ActionEngineHandle {
 pub struct ExecutionRequest {
     pub action_id: ActionId,
     pub trigger_event_id: EventId,
+    pub trigger_kind: Option<String>,
     pub initial_args: forge_types::ArgStack,
 }
 
@@ -188,12 +189,14 @@ impl ActionEngine {
         };
 
         let arg_stack = req.initial_args;
+        let trigger_kind = req.trigger_kind;
         let started_at = OffsetDateTime::now_utc();
 
         let mut ctx = ExecutionContext {
             action_id: req.action_id,
             metadata: ExecutionMetadata::Trigger {
                 event_id: req.trigger_event_id,
+                trigger_kind,
             },
             arg_stack_snapshot: arg_stack.snapshot(),
             started_at,
@@ -374,6 +377,8 @@ async fn run_quick_action_loop(
 
 pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
     SubActionTelemetry {
+        args_in: ::std::collections::BTreeMap::new(),
+        produced: ::std::collections::BTreeMap::new(),
         index,
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
@@ -384,6 +389,8 @@ pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemet
 
 pub(crate) fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
     SubActionTelemetry {
+        args_in: ::std::collections::BTreeMap::new(),
+        produced: ::std::collections::BTreeMap::new(),
         index,
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
@@ -394,6 +401,8 @@ pub(crate) fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTeleme
 
 pub(crate) fn condition_skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
     SubActionTelemetry {
+        args_in: ::std::collections::BTreeMap::new(),
+        produced: ::std::collections::BTreeMap::new(),
         index,
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
@@ -408,6 +417,8 @@ pub(crate) fn condition_failed_telemetry(
     message: String,
 ) -> SubActionTelemetry {
     SubActionTelemetry {
+        args_in: ::std::collections::BTreeMap::new(),
+        produced: ::std::collections::BTreeMap::new(),
         index,
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
@@ -489,6 +500,8 @@ mod tests {
             *self.last_config.lock().unwrap() = Some(config.clone());
             (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     index: 0,
                     kind: "test.record".to_owned(),
                     started_at: OffsetDateTime::now_utc(),
@@ -544,6 +557,8 @@ mod tests {
         ) -> (SubActionTelemetry, Option<ArgStack>) {
             (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     index: ctx.index,
                     kind: self.id.clone(),
                     started_at: OffsetDateTime::now_utc(),
@@ -626,6 +641,7 @@ mod tests {
                 .dispatch(ExecutionRequest {
                     action_id,
                     trigger_event_id: EventId::new(),
+                    trigger_kind: None,
                     initial_args: ArgStack::new(),
                 })
                 .await

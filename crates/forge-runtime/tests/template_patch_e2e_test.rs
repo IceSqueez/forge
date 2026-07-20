@@ -217,6 +217,8 @@ impl SubActionRunner for RecordingRunner {
         *self.captured.lock().unwrap() = Some(config.clone());
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: 0,
                 kind: "test.record".to_owned(),
                 started_at: OffsetDateTime::now_utc(),

@@ -116,6 +116,8 @@ impl SubActionRunner for PostTextRunner {
         if content.trim().is_empty() {
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "discord.webhook.send_message".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -133,6 +135,8 @@ impl SubActionRunner for PostTextRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "discord.webhook.send_message".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

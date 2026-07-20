@@ -35,7 +35,7 @@ impl HistoryRepo for SqliteHistoryRepo {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError> {
         let action_id_str = ctx.action_id.to_string();
         let event_id_str: Option<String> = match &ctx.metadata {
-            ExecutionMetadata::Trigger { event_id } => Some(event_id.to_string()),
+            ExecutionMetadata::Trigger { event_id, .. } => Some(event_id.to_string()),
             ExecutionMetadata::QuickAction { .. } => None,
         };
         let started_at_ms = to_epoch_ms(ctx.started_at);

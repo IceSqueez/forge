@@ -79,6 +79,8 @@ impl SubActionRunner for LookupParametersRunner {
                 }
                 (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: "vtube.lookup.parameters".to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -90,6 +92,8 @@ impl SubActionRunner for LookupParametersRunner {
             }
             Err(e) => (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "vtube.lookup.parameters".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,

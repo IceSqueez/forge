@@ -205,6 +205,8 @@ impl SubActionRunner for FailRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "test.fail".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
@@ -265,6 +267,8 @@ impl SubActionRunner for GateRunner {
         }
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "test.gate".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
@@ -307,6 +311,7 @@ fn request(action_id: ActionId) -> ExecutionRequest {
     ExecutionRequest {
         action_id,
         trigger_event_id: EventId::new(),
+        trigger_kind: None,
         initial_args: ArgStack::new(),
     }
 }

@@ -98,6 +98,8 @@ impl SubActionRunner for CoreClipboardReadRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.clipboard.read".to_owned(),
                 started_at,

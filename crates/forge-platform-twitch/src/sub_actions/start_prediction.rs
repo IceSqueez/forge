@@ -218,6 +218,8 @@ impl SubActionRunner for StartPredictionRunner {
         if title.is_empty() {
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -230,6 +232,8 @@ impl SubActionRunner for StartPredictionRunner {
         if title.chars().count() > MAX_TITLE_CHARS {
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -253,6 +257,8 @@ impl SubActionRunner for StartPredictionRunner {
             Err(msg) => {
                 return (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -284,6 +290,8 @@ impl SubActionRunner for StartPredictionRunner {
                     .set("prediction.id".to_owned(), Variant::String(prediction_id));
                 (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -295,6 +303,8 @@ impl SubActionRunner for StartPredictionRunner {
             }
             Err(outcome) => (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,

@@ -109,6 +109,8 @@ pub(crate) async fn execute_prediction_runner(
     if prediction_id.is_empty() {
         return (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: kind_id.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
@@ -132,6 +134,8 @@ pub(crate) async fn execute_prediction_runner(
     {
         return (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: kind_id.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
@@ -154,6 +158,8 @@ pub(crate) async fn execute_prediction_runner(
 
     (
         SubActionTelemetry {
+            args_in: ::std::collections::BTreeMap::new(),
+            produced: ::std::collections::BTreeMap::new(),
             kind: kind_id.to_owned(),
             started_at,
             duration_ms: start.elapsed().as_millis() as u64,

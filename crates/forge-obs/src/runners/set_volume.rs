@@ -126,6 +126,8 @@ impl SubActionRunner for SetVolumeRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "obs.audio.set_volume".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

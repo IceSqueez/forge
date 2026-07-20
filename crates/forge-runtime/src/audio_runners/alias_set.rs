@@ -128,6 +128,8 @@ impl SubActionRunner for AliasSetRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "tts.alias.set".to_owned(),
                 started_at,

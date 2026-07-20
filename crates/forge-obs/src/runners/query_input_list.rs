@@ -76,6 +76,8 @@ impl SubActionRunner for QueryInputListRunner {
                 }
                 (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: "obs.sources.get_list".to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -87,6 +89,8 @@ impl SubActionRunner for QueryInputListRunner {
             }
             Err(e) => (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "obs.sources.get_list".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,

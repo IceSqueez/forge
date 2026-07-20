@@ -90,6 +90,8 @@ impl SubActionRunner for CoreStringFormatRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.format".to_owned(),
                 started_at,

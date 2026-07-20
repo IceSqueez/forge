@@ -143,6 +143,8 @@ impl SubActionRunner for CoreNotifyShowRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.notify.show".to_owned(),
                 started_at,

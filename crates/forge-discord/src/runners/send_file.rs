@@ -124,6 +124,8 @@ impl SubActionRunner for SendFileRunner {
         let fail = |msg: String, start: Instant| {
             (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "discord.webhook.send_file".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -159,6 +161,8 @@ impl SubActionRunner for SendFileRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "discord.webhook.send_file".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

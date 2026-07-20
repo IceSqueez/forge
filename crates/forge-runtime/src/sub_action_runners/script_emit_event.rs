@@ -106,6 +106,8 @@ impl SubActionRunner for ScriptEmitEventRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "script.emit_event".to_owned(),
                 started_at,

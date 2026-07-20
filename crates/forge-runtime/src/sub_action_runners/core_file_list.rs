@@ -177,6 +177,8 @@ impl SubActionRunner for CoreFileListRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.file.list".to_owned(),
                 started_at,

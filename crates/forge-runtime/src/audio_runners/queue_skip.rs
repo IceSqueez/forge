@@ -73,6 +73,8 @@ impl SubActionRunner for QueueSkipRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "tts.queue.skip_current".to_owned(),
                 started_at,

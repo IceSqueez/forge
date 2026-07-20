@@ -100,6 +100,8 @@ impl SubActionRunner for CoreGlobalsDeleteRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.globals.delete".to_owned(),
                 started_at,

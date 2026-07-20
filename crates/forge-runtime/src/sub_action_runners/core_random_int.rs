@@ -141,6 +141,8 @@ impl SubActionRunner for CoreRandomIntRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.random.int".to_owned(),
                 started_at,

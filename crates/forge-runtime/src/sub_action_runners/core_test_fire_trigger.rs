@@ -42,8 +42,8 @@ impl CoreTestFireTriggerRunner {
             ));
         };
 
-        match self.trigger_instances.get(instance_id).await {
-            Ok(Some(_)) => {}
+        let trigger_kind = match self.trigger_instances.get(instance_id).await {
+            Ok(Some(instance)) => instance.kind_id,
             Ok(None) => {
                 return SubActionOutcome::Failed(format!(
                     "core.test.fire_trigger: unknown trigger instance '{instance_id}'"
@@ -54,7 +54,7 @@ impl CoreTestFireTriggerRunner {
                     "core.test.fire_trigger: instance lookup failed: {e}"
                 ));
             }
-        }
+        };
 
         let Some(scheduler) = self.scheduler.get() else {
             return SubActionOutcome::Failed("queue scheduler not ready".to_owned());
@@ -85,6 +85,7 @@ impl CoreTestFireTriggerRunner {
                 queue_id: action.queue_id,
                 action_id,
                 trigger_event_id: ctx.parent_event_id,
+                trigger_kind: Some(trigger_kind.clone()),
                 initial_args: synthetic_args.clone(),
                 bypass_pause: action.bypass_pause,
             };
@@ -174,6 +175,8 @@ impl SubActionRunner for CoreTestFireTriggerRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.test.fire_trigger".to_owned(),
                 started_at,

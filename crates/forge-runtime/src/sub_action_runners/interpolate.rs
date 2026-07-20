@@ -22,6 +22,32 @@ pub(super) fn parse_variant(s: &str) -> Variant {
     Variant::String(s.to_string())
 }
 
+pub(crate) fn extract_referenced_names(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            continue;
+        }
+        let mut token = String::new();
+        let mut closed = false;
+        for inner in chars.by_ref() {
+            if inner == '%' {
+                closed = true;
+                break;
+            }
+            token.push(inner);
+        }
+        if closed {
+            let name = token.trim();
+            if !name.is_empty() {
+                names.push(name.to_owned());
+            }
+        }
+    }
+    names
+}
+
 pub(super) fn sanitize_var_name(name: &str) -> String {
     let trimmed = name.trim();
     let unwrapped = trimmed

@@ -116,6 +116,8 @@ pub(super) fn telemetry(
         .whole_milliseconds()
         .max(0) as u64;
     SubActionTelemetry {
+        args_in: ::std::collections::BTreeMap::new(),
+        produced: ::std::collections::BTreeMap::new(),
         index: ctx.index,
         kind: kind.to_owned(),
         started_at,

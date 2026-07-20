@@ -107,6 +107,8 @@ impl SubActionRunner for CoreRandomBoolRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.random.bool".to_owned(),
                 started_at,

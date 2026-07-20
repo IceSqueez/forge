@@ -6,8 +6,12 @@ use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RegistryError, RunContext, SubActionRegistry, TelemetrySink, effective_config,
 };
-use forge_types::{ArgStack, EventId, SubActionOutcome, SubActionStep, SubActionTelemetry};
+use forge_types::{
+    ArgStack, EventId, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
+    variant_preview,
+};
 use serde_json::json;
+use std::collections::BTreeMap;
 use tracing::warn;
 
 use crate::Config;
@@ -15,6 +19,31 @@ use crate::action_engine::{
     condition_failed_telemetry, condition_skipped_telemetry, disabled_telemetry, skipped_telemetry,
 };
 use crate::condition::ConditionGate;
+use crate::sub_action_runners::interpolate::extract_referenced_names;
+
+fn capture_args_in(step: &SubActionStep, scope: &ArgStack) -> BTreeMap<String, String> {
+    let mut captured = BTreeMap::new();
+    for value in step.config.values() {
+        if let Variant::String(text) = value {
+            for name in extract_referenced_names(text) {
+                if let Some(bound) = scope.get(&name) {
+                    captured.insert(name, variant_preview(bound));
+                }
+            }
+        }
+    }
+    captured
+}
+
+fn capture_produced(before: &ArgStack, after: &ArgStack) -> BTreeMap<String, String> {
+    let mut produced = BTreeMap::new();
+    for (name, value) in after.snapshot() {
+        if before.get(&name) != Some(&value) {
+            produced.insert(name, variant_preview(&value));
+        }
+    }
+    produced
+}
 
 pub(crate) fn publish_subaction_done(
     publisher: &dyn EventPublisher,
@@ -146,7 +175,8 @@ impl ChainEngine {
 
         for (index, step) in steps.iter().enumerate() {
             if !step.enabled {
-                let tel = disabled_telemetry(index, &step.kind_id);
+                let mut tel = disabled_telemetry(index, &step.kind_id);
+                tel.args_in = capture_args_in(step, &current);
                 publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                 telemetry.push(tel);
                 continue;
@@ -162,13 +192,15 @@ impl ChainEngine {
             match self.check_condition(step, &current).await {
                 ConditionVerdict::Run => {}
                 ConditionVerdict::Skip => {
-                    let tel = condition_skipped_telemetry(index, &step.kind_id);
+                    let mut tel = condition_skipped_telemetry(index, &step.kind_id);
+                    tel.args_in = capture_args_in(step, &current);
                     publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                     telemetry.push(tel);
                     continue;
                 }
                 ConditionVerdict::Fail(msg) => {
-                    let tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
+                    let mut tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
+                    tel.args_in = capture_args_in(step, &current);
                     publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                     telemetry.push(tel);
                     if !step.continue_on_error {
@@ -181,6 +213,8 @@ impl ChainEngine {
                     continue;
                 }
             }
+
+            let args_in = capture_args_in(step, &current);
 
             let run_event = Event::caused_by(
                 EventSource::Core,
@@ -202,7 +236,7 @@ impl ChainEngine {
                 telemetry: nested_sink.clone(),
             };
 
-            let (tel, updated) = match self.registry.get(&step.kind_id) {
+            let (mut tel, updated) = match self.registry.get(&step.kind_id) {
                 Some(runner) => {
                     let resolved = effective_config(&runner.default_config(), &step.config);
                     runner.execute(&resolved, &run_ctx).await
@@ -218,10 +252,16 @@ impl ChainEngine {
 
             let nested = nested_sink.drain();
 
+            let produced = match &updated {
+                Some(new_stack) => capture_produced(&current, new_stack),
+                None => BTreeMap::new(),
+            };
             if let Some(new_stack) = updated {
                 current = new_stack;
             }
 
+            tel.args_in = args_in;
+            tel.produced = produced;
             publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
 
             let failure = match &tel.outcome {
@@ -294,7 +334,8 @@ impl ChainEngine {
                 // settles, so a composite sibling's nested rows stay with it.
                 async move {
                     if !step.enabled {
-                        let tel = disabled_telemetry(index, &step.kind_id);
+                        let mut tel = disabled_telemetry(index, &step.kind_id);
+                        tel.args_in = capture_args_in(step, arg_stack);
                         publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                         return (tel, Vec::new(), None);
                     }
@@ -302,12 +343,15 @@ impl ChainEngine {
                     match self.check_condition(step, arg_stack).await {
                         ConditionVerdict::Run => {}
                         ConditionVerdict::Skip => {
-                            let tel = condition_skipped_telemetry(index, &step.kind_id);
+                            let mut tel = condition_skipped_telemetry(index, &step.kind_id);
+                            tel.args_in = capture_args_in(step, arg_stack);
                             publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                             return (tel, Vec::new(), None);
                         }
                         ConditionVerdict::Fail(msg) => {
-                            let tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
+                            let mut tel =
+                                condition_failed_telemetry(index, &step.kind_id, msg.clone());
+                            tel.args_in = capture_args_in(step, arg_stack);
                             publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                             let failure = if step.continue_on_error {
                                 None
@@ -327,6 +371,7 @@ impl ChainEngine {
                     let run_event_id = run_event.id;
                     self.publisher.publish(run_event);
 
+                    let args_in = capture_args_in(step, arg_stack);
                     let nested_sink = TelemetrySink::new();
                     let run_ctx = RunContext {
                         arg_stack,
@@ -339,7 +384,7 @@ impl ChainEngine {
                         telemetry: nested_sink.clone(),
                     };
 
-                    let (tel, _) = match self.registry.get(&step.kind_id) {
+                    let (mut tel, updated) = match self.registry.get(&step.kind_id) {
                         Some(runner) => {
                             let resolved = effective_config(&runner.default_config(), &step.config);
                             runner.execute(&resolved, &run_ctx).await
@@ -353,6 +398,11 @@ impl ChainEngine {
                         }
                     };
 
+                    tel.args_in = args_in;
+                    tel.produced = match &updated {
+                        Some(new_stack) => capture_produced(arg_stack, new_stack),
+                        None => BTreeMap::new(),
+                    };
                     publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
 
                     let failure = match (&tel.outcome, step.continue_on_error) {
@@ -521,6 +571,8 @@ mod tests {
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,
                 outcome: self.outcome.clone(),
+                args_in: BTreeMap::new(),
+                produced: BTreeMap::new(),
             };
             (tel, updated)
         }

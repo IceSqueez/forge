@@ -150,6 +150,8 @@ pub(crate) async fn execute_redemption_runner(
 
     (
         SubActionTelemetry {
+            args_in: ::std::collections::BTreeMap::new(),
+            produced: ::std::collections::BTreeMap::new(),
             kind: kind_id.to_owned(),
             started_at,
             duration_ms: start.elapsed().as_millis() as u64,

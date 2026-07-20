@@ -86,6 +86,8 @@ impl SubActionRunner for CoreQueuePauseRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.queue.pause".to_owned(),
                 started_at,

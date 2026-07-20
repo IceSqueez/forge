@@ -85,6 +85,8 @@ impl SubActionRunner for GateRunner {
         }
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "test.gate".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
@@ -188,6 +190,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
         .dispatch(ExecutionRequest {
             action_id: target,
             trigger_event_id: EventId::new(),
+            trigger_kind: None,
             initial_args: ArgStack::new(),
         })
         .await
@@ -240,6 +243,7 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
         .dispatch(ExecutionRequest {
             action_id: id,
             trigger_event_id: EventId::new(),
+            trigger_kind: None,
             initial_args: ArgStack::new(),
         })
         .await

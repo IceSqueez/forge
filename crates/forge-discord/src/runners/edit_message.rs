@@ -147,6 +147,8 @@ impl SubActionRunner for EditMessageRunner {
         if !has_any {
             return (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "discord.webhook.update_message".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
@@ -173,6 +175,8 @@ impl SubActionRunner for EditMessageRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 kind: "discord.webhook.update_message".to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,

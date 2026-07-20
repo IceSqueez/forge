@@ -282,6 +282,8 @@ impl SubActionRunner for CoreHttpRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: descriptor.id.to_owned(),
                 started_at,

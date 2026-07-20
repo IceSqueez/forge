@@ -85,6 +85,8 @@ impl SubActionRunner for CoreStringLowercaseRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.string.lowercase".to_owned(),
                 started_at,

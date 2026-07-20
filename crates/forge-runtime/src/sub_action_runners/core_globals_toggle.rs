@@ -126,6 +126,8 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.globals.toggle".to_owned(),
                 started_at,

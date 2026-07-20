@@ -262,6 +262,7 @@ pub(crate) async fn handle_do_action(
         .dispatch(ExecutionRequest {
             action_id: aid,
             trigger_event_id,
+            trigger_kind: None,
             initial_args,
         })
         .await

@@ -73,6 +73,8 @@ impl SubActionRunner for SpeakStopRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "tts.speak.stop".to_owned(),
                 started_at,

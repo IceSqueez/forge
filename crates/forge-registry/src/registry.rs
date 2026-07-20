@@ -164,6 +164,8 @@ mod tests {
         ) -> (SubActionTelemetry, Option<ArgStack>) {
             (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     index: 0,
                     kind: self.kind_id.to_owned(),
                     started_at: OffsetDateTime::now_utc(),

@@ -165,6 +165,8 @@ impl SubActionRunner for CoreUsersGetVarRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "core.users.get_var".to_owned(),
                 started_at,

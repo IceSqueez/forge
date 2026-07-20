@@ -82,6 +82,8 @@ impl SubActionRunner for LookupHotkeysRunner {
                 }
                 (
                     SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
                         kind: "vtube.lookup.hotkeys".to_owned(),
                         started_at,
                         duration_ms: start.elapsed().as_millis() as u64,
@@ -93,6 +95,8 @@ impl SubActionRunner for LookupHotkeysRunner {
             }
             Err(e) => (
                 SubActionTelemetry {
+                    args_in: ::std::collections::BTreeMap::new(),
+                    produced: ::std::collections::BTreeMap::new(),
                     kind: "vtube.lookup.hotkeys".to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,

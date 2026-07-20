@@ -26,6 +26,24 @@ pub struct SubActionTelemetry {
     pub started_at: OffsetDateTime,
     pub duration_ms: u64,
     pub outcome: SubActionOutcome,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub args_in: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub produced: BTreeMap<String, String>,
+}
+
+pub fn variant_preview(value: &Variant) -> String {
+    let rendered = match value {
+        Variant::Array(_) | Variant::Object(_) => value.to_json().to_string(),
+        scalar => scalar.to_string(),
+    };
+    const MAX_CHARS: usize = 120;
+    if rendered.chars().count() <= MAX_CHARS {
+        return rendered;
+    }
+    let mut clipped: String = rendered.chars().take(MAX_CHARS).collect();
+    clipped.push_str("...");
+    clipped
 }
 
 impl SubActionTelemetry {
@@ -47,8 +65,15 @@ impl SubActionTelemetry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExecutionMetadata {
-    Trigger { event_id: EventId },
-    QuickAction { builtin_id: String, label: String },
+    Trigger {
+        event_id: EventId,
+        #[serde(default)]
+        trigger_kind: Option<String>,
+    },
+    QuickAction {
+        builtin_id: String,
+        label: String,
+    },
 }
 
 /// Immutable after construction; built once from trigger event and globals snapshot.
@@ -220,7 +245,10 @@ mod tests {
         let event_id = EventId::new();
         let ctx = ExecutionContext {
             action_id: ActionId::new(),
-            metadata: ExecutionMetadata::Trigger { event_id },
+            metadata: ExecutionMetadata::Trigger {
+                event_id,
+                trigger_kind: None,
+            },
             arg_stack_snapshot: BTreeMap::new(),
             started_at: OffsetDateTime::now_utc(),
             completed_at: None,
@@ -230,6 +258,8 @@ mod tests {
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 5,
                 outcome: SubActionOutcome::Success,
+                args_in: BTreeMap::new(),
+                produced: BTreeMap::new(),
             }],
             outcome: ExecutionOutcome::Success,
         };

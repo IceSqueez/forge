@@ -73,6 +73,8 @@ impl SubActionRunner for StopAllSoundsRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "soundboard.sound.stop_all".to_owned(),
                 started_at,

@@ -97,6 +97,8 @@ impl SubActionRunner for PlaySoundRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "soundboard.sound.play".to_owned(),
                 started_at,

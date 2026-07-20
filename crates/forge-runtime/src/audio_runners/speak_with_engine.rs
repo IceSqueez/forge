@@ -112,6 +112,8 @@ impl SubActionRunner for SpeakWithEngineRunner {
 
         (
             SubActionTelemetry {
+                args_in: ::std::collections::BTreeMap::new(),
+                produced: ::std::collections::BTreeMap::new(),
                 index: ctx.index,
                 kind: "tts.speak.text_with_engine".to_owned(),
                 started_at,

@@ -63,6 +63,8 @@ struct VoiceSidecar {
     audio: SidecarAudio,
     #[serde(default = "default_num_speakers")]
     num_speakers: u32,
+    #[serde(default)]
+    speaker_id_map: std::collections::BTreeMap<String, u32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -120,9 +122,15 @@ fn scan_voices_dir(
                 } else {
                     format!("{}#{}", stem, speaker)
                 };
+                let name = meta
+                    .speaker_id_map
+                    .iter()
+                    .find(|(_, idx)| **idx == speaker)
+                    .map(|(speaker_name, _)| capitalize(speaker_name))
+                    .unwrap_or_else(|| voice_id.clone());
                 voices.push(TtsVoice {
                     id: VoiceId(voice_id.clone()),
-                    name: voice_id,
+                    name,
                     locale: locale.clone(),
                     gender: VoiceGender::Neutral,
                     engine_id: engine_id.clone(),
@@ -134,6 +142,14 @@ fn scan_voices_dir(
     }
     voices.sort_by(|a, b| a.locale.cmp(&b.locale).then(a.name.cmp(&b.name)));
     Ok(voices)
+}
+
+fn capitalize(name: &str) -> String {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
 }
 
 fn parse_voice_id(voice_id: &str) -> (&str, Option<u32>) {

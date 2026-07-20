@@ -901,7 +901,10 @@ tts_engines_header_prefix = CONFIGURED
 tts_engines_more_placeholder = + More engines in future releases
 tts_engines_select_hint = Select an engine to configure
 tts_engines_status_ready = Ready
-tts_header_engines_ready = { $count } engines ready
+tts_header_engines_ready = { $count ->
+    [one] { $count } engine ready
+   *[other] { $count } engines ready
+}
 
 ## TTS Engines - detail header
 

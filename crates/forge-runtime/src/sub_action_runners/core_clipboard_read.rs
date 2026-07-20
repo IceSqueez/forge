@@ -1,8 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use time::OffsetDateTime;
 
 use super::os_ports::ClipboardPort;
@@ -64,6 +69,17 @@ impl SubActionRunner for CoreClipboardReadRunner {
 
     fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
         Ok(())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "into_var".to_owned(),
+                kind: VariantKind::String,
+                label: "Clipboard text".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
     }
 
     async fn execute(

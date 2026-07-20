@@ -1,6 +1,11 @@
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub struct CoreTimeNowRunner;
@@ -64,6 +69,17 @@ impl SubActionRunner for CoreTimeNowRunner {
 
     fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
         Ok(())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "into_var".to_owned(),
+                kind: VariantKind::Datetime,
+                label: "Current time".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
     }
 
     async fn execute(

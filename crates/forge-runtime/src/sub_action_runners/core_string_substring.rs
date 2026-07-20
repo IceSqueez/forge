@@ -1,6 +1,11 @@
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use time::OffsetDateTime;
 
 pub struct CoreStringSubstringRunner;
@@ -90,6 +95,17 @@ impl SubActionRunner for CoreStringSubstringRunner {
             ));
         }
         Ok(())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![ProducedVariable {
+                output_name_key: "into_var".to_owned(),
+                kind: VariantKind::String,
+                label: "Substring".to_owned(),
+            }],
+            consumes: Vec::new(),
+        }
     }
 
     async fn execute(

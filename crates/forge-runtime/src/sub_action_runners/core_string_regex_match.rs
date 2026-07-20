@@ -1,6 +1,11 @@
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_registry::{
+    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
+    SubActionRunner,
+};
+use forge_types::{
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
+};
 use time::OffsetDateTime;
 
 pub struct CoreStringRegexMatchRunner;
@@ -82,6 +87,24 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
             RegistryError::UnknownKindId(format!("core.string.regex_match: invalid regex: {e}"))
         })?;
         Ok(())
+    }
+
+    fn scope_io(&self) -> SubActionIo {
+        SubActionIo {
+            produces: vec![
+                ProducedVariable {
+                    output_name_key: "into_var".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Match found".to_owned(),
+                },
+                ProducedVariable {
+                    output_name_key: "captures_into_var".to_owned(),
+                    kind: VariantKind::Array,
+                    label: "Capture groups".to_owned(),
+                },
+            ],
+            consumes: Vec::new(),
+        }
     }
 
     async fn execute(

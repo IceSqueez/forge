@@ -82,12 +82,13 @@ impl SubActionRunner for CoreTimeNowRunner {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("now")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("now"),
+        );
 
         let formatted = match format {
             "unix_seconds" => started_at.unix_timestamp().to_string(),

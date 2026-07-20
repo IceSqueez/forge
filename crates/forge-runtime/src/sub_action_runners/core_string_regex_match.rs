@@ -93,18 +93,20 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
 
         let source = config.get("source").and_then(|v| v.as_str()).unwrap_or("");
         let pattern = config.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("regex.matched")
-            .to_owned();
-        let captures_into_var = config
-            .get("captures_into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("regex.captures")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("regex.matched"),
+        );
+        let captures_into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("captures_into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("regex.captures"),
+        );
 
         if pattern.is_empty() {
             let new_stack = ctx

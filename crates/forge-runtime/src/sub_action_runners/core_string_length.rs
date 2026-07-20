@@ -78,12 +78,13 @@ impl SubActionRunner for CoreStringLengthRunner {
             .get("mode")
             .and_then(|v| v.as_str())
             .unwrap_or("chars");
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("string.result")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("string.result"),
+        );
 
         // "bytes" mode returns UTF-8 byte count, which differs from char count for non-ASCII input.
         let length = if mode == "bytes" {

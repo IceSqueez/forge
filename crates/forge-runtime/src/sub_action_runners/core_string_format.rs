@@ -71,12 +71,13 @@ impl SubActionRunner for CoreStringFormatRunner {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("string.formatted")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("string.formatted"),
+        );
 
         let new_stack = ctx
             .arg_stack

@@ -116,11 +116,12 @@ impl SubActionRunner for CoreRandomFloatRunner {
 
         let min = resolve_bound(config, ctx, "min", 0.0);
         let max = resolve_bound(config, ctx, "max", 1.0);
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default(),
+        );
 
         let (outcome, produced) = match (min, max) {
             (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),

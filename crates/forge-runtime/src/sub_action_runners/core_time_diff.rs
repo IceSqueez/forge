@@ -118,12 +118,13 @@ impl SubActionRunner for CoreTimeDiffRunner {
             .get("unit")
             .and_then(|v| v.as_str())
             .unwrap_or("seconds");
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("time.diff_value")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("time.diff_value"),
+        );
 
         // Nanosecond precision avoids float rounding from whole_seconds() when the
         // caller asks for fractional minutes/hours/days.

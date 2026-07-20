@@ -78,12 +78,13 @@ impl SubActionRunner for CoreStringTrimRunner {
             .get("mode")
             .and_then(|v| v.as_str())
             .unwrap_or("both");
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("string.result")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("string.result"),
+        );
 
         let result = match mode {
             "left" => source.trim_start().to_owned(),

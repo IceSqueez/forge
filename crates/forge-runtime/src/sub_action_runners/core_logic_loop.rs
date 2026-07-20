@@ -178,7 +178,8 @@ impl SubActionRunner for CoreLogicLoopRunner {
                 .get("array_source")
                 .and_then(Variant::as_str)
                 .unwrap_or_default();
-            let source = ctx.arg_stack.interpolate(source_template);
+            let source =
+                super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(source_template));
             ctx.arg_stack
                 .get(&source)
                 .and_then(Variant::as_array)

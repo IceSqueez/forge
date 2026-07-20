@@ -21,3 +21,34 @@ pub(super) fn parse_variant(s: &str) -> Variant {
     }
     Variant::String(s.to_string())
 }
+
+pub(super) fn sanitize_var_name(name: &str) -> String {
+    let trimmed = name.trim();
+    let unwrapped = trimmed
+        .strip_prefix('%')
+        .and_then(|inner| inner.strip_suffix('%'))
+        .unwrap_or(trimmed);
+    unwrapped.trim().to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_var_name_trims_then_strips_one_percent_pair_then_trims() {
+        // Contract: trim -> peel exactly ONE enclosing %...% -> trim again.
+        for (input, expected) in [
+            ("index", "index"),
+            (" index ", "index"),
+            ("%index%", "index"),
+            ("% index %", "index"),
+            ("%%x%%", "%x%"), // only ONE pair peeled, inner pair survives
+            ("", ""),
+            ("%index", "%index"), // unbalanced (no trailing %) stays verbatim
+            ("index%", "index%"), // unbalanced (no leading %) stays verbatim
+        ] {
+            assert_eq!(sanitize_var_name(input), expected, "input {input:?}");
+        }
+    }
+}

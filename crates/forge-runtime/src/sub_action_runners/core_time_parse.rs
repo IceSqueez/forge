@@ -88,12 +88,13 @@ impl SubActionRunner for CoreTimeParseRunner {
             .and_then(|v| v.as_str())
             .unwrap_or("[year]-[month]-[day] [hour]:[minute]:[second]")
             .to_owned();
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("time.parsed")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("time.parsed"),
+        );
 
         let desc = match time::format_description::parse_borrowed::<2>(&format_str) {
             Ok(d) => d,

@@ -95,7 +95,7 @@ impl SubActionRunner for CoreGlobalsSetRunner {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        let name = ctx.arg_stack.interpolate(name_template);
+        let name = super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
         let raw = ctx.arg_stack.interpolate(value_template);
         let variant = parse_variant(&raw);
         let persisted = config

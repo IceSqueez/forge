@@ -99,12 +99,13 @@ impl SubActionRunner for CoreStringSplitRunner {
             .and_then(|v| v.as_int())
             .unwrap_or(0)
             .max(0) as usize;
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("string.parts")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("string.parts"),
+        );
 
         let raw_parts: Vec<&str> = if separator.is_empty() {
             source.split("").collect()

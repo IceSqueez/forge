@@ -116,7 +116,8 @@ impl SubActionRunner for ScriptRunNamedRunner {
             .get("target_var")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let target_var = ctx.arg_stack.interpolate(target_var_template);
+        let target_var =
+            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(target_var_template));
 
         let Some(compiled) = self.registry.get_by_name(&name).await else {
             let duration_ms = wall_start.elapsed().as_millis() as u64;
@@ -197,6 +198,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                 _ => SubActionOutcome::Success,
             },
             Ok(Err(script_err)) => {
+                let message = format!("script '{name}' failed: {}", body_free_message(&script_err));
                 self.publisher.publish(Event::caused_by(
                     EventSource::Rhai,
                     "script.error",
@@ -204,11 +206,11 @@ impl SubActionRunner for ScriptRunNamedRunner {
                         "script_id": script_id.to_string(),
                         "script_name": name.as_str(),
                         "error_type": error_kind(&script_err),
-                        "message": script_err.to_string(),
+                        "message": message.as_str(),
                     }),
                     script_event_id,
                 ));
-                SubActionOutcome::Failed(script_err.to_string())
+                SubActionOutcome::Failed(message)
             }
             Err(join_err) => {
                 self.publisher.publish(Event::caused_by(
@@ -258,5 +260,85 @@ fn error_kind(err: &ScriptError) -> &'static str {
         ScriptError::Timeout { .. } => "timeout",
         ScriptError::OperationLimit { .. } => "ops_exceeded",
         _ => "runtime",
+    }
+}
+
+fn body_free_message(err: &ScriptError) -> String {
+    match err {
+        ScriptError::Compile { reason, .. } => format!("compile error: {reason}"),
+        ScriptError::Runtime { reason, .. } => format!("runtime error: {reason}"),
+        ScriptError::Timeout {
+            elapsed_ms,
+            limit_ms,
+            ..
+        } => format!("timed out after {elapsed_ms}ms (limit {limit_ms}ms)"),
+        ScriptError::OperationLimit { ops, .. } => {
+            format!("exceeded op-count limit ({ops} operations)")
+        }
+        other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BODY: &str = "let secret_token = 42; print(secret_token);";
+
+    #[test]
+    fn body_free_message_reports_the_reason_without_leaking_the_script_body() {
+        // Why: the default Display embeds the `script` field (the full source),
+        // which can carry secrets; the failure surfaced to the user/telemetry
+        // must keep the diagnostic reason but drop the body.
+        for (err, expected) in [
+            (
+                ScriptError::Compile {
+                    script: BODY.to_owned(),
+                    reason: "unexpected token".to_owned(),
+                },
+                "compile error: unexpected token",
+            ),
+            (
+                ScriptError::Runtime {
+                    script: BODY.to_owned(),
+                    reason: "divide by zero".to_owned(),
+                },
+                "runtime error: divide by zero",
+            ),
+            (
+                ScriptError::Timeout {
+                    script: BODY.to_owned(),
+                    elapsed_ms: 200,
+                    limit_ms: 100,
+                },
+                "timed out after 200ms (limit 100ms)",
+            ),
+            (
+                ScriptError::OperationLimit {
+                    script: BODY.to_owned(),
+                    ops: 5000,
+                },
+                "exceeded op-count limit (5000 operations)",
+            ),
+        ] {
+            let msg = body_free_message(&err);
+            assert_eq!(msg, expected);
+            assert!(
+                !msg.contains("secret_token"),
+                "body-free message leaked the script body: {msg}",
+            );
+        }
+    }
+
+    #[test]
+    fn default_display_leaks_the_body_that_body_free_message_strips() {
+        // Pins the leak that body_free_message exists to prevent: the raw Display
+        // does embed the source, so the runner must not surface it directly.
+        let err = ScriptError::Compile {
+            script: BODY.to_owned(),
+            reason: "unexpected token".to_owned(),
+        };
+        assert!(err.to_string().contains("secret_token"));
+        assert!(!body_free_message(&err).contains("secret_token"));
     }
 }

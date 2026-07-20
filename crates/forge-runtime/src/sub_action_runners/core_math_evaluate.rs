@@ -109,12 +109,13 @@ impl SubActionRunner for CoreMathEvaluateRunner {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("result")
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("result"),
+        );
 
         let result_type = config
             .get("result_type")

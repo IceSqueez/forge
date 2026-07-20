@@ -91,11 +91,12 @@ impl SubActionRunner for CoreRandomBoolRunner {
             .unwrap_or(0.5)
             .clamp(0.0, 1.0);
 
-        let into_var = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let into_var = super::interpolate::sanitize_var_name(
+            config
+                .get("into_var")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default(),
+        );
 
         let value = rand::random_bool(probability);
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Bool(value));

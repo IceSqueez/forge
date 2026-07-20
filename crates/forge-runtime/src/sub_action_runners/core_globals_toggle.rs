@@ -80,7 +80,8 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        let resolved_key = ctx.arg_stack.interpolate(key_template);
+        let resolved_key =
+            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(key_template));
 
         let outcome = match self.globals.get(&resolved_key).await {
             Err(e) => SubActionOutcome::Failed(e.to_string()),

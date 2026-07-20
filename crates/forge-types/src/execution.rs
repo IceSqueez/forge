@@ -97,7 +97,7 @@ impl ArgStack {
             if !closed {
                 continue;
             }
-            if let Some(val) = self.0.get(&key) {
+            if let Some(val) = self.0.get(key.trim()) {
                 result.truncate(token_start);
                 result.push_str(&val.to_string());
             } else {
@@ -169,6 +169,17 @@ mod tests {
     fn interpolate_unknown_var_stays_verbatim() {
         let stack = ArgStack::new();
         assert_eq!(stack.interpolate("%missing%"), "%missing%");
+    }
+
+    #[test]
+    fn interpolate_trims_whitespace_inside_the_token_before_lookup() {
+        // The lookup key is trimmed, so padding inside the `%...%` still resolves
+        // the same binding. An unknown padded token stays verbatim (padding kept).
+        let stack = stack_with(&[("index", Variant::Int(3))]);
+        for template in ["%index %", "% index%", "% index %"] {
+            assert_eq!(stack.interpolate(template), "3", "template {template:?}");
+        }
+        assert_eq!(stack.interpolate("%unknown %"), "%unknown %");
     }
 
     #[test]

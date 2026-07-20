@@ -128,12 +128,12 @@ impl SubActionRunner for CoreUsersGetVarRunner {
                 .and_then(|v| v.as_str())
                 .unwrap_or_default(),
         );
-        let into_var = resolve(
+        let into_var = super::interpolate::sanitize_var_name(&resolve(
             config
                 .get("into_var")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default(),
-        );
+        ));
         let default_raw = resolve(
             config
                 .get("default_value")

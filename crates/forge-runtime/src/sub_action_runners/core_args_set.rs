@@ -74,7 +74,7 @@ impl SubActionRunner for CoreArgsSetRunner {
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let name = ctx.arg_stack.interpolate(name_template);
+        let name = super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
 
         let value = match config.get("value") {
             Some(Variant::String(s)) => {

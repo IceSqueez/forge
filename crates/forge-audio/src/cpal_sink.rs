@@ -40,6 +40,7 @@ impl CpalSink {
         &self,
         buffer: PcmBuffer,
         stop: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
         let device_id_str = self.device_id.0.clone();
         let event_sink = Arc::clone(&self.event_sink);
@@ -54,6 +55,7 @@ impl CpalSink {
                 target_ch,
                 event_sink,
                 stop,
+                paused,
             );
         })
     }
@@ -63,22 +65,25 @@ impl CpalSink {
 impl AudioSink for CpalSink {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
         let stop = Arc::new(AtomicBool::new(false));
-        self.spawn_playback(buffer, stop)
+        let paused = Arc::new(AtomicBool::new(false));
+        self.spawn_playback(buffer, stop, paused)
             .await
             .map_err(|e| AudioError::JoinFailed(e.to_string()))
     }
 
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
         let stop = Arc::new(AtomicBool::new(false));
-        self.spawn_playback(buffer, Arc::clone(&stop));
-        Ok(PlaybackHandle::from_flag(stop))
+        let paused = Arc::new(AtomicBool::new(false));
+        self.spawn_playback(buffer, Arc::clone(&stop), Arc::clone(&paused));
+        Ok(PlaybackHandle::from_flags(stop, paused))
     }
 
     async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         let stop = Arc::new(AtomicBool::new(false));
-        let join = self.spawn_playback(buffer, Arc::clone(&stop));
+        let paused = Arc::new(AtomicBool::new(false));
+        let join = self.spawn_playback(buffer, Arc::clone(&stop), Arc::clone(&paused));
         Ok(ControlledPlayback::from_handle(
-            PlaybackHandle::from_flag(stop),
+            PlaybackHandle::from_flags(stop, paused),
             join,
         ))
     }
@@ -91,6 +96,7 @@ fn run_playback(
     target_ch: Option<u16>,
     event_sink: Arc<dyn AudioEventSink>,
     stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
 ) {
     let host = cpal::default_host();
 
@@ -163,12 +169,15 @@ fn run_playback(
     let stop_f32 = Arc::clone(&stop);
     let stop_i16 = Arc::clone(&stop);
     let stop_i32 = Arc::clone(&stop);
+    let paused_f32 = Arc::clone(&paused);
+    let paused_i16 = Arc::clone(&paused);
+    let paused_i32 = Arc::clone(&paused);
 
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
             stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                if stop_f32.load(Ordering::Relaxed) {
+                if stop_f32.load(Ordering::Relaxed) || paused_f32.load(Ordering::Relaxed) {
                     data.fill(0.0);
                     return;
                 }
@@ -182,7 +191,7 @@ fn run_playback(
         SampleFormat::I16 => device.build_output_stream(
             stream_config,
             move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                if stop_i16.load(Ordering::Relaxed) {
+                if stop_i16.load(Ordering::Relaxed) || paused_i16.load(Ordering::Relaxed) {
                     data.fill(0);
                     return;
                 }
@@ -196,7 +205,7 @@ fn run_playback(
         SampleFormat::I32 => device.build_output_stream(
             stream_config,
             move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
-                if stop_i32.load(Ordering::Relaxed) {
+                if stop_i32.load(Ordering::Relaxed) || paused_i32.load(Ordering::Relaxed) {
                     data.fill(0);
                     return;
                 }
@@ -242,13 +251,19 @@ fn run_playback(
 
     let total_ms = duration_ms + 50;
     let mut elapsed_ms = 0u64;
-    while elapsed_ms < total_ms {
+    while elapsed_ms < total_ms || paused.load(Ordering::Relaxed) {
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        let step = (total_ms - elapsed_ms).min(20);
+        let step = if elapsed_ms < total_ms {
+            (total_ms - elapsed_ms).min(20)
+        } else {
+            20
+        };
         std::thread::sleep(Duration::from_millis(step));
-        elapsed_ms += step;
+        if !paused.load(Ordering::Relaxed) {
+            elapsed_ms += step;
+        }
     }
     drop(stream);
 

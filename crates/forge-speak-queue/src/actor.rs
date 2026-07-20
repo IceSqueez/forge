@@ -380,7 +380,7 @@ pub(crate) async fn run_actor(
                 }
             }
             _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
-                if let Some(c) = current_playback.as_mut() {
+                if !paused && let Some(c) = current_playback.as_mut() {
                     c.elapsed_secs += 1;
                     let _ = event_tx.send(SpeakEvent::Progress {
                         request_id: c.request_id.clone(),
@@ -829,6 +829,9 @@ fn handle_command(
         SpeakCommand::RefreshVoiceCatalog | SpeakCommand::SetEngineEnabled(_, _) => {}
         SpeakCommand::Pause => {
             *paused = true;
+            if let Some(c) = current_playback.as_ref() {
+                c.playback.pause();
+            }
             let _ = event_tx.send(SpeakEvent::Paused {
                 reason: "user paused".into(),
             });
@@ -840,6 +843,9 @@ fn handle_command(
         }
         SpeakCommand::Resume => {
             *paused = false;
+            if let Some(c) = current_playback.as_ref() {
+                c.playback.resume();
+            }
             let _ = event_tx.send(SpeakEvent::Resumed);
             publish(
                 deps.event_bus.as_ref(),

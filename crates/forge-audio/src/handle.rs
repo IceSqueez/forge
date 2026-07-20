@@ -6,37 +6,58 @@ use std::task::{Context, Poll};
 
 use crate::error::AudioError;
 
-/// Cancellation token for one or more in-flight clips.
+/// Cancellation/pause token for one or more in-flight clips.
 ///
 /// `stop` is cooperative: cpal output goes silent at the next device callback
 /// boundary (sub-buffer audio already handed to the driver still drains, a
 /// low-tens-of-ms tail) and the playback thread tears the stream down within one
-/// poll interval. A handle returned by a sink that does not implement
+/// poll interval. `pause`/`resume` hold the writer on silence without consuming
+/// buffered samples, so playback resumes from the exact spot; `stop` always wins
+/// over an active pause. A handle returned by a sink that does not implement
 /// cancellation (the `AudioSink::play_stoppable` default) carries no flags -
-/// `stop` is then a no-op and the clip runs to completion.
+/// `stop`/`pause`/`resume` are then no-ops and the clip runs to completion.
 #[derive(Clone, Default)]
 pub struct PlaybackHandle {
-    flags: Arc<[Arc<AtomicBool>]>,
+    stop_flags: Arc<[Arc<AtomicBool>]>,
+    pause_flags: Arc<[Arc<AtomicBool>]>,
 }
 
 impl PlaybackHandle {
-    pub(crate) fn from_flag(flag: Arc<AtomicBool>) -> Self {
+    pub(crate) fn from_flags(stop: Arc<AtomicBool>, pause: Arc<AtomicBool>) -> Self {
         Self {
-            flags: Arc::from([flag]),
+            stop_flags: Arc::from([stop]),
+            pause_flags: Arc::from([pause]),
         }
     }
 
     pub(crate) fn merge(handles: impl IntoIterator<Item = PlaybackHandle>) -> Self {
-        let flags: Vec<Arc<AtomicBool>> =
-            handles.into_iter().flat_map(|h| h.flags.to_vec()).collect();
+        let mut stop_flags = Vec::new();
+        let mut pause_flags = Vec::new();
+        for h in handles {
+            stop_flags.extend(h.stop_flags.iter().cloned());
+            pause_flags.extend(h.pause_flags.iter().cloned());
+        }
         Self {
-            flags: Arc::from(flags),
+            stop_flags: Arc::from(stop_flags),
+            pause_flags: Arc::from(pause_flags),
         }
     }
 
     pub fn stop(&self) {
-        for flag in self.flags.iter() {
+        for flag in self.stop_flags.iter() {
             flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub fn pause(&self) {
+        for flag in self.pause_flags.iter() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub fn resume(&self) {
+        for flag in self.pause_flags.iter() {
+            flag.store(false, Ordering::Relaxed);
         }
     }
 }
@@ -71,6 +92,14 @@ impl ControlledPlayback {
 
     pub fn stop(&self) {
         self.playback.stop();
+    }
+
+    pub fn pause(&self) {
+        self.playback.pause();
+    }
+
+    pub fn resume(&self) {
+        self.playback.resume();
     }
 }
 

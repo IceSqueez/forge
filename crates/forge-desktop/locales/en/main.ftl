@@ -1219,6 +1219,8 @@ soundboard_modal_save_btn = Save
 soundboard_modal_saving_btn = Saving…
 soundboard_modal_cancel_btn = Cancel
 soundboard_modal_validation_error = Name and audio file are required.
+soundboard_delete_title = Delete clip?
+soundboard_delete_body = This removes the clip from your soundboard permanently.
 
 ## Soundboard - modal section labels
 

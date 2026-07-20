@@ -1,13 +1,15 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    breadcrumb, chip, ghost_button_with_icon, icon, modal, overlay, primary_button, radius,
-    search_input, secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
+    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
+    TextInput, breadcrumb, chip, confirm_modal, ghost_button_with_icon, icon, modal, overlay,
+    primary_button, radius, search_input, secondary_button, slider, spacing, status_dot, toggle,
+    tr, with_alpha,
 };
 use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::EventBus;
@@ -22,7 +24,7 @@ use forge_storage::{
 use forge_types::{ClipId, OutputDevice};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Task,
-    Window, div, prelude::*, px, relative,
+    Window, div, prelude::*, px, relative, svg,
 };
 use time::OffsetDateTime;
 
@@ -54,6 +56,11 @@ const HOTKEY_RADIUS: Pixels = px(4.0);
 const LOOP_ICON: Pixels = px(10.0);
 const PROGRESS_H: Pixels = px(2.0);
 const PROGRESS_WIDTH: f32 = 0.46;
+const PAD_ACTION_TILE: Pixels = px(20.0);
+const PAD_ACTION_GLYPH: Pixels = px(13.0);
+const PAD_ACTION_GAP: Pixels = px(3.0);
+const PAD_ACTION_HOVER_ALPHA: f32 = 0.16;
+const TICK_INTERVAL: Duration = Duration::from_millis(100);
 const STOP_ICON: Pixels = px(12.0);
 const ADD_ICON: Pixels = px(13.0);
 const ADDBAR_RADIUS: Pixels = px(9.0);
@@ -86,12 +93,19 @@ struct SoundClip {
     glyph: Icon,
 }
 
+struct PlaybackProgress {
+    started_at: Instant,
+    duration_secs: Option<f64>,
+    looped: bool,
+}
+
 struct AddModal {
     file_path: Option<PathBuf>,
     name_input: Entity<TextInput>,
     category: String,
     saving: bool,
     error: Option<SharedString>,
+    edit_id: Option<ClipId>,
     _name_sub: Subscription,
 }
 
@@ -102,13 +116,15 @@ pub struct SoundboardView {
     devices: Vec<DeviceInfo>,
     importable: Vec<BuiltinSoundEntry>,
     total_size: Option<u64>,
-    playing: HashSet<ClipId>,
+    playing: HashMap<ClipId, PlaybackProgress>,
+    ticking: bool,
     settings: SoundboardSettings,
     device_menu_open: bool,
     search: Entity<TextInput>,
     search_query: String,
     category_filter: Option<String>,
     modal: Option<AddModal>,
+    pending_delete: Option<ClipId>,
     _search_sub: Subscription,
     player: Arc<SoundboardPlayer>,
     clips_repo: Arc<dyn SoundboardClipsRepo>,
@@ -157,13 +173,15 @@ impl SoundboardView {
             devices: Vec::new(),
             importable: Vec::new(),
             total_size: None,
-            playing: HashSet::new(),
+            playing: HashMap::new(),
+            ticking: false,
             settings,
             device_menu_open: false,
             search,
             search_query: String::new(),
             category_filter: None,
             modal: None,
+            pending_delete: None,
             _search_sub: search_sub,
             player,
             clips_repo,
@@ -196,15 +214,60 @@ impl SoundboardView {
         };
         match event.kind.as_str() {
             "playback.started" => {
-                if self.playing.insert(clip_id) {
-                    cx.notify();
-                }
+                let duration_secs = event.payload.get("duration_secs").and_then(|v| v.as_f64());
+                let looped = event
+                    .payload
+                    .get("looped")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                self.playing.insert(
+                    clip_id,
+                    PlaybackProgress {
+                        started_at: Instant::now(),
+                        duration_secs,
+                        looped,
+                    },
+                );
+                self.ensure_ticker(cx);
+                cx.notify();
             }
             "playback.finished" | "playback.failed" => {
                 self.clear_playing(clip_id, cx);
             }
             _ => {}
         }
+    }
+
+    fn has_live_progress(&self) -> bool {
+        self.playing
+            .values()
+            .any(|p| !p.looped && p.duration_secs.is_some_and(|d| d > 0.0))
+    }
+
+    fn ensure_ticker(&mut self, cx: &mut Context<Self>) {
+        if self.ticking || !self.has_live_progress() {
+            return;
+        }
+        self.ticking = true;
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(TICK_INTERVAL).await;
+                let keep_going = this.update(cx, |this, cx| {
+                    if this.has_live_progress() {
+                        cx.notify();
+                        true
+                    } else {
+                        this.ticking = false;
+                        false
+                    }
+                });
+                match keep_going {
+                    Ok(true) => continue,
+                    _ => break,
+                }
+            }
+        })
+        .detach();
     }
 
     fn on_search_event(
@@ -328,7 +391,7 @@ impl SoundboardView {
     }
 
     fn toggle_play(&mut self, id: ClipId, cx: &mut Context<Self>) {
-        if self.playing.contains(&id) {
+        if self.playing.contains_key(&id) {
             self.player.stop(id);
             self.playing.remove(&id);
             cx.notify();
@@ -339,7 +402,15 @@ impl SoundboardView {
         };
         let known = clip.duration_secs;
         self.error = None;
-        self.playing.insert(id);
+        self.playing.insert(
+            id,
+            PlaybackProgress {
+                started_at: Instant::now(),
+                duration_secs: known.map(f64::from),
+                looped: clip.loop_playback,
+            },
+        );
+        self.ensure_ticker(cx);
         cx.notify();
 
         let player_play = Arc::clone(&self.player);
@@ -377,7 +448,7 @@ impl SoundboardView {
     }
 
     fn clear_playing(&mut self, id: ClipId, cx: &mut Context<Self>) {
-        if self.playing.remove(&id) {
+        if self.playing.remove(&id).is_some() {
             cx.notify();
         }
     }
@@ -529,9 +600,77 @@ impl SoundboardView {
             category: CATEGORY_ORDER[0].to_owned(),
             saving: false,
             error: None,
+            edit_id: None,
             _name_sub: name_sub,
         });
         cx.notify();
+    }
+
+    fn open_edit(&mut self, id: ClipId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(clip) = self.clips.iter().find(|c| c.id == id) else {
+            return;
+        };
+        let name = clip.name.clone();
+        let category = clip.category.clone();
+        let file_path = clip.file_path.clone();
+        let palette = cx.palette();
+        let name_input = cx.new(|cx| {
+            TextInput::new(tr!("soundboard_modal_name_placeholder"), cx).with_palette(palette)
+        });
+        name_input.update(cx, |ti, cx| ti.set_content(name, cx));
+        let name_sub = cx.subscribe(
+            &name_input,
+            |this, _input, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.save(cx),
+                InputEvent::Cancelled => this.close_modal(cx),
+                InputEvent::Changed(_) => cx.notify(),
+            },
+        );
+        name_input.update(cx, |f, cx| f.focus(window, cx));
+        self.modal = Some(AddModal {
+            file_path: Some(file_path),
+            name_input,
+            category,
+            saving: false,
+            error: None,
+            edit_id: Some(id),
+            _name_sub: name_sub,
+        });
+        cx.notify();
+    }
+
+    fn request_delete(&mut self, id: ClipId, cx: &mut Context<Self>) {
+        self.pending_delete = Some(id);
+        cx.notify();
+    }
+
+    fn cancel_delete(&mut self, cx: &mut Context<Self>) {
+        self.pending_delete = None;
+        cx.notify();
+    }
+
+    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.pending_delete.take() else {
+            return;
+        };
+        self.player.stop(id);
+        self.playing.remove(&id);
+        cx.notify();
+        let repo = Arc::clone(&self.clips_repo);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn(async move {
+            let _ = tx.send(repo.delete(id).await.map_err(|e| e.to_string()));
+        });
+        cx.spawn(async move |this, cx| match rx.await {
+            Ok(Ok(_)) => {
+                let _ = this.update(cx, |this, cx| this.reload(cx));
+            }
+            Ok(Err(message)) => {
+                let _ = this.update(cx, |this, cx| this.on_load_error(message, cx));
+            }
+            Err(_) => {}
+        })
+        .detach();
     }
 
     fn close_modal(&mut self, cx: &mut Context<Self>) {
@@ -606,7 +745,7 @@ impl SoundboardView {
         let name = modal.name_input.read(cx).content().trim().to_owned();
         let file_path = modal.file_path.clone().unwrap_or_default();
         let category = modal.category.clone();
-        let hotkey = self.next_free_hotkey();
+        let edit_id = modal.edit_id;
 
         if let Some(modal) = self.modal.as_mut() {
             modal.saving = true;
@@ -614,22 +753,43 @@ impl SoundboardView {
         }
         let repo = Arc::clone(&self.clips_repo);
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let clip = StoredClip {
-                id: ClipId::new(),
-                name,
-                file_path,
-                volume: 1.0,
-                output_device: OutputDevice::Default,
-                hotkey,
-                created_at: OffsetDateTime::now_utc(),
-                category,
-                loop_playback: false,
-                duration_secs: None,
-                builtin_id: None,
-            };
-            let _ = tx.send(repo.save(&clip).await.map_err(|e| e.to_string()));
-        });
+        match edit_id {
+            Some(id) => {
+                let missing_msg = tr!("soundboard_modal_validation_error").to_string();
+                self.rt_handle.spawn(async move {
+                    let result = async {
+                        let Some(mut clip) = repo.get(id).await.map_err(|e| e.to_string())? else {
+                            return Err(missing_msg);
+                        };
+                        clip.name = name;
+                        clip.file_path = file_path;
+                        clip.category = category;
+                        repo.save(&clip).await.map_err(|e| e.to_string())
+                    }
+                    .await;
+                    let _ = tx.send(result);
+                });
+            }
+            None => {
+                let hotkey = self.next_free_hotkey();
+                self.rt_handle.spawn(async move {
+                    let clip = StoredClip {
+                        id: ClipId::new(),
+                        name,
+                        file_path,
+                        volume: 1.0,
+                        output_device: OutputDevice::Default,
+                        hotkey,
+                        created_at: OffsetDateTime::now_utc(),
+                        category,
+                        loop_playback: false,
+                        duration_secs: None,
+                        builtin_id: None,
+                    };
+                    let _ = tx.send(repo.save(&clip).await.map_err(|e| e.to_string()));
+                });
+            }
+        }
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(())) => {
                 let _ = this.update(cx, |this, cx| this.on_saved(cx));
@@ -882,7 +1042,8 @@ impl SoundboardView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = clip.id;
-        let playing = self.playing.contains(&id);
+        let progress = self.playing.get(&id);
+        let playing = progress.is_some();
         let color = category_color(&clip.category, palette);
         let border_color = if playing {
             color
@@ -914,6 +1075,30 @@ impl SoundboardView {
                 .child(hk)
         });
 
+        let edit_btn = self.pad_action_button(
+            ("sb-pad-edit", index),
+            format!("sb-pad-edit-{index}").into(),
+            Icon::Pencil,
+            palette.brand,
+            move |this, _ev, window, cx| this.open_edit(id, window, cx),
+            cx,
+        );
+        let delete_btn = self.pad_action_button(
+            ("sb-pad-del", index),
+            format!("sb-pad-del-{index}").into(),
+            Icon::Trash,
+            palette.random,
+            move |this, _ev, _window, cx| this.request_delete(id, cx),
+            cx,
+        );
+        let top_right = div()
+            .flex()
+            .items_center()
+            .gap(PAD_ACTION_GAP)
+            .child(edit_btn)
+            .child(delete_btn)
+            .children(hotkey_badge);
+
         let top = div()
             .flex()
             .items_center()
@@ -929,7 +1114,7 @@ impl SoundboardView {
                     .bg(palette.surface_overlay)
                     .child(icon(glyph, PAD_GLYPH, color)),
             )
-            .children(hotkey_badge);
+            .child(top_right);
 
         let name = div()
             .w_full()
@@ -976,19 +1161,63 @@ impl SoundboardView {
             .child(name)
             .child(bottom);
 
-        if playing {
+        if let Some(prog) = progress {
+            let indeterminate = prog.looped || !prog.duration_secs.is_some_and(|d| d > 0.0);
+            let fraction = if indeterminate {
+                PROGRESS_WIDTH
+            } else {
+                let elapsed = Instant::now()
+                    .saturating_duration_since(prog.started_at)
+                    .as_secs_f64();
+                (elapsed / prog.duration_secs.unwrap_or(0.0)).clamp(0.0, 1.0) as f32
+            };
             pad = pad.child(
                 div()
                     .absolute()
                     .left_0()
                     .bottom_0()
                     .h(PROGRESS_H)
-                    .w(relative(PROGRESS_WIDTH))
+                    .w(relative(fraction))
                     .rounded(px(2.0))
                     .bg(color),
             );
         }
         pad.into_any_element()
+    }
+
+    fn pad_action_button(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        group: SharedString,
+        glyph: Icon,
+        tint: Rgba,
+        handler: impl Fn(&mut Self, &ClickEvent, &mut Window, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let idle = cx.palette().text_faint;
+        div()
+            .id(id.into())
+            .group(group.clone())
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(PAD_ACTION_TILE)
+            .rounded(radius(Radius::Sm))
+            .cursor_pointer()
+            .hover(move |s| s.bg(with_alpha(tint, PAD_ACTION_HOVER_ALPHA)))
+            .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                cx.stop_propagation();
+                handler(this, ev, window, cx);
+            }))
+            .child(
+                svg()
+                    .flex_none()
+                    .size(PAD_ACTION_GLYPH)
+                    .path(glyph.path())
+                    .text_color(idle)
+                    .group_hover(group, move |s| s.text_color(tint)),
+            )
+            .into_any_element()
     }
 
     fn render_grid(&self, elements: Vec<AnyElement>) -> AnyElement {
@@ -1553,7 +1782,12 @@ impl SoundboardView {
                     .child(save),
             );
 
-        let card = modal(tr!("soundboard_modal_title_add"), body, palette)
+        let title = if modal_state.edit_id.is_some() {
+            tr!("soundboard_modal_title_edit")
+        } else {
+            tr!("soundboard_modal_title_add")
+        };
+        let card = modal(title, body, palette)
             .header_icon(Icon::Music, palette.bits)
             .width(px(440.0))
             .footer(footer)
@@ -1566,6 +1800,44 @@ impl SoundboardView {
             .position(OverlayPosition::Center)
             .on_dismiss("sb-modal-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.close_modal(cx));
+            })
+            .into_any_element()
+    }
+
+    fn render_delete_confirm(
+        &self,
+        id: ClipId,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let name = self
+            .clips
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        let card = confirm_modal(
+            tr!("soundboard_delete_title"),
+            tr!("soundboard_delete_body"),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .item_name(name)
+        .on_cancel(
+            "sb-del-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
+        )
+        .on_confirm(
+            "sb-del-confirm",
+            tr!("common_delete"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
+        );
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("sb-del-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_delete(cx));
             })
             .into_any_element()
     }
@@ -1651,10 +1923,12 @@ impl Render for SoundboardView {
                     .child(inner),
             );
 
-        let modal_overlay = self
-            .modal
-            .as_ref()
-            .map(|modal_state| self.render_modal(modal_state, &palette, density, cx));
+        let active_overlay = if let Some(modal_state) = self.modal.as_ref() {
+            Some(self.render_modal(modal_state, &palette, density, cx))
+        } else {
+            self.pending_delete
+                .map(|id| self.render_delete_confirm(id, &palette, cx))
+        };
 
         div()
             .size_full()
@@ -1663,7 +1937,7 @@ impl Render for SoundboardView {
             .bg(palette.base)
             .child(header)
             .child(body)
-            .children(modal_overlay)
+            .children(active_overlay)
     }
 }
 

@@ -1226,6 +1226,8 @@ soundboard_modal_save_btn = Зберегти
 soundboard_modal_saving_btn = Збереження…
 soundboard_modal_cancel_btn = Скасувати
 soundboard_modal_validation_error = Назва та аудіофайл обов'язкові.
+soundboard_delete_title = Видалити кліп?
+soundboard_delete_body = Це назавжди видалить кліп зі звукової панелі.
 
 ## Звукова панель - назви секцій модального вікна
 

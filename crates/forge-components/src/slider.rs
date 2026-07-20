@@ -65,9 +65,13 @@ impl Render for DragGhost {
     }
 }
 
-/// Drag-payload marker; `on_drag_move` keys on an active drag of this type to keep
-/// delivering move events once the cursor leaves the track bounds.
-struct SliderDrag;
+/// Drag payload; `on_drag_move` keys on an active drag of this type to keep
+/// delivering move events once the cursor leaves the track bounds. Carries the
+/// originating slider's id because gpui fans a typed drag out to EVERY listener
+/// of that type - each handler must ignore drags it did not start.
+struct SliderDrag {
+    id: ElementId,
+}
 
 impl Slider {
     /// Makes the slider draggable; without it the slider is a static read-only bar. The
@@ -125,11 +129,18 @@ impl RenderOnce for Slider {
         match (self.id, self.on_change) {
             (Some(id), Some(handler)) => {
                 let (min, max) = (self.min, self.max);
+                let drag_id = id.clone();
+                let payload_id = id.clone();
                 track
                     .id(id)
                     .cursor_pointer()
-                    .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| DragGhost))
+                    .on_drag(SliderDrag { id: payload_id }, |_, _, _, cx| {
+                        cx.new(|_| DragGhost)
+                    })
                     .on_drag_move(move |e: &DragMoveEvent<SliderDrag>, window, cx| {
+                        if e.drag(cx).id != drag_id {
+                            return;
+                        }
                         let width = e.bounds.right() - e.bounds.left();
                         let f = if width > px(0.0) {
                             ((e.event.position.x - e.bounds.left()) / width).clamp(0.0, 1.0)

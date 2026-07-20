@@ -7,9 +7,9 @@ use forge_platform_core::paths;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Config, EventBus, QueueScheduler, SchedulerCell,
-    ScriptRegistry, SoundPlayer, SpeakDispatcher, TtsTriggerSettingsHandle,
-    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_chat_moderation_persistence,
+    ScriptRegistry, SoundPlayer, SpeakDispatcher, register_audio_sub_actions,
+    register_core_sub_actions, register_core_triggers, spawn_action_engine,
+    spawn_chat_history_persistence, spawn_chat_moderation_persistence,
     spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
@@ -164,16 +164,6 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
 
-    let tts_trigger_settings = {
-        let repo = backend.tts_trigger_settings_repo();
-        let loaded = repo.get_trigger_settings().await.unwrap_or_else(|e| {
-            eprintln!(
-                "forge-desktop: failed to load tts trigger settings on boot, using defaults: {e}"
-            );
-            forge_storage::TtsTriggerSettings::default()
-        });
-        TtsTriggerSettingsHandle::new(loaded)
-    };
     let soundboard_player = Arc::new(SoundboardPlayer::new(
         Arc::new(CpalSinkFactory),
         Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
@@ -185,7 +175,6 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
                 &mut sub_action_reg,
                 Arc::clone(&soundboard_player) as Arc<dyn SoundPlayer>,
                 dispatcher,
-                tts_trigger_settings.clone(),
             ) {
                 eprintln!("forge-desktop: audio sub-action runner registration failed: {e}");
             }
@@ -264,7 +253,6 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         builtins: integrations.builtins,
         server,
         speak,
-        tts_trigger_settings,
         speak_events,
         pipeline_config,
         tts_registry,

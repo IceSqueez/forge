@@ -15,7 +15,6 @@ pub mod soundboard;
 pub mod transit;
 pub mod trigger_instance;
 pub mod tts_filters;
-pub mod tts_triggers;
 pub mod user_globals;
 pub mod viewer;
 pub mod voice_aliases;
@@ -46,7 +45,6 @@ pub use trigger_instance::TriggerInstanceRepo;
 pub use tts_filters::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
 };
-pub use tts_triggers::{TtsTriggerSettings, TtsTriggerSettingsRepo};
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};

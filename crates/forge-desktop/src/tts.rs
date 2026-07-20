@@ -16,7 +16,6 @@ use crate::speak_state::SpeakState;
 use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
 use crate::tts_filters::TtsFiltersView;
-use crate::tts_triggers::TtsTriggersView;
 use crate::voice_aliases::VoiceAliasesView;
 
 const TAB_PAD_V: Pixels = px(7.0);
@@ -49,16 +48,14 @@ pub enum TtsSection {
     Engines,
     Aliases,
     Filters,
-    Triggers,
 }
 
 impl TtsSection {
-    const ALL: [TtsSection; 5] = [
+    const ALL: [TtsSection; 4] = [
         TtsSection::Dashboard,
         TtsSection::Engines,
         TtsSection::Aliases,
         TtsSection::Filters,
-        TtsSection::Triggers,
     ];
 
     fn label(self) -> String {
@@ -67,7 +64,6 @@ impl TtsSection {
             TtsSection::Engines => tr!("tts_tab_engines"),
             TtsSection::Aliases => tr!("tts_tab_aliases"),
             TtsSection::Filters => tr!("tts_tab_filters"),
-            TtsSection::Triggers => tr!("tts_tab_triggers"),
         }
     }
 
@@ -77,7 +73,6 @@ impl TtsSection {
             TtsSection::Engines => "engines",
             TtsSection::Aliases => "aliases",
             TtsSection::Filters => "filters",
-            TtsSection::Triggers => "triggers",
         }
     }
 }
@@ -88,7 +83,6 @@ pub struct TtsView {
     engines: Entity<TtsEnginesView>,
     aliases: Entity<VoiceAliasesView>,
     filters: Entity<TtsFiltersView>,
-    triggers: Entity<TtsTriggersView>,
     tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
     speak: Option<SpeakQueueHandle>,
 }
@@ -101,7 +95,6 @@ impl TtsView {
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         pipeline_config: Option<PipelineConfigHandle>,
-        tts_trigger_settings: forge_runtime::TtsTriggerSettingsHandle,
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -137,14 +130,6 @@ impl TtsView {
                 cx,
             )
         });
-        let triggers = cx.new(|cx| {
-            TtsTriggersView::new(
-                backend.tts_trigger_settings_repo(),
-                tts_trigger_settings,
-                rt_handle.clone(),
-                cx,
-            )
-        });
         let aliases = cx.new(|cx| {
             VoiceAliasesView::new(
                 backend.voice_alias_repo(),
@@ -160,7 +145,6 @@ impl TtsView {
             engines,
             aliases,
             filters,
-            triggers,
             tts_registry,
             speak,
         }
@@ -277,7 +261,6 @@ impl TtsView {
             TtsSection::Engines => self.engines.clone().into_any_element(),
             TtsSection::Aliases => self.aliases.clone().into_any_element(),
             TtsSection::Filters => self.filters.clone().into_any_element(),
-            TtsSection::Triggers => self.triggers.clone().into_any_element(),
         }
     }
 }

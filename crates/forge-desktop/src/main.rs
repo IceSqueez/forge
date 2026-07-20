@@ -53,7 +53,6 @@ mod tts;
 mod tts_dashboard;
 mod tts_engines;
 mod tts_filters;
-mod tts_triggers;
 mod twitch_panel;
 mod uptime_view;
 mod voice_aliases;

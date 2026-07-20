@@ -855,7 +855,6 @@ tts_tab_dashboard = Dashboard
 tts_tab_engines = Engines
 tts_tab_aliases = Voice aliases
 tts_tab_filters = Filters
-tts_tab_triggers = Triggers
 
 ## TTS - breadcrumb
 
@@ -1097,58 +1096,6 @@ tts_filters_skip_reason_blocked = blocked word
 tts_filters_skip_reason_empty = empty after filters
 tts_filters_delete_title = Delete rule?
 tts_filters_delete_body = This rule will be removed from the preprocessing pipeline.
-
-## TTS Triggers - header
-
-tts_triggers_header = WHAT GETS SPOKEN
-tts_triggers_hint = Enable sources and set who can trigger them
-
-## TTS Triggers - command card
-
-tts_triggers_cmd_title = Chat command
-tts_triggers_cmd_subtitle = !tts <message>
-tts_triggers_cmd_meta = cooldown 8s · max 250 chars
-
-## TTS Triggers - channel points card
-
-tts_triggers_points_title = Channel point reward
-tts_triggers_points_subtitle = "Speak my message" · 500 pts
-tts_triggers_points_meta = no cooldown · priority queue
-
-## TTS Triggers - bits card
-
-tts_triggers_bits_title = Bits / cheers
-tts_triggers_bits_subtitle = Speak cheer message
-tts_triggers_bits_min_label = Minimum
-tts_triggers_bits_min_value = 100 bits
-tts_triggers_bits_meta = louder = longer message
-
-## TTS Triggers - sub messages card
-
-tts_triggers_subs_title = Sub messages
-tts_triggers_subs_subtitle = Speak resub / gift messages
-tts_triggers_subs_disabled = Disabled - toggle to enable
-
-## TTS Triggers - format card
-
-tts_triggers_format_header = MESSAGE FORMAT
-tts_triggers_format_read_username = Read username before message
-tts_triggers_format_template_header = TEMPLATE
-tts_triggers_format_speak_emotes = Speak emotes as words
-
-## TTS Triggers - queue behavior card
-
-tts_triggers_queue_header = QUEUE BEHAVIOR
-tts_triggers_queue_max_length = Max queue length
-tts_triggers_queue_per_user_limit = Per-user limit in queue
-tts_triggers_queue_bits_skip = Bits & points skip the line
-
-## TTS Triggers - role chips
-
-tts_triggers_role_subscribers = Subscribers
-tts_triggers_role_vips = VIPs
-tts_triggers_role_mods = Mods
-tts_triggers_role_everyone = Everyone
 
 ## Cloud TTS Engines - card buttons
 

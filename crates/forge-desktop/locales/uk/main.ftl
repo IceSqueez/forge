@@ -857,7 +857,6 @@ tts_tab_dashboard = Панель
 tts_tab_engines = Рушії
 tts_tab_aliases = Псевдоніми голосів
 tts_tab_filters = Фільтри
-tts_tab_triggers = Тригери
 
 ## TTS - хлібні крихти
 
@@ -1102,58 +1101,6 @@ tts_filters_skip_reason_blocked = заблоковане слово
 tts_filters_skip_reason_empty = порожнє після фільтрів
 tts_filters_delete_title = Видалити правило?
 tts_filters_delete_body = Це правило буде вилучено з конвеєра попередньої обробки.
-
-## TTS Triggers - заголовок
-
-tts_triggers_header = ЩО ОЗВУЧУЄТЬСЯ
-tts_triggers_hint = Вмикайте джерела та визначайте, хто може запускати TTS
-
-## TTS Triggers - картка команди
-
-tts_triggers_cmd_title = Команда в чаті
-tts_triggers_cmd_subtitle = !tts <повідомлення>
-tts_triggers_cmd_meta = затримка 8 с · макс. 250 символів
-
-## TTS Triggers - картка балів каналу
-
-tts_triggers_points_title = Нагорода за бали каналу
-tts_triggers_points_subtitle = «Озвучити моє повідомлення» · 500 балів
-tts_triggers_points_meta = без затримки · пріоритетна черга
-
-## TTS Triggers - картка бітсів
-
-tts_triggers_bits_title = Бітси / вигуки
-tts_triggers_bits_subtitle = Озвучити повідомлення вигуку
-tts_triggers_bits_min_label = Мінімум
-tts_triggers_bits_min_value = 100 бітів
-tts_triggers_bits_meta = більше = довше повідомлення
-
-## TTS Triggers - картка підписок
-
-tts_triggers_subs_title = Повідомлення підписок
-tts_triggers_subs_subtitle = Озвучувати ресаб / подаровані підписки
-tts_triggers_subs_disabled = Вимкнено - увімкніть перемикач
-
-## TTS Triggers - картка формату
-
-tts_triggers_format_header = ФОРМАТ ПОВІДОМЛЕННЯ
-tts_triggers_format_read_username = Читати ім'я користувача перед повідомленням
-tts_triggers_format_template_header = ШАБЛОН
-tts_triggers_format_speak_emotes = Вимовляти емоути як слова
-
-## TTS Triggers - картка поведінки черги
-
-tts_triggers_queue_header = ПОВЕДІНКА ЧЕРГИ
-tts_triggers_queue_max_length = Максимальна довжина черги
-tts_triggers_queue_per_user_limit = Ліміт на одного користувача в черзі
-tts_triggers_queue_bits_skip = Бітси та бали пропускають чергу
-
-## TTS Triggers - чіпи ролей
-
-tts_triggers_role_subscribers = Підписники
-tts_triggers_role_vips = VIP
-tts_triggers_role_mods = Модератори
-tts_triggers_role_everyone = Усі
 
 ## Хмарні рушії - кнопки картки
 

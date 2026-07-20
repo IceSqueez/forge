@@ -17,7 +17,6 @@ use forge_storage::settings::MockSettingsRepo;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::tts_filters::MockTtsFiltersRepo;
-use forge_storage::tts_triggers::MockTtsTriggerSettingsRepo;
 use forge_storage::user_globals::MockUserGlobalsRepo;
 use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
@@ -26,7 +25,7 @@ use forge_storage::{
     CredentialId, CredentialsRepo, DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry,
     GlobalsRepo, HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
     SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    TtsTriggerSettingsRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -41,7 +40,6 @@ pub struct TestDataProvider {
     pub voice_alias_repo: Arc<MockVoiceAliasRepo>,
     pub viewer_repo: Arc<MockViewerRepo>,
     pub tts_filters_repo: Arc<MockTtsFiltersRepo>,
-    pub tts_trigger_settings_repo: Arc<MockTtsTriggerSettingsRepo>,
     pub chat_history_repo: Arc<MockChatHistoryRepo>,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
@@ -62,7 +60,6 @@ impl TestDataProvider {
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
             viewer_repo: Arc::new(MockViewerRepo::new()),
             tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
-            tts_trigger_settings_repo: Arc::new(MockTtsTriggerSettingsRepo::new()),
             chat_history_repo: Arc::new(MockChatHistoryRepo::new()),
             globals_repo: Arc::new(MockGlobalsRepo::new()),
             user_globals_repo: Arc::new(MockUserGlobalsRepo::new()),
@@ -365,10 +362,6 @@ impl DataProvider for TestDataProvider {
 
     fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo> {
         Arc::clone(&self.tts_filters_repo) as Arc<dyn TtsFiltersRepo>
-    }
-
-    fn tts_trigger_settings_repo(&self) -> Arc<dyn TtsTriggerSettingsRepo> {
-        Arc::clone(&self.tts_trigger_settings_repo) as Arc<dyn TtsTriggerSettingsRepo>
     }
 
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {

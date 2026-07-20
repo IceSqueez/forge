@@ -8,8 +8,8 @@ use forge_storage::{
     CredentialId, CredentialsRepo, DataProvider, EXPECTED_SCHEMA_VERSION, EventLogRepo,
     ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, ImportMode, QueueRepo,
     ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, TtsTriggerSettingsRepo, UserGlobalEntry, UserGlobalsRepo,
-    ViewerRepo, VoiceAliasRepo,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
@@ -21,8 +21,7 @@ use crate::{
     SqliteActionRepo, SqliteBundleRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo,
     SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo,
     SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
-    SqliteTtsTriggerSettingsRepo, SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo,
-    apply_migrations, connect,
+    SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -43,7 +42,6 @@ pub struct SqliteBackend {
     voice_alias: Arc<SqliteVoiceAliasRepo>,
     viewer: Arc<SqliteViewerRepo>,
     tts_filters: Arc<SqliteTtsFiltersRepo>,
-    tts_trigger_settings: Arc<SqliteTtsTriggerSettingsRepo>,
     chat_history: Arc<SqliteChatHistoryRepo>,
     bundle: SqliteBundleRepo,
     shutdown: Arc<Notify>,
@@ -150,7 +148,6 @@ impl SqliteBackend {
             voice_alias: Arc::new(SqliteVoiceAliasRepo::new(pool.clone())),
             viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
             tts_filters: Arc::new(SqliteTtsFiltersRepo::new(pool.clone())),
-            tts_trigger_settings: Arc::new(SqliteTtsTriggerSettingsRepo::new(pool.clone())),
             chat_history: Arc::new(SqliteChatHistoryRepo::new(pool.clone())),
             bundle: SqliteBundleRepo::new(pool.clone()),
             credentials,
@@ -465,10 +462,6 @@ impl DataProvider for SqliteBackend {
 
     fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo> {
         Arc::clone(&self.tts_filters) as Arc<dyn TtsFiltersRepo>
-    }
-
-    fn tts_trigger_settings_repo(&self) -> Arc<dyn TtsTriggerSettingsRepo> {
-        Arc::clone(&self.tts_trigger_settings) as Arc<dyn TtsTriggerSettingsRepo>
     }
 
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {

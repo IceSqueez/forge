@@ -30,7 +30,6 @@ pub struct RuntimeHandles {
     pub server: Option<forge_server::ServerHandle>,
     /// `None` only if speak-queue construction failed.
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
-    pub tts_trigger_settings: forge_runtime::TtsTriggerSettingsHandle,
     /// `None` only when the speak subsystem doesn't build.
     pub pipeline_config: Option<forge_speak_queue::PipelineConfigHandle>,
     /// Taken once by the boot bridge task; not `Clone`.

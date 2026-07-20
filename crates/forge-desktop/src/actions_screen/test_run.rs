@@ -541,7 +541,14 @@ impl ScreenActionsView {
             .trigger_menu
             .map(|pos| self.render_trigger_menu(run, pos, palette, cx));
 
-        div().child(card_overlay).children(menu).into_any_element()
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .child(card_overlay)
+            .children(menu)
+            .into_any_element()
     }
 
     fn render_trigger_selector(

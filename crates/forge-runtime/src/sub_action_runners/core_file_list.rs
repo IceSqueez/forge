@@ -143,7 +143,9 @@ impl SubActionRunner for CoreFileListRunner {
 
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
 
-        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
+        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&interpolated_path)
+            .await
+        {
             Err(reason) => (
                 SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
                 None,

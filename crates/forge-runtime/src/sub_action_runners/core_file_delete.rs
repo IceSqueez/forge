@@ -84,7 +84,7 @@ impl SubActionRunner for CoreFileDeleteRunner {
 
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
 
-        let outcome = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
+        let outcome = match super::file_sandbox::resolve_sandboxed(&interpolated_path).await {
             Err(reason) => SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
             Ok(abs_path) => match tokio::fs::remove_file(&abs_path).await {
                 Ok(()) => SubActionOutcome::Success,

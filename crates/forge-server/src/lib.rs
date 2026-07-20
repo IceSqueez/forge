@@ -9,6 +9,7 @@ pub mod config;
 pub mod error;
 pub mod handle;
 pub mod protocol;
+mod sandbox;
 pub mod server;
 pub mod server_info;
 pub mod snapshot;

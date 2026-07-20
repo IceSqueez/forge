@@ -393,23 +393,14 @@ pub(crate) async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchCont
             Err(_) => continue,
         };
         while let Ok(Some(entry)) = read_dir.next_entry().await {
-            let canon_entry = match tokio::fs::canonicalize(entry.path()).await {
-                Ok(p) => p,
-                Err(_) => continue,
+            let canon_entry = match crate::sandbox::confine(root, &entry.path()).await {
+                Some(p) => p,
+                None => continue,
             };
-            if !canon_entry.starts_with(&canon_root) {
-                continue;
-            }
             let rel = match canon_entry.strip_prefix(&canon_root) {
                 Ok(r) => r.to_owned(),
                 Err(_) => continue,
             };
-            if rel
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-            {
-                continue;
-            }
             let meta = match entry.metadata().await {
                 Ok(m) => m,
                 Err(_) => continue,

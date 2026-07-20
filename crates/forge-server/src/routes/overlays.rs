@@ -82,19 +82,11 @@ async fn resolve_and_read(state: &AppState, url_path: &str) -> Result<Vec<u8>, S
     }
 
     let root = state.overlay_root.as_ref();
-    let joined = root.join(url_path.trim_start_matches('/'));
+    let requested = std::path::Path::new(url_path.trim_start_matches('/'));
 
-    let canon_root = tokio::fs::canonicalize(root)
+    let canon_file = crate::sandbox::confine(root, requested)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
-
-    let canon_file = tokio::fs::canonicalize(&joined)
-        .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
-
-    if !canon_file.starts_with(&canon_root) {
-        return Err(StatusCode::NOT_FOUND);
-    }
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     let meta = tokio::fs::metadata(&canon_file)
         .await

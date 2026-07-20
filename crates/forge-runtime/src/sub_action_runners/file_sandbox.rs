@@ -1,8 +1,7 @@
 use std::path::{Component, PathBuf};
 
-/// Rejects absolute paths, Windows path prefixes, and parent-dir (`..`) traversal.
-/// Confines the resolved result to `<data_dir>/assets/`.
-pub(super) fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
+/// Canonicalizes the deepest existing prefix to reject a symlink escape inside `assets/`.
+pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err("path is empty".to_owned());
     }
@@ -19,8 +18,30 @@ pub(super) fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
             _ => {}
         }
     }
+
     let root = forge_platform_core::paths::data_dir().join("assets");
-    Ok(root.join(candidate))
+    let Ok(canon_root) = tokio::fs::canonicalize(&root).await else {
+        return Ok(root.join(candidate));
+    };
+
+    let mut canon_prefix = canon_root.clone();
+    let mut remaining = candidate.components().peekable();
+    while let Some(component) = remaining.peek().copied() {
+        let probe = canon_prefix.join(component.as_os_str());
+        match tokio::fs::canonicalize(&probe).await {
+            Ok(canon_probe) => {
+                if !canon_probe.starts_with(&canon_root) {
+                    return Err("path escapes sandbox root".to_owned());
+                }
+                canon_prefix = canon_probe;
+                remaining.next();
+            }
+            Err(_) => break,
+        }
+    }
+
+    let tail: PathBuf = remaining.collect();
+    Ok(canon_prefix.join(tail))
 }
 
 /// `*` wildcard matches any character sequence in `name`; all other characters are literal.
@@ -61,8 +82,8 @@ mod tests {
 
     // Security boundary: every input here MUST be rejected. A regression that
     // lets any of them through is a sandbox escape (read/write outside assets/).
-    #[test]
-    fn resolve_sandboxed_rejects_traversal_and_rooted_paths() {
+    #[tokio::test]
+    async fn resolve_sandboxed_rejects_traversal_and_rooted_paths() {
         let escapes = [
             "..",                // bare parent
             "../etc/passwd",     // leading parent traversal
@@ -76,20 +97,24 @@ mod tests {
         ];
         for bad in escapes {
             assert!(
-                resolve_sandboxed(bad).is_err(),
+                resolve_sandboxed(bad).await.is_err(),
                 "expected sandbox rejection for {bad:?}"
             );
         }
     }
 
-    #[test]
-    fn resolve_sandboxed_joins_valid_relative_under_assets_root() {
+    #[tokio::test]
+    async fn resolve_sandboxed_joins_valid_relative_under_assets_root() {
         let root = forge_platform_core::paths::data_dir().join("assets");
-        let resolved = resolve_sandboxed("sub/file.txt").unwrap();
+        let expected_root = tokio::fs::canonicalize(&root).await.unwrap_or(root);
+        let resolved = resolve_sandboxed("sub/file.txt").await.unwrap();
         // Confined to the assets root...
-        assert!(resolved.starts_with(&root), "{resolved:?} escaped {root:?}");
+        assert!(
+            resolved.starts_with(&expected_root),
+            "{resolved:?} escaped {expected_root:?}"
+        );
         // ...and the relative tail is appended verbatim (not dropped/rewritten).
-        assert_eq!(resolved, root.join("sub").join("file.txt"));
+        assert_eq!(resolved, expected_root.join("sub").join("file.txt"));
     }
 
     // `*` is the only wildcard; every other char (including `?`) is literal;

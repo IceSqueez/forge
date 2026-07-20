@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_audio::{
     AudioError, AudioSink, CpalSink, DeviceId, NullAudioEventSink, list_output_devices,
+    pick_default_output_device,
 };
 use forge_types::OutputDevice;
 
@@ -30,12 +31,7 @@ fn resolve_device_id(device: &OutputDevice) -> Result<DeviceId, AudioError> {
     match device {
         OutputDevice::Default => {
             let devices = list_output_devices()?;
-            devices
-                .into_iter()
-                .find(|d| d.is_default)
-                .or_else(|| list_output_devices().ok()?.into_iter().next())
-                .map(|d| d.id)
-                .ok_or(AudioError::NoDefaultDevice)
+            pick_default_output_device(&devices).ok_or(AudioError::NoDefaultDevice)
         }
         OutputDevice::ByName { name } => {
             let devices = list_output_devices()?;
@@ -46,12 +42,7 @@ fn resolve_device_id(device: &OutputDevice) -> Result<DeviceId, AudioError> {
                 "output device '{}' not found, falling back to default",
                 name
             );
-            devices
-                .into_iter()
-                .find(|d| d.is_default)
-                .or_else(|| list_output_devices().ok()?.into_iter().next())
-                .map(|d| d.id)
-                .ok_or(AudioError::NoDefaultDevice)
+            pick_default_output_device(&devices).ok_or(AudioError::NoDefaultDevice)
         }
         OutputDevice::ById { id } => Ok(DeviceId::new(id)),
     }

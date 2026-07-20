@@ -1,9 +1,40 @@
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::AudioError;
+
+const NOISE_ID_PREFIXES: &[&str] = &[
+    "dmix",
+    "dsnoop",
+    "dcmix",
+    "surround",
+    "front",
+    "rear",
+    "center_lfe",
+    "side",
+    "iec958",
+    "spdif",
+    "hdmi",
+    "usbstream",
+    "samplerate",
+    "speexrate",
+    "upmix",
+    "vdownmix",
+    "lavrate",
+    "plug:",
+    "plughw:",
+    "hw:",
+];
+
+fn is_noise_device_id(id_str: &str) -> bool {
+    id_str == "null"
+        || NOISE_ID_PREFIXES
+            .iter()
+            .any(|prefix| id_str.starts_with(prefix))
+}
 
 pub use forge_types::OutputDevice;
 
@@ -75,7 +106,7 @@ fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
         .output_devices()
         .map_err(|e| AudioError::Host(e.to_string()))?;
 
-    let mut out = Vec::new();
+    let mut all = Vec::new();
     for device in devices {
         let Ok(desc) = device.description() else {
             continue;
@@ -86,13 +117,52 @@ fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
             .map(|id| id.id().to_owned())
             .unwrap_or_else(|_| name.clone());
         let is_default = !default_name.is_empty() && name == default_name;
-        out.push(DeviceInfo {
+        all.push(DeviceInfo {
             id: DeviceId::new(id_str),
             name,
             is_default,
         });
     }
+
+    let default_entry = all.iter().find(|d| d.is_default).cloned();
+
+    let mut out = Vec::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+    for device in all {
+        if is_noise_device_id(device.id.as_str()) {
+            continue;
+        }
+        if !seen_names.insert(device.name.clone()) {
+            continue;
+        }
+        out.push(device);
+    }
+
+    if !out.iter().any(|d| d.is_default)
+        && let Some(default_entry) = default_entry
+    {
+        out.push(default_entry);
+    }
+
     Ok(out)
+}
+
+/// Preference chain for an unconfigured output: a non-null device the host
+/// reports as default, else "default"/"pipewire"/"pulse" by id, else any
+/// non-null device, else whatever is first. Guards against ALSA's `null` PCM
+/// plugin winning `is_default` or first-position on PipeWire-ALSA setups.
+pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
+    devices
+        .iter()
+        .find(|d| d.is_default && d.id.as_str() != "null")
+        .or_else(|| {
+            ["default", "pipewire", "pulse"]
+                .iter()
+                .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
+        })
+        .or_else(|| devices.iter().find(|d| d.id.as_str() != "null"))
+        .or_else(|| devices.first())
+        .map(|d| d.id.clone())
 }
 
 #[cfg(test)]

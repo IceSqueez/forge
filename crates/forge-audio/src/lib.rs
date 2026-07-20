@@ -13,7 +13,10 @@ pub mod sink;
 
 pub use cpal_sink::CpalSink;
 pub use decode::{decode_bytes, decode_file, probe_duration_secs};
-pub use device::{DeviceId, DeviceInfo, OutputDevice, list_output_devices, refresh_output_devices};
+pub use device::{
+    DeviceId, DeviceInfo, OutputDevice, list_output_devices, pick_default_output_device,
+    refresh_output_devices,
+};
 pub use error::AudioError;
 pub use events::{AudioEvent, AudioEventSink, NullAudioEventSink};
 pub use fan_out::{fan_out, fan_out_stoppable};

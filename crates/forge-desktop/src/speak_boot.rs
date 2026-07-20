@@ -86,17 +86,7 @@ async fn resolve_audio_output_device(backend: &Arc<dyn DataProvider>) -> Option<
         return Some(found.id.clone());
     }
 
-    devices
-        .iter()
-        .find(|d| d.is_default && d.id.as_str() != "null")
-        .or_else(|| {
-            ["default", "pipewire", "pulse"]
-                .iter()
-                .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
-        })
-        .or_else(|| devices.iter().find(|d| d.id.as_str() != "null"))
-        .or_else(|| devices.first())
-        .map(|d| d.id.clone())
+    forge_audio::pick_default_output_device(&devices)
 }
 
 async fn register_local_engines(registry: &mut TtsRegistry) {

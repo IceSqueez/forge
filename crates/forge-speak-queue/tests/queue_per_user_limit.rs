@@ -101,6 +101,7 @@ fn make_deps() -> QueueDeps {
         audio_sink: Arc::new(NullSink),
         event_bus: Arc::new(NullPublisher),
         disabled_engines: std::collections::HashSet::new(),
+        engine_gains: std::collections::HashMap::new(),
     }
 }
 

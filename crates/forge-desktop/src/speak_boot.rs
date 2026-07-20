@@ -181,6 +181,36 @@ async fn load_resolver(backend: &Arc<dyn DataProvider>) -> VoiceAliasResolver {
     VoiceAliasResolver::new(aliases, strategy, profile, defaults)
 }
 
+async fn load_engine_params(
+    backend: &Arc<dyn DataProvider>,
+    engine_ids: &[EngineId],
+) -> (
+    std::collections::HashMap<EngineId, SynthesisDefaults>,
+    std::collections::HashMap<EngineId, f32>,
+) {
+    let mut defaults = std::collections::HashMap::new();
+    let mut gains = std::collections::HashMap::new();
+    for engine_id in engine_ids {
+        match forge_storage::engine_params(backend.as_ref(), &engine_id.0).await {
+            Ok(params) => {
+                defaults.insert(
+                    engine_id.clone(),
+                    SynthesisDefaults {
+                        pitch_semitones: params.pitch_semitones,
+                        rate_multiplier: params.rate_multiplier,
+                    },
+                );
+                gains.insert(engine_id.clone(), params.gain);
+            }
+            Err(e) => eprintln!(
+                "forge-desktop: failed to load engine params for {}; using defaults: {e}",
+                engine_id.0
+            ),
+        }
+    }
+    (defaults, gains)
+}
+
 async fn load_master_volume(backend: &Arc<dyn DataProvider>) -> f32 {
     match forge_storage::master_volume(backend.as_ref()).await {
         Ok(volume) => volume,
@@ -239,7 +269,15 @@ pub async fn build_speak_queue(
     register_cloud_engines(&registry, creds.as_ref()).await;
     let registry = Arc::new(registry);
 
-    let resolver = Arc::new(std::sync::RwLock::new(load_resolver(backend).await));
+    let engine_ids = registry
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .engine_ids();
+    let (engine_defaults, engine_gains) = load_engine_params(backend, &engine_ids).await;
+
+    let mut resolver = load_resolver(backend).await;
+    resolver.engine_defaults = engine_defaults;
+    let resolver = Arc::new(std::sync::RwLock::new(resolver));
     let pipeline = PipelineConfigHandle::new(load_pipeline(backend).await);
     let disabled_engines = load_disabled_engines(backend).await;
 
@@ -271,6 +309,7 @@ pub async fn build_speak_queue(
         audio_sink,
         event_bus: Arc::clone(bus) as Arc<dyn EventPublisher>,
         disabled_engines,
+        engine_gains,
     };
     let queue_config = QueueConfig {
         master_volume: load_master_volume(backend).await,

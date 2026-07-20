@@ -1,7 +1,7 @@
 mod actor;
 pub mod filters;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -85,7 +85,7 @@ pub enum SpeakCommand {
     SetStrategy(AssignmentStrategy),
     /// Sets `QueueConfig::master_volume`, clamped to `0.0..=1.0`.
     SetVolume(f32),
-    SetSynthesisDefaults(SynthesisDefaults),
+    SetEngineParams(EngineId, SynthesisDefaults, f32),
     /// Drops an alias from the live resolver by id; no-op when the id is absent.
     RemoveAlias(AliasId),
     /// Rebuilds the voice catalog from the live `TtsRegistry`. Send this after
@@ -202,6 +202,7 @@ pub struct QueueDeps {
     /// Loaded from persisted settings at boot so the first catalog build already
     /// excludes these engines.
     pub disabled_engines: HashSet<EngineId>,
+    pub engine_gains: HashMap<EngineId, f32>,
 }
 
 #[derive(Clone)]
@@ -216,6 +217,7 @@ pub struct SpeakQueueHandle {
     disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
     resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     master_volume_bits: Arc<AtomicU32>,
+    engine_gains: Arc<std::sync::RwLock<Arc<HashMap<EngineId, f32>>>>,
 }
 
 impl SpeakQueueHandle {
@@ -246,6 +248,22 @@ impl SpeakQueueHandle {
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .defaults
+    }
+
+    pub fn engine_synthesis_defaults(&self, engine_id: &EngineId) -> SynthesisDefaults {
+        self.resolver
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .defaults_for(engine_id)
+    }
+
+    pub fn engine_gain(&self, engine_id: &EngineId) -> f32 {
+        self.engine_gains
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(engine_id)
+            .copied()
+            .unwrap_or(1.0)
     }
 
     pub fn master_volume(&self) -> f32 {
@@ -304,12 +322,16 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let disabled_engines = Arc::new(std::sync::RwLock::new(Arc::new(HashSet::<EngineId>::new())));
     let resolver = deps.resolver.clone();
     let master_volume_bits = Arc::new(AtomicU32::new(config.master_volume.to_bits()));
+    let engine_gains = Arc::new(std::sync::RwLock::new(Arc::new(
+        HashMap::<EngineId, f32>::new(),
+    )));
 
     let event_tx_clone = event_tx.clone();
     let depth_clone = depth.clone();
     let voices_clone = voices.clone();
     let disabled_engines_clone = disabled_engines.clone();
     let master_volume_bits_clone = master_volume_bits.clone();
+    let engine_gains_clone = engine_gains.clone();
     tokio::spawn(async move {
         actor::run_actor(
             config,
@@ -320,6 +342,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             voices_clone,
             disabled_engines_clone,
             master_volume_bits_clone,
+            engine_gains_clone,
         )
         .await;
     });
@@ -333,6 +356,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             disabled_engines,
             resolver,
             master_volume_bits,
+            engine_gains,
         },
         SpeakEventStream(event_rx),
     )
@@ -361,6 +385,7 @@ mod tests {
                 SynthesisDefaults::default(),
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            engine_gains: Arc::new(std::sync::RwLock::new(Arc::new(HashMap::new()))),
         };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
@@ -383,6 +408,7 @@ mod tests {
                 SynthesisDefaults::default(),
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            engine_gains: Arc::new(std::sync::RwLock::new(Arc::new(HashMap::new()))),
         };
         let mut sub = handle.subscribe();
         event_tx

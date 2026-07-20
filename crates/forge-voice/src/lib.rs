@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 pub use forge_tts_core::{EngineId, TtsVoice, VoiceId};
@@ -108,6 +110,7 @@ pub struct VoiceAliasResolver {
     pub strategy: AssignmentStrategy,
     pub profile: IgnoreProfile,
     pub defaults: SynthesisDefaults,
+    pub engine_defaults: HashMap<EngineId, SynthesisDefaults>,
 }
 
 impl VoiceAliasResolver {
@@ -122,7 +125,15 @@ impl VoiceAliasResolver {
             strategy,
             profile,
             defaults,
+            engine_defaults: HashMap::new(),
         }
+    }
+
+    pub fn defaults_for(&self, engine_id: &EngineId) -> SynthesisDefaults {
+        self.engine_defaults
+            .get(engine_id)
+            .copied()
+            .unwrap_or(self.defaults)
     }
 
     /// Resolution chain:
@@ -140,16 +151,19 @@ impl VoiceAliasResolver {
                 AliasState::Blocked => ResolveResult::Skip {
                     reason: "blocked by alias",
                 },
-                AliasState::Active => ResolveResult::Speak {
-                    voice_id: alias.voice_id.clone(),
-                    engine_id: alias.engine_id.clone(),
-                    pitch: alias
-                        .pitch_semitones
-                        .unwrap_or(self.defaults.pitch_semitones),
-                    rate: alias
-                        .rate_multiplier
-                        .unwrap_or(self.defaults.rate_multiplier),
-                },
+                AliasState::Active => {
+                    let engine_defaults = self.defaults_for(&alias.engine_id);
+                    ResolveResult::Speak {
+                        voice_id: alias.voice_id.clone(),
+                        engine_id: alias.engine_id.clone(),
+                        pitch: alias
+                            .pitch_semitones
+                            .unwrap_or(engine_defaults.pitch_semitones),
+                        rate: alias
+                            .rate_multiplier
+                            .unwrap_or(engine_defaults.rate_multiplier),
+                    }
+                }
             };
         }
 
@@ -181,21 +195,23 @@ impl VoiceAliasResolver {
                 voice_id,
                 engine_id,
             } => {
+                let engine_defaults = self.defaults_for(engine_id);
                 return ResolveResult::Speak {
                     voice_id: voice_id.clone(),
                     engine_id: engine_id.clone(),
-                    pitch: self.defaults.pitch_semitones,
-                    rate: self.defaults.rate_multiplier,
+                    pitch: engine_defaults.pitch_semitones,
+                    rate: engine_defaults.rate_multiplier,
                 };
             }
         };
 
         let voice = eligible[idx];
+        let engine_defaults = self.defaults_for(&voice.engine_id);
         ResolveResult::Speak {
             voice_id: voice.id.clone(),
             engine_id: voice.engine_id.clone(),
-            pitch: self.defaults.pitch_semitones,
-            rate: self.defaults.rate_multiplier,
+            pitch: engine_defaults.pitch_semitones,
+            rate: engine_defaults.rate_multiplier,
         }
     }
 }

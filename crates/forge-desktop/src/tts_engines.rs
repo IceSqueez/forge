@@ -7,7 +7,7 @@ use forge_components::{
     tr,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
-use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo};
+use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo};
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
 use forge_types::EventId;
 use forge_voice::SynthesisDefaults;
@@ -77,11 +77,6 @@ impl TtsEnginesView {
             .as_ref()
             .map(|h| h.disabled_engines().iter().map(|e| e.0.clone()).collect())
             .unwrap_or_default();
-        let synthesis_defaults = speak
-            .as_ref()
-            .map(|h| h.synthesis_defaults())
-            .unwrap_or_default();
-        let volume = speak.as_ref().map(|h| h.master_volume()).unwrap_or(1.0);
 
         let cloud = cx.new(|cx| {
             CloudCredentialsView::new(
@@ -108,9 +103,9 @@ impl TtsEnginesView {
             rt_handle,
             selected: Selection::None,
             disabled,
-            pitch_semitones: synthesis_defaults.pitch_semitones,
-            rate_multiplier: synthesis_defaults.rate_multiplier,
-            volume,
+            pitch_semitones: SynthesisDefaults::default().pitch_semitones,
+            rate_multiplier: SynthesisDefaults::default().rate_multiplier,
+            volume: 1.0,
             add_open: false,
             regions: HashMap::new(),
             cloud,
@@ -137,8 +132,27 @@ impl TtsEnginesView {
         if let Some(engine) = self.engines.get(index) {
             let id = engine.id.clone();
             self.ensure_region_loaded(&id, cx);
+            self.seed_engine_params(&id);
         }
         cx.notify();
+    }
+
+    fn seed_engine_params(&mut self, engine_id: &str) {
+        let Some(speak) = self.speak.as_ref() else {
+            return;
+        };
+        let id = EngineId(engine_id.to_owned());
+        let defaults = speak.engine_synthesis_defaults(&id);
+        self.pitch_semitones = defaults.pitch_semitones;
+        self.rate_multiplier = defaults.rate_multiplier;
+        self.volume = speak.engine_gain(&id);
+    }
+
+    fn selected_engine_id(&self) -> Option<String> {
+        match self.selected {
+            Selection::Engine(index) => self.engines.get(index).map(|e| e.id.clone()),
+            _ => None,
+        }
     }
 
     fn toggle_add_picker(&mut self, cx: &mut Context<Self>) {
@@ -188,63 +202,62 @@ impl TtsEnginesView {
 
     fn set_pitch(&mut self, value: f32, cx: &mut Context<Self>) {
         self.pitch_semitones = value.clamp(-12.0, 12.0);
-        self.push_synthesis_defaults();
+        self.push_engine_params();
         cx.notify();
     }
 
     fn set_speed(&mut self, value: f32, cx: &mut Context<Self>) {
         self.rate_multiplier = value.clamp(0.5, 2.0);
-        self.push_synthesis_defaults();
+        self.push_engine_params();
         cx.notify();
-    }
-
-    fn push_synthesis_defaults(&self) {
-        let defaults = SynthesisDefaults {
-            pitch_semitones: self.pitch_semitones,
-            rate_multiplier: self.rate_multiplier,
-        };
-        if let Some(speak) = self.speak.clone() {
-            self.rt_handle.spawn(async move {
-                if let Err(e) = speak
-                    .send(SpeakCommand::SetSynthesisDefaults(defaults))
-                    .await
-                {
-                    eprintln!("forge-desktop: set synthesis defaults failed: {e}");
-                }
-            });
-        }
-        let settings = Arc::clone(&self.settings);
-        self.rt_handle.spawn(async move {
-            if let Err(e) = forge_storage::set_synthesis_defaults(settings.as_ref(), defaults).await
-            {
-                eprintln!("forge-desktop: persist synthesis defaults failed: {e}");
-            }
-        });
     }
 
     fn set_engine_volume(&mut self, value: f32, cx: &mut Context<Self>) {
         self.volume = value.clamp(0.0, 1.0);
-        let volume = self.volume;
+        self.push_engine_params();
+        cx.notify();
+    }
+
+    fn push_engine_params(&self) {
+        let Some(engine_id) = self.selected_engine_id() else {
+            return;
+        };
+        let defaults = SynthesisDefaults {
+            pitch_semitones: self.pitch_semitones,
+            rate_multiplier: self.rate_multiplier,
+        };
+        let gain = self.volume;
         if let Some(speak) = self.speak.clone() {
+            let eid = EngineId(engine_id.clone());
             self.rt_handle.spawn(async move {
-                if let Err(e) = speak.send(SpeakCommand::SetVolume(volume)).await {
-                    eprintln!("forge-desktop: set volume failed: {e}");
+                if let Err(e) = speak
+                    .send(SpeakCommand::SetEngineParams(eid, defaults, gain))
+                    .await
+                {
+                    eprintln!("forge-desktop: set engine params failed: {e}");
                 }
             });
         }
         let settings = Arc::clone(&self.settings);
+        let params = EngineParams {
+            pitch_semitones: defaults.pitch_semitones,
+            rate_multiplier: defaults.rate_multiplier,
+            gain,
+        };
         self.rt_handle.spawn(async move {
-            if let Err(e) = forge_storage::set_master_volume(settings.as_ref(), volume).await {
-                eprintln!("forge-desktop: persist master volume failed: {e}");
+            if let Err(e) =
+                forge_storage::set_engine_params(settings.as_ref(), &engine_id, params).await
+            {
+                eprintln!("forge-desktop: persist engine params failed: {e}");
             }
         });
-        cx.notify();
     }
 
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
         self.engines = load_roster(self.registry.as_ref());
         if let Some(index) = self.engines.iter().position(|e| e.id == engine_id.0) {
             self.selected = Selection::Engine(index);
+            self.seed_engine_params(&engine_id.0.clone());
         }
         self.ensure_region_loaded(&engine_id.0.clone(), cx);
         cx.notify();

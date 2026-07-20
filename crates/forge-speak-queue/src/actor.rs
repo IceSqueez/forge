@@ -193,12 +193,15 @@ fn resolve_with_overrides(
                 .map(|v| v.engine_id.clone())
         });
         return match engine_id {
-            Some(engine_id) => ResolveResult::Speak {
-                voice_id: voice_id.clone(),
-                engine_id,
-                pitch: resolver.defaults.pitch_semitones,
-                rate: resolver.defaults.rate_multiplier,
-            },
+            Some(engine_id) => {
+                let engine_defaults = resolver.defaults_for(&engine_id);
+                ResolveResult::Speak {
+                    voice_id: voice_id.clone(),
+                    engine_id,
+                    pitch: engine_defaults.pitch_semitones,
+                    rate: engine_defaults.rate_multiplier,
+                }
+            }
             None => ResolveResult::Skip {
                 reason: "voice override not found in catalog",
             },
@@ -217,14 +220,14 @@ fn resolve_with_overrides(
     resolver.resolve(&req.viewer_id, &req.viewer_name, catalog)
 }
 
-fn apply_master_volume(mut buf: PcmBuffer, volume: f32) -> PcmBuffer {
-    if (volume - 1.0_f32).abs() < f32::EPSILON {
+fn apply_gain(mut buf: PcmBuffer, gain: f32) -> PcmBuffer {
+    if (gain - 1.0_f32).abs() < f32::EPSILON {
         return buf;
     }
     buf.samples = buf
         .samples
         .iter()
-        .map(|&s| (s as f32 * volume).clamp(i16::MIN as f32, i16::MAX as f32) as i16)
+        .map(|&s| (s as f32 * gain).clamp(i16::MIN as f32, i16::MAX as f32) as i16)
         .collect();
     buf
 }
@@ -243,6 +246,7 @@ pub(crate) async fn run_actor(
     voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
     disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
     master_volume_bits: Arc<AtomicU32>,
+    engine_gains: Arc<std::sync::RwLock<Arc<HashMap<EngineId, f32>>>>,
 ) {
     let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
     let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
@@ -252,6 +256,7 @@ pub(crate) async fn run_actor(
     let mut active_request_id: Option<RequestId> = None;
     let mut last_successful: Option<SpeakRequest> = None;
     let mut disabled: HashSet<EngineId> = deps.disabled_engines.clone();
+    let mut gains: HashMap<EngineId, f32> = deps.engine_gains.clone();
     let mut current_playback: Option<CurrentPlayback> = None;
     let mut progress_ticker: Option<tokio::time::Interval> = None;
 
@@ -261,6 +266,7 @@ pub(crate) async fn run_actor(
     let voice_catalog = Arc::new(build_voice_catalog(&deps.registry, &disabled).await);
     *voices.write().unwrap_or_else(|e| e.into_inner()) = voice_catalog.clone();
     *disabled_engines.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(disabled.clone());
+    *engine_gains.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(gains.clone());
     let mut task_deps = SynthTaskDeps {
         resolver: deps.resolver.clone(),
         pipeline: deps.pipeline.clone(),
@@ -340,6 +346,15 @@ pub(crate) async fn run_actor(
                         );
                         master_volume_bits.store(config.master_volume.to_bits(), Ordering::Relaxed);
                     }
+                    Some(SpeakCommand::SetEngineParams(engine_id, defaults, gain)) => {
+                        {
+                            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
+                            guard.engine_defaults.insert(engine_id.clone(), defaults);
+                        }
+                        gains.insert(engine_id, gain.clamp(0.0, 1.0));
+                        *engine_gains.write().unwrap_or_else(|e| e.into_inner()) =
+                            Arc::new(gains.clone());
+                    }
                     Some(c) => handle_command(
                         c,
                         &mut config,
@@ -370,6 +385,7 @@ pub(crate) async fn run_actor(
                         &mut progress_ticker,
                         &high_queue,
                         &normal_queue,
+                        &gains,
                     ).await;
                 }
             }
@@ -418,6 +434,7 @@ async fn handle_synth_result(
     progress_ticker: &mut Option<tokio::time::Interval>,
     high_queue: &VecDeque<SpeakRequest>,
     normal_queue: &VecDeque<SpeakRequest>,
+    engine_gains: &HashMap<EngineId, f32>,
 ) {
     if active_request_id.as_ref() != Some(&result.request_id) {
         return;
@@ -476,7 +493,8 @@ async fn handle_synth_result(
                     "engine_id": engine_id.0,
                 }),
             );
-            let adjusted = apply_master_volume(pcm, config.master_volume);
+            let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
+            let adjusted = apply_gain(pcm, config.master_volume * engine_gain);
             match deps.audio_sink.play_controlled(adjusted).await {
                 Ok(playback) => {
                     let mut ticker = tokio::time::interval(Duration::from_secs(1));
@@ -816,17 +834,16 @@ fn handle_command(
         SpeakCommand::SetVolume(volume) => {
             config.master_volume = volume.clamp(0.0, 1.0);
         }
-        SpeakCommand::SetSynthesisDefaults(defaults) => {
-            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-            guard.defaults = defaults;
-        }
         SpeakCommand::RemoveAlias(id) => {
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
             guard.aliases.retain(|a| a.id != id);
         }
         // Intercepted in `run_actor` before dispatch (needs to spawn an async
-        // rebuild); never reaches this synchronous handler.
-        SpeakCommand::RefreshVoiceCatalog | SpeakCommand::SetEngineEnabled(_, _) => {}
+        // rebuild, or update the handle-visible gain/resolver mirrors); never
+        // reaches this synchronous handler.
+        SpeakCommand::RefreshVoiceCatalog
+        | SpeakCommand::SetEngineEnabled(_, _)
+        | SpeakCommand::SetEngineParams(_, _, _) => {}
         SpeakCommand::Pause => {
             *paused = true;
             if let Some(c) = current_playback.as_ref() {
@@ -995,6 +1012,7 @@ mod tests {
             audio_sink: Arc::new(SilentSink),
             event_bus: Arc::new(NullPublisher),
             disabled_engines: HashSet::new(),
+            engine_gains: HashMap::new(),
         }
     }
 

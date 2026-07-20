@@ -43,6 +43,7 @@ pub mod reserved_keys {
     pub const TTS_DISABLED_ENGINES_KEY: &str = "tts.disabled_engines";
     pub const TTS_SYNTHESIS_DEFAULTS_KEY: &str = "tts.synthesis_defaults";
     pub const TTS_MASTER_VOLUME_KEY: &str = "tts.master_volume";
+    pub const TTS_ENGINE_PARAMS_KEY_PREFIX: &str = "tts.engine_params.";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -286,6 +287,45 @@ pub async fn set_synthesis_defaults(
     let json = serde_json::to_string(&defaults).map_err(|e| StorageError::Parse(e.to_string()))?;
     repo.set_string(reserved_keys::TTS_SYNTHESIS_DEFAULTS_KEY, &json)
         .await
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct EngineParams {
+    pub pitch_semitones: f32,
+    pub rate_multiplier: f32,
+    pub gain: f32,
+}
+
+impl Default for EngineParams {
+    fn default() -> Self {
+        Self {
+            pitch_semitones: 0.0,
+            rate_multiplier: 1.0,
+            gain: 1.0,
+        }
+    }
+}
+
+pub async fn engine_params(
+    repo: &dyn SettingsRepo,
+    engine_id: &str,
+) -> Result<EngineParams, StorageError> {
+    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_KEY_PREFIX);
+    let raw = repo.get_string(&key).await?;
+    Ok(raw
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default())
+}
+
+pub async fn set_engine_params(
+    repo: &dyn SettingsRepo,
+    engine_id: &str,
+    params: EngineParams,
+) -> Result<(), StorageError> {
+    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_KEY_PREFIX);
+    let json = serde_json::to_string(&params).map_err(|e| StorageError::Parse(e.to_string()))?;
+    repo.set_string(&key, &json).await
 }
 
 pub async fn master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {

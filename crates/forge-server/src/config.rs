@@ -6,7 +6,7 @@ use forge_platform_core::paths;
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
-    reserved_keys,
+    get_bool_setting, reserved_keys, set_bool_setting,
 };
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
@@ -84,12 +84,7 @@ impl Default for ServerSettings {
 
 impl ServerSettings {
     pub async fn load(repo: &dyn SettingsRepo) -> Result<Self, StorageError> {
-        let enabled = repo
-            .get_string(reserved_keys::SERVER_ENABLED_KEY)
-            .await?
-            .as_deref()
-            .map(|s| s == "true")
-            .unwrap_or(true);
+        let enabled = get_bool_setting(repo, reserved_keys::SERVER_ENABLED_KEY, true).await;
         let bind_address = repo
             .get_string(reserved_keys::SERVER_BIND_ADDRESS_KEY)
             .await?
@@ -100,30 +95,26 @@ impl ServerSettings {
             .as_deref()
             .and_then(|s| s.parse().ok())
             .unwrap_or(8081u16);
-        let lan_bind_enabled = repo
-            .get_string(reserved_keys::SERVER_LAN_BIND_ENABLED_KEY)
-            .await?
-            .as_deref()
-            .map(|s| s == "true")
-            .unwrap_or(false);
-        let auth_required_for_reads = repo
-            .get_string(reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS_KEY)
-            .await?
-            .as_deref()
-            .map(|s| s == "true")
-            .unwrap_or(false);
-        let http_overlay_require_token = repo
-            .get_string(reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY)
-            .await?
-            .as_deref()
-            .map(|s| s == "true")
-            .unwrap_or(false);
-        let overlay_cors_any_origin = repo
-            .get_string(reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY)
-            .await?
-            .as_deref()
-            .map(|s| s == "true")
-            .unwrap_or(true);
+        let lan_bind_enabled =
+            get_bool_setting(repo, reserved_keys::SERVER_LAN_BIND_ENABLED_KEY, false).await;
+        let auth_required_for_reads = get_bool_setting(
+            repo,
+            reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS_KEY,
+            false,
+        )
+        .await;
+        let http_overlay_require_token = get_bool_setting(
+            repo,
+            reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
+            false,
+        )
+        .await;
+        let overlay_cors_any_origin = get_bool_setting(
+            repo,
+            reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
+            true,
+        )
+        .await;
         let overlay_root = repo
             .get_string(reserved_keys::SERVER_OVERLAY_ROOT_KEY)
             .await?;
@@ -140,11 +131,7 @@ impl ServerSettings {
     }
 
     pub async fn save_enabled(repo: &dyn SettingsRepo, enabled: bool) -> Result<(), StorageError> {
-        repo.set_string(
-            reserved_keys::SERVER_ENABLED_KEY,
-            if enabled { "true" } else { "false" },
-        )
-        .await
+        set_bool_setting(repo, reserved_keys::SERVER_ENABLED_KEY, enabled).await
     }
 
     pub async fn save_bind_address(
@@ -170,20 +157,17 @@ impl ServerSettings {
         repo: &dyn SettingsRepo,
         enabled: bool,
     ) -> Result<(), StorageError> {
-        repo.set_string(
-            reserved_keys::SERVER_LAN_BIND_ENABLED_KEY,
-            if enabled { "true" } else { "false" },
-        )
-        .await
+        set_bool_setting(repo, reserved_keys::SERVER_LAN_BIND_ENABLED_KEY, enabled).await
     }
 
     pub async fn save_auth_required_for_reads(
         repo: &dyn SettingsRepo,
         required: bool,
     ) -> Result<(), StorageError> {
-        repo.set_string(
+        set_bool_setting(
+            repo,
             reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS_KEY,
-            if required { "true" } else { "false" },
+            required,
         )
         .await
     }
@@ -192,9 +176,10 @@ impl ServerSettings {
         repo: &dyn SettingsRepo,
         required: bool,
     ) -> Result<(), StorageError> {
-        repo.set_string(
+        set_bool_setting(
+            repo,
             reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY,
-            if required { "true" } else { "false" },
+            required,
         )
         .await
     }
@@ -203,9 +188,10 @@ impl ServerSettings {
         repo: &dyn SettingsRepo,
         allow: bool,
     ) -> Result<(), StorageError> {
-        repo.set_string(
+        set_bool_setting(
+            repo,
             reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY,
-            if allow { "true" } else { "false" },
+            allow,
         )
         .await
     }

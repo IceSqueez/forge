@@ -1,4 +1,4 @@
-use forge_storage::{SettingsRepo, reserved_keys};
+use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
 
 pub struct ScriptHttpConfig {
     pub allowed_domains: Vec<String>,
@@ -53,13 +53,12 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(defaults.timeout_ms);
 
-    let allow_local = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL_KEY)
-        .await
-        .ok()
-        .flatten()
-        .map(|s| s.eq_ignore_ascii_case("true"))
-        .unwrap_or(defaults.allow_local);
+    let allow_local = get_bool_setting(
+        repo,
+        reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL_KEY,
+        defaults.allow_local,
+    )
+    .await;
 
     let max_response_bytes = repo
         .get_string(reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY)

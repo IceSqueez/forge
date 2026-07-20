@@ -6,7 +6,7 @@ use forge_components::{
     with_alpha,
 };
 use forge_script::{ScriptHttpConfig, load_script_http_config};
-use forge_storage::{DataProvider, SettingsRepo, reserved_keys};
+use forge_storage::{DataProvider, SettingsRepo, reserved_keys, set_bool_setting};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div,
     prelude::*, px, relative,
@@ -701,9 +701,10 @@ async fn do_save(repo: Arc<dyn SettingsRepo>, p: SavePayload) -> Result<(), Stri
     )
     .await
     .map_err(|e| e.to_string())?;
-    repo.set_string(
+    set_bool_setting(
+        repo.as_ref(),
         reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL_KEY,
-        if p.allow_local { "true" } else { "false" },
+        p.allow_local,
     )
     .await
     .map_err(|e| e.to_string())?;

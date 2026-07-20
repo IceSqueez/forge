@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_storage::{SettingsRepo, reserved_keys};
+use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -70,13 +70,12 @@ impl CoreHttpRunner {
     }
 
     async fn allow_local(&self) -> bool {
-        self.settings
-            .get_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY)
-            .await
-            .ok()
-            .flatten()
-            .map(|s| s.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
+        get_bool_setting(
+            self.settings.as_ref(),
+            reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY,
+            false,
+        )
+        .await
     }
 }
 

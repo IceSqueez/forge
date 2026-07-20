@@ -234,6 +234,32 @@ pub trait SettingsRepo: Send + Sync {
     }
 }
 
+fn decode_bool_setting(s: &str) -> Option<bool> {
+    if s == "1" || s.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if s == "0" || s.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+pub async fn get_bool_setting(repo: &dyn SettingsRepo, key: &str, default: bool) -> bool {
+    match repo.get_string(key).await {
+        Ok(Some(s)) => decode_bool_setting(&s).unwrap_or(default),
+        _ => default,
+    }
+}
+
+pub async fn set_bool_setting(
+    repo: &dyn SettingsRepo,
+    key: &str,
+    value: bool,
+) -> Result<(), StorageError> {
+    repo.set_string(key, if value { "true" } else { "false" })
+        .await
+}
+
 pub async fn chat_history_store_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
     let raw = repo
         .get_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT_KEY)
@@ -365,18 +391,14 @@ pub async fn set_chat_history_display_limit(
 }
 
 pub async fn soundboard_enabled(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::SOUNDBOARD_ENABLED_KEY)
-        .await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(true))
+    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED_KEY, true).await)
 }
 
 pub async fn set_soundboard_enabled(
     repo: &dyn SettingsRepo,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    repo.set_string(reserved_keys::SOUNDBOARD_ENABLED_KEY, &enabled.to_string())
-        .await
+    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED_KEY, enabled).await
 }
 
 pub async fn soundboard_output_device(
@@ -422,21 +444,14 @@ pub async fn set_soundboard_master_volume(
 }
 
 pub async fn soundboard_also_headphones(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY)
-        .await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(false))
+    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY, false).await)
 }
 
 pub async fn set_soundboard_also_headphones(
     repo: &dyn SettingsRepo,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY,
-        &enabled.to_string(),
-    )
-    .await
+    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY, enabled).await
 }
 
 #[cfg(test)]

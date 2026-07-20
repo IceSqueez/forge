@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextArea, TextInput, badge,
-    card, confirm_modal, icon, overlay, primary_button, radius, secondary_button, spacing, toggle,
-    tr, with_alpha,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextArea,
+    TextInput, badge, card, confirm_modal, icon, overlay, primary_button, radius, secondary_button,
+    spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
     PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -13,7 +13,7 @@ use forge_speak_queue::{
 use forge_storage::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
 };
-use forge_tts_pipeline::{PipelineResult, StageAction, StageOutcome};
+use forge_tts_pipeline::{PipelineResult, SkipReason, StageAction, StageName, StageOutcome};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window,
     div, prelude::*, px,
@@ -25,7 +25,7 @@ const URL_MODES: [UrlMode; 3] = [UrlMode::Speak, UrlMode::Replace, UrlMode::Supp
 
 const BADGE_SIZE: Pixels = px(20.0);
 const MICRO_FS: Pixels = px(8.5);
-const PREVIEW_W: Pixels = px(300.0);
+const PREVIEW_W: Pixels = px(320.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DraftKind {
@@ -127,7 +127,9 @@ impl TtsFiltersView {
 
         let preview_input = cx.new(|cx| {
             let mut input = TextArea::new(tr!("tts_filters_preview_input_placeholder"), cx)
-                .with_palette(palette);
+                .with_palette(palette)
+                .on_surface()
+                .with_height(px(56.0));
             input.set_content("hey @koval check this out https://example.com POGGERS", cx);
             input
         });
@@ -1241,8 +1243,20 @@ impl TtsFiltersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let gap_sm = spacing(Spacing::Xs, density);
         let gap_md = spacing(Spacing::Sm, density);
+
+        let header = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(icon(Icon::Eye, FONT_SM, palette.brand))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(tr!("tts_filters_preview_header")),
+            );
 
         let input_block = div()
             .flex()
@@ -1254,63 +1268,40 @@ impl TtsFiltersView {
             ))
             .child(self.preview_input.clone());
 
-        let stages: AnyElement = if let Some(preview) = &self.cached_preview {
-            let mut col = div().flex().flex_col().gap(gap_sm);
+        let mut stages_section = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(mono_caption(
+                tr!("tts_filters_preview_output_label"),
+                palette,
+            ));
+
+        if let Some(preview) = &self.cached_preview {
             for (i, outcome) in preview.stages.iter().enumerate() {
-                col = col.child(preview_stage_card(
-                    tr!("tts_filters_stage_n", n = (i + 1) as i64),
+                stages_section = stages_section.child(preview_stage_card(
+                    (i + 1) as u32,
+                    stage_name_label(outcome.stage),
                     outcome,
                     palette,
                     density,
                 ));
             }
-            col.into_any_element()
-        } else {
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(tr!("tts_filters_preview_empty"))
-                .into_any_element()
-        };
-
-        let spoken = self
-            .cached_preview
-            .as_ref()
-            .map(|p| matches!(p.result, PipelineResult::Speak(_)))
-            .unwrap_or(false);
-        let output_text: String = match self.cached_preview.as_ref().map(|p| &p.result) {
-            Some(PipelineResult::Speak(s)) => s.clone(),
-            Some(PipelineResult::Skip { .. }) => tr!("tts_filters_preview_skipped"),
-            None => "\u{2014}".to_owned(),
-        };
-        let output_border = if spoken {
-            palette.success
-        } else {
-            palette.border_regular
-        };
-        let output_block = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(mono_caption(
-                tr!("tts_filters_preview_output_label"),
+            stages_section = stages_section.child(final_output_card(
+                (preview.stages.len() + 1) as u32,
+                &preview.result,
                 palette,
-            ))
-            .child(
+                density,
+            ));
+        } else {
+            stages_section = stages_section.child(
                 div()
-                    .w_full()
-                    .py(spacing(Spacing::Xs, density))
-                    .px(spacing(Spacing::Sm, density))
-                    .rounded(radius(Radius::Sm))
-                    .border(BORDER_THIN)
-                    .border_color(output_border)
-                    .bg(palette.elevated)
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(output_text),
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("tts_filters_preview_empty")),
             );
+        }
 
         let speak_btn = div()
             .id("filt-speak-preview")
@@ -1318,49 +1309,37 @@ impl TtsFiltersView {
             .flex()
             .items_center()
             .justify_center()
-            .gap(spacing(Spacing::Xxs, density))
+            .gap(spacing(Spacing::Xs, density))
             .py(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.speak_preview(cx)))
-            .child(icon(Icon::PlayerPlay, FONT_SM, palette.shell))
+            .child(icon(Icon::PlayerPlayFilled, FONT_XS, palette.shell))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(tr!("tts_filters_speak_preview_btn")),
             );
-
-        let tip = card(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_muted)
-                .child(tr!("tts_filters_preview_tip")),
-            palette,
-        )
-        .radius(Radius::Sm)
-        .padding_xy(spacing(Spacing::Xs, density), spacing(Spacing::Xs, density))
-        .full_width();
 
         let inner = div()
             .flex()
             .flex_col()
             .gap(gap_md)
-            .child(mono_caption(tr!("tts_filters_preview_header"), palette))
+            .child(header)
             .child(input_block)
-            .child(stages)
-            .child(output_block)
-            .child(speak_btn)
-            .child(tip);
+            .child(stages_section)
+            .child(speak_btn);
 
         div()
             .w(PREVIEW_W)
             .flex_none()
             .h_full()
             .bg(palette.shell)
+            .border_l(BORDER_THIN)
+            .border_color(palette.border_regular)
             .flex()
             .flex_col()
             .child(
@@ -1443,7 +1422,7 @@ enum ModeTarget {
 fn mono_caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
+        .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into())
 }
@@ -1515,7 +1494,8 @@ fn draft_field(
 }
 
 fn preview_stage_card(
-    label: String,
+    n: u32,
+    name: String,
     outcome: &StageOutcome,
     palette: &ForgePalette,
     density: Density,
@@ -1528,24 +1508,21 @@ fn preview_stage_card(
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(palette.success)
                     .child("\u{2713}"),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(tr!("tts_filters_stage_pass")),
             )
             .into_any_element(),
-        StageAction::Transformed => div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_SM)
-            .text_color(palette.text_primary)
-            .child(outcome.output.clone())
-            .into_any_element(),
+        StageAction::Transformed => {
+            highlighted_output(&outcome.input, &outcome.output, palette, density)
+        }
         StageAction::Skipped { reason } => div()
             .flex()
             .items_center()
@@ -1553,20 +1530,64 @@ fn preview_stage_card(
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child("\u{d7}"),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(format!("{} - {reason:?}", tr!("tts_filters_stage_skipped"))),
+                    .text_size(FONT_XS)
+                    .text_color(palette.random)
+                    .child(format!(
+                        "{}: {}",
+                        tr!("tts_filters_stage_skipped"),
+                        skip_reason_label(reason)
+                    )),
             )
             .into_any_element(),
     };
 
+    stage_card_frame(format!("{n} \u{b7} {name}"), body, palette, density)
+}
+
+fn final_output_card(
+    n: u32,
+    result: &PipelineResult,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let (text, color) = match result {
+        PipelineResult::Speak(spoken) => (format!("\"{spoken}\""), palette.text_primary),
+        PipelineResult::Skip { reason } => (
+            format!(
+                "{}: {}",
+                tr!("tts_filters_stage_skipped"),
+                skip_reason_label(reason)
+            ),
+            palette.random,
+        ),
+    };
+
+    stage_card_frame(
+        format!("{} \u{b7} {}", n, tr!("tts_filters_preview_final_label")),
+        div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(color)
+            .child(text)
+            .into_any_element(),
+        palette,
+        density,
+    )
+}
+
+fn stage_card_frame(
+    label: String,
+    body: AnyElement,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
     card(
         div()
             .flex()
@@ -1575,17 +1596,78 @@ fn preview_stage_card(
             .child(
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label),
             )
             .child(body),
         palette,
     )
-    .radius(Radius::Sm)
+    .radius(Radius::Md)
     .padding_xy(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
     .full_width()
     .into_any_element()
+}
+
+fn highlighted_output(
+    input: &str,
+    output: &str,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let input_tokens: std::collections::HashSet<&str> = input.split_whitespace().collect();
+    let mut row = div()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap(spacing(Spacing::Xxs, density));
+    for token in output.split_whitespace() {
+        if input_tokens.contains(token) {
+            row = row.child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(token.to_owned()),
+            );
+        } else {
+            let color = if token.contains('*') {
+                palette.warning
+            } else {
+                palette.brand
+            };
+            row = row.child(
+                div()
+                    .px(px(3.0))
+                    .rounded(px(2.0))
+                    .bg(palette.surface_overlay)
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(color)
+                    .child(token.to_owned()),
+            );
+        }
+    }
+    row.into_any_element()
+}
+
+fn stage_name_label(stage: StageName) -> String {
+    match stage {
+        StageName::EmoteStripper => tr!("tts_filters_stage_name_emotes"),
+        StageName::UrlSanitizer => tr!("tts_filters_stage_name_urls"),
+        StageName::TextReplacements => tr!("tts_filters_stage_name_replacements"),
+        StageName::WordBlocklist => tr!("tts_filters_stage_name_blocklist"),
+        StageName::LengthCapper => tr!("tts_filters_stage_name_length"),
+    }
+}
+
+fn skip_reason_label(reason: &SkipReason) -> String {
+    match reason {
+        SkipReason::MatchedSkipRule(_) => tr!("tts_filters_skip_reason_rule"),
+        SkipReason::BlockedByWordFilter => tr!("tts_filters_skip_reason_blocked"),
+        SkipReason::EmptyAfterProcessing => tr!("tts_filters_skip_reason_empty"),
+    }
 }
 
 fn url_label(mode: UrlMode) -> String {

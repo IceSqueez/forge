@@ -994,18 +994,24 @@ tts_filters_saved = All changes saved
 
 ## TTS Filters - preview column
 
-tts_filters_preview_header = PIPELINE PREVIEW
+tts_filters_preview_header = Live preview
 tts_filters_preview_input_label = INPUT MESSAGE
 tts_filters_preview_input_placeholder = Type a message to preview…
 tts_filters_preview_empty = Enter a message above to preview
-tts_filters_preview_output_label = FINAL OUTPUT
+tts_filters_preview_output_label = STAGE OUTPUTS
+tts_filters_preview_final_label = OUTPUT
 tts_filters_speak_preview_btn = Speak preview
 tts_filters_preview_speaker_name = Preview
-tts_filters_preview_tip = Type any message above to see how filters transform it in real time
-tts_filters_stage_n = STAGE { $n }
 tts_filters_stage_pass = pass
 tts_filters_stage_skipped = skipped
-tts_filters_preview_skipped = [message would be skipped]
+tts_filters_stage_name_emotes = EMOTES
+tts_filters_stage_name_urls = URLS
+tts_filters_stage_name_replacements = REPLACEMENTS
+tts_filters_stage_name_blocklist = BLOCKLIST
+tts_filters_stage_name_length = LENGTH
+tts_filters_skip_reason_rule = matched a skip rule
+tts_filters_skip_reason_blocked = blocked word
+tts_filters_skip_reason_empty = empty after filters
 tts_filters_delete_title = Delete rule?
 tts_filters_delete_body = This rule will be removed from the preprocessing pipeline.
 

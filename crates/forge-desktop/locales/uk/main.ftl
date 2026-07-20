@@ -999,18 +999,24 @@ tts_filters_saved = Усі зміни збережено
 
 ## TTS Filters - колонка попереднього перегляду
 
-tts_filters_preview_header = ПОПЕРЕДНІЙ ПЕРЕГЛЯД
+tts_filters_preview_header = Живий перегляд
 tts_filters_preview_input_label = ВХІДНЕ ПОВІДОМЛЕННЯ
 tts_filters_preview_input_placeholder = Введіть повідомлення для перегляду…
 tts_filters_preview_empty = Введіть повідомлення вище для перегляду
-tts_filters_preview_output_label = ПІДСУМКОВИЙ РЕЗУЛЬТАТ
+tts_filters_preview_output_label = ВИХІД СТАДІЙ
+tts_filters_preview_final_label = РЕЗУЛЬТАТ
 tts_filters_speak_preview_btn = Озвучити перегляд
 tts_filters_preview_speaker_name = Перегляд
-tts_filters_preview_tip = Введіть будь-яке повідомлення вище, щоб побачити, як фільтри перетворюють його в реальному часі
-tts_filters_stage_n = СТАДІЯ { $n }
 tts_filters_stage_pass = без змін
 tts_filters_stage_skipped = пропущено
-tts_filters_preview_skipped = [повідомлення буде пропущено]
+tts_filters_stage_name_emotes = ЕМОЦІЇ
+tts_filters_stage_name_urls = ПОСИЛАННЯ
+tts_filters_stage_name_replacements = ЗАМІНИ
+tts_filters_stage_name_blocklist = БЛОК-СПИСОК
+tts_filters_stage_name_length = ДОВЖИНА
+tts_filters_skip_reason_rule = спрацювало стоп-правило
+tts_filters_skip_reason_blocked = заблоковане слово
+tts_filters_skip_reason_empty = порожнє після фільтрів
 tts_filters_delete_title = Видалити правило?
 tts_filters_delete_body = Це правило буде вилучено з конвеєра попередньої обробки.
 

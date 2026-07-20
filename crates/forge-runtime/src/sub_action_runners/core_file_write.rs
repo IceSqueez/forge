@@ -1,22 +1,11 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use base64::Engine as _;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 use tokio::io::AsyncWriteExt as _;
 
-pub struct CoreFileWriteRunner {
-    globals: Arc<dyn GlobalsRepo>,
-}
-
-impl CoreFileWriteRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
-        Self { globals }
-    }
-}
+pub struct CoreFileWriteRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreFileWriteRunner {
@@ -129,26 +118,20 @@ impl SubActionRunner for CoreFileWriteRunner {
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
         let content = ctx.arg_stack.interpolate(content_template);
 
-        let outcome = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
-            Err(reason) => SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+        let (outcome, updated) = match super::file_sandbox::resolve_sandboxed(&interpolated_path) {
+            Err(reason) => (
+                SubActionOutcome::Failed(format!("sandbox rejected path: {reason}")),
+                None,
+            ),
             Ok(abs_path) => {
                 match do_write(&abs_path, &content, &encoding, &mode, create_parent_dirs).await {
-                    Err(reason) => SubActionOutcome::Failed(reason),
+                    Err(reason) => (SubActionOutcome::Failed(reason), None),
                     Ok(bytes_written) => {
-                        match self
-                            .globals
-                            .set(
-                                "file.bytes_written",
-                                Variant::Int(bytes_written as i64),
-                                false,
-                            )
-                            .await
-                        {
-                            Ok(()) => SubActionOutcome::Success,
-                            Err(e) => {
-                                SubActionOutcome::Failed(format!("store bytes_written failed: {e}"))
-                            }
-                        }
+                        let stack = ctx.arg_stack.clone().set(
+                            "file.bytes_written".to_owned(),
+                            Variant::Int(bytes_written as i64),
+                        );
+                        (SubActionOutcome::Success, Some(stack))
                     }
                 }
             }
@@ -168,7 +151,7 @@ impl SubActionRunner for CoreFileWriteRunner {
                 duration_ms,
                 outcome,
             },
-            None,
+            updated,
         )
     }
 }
@@ -240,9 +223,7 @@ async fn do_write(
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_storage::{GlobalEntry, StorageError};
     use forge_types::EventId;
-    use std::sync::Mutex;
 
     #[test]
     fn encode_content_utf8_returns_raw_utf8_bytes() {
@@ -290,48 +271,13 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    #[derive(Default)]
-    struct RecordingGlobals {
-        writes: Mutex<Vec<(String, Variant, bool)>>,
-    }
-
-    #[async_trait]
-    impl GlobalsRepo for RecordingGlobals {
-        async fn get(&self, _name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(None)
-        }
-        async fn set(&self, name: &str, value: Variant, p: bool) -> Result<(), StorageError> {
-            self.writes
-                .lock()
-                .unwrap()
-                .push((name.to_owned(), value, p));
-            Ok(())
-        }
-        async fn delete(&self, _name: &str) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(vec![])
-        }
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn incr(&self, _name: &str, _amount: i64) -> Result<Variant, StorageError> {
-            Ok(Variant::Int(0))
-        }
-    }
-
-    // Proves resolve_sandboxed is wired BEFORE any fs/global write: a traversal
-    // path yields the sandbox-rejection outcome and writes no global. If the
+    // Proves resolve_sandboxed is wired BEFORE any fs write: a traversal path
+    // yields the sandbox-rejection outcome and binds no scope variable. If the
     // guard were skipped, the path would reach tokio::fs and produce a different
     // ("open failed") message instead.
     #[tokio::test]
     async fn write_rejects_parent_traversal_before_touching_disk() {
-        let globals = Arc::new(RecordingGlobals::default());
-        let runner = CoreFileWriteRunner::new(globals.clone());
+        let runner = CoreFileWriteRunner;
         let mut cfg = SubActionConfig::new();
         cfg.insert(
             "path".to_owned(),
@@ -341,15 +287,16 @@ mod tests {
 
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        let outcome = runner.execute(&cfg, &ctx).await.0.outcome;
+        let (telemetry, produced) = runner.execute(&cfg, &ctx).await;
 
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(msg) if msg.contains("sandbox rejected")),
-            "expected sandbox rejection, got {outcome:?}"
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("sandbox rejected")),
+            "expected sandbox rejection, got {:?}",
+            telemetry.outcome
         );
         assert!(
-            globals.writes.lock().unwrap().is_empty(),
-            "no global must be written when the sandbox rejects the path"
+            produced.is_none(),
+            "no scope variable must be bound when the sandbox rejects the path"
         );
     }
 }

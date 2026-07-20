@@ -245,7 +245,7 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreLogicWaitRunner))?;
     reg.register(Box::new(CoreLogWriteRunner))?;
     reg.register(Box::new(CoreFileReadRunner))?;
-    reg.register(Box::new(CoreFileWriteRunner::new(Arc::clone(&globals))))?;
+    reg.register(Box::new(CoreFileWriteRunner))?;
     reg.register(Box::new(CoreFileDeleteRunner))?;
     reg.register(Box::new(CoreFileListRunner))?;
     reg.register(Box::new(CoreRandomIntRunner))?;

@@ -7,8 +7,8 @@ use forge_components::{
     TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay, search_input, tr,
 };
 use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
-use forge_runtime::EventBus;
 use forge_runtime::actions::{ActionDetail, ActionsService};
+use forge_runtime::{EventBus, QueueSchedulerHandle};
 use forge_storage::{
     ActionRepo, ActionTelemetry, GlobalsRepo, QueueRepo, ScriptRepo, SettingsRepo,
     SoundboardClipsRepo, TriggerInstanceRepo, reserved_keys,
@@ -167,6 +167,7 @@ pub struct ScreenActionsView {
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     bus: Arc<EventBus>,
+    scheduler: QueueSchedulerHandle,
     select_options: HashMap<String, Vec<(String, String)>>,
     tree_width: Pixels,
     loading: bool,
@@ -214,6 +215,7 @@ impl ScreenActionsView {
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
         bus: Arc<EventBus>,
+        scheduler: QueueSchedulerHandle,
         preselect: Option<ActionId>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -238,6 +240,7 @@ impl ScreenActionsView {
             trigger_registry,
             rt_handle,
             bus,
+            scheduler,
             select_options: HashMap::new(),
             tree_width: LEFT_PANEL_W,
             loading: true,

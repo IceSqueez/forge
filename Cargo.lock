@@ -2484,6 +2484,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "open",
+ "rand 0.10.2",
  "reqwest",
  "rfd",
  "serde",

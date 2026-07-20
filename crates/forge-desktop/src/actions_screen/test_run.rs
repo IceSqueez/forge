@@ -1,10 +1,11 @@
 use super::*;
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    Radius, Spacing, ghost_button_with_icon, modal, primary_button, radius, spacing,
+    MenuItem, Radius, Spacing, context_menu, ghost_button_with_icon, menu_header, menu_item, modal,
+    primary_button, radius, spacing,
 };
 use forge_events::{Event, EventsError};
-use forge_types::EventId;
+use forge_types::{ArgStack, EventId};
 use gpui::{Rgba, Task, relative};
 use std::time::Duration;
 
@@ -16,6 +17,7 @@ const ROW_PAD_H: Pixels = px(11.0);
 const ROW_GLYPH: Pixels = px(13.0);
 const BANNER_ICON: Pixels = px(15.0);
 const EMPTY_PAD: Pixels = px(20.0);
+const SELECT_PAD_V: Pixels = px(5.0);
 const TRIGGER_TIMEOUT: Duration = Duration::from_secs(3);
 const FAIL_TINT_ALPHA: f32 = 0.09;
 
@@ -45,19 +47,29 @@ struct TestRunRow {
     status: RowStatus,
 }
 
+struct TestTriggerChoice {
+    name: SharedString,
+    kind_label: SharedString,
+}
+
+enum TestRunNote {
+    NoSchema,
+    NoTriggers,
+}
+
 enum TestRunPhase {
     Awaiting,
     Running,
     Done { errors: usize },
     Halted { step: usize },
-    NoMatch,
+    NotStarted,
 }
 
 impl TestRunPhase {
     fn is_terminal(&self) -> bool {
         matches!(
             self,
-            TestRunPhase::Done { .. } | TestRunPhase::Halted { .. } | TestRunPhase::NoMatch
+            TestRunPhase::Done { .. } | TestRunPhase::Halted { .. } | TestRunPhase::NotStarted
         )
     }
 }
@@ -66,6 +78,10 @@ pub(super) struct TestRunModal {
     action_id: ActionId,
     action_name: SharedString,
     rows: Vec<TestRunRow>,
+    triggers: Vec<TestTriggerChoice>,
+    selected_trigger: Option<usize>,
+    note: Option<TestRunNote>,
+    trigger_menu: Option<Point<Pixels>>,
     root: Option<EventId>,
     top_run_ids: HashMap<EventId, usize>,
     phase: TestRunPhase,
@@ -134,18 +150,78 @@ impl ScreenActionsView {
         let Some(id) = self.selected else {
             return;
         };
-        let Some(detail) = self.detail.as_ref() else {
-            return;
+        let selected = match self.detail.as_ref() {
+            Some(detail) => detail
+                .trigger_instances
+                .iter()
+                .position(|inst| inst.enabled)
+                .or_else(|| (!detail.trigger_instances.is_empty()).then_some(0)),
+            None => return,
         };
+        self.launch_test_run(id, selected, cx);
+    }
+
+    fn launch_test_run(&mut self, id: ActionId, selected: Option<usize>, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let action_name: SharedString = detail.action.name.clone().into();
-        let rows: Vec<TestRunRow> = detail
-            .action
-            .sub_actions
-            .iter()
-            .enumerate()
-            .map(|(index, step)| self.test_run_row(index, step, &palette))
-            .collect();
+        let prepared = {
+            let Some(detail) = self.detail.as_ref() else {
+                return;
+            };
+            if detail.action.id != id {
+                return;
+            }
+            let action = &detail.action;
+            let action_name: SharedString = action.name.clone().into();
+            let queue_id = action.queue_id;
+            let bypass_pause = action.bypass_pause;
+
+            let rows: Vec<TestRunRow> = action
+                .sub_actions
+                .iter()
+                .enumerate()
+                .map(|(index, step)| self.test_run_row(index, step, &palette))
+                .collect();
+
+            let triggers: Vec<TestTriggerChoice> = detail
+                .trigger_instances
+                .iter()
+                .map(|inst| {
+                    let kind_label = self
+                        .trigger_registry
+                        .get(&inst.kind_id)
+                        .map(|desc| desc.label().to_owned())
+                        .unwrap_or_else(|| inst.kind_id.clone());
+                    TestTriggerChoice {
+                        name: inst.name.clone().into(),
+                        kind_label: kind_label.into(),
+                    }
+                })
+                .collect();
+
+            let (initial_args, note) = match selected.and_then(|i| detail.trigger_instances.get(i))
+            {
+                Some(inst) => match self
+                    .trigger_registry
+                    .get(&inst.kind_id)
+                    .and_then(|desc| desc.output_schema())
+                {
+                    Some(schema) => (super::test_trigger::synthesize_args(&schema), None),
+                    None => (ArgStack::new(), Some(TestRunNote::NoSchema)),
+                },
+                None => (ArgStack::new(), Some(TestRunNote::NoTriggers)),
+            };
+
+            (
+                action_name,
+                queue_id,
+                bypass_pause,
+                rows,
+                triggers,
+                initial_args,
+                note,
+            )
+        };
+        let (action_name, queue_id, bypass_pause, rows, triggers, initial_args, note) = prepared;
 
         let subscription = self.bus.subscribe();
         let bridge = cx.spawn(async move |this, cx| {
@@ -162,13 +238,21 @@ impl ScreenActionsView {
             }
         });
 
-        let service = Arc::clone(&self.actions_service);
-        let registry = Arc::clone(&self.trigger_registry);
+        let scheduler = self.scheduler.clone();
         let bus = Arc::clone(&self.bus);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let _ =
-                tx.send(super::test_trigger::run_test_trigger(&service, &registry, &bus, id).await);
+            let _ = tx.send(
+                super::test_trigger::dispatch_test_run(
+                    &scheduler,
+                    &bus,
+                    id,
+                    queue_id,
+                    bypass_pause,
+                    initial_args,
+                )
+                .await,
+            );
         });
         let fire = cx.spawn(async move |this, cx| {
             if let Ok(result) = rx.await {
@@ -180,6 +264,10 @@ impl ScreenActionsView {
             action_id: id,
             action_name,
             rows,
+            triggers,
+            selected_trigger: selected,
+            note,
+            trigger_menu: None,
             root: None,
             top_run_ids: HashMap::new(),
             phase: TestRunPhase::Awaiting,
@@ -217,7 +305,39 @@ impl ScreenActionsView {
     }
 
     fn run_test_again(&mut self, cx: &mut Context<Self>) {
-        self.start_test_run(cx);
+        let Some((id, selected)) = self
+            .test_run
+            .as_ref()
+            .map(|run| (run.action_id, run.selected_trigger))
+        else {
+            return;
+        };
+        self.launch_test_run(id, selected, cx);
+    }
+
+    fn pick_test_trigger(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(id) = self.test_run.as_ref().map(|run| run.action_id) else {
+            return;
+        };
+        self.launch_test_run(id, Some(index), cx);
+    }
+
+    fn toggle_trigger_menu(&mut self, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        if let Some(run) = self.test_run.as_mut() {
+            run.trigger_menu = if run.trigger_menu.is_some() {
+                None
+            } else {
+                Some(pos)
+            };
+            cx.notify();
+        }
+    }
+
+    fn close_trigger_menu(&mut self, cx: &mut Context<Self>) {
+        if let Some(run) = self.test_run.as_mut() {
+            run.trigger_menu = None;
+            cx.notify();
+        }
     }
 
     fn cancel_test_run(&mut self, cx: &mut Context<Self>) {
@@ -225,32 +345,21 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn on_test_fired(
-        &mut self,
-        id: ActionId,
-        result: Result<bool, String>,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_test_fired(&mut self, id: ActionId, result: Result<(), String>, cx: &mut Context<Self>) {
         let outcome = {
-            let Some(run) = self.test_run.as_mut() else {
+            let Some(run) = self.test_run.as_ref() else {
                 return;
             };
             if run.action_id != id {
                 return;
             }
             match result {
-                Ok(true) => {
+                Ok(()) => {
                     if matches!(run.phase, TestRunPhase::Awaiting) {
                         FireOutcome::StartTimeout
                     } else {
                         FireOutcome::Repaint
                     }
-                }
-                Ok(false) => {
-                    if matches!(run.phase, TestRunPhase::Awaiting) {
-                        run.phase = TestRunPhase::NoMatch;
-                    }
-                    FireOutcome::Repaint
                 }
                 Err(message) => FireOutcome::Error(message),
             }
@@ -284,7 +393,7 @@ impl ScreenActionsView {
         if let Some(run) = self.test_run.as_mut()
             && matches!(run.phase, TestRunPhase::Awaiting)
         {
-            run.phase = TestRunPhase::NoMatch;
+            run.phase = TestRunPhase::NotStarted;
             cx.notify();
         }
     }
@@ -304,10 +413,20 @@ impl ScreenActionsView {
                     return false;
                 }
                 run.root = Some(event.id);
-                if !run.phase.is_terminal() || matches!(run.phase, TestRunPhase::NoMatch) {
+                if !run.phase.is_terminal() || matches!(run.phase, TestRunPhase::NotStarted) {
                     run.phase = TestRunPhase::Running;
                 }
                 cx.notify();
+                false
+            }
+            "action.skipped" => {
+                let ours = event.payload.get("action_id").and_then(|v| v.as_str())
+                    == Some(run.action_id.to_string().as_str());
+                if ours && matches!(run.phase, TestRunPhase::Awaiting) {
+                    run.phase = TestRunPhase::NotStarted;
+                    cx.notify();
+                    return true;
+                }
                 false
             }
             "subaction.run" => {
@@ -383,7 +502,15 @@ impl ScreenActionsView {
             palette.success
         };
 
-        let body = self.render_test_run_body(run, palette);
+        let subtitle = match run.selected_trigger.and_then(|i| run.triggers.get(i)) {
+            Some(choice) => tr!(
+                "action_editor_test_run_subtitle_trigger",
+                name = choice.kind_label.as_ref()
+            ),
+            None => tr!("action_editor_test_run_subtitle_none"),
+        };
+
+        let body = self.render_test_run_body(run, palette, cx);
         let footer = self.render_test_run_footer(run, palette, cx);
 
         let card = modal(
@@ -396,7 +523,7 @@ impl ScreenActionsView {
         )
         .width(MODAL_W)
         .header_icon(Icon::PlayerPlay, header_tint)
-        .subtitle(tr!("action_editor_test_run_subtitle"))
+        .subtitle(subtitle)
         .footer(footer)
         .on_close(
             "actions-test-run-close-x",
@@ -404,20 +531,105 @@ impl ScreenActionsView {
         );
 
         let view = cx.entity();
-        overlay(card, palette)
+        let card_overlay = overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("actions-test-run-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel_test_run(cx));
+            });
+
+        let menu = run
+            .trigger_menu
+            .map(|pos| self.render_trigger_menu(run, pos, palette, cx));
+
+        div().child(card_overlay).children(menu).into_any_element()
+    }
+
+    fn render_trigger_selector(
+        &self,
+        run: &TestRunModal,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let label: SharedString = run
+            .selected_trigger
+            .and_then(|i| run.triggers.get(i))
+            .map(|choice| choice.kind_label.clone())
+            .unwrap_or_else(|| tr!("action_editor_test_run_subtitle_none").into());
+        let hover = palette.surface_overlay;
+
+        div()
+            .id("actions-test-trigger-select")
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .py(SELECT_PAD_V)
+            .px(spacing(Spacing::Sm, Density::Cozy))
+            .rounded(radius(Radius::Md))
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .child(icon(Icon::Bolt, ROW_GLYPH, palette.brand))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .overflow_hidden()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(label),
+            )
+            .child(icon(Icon::ChevronDown, ROW_GLYPH, palette.text_faint))
+            .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| {
+                this.toggle_trigger_menu(ev.position(), cx)
+            }))
+            .into_any_element()
+    }
+
+    fn render_trigger_menu(
+        &self,
+        run: &TestRunModal,
+        pos: Point<Pixels>,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let view = cx.entity();
+        let mut items: Vec<MenuItem> =
+            vec![menu_header(tr!("action_editor_test_run_trigger_pick"))];
+        for (i, choice) in run.triggers.iter().enumerate() {
+            let mut entry = menu_item(
+                SharedString::from(format!("actions-test-trigger-{i}")),
+                format!("{} · {}", choice.name, choice.kind_label),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_test_trigger(i, cx)),
+            )
+            .icon(Icon::Bolt);
+            if run.selected_trigger == Some(i) {
+                entry = entry.color(palette.brand);
+            }
+            items.push(entry.into());
+        }
+
+        context_menu(pos, palette)
+            .items(items)
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_trigger_menu(cx));
             })
             .into_any_element()
     }
 
-    fn render_test_run_body(&self, run: &TestRunModal, palette: &ForgePalette) -> AnyElement {
+    fn render_test_run_body(
+        &self,
+        run: &TestRunModal,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let progress_color = match run.phase {
             TestRunPhase::Halted { .. } => palette.random,
             TestRunPhase::Done { errors } if errors > 0 => palette.warning,
             TestRunPhase::Done { .. } => palette.success,
-            TestRunPhase::NoMatch => palette.text_faint,
+            TestRunPhase::NotStarted => palette.text_faint,
             _ => palette.brand,
         };
         let progress = div()
@@ -459,9 +671,25 @@ impl ScreenActionsView {
         let mut body = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(progress)
-            .child(rows);
+            .gap(spacing(Spacing::Sm, Density::Cozy));
+        if run.triggers.len() > 1 {
+            body = body.child(self.render_trigger_selector(run, palette, cx));
+        }
+        body = body.child(progress).child(rows);
+        if let Some(note) = &run.note {
+            let text = match note {
+                TestRunNote::NoSchema => tr!("action_editor_test_run_note_no_schema"),
+                TestRunNote::NoTriggers => tr!("action_editor_test_run_note_no_triggers"),
+            };
+            body = body.child(
+                div()
+                    .w_full()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(text),
+            );
+        }
         if let Some(banner) = self.render_test_run_banner(run, palette) {
             body = body.child(banner);
         }
@@ -629,10 +857,10 @@ impl ScreenActionsView {
                 None,
                 palette,
             )),
-            TestRunPhase::NoMatch => Some(self.test_run_banner(
+            TestRunPhase::NotStarted => Some(self.test_run_banner(
                 Icon::InfoCircle,
                 palette.text_muted,
-                tr!("action_editor_test_run_nomatch"),
+                tr!("action_editor_test_run_notstarted"),
                 None,
                 palette,
             )),
@@ -697,7 +925,7 @@ impl ScreenActionsView {
         let status = match run.phase {
             TestRunPhase::Halted { .. } => tr!("action_editor_test_run_foot_halted"),
             TestRunPhase::Done { .. } => tr!("action_editor_test_run_foot_finished"),
-            TestRunPhase::NoMatch => tr!("action_editor_test_run_foot_nomatch"),
+            TestRunPhase::NotStarted => tr!("action_editor_test_run_foot_notstarted"),
             _ => tr!("action_editor_test_run_foot_simulating"),
         };
 

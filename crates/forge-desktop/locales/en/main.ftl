@@ -566,7 +566,11 @@ actions_step_continue_on_error_hint = Keep running later steps if this one fails
 
 action_editor_test_failed = Test trigger failed: { $error }
 action_editor_test_run_title = Test run · { $name }
-action_editor_test_run_subtitle = Runs the action with a simulated trigger event
+action_editor_test_run_subtitle_trigger = Simulated trigger · { $name }
+action_editor_test_run_subtitle_none = No trigger attached
+action_editor_test_run_trigger_pick = Simulate as trigger
+action_editor_test_run_note_no_schema = Trigger declares no outputs · running with empty values
+action_editor_test_run_note_no_triggers = No trigger attached · running with empty values
 action_editor_test_run_empty = No sub-actions to run.
 action_editor_test_run_default_error = Step execution failed
 action_editor_test_run_status_queued = queued
@@ -576,11 +580,11 @@ action_editor_test_run_status_skipped = skipped
 action_editor_test_run_status_ms = { $ms } ms
 action_editor_test_run_failed_banner = Run failed at step { $step } · { $name }
 action_editor_test_run_completed = Completed { $count } steps · { $errors } errors
-action_editor_test_run_nomatch = Trigger did not match · the action did not run
+action_editor_test_run_notstarted = Action did not start · the queue may be paused
 action_editor_test_run_foot_simulating = Simulating…
 action_editor_test_run_foot_finished = Run finished
 action_editor_test_run_foot_halted = Halted on error
-action_editor_test_run_foot_nomatch = Trigger did not match
+action_editor_test_run_foot_notstarted = Did not start
 action_editor_test_run_again = Run again
 action_editor_test_run_close = Close
 

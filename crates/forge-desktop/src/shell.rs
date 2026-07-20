@@ -315,6 +315,7 @@ impl AppShell {
                 let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
                 let bus = Arc::clone(&handles.bus);
+                let scheduler = handles.scheduler.clone();
                 let view = cx.new(|cx| {
                     ScreenActionsView::new(
                         action_repo,
@@ -330,6 +331,7 @@ impl AppShell {
                         trigger_registry,
                         rt_handle,
                         bus,
+                        scheduler,
                         preselect,
                         cx,
                     )

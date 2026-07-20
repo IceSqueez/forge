@@ -566,7 +566,11 @@ actions_step_continue_on_error_hint = Виконувати наступні кр
 
 action_editor_test_failed = Не вдалося запустити тестовий тригер: { $error }
 action_editor_test_run_title = Тестовий запуск · { $name }
-action_editor_test_run_subtitle = Виконує дію зі змодельованою подією тригера
+action_editor_test_run_subtitle_trigger = Змодельований тригер · { $name }
+action_editor_test_run_subtitle_none = Тригер не прив'язано
+action_editor_test_run_trigger_pick = Змоделювати як тригер
+action_editor_test_run_note_no_schema = Тригер не оголошує вихідних даних · запуск із порожніми значеннями
+action_editor_test_run_note_no_triggers = Тригер не прив'язано · запуск із порожніми значеннями
 action_editor_test_run_empty = Немає підпунктів для виконання.
 action_editor_test_run_default_error = Виконання кроку не вдалося
 action_editor_test_run_status_queued = у черзі
@@ -576,11 +580,11 @@ action_editor_test_run_status_skipped = пропущено
 action_editor_test_run_status_ms = { $ms } мс
 action_editor_test_run_failed_banner = Збій на кроці { $step } · { $name }
 action_editor_test_run_completed = Виконано кроків: { $count } · помилок: { $errors }
-action_editor_test_run_nomatch = Тригер не збігся · дію не виконано
+action_editor_test_run_notstarted = Дію не запущено · можливо, чергу призупинено
 action_editor_test_run_foot_simulating = Моделювання…
 action_editor_test_run_foot_finished = Запуск завершено
 action_editor_test_run_foot_halted = Зупинено через помилку
-action_editor_test_run_foot_nomatch = Тригер не збігся
+action_editor_test_run_foot_notstarted = Не запущено
 action_editor_test_run_again = Запустити знову
 action_editor_test_run_close = Закрити
 

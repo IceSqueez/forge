@@ -52,6 +52,7 @@ futures-util = { workspace = true }
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
 open = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true }
 rfd = { workspace = true }
 serde = { workspace = true }

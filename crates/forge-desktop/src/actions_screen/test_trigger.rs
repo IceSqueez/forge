@@ -1,142 +1,124 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{TriggerRegistry, effective_config};
-use forge_runtime::EventBus;
-use forge_runtime::actions::ActionsService;
-use forge_types::{ActionId, TriggerConfig, TriggerInstance, Variant};
-use serde_json::json;
+use std::collections::BTreeMap;
 
-/// `Ok(true)` if the synthesized event satisfied the trigger's source / kind-prefix / predicate checks.
-pub(super) async fn run_test_trigger(
-    service: &ActionsService,
-    registry: &TriggerRegistry,
-    bus: &EventBus,
-    id: ActionId,
-) -> Result<bool, String> {
-    let detail = service.load_detail(id).await.map_err(|e| e.to_string())?;
-    let resolved = detail
-        .trigger_instances
-        .first()
-        .and_then(|inst| registry.get(&inst.kind_id).map(|desc| (inst, desc)));
-    let (event, matched) = match resolved {
-        Some((instance, descriptor)) => {
-            let config = effective_config(&descriptor.default_config(), &instance.overrides);
-            let event = synthesize_test_event(instance, &config);
-            let filter = descriptor.event_filter();
-            let matched = filter.source.is_none_or(|s| s == event.source)
-                && filter
-                    .kind_prefix
-                    .as_deref()
-                    .is_none_or(|p| event.kind.starts_with(p))
-                && descriptor.matches_trigger(&config, &event);
-            (event, matched)
-        }
-        None => (
-            Event::new(
-                EventSource::Core,
-                "test.trigger",
-                json!({ "action_id": id.to_string() }),
-            ),
-            false,
-        ),
-    };
-    let event_id = event.id;
-    bus.record(event);
-    bus.replay_and_publish(event_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(matched)
+use forge_events::{Event, EventSource};
+use forge_runtime::{EventBus, QueueSchedulerHandle, SchedulerRequest};
+use forge_types::{
+    ActionId, ArgStack, DeclaredVariable, QueueId, SynthesisHint, VariableSchema, Variant,
+    VariantKind,
+};
+use rand::RngExt;
+use serde_json::json;
+use time::OffsetDateTime;
+
+const USERNAME_POOL: &[&str] = &[
+    "test_user",
+    "stream_fan_42",
+    "lurker_99",
+    "night_owl",
+    "pixel_pal",
+];
+const DISPLAY_NAME_POOL: &[&str] = &[
+    "TestUser",
+    "StreamFan42",
+    "NightOwl",
+    "PixelPal",
+    "CoolViewer",
+];
+const MESSAGE_POOL: &[&str] = &[
+    "hey, great stream!",
+    "this is a test message",
+    "love the content",
+    "what game is this?",
+    "first time here, hi!",
+];
+
+pub(super) fn synthesize_args(schema: &VariableSchema) -> ArgStack {
+    let mut stack = ArgStack::new();
+    for var in &schema.variables {
+        stack = stack.set(var.name.clone(), synthesize_value(var));
+    }
+    stack
 }
 
-pub(super) fn synthesize_test_event(instance: &TriggerInstance, config: &TriggerConfig) -> Event {
-    match instance.kind_id.as_str() {
-        "twitch.chat.command" => {
-            let phrase = match config.get("phrase") {
-                Some(Variant::String(s)) if !s.is_empty() => s.as_str(),
-                _ => "!command",
-            };
-            Event::new(
-                EventSource::Twitch,
-                "chat.message",
-                json!({
-                    "message": format!("{phrase} test"),
-                    "user_login": "test_user",
-                    "channel": "test_channel"
-                }),
-            )
-        }
-        "twitch.chat.message" => Event::new(
-            EventSource::Twitch,
-            "chat.message",
-            json!({
-                "message": "test message",
-                "user_login": "test_user",
-                "channel": "test_channel"
-            }),
-        ),
-        "twitch.support.subscriber" => Event::new(
-            EventSource::Twitch,
-            "sub.received",
-            json!({
-                "user_login": "test_user",
-                "tier": "1000"
-            }),
-        ),
-        "twitch.support.resubscriber" => Event::new(
-            EventSource::Twitch,
-            "resub.received",
-            json!({
-                "user_login": "test_user",
-                "tier": "1000",
-                "months": 3
-            }),
-        ),
-        "twitch.support.gift_sub" => Event::new(
-            EventSource::Twitch,
-            "giftsub.received",
-            json!({
-                "gifter_login": "test_gifter",
-                "recipient_login": "test_recipient",
-                "tier": "1000"
-            }),
-        ),
-        "twitch.support.cheer" => Event::new(
-            EventSource::Twitch,
-            "cheer.received",
-            json!({
-                "user_login": "test_user",
-                "bits": 100
-            }),
-        ),
-        "twitch.channel.raid_received" => Event::new(
-            EventSource::Twitch,
-            "raid.received",
-            json!({
-                "from_broadcaster_login": "test_raider",
-                "viewers": 10
-            }),
-        ),
-        "obs.scenes.current_changed" => {
-            let scene_name = match config.get("scene") {
-                Some(Variant::String(s)) => s.clone(),
-                _ => "TestScene".to_owned(),
-            };
-            Event::new(
-                EventSource::Obs,
-                "scene.changed",
-                json!({ "scene": scene_name }),
-            )
-        }
-        "script.event.custom" => {
-            let event_name = match config.get("name") {
-                Some(Variant::String(s)) if !s.is_empty() => s.as_str(),
-                _ => "test",
-            };
-            Event::new(
-                EventSource::Server,
-                format!("custom.{event_name}"),
-                json!({}),
-            )
-        }
-        _ => Event::new(EventSource::Core, "test.trigger", json!({})),
+fn synthesize_value(var: &DeclaredVariable) -> Variant {
+    let mut rng = rand::rng();
+    if let Some(hint) = &var.synthesis {
+        return match hint {
+            SynthesisHint::Username => Variant::String(pick(USERNAME_POOL).to_owned()),
+            SynthesisHint::DisplayName => Variant::String(pick(DISPLAY_NAME_POOL).to_owned()),
+            SynthesisHint::Message => Variant::String(pick(MESSAGE_POOL).to_owned()),
+            SynthesisHint::BoundedInt { min, max } => {
+                let (lo, hi) = if min <= max {
+                    (*min, *max)
+                } else {
+                    (*max, *min)
+                };
+                Variant::Int(rng.random_range(lo..=hi))
+            }
+        };
     }
+    match var.kind {
+        VariantKind::String => Variant::String(sample_token(var)),
+        VariantKind::Int => Variant::Int(rng.random_range(1..=100)),
+        VariantKind::Float => Variant::Float(f64::from(rng.random_range(1..=9_999)) / 100.0),
+        VariantKind::Bool => Variant::Bool(rng.random_range(0..=1) == 1),
+        VariantKind::Datetime => Variant::Datetime(OffsetDateTime::now_utc()),
+        VariantKind::Array => Variant::Array(vec![
+            Variant::String(sample_token(var)),
+            Variant::String(pick(USERNAME_POOL).to_owned()),
+        ]),
+        VariantKind::Object => Variant::Object(BTreeMap::new()),
+    }
+}
+
+fn pick(pool: &[&'static str]) -> &'static str {
+    pool[rand::rng().random_range(0..pool.len())]
+}
+
+fn sample_token(var: &DeclaredVariable) -> String {
+    let base = if var.label.is_empty() {
+        &var.name
+    } else {
+        &var.label
+    };
+    let slug: String = base
+        .split_whitespace()
+        .next()
+        .unwrap_or("sample")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    if slug.is_empty() {
+        "sample".to_owned()
+    } else {
+        format!("{slug}_sample")
+    }
+}
+
+pub(super) async fn dispatch_test_run(
+    scheduler: &QueueSchedulerHandle,
+    bus: &EventBus,
+    action_id: ActionId,
+    queue_id: QueueId,
+    bypass_pause: bool,
+    initial_args: ArgStack,
+) -> Result<(), String> {
+    let root = Event::new(
+        EventSource::Core,
+        "test.run",
+        json!({ "action_id": action_id.to_string() }),
+    );
+    let trigger_event_id = root.id;
+    bus.record(root);
+    scheduler
+        .dispatch(SchedulerRequest {
+            queue_id,
+            action_id,
+            trigger_event_id,
+            initial_args,
+            bypass_pause,
+        })
+        .await
+        .map_err(|e| e.to_string())
 }

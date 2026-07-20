@@ -18,8 +18,9 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_types::{
-    ExecutionContext, ExecutionOutcome, PlatformScope, SubActionConfig, SubActionOutcome,
-    SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId, Variant,
+    ExecutionContext, ExecutionMetadata, ExecutionOutcome, PlatformScope, SubActionConfig,
+    SubActionOutcome, SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId,
+    Variant, variant_preview,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -2467,7 +2468,7 @@ impl ScreenActionsView {
         };
 
         let card = modal(tr!("action_editor_run_history_title"), body, palette)
-            .size(ModalSize::Md)
+            .size(ModalSize::Lg)
             .header_icon(Icon::History, palette.brand)
             .subtitle(state.action_name.clone())
             .kbd_hint(tr!("actions_esc_hint"))
@@ -2527,6 +2528,7 @@ impl ScreenActionsView {
 
     fn render_history_list(&self, runs: &[ExecutionContext], palette: &ForgePalette) -> AnyElement {
         let mut col = div()
+            .w_full()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy));
@@ -2535,6 +2537,7 @@ impl ScreenActionsView {
         }
         div()
             .id("actions-history-scroll")
+            .w_full()
             .max_h(HISTORY_MAX_H)
             .overflow_y_scroll()
             .child(col)
@@ -2602,6 +2605,11 @@ impl ScreenActionsView {
             )
             .child(badge);
 
+        let step_failed = ctx
+            .telemetry
+            .iter()
+            .any(|step| matches!(step.outcome, SubActionOutcome::Failed(_)));
+
         let mut card = div()
             .w_full()
             .flex()
@@ -2613,8 +2621,11 @@ impl ScreenActionsView {
             .border(HALF_BORDER)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .child(top);
-        if let Some(message) = error_message {
+            .child(top)
+            .child(self.render_run_trigger(ctx, palette));
+        if let Some(message) = error_message
+            && !step_failed
+        {
             card = card.child(
                 div()
                     .pl(HISTORY_ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
@@ -2640,6 +2651,67 @@ impl ScreenActionsView {
             card = card.child(steps);
         }
         card.into_any_element()
+    }
+
+    fn render_run_trigger(&self, ctx: &ExecutionContext, palette: &ForgePalette) -> AnyElement {
+        let (glyph, label): (Icon, SharedString) = match &ctx.metadata {
+            ExecutionMetadata::Trigger { trigger_kind, .. } => {
+                let descriptor = trigger_kind
+                    .as_deref()
+                    .and_then(|kind| self.trigger_registry.get(kind));
+                let glyph = Icon::from_name(
+                    descriptor
+                        .map(TriggerKindDescriptor::icon_name)
+                        .unwrap_or("bolt"),
+                );
+                let label = descriptor
+                    .map(|d| SharedString::from(d.label().to_owned()))
+                    .unwrap_or_else(|| tr!("action_editor_run_history_trigger_fallback").into());
+                (glyph, label)
+            }
+            ExecutionMetadata::QuickAction { label, .. } => (
+                Icon::from_name("layout-grid"),
+                SharedString::from(label.clone()),
+            ),
+        };
+
+        let header = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(icon(glyph, FONT_XS, palette.text_muted))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_secondary)
+                    .child(label),
+            );
+
+        let mut section = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .pl(HISTORY_ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
+            .child(header);
+
+        if !ctx.arg_stack_snapshot.is_empty() {
+            let joined = ctx
+                .arg_stack_snapshot
+                .iter()
+                .map(|(name, value)| format!("{name} = {}", variant_preview(value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            section = section.child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(joined),
+            );
+        }
+
+        section.into_any_element()
     }
 
     fn render_telemetry_row(
@@ -2722,6 +2794,60 @@ impl ScreenActionsView {
             row = row.pl(HISTORY_STEP_NEST_INDENT);
         }
         row = row.child(line);
+
+        let io_indent = spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy);
+
+        if !step.args_in.is_empty() {
+            let joined = step
+                .args_in
+                .iter()
+                .map(|(name, value)| format!("{name} = {value}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            row = row.child(
+                div()
+                    .pl(io_indent)
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(format!(
+                        "{} {joined}",
+                        tr!("action_editor_run_history_step_args_in")
+                    )),
+            );
+        }
+
+        if !step.produced.is_empty() {
+            let mut produced = div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(spacing(Spacing::Xs, Density::Cozy))
+                .pl(io_indent)
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .child(
+                    div()
+                        .text_color(palette.text_muted)
+                        .child(tr!("action_editor_run_history_step_produced")),
+                );
+            for (name, value) in &step.produced {
+                produced = produced.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .child(div().text_color(palette.warning).child(name.clone()))
+                        .child(div().text_color(palette.text_muted).child(" = "))
+                        .child(
+                            div()
+                                .text_color(palette.text_secondary)
+                                .child(value.clone()),
+                        ),
+                );
+            }
+            row = row.child(produced);
+        }
+
         if let Some(text) = message {
             row = row.child(
                 div()

@@ -543,6 +543,9 @@ action_editor_run_history_step_ok = ok
 action_editor_run_history_step_failed = помилка
 action_editor_run_history_step_skipped = пропущено
 action_editor_run_history_step_nested = ↳
+action_editor_run_history_trigger_fallback = Тригер
+action_editor_run_history_step_args_in = @in
+action_editor_run_history_step_produced = @out
 
 ## Редактор дій - меню кроку
 

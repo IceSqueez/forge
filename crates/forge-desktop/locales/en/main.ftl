@@ -543,6 +543,9 @@ action_editor_run_history_step_ok = ok
 action_editor_run_history_step_failed = failed
 action_editor_run_history_step_skipped = skipped
 action_editor_run_history_step_nested = ↳
+action_editor_run_history_trigger_fallback = Trigger
+action_editor_run_history_step_args_in = @in
+action_editor_run_history_step_produced = @out
 
 ## Action editor - step menu
 

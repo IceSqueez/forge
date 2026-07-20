@@ -527,9 +527,6 @@ action_stat_errors_7d = ERRORS · 7d
 action_stat_avg_ms = { $count } ms
 action_stat_avg_none = -
 action_stat_execution = EXECUTION
-action_stat_no_errors = no errors
-action_stat_cancelled = cancelled
-action_step_avg_badge = { $count } ms avg
 
 ## Action editor - run history
 

@@ -673,20 +673,6 @@ fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
     segs
 }
 
-fn step_avg_badge(avg_ms: u64, palette: &ForgePalette) -> AnyElement {
-    div()
-        .flex_shrink_0()
-        .py(px(1.0))
-        .px(px(6.0))
-        .rounded(CHIP_RADIUS)
-        .bg(palette.surface_overlay)
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XXS)
-        .text_color(palette.success)
-        .child(tr!("action_step_avg_badge", count = avg_ms as i64))
-        .into_any_element()
-}
-
 fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     if s.is_empty() {
         return div()
@@ -2768,36 +2754,13 @@ impl ScreenActionsView {
             palette.success
         };
 
-        let (exec_value, exec_color, exec_hint, exec_hint_color): (
-            SharedString,
-            Rgba,
-            Option<SharedString>,
-            Rgba,
-        ) = match &self.last_outcome {
-            Some(ExecutionOutcome::Success) => (
-                "0".into(),
-                palette.text_primary,
-                Some(tr!("action_stat_no_errors").into()),
-                palette.text_muted,
-            ),
-            Some(ExecutionOutcome::Failed(message)) => (
+        let (exec_value, exec_color): (SharedString, Rgba) = match &self.last_outcome {
+            Some(ExecutionOutcome::Failed(_)) => (
                 tr!("action_editor_run_history_outcome_failed").into(),
                 palette.random,
-                Some(message.clone().into()),
-                palette.random,
             ),
-            Some(ExecutionOutcome::Cancelled) => (
-                "-".into(),
-                palette.text_muted,
-                Some(tr!("action_stat_cancelled").into()),
-                palette.text_muted,
-            ),
-            None => (
-                "0".into(),
-                palette.text_primary,
-                Some(tr!("action_stat_no_errors").into()),
-                palette.text_muted,
-            ),
+            Some(ExecutionOutcome::Cancelled) => ("-".into(), palette.text_muted),
+            Some(ExecutionOutcome::Success) | None => ("0".into(), palette.text_primary),
         };
 
         div()
@@ -2813,34 +2776,37 @@ impl ScreenActionsView {
                 tr!("action_stat_last_fired"),
                 last_fired,
                 palette.text_primary,
-                None,
-                palette.text_muted,
                 palette,
             ))
-            .child(self.render_runs_stat_cell(runs, palette, cx))
+            .child(self.render_history_link_cell(
+                "actions-runs-history-link",
+                tr!("action_stat_runs_today"),
+                runs,
+                palette.brand,
+                palette,
+                cx,
+            ))
             .child(self.render_stat_cell(
                 tr!("action_stat_avg_time"),
                 avg,
                 palette.success,
-                None,
-                palette.text_muted,
                 palette,
             ))
-            .child(self.render_stat_cell(
+            .child(self.render_history_link_cell(
+                "actions-execution-history-link",
                 tr!("action_stat_execution"),
                 exec_value,
                 exec_color,
-                exec_hint,
-                exec_hint_color,
                 palette,
+                cx,
             ))
-            .child(self.render_stat_cell(
+            .child(self.render_history_link_cell(
+                "actions-errors-history-link",
                 tr!("action_stat_errors_7d"),
                 errors.to_string(),
                 error_color,
-                None,
-                palette.text_muted,
                 palette,
+                cx,
             ))
             .into_any_element()
     }
@@ -2850,11 +2816,9 @@ impl ScreenActionsView {
         label: impl Into<SharedString>,
         value: impl Into<SharedString>,
         value_color: Rgba,
-        hint: Option<SharedString>,
-        hint_color: Rgba,
         palette: &ForgePalette,
     ) -> AnyElement {
-        let mut cell = div()
+        div()
             .flex_1()
             .flex()
             .flex_col()
@@ -2872,22 +2836,16 @@ impl ScreenActionsView {
                     .text_size(FONT_SM)
                     .text_color(value_color)
                     .child(value.into()),
-            );
-        if let Some(hint) = hint {
-            cell = cell.child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(hint_color)
-                    .child(hint),
-            );
-        }
-        cell.into_any_element()
+            )
+            .into_any_element()
     }
 
-    fn render_runs_stat_cell(
+    fn render_history_link_cell(
         &self,
+        id: &'static str,
+        label: impl Into<SharedString>,
         value: impl Into<SharedString>,
+        value_color: Rgba,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -2902,15 +2860,15 @@ impl ScreenActionsView {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(tr!("action_stat_runs_today")),
+                    .child(label.into()),
             )
             .child(
                 div()
-                    .id("actions-runs-history-link")
+                    .id(id)
                     .cursor_pointer()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_SM)
-                    .text_color(palette.brand)
+                    .text_color(value_color)
                     .underline()
                     .text_decoration_1()
                     .text_decoration_color(palette.border_input)
@@ -3199,21 +3157,11 @@ impl ScreenActionsView {
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(title);
-        let avg_ms = if depth == 0 {
-            self.detail
-                .as_ref()
-                .and_then(|d| d.sub_action_avg_ms.get(i).copied().flatten())
-        } else {
-            None
-        };
-        let mut title_el = div()
+        let title_el = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(title_text);
-        if let Some(avg) = avg_ms {
-            title_el = title_el.child(step_avg_badge(avg, palette));
-        }
 
         let enabled = step.enabled;
         let mut card = row_card(title_el, palette)
@@ -3383,12 +3331,12 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let runner = self.sub_action_registry.get(&form.kind_id);
-        let header_glyph = runner
-            .map(|r| Icon::from_name(r.icon_name()))
-            .unwrap_or(Icon::LayoutGrid);
-        let header_color = runner
-            .map(|r| sub_category_color(r.category(), palette))
-            .unwrap_or(palette.brand);
+        let (header_glyph, header_color) = step_glyph(
+            &form.kind_id,
+            runner.map(|r| r.icon_name()).unwrap_or("layout-grid"),
+            runner.map(|r| sub_category_color(r.category(), palette)),
+            palette,
+        );
         let chain_len = self.current_chain().len();
         let (step_index, step_total) = match form.target {
             SubFormTarget::Edit(i) => (i + 1, chain_len),

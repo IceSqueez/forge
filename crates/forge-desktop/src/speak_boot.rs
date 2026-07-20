@@ -88,9 +88,15 @@ async fn resolve_audio_output_device(backend: &Arc<dyn DataProvider>) -> Option<
 
     devices
         .iter()
-        .find(|d| d.is_default)
+        .find(|d| d.is_default && d.id.as_str() != "null")
+        .or_else(|| {
+            ["default", "pipewire", "pulse"]
+                .iter()
+                .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
+        })
+        .or_else(|| devices.iter().find(|d| d.id.as_str() != "null"))
+        .or_else(|| devices.first())
         .map(|d| d.id.clone())
-        .or_else(|| devices.first().map(|d| d.id.clone()))
 }
 
 async fn register_local_engines(registry: &mut TtsRegistry) {

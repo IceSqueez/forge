@@ -225,7 +225,12 @@ impl TtsFiltersView {
             return;
         }
         let config = build_config_lenient(&self.rules, &self.settings);
-        let (result, stages) = forge_tts_pipeline::preview(&input, &config);
+        let speaker_name = tr!("tts_filters_preview_speaker_name");
+        let context = forge_tts_pipeline::PipelineContext {
+            viewer_name: &speaker_name,
+            recent_messages: &[],
+        };
+        let (result, stages) = forge_tts_pipeline::preview(&input, &config, &context);
         self.cached_preview = Some(CachedPreview { stages, result });
     }
 
@@ -1654,11 +1659,10 @@ fn highlighted_output(
 
 fn stage_name_label(stage: StageName) -> String {
     match stage {
-        StageName::EmoteStripper => tr!("tts_filters_stage_name_emotes"),
-        StageName::UrlSanitizer => tr!("tts_filters_stage_name_urls"),
-        StageName::TextReplacements => tr!("tts_filters_stage_name_replacements"),
+        StageName::SkipRules => tr!("tts_filters_stage_name_skip_rules"),
         StageName::WordBlocklist => tr!("tts_filters_stage_name_blocklist"),
-        StageName::LengthCapper => tr!("tts_filters_stage_name_length"),
+        StageName::TextReplacements => tr!("tts_filters_stage_name_replacements"),
+        StageName::Output => tr!("tts_filters_stage_name_output"),
     }
 }
 

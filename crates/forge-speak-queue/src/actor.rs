@@ -66,13 +66,17 @@ struct SynthTaskDeps {
     voice_catalog: Arc<Vec<TtsVoice>>,
 }
 
-async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResult {
+async fn run_synthesis(
+    req: SpeakRequest,
+    deps: SynthTaskDeps,
+    recent_messages: Vec<String>,
+) -> SynthTaskResult {
     // Load the current config (atomic Arc clone, read guard dropped immediately).
     let pipeline_cfg = deps.pipeline.load();
 
     // Reward-origin gating is per-message, not part of the shared PipelineConfig,
     // so it's applied here as a pre-pass rather than inside `process`: reusing the
-    // same word-token strip `process`'s emote stage performs, independently of
+    // same word-token strip the `Output` stage performs, independently of
     // `emote_sources.twitch` (which gates only the general/always-in-the-pipeline
     // strip inside `process`). A no-op when the toggle is off or the message isn't
     // reward-sourced.
@@ -84,7 +88,11 @@ async fn run_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResul
     } else {
         &req.text
     };
-    let pipeline_result = forge_tts_pipeline::process(text_for_pipeline, &pipeline_cfg);
+    let context = forge_tts_pipeline::PipelineContext {
+        viewer_name: &req.viewer_name,
+        recent_messages: &recent_messages,
+    };
+    let pipeline_result = forge_tts_pipeline::process(text_for_pipeline, &pipeline_cfg, &context);
     let text_to_speak = match pipeline_result {
         PipelineResult::Speak(t) => t,
         PipelineResult::Skip { reason } => {
@@ -259,6 +267,7 @@ pub(crate) async fn run_actor(
     let mut gains: HashMap<EngineId, f32> = deps.engine_gains.clone();
     let mut current_playback: Option<CurrentPlayback> = None;
     let mut progress_ticker: Option<tokio::time::Interval> = None;
+    let mut recent_messages: VecDeque<String> = VecDeque::new();
 
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
     let (catalog_tx, mut catalog_rx) = tokio::sync::mpsc::channel::<Arc<Vec<TtsVoice>>>(1);
@@ -304,8 +313,14 @@ pub(crate) async fn run_actor(
                 registry: task_deps.registry.clone(),
                 voice_catalog: task_deps.voice_catalog.clone(),
             };
+            let recent_snapshot: Vec<String> = recent_messages.iter().cloned().collect();
+            let window = deps.pipeline.load().skip_rules.window.max(1);
+            while recent_messages.len() >= window {
+                recent_messages.pop_front();
+            }
+            recent_messages.push_back(req.text.clone());
             tokio::spawn(async move {
-                let result = run_synthesis(req, task_deps_clone).await;
+                let result = run_synthesis(req, task_deps_clone, recent_snapshot).await;
                 let _ = tx.send(result).await;
             });
         }
@@ -1215,7 +1230,7 @@ mod tests {
             req.voice_override = Some(voice.id.clone());
             req.is_reward = is_reward;
 
-            let result = run_synthesis(req, deps).await;
+            let result = run_synthesis(req, deps, Vec::new()).await;
             assert!(
                 matches!(result.outcome, SynthOutcome::Speak { .. }),
                 "expected Speak for is_reward={is_reward} toggle={strip_reward_emotes}",

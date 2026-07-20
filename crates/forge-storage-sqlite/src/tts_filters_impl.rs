@@ -126,10 +126,43 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
     }
 }
 
-type SettingsRow = (String, Option<i64>, String, i64, i64);
+#[allow(clippy::type_complexity)]
+type SettingsRow = (
+    String,
+    Option<i64>,
+    String,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    String,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+);
 
 fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageError> {
-    let (url_mode_str, max_length, blocklist_mode_str, strip_twitch, strip_reward) = row;
+    let (
+        url_mode_str,
+        max_length,
+        blocklist_mode_str,
+        strip_twitch,
+        strip_reward,
+        skip_contains_url,
+        skip_starts_with_bang,
+        skip_from_bot_accounts,
+        bot_accounts_json,
+        skip_longer_than,
+        longer_than_max_chars,
+        skip_repeat_of_recent,
+        repeat_of_recent_window,
+        output_read_display_name_first,
+        output_emote_to_word,
+    ) = row;
 
     let url_mode: UrlMode = serde_json::from_str(&format!("\"{url_mode_str}\""))
         .map_err(|_| StorageError::Parse(format!("unknown url_mode: {url_mode_str}")))?;
@@ -139,12 +172,26 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
             StorageError::Parse(format!("unknown blocklist_mode: {blocklist_mode_str}"))
         })?;
 
+    let bot_accounts: Vec<String> = serde_json::from_str(&bot_accounts_json).map_err(|_| {
+        StorageError::Parse(format!("invalid bot_accounts json: {bot_accounts_json}"))
+    })?;
+
     Ok(TtsPipelineSettings {
         url_mode,
         max_length: max_length.map(|v| v as u32),
         blocklist_mode,
         strip_twitch_emotes: strip_twitch != 0,
         strip_reward_emotes: strip_reward != 0,
+        skip_contains_url: skip_contains_url != 0,
+        skip_starts_with_bang: skip_starts_with_bang != 0,
+        skip_from_bot_accounts: skip_from_bot_accounts != 0,
+        bot_accounts,
+        skip_longer_than: skip_longer_than != 0,
+        longer_than_max_chars: longer_than_max_chars as u32,
+        skip_repeat_of_recent: skip_repeat_of_recent != 0,
+        repeat_of_recent_window: repeat_of_recent_window as u32,
+        output_read_display_name_first: output_read_display_name_first != 0,
+        output_emote_to_word: output_emote_to_word != 0,
     })
 }
 
@@ -194,7 +241,11 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
     async fn get_pipeline_settings(&self) -> Result<TtsPipelineSettings, StorageError> {
         let row: Option<SettingsRow> = sqlx::query_as(
             "SELECT url_mode, max_length, blocklist_mode,
-                    strip_twitch_emotes, strip_reward_emotes
+                    strip_twitch_emotes, strip_reward_emotes,
+                    skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts,
+                    bot_accounts, skip_longer_than, longer_than_max_chars,
+                    skip_repeat_of_recent, repeat_of_recent_window,
+                    output_read_display_name_first, output_emote_to_word
              FROM tts_pipeline_settings WHERE id = 1",
         )
         .fetch_optional(&self.pool)
@@ -219,23 +270,48 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
             .map_err(StorageError::Serialization)?
             .trim_matches('"')
             .to_owned();
+        let bot_accounts_json =
+            serde_json::to_string(&settings.bot_accounts).map_err(StorageError::Serialization)?;
 
         sqlx::query(
             "INSERT INTO tts_pipeline_settings
-                (id, url_mode, max_length, blocklist_mode, strip_twitch_emotes, strip_reward_emotes)
-             VALUES (1, ?, ?, ?, ?, ?)
+                (id, url_mode, max_length, blocklist_mode, strip_twitch_emotes, strip_reward_emotes,
+                 skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts, bot_accounts,
+                 skip_longer_than, longer_than_max_chars, skip_repeat_of_recent,
+                 repeat_of_recent_window, output_read_display_name_first, output_emote_to_word)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
-                url_mode            = excluded.url_mode,
-                max_length          = excluded.max_length,
-                blocklist_mode      = excluded.blocklist_mode,
-                strip_twitch_emotes = excluded.strip_twitch_emotes,
-                strip_reward_emotes = excluded.strip_reward_emotes",
+                url_mode                       = excluded.url_mode,
+                max_length                     = excluded.max_length,
+                blocklist_mode                 = excluded.blocklist_mode,
+                strip_twitch_emotes            = excluded.strip_twitch_emotes,
+                strip_reward_emotes            = excluded.strip_reward_emotes,
+                skip_contains_url              = excluded.skip_contains_url,
+                skip_starts_with_bang          = excluded.skip_starts_with_bang,
+                skip_from_bot_accounts         = excluded.skip_from_bot_accounts,
+                bot_accounts                   = excluded.bot_accounts,
+                skip_longer_than               = excluded.skip_longer_than,
+                longer_than_max_chars          = excluded.longer_than_max_chars,
+                skip_repeat_of_recent          = excluded.skip_repeat_of_recent,
+                repeat_of_recent_window        = excluded.repeat_of_recent_window,
+                output_read_display_name_first = excluded.output_read_display_name_first,
+                output_emote_to_word           = excluded.output_emote_to_word",
         )
         .bind(&url_mode_str)
         .bind(settings.max_length.map(|v| v as i64))
         .bind(&blocklist_mode_str)
         .bind(settings.strip_twitch_emotes as i64)
         .bind(settings.strip_reward_emotes as i64)
+        .bind(settings.skip_contains_url as i64)
+        .bind(settings.skip_starts_with_bang as i64)
+        .bind(settings.skip_from_bot_accounts as i64)
+        .bind(&bot_accounts_json)
+        .bind(settings.skip_longer_than as i64)
+        .bind(settings.longer_than_max_chars as i64)
+        .bind(settings.skip_repeat_of_recent as i64)
+        .bind(settings.repeat_of_recent_window as i64)
+        .bind(settings.output_read_display_name_first as i64)
+        .bind(settings.output_emote_to_word as i64)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;

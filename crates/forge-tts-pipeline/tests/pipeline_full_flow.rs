@@ -1,47 +1,49 @@
 //! Regression: pipeline stage ordering and combined transforms.
 //!
 //! The canonical order is:
-//!   EmoteStripper → UrlSanitizer → TextReplacements → WordBlocklist → LengthCapper
+//!   SkipRules → WordBlocklist → TextReplacements → Output
 //!
-//! Changing stage order silently breaks user-configured pipelines (e.g. a URL
-//! replacement rule that fires before UrlSanitizer is already gone would fail).
+//! Changing stage order silently breaks user-configured pipelines (e.g. a skip
+//! rule that should see the raw message instead seeing already-transformed text).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_tts_pipeline::{
-    BlocklistMode, EmoteTokenSet, PipelineConfig, PipelineResult, ReplacementRule, SkipReason,
-    UrlMode, process,
+    BlocklistMode, EmoteTokenSet, PipelineConfig, PipelineContext, PipelineResult, ReplacementRule,
+    SkipReason, SkipRulesConfig, process,
 };
 
-fn url_replace_config() -> PipelineConfig {
-    PipelineConfig {
-        url_mode: UrlMode::Replace {
-            substitute: "link".into(),
-        },
-        ..PipelineConfig::default()
+fn ctx() -> PipelineContext<'static> {
+    PipelineContext {
+        viewer_name: "viewer",
+        recent_messages: &[],
     }
 }
 
 #[test]
-fn url_replaced_before_regex_rules_can_see_original_url() {
-    // UrlSanitizer runs before TextReplacements.
-    // A regex rule matching "https" never sees the raw URL - it's already "link".
+fn replacement_rule_order_hides_original_text_from_later_rules() {
+    // TextReplacements applies rules in order. A leading rule that rewrites the
+    // URL-like substring must run before a later regex rule that would have
+    // matched the original text.
     let config = PipelineConfig {
-        url_mode: UrlMode::Replace {
-            substitute: "link".into(),
-        },
-        replacement_rules: vec![ReplacementRule::Regex {
-            compiled: regex::Regex::new(r"https?://\S+").unwrap(),
-            replacement: "SHOULD_NOT_APPEAR".into(),
-        }],
+        replacement_rules: vec![
+            ReplacementRule::Regex {
+                compiled: regex::Regex::new(r"https?://\S+").unwrap(),
+                replacement: "link".into(),
+            },
+            ReplacementRule::Regex {
+                compiled: regex::Regex::new(r"https").unwrap(),
+                replacement: "SHOULD_NOT_APPEAR".into(),
+            },
+        ],
         ..PipelineConfig::default()
     };
 
-    match process("visit https://example.com today", &config) {
+    match process("visit https://example.com today", &config, &ctx()) {
         PipelineResult::Speak(text) => {
             assert!(
                 !text.contains("SHOULD_NOT_APPEAR"),
-                "regex ran before URL sanitizer - stage order broken"
+                "second rule ran on the original url - rule order broken"
             );
             assert!(text.contains("link"), "URL should have been substituted");
         }
@@ -50,10 +52,9 @@ fn url_replaced_before_regex_rules_can_see_original_url() {
 }
 
 #[test]
-fn blocklist_runs_after_replacement_rules() {
-    // TextReplacements runs before WordBlocklist.
-    // If a replacement converts a non-blocked word into a blocked word,
-    // the blocklist stage catches it.
+fn replacement_output_is_not_caught_by_blocklist() {
+    // WordBlocklist now runs BEFORE TextReplacements. A replacement rule that
+    // introduces a blocked word must NOT be caught - the blocklist already ran.
     let config = PipelineConfig {
         replacement_rules: vec![ReplacementRule::Text {
             pattern: "sneaky".into(),
@@ -64,76 +65,91 @@ fn blocklist_runs_after_replacement_rules() {
         ..PipelineConfig::default()
     };
 
-    match process("that was sneaky right", &config) {
+    match process("that was sneaky right", &config, &ctx()) {
         PipelineResult::Speak(text) => {
             assert!(
-                text.contains("[beep]"),
-                "replacement → blocklist chain must work: {text}"
+                text.contains("badword"),
+                "blocklist runs before replacements now - it must not see the introduced word: {text}"
             );
         }
-        PipelineResult::Skip { .. } => panic!("expected Speak after censor"),
+        PipelineResult::Skip { .. } => panic!("expected Speak - blocklist already ran"),
     }
 }
 
 #[test]
-fn emote_stripper_runs_before_url_sanitizer() {
-    // EmoteStripper runs first. Emote token "LUL" removed before URL check.
-    let mut config = url_replace_config();
-    config.emote_sources.twitch = true;
-    config.emote_tokens = EmoteTokenSet {
-        tokens: ["LUL".to_string()].into_iter().collect(),
+fn skip_rules_evaluate_original_message_unaffected_by_output_settings() {
+    // SkipRules is stage 1: it must fire on the pristine original message
+    // regardless of what the Output stage would later do to emote tokens.
+    let mut config = PipelineConfig {
+        skip_rules: SkipRulesConfig {
+            contains_url: true,
+            ..SkipRulesConfig::default()
+        },
+        ..PipelineConfig::default()
     };
+    config.emote_sources.twitch = true;
+    config.emote_tokens.tokens.insert("LUL".into());
 
-    match process("check LUL https://example.com out", &config) {
-        PipelineResult::Speak(text) => {
-            assert!(!text.contains("LUL"), "emote not stripped");
-            assert!(!text.contains("https://"), "URL not replaced");
-            assert!(text.contains("link"), "URL should be replaced with 'link'");
+    match process("check LUL https://example.com out", &config, &ctx()) {
+        PipelineResult::Skip { reason } => {
+            assert_eq!(
+                reason,
+                SkipReason::MatchedSkipRule("message contains a url")
+            );
         }
-        PipelineResult::Skip { .. } => panic!("expected Speak"),
+        PipelineResult::Speak(_) => panic!("expected Skip due to URL"),
     }
 }
 
 #[test]
-fn length_capper_truncates_result_of_earlier_stages() {
-    // LengthCapper is the final stage; it truncates the output of all prior stages.
+fn skip_rules_longer_than_checks_original_length_not_post_replacement_length() {
+    // SkipRules runs before TextReplacements, so `longer_than` must evaluate the
+    // ORIGINAL message length, not the length after a replacement rule expands it.
     let config = PipelineConfig {
+        skip_rules: SkipRulesConfig {
+            longer_than: true,
+            max_chars: 10,
+            ..SkipRulesConfig::default()
+        },
         replacement_rules: vec![ReplacementRule::Text {
             pattern: "short".into(),
             replacement: "averylongword".into(),
         }],
-        max_chars: 10,
         ..PipelineConfig::default()
     };
 
-    match process("short text", &config) {
+    match process("short text", &config, &ctx()) {
         PipelineResult::Speak(text) => {
-            // "averylongword text" (18 chars) truncated to 10 + ellipsis
             assert!(
-                text.chars().count() <= 11, // 10 + ellipsis char
-                "length capper must truncate post-replacement output: '{text}'"
+                text.contains("averylongword"),
+                "replacement must still apply after the original-length check passes: {text}"
             );
         }
-        PipelineResult::Skip { .. } => panic!("expected Speak after truncation"),
+        PipelineResult::Skip { .. } => {
+            panic!("original message is exactly 10 chars - must not be skipped")
+        }
     }
 }
 
 #[test]
 fn url_skip_rule_prevents_downstream_processing() {
-    // When UrlSanitizer skips the message, no further stages run.
+    // When SkipRules skips the message, no further stages run.
     // The text must be returned as-is in SkipReason (not mutated by later stages).
     let config = PipelineConfig {
-        url_mode: UrlMode::SkipMessage,
+        skip_rules: SkipRulesConfig {
+            contains_url: true,
+            ..SkipRulesConfig::default()
+        },
         word_blocklist: vec!["safe".into()],
         blocklist_mode: BlocklistMode::Censor,
         ..PipelineConfig::default()
     };
 
-    match process("visit https://example.com safe word", &config) {
+    match process("visit https://example.com safe word", &config, &ctx()) {
         PipelineResult::Skip { reason } => {
             assert_eq!(
                 reason,
-                SkipReason::MatchedSkipRule("message contains url"),
+                SkipReason::MatchedSkipRule("message contains a url"),
                 "wrong skip reason"
             );
         }
@@ -142,16 +158,15 @@ fn url_skip_rule_prevents_downstream_processing() {
 }
 
 #[test]
-fn blocklist_skip_mode_short_circuits_length_capper() {
-    // WordBlocklist in SkipMessage mode skips before LengthCapper.
+fn blocklist_skip_mode_short_circuits_downstream_stages() {
+    // WordBlocklist in SkipMessage mode skips before TextReplacements/Output ever run.
     let config = PipelineConfig {
         word_blocklist: vec!["forbidden".into()],
         blocklist_mode: BlocklistMode::SkipMessage,
-        max_chars: 3,
         ..PipelineConfig::default()
     };
 
-    match process("forbidden", &config) {
+    match process("forbidden", &config, &ctx()) {
         PipelineResult::Skip { reason } => {
             assert_eq!(reason, SkipReason::BlockedByWordFilter);
         }
@@ -160,7 +175,7 @@ fn blocklist_skip_mode_short_circuits_length_capper() {
 }
 
 #[test]
-fn empty_text_after_emote_strip_skips_at_length_capper() {
+fn empty_text_after_emote_strip_skips_after_output_stage() {
     let mut config = PipelineConfig {
         emote_tokens: EmoteTokenSet {
             tokens: ["LUL".to_string(), "Pog".to_string()].into_iter().collect(),
@@ -169,7 +184,7 @@ fn empty_text_after_emote_strip_skips_at_length_capper() {
     };
     config.emote_sources.twitch = true;
 
-    match process("LUL Pog LUL", &config) {
+    match process("LUL Pog LUL", &config, &ctx()) {
         PipelineResult::Skip { reason } => {
             assert_eq!(reason, SkipReason::EmptyAfterProcessing);
         }

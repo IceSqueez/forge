@@ -67,16 +67,50 @@ pub struct FilterRule {
 
 /// Pipeline-level settings that are not user-authored rules but are persisted
 /// alongside them as part of the TTS filter configuration.
+///
+/// `url_mode` and `max_length` are retired by the skip-rules/output model below
+/// but stay readable so the TTS domain can one-time-convert existing rows
+/// (`UrlMode::Replace` into a synthetic replacement rule, `UrlMode::Suppress`
+/// into `skip_contains_url`, `max_length` into `longer_than_max_chars`) without
+/// breaking deserialization of rows written before this model existed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TtsPipelineSettings {
     pub url_mode: UrlMode,
-    /// Maximum character count before truncation. `None` = unlimited.
     pub max_length: Option<u32>,
     pub blocklist_mode: BlocklistMode,
     /// Strip Twitch-style emote tokens before synthesis.
     pub strip_twitch_emotes: bool,
     /// Strip channel-point reward emote tokens before synthesis.
     pub strip_reward_emotes: bool,
+    #[serde(default)]
+    pub skip_contains_url: bool,
+    #[serde(default)]
+    pub skip_starts_with_bang: bool,
+    #[serde(default)]
+    pub skip_from_bot_accounts: bool,
+    /// User-added bot accounts merged with the built-in list at evaluation time.
+    #[serde(default)]
+    pub bot_accounts: Vec<String>,
+    #[serde(default)]
+    pub skip_longer_than: bool,
+    #[serde(default = "default_longer_than_max_chars")]
+    pub longer_than_max_chars: u32,
+    #[serde(default)]
+    pub skip_repeat_of_recent: bool,
+    #[serde(default = "default_repeat_of_recent_window")]
+    pub repeat_of_recent_window: u32,
+    #[serde(default)]
+    pub output_read_display_name_first: bool,
+    #[serde(default)]
+    pub output_emote_to_word: bool,
+}
+
+fn default_longer_than_max_chars() -> u32 {
+    200
+}
+
+fn default_repeat_of_recent_window() -> u32 {
+    3
 }
 
 impl Default for TtsPipelineSettings {
@@ -87,6 +121,16 @@ impl Default for TtsPipelineSettings {
             blocklist_mode: BlocklistMode::Censor,
             strip_twitch_emotes: true,
             strip_reward_emotes: true,
+            skip_contains_url: false,
+            skip_starts_with_bang: false,
+            skip_from_bot_accounts: false,
+            bot_accounts: Vec::new(),
+            skip_longer_than: false,
+            longer_than_max_chars: default_longer_than_max_chars(),
+            skip_repeat_of_recent: false,
+            repeat_of_recent_window: default_repeat_of_recent_window(),
+            output_read_display_name_first: false,
+            output_emote_to_word: false,
         }
     }
 }

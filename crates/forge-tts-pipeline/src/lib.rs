@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,11 +27,10 @@ pub struct StageOutcome {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StageName {
-    EmoteStripper,
-    UrlSanitizer,
-    TextReplacements,
+    SkipRules,
     WordBlocklist,
-    LengthCapper,
+    TextReplacements,
+    Output,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,21 +47,6 @@ pub struct EmoteSources {
     pub ffz: bool,
     pub seven_tv: bool,
     pub emoji: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum UrlMode {
-    Replace { substitute: String },
-    SkipMessage,
-    Passthrough,
-}
-
-impl Default for UrlMode {
-    fn default() -> Self {
-        Self::Replace {
-            substitute: "link".into(),
-        }
-    }
 }
 
 /// A set of emote tokens supplied by the speak-queue actor at construction time.
@@ -90,6 +75,52 @@ pub enum BlocklistMode {
     SkipMessage,
 }
 
+/// Independently toggleable conditions evaluated against the original message.
+/// Any enabled condition that matches short-circuits the whole pipeline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkipRulesConfig {
+    pub contains_url: bool,
+    pub starts_with_bang: bool,
+    pub from_bot_accounts: bool,
+    /// User-added accounts, merged with the built-in bot list at evaluation time.
+    pub bot_accounts: Vec<String>,
+    pub longer_than: bool,
+    pub max_chars: usize,
+    pub repeat_of_recent: bool,
+    /// Caller-supplied `recent_messages` window this many entries wide; the pipeline
+    /// only compares against whatever slice it is handed.
+    pub window: usize,
+}
+
+impl Default for SkipRulesConfig {
+    fn default() -> Self {
+        Self {
+            contains_url: false,
+            starts_with_bang: false,
+            from_bot_accounts: false,
+            bot_accounts: Vec::new(),
+            longer_than: false,
+            max_chars: 200,
+            repeat_of_recent: false,
+            window: 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct OutputConfig {
+    pub read_display_name_first: bool,
+    pub emote_to_word: bool,
+}
+
+/// Per-message facts the pipeline needs but that never belong in the shared,
+/// swappable `PipelineConfig`.
+#[derive(Debug, Clone, Copy)]
+pub struct PipelineContext<'a> {
+    pub viewer_name: &'a str,
+    pub recent_messages: &'a [String],
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum PipelineError {
     #[error("invalid regex pattern `{pattern}`: {source}")]
@@ -103,20 +134,20 @@ pub enum PipelineError {
 ///
 /// Constructed once per settings-save; reused across messages.
 /// Holds pre-compiled `Regex` objects - construction is fallible.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PipelineConfig {
     pub emote_sources: EmoteSources,
     pub emote_tokens: EmoteTokenSet,
-    pub url_mode: UrlMode,
+    pub skip_rules: SkipRulesConfig,
     pub replacement_rules: Vec<ReplacementRule>,
     pub word_blocklist: Vec<String>,
     pub blocklist_mode: BlocklistMode,
-    pub max_chars: usize,
+    pub output: OutputConfig,
     /// Whether channel-points-reward-sourced messages get `emote_tokens` stripped
-    /// in addition to (not instead of) whatever `emote_sources`/`emote_tokens`
-    /// already apply. Origin is per-message, not part of this shared config, so
-    /// callers gate on it themselves (see `strip_emote_tokens`) before invoking
-    /// `process`; this field only carries the persisted on/off setting.
+    /// in addition to (not instead of) whatever the `Output` stage already applies.
+    /// Origin is per-message, not part of this shared config, so callers gate on it
+    /// themselves (see `strip_emote_tokens`) before invoking `process`; this field
+    /// only carries the persisted on/off setting.
     pub strip_reward_emotes: bool,
 }
 
@@ -125,40 +156,35 @@ impl PipelineConfig {
     pub fn new(
         emote_sources: EmoteSources,
         emote_tokens: EmoteTokenSet,
-        url_mode: UrlMode,
+        skip_rules: SkipRulesConfig,
         replacement_rules: Vec<ReplacementRule>,
         word_blocklist: Vec<String>,
         blocklist_mode: BlocklistMode,
-        max_chars: usize,
+        output: OutputConfig,
         strip_reward_emotes: bool,
     ) -> Self {
         Self {
             emote_sources,
             emote_tokens,
-            url_mode,
+            skip_rules,
             replacement_rules,
             word_blocklist,
             blocklist_mode,
-            max_chars,
+            output,
             strip_reward_emotes,
         }
     }
 }
 
-impl Default for PipelineConfig {
-    fn default() -> Self {
-        Self {
-            emote_sources: EmoteSources::default(),
-            emote_tokens: EmoteTokenSet::default(),
-            url_mode: UrlMode::default(),
-            replacement_rules: vec![],
-            word_blocklist: vec![],
-            blocklist_mode: BlocklistMode::default(),
-            max_chars: 500,
-            strip_reward_emotes: false,
-        }
-    }
-}
+const BUILTIN_BOT_ACCOUNTS: &[&str] = &[
+    "nightbot",
+    "streamelements",
+    "moobot",
+    "fossabot",
+    "streamlabs",
+    "wizebot",
+    "botisimo",
+];
 
 fn is_emoji_char(c: char) -> bool {
     let cp = c as u32;
@@ -178,7 +204,7 @@ fn is_emoji_char(c: char) -> bool {
 ///
 /// Exposed so callers needing origin-specific gating (e.g. only stripping for
 /// channel-points-reward-sourced messages) can invoke the same stripping pass
-/// `stage_emote_stripper` uses, ahead of `process`, without duplicating the
+/// the `Output` stage uses, ahead of `process`, without duplicating the
 /// token-match logic.
 pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
     if tokens.tokens.is_empty() {
@@ -191,45 +217,52 @@ pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
     words.join(" ")
 }
 
-fn stage_emote_stripper(text: &str, config: &PipelineConfig) -> String {
-    // Gated on `emote_sources.twitch` (persisted as `strip_twitch_emotes`) so this
-    // general, always-in-the-pipeline pass and the reward-only pre-pass the actor
-    // runs ahead of `process` (via `strip_emote_tokens` directly, gated on
-    // `is_reward && strip_reward_emotes`) are observably distinct: with this flag
-    // off, `emote_tokens` populated alone must NOT cause every message to be
-    // stripped - only reward-sourced ones, and only through the pre-pass.
-    let stripped = if config.emote_sources.twitch {
-        strip_emote_tokens(text, &config.emote_tokens)
-    } else {
-        text.to_owned()
-    };
-
-    if config.emote_sources.emoji {
-        stripped.chars().filter(|c| !is_emoji_char(*c)).collect()
-    } else {
-        stripped
-    }
-}
+#[allow(clippy::expect_used)]
+static URL_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?:https?|ftp)://\S+").expect("static regex"));
 
 #[allow(clippy::expect_used)]
-static URL_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
-    regex::Regex::new(r"(?:https?|ftp)://\S+").expect("valid url regex")
-});
+static COLON_EMOTE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r":([A-Za-z0-9_]+):").expect("static regex"));
 
-fn stage_url_sanitizer(text: &str, mode: &UrlMode) -> Result<String, SkipReason> {
-    match mode {
-        UrlMode::Passthrough => Ok(text.to_owned()),
-        UrlMode::SkipMessage => {
-            if URL_RE.is_match(text) {
-                Err(SkipReason::MatchedSkipRule("message contains url"))
-            } else {
-                Ok(text.to_owned())
-            }
-        }
-        UrlMode::Replace { substitute } => {
-            Ok(URL_RE.replace_all(text, substitute.as_str()).into_owned())
-        }
+fn colon_tokens_to_words(text: &str) -> String {
+    COLON_EMOTE_RE.replace_all(text, "$1").into_owned()
+}
+
+fn is_bot_account(viewer_name: &str, extra: &[String]) -> bool {
+    let lower = viewer_name.to_lowercase();
+    BUILTIN_BOT_ACCOUNTS.iter().any(|b| *b == lower)
+        || extra.iter().any(|b| b.to_lowercase() == lower)
+}
+
+fn is_repeat_of_recent(text: &str, recent: &[String]) -> bool {
+    let trimmed = text.trim();
+    recent.iter().any(|r| r.trim() == trimmed)
+}
+
+fn stage_skip_rules(
+    text: &str,
+    config: &SkipRulesConfig,
+    context: &PipelineContext,
+) -> Option<SkipReason> {
+    if config.contains_url && URL_RE.is_match(text) {
+        return Some(SkipReason::MatchedSkipRule("message contains a url"));
     }
+    if config.starts_with_bang && text.starts_with('!') {
+        return Some(SkipReason::MatchedSkipRule("message starts with a prefix"));
+    }
+    if config.from_bot_accounts && is_bot_account(context.viewer_name, &config.bot_accounts) {
+        return Some(SkipReason::MatchedSkipRule("message is from a bot account"));
+    }
+    if config.longer_than && text.chars().count() > config.max_chars {
+        return Some(SkipReason::MatchedSkipRule("message exceeds max length"));
+    }
+    if config.repeat_of_recent && is_repeat_of_recent(text, context.recent_messages) {
+        return Some(SkipReason::MatchedSkipRule(
+            "message repeats a recent message",
+        ));
+    }
+    None
 }
 
 fn stage_text_replacements(text: &str, rules: &[ReplacementRule]) -> String {
@@ -308,16 +341,27 @@ fn stage_word_blocklist(
     Ok(result)
 }
 
-fn stage_length_capper(text: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let count = text.chars().count();
-    if count <= max_chars {
-        text.to_owned()
+fn transform_emotes(text: &str, config: &PipelineConfig) -> String {
+    if config.output.emote_to_word {
+        colon_tokens_to_words(text)
+    } else if config.emote_sources.twitch {
+        strip_emote_tokens(text, &config.emote_tokens)
     } else {
-        let truncated: String = text.chars().take(max_chars).collect();
-        format!("{truncated}\u{2026}")
+        text.to_owned()
+    }
+}
+
+fn stage_output(text: &str, config: &PipelineConfig, context: &PipelineContext) -> String {
+    let emote_pass = transform_emotes(text, config);
+    let emoji_pass: String = if config.emote_sources.emoji {
+        emote_pass.chars().filter(|c| !is_emoji_char(*c)).collect()
+    } else {
+        emote_pass
+    };
+    if config.output.read_display_name_first {
+        format!("{} says: {}", context.viewer_name, emoji_pass)
+    } else {
+        emoji_pass
     }
 }
 
@@ -326,69 +370,68 @@ enum StageOut {
     Skip(SkipReason),
 }
 
-fn run_stage(stage: StageName, text: &str, config: &PipelineConfig) -> StageOut {
+fn run_stage(
+    stage: StageName,
+    text: &str,
+    config: &PipelineConfig,
+    context: &PipelineContext,
+) -> StageOut {
     match stage {
-        StageName::EmoteStripper => StageOut::Ok(stage_emote_stripper(text, config)),
-        StageName::UrlSanitizer => match stage_url_sanitizer(text, &config.url_mode) {
-            Ok(s) => StageOut::Ok(s),
-            Err(r) => StageOut::Skip(r),
+        StageName::SkipRules => match stage_skip_rules(text, &config.skip_rules, context) {
+            Some(reason) => StageOut::Skip(reason),
+            None => StageOut::Ok(text.to_owned()),
         },
-        StageName::TextReplacements => {
-            StageOut::Ok(stage_text_replacements(text, &config.replacement_rules))
-        }
         StageName::WordBlocklist => {
             match stage_word_blocklist(text, &config.word_blocklist, &config.blocklist_mode) {
                 Ok(s) => StageOut::Ok(s),
                 Err(r) => StageOut::Skip(r),
             }
         }
-        StageName::LengthCapper => {
-            let out = stage_length_capper(text, config.max_chars);
-            if out.trim().is_empty() {
-                StageOut::Skip(SkipReason::EmptyAfterProcessing)
-            } else {
-                StageOut::Ok(out)
-            }
+        StageName::TextReplacements => {
+            StageOut::Ok(stage_text_replacements(text, &config.replacement_rules))
         }
+        StageName::Output => StageOut::Ok(stage_output(text, config, context)),
     }
 }
 
+const STAGES: [StageName; 4] = [
+    StageName::SkipRules,
+    StageName::WordBlocklist,
+    StageName::TextReplacements,
+    StageName::Output,
+];
+
 /// Pure function - no I/O, no allocation beyond string manipulation.
 /// Never panics. Config must be pre-validated via `PipelineConfig::new`.
-pub fn process(text: &str, config: &PipelineConfig) -> PipelineResult {
-    let stages = [
-        StageName::EmoteStripper,
-        StageName::UrlSanitizer,
-        StageName::TextReplacements,
-        StageName::WordBlocklist,
-        StageName::LengthCapper,
-    ];
+pub fn process(text: &str, config: &PipelineConfig, context: &PipelineContext) -> PipelineResult {
     let mut current = text.to_owned();
-    for stage in stages {
-        match run_stage(stage, &current, config) {
+    for stage in STAGES {
+        match run_stage(stage, &current, config, context) {
             StageOut::Ok(s) => current = s,
             StageOut::Skip(r) => return PipelineResult::Skip { reason: r },
         }
     }
+    if current.trim().is_empty() {
+        return PipelineResult::Skip {
+            reason: SkipReason::EmptyAfterProcessing,
+        };
+    }
     PipelineResult::Speak(current)
 }
 
-/// Returns all five `StageOutcome` entries regardless of early `Skip`.
+/// Returns all four `StageOutcome` entries regardless of early `Skip`.
 /// On `Skip`, subsequent stages receive the last non-empty intermediate text
 /// but record `StageAction::Skipped`.
-pub fn preview(text: &str, config: &PipelineConfig) -> (PipelineResult, Vec<StageOutcome>) {
-    let stage_names = [
-        StageName::EmoteStripper,
-        StageName::UrlSanitizer,
-        StageName::TextReplacements,
-        StageName::WordBlocklist,
-        StageName::LengthCapper,
-    ];
-    let mut outcomes = Vec::with_capacity(5);
+pub fn preview(
+    text: &str,
+    config: &PipelineConfig,
+    context: &PipelineContext,
+) -> (PipelineResult, Vec<StageOutcome>) {
+    let mut outcomes = Vec::with_capacity(STAGES.len());
     let mut current = text.to_owned();
     let mut early_skip: Option<SkipReason> = None;
 
-    for name in stage_names {
+    for name in STAGES {
         let input = current.clone();
         let (output, action) = if let Some(ref reason) = early_skip {
             (
@@ -398,7 +441,7 @@ pub fn preview(text: &str, config: &PipelineConfig) -> (PipelineResult, Vec<Stag
                 },
             )
         } else {
-            match run_stage(name, &input, config) {
+            match run_stage(name, &input, config, context) {
                 StageOut::Ok(out) => {
                     let action = if out == input {
                         StageAction::PassedThrough
@@ -440,29 +483,151 @@ pub fn preview(text: &str, config: &PipelineConfig) -> (PipelineResult, Vec<Stag
 mod tests {
     use super::*;
 
+    fn ctx() -> PipelineContext<'static> {
+        PipelineContext {
+            viewer_name: "viewer",
+            recent_messages: &[],
+        }
+    }
+
     #[test]
     fn process_passthrough_no_config() {
         let config = PipelineConfig::default();
-        let result = process("hello world", &config);
+        let result = process("hello world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello world".into()));
     }
 
     #[test]
-    fn preview_returns_five_stages() {
+    fn preview_returns_four_stages() {
         let config = PipelineConfig::default();
-        let (_result, outcomes) = preview("test", &config);
-        assert_eq!(outcomes.len(), 5);
-        assert_eq!(outcomes[0].stage, StageName::EmoteStripper);
-        assert_eq!(outcomes[4].stage, StageName::LengthCapper);
+        let (_result, outcomes) = preview("test", &config, &ctx());
+        assert_eq!(outcomes.len(), 4);
+        assert_eq!(outcomes[0].stage, StageName::SkipRules);
+        assert_eq!(outcomes[3].stage, StageName::Output);
     }
 
     #[test]
-    fn emote_stripper_removes_known_tokens() {
+    fn skip_rules_contains_url() {
+        let config = PipelineConfig {
+            skip_rules: SkipRulesConfig {
+                contains_url: true,
+                ..SkipRulesConfig::default()
+            },
+            ..PipelineConfig::default()
+        };
+        let result = process("visit https://spam.com", &config, &ctx());
+        assert_eq!(
+            result,
+            PipelineResult::Skip {
+                reason: SkipReason::MatchedSkipRule("message contains a url")
+            }
+        );
+    }
+
+    #[test]
+    fn skip_rules_starts_with_bang() {
+        let config = PipelineConfig {
+            skip_rules: SkipRulesConfig {
+                starts_with_bang: true,
+                ..SkipRulesConfig::default()
+            },
+            ..PipelineConfig::default()
+        };
+        let result = process("!command arg", &config, &ctx());
+        assert!(matches!(result, PipelineResult::Skip { .. }));
+        let passthrough = process("command arg", &config, &ctx());
+        assert_eq!(passthrough, PipelineResult::Speak("command arg".into()));
+    }
+
+    #[test]
+    fn skip_rules_from_bot_accounts_matches_builtin_and_user_list() {
+        let config = PipelineConfig {
+            skip_rules: SkipRulesConfig {
+                from_bot_accounts: true,
+                bot_accounts: vec!["custombot".into()],
+                ..SkipRulesConfig::default()
+            },
+            ..PipelineConfig::default()
+        };
+        let builtin_ctx = PipelineContext {
+            viewer_name: "NightBot",
+            recent_messages: &[],
+        };
+        assert!(matches!(
+            process("hi chat", &config, &builtin_ctx),
+            PipelineResult::Skip { .. }
+        ));
+        let custom_ctx = PipelineContext {
+            viewer_name: "CustomBot",
+            recent_messages: &[],
+        };
+        assert!(matches!(
+            process("hi chat", &config, &custom_ctx),
+            PipelineResult::Skip { .. }
+        ));
+        let human_ctx = PipelineContext {
+            viewer_name: "a_real_viewer",
+            recent_messages: &[],
+        };
+        assert_eq!(
+            process("hi chat", &config, &human_ctx),
+            PipelineResult::Speak("hi chat".into())
+        );
+    }
+
+    #[test]
+    fn skip_rules_longer_than_skips_instead_of_truncating() {
+        let config = PipelineConfig {
+            skip_rules: SkipRulesConfig {
+                longer_than: true,
+                max_chars: 5,
+                ..SkipRulesConfig::default()
+            },
+            ..PipelineConfig::default()
+        };
+        let result = process("hello world", &config, &ctx());
+        assert_eq!(
+            result,
+            PipelineResult::Skip {
+                reason: SkipReason::MatchedSkipRule("message exceeds max length")
+            }
+        );
+        let fits = process("hello", &config, &ctx());
+        assert_eq!(fits, PipelineResult::Speak("hello".into()));
+    }
+
+    #[test]
+    fn skip_rules_repeat_of_recent_is_trimmed_case_sensitive() {
+        let config = PipelineConfig {
+            skip_rules: SkipRulesConfig {
+                repeat_of_recent: true,
+                ..SkipRulesConfig::default()
+            },
+            ..PipelineConfig::default()
+        };
+        let recent = vec!["hello chat".to_owned()];
+        let repeat_ctx = PipelineContext {
+            viewer_name: "viewer",
+            recent_messages: &recent,
+        };
+        assert!(matches!(
+            process("  hello chat  ", &config, &repeat_ctx),
+            PipelineResult::Skip { .. }
+        ));
+        assert_eq!(
+            process("Hello chat", &config, &repeat_ctx),
+            PipelineResult::Speak("Hello chat".into()),
+            "case-sensitive - different casing must not match"
+        );
+    }
+
+    #[test]
+    fn emote_stripper_removes_known_tokens_in_output_stage() {
         let mut config = PipelineConfig::default();
         config.emote_sources.twitch = true;
         config.emote_tokens.tokens.insert("LUL".into());
         config.emote_tokens.tokens.insert("Pog".into());
-        let result = process("hello LUL world Pog nice", &config);
+        let result = process("hello LUL world Pog nice", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello world nice".into()));
     }
 
@@ -470,42 +635,46 @@ mod tests {
     fn emote_stripper_strips_emoji() {
         let mut config = PipelineConfig::default();
         config.emote_sources.emoji = true;
-        let result = process("hello 🎉 world", &config);
+        let result = process("hello 🎉 world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello  world".into()));
     }
 
     #[test]
-    fn url_sanitizer_replace_mode() {
-        let config = PipelineConfig {
-            url_mode: UrlMode::Replace {
-                substitute: "link".into(),
+    fn output_emote_to_word_converts_colon_tokens_and_keeps_known_tokens() {
+        let mut config = PipelineConfig {
+            output: OutputConfig {
+                emote_to_word: true,
+                ..OutputConfig::default()
             },
             ..PipelineConfig::default()
         };
-        let result = process("check out https://example.com today", &config);
-        assert_eq!(result, PipelineResult::Speak("check out link today".into()));
-    }
-
-    #[test]
-    fn url_sanitizer_skip_message() {
-        let config = PipelineConfig {
-            url_mode: UrlMode::SkipMessage,
-            ..PipelineConfig::default()
-        };
-        let result = process("visit http://spam.com", &config);
-        assert!(matches!(result, PipelineResult::Skip { .. }));
-    }
-
-    #[test]
-    fn url_sanitizer_passthrough_leaves_url() {
-        let config = PipelineConfig {
-            url_mode: UrlMode::Passthrough,
-            ..PipelineConfig::default()
-        };
-        let result = process("visit https://forge.rs", &config);
+        config.emote_sources.twitch = true;
+        config.emote_tokens.tokens.insert("LUL".into());
+        let result = process("hello :pog: LUL world", &config, &ctx());
         assert_eq!(
             result,
-            PipelineResult::Speak("visit https://forge.rs".into())
+            PipelineResult::Speak("hello pog LUL world".into()),
+            "colon tokens become bare words; known-list tokens are left as spoken words"
+        );
+    }
+
+    #[test]
+    fn output_read_display_name_first_prefixes_viewer_name() {
+        let config = PipelineConfig {
+            output: OutputConfig {
+                read_display_name_first: true,
+                ..OutputConfig::default()
+            },
+            ..PipelineConfig::default()
+        };
+        let context = PipelineContext {
+            viewer_name: "koval_dev",
+            recent_messages: &[],
+        };
+        let result = process("hi chat", &config, &context);
+        assert_eq!(
+            result,
+            PipelineResult::Speak("koval_dev says: hi chat".into())
         );
     }
 
@@ -518,7 +687,7 @@ mod tests {
             }],
             ..PipelineConfig::default()
         };
-        let result = process("LOL that was funny LoL", &config);
+        let result = process("LOL that was funny LoL", &config, &ctx());
         assert_eq!(
             result,
             PipelineResult::Speak("(laugh) that was funny (laugh)".into())
@@ -534,7 +703,7 @@ mod tests {
             }],
             ..PipelineConfig::default()
         };
-        let result = process("I have 42 cats and 7 dogs", &config);
+        let result = process("I have 42 cats and 7 dogs", &config, &ctx());
         assert_eq!(
             result,
             PipelineResult::Speak("I have # cats and # dogs".into())
@@ -548,7 +717,7 @@ mod tests {
             blocklist_mode: BlocklistMode::Censor,
             ..PipelineConfig::default()
         };
-        let result = process("this is badword here", &config);
+        let result = process("this is badword here", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("this is [beep] here".into()));
     }
 
@@ -559,7 +728,7 @@ mod tests {
             blocklist_mode: BlocklistMode::SkipMessage,
             ..PipelineConfig::default()
         };
-        let result = process("contains badword here", &config);
+        let result = process("contains badword here", &config, &ctx());
         assert!(matches!(
             result,
             PipelineResult::Skip {
@@ -575,55 +744,43 @@ mod tests {
             blocklist_mode: BlocklistMode::Censor,
             ..PipelineConfig::default()
         };
-        let result = process("BADWORD in caps", &config);
+        let result = process("BADWORD in caps", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("[beep] in caps".into()));
-    }
-
-    #[test]
-    fn length_capper_truncates_with_ellipsis() {
-        let config = PipelineConfig {
-            max_chars: 5,
-            ..PipelineConfig::default()
-        };
-        let result = process("hello world", &config);
-        assert_eq!(result, PipelineResult::Speak("hello\u{2026}".into()));
-    }
-
-    #[test]
-    fn length_capper_no_truncation_if_fits() {
-        let config = PipelineConfig {
-            max_chars: 100,
-            ..PipelineConfig::default()
-        };
-        let result = process("short", &config);
-        assert_eq!(result, PipelineResult::Speak("short".into()));
     }
 
     #[test]
     fn preview_all_stages_recorded_on_skip() {
         let config = PipelineConfig {
-            url_mode: UrlMode::SkipMessage,
+            skip_rules: SkipRulesConfig {
+                contains_url: true,
+                ..SkipRulesConfig::default()
+            },
             ..PipelineConfig::default()
         };
-        let (result, outcomes) = preview("visit https://example.com", &config);
-        assert_eq!(outcomes.len(), 5);
+        let (result, outcomes) = preview("visit https://example.com", &config, &ctx());
+        assert_eq!(outcomes.len(), 4);
         assert!(matches!(result, PipelineResult::Skip { .. }));
-        assert_eq!(outcomes[1].stage, StageName::UrlSanitizer);
+        assert_eq!(outcomes[0].stage, StageName::SkipRules);
+        assert!(matches!(outcomes[0].action, StageAction::Skipped { .. }));
         assert!(matches!(outcomes[1].action, StageAction::Skipped { .. }));
         assert!(matches!(outcomes[2].action, StageAction::Skipped { .. }));
         assert!(matches!(outcomes[3].action, StageAction::Skipped { .. }));
-        assert!(matches!(outcomes[4].action, StageAction::Skipped { .. }));
     }
 
     #[test]
     fn preview_stage_input_output_chain() {
-        let mut config = PipelineConfig::default();
-        config.emote_sources.twitch = true;
-        config.emote_tokens.tokens.insert("LUL".into());
-        let (result, outcomes) = preview("hello LUL world", &config);
-        assert_eq!(result, PipelineResult::Speak("hello world".into()));
-        assert_eq!(outcomes[0].output, "hello world");
-        assert_eq!(outcomes[1].input, "hello world");
+        let config = PipelineConfig {
+            replacement_rules: vec![ReplacementRule::Text {
+                pattern: "world".into(),
+                replacement: "forge".into(),
+            }],
+            ..PipelineConfig::default()
+        };
+        let (result, outcomes) = preview("hello world", &config, &ctx());
+        assert_eq!(result, PipelineResult::Speak("hello forge".into()));
+        assert_eq!(outcomes[1].output, "hello world");
+        assert_eq!(outcomes[2].input, "hello world");
+        assert_eq!(outcomes[2].output, "hello forge");
     }
 
     #[test]

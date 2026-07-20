@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use forge_storage::{FilterRule, FilterRuleKind, TtsPipelineSettings, UrlMode as StorageUrlMode};
 use forge_tts_pipeline::{
-    BlocklistMode, EmoteSources, EmoteTokenSet, PipelineConfig, PipelineError, ReplacementRule,
-    UrlMode,
+    BlocklistMode, EmoteSources, EmoteTokenSet, OutputConfig, PipelineConfig, PipelineError,
+    ReplacementRule, SkipRulesConfig,
 };
 
 /// Errors produced when translating persisted rules into a validated pipeline config.
@@ -31,13 +31,62 @@ impl From<FilterMappingError> for PipelineError {
     }
 }
 
-fn storage_url_mode_to_pipeline(mode: StorageUrlMode) -> UrlMode {
+#[allow(clippy::expect_used)]
+static MIGRATED_URL_REGEX: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"https?://\S+").expect("static regex"));
+
+/// One-time conversion of the retired `UrlMode` field: `Replace` becomes a
+/// synthetic leading `TextReplacements` rule, `Suppress` becomes a `SkipRules`
+/// condition, `Speak` needs nothing.
+fn migrate_url_mode(
+    mode: StorageUrlMode,
+    replacement_rules: &mut Vec<ReplacementRule>,
+    skip_rules: &mut SkipRulesConfig,
+) {
     match mode {
-        StorageUrlMode::Speak => UrlMode::Passthrough,
-        StorageUrlMode::Replace => UrlMode::Replace {
-            substitute: "link".to_owned(),
-        },
-        StorageUrlMode::Suppress => UrlMode::SkipMessage,
+        StorageUrlMode::Speak => {}
+        StorageUrlMode::Replace => {
+            replacement_rules.insert(
+                0,
+                ReplacementRule::Regex {
+                    compiled: MIGRATED_URL_REGEX.clone(),
+                    replacement: "link".to_owned(),
+                },
+            );
+        }
+        StorageUrlMode::Suppress => {
+            skip_rules.contains_url = true;
+        }
+    }
+}
+
+/// One-time conversion of the retired `max_length` field into the new
+/// skip-based `longer_than` condition. `None` ("unlimited") disables the
+/// condition rather than falling back to the old implicit 500-char cap.
+fn migrate_max_length(max_length: Option<u32>, skip_rules: &mut SkipRulesConfig) {
+    if let Some(n) = max_length {
+        skip_rules.longer_than = true;
+        skip_rules.max_chars = n as usize;
+    }
+}
+
+fn skip_rules_from_settings(settings: &TtsPipelineSettings) -> SkipRulesConfig {
+    SkipRulesConfig {
+        contains_url: settings.skip_contains_url,
+        starts_with_bang: settings.skip_starts_with_bang,
+        from_bot_accounts: settings.skip_from_bot_accounts,
+        bot_accounts: settings.bot_accounts.clone(),
+        longer_than: settings.skip_longer_than,
+        max_chars: settings.longer_than_max_chars as usize,
+        repeat_of_recent: settings.skip_repeat_of_recent,
+        window: settings.repeat_of_recent_window as usize,
+    }
+}
+
+fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
+    OutputConfig {
+        read_display_name_first: settings.output_read_display_name_first,
+        emote_to_word: settings.output_emote_to_word,
     }
 }
 
@@ -171,15 +220,18 @@ pub fn build_config_strict(
     settings: &TtsPipelineSettings,
 ) -> Result<PipelineConfig, FilterMappingError> {
     let mapped = map_rules(rules, settings, true)?;
-    let max_chars = settings.max_length.unwrap_or(500) as usize;
+    let mut replacement_rules = mapped.replacement_rules;
+    let mut skip_rules = skip_rules_from_settings(settings);
+    migrate_url_mode(settings.url_mode, &mut replacement_rules, &mut skip_rules);
+    migrate_max_length(settings.max_length, &mut skip_rules);
     Ok(PipelineConfig::new(
         emote_sources_from_settings(settings),
         EmoteTokenSet::default(),
-        storage_url_mode_to_pipeline(settings.url_mode),
-        mapped.replacement_rules,
+        skip_rules,
+        replacement_rules,
         mapped.word_blocklist,
         mapped.blocklist_mode,
-        max_chars,
+        output_from_settings(settings),
         settings.strip_reward_emotes,
     ))
 }
@@ -202,15 +254,18 @@ pub fn build_config_lenient(
             blocklist_mode: storage_blocklist_mode_to_pipeline(settings.blocklist_mode),
         }
     });
-    let max_chars = settings.max_length.unwrap_or(500) as usize;
+    let mut replacement_rules = mapped.replacement_rules;
+    let mut skip_rules = skip_rules_from_settings(settings);
+    migrate_url_mode(settings.url_mode, &mut replacement_rules, &mut skip_rules);
+    migrate_max_length(settings.max_length, &mut skip_rules);
     PipelineConfig::new(
         emote_sources_from_settings(settings),
         EmoteTokenSet::default(),
-        storage_url_mode_to_pipeline(settings.url_mode),
-        mapped.replacement_rules,
+        skip_rules,
+        replacement_rules,
         mapped.word_blocklist,
         mapped.blocklist_mode,
-        max_chars,
+        output_from_settings(settings),
         settings.strip_reward_emotes,
     )
 }

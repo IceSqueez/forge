@@ -11,11 +11,18 @@ mod filters {
         BlocklistMode as StorageBlocklistMode, FilterRule, FilterRuleKind, TtsPipelineSettings,
         UrlMode as StorageUrlMode,
     };
-    use forge_tts_pipeline::{PipelineResult, SkipReason, process};
+    use forge_tts_pipeline::{PipelineContext, PipelineResult, SkipReason, process};
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    fn ctx() -> PipelineContext<'static> {
+        PipelineContext {
+            viewer_name: "viewer",
+            recent_messages: &[],
+        }
+    }
 
     fn default_settings() -> TtsPipelineSettings {
         TtsPipelineSettings::default()
@@ -68,7 +75,7 @@ mod filters {
     fn enabled_literal_rule_rewrites_matching_text() {
         let rules = [literal_rule("lol", "lol", "(laugh)", true)];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("LOL that was funny lol!", &config);
+        let result = process("LOL that was funny lol!", &config, &ctx());
         assert_eq!(
             result,
             PipelineResult::Speak("(laugh) that was funny (laugh)!".into())
@@ -80,7 +87,7 @@ mod filters {
         // An empty literal pattern must never panic and must leave text unchanged.
         let rules = [literal_rule("empty", "", "anything", true)];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("hello world", &config);
+        let result = process("hello world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello world".into()));
     }
 
@@ -88,7 +95,7 @@ mod filters {
     fn disabled_literal_rule_does_not_apply() {
         let rules = [literal_rule("lol", "lol", "(laugh)", false)];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("lol", &config);
+        let result = process("lol", &config, &ctx());
         // disabled rule → text is unchanged
         assert_eq!(result, PipelineResult::Speak("lol".into()));
     }
@@ -101,7 +108,7 @@ mod filters {
     fn enabled_regex_rule_rewrites_via_process() {
         let rules = [regex_rule("digits", r"\d+", "#")];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("I have 42 cats and 7 dogs", &config);
+        let result = process("I have 42 cats and 7 dogs", &config, &ctx());
         assert_eq!(
             result,
             PipelineResult::Speak("I have # cats and # dogs".into())
@@ -138,7 +145,7 @@ mod filters {
             },
         ];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("hello world", &config);
+        let result = process("hello world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hey world".into()));
     }
 
@@ -227,7 +234,7 @@ mod filters {
             literal_rule("third", "world", "earth", true),
         ];
         let config = build_config_lenient(&rules, &default_settings());
-        let result = process("hello world", &config);
+        let result = process("hello world", &config, &ctx());
         // Both valid rules applied; broken rule skipped without error.
         assert_eq!(result, PipelineResult::Speak("hi earth".into()));
     }
@@ -244,7 +251,7 @@ mod filters {
             StorageBlocklistMode::Censor,
         )];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("don't say slur here", &config);
+        let result = process("don't say slur here", &config, &ctx());
         assert_eq!(
             result,
             PipelineResult::Speak("don't say [beep] here".into())
@@ -259,7 +266,7 @@ mod filters {
             StorageBlocklistMode::Suppress,
         )];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("this contains slur inside", &config);
+        let result = process("this contains slur inside", &config, &ctx());
         assert!(
             matches!(
                 result,
@@ -281,7 +288,7 @@ mod filters {
         ];
         let config = build_config_strict(&rules, &default_settings()).unwrap();
         // word2 is in the blocklist; mode is Suppress (last rule wins)
-        let result = process("message with word2", &config);
+        let result = process("message with word2", &config, &ctx());
         assert!(
             matches!(
                 result,
@@ -302,7 +309,7 @@ mod filters {
         let mut settings = default_settings();
         settings.url_mode = StorageUrlMode::Speak;
         let config = build_config_strict(&[], &settings).unwrap();
-        let result = process("check https://example.com", &config);
+        let result = process("check https://example.com", &config, &ctx());
         assert_eq!(
             result,
             PipelineResult::Speak("check https://example.com".into())
@@ -314,7 +321,7 @@ mod filters {
         let mut settings = default_settings();
         settings.url_mode = StorageUrlMode::Replace;
         let config = build_config_strict(&[], &settings).unwrap();
-        let result = process("check https://example.com now", &config);
+        let result = process("check https://example.com now", &config, &ctx());
         // The substitute label is "link" (hard-coded in the mapper).
         assert_eq!(result, PipelineResult::Speak("check link now".into()));
     }
@@ -324,7 +331,7 @@ mod filters {
         let mut settings = default_settings();
         settings.url_mode = StorageUrlMode::Suppress;
         let config = build_config_strict(&[], &settings).unwrap();
-        let result = process("visit http://spam.biz for prizes", &config);
+        let result = process("visit http://spam.biz for prizes", &config, &ctx());
         assert!(
             matches!(result, PipelineResult::Skip { .. }),
             "expected skip for message with URL in Suppress mode"
@@ -336,7 +343,7 @@ mod filters {
         let mut settings = default_settings();
         settings.url_mode = StorageUrlMode::Suppress;
         let config = build_config_strict(&[], &settings).unwrap();
-        let result = process("no url here, safe message", &config);
+        let result = process("no url here, safe message", &config, &ctx());
         assert!(
             matches!(result, PipelineResult::Speak(_)),
             "URL-free message must not be skipped under Suppress mode"
@@ -345,63 +352,50 @@ mod filters {
 
     // -------------------------------------------------------------------------
     // max_length mapping
+    //
+    // `max_length` no longer drives truncation (the `LengthCapper` stage is
+    // retired). The migration maps it onto the new skip-based `longer_than`
+    // condition: `None` ("unlimited") disables the condition entirely; `Some(n)`
+    // enables it at threshold `n`, so a message longer than `n` is now Skipped
+    // rather than truncated with an ellipsis.
     // -------------------------------------------------------------------------
 
     #[test]
-    fn max_length_none_uses_documented_default_of_500() {
-        // max_length = None → falls back to 500. A 501-char string must be truncated.
+    fn max_length_none_disables_the_longer_than_skip_condition() {
         let mut settings = default_settings();
         settings.max_length = None;
         let config = build_config_strict(&[], &settings).unwrap();
         let long: String = "a".repeat(501);
-        let result = process(&long, &config);
-        match result {
-            PipelineResult::Speak(spoken) => {
-                // 500 chars + the Unicode ellipsis (one code-point, not 3 bytes)
-                let chars: Vec<char> = spoken.chars().collect();
-                assert_eq!(
-                    chars.last().copied(),
-                    Some('\u{2026}'),
-                    "501-char input must be truncated with ellipsis at default 500"
-                );
-                assert_eq!(
-                    chars.len(),
-                    501,
-                    "truncated string must be 500 content chars + 1 ellipsis"
-                );
-            }
-            other => panic!("expected Speak, got {other:?}"),
-        }
+        let result = process(&long, &config, &ctx());
+        assert_eq!(
+            result,
+            PipelineResult::Speak(long),
+            "max_length=None must disable longer_than, not fall back to an implicit cap"
+        );
     }
 
     #[test]
-    fn max_length_some_n_truncates_at_n() {
+    fn max_length_some_n_skips_messages_longer_than_n() {
         let mut settings = default_settings();
         settings.max_length = Some(10);
         let config = build_config_strict(&[], &settings).unwrap();
-        let result = process("hello world this is too long", &config);
-        match result {
-            PipelineResult::Speak(spoken) => {
-                let chars: Vec<char> = spoken.chars().collect();
-                assert_eq!(
-                    chars.last().copied(),
-                    Some('\u{2026}'),
-                    "text longer than max_length must end with ellipsis"
-                );
-                // 10 content chars + ellipsis = 11 code-points
-                assert_eq!(chars.len(), 11);
-            }
-            other => panic!("expected Speak, got {other:?}"),
-        }
+        let result = process("hello world this is too long", &config, &ctx());
+        assert_eq!(
+            result,
+            PipelineResult::Skip {
+                reason: SkipReason::MatchedSkipRule("message exceeds max length")
+            },
+            "text longer than the migrated max_length must now be Skipped, not truncated"
+        );
     }
 
     #[test]
-    fn max_length_exactly_at_boundary_is_not_truncated() {
+    fn max_length_exactly_at_boundary_is_not_skipped() {
         let mut settings = default_settings();
         settings.max_length = Some(5);
         let config = build_config_strict(&[], &settings).unwrap();
-        let result = process("hello", &config);
-        // Exactly at the limit - no ellipsis, no truncation.
+        let result = process("hello", &config, &ctx());
+        // Exactly at the limit - not "longer than", so it passes through unchanged.
         assert_eq!(result, PipelineResult::Speak("hello".into()));
     }
 
@@ -416,60 +410,48 @@ mod filters {
         let config = build_config_strict(&[], &settings).unwrap();
         let handle = PipelineConfigHandle::new(config);
         let loaded = handle.load();
-        // Use the loaded config to drive process() - observable via truncation.
-        let result = process("hello world!", &loaded);
-        match result {
-            PipelineResult::Speak(s) => {
-                let chars: Vec<char> = s.chars().collect();
-                assert_eq!(
-                    chars.last().copied(),
-                    Some('\u{2026}'),
-                    "loaded config must carry the seeded max_length=7"
-                );
-            }
-            other => panic!("expected Speak, got {other:?}"),
-        }
+        // Use the loaded config to drive process() - observable via the skip.
+        let result = process("hello world!", &loaded, &ctx());
+        assert_eq!(
+            result,
+            PipelineResult::Skip {
+                reason: SkipReason::MatchedSkipRule("message exceeds max length")
+            },
+            "loaded config must carry the seeded max_length=7"
+        );
     }
 
     #[test]
     fn handle_swap_replaces_active_config_observable_via_process() {
-        // Seed with max_length=5 (truncates "hello world") then swap to max_length=500
+        // Seed with max_length=5 (skips "hello world!") then swap to max_length=500
         // (passes through). After swap, load() must return the new config.
         let mut settings_v1 = default_settings();
         settings_v1.max_length = Some(5);
         let config_v1 = build_config_strict(&[], &settings_v1).unwrap();
         let handle = PipelineConfigHandle::new(config_v1);
 
-        // v1: truncates
+        // v1: skips
         let loaded_v1 = handle.load();
         assert!(
             matches!(
-                process("hello world!", &loaded_v1),
-                PipelineResult::Speak(_)
+                process("hello world!", &loaded_v1, &ctx()),
+                PipelineResult::Skip { .. }
             ),
-            "pre-swap config must truncate 'hello world!'"
-        );
-        let spoken_v1 = match process("hello world!", &loaded_v1) {
-            PipelineResult::Speak(s) => s,
-            other => panic!("unexpected {other:?}"),
-        };
-        assert!(
-            spoken_v1.ends_with('\u{2026}'),
-            "v1 config (max=5) must truncate with ellipsis"
+            "pre-swap config (max=5) must skip 'hello world!'"
         );
 
-        // Swap to v2 (no truncation for short text)
+        // Swap to v2 (no skip for short text)
         let mut settings_v2 = default_settings();
         settings_v2.max_length = Some(500);
         let config_v2 = build_config_strict(&[], &settings_v2).unwrap();
         handle.swap(config_v2);
 
         let loaded_v2 = handle.load();
-        let result_v2 = process("hello world!", &loaded_v2);
+        let result_v2 = process("hello world!", &loaded_v2, &ctx());
         assert_eq!(
             result_v2,
             PipelineResult::Speak("hello world!".into()),
-            "after swap, load() must return the new config (no truncation)"
+            "after swap, load() must return the new config (no skip)"
         );
     }
 
@@ -485,13 +467,9 @@ mod filters {
 
         // Both see max_length=3 initially
         let pre = handle_clone.load();
-        let spoken_pre = match process("hello", &pre) {
-            PipelineResult::Speak(s) => s,
-            other => panic!("unexpected {other:?}"),
-        };
         assert!(
-            spoken_pre.ends_with('\u{2026}'),
-            "clone must see the original seeded config (max=3, truncates 'hello')"
+            matches!(process("hello", &pre, &ctx()), PipelineResult::Skip { .. }),
+            "clone must see the original seeded config (max=3, skips 'hello')"
         );
 
         // Swap through the original
@@ -502,7 +480,7 @@ mod filters {
 
         // Clone must now see the swapped config
         let post = handle_clone.load();
-        let result_post = process("hello", &post);
+        let result_post = process("hello", &post, &ctx());
         assert_eq!(
             result_post,
             PipelineResult::Speak("hello".into()),

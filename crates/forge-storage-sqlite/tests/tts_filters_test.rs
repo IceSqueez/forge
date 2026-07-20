@@ -162,6 +162,7 @@ async fn pipeline_settings_url_and_blocklist_mode_round_trip() {
                 max_length: None,
                 strip_twitch_emotes: true,
                 strip_reward_emotes: false,
+                ..TtsPipelineSettings::default()
             };
             r.set_pipeline_settings(&settings).await.expect("set");
             let got = r.get_pipeline_settings().await.expect("get");
@@ -585,6 +586,7 @@ async fn data_provider_tts_filters_repo_accessor_round_trips_settings() {
         blocklist_mode: BlocklistMode::Suppress,
         strip_twitch_emotes: false,
         strip_reward_emotes: true,
+        ..TtsPipelineSettings::default()
     };
     repo.set_pipeline_settings(&s).await.expect("set");
     let got = repo.get_pipeline_settings().await.expect("get");

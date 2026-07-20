@@ -81,6 +81,10 @@ const STEP_CARD_PAD_H: Pixels = px(12.0);
 const HEADER_ACTION_H: Pixels = px(28.0);
 const SUB_MODAL_MAX_H: Pixels = px(440.0);
 const SUB_AREA_FIELD_H: Pixels = px(150.0);
+const STEP_MODAL_W: Pixels = px(560.0);
+const STEP_TILE: Pixels = px(32.0);
+const STEP_TILE_GLYPH: Pixels = px(16.0);
+const GRID_COL_GAP: Pixels = px(12.0);
 const HISTORY_MAX_H: Pixels = px(360.0);
 const HISTORY_ROW_DOT: Pixels = px(7.0);
 const HISTORY_STEP_DOT: Pixels = px(5.0);
@@ -683,6 +687,8 @@ struct EditSubActionForm {
     kind_id: String,
     target: SubFormTarget,
     fields: Vec<SubFormField>,
+    name_input: Entity<TextInput>,
+    condition_input: Entity<TextInput>,
     continue_on_error: bool,
     select_menu_open: Option<String>,
     select_menu_pos: Option<Point<Pixels>>,

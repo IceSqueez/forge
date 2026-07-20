@@ -372,8 +372,6 @@ actions_modal_cancel_btn = Скасувати
 
 ## Дії - модальне вікно кроку
 
-actions_sub_modal_add_title = Додати крок
-actions_sub_modal_edit_title = Редагувати крок
 actions_sub_select_kind = Оберіть тип кроку
 actions_sub_no_config = Цей крок не має налаштувань.
 actions_sub_select_placeholder = Оберіть...
@@ -513,7 +511,6 @@ action_editor_triggers_hint = Клацніть тригер, щоб редагу
 action_editor_section_sub_actions = ПІДПУНКТИ · { $count }
 action_editor_section_sub_actions_label = ПІДПУНКТИ
 action_editor_sub_actions_count = { $count } підпунктів
-action_editor_config_label = КОНФІГУРАЦІЯ
 actions_sub_file_browse = Огляд
 actions_sub_datetime_pick = Обрати
 actions_sub_datetime_now = Зараз
@@ -561,6 +558,10 @@ actions_step_disable = Вимкнути
 actions_step_enable = Увімкнути
 actions_step_continue_on_error = Продовжувати при помилці
 actions_step_continue_on_error_hint = Виконувати наступні кроки, навіть якщо цей впаде
+actions_step_subtitle = Крок {$index} з {$total} · налаштування
+actions_step_advanced = ДОДАТКОВО
+actions_step_condition_label = ВИКОНУВАТИ, ЛИШЕ ЯКЩО (умова)
+actions_step_condition_hint = Залиште порожнім, щоб крок виконувався завжди
 
 ## Редактор дій - тестовий запуск
 

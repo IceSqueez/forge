@@ -111,6 +111,8 @@ pub struct TextInput {
     read_only: bool,
     secure: bool,
     leading_icon: Option<(Icon, Rgba)>,
+    prefix: Option<SharedString>,
+    accent: Option<Rgba>,
     on_surface: bool,
     static_chrome: Option<(Rgba, Radius)>,
     plain: bool,
@@ -141,6 +143,8 @@ impl TextInput {
             read_only: false,
             secure: false,
             leading_icon: None,
+            prefix: None,
+            accent: None,
             on_surface: false,
             static_chrome: None,
             plain: false,
@@ -190,6 +194,17 @@ impl TextInput {
 
     pub fn leading_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
         self.leading_icon = Some((glyph, tint));
+        self
+    }
+
+    pub fn prefix(mut self, prefix: impl Into<SharedString>) -> Self {
+        self.prefix = Some(prefix.into());
+        self
+    }
+
+    /// Tints the typed text and the focused border (for variable / accent-typed fields).
+    pub fn accent(mut self, accent: Rgba) -> Self {
+        self.accent = Some(accent);
         self
     }
 
@@ -841,7 +856,7 @@ impl Render for TextInput {
                 let border = if self.read_only {
                     self.palette.disabled
                 } else if focused {
-                    self.palette.border_active
+                    self.accent.unwrap_or(self.palette.border_active)
                 } else {
                     self.palette.border_input
                 };
@@ -850,6 +865,8 @@ impl Render for TextInput {
         };
         let text_color = if self.read_only {
             self.palette.text_muted
+        } else if let Some(accent) = self.accent {
+            accent
         } else {
             self.palette.text_primary
         };
@@ -899,24 +916,34 @@ impl Render for TextInput {
         } else {
             DEFAULT_BODY_FAMILY
         };
-        let field = field
+        let mut field = field
             .font_family(font_family)
             .text_size(self.font_size)
             .text_color(text_color)
             .line_height(self.font_size * 1.5);
 
-        match self.leading_icon {
-            Some((glyph, tint)) => field
-                .gap(spacing(Spacing::Xs, self.density))
-                .child(icon(glyph, FONT_SM, tint))
-                .child(
-                    div()
-                        .flex_1()
-                        .overflow_hidden()
-                        .child(TextElement { input: cx.entity() }),
-                ),
-            None => field.child(TextElement { input: cx.entity() }),
+        let content = div()
+            .flex_1()
+            .overflow_hidden()
+            .child(TextElement { input: cx.entity() });
+        if self.leading_icon.is_none() && self.prefix.is_none() {
+            return field.child(content);
         }
+        field = field.gap(spacing(Spacing::Xs, self.density));
+        if let Some((glyph, tint)) = self.leading_icon {
+            field = field.child(icon(glyph, FONT_SM, tint));
+        }
+        if let Some(prefix) = self.prefix.clone() {
+            field = field.child(
+                div()
+                    .flex_none()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(self.font_size)
+                    .text_color(self.palette.text_faint)
+                    .child(prefix),
+            );
+        }
+        field.child(content)
     }
 }
 

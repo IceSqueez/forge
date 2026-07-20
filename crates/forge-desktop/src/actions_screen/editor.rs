@@ -72,6 +72,59 @@ async fn pick_file_path() -> Option<String> {
     Some(handle.path().to_string_lossy().into_owned())
 }
 
+fn is_var_key(key: &str) -> bool {
+    matches!(key, "target_var" | "into_var" | "into_arg")
+}
+
+fn sanitize_var_value(raw: &str) -> String {
+    raw.trim().trim_matches('%').trim().to_owned()
+}
+
+fn normalize_condition(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let trimmed = trimmed.strip_prefix("if ").unwrap_or(trimmed).trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
+fn resolve_step_label(raw: &str, kind_label: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == kind_label {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
+}
+
+fn sub_field_is_half(field: &SubFormField) -> bool {
+    match field {
+        SubFormField::Select { .. } => true,
+        SubFormField::Input {
+            key,
+            integer,
+            browse,
+            datetime,
+            ..
+        } => !*browse && !*datetime && (*integer || is_var_key(key)),
+        _ => false,
+    }
+}
+
+fn field_wrap(label: &str, control: AnyElement, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_muted)
+                .child(label.to_owned()),
+        )
+        .child(control)
+        .into_any_element()
+}
+
 pub(super) fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
@@ -396,8 +449,16 @@ fn build_input_field(
         .get(key)
         .map(nav::variant_to_display_str)
         .unwrap_or_default();
+    let is_var = is_var_key(key);
     let input = cx.new(|cx| {
-        let mut input = TextInput::new(placeholder, cx).with_palette(palette);
+        let ph = if is_var { "%result%" } else { placeholder };
+        let mut input = TextInput::new(ph, cx).with_palette(palette);
+        if is_var {
+            input = input
+                .mono()
+                .leading_icon(Icon::Variable, palette.warning)
+                .accent(palette.warning);
+        }
         if !seed.is_empty() {
             input.set_content(seed, cx);
         }
@@ -863,6 +924,47 @@ impl ScreenActionsView {
         Some(fields)
     }
 
+    fn kind_label(&self, kind_id: &str) -> String {
+        self.sub_action_registry
+            .get(kind_id)
+            .map(|r| r.label().to_owned())
+            .unwrap_or_else(|| kind_id.to_owned())
+    }
+
+    fn build_step_meta_inputs(
+        &self,
+        kind_label: &str,
+        name_value: &str,
+        condition_value: &str,
+        cx: &mut Context<Self>,
+    ) -> (Entity<TextInput>, Entity<TextInput>) {
+        let palette = cx.palette();
+        let placeholder = kind_label.to_owned();
+        let name_value = name_value.to_owned();
+        let condition_value = condition_value.to_owned();
+        let name_input = cx.new(|cx| {
+            let mut input = TextInput::new(placeholder, cx)
+                .with_palette(palette)
+                .plain()
+                .with_font_size(FONT_SM);
+            if !name_value.is_empty() {
+                input.set_content(name_value, cx);
+            }
+            input
+        });
+        let condition_input = cx.new(|cx| {
+            let mut input = TextInput::new("%user.isMod% == true", cx)
+                .with_palette(palette)
+                .mono()
+                .prefix("if");
+            if !condition_value.is_empty() {
+                input.set_content(condition_value, cx);
+            }
+            input
+        });
+        (name_input, condition_input)
+    }
+
     fn open_edit_sub_action(&mut self, i: usize, cx: &mut Context<Self>) {
         let chain = self.current_chain();
         let Some(step) = chain.get(i) else {
@@ -871,14 +973,21 @@ impl ScreenActionsView {
         let kind_id = step.kind_id.clone();
         let config = step.config.clone();
         let continue_on_error = step.continue_on_error;
+        let kind_label = self.kind_label(&kind_id);
+        let name_value = step.label.clone().unwrap_or_else(|| kind_label.clone());
+        let condition_value = step.condition.clone().unwrap_or_default();
         let Some(fields) = self.build_sub_form_fields(&kind_id, &config, cx) else {
             return;
         };
+        let (name_input, condition_input) =
+            self.build_step_meta_inputs(&kind_label, &name_value, &condition_value, cx);
         self.step_menu_open = None;
         self.sub_form = Some(EditSubActionForm {
             kind_id,
             target: SubFormTarget::Edit(i),
             fields,
+            name_input,
+            condition_input,
             continue_on_error,
             select_menu_open: None,
             select_menu_pos: None,
@@ -1168,7 +1277,7 @@ impl ScreenActionsView {
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
+                    .text_color(palette.text_muted)
                     .child(label.to_owned()),
             )
             .child(trigger)
@@ -1188,6 +1297,9 @@ impl ScreenActionsView {
         let target = form.target;
         let kind_id = form.kind_id.clone();
         let continue_on_error = form.continue_on_error;
+        let kind_label = self.kind_label(&kind_id);
+        let label = resolve_step_label(form.name_input.read(cx).content(), &kind_label);
+        let condition = normalize_condition(form.condition_input.read(cx).content());
         let bool_vals: HashMap<String, bool> = form
             .fields
             .iter()
@@ -1226,6 +1338,8 @@ impl ScreenActionsView {
                         if let Ok(n) = text.trim().parse::<i64>() {
                             overrides.push((key.clone(), Variant::Int(n)));
                         }
+                    } else if is_var_key(key) {
+                        overrides.push((key.clone(), Variant::String(sanitize_var_value(&text))));
                     } else {
                         overrides.push((key.clone(), Variant::String(text)));
                     }
@@ -1265,6 +1379,8 @@ impl ScreenActionsView {
                                 step.config.insert(key, value);
                             }
                             step.continue_on_error = continue_on_error;
+                            step.condition = condition;
+                            step.label = label;
                         }
                     },
                     cx,
@@ -1285,9 +1401,9 @@ impl ScreenActionsView {
                             kind_id,
                             config,
                             enabled: true,
-                            continue_on_error: false,
-                            condition: None,
-                            label: None,
+                            continue_on_error,
+                            condition,
+                            label,
                         });
                     },
                     cx,
@@ -1397,11 +1513,16 @@ impl ScreenActionsView {
             cx.notify();
             return;
         };
+        let kind_label = self.kind_label(&kind_id);
+        let (name_input, condition_input) =
+            self.build_step_meta_inputs(&kind_label, &kind_label, "", cx);
         self.step_menu_open = None;
         self.sub_form = Some(EditSubActionForm {
             kind_id,
             target: SubFormTarget::Add,
             fields,
+            name_input,
+            condition_input,
             continue_on_error: false,
             select_menu_open: None,
             select_menu_pos: None,
@@ -3261,11 +3382,18 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let title = self
-            .sub_action_registry
-            .get(&form.kind_id)
-            .map(|r| r.label().to_owned())
-            .unwrap_or_else(|| form.kind_id.clone());
+        let runner = self.sub_action_registry.get(&form.kind_id);
+        let header_glyph = runner
+            .map(|r| Icon::from_name(r.icon_name()))
+            .unwrap_or(Icon::LayoutGrid);
+        let header_color = runner
+            .map(|r| sub_category_color(r.category(), palette))
+            .unwrap_or(palette.brand);
+        let chain_len = self.current_chain().len();
+        let (step_index, step_total) = match form.target {
+            SubFormTarget::Edit(i) => (i + 1, chain_len),
+            SubFormTarget::Add => (chain_len + 1, chain_len + 1),
+        };
         let bool_vals: HashMap<&str, bool> = form
             .fields
             .iter()
@@ -3280,26 +3408,7 @@ impl ScreenActionsView {
                 .unwrap_or(true)
         };
 
-        let mut fields_col = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(title),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("action_editor_config_label")),
-            );
-
-        let mut rendered_any = false;
+        let mut grid_items: Vec<(bool, AnyElement)> = Vec::new();
         for field in &form.fields {
             match field {
                 SubFormField::Input {
@@ -3314,7 +3423,6 @@ impl ScreenActionsView {
                     if !gate_on(gate) {
                         continue;
                     }
-                    rendered_any = true;
                     let control: AnyElement = if *browse {
                         let target_input = input.clone();
                         div()
@@ -3364,20 +3472,10 @@ impl ScreenActionsView {
                     } else {
                         input.clone().into_any_element()
                     };
-                    fields_col = fields_col.child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(spacing(Spacing::Xxs, Density::Cozy))
-                            .child(
-                                div()
-                                    .font_family(DEFAULT_MONO_FAMILY)
-                                    .text_size(FONT_XXS)
-                                    .text_color(palette.text_faint)
-                                    .child(label.clone()),
-                            )
-                            .child(control),
-                    );
+                    grid_items.push((
+                        sub_field_is_half(field),
+                        field_wrap(label, control, palette),
+                    ));
                 }
                 SubFormField::Area {
                     label,
@@ -3389,7 +3487,6 @@ impl ScreenActionsView {
                     if !gate_on(gate) {
                         continue;
                     }
-                    rendered_any = true;
                     let lang_tag = syntax.map(|lang| match lang {
                         CodeLanguage::Rhai => "rhai",
                         CodeLanguage::Json => "json",
@@ -3402,7 +3499,7 @@ impl ScreenActionsView {
                             div()
                                 .font_family(DEFAULT_MONO_FAMILY)
                                 .text_size(FONT_XXS)
-                                .text_color(palette.text_faint)
+                                .text_color(palette.text_muted)
                                 .child(label.clone()),
                         );
                     if let Some(tag) = lang_tag {
@@ -3414,14 +3511,16 @@ impl ScreenActionsView {
                                 .child(tag),
                         );
                     }
-                    fields_col = fields_col.child(
+                    grid_items.push((
+                        false,
                         div()
                             .flex()
                             .flex_col()
                             .gap(spacing(Spacing::Xxs, Density::Cozy))
                             .child(header)
-                            .child(area.clone()),
-                    );
+                            .child(area.clone())
+                            .into_any_element(),
+                    ));
                 }
                 SubFormField::Bool {
                     key,
@@ -3432,9 +3531,9 @@ impl ScreenActionsView {
                     if !gate_on(gate) {
                         continue;
                     }
-                    rendered_any = true;
                     let toggle_key = key.clone();
-                    fields_col = fields_col.child(
+                    grid_items.push((
+                        false,
                         div()
                             .w_full()
                             .flex()
@@ -3453,8 +3552,9 @@ impl ScreenActionsView {
                                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                                     this.toggle_sub_field(toggle_key.clone(), cx)
                                 }),
-                            )),
-                    );
+                            ))
+                            .into_any_element(),
+                    ));
                 }
                 SubFormField::Select {
                     key,
@@ -3467,21 +3567,23 @@ impl ScreenActionsView {
                     if !gate_on(gate) {
                         continue;
                     }
-                    rendered_any = true;
-                    fields_col = fields_col.child(self.render_select_field(
-                        key,
-                        label,
-                        options,
-                        selected,
-                        form.select_menu_open.as_deref() == Some(key.as_str()),
-                        form.select_menu_pos,
-                        palette,
-                        cx,
+                    grid_items.push((
+                        true,
+                        self.render_select_field(
+                            key,
+                            label,
+                            options,
+                            selected,
+                            form.select_menu_open.as_deref() == Some(key.as_str()),
+                            form.select_menu_pos,
+                            palette,
+                            cx,
+                        ),
                     ));
                 }
                 SubFormField::Hint { label } => {
-                    rendered_any = true;
-                    fields_col = fields_col.child(
+                    grid_items.push((
+                        false,
                         div()
                             .flex()
                             .flex_col()
@@ -3490,7 +3592,7 @@ impl ScreenActionsView {
                                 div()
                                     .font_family(DEFAULT_MONO_FAMILY)
                                     .text_size(FONT_XXS)
-                                    .text_color(palette.text_faint)
+                                    .text_color(palette.text_muted)
                                     .child(label.clone()),
                             )
                             .child(
@@ -3499,78 +3601,204 @@ impl ScreenActionsView {
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_faint)
                                     .child(tr!("action_editor_branch_modal_hint")),
-                            ),
-                    );
+                            )
+                            .into_any_element(),
+                    ));
                 }
             }
         }
-        if !rendered_any {
-            fields_col = fields_col.child(
+
+        let mut grid = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, Density::Cozy));
+        if grid_items.is_empty() {
+            grid = grid.child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_sub_no_config")),
             );
+        } else {
+            let mut it = grid_items.into_iter().peekable();
+            while let Some((half, element)) = it.next() {
+                if half {
+                    let second = if it.peek().map(|(h, _)| *h).unwrap_or(false) {
+                        it.next().map(|(_, e)| e)
+                    } else {
+                        None
+                    };
+                    let right = match second {
+                        Some(e) => div().flex_1().child(e),
+                        None => div().flex_1(),
+                    };
+                    grid = grid.child(
+                        div()
+                            .flex()
+                            .gap(GRID_COL_GAP)
+                            .child(div().flex_1().child(element))
+                            .child(right),
+                    );
+                } else {
+                    grid = grid.child(element);
+                }
+            }
         }
 
-        fields_col = fields_col.child(
-            div()
-                .w_full()
-                .mt(spacing(Spacing::Xs, Density::Cozy))
-                .pt(spacing(Spacing::Sm, Density::Cozy))
-                .border_t(HALF_BORDER)
-                .border_color(palette.border_regular)
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(spacing(Spacing::Sm, Density::Cozy))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(spacing(Spacing::Xs, Density::Cozy))
-                        .child(icon(Icon::AlertTriangle, CARD_GLYPH, palette.warning))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(spacing(Spacing::Xxs, Density::Cozy))
-                                .child(
-                                    div()
-                                        .font_family(DEFAULT_BODY_FAMILY)
-                                        .text_size(FONT_XS)
-                                        .text_color(palette.text_primary)
-                                        .child(tr!("actions_step_continue_on_error")),
-                                )
-                                .child(
-                                    div()
-                                        .font_family(DEFAULT_BODY_FAMILY)
-                                        .text_size(FONT_XXS)
-                                        .text_color(palette.text_faint)
-                                        .child(tr!("actions_step_continue_on_error_hint")),
-                                ),
-                        ),
-                )
-                .child(toggle(form.continue_on_error, palette).on_click(
-                    "actions-sub-continue-on-error",
-                    cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.toggle_sub_continue_on_error(cx)
-                    }),
-                )),
-        );
+        let continue_row = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, Density::Cozy))
+                    .child(icon(Icon::AlertTriangle, CARD_GLYPH, palette.warning))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(spacing(Spacing::Xxs, Density::Cozy))
+                            .child(
+                                div()
+                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .text_size(FONT_XS)
+                                    .text_color(palette.text_primary)
+                                    .child(tr!("actions_step_continue_on_error")),
+                            )
+                            .child(
+                                div()
+                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .text_size(FONT_XXS)
+                                    .text_color(palette.text_faint)
+                                    .child(tr!("actions_step_continue_on_error_hint")),
+                            ),
+                    ),
+            )
+            .child(toggle(form.continue_on_error, palette).on_click(
+                "actions-sub-continue-on-error",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_sub_continue_on_error(cx)),
+            ));
+
+        let condition_field = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("actions_step_condition_label")),
+            )
+            .child(form.condition_input.clone())
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("actions_step_condition_hint")),
+            );
+
+        let advanced = div()
+            .w_full()
+            .mt(spacing(Spacing::Xs, Density::Cozy))
+            .pt(spacing(Spacing::Sm, Density::Cozy))
+            .border_t(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("actions_step_advanced")),
+            )
+            .child(condition_field)
+            .child(continue_row);
 
         let body = div()
             .id("actions-sub-scroll")
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Md, Density::Cozy))
+            .py(spacing(Spacing::Sm, Density::Cozy))
             .max_h(SUB_MODAL_MAX_H)
             .overflow_y_scroll()
-            .child(fields_col);
+            .child(grid)
+            .child(advanced);
+
+        let close_hover = palette.surface_overlay;
+        let header = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .py(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Md, Density::Cozy))
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(STEP_TILE)
+                    .rounded(radius(Radius::Sm))
+                    .bg(palette.surface_overlay)
+                    .child(icon(header_glyph, STEP_TILE_GLYPH, header_color)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(form.name_input.clone()),
+                    )
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_faint)
+                            .child(tr!(
+                                "actions_step_subtitle",
+                                index = step_index as i64,
+                                total = step_total as i64
+                            )),
+                    ),
+            )
+            .child(
+                div()
+                    .id("actions-sub-close")
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .p(spacing(Spacing::Xxs, Density::Cozy))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(close_hover))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)))
+                    .child(icon(Icon::X, px(16.0), palette.text_faint)),
+            );
 
         let cancel = secondary_button(tr!("common_cancel"), palette).on_click(
             "actions-sub-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
         );
-        let save = primary_button(tr!("common_save"), palette).on_click(
+        let save = primary_button(tr!("actions_modal_save_btn"), palette).on_click(
             "actions-sub-submit",
             cx.listener(|this, _: &ClickEvent, _, cx| this.submit_sub_action(cx)),
         );
@@ -3580,21 +3808,26 @@ impl ScreenActionsView {
             .items_center()
             .justify_end()
             .gap(spacing(Spacing::Xs, Density::Cozy))
+            .py(spacing(Spacing::Sm, Density::Cozy))
+            .px(spacing(Spacing::Md, Density::Cozy))
+            .bg(palette.shell)
+            .border_t(BORDER_THIN)
+            .border_color(palette.border_regular)
             .child(cancel)
             .child(save);
 
-        let modal_title = match form.target {
-            SubFormTarget::Edit(_) => tr!("actions_sub_modal_edit_title"),
-            SubFormTarget::Add => tr!("actions_sub_modal_add_title"),
-        };
-        let card = modal(modal_title, body, palette)
-            .size(ModalSize::Md)
-            .footer(footer)
-            .kbd_hint(tr!("actions_esc_hint"))
-            .on_close(
-                "actions-sub-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
-            );
+        let card = div()
+            .flex()
+            .flex_col()
+            .w(STEP_MODAL_W)
+            .bg(palette.elevated)
+            .rounded(radius(Radius::Lg))
+            .overflow_hidden()
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(header)
+            .child(body)
+            .child(footer);
 
         let view = cx.entity();
         overlay(card, palette)

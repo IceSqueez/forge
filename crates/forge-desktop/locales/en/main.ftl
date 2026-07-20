@@ -372,8 +372,6 @@ actions_modal_cancel_btn = Cancel
 
 ## Actions - add-sub-action modal / step chips
 
-actions_sub_modal_add_title = Add step
-actions_sub_modal_edit_title = Edit step
 actions_sub_select_kind = Choose a step type
 actions_sub_no_config = This step has no settings.
 actions_sub_select_placeholder = Select...
@@ -513,7 +511,6 @@ action_editor_triggers_hint = Click a trigger to edit it in the registry
 action_editor_section_sub_actions = SUB-ACTIONS · { $count }
 action_editor_section_sub_actions_label = SUB-ACTIONS
 action_editor_sub_actions_count = { $count } sub-actions
-action_editor_config_label = CONFIGURATION
 actions_sub_file_browse = Browse
 actions_sub_datetime_pick = Pick
 actions_sub_datetime_now = Now
@@ -561,6 +558,10 @@ actions_step_disable = Disable
 actions_step_enable = Enable
 actions_step_continue_on_error = Continue on error
 actions_step_continue_on_error_hint = Keep running later steps if this one fails
+actions_step_subtitle = Step {$index} of {$total} · edit configuration
+actions_step_advanced = ADVANCED
+actions_step_condition_label = RUN ONLY IF (condition)
+actions_step_condition_hint = Leave empty to always run this step
 
 ## Action editor - test run
 

@@ -341,7 +341,11 @@ impl ScreenActionsView {
     }
 
     fn cancel_test_run(&mut self, cx: &mut Context<Self>) {
+        let refresh_id = self.test_run.as_ref().map(|run| run.action_id);
         self.test_run = None;
+        if let Some(id) = refresh_id {
+            self.load_detail_for(id, cx);
+        }
         cx.notify();
     }
 
@@ -399,94 +403,102 @@ impl ScreenActionsView {
     }
 
     fn on_test_event(&mut self, event: &Event, cx: &mut Context<Self>) -> bool {
-        let Some(run) = self.test_run.as_mut() else {
-            return true;
-        };
-        match event.kind.as_str() {
-            "action.start" => {
-                if run.root.is_some() {
-                    return false;
-                }
-                let ours = event.payload.get("action_id").and_then(|v| v.as_str())
-                    == Some(run.action_id.to_string().as_str());
-                if !ours {
-                    return false;
-                }
-                run.root = Some(event.id);
-                if !run.phase.is_terminal() || matches!(run.phase, TestRunPhase::NotStarted) {
-                    run.phase = TestRunPhase::Running;
-                }
-                cx.notify();
-                false
-            }
-            "action.skipped" => {
-                let ours = event.payload.get("action_id").and_then(|v| v.as_str())
-                    == Some(run.action_id.to_string().as_str());
-                if ours && matches!(run.phase, TestRunPhase::Awaiting) {
-                    run.phase = TestRunPhase::NotStarted;
-                    cx.notify();
-                    return true;
-                }
-                false
-            }
-            "subaction.run" => {
-                let Some(root) = run.root else {
-                    return false;
-                };
-                if event.caused_by != Some(root) {
-                    return false;
-                }
-                if let Some(index) = done_step_index(event) {
-                    run.top_run_ids.insert(event.id, index);
-                    if let Some(row) = run.rows.get_mut(index) {
-                        row.status = RowStatus::Running;
+        let mut refresh_after: Option<ActionId> = None;
+        let handled = {
+            let Some(run) = self.test_run.as_mut() else {
+                return true;
+            };
+            match event.kind.as_str() {
+                "action.start" => {
+                    if run.root.is_some() {
+                        return false;
+                    }
+                    let ours = event.payload.get("action_id").and_then(|v| v.as_str())
+                        == Some(run.action_id.to_string().as_str());
+                    if !ours {
+                        return false;
+                    }
+                    run.root = Some(event.id);
+                    if !run.phase.is_terminal() || matches!(run.phase, TestRunPhase::NotStarted) {
+                        run.phase = TestRunPhase::Running;
                     }
                     cx.notify();
+                    false
                 }
-                false
-            }
-            "subaction.done" => {
-                let Some(root) = run.root else {
-                    return false;
-                };
-                let is_disabled_top = event.caused_by == Some(root);
-                let is_executed_top = event
-                    .caused_by
-                    .is_some_and(|c| run.top_run_ids.contains_key(&c));
-                if !is_disabled_top && !is_executed_top {
-                    return false;
+                "action.skipped" => {
+                    let ours = event.payload.get("action_id").and_then(|v| v.as_str())
+                        == Some(run.action_id.to_string().as_str());
+                    if ours && matches!(run.phase, TestRunPhase::Awaiting) {
+                        run.phase = TestRunPhase::NotStarted;
+                        cx.notify();
+                        return true;
+                    }
+                    false
                 }
-                if let Some(index) = done_step_index(event)
-                    && let Some(row) = run.rows.get_mut(index)
-                {
-                    row.status = row_status_from_done(event);
-                    cx.notify();
-                }
-                false
-            }
-            "action.done" => {
-                if event.caused_by != run.root {
-                    return false;
-                }
-                let failed =
-                    event.payload.get("outcome").and_then(|v| v.as_str()) == Some("failed");
-                if failed {
-                    let step = run
-                        .rows
-                        .iter()
-                        .rposition(|r| matches!(r.status, RowStatus::Failed { .. }))
-                        .unwrap_or(run.rows.len().saturating_sub(1));
-                    run.phase = TestRunPhase::Halted { step };
-                } else {
-                    run.phase = TestRunPhase::Done {
-                        errors: run.errors(),
+                "subaction.run" => {
+                    let Some(root) = run.root else {
+                        return false;
                     };
+                    if event.caused_by != Some(root) {
+                        return false;
+                    }
+                    if let Some(index) = done_step_index(event) {
+                        run.top_run_ids.insert(event.id, index);
+                        if let Some(row) = run.rows.get_mut(index) {
+                            row.status = RowStatus::Running;
+                        }
+                        cx.notify();
+                    }
+                    false
                 }
-                cx.notify();
-                true
+                "subaction.done" => {
+                    let Some(root) = run.root else {
+                        return false;
+                    };
+                    let is_disabled_top = event.caused_by == Some(root);
+                    let is_executed_top = event
+                        .caused_by
+                        .is_some_and(|c| run.top_run_ids.contains_key(&c));
+                    if !is_disabled_top && !is_executed_top {
+                        return false;
+                    }
+                    if let Some(index) = done_step_index(event)
+                        && let Some(row) = run.rows.get_mut(index)
+                    {
+                        row.status = row_status_from_done(event);
+                        cx.notify();
+                    }
+                    false
+                }
+                "action.done" => {
+                    if event.caused_by != run.root {
+                        return false;
+                    }
+                    let failed =
+                        event.payload.get("outcome").and_then(|v| v.as_str()) == Some("failed");
+                    if failed {
+                        let step = run
+                            .rows
+                            .iter()
+                            .rposition(|r| matches!(r.status, RowStatus::Failed { .. }))
+                            .unwrap_or(run.rows.len().saturating_sub(1));
+                        run.phase = TestRunPhase::Halted { step };
+                    } else {
+                        run.phase = TestRunPhase::Done {
+                            errors: run.errors(),
+                        };
+                    }
+                    refresh_after = Some(run.action_id);
+                    cx.notify();
+                    true
+                }
+                _ => false,
             }
-            _ => false,
+        };
+        if let Some(id) = refresh_after {
+            self.load_detail_for(id, cx);
         }
+        handled
     }
 
     pub(super) fn render_test_run_modal(

@@ -1,5 +1,5 @@
 use crate::ids::{ActionId, EventId};
-use crate::variant::Variant;
+use crate::variant::{Variant, VariantKind};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
@@ -35,10 +35,19 @@ pub struct SubActionTelemetry {
 pub fn variant_preview(value: &Variant) -> String {
     const MAX_CHARS: usize = 800;
     let rendered = match value {
-        Variant::Array(_) | Variant::Object(_) => {
-            serde_json::to_string_pretty(&value.to_plain_json())
-                .unwrap_or_else(|_| value.to_string())
+        Variant::Array(items) => {
+            let uniform = items.first().map(VariantKind::from_variant).filter(|kind| {
+                items
+                    .iter()
+                    .all(|item| VariantKind::from_variant(item) == *kind)
+            });
+            return match uniform {
+                Some(kind) => format!("{}[{}]", kind.contract_name(), items.len()),
+                None => format!("[{}]", items.len()),
+            };
         }
+        Variant::Object(_) => serde_json::to_string_pretty(&value.to_plain_json())
+            .unwrap_or_else(|_| value.to_string()),
         scalar => scalar.to_string(),
     };
     if rendered.chars().count() <= MAX_CHARS {

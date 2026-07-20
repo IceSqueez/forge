@@ -2538,6 +2538,8 @@ impl ScreenActionsView {
         div()
             .id("actions-history-scroll")
             .w_full()
+            .flex()
+            .flex_col()
             .max_h(HISTORY_MAX_H)
             .overflow_y_scroll()
             .child(col)

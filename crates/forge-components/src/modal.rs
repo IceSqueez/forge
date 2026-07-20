@@ -212,6 +212,9 @@ impl RenderOnce for Modal {
         let footer = self.render_footer();
 
         let body = div()
+            .w_full()
+            .flex()
+            .flex_col()
             .p(pad(Spacing::Md))
             .child(std::mem::replace(&mut self.body, div().into_any_element()));
 

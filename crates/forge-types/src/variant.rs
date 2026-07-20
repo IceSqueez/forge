@@ -91,6 +91,18 @@ impl VariantKind {
         }
     }
 
+    pub fn contract_name(self) -> &'static str {
+        match self {
+            Self::Int => "int",
+            Self::Float => "float",
+            Self::Bool => "bool",
+            Self::String => "string",
+            Self::Datetime => "datetime",
+            Self::Array => "array",
+            Self::Object => "object",
+        }
+    }
+
     /// Parses a lowercase type name from a script contract annotation.
     ///
     /// Returns `None` for unknown names and for names that are not all-lowercase

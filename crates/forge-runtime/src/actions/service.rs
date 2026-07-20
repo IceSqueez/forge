@@ -83,11 +83,13 @@ impl ActionsService {
         let trigger_instances = self.trigger_instances.list_for_action(id).await?;
         let recent = self.history.recent_for_action(id, 20).await?;
         let sub_action_avg_ms = compute_sub_action_averages(&recent, action.sub_actions.len());
+        let last_step_outcomes = compute_last_step_outcomes(&recent, action.sub_actions.len());
 
         Ok(ActionDetail {
             action,
             trigger_instances,
             sub_action_avg_ms,
+            last_step_outcomes,
         })
     }
 
@@ -184,4 +186,19 @@ fn compute_sub_action_averages(
         .zip(counts.iter())
         .map(|(s, c)| if *c > 0 { Some(s / c) } else { None })
         .collect()
+}
+
+fn compute_last_step_outcomes(
+    history: &[forge_types::ExecutionContext],
+    sub_action_count: usize,
+) -> Vec<Option<forge_types::SubActionOutcome>> {
+    let mut outcomes: Vec<Option<forge_types::SubActionOutcome>> = vec![None; sub_action_count];
+    if let Some(latest) = history.first() {
+        for t in &latest.telemetry {
+            if !t.is_nested() && t.index < sub_action_count {
+                outcomes[t.index] = Some(t.outcome.clone());
+            }
+        }
+    }
+    outcomes
 }

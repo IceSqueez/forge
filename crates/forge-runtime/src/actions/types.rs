@@ -1,4 +1,4 @@
-use forge_types::{Action, ActionId, TriggerInstance};
+use forge_types::{Action, ActionId, SubActionOutcome, TriggerInstance};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
@@ -22,4 +22,5 @@ pub struct ActionDetail {
     pub action: Action,
     pub trigger_instances: Vec<TriggerInstance>,
     pub sub_action_avg_ms: Vec<Option<u64>>,
+    pub last_step_outcomes: Vec<Option<SubActionOutcome>>,
 }

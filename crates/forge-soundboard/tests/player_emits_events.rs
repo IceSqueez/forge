@@ -127,6 +127,10 @@ fn make_stored_clip(id: ClipId, path: PathBuf) -> StoredClip {
         output_device: OutputDevice::Default,
         hotkey: None,
         created_at: OffsetDateTime::now_utc(),
+        category: String::new(),
+        loop_playback: false,
+        duration_secs: None,
+        builtin_id: None,
     }
 }
 

@@ -1,15 +1,16 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioEvent, AudioEventSink, PcmBuffer, PlaybackHandle};
+use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink, PcmBuffer, PlaybackHandle};
 use forge_runtime::{SoundPlayer, SoundPlayerError};
 use forge_storage::SoundboardClipsRepo;
 use forge_types::{ClipId, OutputDevice};
 
 use crate::error::SoundboardError;
+use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 use crate::sink_factory::AudioSinkFactory;
 
 /// Upper bound on the linear master gain. +6 dB (the catalog ceiling) is ≈2.0;
@@ -21,7 +22,44 @@ const MAX_MASTER_GAIN: f32 = 4.0;
 /// registry entry outlives the clip by this much so a late `stop` still lands.
 const PLAYBACK_TAIL_MS: u64 = 200;
 
-type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, PlaybackHandle)>>>>;
+/// Poll granularity while a looping clip waits between iterations, so a `stop`
+/// lands within one step instead of waiting out the whole clip duration.
+const LOOP_POLL_MS: u64 = 50;
+
+/// Floor on the inter-iteration wait for a looping clip, guarding against a
+/// zero-length decode spinning the replay loop.
+const LOOP_MIN_CYCLE_MS: u64 = 50;
+
+/// Stop token for one in-flight play. Non-looping clips just wrap the
+/// `forge_audio` handle; looping clips additionally carry a flag that stops the
+/// replay-scheduling task between iterations, plus the current iteration's live
+/// handle so an in-progress cpal stream is cut short immediately on `stop`.
+#[derive(Clone)]
+enum StopToken {
+    Handle(PlaybackHandle),
+    Loop {
+        should_stop: Arc<AtomicBool>,
+        current: Arc<Mutex<PlaybackHandle>>,
+    },
+}
+
+impl StopToken {
+    fn stop(&self) {
+        match self {
+            StopToken::Handle(handle) => handle.stop(),
+            StopToken::Loop {
+                should_stop,
+                current,
+            } => {
+                should_stop.store(true, Ordering::Relaxed);
+                let handle = current.lock().unwrap_or_else(PoisonError::into_inner);
+                handle.stop();
+            }
+        }
+    }
+}
+
+type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, StopToken)>>>>;
 
 pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
@@ -32,8 +70,11 @@ pub struct SoundboardPlayer {
     active: ActiveRegistry,
     next_play_id: AtomicU64,
     /// Linear master gain as `f32` bits; there is no shared mixer (per T2), so it
-    /// is folded into each clip's samples at play time rather than ramped.
+    /// is folded into each clip's samples at play time rather than ramped. Seeded
+    /// from `settings.master_volume` and kept in sync by `update_settings`; the
+    /// `soundboard.sound.set_master` sub-action may also overwrite it live.
     master_gain_bits: AtomicU32,
+    settings: SoundboardSettingsHandle,
 }
 
 impl SoundboardPlayer {
@@ -42,14 +83,42 @@ impl SoundboardPlayer {
         event_sink: Arc<dyn AudioEventSink>,
         clips_repo: Arc<dyn SoundboardClipsRepo>,
     ) -> Self {
+        Self::with_settings(
+            sink_factory,
+            event_sink,
+            clips_repo,
+            SoundboardSettingsHandle::default(),
+        )
+    }
+
+    pub fn with_settings(
+        sink_factory: Arc<dyn AudioSinkFactory>,
+        event_sink: Arc<dyn AudioEventSink>,
+        clips_repo: Arc<dyn SoundboardClipsRepo>,
+        settings: SoundboardSettingsHandle,
+    ) -> Self {
+        let master_volume = settings.load().master_volume.clamp(0.0, MAX_MASTER_GAIN);
         Self {
             sink_factory,
             event_sink,
             clips_repo,
             active: Arc::new(Mutex::new(HashMap::new())),
             next_play_id: AtomicU64::new(0),
-            master_gain_bits: AtomicU32::new(1.0_f32.to_bits()),
+            master_gain_bits: AtomicU32::new(master_volume.to_bits()),
+            settings,
         }
+    }
+
+    pub fn settings_handle(&self) -> SoundboardSettingsHandle {
+        self.settings.clone()
+    }
+
+    /// Live swap surface for the four `soundboard.*` globals. Also pushes
+    /// `master_volume` into the live gain atomic so a Settings-screen save takes
+    /// effect on the next clip immediately, same as the `set_master` sub-action.
+    pub fn update_settings(&self, settings: SoundboardSettings) {
+        self.set_master_volume(settings.master_volume);
+        self.settings.swap(settings);
     }
 
     pub fn set_master_volume(&self, gain: f32) {
@@ -59,12 +128,12 @@ impl SoundboardPlayer {
     }
 
     pub fn stop(&self, clip_id: ClipId) {
-        let handles = {
+        let tokens = {
             let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
             guard.remove(&clip_id).unwrap_or_default()
         };
-        for (_id, handle) in &handles {
-            handle.stop();
+        for (_id, token) in &tokens {
+            token.stop();
         }
     }
 
@@ -73,11 +142,43 @@ impl SoundboardPlayer {
             let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
             std::mem::take(&mut *guard)
         };
-        for handles in drained.values() {
-            for (_id, handle) in handles {
-                handle.stop();
+        for tokens in drained.values() {
+            for (_id, token) in tokens {
+                token.stop();
             }
         }
+    }
+
+    /// Probes and persists `duration_secs` if it is not already cached - covers
+    /// both a just-added clip and a lazy backfill for an existing NULL row.
+    pub async fn ensure_clip_duration(
+        &self,
+        clip_id: ClipId,
+    ) -> Result<Option<f32>, SoundboardError> {
+        let mut clip = self
+            .clips_repo
+            .get(clip_id)
+            .await
+            .map_err(|e| SoundboardError::Storage(e.to_string()))?
+            .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
+
+        if clip.duration_secs.is_some() {
+            return Ok(clip.duration_secs);
+        }
+
+        let path = clip.file_path.clone();
+        let probed =
+            tokio::task::spawn_blocking(move || crate::duration::probe_clip_duration_secs(&path))
+                .await
+                .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
+
+        clip.duration_secs = Some(probed);
+        self.clips_repo
+            .save(&clip)
+            .await
+            .map_err(|e| SoundboardError::Storage(e.to_string()))?;
+
+        Ok(Some(probed))
     }
 
     pub async fn play(
@@ -85,6 +186,12 @@ impl SoundboardPlayer {
         clip_id: ClipId,
         override_device: Option<OutputDevice>,
     ) -> Result<(), SoundboardError> {
+        let settings = self.settings.load();
+        if !settings.enabled {
+            tracing::debug!(clip_id = %clip_id, "soundboard disabled by settings; play request ignored");
+            return Ok(());
+        }
+
         let clip = self
             .clips_repo
             .get(clip_id)
@@ -92,10 +199,10 @@ impl SoundboardPlayer {
             .map_err(|e| SoundboardError::Storage(e.to_string()))?
             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
 
-        let device = override_device.unwrap_or_else(|| clip.output_device.clone());
+        let device = resolve_device(&clip.output_device, override_device, &settings);
         let device_label = device_label(&device);
 
-        let sink = match self.sink_factory.build(&device).await {
+        let sinks = match self.build_sinks(&device, settings.also_headphones).await {
             Ok(s) => s,
             Err(e) => {
                 self.event_sink.emit(AudioEvent::PlaybackFailed {
@@ -143,7 +250,12 @@ impl SoundboardPlayer {
             device: device_label,
         });
 
-        match sink.play_stoppable(buffer).await {
+        if clip.loop_playback {
+            self.play_looping(clip_id, sinks, buffer, duration_ms);
+            return Ok(());
+        }
+
+        match play_target(&sinks, buffer).await {
             Ok(handle) => {
                 self.register(clip_id, handle, duration_ms);
                 self.event_sink.emit(AudioEvent::PlaybackFinished {
@@ -162,6 +274,30 @@ impl SoundboardPlayer {
         }
     }
 
+    /// Builds the main output sink plus, when `also_headphones` is on and the
+    /// resolved device is not already the system default, a second sink to the
+    /// default device. The headphone leg is best-effort: a build failure there is
+    /// logged and skipped rather than failing the whole play request.
+    async fn build_sinks(
+        &self,
+        device: &OutputDevice,
+        also_headphones: bool,
+    ) -> Result<Vec<Arc<dyn AudioSink>>, AudioError> {
+        let main = self.sink_factory.build(device).await?;
+        let mut sinks = vec![main];
+
+        if also_headphones && !matches!(device, OutputDevice::Default) {
+            match self.sink_factory.build(&OutputDevice::Default).await {
+                Ok(headphones) => sinks.push(headphones),
+                Err(e) => {
+                    tracing::warn!(error = %e, "also_headphones fan-out sink build failed, playing to primary device only");
+                }
+            }
+        }
+
+        Ok(sinks)
+    }
+
     /// Stores the stop token and schedules its removal once the clip's own
     /// duration (plus tail) has elapsed, so the registry self-drains even when no
     /// explicit stop arrives. An earlier `stop`/`stop_all` removes it first; the
@@ -170,7 +306,10 @@ impl SoundboardPlayer {
         let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
         {
             let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-            guard.entry(clip_id).or_default().push((play_id, handle));
+            guard
+                .entry(clip_id)
+                .or_default()
+                .push((play_id, StopToken::Handle(handle)));
         }
 
         let active = Arc::clone(&self.active);
@@ -185,6 +324,112 @@ impl SoundboardPlayer {
             }
         });
     }
+
+    /// Replays `buffer` to `sinks` until stopped. Registers a `StopToken::Loop`
+    /// immediately (no scheduled cleanup - the spawned task removes its own entry
+    /// on exit, whether that is an explicit stop or a fatal sink error).
+    fn play_looping(
+        &self,
+        clip_id: ClipId,
+        sinks: Vec<Arc<dyn AudioSink>>,
+        buffer: PcmBuffer,
+        duration_ms: u64,
+    ) {
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let current = Arc::new(Mutex::new(PlaybackHandle::default()));
+        let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
+
+        {
+            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.entry(clip_id).or_default().push((
+                play_id,
+                StopToken::Loop {
+                    should_stop: Arc::clone(&should_stop),
+                    current: Arc::clone(&current),
+                },
+            ));
+        }
+
+        let active = Arc::clone(&self.active);
+        let event_sink = Arc::clone(&self.event_sink);
+        let cycle_ms = duration_ms.max(LOOP_MIN_CYCLE_MS);
+
+        tokio::spawn(async move {
+            loop {
+                if should_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                match play_target(&sinks, buffer.clone()).await {
+                    Ok(handle) => {
+                        let mut guard = current.lock().unwrap_or_else(PoisonError::into_inner);
+                        *guard = handle;
+                    }
+                    Err(e) => {
+                        event_sink.emit(AudioEvent::PlaybackFailed {
+                            clip_id: Some(clip_id),
+                            error: e.to_string(),
+                        });
+                        break;
+                    }
+                }
+
+                let mut waited = 0u64;
+                while waited < cycle_ms {
+                    if should_stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let step = LOOP_POLL_MS.min(cycle_ms - waited);
+                    tokio::time::sleep(Duration::from_millis(step)).await;
+                    waited += step;
+                }
+            }
+
+            let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(plays) = guard.get_mut(&clip_id) {
+                plays.retain(|(id, _)| *id != play_id);
+                if plays.is_empty() {
+                    guard.remove(&clip_id);
+                }
+            }
+        });
+    }
+}
+
+/// Plays `buffer` to every sink in `sinks` (single sink or main+headphones fan
+/// out), returning one merged stop handle. The first (main) sink's outcome is
+/// fatal; failures on any later (headphone) sink are logged and otherwise
+/// ignored, since the main leg already carries the clip.
+async fn play_target(
+    sinks: &[Arc<dyn AudioSink>],
+    buffer: PcmBuffer,
+) -> Result<PlaybackHandle, AudioError> {
+    let (handle, mut outcomes) = forge_audio::fan_out_stoppable(buffer, sinks).await;
+    let main = outcomes.remove(0);
+    for (idx, outcome) in outcomes.into_iter().enumerate() {
+        if let Err(e) = outcome {
+            tracing::warn!(sink_index = idx + 1, error = %e, "secondary output sink failed");
+        }
+    }
+    main?;
+    Ok(handle)
+}
+
+/// Output routing precedence: an explicit call-time override always wins; else a
+/// non-default per-clip device wins; else the persisted global device; else the
+/// system default.
+fn resolve_device(
+    clip_device: &OutputDevice,
+    override_device: Option<OutputDevice>,
+    settings: &SoundboardSettings,
+) -> OutputDevice {
+    if let Some(dev) = override_device {
+        return dev;
+    }
+    if !matches!(clip_device, OutputDevice::Default) {
+        return clip_device.clone();
+    }
+    settings.output_device()
 }
 
 #[async_trait]
@@ -386,6 +631,10 @@ mod tests {
             output_device: OutputDevice::Default,
             hotkey: None,
             created_at: OffsetDateTime::now_utc(),
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
         }
     }
 

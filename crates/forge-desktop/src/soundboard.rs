@@ -418,17 +418,8 @@ impl SoundboardView {
         let file_path = modal.file_path.clone().unwrap_or_default();
         let output_device = self.device_from_idx(modal.device_idx);
         let volume = modal.volume;
-        let clip_id = modal.editing.unwrap_or_else(ClipId::new);
-
-        let clip = StoredClip {
-            id: clip_id,
-            name: name.clone(),
-            file_path,
-            volume,
-            output_device,
-            hotkey,
-            created_at: OffsetDateTime::now_utc(),
-        };
+        let editing = modal.editing;
+        let clip_id = editing.unwrap_or_else(ClipId::new);
 
         if let Some(modal) = self.modal.as_mut() {
             modal.saving = true;
@@ -436,8 +427,35 @@ impl SoundboardView {
         }
 
         let repo = Arc::clone(&self.clips_repo);
+        let name_for_clip = name.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
+            // Fetch the existing row on edit so fields not yet exposed in this
+            // modal (category, loop_playback, duration_secs, builtin_id) survive
+            // a rename/volume-tweak instead of being reset to their defaults.
+            let existing = match editing {
+                Some(id) => repo.get(id).await.ok().flatten(),
+                None => None,
+            };
+            let clip = StoredClip {
+                id: clip_id,
+                name: name_for_clip,
+                file_path,
+                volume,
+                output_device,
+                hotkey,
+                created_at: existing
+                    .as_ref()
+                    .map(|c| c.created_at)
+                    .unwrap_or_else(OffsetDateTime::now_utc),
+                category: existing
+                    .as_ref()
+                    .map(|c| c.category.clone())
+                    .unwrap_or_default(),
+                loop_playback: existing.as_ref().is_some_and(|c| c.loop_playback),
+                duration_secs: existing.as_ref().and_then(|c| c.duration_secs),
+                builtin_id: existing.as_ref().and_then(|c| c.builtin_id.clone()),
+            };
             let _ = tx.send(save_clip(repo, clip).await);
         });
         cx.spawn(async move |this, cx| match rx.await {

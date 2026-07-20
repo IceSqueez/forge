@@ -29,11 +29,26 @@ impl SqliteSoundboardClipsRepo {
     }
 }
 
+type ClipRow = (
+    String,
+    String,
+    String,
+    f64,
+    String,
+    Option<String>,
+    i64,
+    String,
+    bool,
+    Option<f64>,
+    Option<String>,
+);
+
 #[async_trait]
 impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
     async fn list(&self) -> Result<Vec<StoredClip>, StorageError> {
-        let rows: Vec<(String, String, String, f64, String, Option<String>, i64)> = sqlx::query_as(
-            "SELECT id, name, file_path, volume, output_device, hotkey, created_at
+        let rows: Vec<ClipRow> = sqlx::query_as(
+            "SELECT id, name, file_path, volume, output_device, hotkey, created_at,
+                    category, loop_playback, duration_secs, builtin_id
              FROM soundboard_clips ORDER BY name COLLATE NOCASE",
         )
         .fetch_all(&self.pool)
@@ -45,15 +60,15 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
 
     async fn get(&self, id: ClipId) -> Result<Option<StoredClip>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<(String, String, String, f64, String, Option<String>, i64)> =
-            sqlx::query_as(
-                "SELECT id, name, file_path, volume, output_device, hotkey, created_at
-                 FROM soundboard_clips WHERE id = ?",
-            )
-            .bind(&id_str)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<ClipRow> = sqlx::query_as(
+            "SELECT id, name, file_path, volume, output_device, hotkey, created_at,
+                    category, loop_playback, duration_secs, builtin_id
+             FROM soundboard_clips WHERE id = ?",
+        )
+        .bind(&id_str)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         row.map(row_to_clip).transpose()
     }
@@ -70,17 +85,23 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
         let device_json =
             serde_json::to_string(&clip.output_device).map_err(StorageError::Serialization)?;
         let created_ms = to_epoch_ms(clip.created_at);
+        let duration_secs = clip.duration_secs.map(f64::from);
 
         sqlx::query(
             "INSERT INTO soundboard_clips
-                (id, name, file_path, volume, output_device, hotkey, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, name, file_path, volume, output_device, hotkey, created_at,
+                 category, loop_playback, duration_secs, builtin_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 file_path = excluded.file_path,
                 volume = excluded.volume,
                 output_device = excluded.output_device,
-                hotkey = excluded.hotkey",
+                hotkey = excluded.hotkey,
+                category = excluded.category,
+                loop_playback = excluded.loop_playback,
+                duration_secs = excluded.duration_secs,
+                builtin_id = excluded.builtin_id",
         )
         .bind(&id_str)
         .bind(&clip.name)
@@ -89,6 +110,10 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
         .bind(&device_json)
         .bind(clip.hotkey.as_deref())
         .bind(created_ms)
+        .bind(&clip.category)
+        .bind(clip.loop_playback)
+        .bind(duration_secs)
+        .bind(clip.builtin_id.as_deref())
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -107,10 +132,20 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
     }
 }
 
-fn row_to_clip(
-    row: (String, String, String, f64, String, Option<String>, i64),
-) -> Result<StoredClip, StorageError> {
-    let (id_str, name, path, volume, device_json, hotkey, created_ms) = row;
+fn row_to_clip(row: ClipRow) -> Result<StoredClip, StorageError> {
+    let (
+        id_str,
+        name,
+        path,
+        volume,
+        device_json,
+        hotkey,
+        created_ms,
+        category,
+        loop_playback,
+        duration_secs,
+        builtin_id,
+    ) = row;
     let id = parse_clip_id(&id_str)?;
     let output_device: OutputDevice = serde_json::from_str(&device_json).map_err(|e| {
         StorageError::from(SqliteStorageError::Decode(format!(
@@ -131,6 +166,10 @@ fn row_to_clip(
         output_device,
         hotkey,
         created_at,
+        category,
+        loop_playback,
+        duration_secs: duration_secs.map(|d| d as f32),
+        builtin_id,
     })
 }
 
@@ -158,6 +197,10 @@ mod tests {
             },
             hotkey: Some("Ctrl+1".to_string()),
             created_at: OffsetDateTime::now_utc(),
+            category: "memes".to_string(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
         }
     }
 

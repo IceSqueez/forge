@@ -35,6 +35,47 @@ pub fn decode_bytes(bytes: &[u8], hint_ext: Option<&str>) -> Result<PcmBuffer, A
     decode_stream(mss, hint)
 }
 
+/// Duration of an audio file, in seconds. Tries a lightweight probe first (reads
+/// container-level track duration/timebase metadata, no packet decoding); falls
+/// back to a full decode when a format does not carry that metadata.
+pub fn probe_duration_secs(path: &Path) -> Result<f32, AudioError> {
+    if let Some(secs) = light_probe_duration_secs(path)? {
+        return Ok(secs);
+    }
+    let pcm = decode_file(path)?;
+    Ok(pcm.duration_ms() as f32 / 1000.0)
+}
+
+fn light_probe_duration_secs(path: &Path) -> Result<Option<f32>, AudioError> {
+    let file = std::fs::File::open(path)?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+
+    let format = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| AudioError::Decode(e.to_string()))?;
+
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or_else(|| AudioError::Decode("no decodable audio track found".to_string()))?;
+
+    Ok(match (track.time_base, track.duration) {
+        (Some(time_base), Some(duration)) => time_base
+            .calc_time(symphonia::core::units::Timestamp::new(duration.get() as i64))
+            .map(|t| t.as_secs_f64() as f32),
+        _ => None,
+    })
+}
+
 fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioError> {
     let mut format = symphonia::default::get_probe()
         .probe(

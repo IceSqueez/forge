@@ -44,6 +44,10 @@ pub mod reserved_keys {
     pub const TTS_SYNTHESIS_DEFAULTS_KEY: &str = "tts.synthesis_defaults";
     pub const TTS_MASTER_VOLUME_KEY: &str = "tts.master_volume";
     pub const TTS_ENGINE_PARAMS_KEY_PREFIX: &str = "tts.engine_params.";
+    pub const SOUNDBOARD_ENABLED_KEY: &str = "soundboard.enabled";
+    pub const SOUNDBOARD_OUTPUT_DEVICE_KEY: &str = "soundboard.output_device";
+    pub const SOUNDBOARD_MASTER_VOLUME_KEY: &str = "soundboard.master_volume";
+    pub const SOUNDBOARD_ALSO_HEADPHONES_KEY: &str = "soundboard.also_headphones";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -357,6 +361,86 @@ pub async fn set_chat_history_display_limit(
     repo.set_string(
         reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT_KEY,
         &limit.to_string(),
+    )
+    .await
+}
+
+/// Absent key defaults to enabled (matches product default: soundboard is on).
+pub async fn soundboard_enabled(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::SOUNDBOARD_ENABLED_KEY)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(true))
+}
+
+pub async fn set_soundboard_enabled(
+    repo: &dyn SettingsRepo,
+    enabled: bool,
+) -> Result<(), StorageError> {
+    repo.set_string(reserved_keys::SOUNDBOARD_ENABLED_KEY, &enabled.to_string())
+        .await
+}
+
+/// Persisted output device id for soundboard playback. `None` means the system
+/// default device applies.
+pub async fn soundboard_output_device(
+    repo: &dyn SettingsRepo,
+) -> Result<Option<String>, StorageError> {
+    repo.get_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE_KEY)
+        .await
+}
+
+pub async fn set_soundboard_output_device(
+    repo: &dyn SettingsRepo,
+    device_id: Option<String>,
+) -> Result<(), StorageError> {
+    match device_id {
+        Some(id) => {
+            repo.set_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE_KEY, &id)
+                .await
+        }
+        None => {
+            repo.delete(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE_KEY)
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+/// Absent or corrupt key returns unity gain (`1.0`).
+pub async fn soundboard_master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::SOUNDBOARD_MASTER_VOLUME_KEY)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
+}
+
+pub async fn set_soundboard_master_volume(
+    repo: &dyn SettingsRepo,
+    volume: f32,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::SOUNDBOARD_MASTER_VOLUME_KEY,
+        &volume.clamp(0.0, 1.0).to_string(),
+    )
+    .await
+}
+
+/// Absent or corrupt key defaults to off.
+pub async fn soundboard_also_headphones(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(false))
+}
+
+pub async fn set_soundboard_also_headphones(
+    repo: &dyn SettingsRepo,
+    enabled: bool,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY,
+        &enabled.to_string(),
     )
     .await
 }

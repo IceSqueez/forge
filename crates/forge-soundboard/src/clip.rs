@@ -40,6 +40,15 @@ pub struct SoundboardClip {
     pub output_device: OutputDevice,
     pub hotkey: Option<String>,
     pub created_at: OffsetDateTime,
+    /// Free-form grouping key (e.g. `"memes"`, `"alerts"`, `"music"`, `"voice"`).
+    /// Empty string means uncategorized.
+    pub category: String,
+    pub loop_playback: bool,
+    /// Probed once and cached; `None` until a probe has run for this clip.
+    pub duration_secs: Option<f32>,
+    /// Identifies a builtin-library slot this clip was imported from; `None` for
+    /// user-added clips.
+    pub builtin_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -77,6 +86,10 @@ mod tests {
             output_device: OutputDevice::Default,
             hotkey: Some("Ctrl+1".to_string()),
             created_at: OffsetDateTime::now_utc(),
+            category: "memes".to_string(),
+            loop_playback: false,
+            duration_secs: Some(1.2),
+            builtin_id: None,
         };
         let json = serde_json::to_string(&clip).unwrap();
         let back: SoundboardClip = serde_json::from_str(&json).unwrap();

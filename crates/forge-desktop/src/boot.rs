@@ -12,7 +12,10 @@ use forge_runtime::{
     spawn_chat_history_persistence, spawn_chat_moderation_persistence,
     spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
-use forge_soundboard::{BusAudioEventSink, CpalSinkFactory, SoundboardPlayer};
+use forge_soundboard::{
+    BusAudioEventSink, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
+    load_soundboard_settings,
+};
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
     UserGlobalsRepo,
@@ -164,10 +167,16 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
 
-    let soundboard_player = Arc::new(SoundboardPlayer::new(
+    let soundboard_settings_repo: Arc<dyn SettingsRepo> =
+        Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+    let soundboard_settings = SoundboardSettingsHandle::new(
+        load_soundboard_settings(soundboard_settings_repo.as_ref()).await,
+    );
+    let soundboard_player = Arc::new(SoundboardPlayer::with_settings(
         Arc::new(CpalSinkFactory),
         Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
         backend.soundboard_clips_repo(),
+        soundboard_settings,
     ));
     match speak_dispatcher {
         Some(dispatcher) => {

@@ -1090,6 +1090,7 @@ tts_cloud_save_failed_toast = Не вдалося зберегти обліко�
 ## Псевдоніми голосів - банер стратегії
 
 tts_aliases_strategy_label = Типова стратегія призначення
+tts_aliases_strategy_sublabel = Як обирається голос для глядачів без ручного псевдоніма
 tts_aliases_strategy_deterministic = Детерміновано за ім'ям
 tts_aliases_strategy_random = Випадково
 tts_aliases_strategy_single = Один голос
@@ -1144,7 +1145,7 @@ tts_aliases_form_pitch_placeholder = 0
 tts_aliases_form_rate_label = ТЕМП (x)
 tts_aliases_form_rate_placeholder = 1.0
 tts_aliases_form_create = Створити
-tts_aliases_form_block_label = Заблокувати в TTS
+tts_aliases_form_block_label = Ніколи не озвучувати
 tts_aliases_form_block_desc = Повідомлення цього глядача ніколи не озвучуються.
 tts_aliases_form_blocked_note = Не озвучувати - налаштування голосу не застосовуються.
 
@@ -1161,7 +1162,7 @@ tts_aliases_preview_text = Це попереднє прослуховуванн�
 
 ## Голосові аліаси - підпис під таблицею
 
-tts_aliases_footer_caption = Показано { $shown } з { $total } ручних аліасів
+tts_aliases_footer_caption = Показано { $shown } з { $total } ручних аліасів · { $auto } глядачів озвучуються автоматично
 
 ## Звукова панель - хлібні крихти
 

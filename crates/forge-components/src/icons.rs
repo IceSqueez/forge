@@ -122,6 +122,10 @@ tabler_icons! {
     Cloud => "cloud.svg",
     Cpu => "cpu.svg",
     GripVertical => "grip-vertical.svg",
+    Wand => "wand.svg",
+    Microphone2 => "microphone-2.svg",
+    BrandAws => "brand-aws.svg",
+    VolumeOff => "volume-off.svg",
 }
 
 impl Icon {
@@ -221,6 +225,10 @@ impl Icon {
             "cloud" => Icon::Cloud,
             "cpu" | "chip" | "processor" => Icon::Cpu,
             "grip-vertical" | "grip" => Icon::GripVertical,
+            "wand" | "magic" => Icon::Wand,
+            "microphone-2" | "microphone" => Icon::Microphone2,
+            "brand-aws" | "aws" => Icon::BrandAws,
+            "volume-off" | "mute" => Icon::VolumeOff,
             _ => Icon::InfoCircle,
         }
     }

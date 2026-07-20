@@ -62,6 +62,14 @@ impl ViewerRepo for SqliteViewerRepo {
         rows.into_iter().map(row_to_viewer).collect()
     }
 
+    async fn count(&self) -> Result<u64, StorageError> {
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM viewers")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        Ok(u64::try_from(count).unwrap_or(0))
+    }
+
     async fn get(
         &self,
         platform: ViewerPlatform,

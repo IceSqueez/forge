@@ -46,6 +46,7 @@ pub struct Viewer {
 #[async_trait]
 pub trait ViewerRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<Viewer>, StorageError>;
+    async fn count(&self) -> Result<u64, StorageError>;
     async fn get(
         &self,
         platform: ViewerPlatform,

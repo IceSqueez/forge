@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge, card,
-    confirm_modal, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge,
+    card, confirm_modal, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
     search_input, secondary_button, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
-use forge_storage::{AliasId, AssignmentStrategy, VoiceAlias, VoiceAliasRepo};
+use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
 use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Rgba, SharedString,
@@ -16,6 +16,7 @@ use gpui::{
 };
 
 use crate::presentation::ActivePresentation;
+use crate::tts::name_accent;
 
 const SEARCH_W: Pixels = px(240.0);
 const MODAL_W: Pixels = px(440.0);
@@ -24,7 +25,18 @@ const AVATAR: Pixels = px(22.0);
 const TABLE_RADIUS: Pixels = px(8.0);
 const ROLE_BADGE_FS: Pixels = px(8.5);
 const ENGINE_GLYPH: Pixels = px(12.0);
-const ACTION_GLYPH: Pixels = px(14.0);
+const ACTION_GLYPH: Pixels = px(13.0);
+const BANNER_ICON: Pixels = px(18.0);
+const ROW_PAD_V: Pixels = px(9.0);
+const ROW_PAD_H: Pixels = px(12.0);
+const VOICE_FS: Pixels = px(11.5);
+const META_FS: Pixels = px(11.0);
+const SEG_PAD_V: Pixels = px(5.0);
+const SEG_PAD_H: Pixels = px(11.0);
+const SEG_FS: Pixels = px(11.0);
+const SEG_RADIUS: Pixels = px(5.0);
+const GROUP_RADIUS: Pixels = px(7.0);
+const PAGE_PAD_H: Pixels = px(18.0);
 
 const VIEWER_GROW: f32 = 1.4;
 const VOICE_GROW: f32 = 1.6;
@@ -62,17 +74,10 @@ impl StrategyChoice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EngineKind {
-    Local,
-    Cloud,
-}
-
 struct AliasRow {
     id: AliasId,
     viewer_id: String,
     viewer_name: String,
-    kind: EngineKind,
     engine_id: String,
     engine_label: String,
     voice_id: String,
@@ -120,12 +125,14 @@ struct AliasForm {
 
 pub struct VoiceAliasesView {
     repo: Arc<dyn VoiceAliasRepo>,
+    viewer_repo: Arc<dyn ViewerRepo>,
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     loading: bool,
     strategy: StrategyChoice,
     aliases: Vec<AliasRow>,
     total_count: usize,
+    viewer_count: usize,
     search: Entity<TextInput>,
     form: Option<AliasForm>,
     pending_delete: Option<usize>,
@@ -135,6 +142,7 @@ pub struct VoiceAliasesView {
 impl VoiceAliasesView {
     pub fn new(
         repo: Arc<dyn VoiceAliasRepo>,
+        viewer_repo: Arc<dyn ViewerRepo>,
         speak: Option<SpeakQueueHandle>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
@@ -149,12 +157,14 @@ impl VoiceAliasesView {
 
         let view = Self {
             repo,
+            viewer_repo,
             speak,
             rt_handle,
             loading: true,
             strategy: StrategyChoice::DeterministicByName,
             aliases: Vec::new(),
             total_count: 0,
+            viewer_count: 0,
             search,
             form: None,
             pending_delete: None,
@@ -166,21 +176,25 @@ impl VoiceAliasesView {
 
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
+        let viewer_repo = Arc::clone(&self.viewer_repo);
         let (tx, rx) = tokio::sync::oneshot::channel::<
-            Result<(Vec<VoiceAlias>, AssignmentStrategy), String>,
+            Result<(Vec<VoiceAlias>, AssignmentStrategy, u64), String>,
         >();
         self.rt_handle.spawn(async move {
             let outcome = async {
                 let aliases = repo.list().await.map_err(|e| e.to_string())?;
                 let strategy = repo.get_strategy().await.map_err(|e| e.to_string())?;
-                Ok((aliases, strategy))
+                let viewers = viewer_repo.count().await.map_err(|e| e.to_string())?;
+                Ok((aliases, strategy, viewers))
             }
             .await;
             let _ = tx.send(outcome);
         });
         cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok((aliases, strategy))) => {
-                let _ = this.update(cx, |this, cx| this.apply_loaded(aliases, strategy, cx));
+            Ok(Ok((aliases, strategy, viewers))) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.apply_loaded(aliases, strategy, viewers, cx)
+                });
             }
             Ok(Err(message)) => {
                 let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
@@ -215,9 +229,11 @@ impl VoiceAliasesView {
         &mut self,
         aliases: Vec<VoiceAlias>,
         strategy: AssignmentStrategy,
+        viewers: u64,
         cx: &mut Context<Self>,
     ) {
         self.strategy = choice_from_strategy(&strategy);
+        self.viewer_count = usize::try_from(viewers).unwrap_or(usize::MAX);
         self.set_roster(aliases);
         cx.notify();
     }
@@ -528,9 +544,10 @@ impl VoiceAliasesView {
         let mut segmented = div()
             .flex()
             .flex_row()
-            .gap(spacing(Spacing::Xxs, density))
-            .p(spacing(Spacing::Xxs, density))
-            .rounded(radius(Radius::Sm))
+            .p(px(2.0))
+            .rounded(GROUP_RADIUS)
+            .border(BORDER_THIN)
+            .border_color(palette.surface_overlay)
             .bg(palette.shell);
         for choice in StrategyChoice::ALL {
             let active = self.strategy == choice;
@@ -543,29 +560,43 @@ impl VoiceAliasesView {
             ));
         }
 
+        let heading = div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(px(12.5))
+                    .text_color(palette.text_primary)
+                    .child(tr!("tts_aliases_strategy_label")),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(META_FS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("tts_aliases_strategy_sublabel")),
+            );
+
         let row = div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .flex_1()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("tts_aliases_strategy_label")),
-            )
+            .child(icon(Icon::Wand, BANNER_ICON, palette.brand))
+            .child(heading)
             .child(segmented);
 
         div()
             .w_full()
-            .px(spacing(Spacing::Md, density))
-            .pt(spacing(Spacing::Sm, density))
-            .pb(spacing(Spacing::Sm, density))
+            .px(PAGE_PAD_H)
+            .pt(px(12.0))
+            .pb(px(12.0))
             .child(
                 card(row, palette)
-                    .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Sm, density))
+                    .padding_xy(px(12.0), px(14.0))
                     .full_width(),
             )
             .into_any_element()
@@ -579,7 +610,7 @@ impl VoiceAliasesView {
     ) -> AnyElement {
         let count = div()
             .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_SM)
+            .text_size(META_FS)
             .text_color(palette.text_muted)
             .child(tr!("tts_aliases_count", count = self.total_count as i64));
 
@@ -601,8 +632,8 @@ impl VoiceAliasesView {
             .flex()
             .items_center()
             .justify_between()
-            .px(spacing(Spacing::Md, density))
-            .pb(spacing(Spacing::Sm, density))
+            .px(PAGE_PAD_H)
+            .pb(px(12.0))
             .child(div().w(SEARCH_W).child(self.search.clone()))
             .child(right)
             .into_any_element()
@@ -617,7 +648,7 @@ impl VoiceAliasesView {
         let header = card(header_row(palette), palette)
             .background(palette.shell)
             .split_radius(TABLE_RADIUS, px(0.0))
-            .padding_xy(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
+            .padding_xy(px(7.0), px(12.0))
             .full_width();
 
         let needle = self.search.read(cx).content().to_ascii_lowercase();
@@ -650,7 +681,7 @@ impl VoiceAliasesView {
             let mut col = div().w_full().flex().flex_col();
             for (pos, (index, row)) in visible.iter().enumerate() {
                 let last = pos + 1 == total;
-                col = col.child(self.alias_row(pos, *index, row, last, palette, density, cx));
+                col = col.child(self.alias_row(*index, row, last, palette, density, cx));
             }
             col.into_any_element()
         };
@@ -671,16 +702,18 @@ impl VoiceAliasesView {
                     .child(body),
             );
 
+        let auto = self.viewer_count.saturating_sub(self.total_count);
         let footer = div()
             .w_full()
-            .py(spacing(Spacing::Xs, density))
+            .pt(px(8.0))
             .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
+            .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!(
                 "tts_aliases_footer_caption",
                 shown = visible.len() as i64,
-                total = self.total_count as i64
+                total = self.total_count as i64,
+                auto = auto as i64
             ));
 
         div()
@@ -689,8 +722,8 @@ impl VoiceAliasesView {
             .min_h(px(0.0))
             .flex()
             .flex_col()
-            .px(spacing(Spacing::Md, density))
-            .pb(spacing(Spacing::Md, density))
+            .px(PAGE_PAD_H)
+            .pb(px(16.0))
             .child(header)
             .child(body_frame)
             .child(footer)
@@ -700,7 +733,6 @@ impl VoiceAliasesView {
     #[allow(clippy::too_many_arguments)]
     fn alias_row(
         &self,
-        pos: usize,
         index: usize,
         row: &AliasRow,
         last: bool,
@@ -724,9 +756,9 @@ impl VoiceAliasesView {
             .next()
             .unwrap_or('?');
         let (avatar_bg, avatar_fg) = if muted {
-            (palette.surface_overlay, palette.text_muted)
+            (palette.text_extreme_faint, palette.shell)
         } else {
-            (avatar_color_for(&row.viewer_name, palette), palette.shell)
+            (name_accent(&row.viewer_name, palette), palette.shell)
         };
         let avatar = div()
             .flex_none()
@@ -740,7 +772,7 @@ impl VoiceAliasesView {
                 div()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(avatar_fg)
                     .child(initial.to_string()),
             );
@@ -753,7 +785,7 @@ impl VoiceAliasesView {
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(name_color)
                     .child(row.viewer_name.clone()),
             );
@@ -770,29 +802,26 @@ impl VoiceAliasesView {
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xxs, density))
-                .child(icon(Icon::Volume, ENGINE_GLYPH, palette.random))
+                .child(icon(Icon::VolumeOff, ENGINE_GLYPH, palette.random))
                 .child(
                     div()
                         .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.random)
+                        .text_size(VOICE_FS)
+                        .text_color(palette.text_faint)
                         .child(tr!("tts_aliases_never_speak")),
                 )
                 .into_any_element()
         } else {
+            let (glyph, glyph_color) = engine_visual(&row.engine_id, palette);
             div()
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xxs, density))
-                .child(icon(
-                    engine_glyph(row.kind),
-                    ENGINE_GLYPH,
-                    engine_color(row.kind, palette),
-                ))
+                .child(icon(glyph, ENGINE_GLYPH, glyph_color))
                 .child(
                     div()
                         .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_SM)
+                        .text_size(VOICE_FS)
                         .text_color(palette.text_primary)
                         .child(format!("{} · {}", row.engine_label, row.voice_label)),
                 )
@@ -800,7 +829,7 @@ impl VoiceAliasesView {
         };
 
         let (pitch_color, speed_color) = if muted {
-            (palette.surface_overlay, palette.surface_overlay)
+            (palette.text_extreme_faint, palette.text_extreme_faint)
         } else {
             (palette.text_muted, palette.text_muted)
         };
@@ -808,7 +837,7 @@ impl VoiceAliasesView {
         let speed_cell = mono_cell(fmt_rate(row.rate_multiplier, muted), speed_color);
 
         let preview_color = if muted {
-            palette.surface_overlay
+            palette.text_extreme_faint
         } else {
             palette.success
         };
@@ -829,7 +858,7 @@ impl VoiceAliasesView {
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_edit(index, window, cx)
             }))
-            .child(icon(Icon::Pencil, ACTION_GLYPH, palette.text_muted));
+            .child(icon(Icon::Pencil, ACTION_GLYPH, palette.text_faint));
         let delete = div()
             .id(("va-delete", index))
             .flex()
@@ -837,7 +866,7 @@ impl VoiceAliasesView {
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(index, cx)),
             )
-            .child(icon(Icon::X, ACTION_GLYPH, palette.text_muted));
+            .child(icon(Icon::Trash, ACTION_GLYPH, palette.text_faint));
         let actions = div()
             .w(ACTIONS_W)
             .flex_none()
@@ -849,18 +878,15 @@ impl VoiceAliasesView {
             .child(edit)
             .child(delete);
 
-        let bg = if pos.is_multiple_of(2) {
-            palette.elevated
-        } else {
-            palette.shell
-        };
+        let hover_bg = with_alpha(palette.border_regular, 0.08);
         let mut root = div()
+            .id(("va-row", index))
             .w_full()
             .flex()
             .items_center()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .bg(bg)
+            .py(ROW_PAD_V)
+            .px(ROW_PAD_H)
+            .hover(move |s| s.bg(hover_bg))
             .child(weighted(VIEWER_GROW, viewer_inner))
             .child(weighted(VOICE_GROW, voice_inner))
             .child(weighted(PITCH_GROW, pitch_cell))
@@ -1121,8 +1147,8 @@ fn header_row(palette: &ForgePalette) -> impl IntoElement {
     let caption = |text: SharedString| {
         div()
             .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_muted)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
             .child(text)
     };
     div()
@@ -1158,7 +1184,7 @@ fn header_row(palette: &ForgePalette) -> impl IntoElement {
 fn mono_cell(value: String, color: Rgba) -> impl IntoElement {
     div()
         .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_SM)
+        .text_size(META_FS)
         .text_color(color)
         .child(value)
 }
@@ -1190,13 +1216,13 @@ fn seg_button(
     };
     let mut chip = div()
         .id(id)
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Sm, Density::Cozy))
-        .rounded(radius(Radius::Sm))
+        .py(SEG_PAD_V)
+        .px(SEG_PAD_H)
+        .rounded(SEG_RADIUS)
         .cursor_pointer()
         .font_family(DEFAULT_BODY_FAMILY)
         .font_weight(weight)
-        .text_size(FONT_XS)
+        .text_size(SEG_FS)
         .text_color(fg)
         .on_click(handler)
         .child(label.into());
@@ -1256,18 +1282,12 @@ fn text_field(
 
 fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let engine = a.engine_id.0;
-    let kind = if is_local_engine(&engine) {
-        EngineKind::Local
-    } else {
-        EngineKind::Cloud
-    };
     let engine_label = engine_display_label(&engine);
     let voice = a.voice_id.0;
     AliasRow {
         id: a.id,
         viewer_id: a.viewer_id,
         viewer_name: a.viewer_name,
-        kind,
         engine_id: engine,
         engine_label,
         voice_id: voice.clone(),
@@ -1308,11 +1328,16 @@ fn choice_from_strategy(strategy: &AssignmentStrategy) -> StrategyChoice {
     }
 }
 
-fn is_local_engine(engine_id: &str) -> bool {
-    matches!(
-        engine_id,
-        "piper" | "espeak" | "espeak-ng" | "sapi" | "avfoundation"
-    )
+fn engine_visual(engine_id: &str, palette: &ForgePalette) -> (Icon, Rgba) {
+    match engine_id {
+        "piper" => (Icon::Cpu, palette.success),
+        "espeak" | "espeak-ng" | "sapi" | "avfoundation" => (Icon::Terminal, palette.success),
+        "elevenlabs" => (Icon::Microphone2, palette.brand),
+        "polly" => (Icon::BrandAws, palette.bits),
+        "azure" => (Icon::Cloud, palette.info),
+        "openai" => (Icon::Bolt, palette.accent_teal),
+        _ => (Icon::Cloud, palette.text_muted),
+    }
 }
 
 fn engine_display_label(engine_id: &str) -> String {
@@ -1347,33 +1372,4 @@ fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
 
 fn fmt_field(value: Option<f32>) -> String {
     value.map(|v| format!("{v}")).unwrap_or_default()
-}
-
-fn engine_glyph(kind: EngineKind) -> Icon {
-    match kind {
-        EngineKind::Local => Icon::Terminal,
-        EngineKind::Cloud => Icon::Globe,
-    }
-}
-
-fn engine_color(kind: EngineKind, palette: &ForgePalette) -> Rgba {
-    match kind {
-        EngineKind::Local => palette.success,
-        EngineKind::Cloud => palette.info,
-    }
-}
-
-fn avatar_color_for(name: &str, palette: &ForgePalette) -> Rgba {
-    let hash = name.bytes().fold(0u32, |acc, b| {
-        acc.wrapping_mul(31).wrapping_add(u32::from(b))
-    });
-    let colors = [
-        palette.brand,
-        palette.success,
-        palette.warning,
-        palette.info,
-        palette.random,
-        palette.bits,
-    ];
-    colors[(hash as usize) % colors.len()]
 }

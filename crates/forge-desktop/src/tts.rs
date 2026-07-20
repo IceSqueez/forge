@@ -148,6 +148,7 @@ impl TtsView {
         let aliases = cx.new(|cx| {
             VoiceAliasesView::new(
                 backend.voice_alias_repo(),
+                backend.viewer_repo(),
                 speak.clone(),
                 rt_handle.clone(),
                 cx,

@@ -1085,6 +1085,7 @@ tts_cloud_save_failed_toast = Failed to save { $name } credentials: { $error }
 ## Voice Aliases - strategy banner
 
 tts_aliases_strategy_label = Default assignment strategy
+tts_aliases_strategy_sublabel = How a voice is chosen for viewers without a manual alias
 tts_aliases_strategy_deterministic = Deterministic by name
 tts_aliases_strategy_random = Random
 tts_aliases_strategy_single = Single voice
@@ -1137,7 +1138,7 @@ tts_aliases_form_pitch_placeholder = 0
 tts_aliases_form_rate_label = RATE (x)
 tts_aliases_form_rate_placeholder = 1.0
 tts_aliases_form_create = Create
-tts_aliases_form_block_label = Block from TTS
+tts_aliases_form_block_label = Never speak
 tts_aliases_form_block_desc = This viewer's messages are never spoken.
 tts_aliases_form_blocked_note = Never speak - voice settings do not apply.
 
@@ -1154,7 +1155,7 @@ tts_aliases_preview_text = This is a voice preview.
 
 ## Voice Aliases - footer caption
 
-tts_aliases_footer_caption = Showing { $shown } of { $total } manual aliases
+tts_aliases_footer_caption = Showing { $shown } of { $total } manual aliases · { $auto } viewers use auto-assignment
 
 ## Soundboard - breadcrumb
 

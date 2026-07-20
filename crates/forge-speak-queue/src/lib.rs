@@ -93,9 +93,6 @@ pub enum SpeakCommand {
     /// catalog (and `SpeakQueueHandle::engines`/`available_voices`) picks it up
     /// without an app restart.
     RefreshVoiceCatalog,
-    /// Disables or re-enables an engine. A disabled engine's voices are excluded
-    /// from the rebuilt catalog, which in turn removes it from resolution,
-    /// `available_voices()`, and `engines()` without unregistering the factory.
     SetEngineEnabled(EngineId, bool),
     /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
     VoiceGateActivated,
@@ -199,8 +196,6 @@ pub struct QueueDeps {
     pub pipeline: PipelineConfigHandle,
     pub audio_sink: Arc<dyn forge_audio::AudioSink>,
     pub event_bus: Arc<dyn forge_events::EventPublisher>,
-    /// Loaded from persisted settings at boot so the first catalog build already
-    /// excludes these engines.
     pub disabled_engines: HashSet<EngineId>,
     pub engine_gains: HashMap<EngineId, f32>,
 }

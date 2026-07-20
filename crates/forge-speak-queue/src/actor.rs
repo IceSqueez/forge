@@ -74,12 +74,6 @@ async fn run_synthesis(
     // Load the current config (atomic Arc clone, read guard dropped immediately).
     let pipeline_cfg = deps.pipeline.load();
 
-    // Reward-origin gating is per-message, not part of the shared PipelineConfig,
-    // so it's applied here as a pre-pass rather than inside `process`: reusing the
-    // same word-token strip the `Output` stage performs, independently of
-    // `emote_sources.twitch` (which gates only the general/always-in-the-pipeline
-    // strip inside `process`). A no-op when the toggle is off or the message isn't
-    // reward-sourced.
     let reward_stripped;
     let text_for_pipeline: &str = if req.is_reward && pipeline_cfg.strip_reward_emotes {
         reward_stripped =
@@ -841,9 +835,6 @@ fn handle_command(
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
             guard.aliases.retain(|a| a.id != id);
         }
-        // Intercepted in `run_actor` before dispatch (needs to spawn an async
-        // rebuild, or update the handle-visible gain/resolver mirrors); never
-        // reaches this synchronous handler.
         SpeakCommand::RefreshVoiceCatalog
         | SpeakCommand::SetEngineEnabled(_, _)
         | SpeakCommand::SetEngineParams(_, _, _) => {}

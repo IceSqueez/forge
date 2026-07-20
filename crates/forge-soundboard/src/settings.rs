@@ -31,10 +31,6 @@ impl SoundboardSettings {
     }
 }
 
-/// Live-reconfigurable snapshot of the four `soundboard.*` settings. Boot seeds it
-/// from storage; a future Settings screen swaps it on save. `load` clones the
-/// inner `Arc` and drops the guard before returning, so no lock is ever held
-/// across an `.await`.
 #[derive(Clone)]
 pub struct SoundboardSettingsHandle(Arc<RwLock<Arc<SoundboardSettings>>>);
 
@@ -60,8 +56,6 @@ impl Default for SoundboardSettingsHandle {
     }
 }
 
-/// Lenient boot-time load: an absent or corrupt key falls back to the field's own
-/// default rather than failing startup.
 pub async fn load_soundboard_settings(repo: &dyn SettingsRepo) -> SoundboardSettings {
     SoundboardSettings {
         enabled: forge_storage::soundboard_enabled(repo)

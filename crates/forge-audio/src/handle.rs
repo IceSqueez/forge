@@ -6,16 +6,6 @@ use std::task::{Context, Poll};
 
 use crate::error::AudioError;
 
-/// Cancellation/pause token for one or more in-flight clips.
-///
-/// `stop` is cooperative: cpal output goes silent at the next device callback
-/// boundary (sub-buffer audio already handed to the driver still drains, a
-/// low-tens-of-ms tail) and the playback thread tears the stream down within one
-/// poll interval. `pause`/`resume` hold the writer on silence without consuming
-/// buffered samples, so playback resumes from the exact spot; `stop` always wins
-/// over an active pause. A handle returned by a sink that does not implement
-/// cancellation (the `AudioSink::play_stoppable` default) carries no flags -
-/// `stop`/`pause`/`resume` are then no-ops and the clip runs to completion.
 #[derive(Clone, Default)]
 pub struct PlaybackHandle {
     stop_flags: Arc<[Arc<AtomicBool>]>,

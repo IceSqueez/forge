@@ -204,7 +204,6 @@ impl TextInput {
         self
     }
 
-    /// Tints the typed text and the focused border (for variable / accent-typed fields).
     pub fn accent(mut self, accent: Rgba) -> Self {
         self.accent = Some(accent);
         self
@@ -233,8 +232,6 @@ impl TextInput {
         self.static_chrome = chrome;
     }
 
-    /// Flips display masking at runtime (for a reveal toggle). Masking hides display
-    /// only - `content()` keeps the real value either way.
     pub fn set_secure(&mut self, secure: bool, cx: &mut Context<Self>) {
         if self.secure != secure {
             self.secure = secure;
@@ -242,7 +239,6 @@ impl TextInput {
         }
     }
 
-    /// Forces a red error border that wins over the idle and focus border colors.
     pub fn set_invalid(&mut self, invalid: bool, cx: &mut Context<Self>) {
         if self.invalid != invalid {
             self.invalid = invalid;

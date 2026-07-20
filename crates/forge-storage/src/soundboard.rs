@@ -16,14 +16,9 @@ pub struct StoredClip {
     pub output_device: OutputDevice,
     pub hotkey: Option<String>,
     pub created_at: OffsetDateTime,
-    /// Free-form grouping key (e.g. `"memes"`, `"alerts"`, `"music"`, `"voice"`).
-    /// Empty string means uncategorized.
     pub category: String,
     pub loop_playback: bool,
-    /// Probed once and cached; `None` until a probe has run for this clip.
     pub duration_secs: Option<f32>,
-    /// Identifies a builtin-library slot this clip was imported from; `None` for
-    /// user-added clips.
     pub builtin_id: Option<String>,
 }
 

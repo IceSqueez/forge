@@ -77,7 +77,6 @@ pub struct TooltipLines {
     density: Density,
 }
 
-/// Defaults to `Density::Cozy`.
 pub fn tooltip_lines(lines: Vec<SharedString>, palette: &ForgePalette) -> TooltipLines {
     TooltipLines {
         lines,
@@ -120,8 +119,6 @@ impl Render for TooltipLines {
     }
 }
 
-/// Re-materialises a fresh [`TooltipLines`] view on each hover for a multi-line
-/// tooltip, as gpui's tooltip contract requires.
 pub fn tooltip_lines_builder(
     lines: Vec<SharedString>,
     palette: &ForgePalette,

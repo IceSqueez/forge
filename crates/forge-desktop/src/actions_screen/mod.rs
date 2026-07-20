@@ -210,8 +210,6 @@ pub struct ScreenActionsView {
     nav_path: Vec<nav::NavFrame>,
     /// Keyed by `(step_index, case_index)` within the current chain.
     case_fields: BTreeMap<(usize, usize), CaseField>,
-    /// Per top-level step variable-availability + last-run health, index-aligned
-    /// to `detail.action.sub_actions`.
     step_health: Vec<analyzer::StepHealth>,
     _search_sub: Subscription,
 }

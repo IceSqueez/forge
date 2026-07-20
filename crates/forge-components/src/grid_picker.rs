@@ -55,9 +55,6 @@ const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
 const GRID_BADGE_FS: Pixels = px(9.0);
 
-/// Card box height. Card rows are laid out at [`GRID_ROW_H`] (card plus inter-row gap); group
-/// headers use the shorter [`GRID_HEADER_ROW_H`]. The variable-height virtualized `list` measures
-/// each rendered row, so header rows no longer inflate to a full card row.
 const GRID_CARD_H: Pixels = px(72.0);
 const GRID_ROW_H: Pixels = px(80.0);
 const GRID_HEADER_ROW_H: Pixels = px(30.0);
@@ -78,8 +75,6 @@ pub struct GridPickerItem {
     pub state: GridPickerItemState,
 }
 
-/// A `scope` of `"all"` marks the leading always-visible band; it rails as a pinned entry
-/// right after Favorites instead of sorting alphabetically with the other groups.
 pub struct GridPickerGroup {
     pub label: SharedString,
     pub dot_color: Rgba,
@@ -121,7 +116,6 @@ enum RailSel {
     Group(SharedString),
 }
 
-/// Flattened per-card payload; owned so a row can be rebuilt independently of the source group.
 #[derive(Clone)]
 struct CardData {
     id: SharedString,
@@ -133,7 +127,6 @@ struct CardData {
     favorite: bool,
 }
 
-/// One virtualized list row: either a group header or a pair of side-by-side cards.
 enum PickerRow {
     Header {
         label: SharedString,
@@ -194,9 +187,6 @@ impl GridPicker {
         picker
     }
 
-    /// Recompute the filtered, flattened list rows from the current query/rail/favorites and sync
-    /// the `ListState` item count. `reset_scroll` (or a change in row count) scrolls back to the top;
-    /// a favorites toggle that leaves the row count unchanged preserves the scroll position.
     fn rebuild_rows(&mut self, reset_scroll: bool) {
         let searching = !self.query.trim().is_empty();
         let query = self.query.trim().to_lowercase();
@@ -600,8 +590,6 @@ impl GridPicker {
         col.child(list).into_any_element()
     }
 
-    /// Render a single virtualized list row by index. The variable-height `list` measures the
-    /// returned element, so headers render short and card rows render at the full card height.
     fn render_list_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let accent = self.config.accent;

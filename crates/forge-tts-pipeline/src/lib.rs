@@ -75,25 +75,18 @@ pub enum BlocklistMode {
     SkipMessage,
 }
 
-/// Independently toggleable conditions evaluated against the original message.
-/// Any enabled condition that matches short-circuits the whole pipeline.
 #[derive(Debug, Clone)]
 pub struct SkipRulesConfig {
     pub contains_url: bool,
-    /// `None` disables the condition; `Some(prefix)` matches messages starting with it.
     pub skip_prefix: Option<String>,
     pub from_bot_accounts: bool,
-    /// User-added accounts, merged with the built-in bot list at evaluation time.
     pub bot_accounts: Vec<String>,
     pub longer_than: bool,
     pub max_chars: usize,
     pub repeat_of_recent: bool,
-    /// Caller-supplied `recent_messages` window this many entries wide; the pipeline
-    /// only compares against whatever slice it is handed.
     pub window: usize,
     pub emote_only: bool,
     pub mostly_non_latin: bool,
-    /// Pre-compiled at config build; an invalid pattern never reaches this list.
     pub custom_regexes: Vec<regex::Regex>,
 }
 
@@ -122,8 +115,6 @@ pub struct OutputConfig {
     pub sanitize_punctuation: bool,
 }
 
-/// Per-message facts the pipeline needs but that never belong in the shared,
-/// swappable `PipelineConfig`.
 #[derive(Debug, Clone, Copy)]
 pub struct PipelineContext<'a> {
     pub viewer_name: &'a str,
@@ -152,11 +143,6 @@ pub struct PipelineConfig {
     pub word_blocklist: Vec<String>,
     pub blocklist_mode: BlocklistMode,
     pub output: OutputConfig,
-    /// Whether channel-points-reward-sourced messages get `emote_tokens` stripped
-    /// in addition to (not instead of) whatever the `Output` stage already applies.
-    /// Origin is per-message, not part of this shared config, so callers gate on it
-    /// themselves (see `strip_emote_tokens`) before invoking `process`; this field
-    /// only carries the persisted on/off setting.
     pub strip_reward_emotes: bool,
 }
 
@@ -207,14 +193,6 @@ fn is_emoji_char(c: char) -> bool {
     )
 }
 
-/// Removes whitespace-delimited emote-code tokens (e.g. `LUL`, `Pog`) present in
-/// `tokens` from `text`. Word-token match only - emote codes are not a unicode
-/// range, so this never touches ordinary punctuation or non-emote unicode.
-///
-/// Exposed so callers needing origin-specific gating (e.g. only stripping for
-/// channel-points-reward-sourced messages) can invoke the same stripping pass
-/// the `Output` stage uses, ahead of `process`, without duplicating the
-/// token-match logic.
 pub fn strip_emote_tokens(text: &str, tokens: &EmoteTokenSet) -> String {
     if tokens.tokens.is_empty() {
         return text.to_owned();
@@ -498,9 +476,6 @@ pub fn process(text: &str, config: &PipelineConfig, context: &PipelineContext) -
     PipelineResult::Speak(current)
 }
 
-/// Returns all four `StageOutcome` entries regardless of early `Skip`.
-/// On `Skip`, subsequent stages receive the last non-empty intermediate text
-/// but record `StageAction::Skipped`.
 pub fn preview(
     text: &str,
     config: &PipelineConfig,

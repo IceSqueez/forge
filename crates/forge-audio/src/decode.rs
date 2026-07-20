@@ -35,9 +35,6 @@ pub fn decode_bytes(bytes: &[u8], hint_ext: Option<&str>) -> Result<PcmBuffer, A
     decode_stream(mss, hint)
 }
 
-/// Duration of an audio file, in seconds. Tries a lightweight probe first (reads
-/// container-level track duration/timebase metadata, no packet decoding); falls
-/// back to a full decode when a format does not carry that metadata.
 pub fn probe_duration_secs(path: &Path) -> Result<f32, AudioError> {
     if let Some(secs) = light_probe_duration_secs(path)? {
         return Ok(secs);

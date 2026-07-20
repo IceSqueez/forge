@@ -104,8 +104,6 @@ enum SecureField {
     PollySecret,
 }
 
-/// Emitted after a cloud engine registers into the live registry so the parent
-/// engines view can refresh its rail roster and select the new entry.
 pub struct CloudEngineRegistered(pub EngineId);
 
 enum CloudCreds {

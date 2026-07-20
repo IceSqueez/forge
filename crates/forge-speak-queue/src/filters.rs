@@ -44,9 +44,6 @@ impl From<FilterMappingError> for PipelineError {
 static MIGRATED_URL_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"https?://\S+").expect("static regex"));
 
-/// One-time conversion of the retired `UrlMode` field: `Replace` becomes a
-/// synthetic leading `TextReplacements` rule, `Suppress` becomes a `SkipRules`
-/// condition, `Speak` needs nothing.
 fn migrate_url_mode(
     mode: StorageUrlMode,
     replacement_rules: &mut Vec<ReplacementRule>,
@@ -69,9 +66,6 @@ fn migrate_url_mode(
     }
 }
 
-/// One-time conversion of the retired `max_length` field into the new
-/// skip-based `longer_than` condition. `None` ("unlimited") disables the
-/// condition rather than falling back to the old implicit 500-char cap.
 fn migrate_max_length(max_length: Option<u32>, skip_rules: &mut SkipRulesConfig) {
     if let Some(n) = max_length {
         skip_rules.longer_than = true;
@@ -79,8 +73,6 @@ fn migrate_max_length(max_length: Option<u32>, skip_rules: &mut SkipRulesConfig)
     }
 }
 
-/// Old `skip_starts_with_bang` stays readable for one-time conversion; an explicit
-/// non-empty `skip_prefix` always wins over it.
 fn effective_skip_prefix(settings: &TtsPipelineSettings) -> Option<String> {
     match &settings.skip_prefix {
         Some(prefix) if !prefix.is_empty() => Some(prefix.clone()),

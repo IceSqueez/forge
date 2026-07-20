@@ -126,7 +126,6 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
     }
 }
 
-// Split across two tuples - sqlx's tuple `FromRow` tops out at 16 columns.
 #[allow(clippy::type_complexity)]
 type SettingsRow = (
     String,

@@ -65,14 +65,6 @@ pub struct FilterRule {
     pub kind: FilterRuleKind,
 }
 
-/// Pipeline-level settings that are not user-authored rules but are persisted
-/// alongside them as part of the TTS filter configuration.
-///
-/// `url_mode` and `max_length` are retired by the skip-rules/output model below
-/// but stay readable so the TTS domain can one-time-convert existing rows
-/// (`UrlMode::Replace` into a synthetic replacement rule, `UrlMode::Suppress`
-/// into `skip_contains_url`, `max_length` into `longer_than_max_chars`) without
-/// breaking deserialization of rows written before this model existed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TtsPipelineSettings {
     pub url_mode: UrlMode,
@@ -84,15 +76,12 @@ pub struct TtsPipelineSettings {
     pub strip_reward_emotes: bool,
     #[serde(default)]
     pub skip_contains_url: bool,
-    /// Retired by `skip_prefix` but stays readable so existing rows one-time-convert
-    /// (`true` becomes `skip_prefix: Some("!")`) without breaking deserialization.
     #[serde(default)]
     pub skip_starts_with_bang: bool,
     #[serde(default)]
     pub skip_prefix: Option<String>,
     #[serde(default)]
     pub skip_from_bot_accounts: bool,
-    /// User-added bot accounts merged with the built-in list at evaluation time.
     #[serde(default)]
     pub bot_accounts: Vec<String>,
     #[serde(default)]
@@ -111,7 +100,6 @@ pub struct TtsPipelineSettings {
     pub skip_emote_only: bool,
     #[serde(default)]
     pub skip_mostly_non_latin: bool,
-    /// Source patterns only - compiled form is never persisted, matching `FilterRuleKind::Regex`.
     #[serde(default)]
     pub skip_custom_regexes: Vec<String>,
     #[serde(default)]

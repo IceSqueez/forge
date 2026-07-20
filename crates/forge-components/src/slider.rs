@@ -74,7 +74,6 @@ struct SliderDrag {
 }
 
 impl Slider {
-    /// Recolors the filled portion and thumb; rail stays `surface_overlay`.
     #[must_use]
     pub fn accent(mut self, fill: Rgba) -> Self {
         self.fill = fill;

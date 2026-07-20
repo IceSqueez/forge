@@ -194,10 +194,6 @@ impl SoundboardView {
         view
     }
 
-    /// Correlates `AudioEvent`s forwarded over the bus back to this view's pad
-    /// state, so plays triggered outside this screen (hotkey, sub-action, chat
-    /// command) also reflect in the grid, and clearing a pad tracks the clip's
-    /// real end (stop/skip/completion) instead of a client-side duration guess.
     fn on_bus_event(&mut self, event: &Event, cx: &mut Context<Self>) {
         if event.source != EventSource::Audio {
             return;
@@ -429,9 +425,6 @@ impl SoundboardView {
                 }
                 Err(_) => return,
             }
-            // Clearing `playing` now happens via the bus bridge (`on_bus_event`)
-            // once the real `playback.finished`/`playback.failed` event arrives;
-            // this backfill only persists the probed duration for the idle label.
             if known.is_none() {
                 rt.spawn(async move {
                     let _ = player_dur.ensure_clip_duration(id).await;

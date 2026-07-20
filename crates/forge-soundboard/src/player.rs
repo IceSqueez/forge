@@ -22,18 +22,10 @@ const MAX_MASTER_GAIN: f32 = 4.0;
 /// registry entry outlives the clip by this much so a late `stop` still lands.
 const PLAYBACK_TAIL_MS: u64 = 200;
 
-/// Poll granularity while a looping clip waits between iterations, so a `stop`
-/// lands within one step instead of waiting out the whole clip duration.
 const LOOP_POLL_MS: u64 = 50;
 
-/// Floor on the inter-iteration wait for a looping clip, guarding against a
-/// zero-length decode spinning the replay loop.
 const LOOP_MIN_CYCLE_MS: u64 = 50;
 
-/// Stop token for one in-flight play. Non-looping clips just wrap the
-/// `forge_audio` handle; looping clips additionally carry a flag that stops the
-/// replay-scheduling task between iterations, plus the current iteration's live
-/// handle so an in-progress cpal stream is cut short immediately on `stop`.
 #[derive(Clone)]
 enum StopToken {
     Handle(PlaybackHandle),
@@ -69,10 +61,6 @@ pub struct SoundboardPlayer {
     /// concurrent plays of the same clip register and clean up independently.
     active: ActiveRegistry,
     next_play_id: AtomicU64,
-    /// Linear master gain as `f32` bits; there is no shared mixer (per T2), so it
-    /// is folded into each clip's samples at play time rather than ramped. Seeded
-    /// from `settings.master_volume` and kept in sync by `update_settings`; the
-    /// `soundboard.sound.set_master` sub-action may also overwrite it live.
     master_gain_bits: AtomicU32,
     settings: SoundboardSettingsHandle,
 }
@@ -113,9 +101,6 @@ impl SoundboardPlayer {
         self.settings.clone()
     }
 
-    /// Live swap surface for the four `soundboard.*` globals. Also pushes
-    /// `master_volume` into the live gain atomic so a Settings-screen save takes
-    /// effect on the next clip immediately, same as the `set_master` sub-action.
     pub fn update_settings(&self, settings: SoundboardSettings) {
         self.set_master_volume(settings.master_volume);
         self.settings.swap(settings);
@@ -158,8 +143,6 @@ impl SoundboardPlayer {
         }
     }
 
-    /// Probes and persists `duration_secs` if it is not already cached - covers
-    /// both a just-added clip and a lazy backfill for an existing NULL row.
     pub async fn ensure_clip_duration(
         &self,
         clip_id: ClipId,
@@ -295,13 +278,6 @@ impl SoundboardPlayer {
         Ok(sinks)
     }
 
-    /// Stores the stop token and schedules its removal once the clip's own
-    /// duration (plus tail) has elapsed, so the registry self-drains even when no
-    /// explicit stop arrives. An earlier `stop`/`stop_all` removes it first; the
-    /// scheduled cleanup then finds nothing and is inert - in that case `stop`/
-    /// `stop_all` already emitted `PlaybackFinished` for this clip, so this task
-    /// only emits it when it is the one that actually found and removed its own
-    /// `play_id` (natural completion, not a pre-empted stop).
     fn register(&self, clip_id: ClipId, handle: PlaybackHandle, duration_ms: u64) {
         let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
         {
@@ -339,9 +315,6 @@ impl SoundboardPlayer {
         });
     }
 
-    /// Replays `buffer` to `sinks` until stopped. Registers a `StopToken::Loop`
-    /// immediately (no scheduled cleanup - the spawned task removes its own entry
-    /// on exit, whether that is an explicit stop or a fatal sink error).
     fn play_looping(
         &self,
         clip_id: ClipId,
@@ -410,10 +383,6 @@ impl SoundboardPlayer {
     }
 }
 
-/// Plays `buffer` to every sink in `sinks` (single sink or main+headphones fan
-/// out), returning one merged stop handle. The first (main) sink's outcome is
-/// fatal; failures on any later (headphone) sink are logged and otherwise
-/// ignored, since the main leg already carries the clip.
 async fn play_target(
     sinks: &[Arc<dyn AudioSink>],
     buffer: PcmBuffer,
@@ -429,9 +398,6 @@ async fn play_target(
     Ok(handle)
 }
 
-/// Output routing precedence: an explicit call-time override always wins; else a
-/// non-default per-clip device wins; else the persisted global device; else the
-/// system default.
 fn resolve_device(
     clip_device: &OutputDevice,
     override_device: Option<OutputDevice>,

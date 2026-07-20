@@ -196,7 +196,6 @@ impl OutputPreset {
         .into()
     }
 
-    /// Rendered so users see the full design surface, but never selectable.
     fn disabled(self) -> bool {
         matches!(self, OutputPreset::Lang | OutputPreset::MaxDur)
     }
@@ -397,8 +396,6 @@ impl TtsFiltersView {
         .detach();
     }
 
-    /// Applies `mutate`, then re-validates the whole pipeline config; rolls back and
-    /// surfaces `save_error` on failure instead of persisting a broken regex.
     fn try_apply(&mut self, cx: &mut Context<Self>, mutate: impl FnOnce(&mut Self)) -> bool {
         let backup_settings = self.settings.clone();
         let backup_rules = self.rules.clone();

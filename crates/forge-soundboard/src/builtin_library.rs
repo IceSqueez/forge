@@ -1,8 +1,5 @@
 use std::path::{Path, PathBuf};
 
-/// One slot in the bundled builtin sound library. The audio files themselves are
-/// NOT shipped in the repo - the maintainer supplies them under
-/// `<data_dir>/soundboard/builtin/<builtin_id>.<ext>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltinSoundEntry {
     pub builtin_id: &'static str,
@@ -13,7 +10,6 @@ pub struct BuiltinSoundEntry {
     pub loop_playback: bool,
 }
 
-/// File extensions probed, in order, when resolving a builtin's audio file.
 pub const BUILTIN_FILE_EXTENSIONS: &[&str] = &["mp3", "wav", "ogg", "flac"];
 
 pub const BUILTIN_SOUNDS: &[BuiltinSoundEntry] = &[
@@ -147,8 +143,6 @@ pub const BUILTIN_SOUNDS: &[BuiltinSoundEntry] = &[
     },
 ];
 
-/// Resolves a builtin's audio file on disk, trying each supported extension in
-/// order. `None` if the maintainer has not supplied a file for this slot yet.
 pub fn resolve_builtin_path(data_dir: &Path, builtin_id: &str) -> Option<PathBuf> {
     let dir = data_dir.join("soundboard").join("builtin");
     BUILTIN_FILE_EXTENSIONS.iter().find_map(|ext| {
@@ -157,7 +151,6 @@ pub fn resolve_builtin_path(data_dir: &Path, builtin_id: &str) -> Option<PathBuf
     })
 }
 
-/// Every catalog entry paired with whether its audio file is present on disk.
 pub fn builtin_availability(data_dir: &Path) -> Vec<(BuiltinSoundEntry, bool)> {
     BUILTIN_SOUNDS
         .iter()

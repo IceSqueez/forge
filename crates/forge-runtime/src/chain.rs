@@ -350,11 +350,6 @@ impl ChainEngine {
             .enumerate()
             .map(|(index, step)| {
                 let cancel = cancel.clone();
-                // Concurrent siblings share no sequential ordering, so a control
-                // signal one raises has no defined enclosing chain to drain it;
-                // each gets its own never-read cell rather than racing on a shared one.
-                // Each also gets its own telemetry sink, drained once its future
-                // settles, so a composite sibling's nested rows stay with it.
                 async move {
                     if !step.enabled {
                         let mut tel = disabled_telemetry(index, &step.kind_id);

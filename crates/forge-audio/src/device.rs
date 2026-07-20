@@ -147,10 +147,6 @@ fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
     Ok(out)
 }
 
-/// Preference chain for an unconfigured output: a non-null device the host
-/// reports as default, else "default"/"pipewire"/"pulse" by id, else any
-/// non-null device, else whatever is first. Guards against ALSA's `null` PCM
-/// plugin winning `is_default` or first-position on PipeWire-ALSA setups.
 pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
     devices
         .iter()

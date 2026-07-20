@@ -20,6 +20,31 @@ struct SynthTaskResult {
     outcome: SynthOutcome,
 }
 
+struct CurrentPlayback {
+    request_id: RequestId,
+    request: SpeakRequest,
+    playback: forge_audio::ControlledPlayback,
+    elapsed_secs: u32,
+}
+
+async fn poll_current(
+    current: &mut Option<CurrentPlayback>,
+) -> Result<(), forge_audio::AudioError> {
+    match current {
+        Some(c) => (&mut c.playback).await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn tick_progress(ticker: &mut Option<tokio::time::Interval>) {
+    match ticker {
+        Some(t) => {
+            t.tick().await;
+        }
+        None => std::future::pending().await,
+    }
+}
+
 enum SynthOutcome {
     Speak {
         pcm: PcmBuffer,
@@ -227,6 +252,8 @@ pub(crate) async fn run_actor(
     let mut active_request_id: Option<RequestId> = None;
     let mut last_successful: Option<SpeakRequest> = None;
     let mut disabled: HashSet<EngineId> = deps.disabled_engines.clone();
+    let mut current_playback: Option<CurrentPlayback> = None;
+    let mut progress_ticker: Option<tokio::time::Interval> = None;
 
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
     let (catalog_tx, mut catalog_rx) = tokio::sync::mpsc::channel::<Arc<Vec<TtsVoice>>>(1);
@@ -307,6 +334,8 @@ pub(crate) async fn run_actor(
                             &mut voicegate_active,
                             &mut active_request_id,
                             &last_successful,
+                            &mut current_playback,
+                            &mut progress_ticker,
                         );
                         master_volume_bits.store(config.master_volume.to_bits(), Ordering::Relaxed);
                     }
@@ -322,6 +351,8 @@ pub(crate) async fn run_actor(
                         &mut voicegate_active,
                         &mut active_request_id,
                         &last_successful,
+                        &mut current_playback,
+                        &mut progress_ticker,
                     ),
                 }
             }
@@ -333,7 +364,8 @@ pub(crate) async fn run_actor(
                         &deps,
                         &event_tx,
                         &mut active_request_id,
-                        &mut last_successful,
+                        &mut current_playback,
+                        &mut progress_ticker,
                         &high_queue,
                         &normal_queue,
                     ).await;
@@ -343,6 +375,30 @@ pub(crate) async fn run_actor(
                 if let Some(catalog) = result {
                     *voices.write().unwrap_or_else(|e| e.into_inner()) = catalog.clone();
                     task_deps.voice_catalog = catalog;
+                }
+            }
+            _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
+                if let Some(c) = current_playback.as_mut() {
+                    c.elapsed_secs += 1;
+                    let _ = event_tx.send(SpeakEvent::Progress {
+                        request_id: c.request_id.clone(),
+                        elapsed_secs: c.elapsed_secs,
+                    });
+                }
+            }
+            play_result = poll_current(&mut current_playback), if current_playback.is_some() => {
+                if let Some(current) = current_playback.take() {
+                    progress_ticker = None;
+                    finish_playback(
+                        play_result,
+                        &deps,
+                        &event_tx,
+                        &mut active_request_id,
+                        &mut last_successful,
+                        current,
+                        &high_queue,
+                        &normal_queue,
+                    ).await;
                 }
             }
         }
@@ -356,18 +412,19 @@ async fn handle_synth_result(
     deps: &QueueDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
-    last_successful: &mut Option<SpeakRequest>,
+    current_playback: &mut Option<CurrentPlayback>,
+    progress_ticker: &mut Option<tokio::time::Interval>,
     high_queue: &VecDeque<SpeakRequest>,
     normal_queue: &VecDeque<SpeakRequest>,
 ) {
     if active_request_id.as_ref() != Some(&result.request_id) {
         return;
     }
-    *active_request_id = None;
     let queue_len = high_queue.len() + normal_queue.len();
 
     match result.outcome {
         SynthOutcome::Skipped { reason } => {
+            *active_request_id = None;
             tracing::debug!(request_id = %result.request_id.0, %reason, "speak skipped");
             let _ = event_tx.send(SpeakEvent::Skipped {
                 request_id: result.request_id.clone(),
@@ -381,6 +438,7 @@ async fn handle_synth_result(
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
         }
         SynthOutcome::Failed { error } => {
+            *active_request_id = None;
             tracing::warn!(request_id = %result.request_id.0, %error, "speak failed");
             let _ = event_tx.send(SpeakEvent::Failed {
                 request_id: result.request_id.clone(),
@@ -417,38 +475,21 @@ async fn handle_synth_result(
                 }),
             );
             let adjusted = apply_master_volume(pcm, config.master_volume);
-            let play_result = {
-                let mut ticker = tokio::time::interval(Duration::from_secs(1));
-                ticker.tick().await;
-                let mut play_fut = deps.audio_sink.play(adjusted);
-                let mut elapsed_secs = 0u32;
-                loop {
-                    tokio::select! {
-                        play_res = &mut play_fut => break play_res,
-                        _ = ticker.tick() => {
-                            elapsed_secs += 1;
-                            let _ = event_tx.send(SpeakEvent::Progress {
-                                request_id: result.request_id.clone(),
-                                elapsed_secs,
-                            });
-                        }
-                    }
-                }
-            };
-            match play_result {
-                Ok(()) => {
-                    *last_successful = Some(result.request);
-                    let _ = event_tx.send(SpeakEvent::Finished {
-                        request_id: result.request_id.clone(),
+            match deps.audio_sink.play_controlled(adjusted).await {
+                Ok(playback) => {
+                    let mut ticker = tokio::time::interval(Duration::from_secs(1));
+                    ticker.tick().await;
+                    *progress_ticker = Some(ticker);
+                    *current_playback = Some(CurrentPlayback {
+                        request_id: result.request_id,
+                        request: result.request,
+                        playback,
+                        elapsed_secs: 0,
                     });
-                    publish(
-                        deps.event_bus.as_ref(),
-                        "speak.finished",
-                        serde_json::json!({ "request_id": result.request_id.0 }),
-                    );
                 }
                 Err(e) => {
-                    tracing::warn!(request_id = %result.request_id.0, error = %e, "audio playback failed");
+                    *active_request_id = None;
+                    tracing::warn!(request_id = %result.request_id.0, error = %e, "audio playback failed to start");
                     let _ = event_tx.send(SpeakEvent::Failed {
                         request_id: result.request_id.clone(),
                         error: e.to_string(),
@@ -458,11 +499,79 @@ async fn handle_synth_result(
                         "speak.failed",
                         serde_json::json!({ "request_id": result.request_id.0, "error": e.to_string() }),
                     );
+                    let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
                 }
             }
-            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn finish_playback(
+    play_result: Result<(), forge_audio::AudioError>,
+    deps: &QueueDeps,
+    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
+    active_request_id: &mut Option<RequestId>,
+    last_successful: &mut Option<SpeakRequest>,
+    current: CurrentPlayback,
+    high_queue: &VecDeque<SpeakRequest>,
+    normal_queue: &VecDeque<SpeakRequest>,
+) {
+    *active_request_id = None;
+    let queue_len = high_queue.len() + normal_queue.len();
+
+    match play_result {
+        Ok(()) => {
+            let _ = event_tx.send(SpeakEvent::Finished {
+                request_id: current.request_id.clone(),
+            });
+            publish(
+                deps.event_bus.as_ref(),
+                "speak.finished",
+                serde_json::json!({ "request_id": current.request_id.0 }),
+            );
+            *last_successful = Some(current.request);
+        }
+        Err(e) => {
+            tracing::warn!(request_id = %current.request_id.0, error = %e, "audio playback failed");
+            let _ = event_tx.send(SpeakEvent::Failed {
+                request_id: current.request_id.clone(),
+                error: e.to_string(),
+            });
+            publish(
+                deps.event_bus.as_ref(),
+                "speak.failed",
+                serde_json::json!({ "request_id": current.request_id.0, "error": e.to_string() }),
+            );
+        }
+    }
+    let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
+}
+
+fn stop_active(
+    reason: &str,
+    deps: &QueueDeps,
+    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
+    active_request_id: &mut Option<RequestId>,
+    current_playback: &mut Option<CurrentPlayback>,
+    progress_ticker: &mut Option<tokio::time::Interval>,
+) {
+    let Some(request_id) = active_request_id.take() else {
+        return;
+    };
+    if let Some(current) = current_playback.take() {
+        current.playback.stop();
+    }
+    *progress_ticker = None;
+    let _ = event_tx.send(SpeakEvent::Skipped {
+        request_id: request_id.clone(),
+        reason: reason.to_owned(),
+    });
+    publish(
+        deps.event_bus.as_ref(),
+        "speak.skipped",
+        serde_json::json!({ "request_id": request_id.0, "reason": reason }),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -478,6 +587,8 @@ fn handle_command(
     voicegate_active: &mut bool,
     active_request_id: &mut Option<RequestId>,
     last_successful: &Option<SpeakRequest>,
+    current_playback: &mut Option<CurrentPlayback>,
+    progress_ticker: &mut Option<tokio::time::Interval>,
 ) {
     match cmd {
         SpeakCommand::Enqueue(req) => {
@@ -538,15 +649,29 @@ fn handle_command(
             });
         }
         SpeakCommand::Skip => {
-            *active_request_id = None;
+            stop_active(
+                "skipped by user",
+                deps,
+                event_tx,
+                active_request_id,
+                current_playback,
+                progress_ticker,
+            );
             let total = high_queue.len() + normal_queue.len();
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
         }
         SpeakCommand::Clear => {
+            stop_active(
+                "stopped by clear",
+                deps,
+                event_tx,
+                active_request_id,
+                current_playback,
+                progress_ticker,
+            );
             high_queue.clear();
             normal_queue.clear();
             per_user_counts.clear();
-            *active_request_id = None;
             let _ = event_tx.send(SpeakEvent::Cleared);
             publish(
                 deps.event_bus.as_ref(),
@@ -783,6 +908,8 @@ mod tests {
         let mut voicegate = false;
         let mut active: Option<RequestId> = None;
         let last: Option<SpeakRequest> = None;
+        let mut current_playback: Option<CurrentPlayback> = None;
+        let mut progress_ticker: Option<tokio::time::Interval> = None;
         handle_command(
             cmd,
             config,
@@ -795,6 +922,8 @@ mod tests {
             &mut voicegate,
             &mut active,
             &last,
+            &mut current_playback,
+            &mut progress_ticker,
         );
     }
 

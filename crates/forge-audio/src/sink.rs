@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::error::AudioError;
-use crate::handle::PlaybackHandle;
+use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::pcm::PcmBuffer;
 
 /// Output target for synthesized or decoded audio.
@@ -20,6 +20,11 @@ pub trait AudioSink: Send + Sync {
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
         self.play(buffer).await?;
         Ok(PlaybackHandle::default())
+    }
+
+    async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+        self.play(buffer).await?;
+        Ok(ControlledPlayback::completed())
     }
 }
 

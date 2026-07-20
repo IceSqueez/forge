@@ -10,7 +10,7 @@ use crate::convert;
 use crate::device::DeviceId;
 use crate::error::AudioError;
 use crate::events::{AudioEvent, AudioEventSink};
-use crate::handle::PlaybackHandle;
+use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::pcm::PcmBuffer;
 use crate::sink::AudioSink;
 
@@ -72,6 +72,15 @@ impl AudioSink for CpalSink {
         let stop = Arc::new(AtomicBool::new(false));
         self.spawn_playback(buffer, Arc::clone(&stop));
         Ok(PlaybackHandle::from_flag(stop))
+    }
+
+    async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let join = self.spawn_playback(buffer, Arc::clone(&stop));
+        Ok(ControlledPlayback::from_handle(
+            PlaybackHandle::from_flag(stop),
+            join,
+        ))
     }
 }
 

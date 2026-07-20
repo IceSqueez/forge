@@ -17,6 +17,6 @@ pub use device::{DeviceId, DeviceInfo, OutputDevice, list_output_devices, refres
 pub use error::AudioError;
 pub use events::{AudioEvent, AudioEventSink, NullAudioEventSink};
 pub use fan_out::{fan_out, fan_out_stoppable};
-pub use handle::PlaybackHandle;
+pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use pcm::PcmBuffer;
 pub use sink::{AudioSink, NullSink};

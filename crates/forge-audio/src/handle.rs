@@ -1,5 +1,10 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
+
+use crate::error::AudioError;
 
 /// Cancellation token for one or more in-flight clips.
 ///
@@ -32,6 +37,53 @@ impl PlaybackHandle {
     pub fn stop(&self) {
         for flag in self.flags.iter() {
             flag.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+enum Completion {
+    Ready,
+    Handle(tokio::task::JoinHandle<()>),
+}
+
+pub struct ControlledPlayback {
+    playback: PlaybackHandle,
+    completion: Completion,
+}
+
+impl ControlledPlayback {
+    pub(crate) fn completed() -> Self {
+        Self {
+            playback: PlaybackHandle::default(),
+            completion: Completion::Ready,
+        }
+    }
+
+    pub(crate) fn from_handle(
+        playback: PlaybackHandle,
+        completion: tokio::task::JoinHandle<()>,
+    ) -> Self {
+        Self {
+            playback,
+            completion: Completion::Handle(completion),
+        }
+    }
+
+    pub fn stop(&self) {
+        self.playback.stop();
+    }
+}
+
+impl Future for ControlledPlayback {
+    type Output = Result<(), AudioError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        match &mut this.completion {
+            Completion::Ready => Poll::Ready(Ok(())),
+            Completion::Handle(handle) => Pin::new(handle)
+                .poll(cx)
+                .map(|res| res.map_err(|e| AudioError::JoinFailed(e.to_string()))),
         }
     }
 }

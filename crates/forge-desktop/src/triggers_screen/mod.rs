@@ -144,8 +144,8 @@ struct TriggerInstanceRow {
     enabled: bool,
     used_in_count: usize,
     override_count: usize,
-    global_cooldown_secs: u32,
-    user_cooldown_secs: u32,
+    cooldown_secs: u32,
+    cooldown_global: bool,
 }
 
 struct TriggerDetail {
@@ -157,17 +157,12 @@ struct TriggerDetail {
     _cooldown_sub: Subscription,
 }
 
-pub(crate) fn cooldown_suffix(global_cooldown_secs: u32, user_cooldown_secs: u32) -> String {
-    let mut out = String::new();
-    out.push_str(&tr!(
-        "triggers_cooldown_global_suffix",
-        secs = global_cooldown_secs as i64
-    ));
-    out.push_str(&tr!(
-        "triggers_cooldown_user_suffix",
-        secs = user_cooldown_secs as i64
-    ));
-    out
+pub(crate) fn cooldown_suffix(secs: u32, global: bool) -> String {
+    if global {
+        tr!("triggers_cooldown_suffix_global", secs = secs as i64)
+    } else {
+        tr!("triggers_cooldown_suffix_per_user", secs = secs as i64)
+    }
 }
 
 struct TriggerDetailData {
@@ -435,8 +430,8 @@ async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstance
             enabled: instance.enabled,
             used_in_count,
             override_count: instance.overrides.len(),
-            global_cooldown_secs: instance.global_cooldown_secs,
-            user_cooldown_secs: instance.user_cooldown_secs,
+            cooldown_secs: instance.cooldown_secs,
+            cooldown_global: instance.cooldown_global,
         });
     }
     Ok(rows)

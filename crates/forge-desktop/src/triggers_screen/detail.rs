@@ -97,12 +97,8 @@ impl TriggersRegistryView {
             );
         }
 
-        let cooldown_per_user = data.instance.user_cooldown_secs > 0;
-        let cooldown_seed = if cooldown_per_user {
-            data.instance.user_cooldown_secs
-        } else {
-            data.instance.global_cooldown_secs
-        };
+        let cooldown_per_user = !data.instance.cooldown_global;
+        let cooldown_seed = data.instance.cooldown_secs;
         let cooldown_input = self.build_cooldown_input(cooldown_seed, palette, cx);
         let cooldown_sub = cx.subscribe(&cooldown_input, Self::on_cooldown_committed);
 
@@ -195,15 +191,10 @@ impl TriggersRegistryView {
 
         let sparse = sparse_overrides(&default, &buffer);
         let cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
-        let (global_cooldown_secs, user_cooldown_secs) = if detail.cooldown_per_user {
-            (0, cooldown_secs)
-        } else {
-            (cooldown_secs, 0)
-        };
         let mut instance = detail.instance.clone();
         instance.overrides = sparse;
-        instance.global_cooldown_secs = global_cooldown_secs;
-        instance.user_cooldown_secs = user_cooldown_secs;
+        instance.cooldown_secs = cooldown_secs;
+        instance.cooldown_global = !detail.cooldown_per_user;
         let repo = Arc::clone(&self.repo);
         self.spawn_reload(
             async move {
@@ -672,7 +663,7 @@ impl TriggersRegistryView {
                     .child(detail.cooldown_input.clone()),
             );
 
-        let scope_toggle = toggle(detail.cooldown_per_user, palette).on_click(
+        let scope_toggle = toggle(!detail.cooldown_per_user, palette).on_click(
             "triggers-detail-cooldown-scope",
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_cooldown_scope(cx)),
         );

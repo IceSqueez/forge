@@ -59,8 +59,8 @@ fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstan
         enabled: true,
         user_defined,
         platform_scope: Default::default(),
-        global_cooldown_secs: 0,
-        user_cooldown_secs: 0,
+        cooldown_secs: 0,
+        cooldown_global: true,
     }
 }
 
@@ -117,8 +117,8 @@ async fn overrides_survive_roundtrip() {
         enabled: true,
         user_defined: true,
         platform_scope: Default::default(),
-        global_cooldown_secs: 0,
-        user_cooldown_secs: 0,
+        cooldown_secs: 0,
+        cooldown_global: true,
     };
     let id = inst.id;
     repo.save(&inst).await.expect("save");
@@ -510,8 +510,8 @@ async fn platform_scope_only_subset_round_trips() {
         enabled: true,
         user_defined: true,
         platform_scope: scope.clone(),
-        global_cooldown_secs: 0,
-        user_cooldown_secs: 0,
+        cooldown_secs: 0,
+        cooldown_global: true,
     };
     let id = inst.id;
     repo.save(&inst).await.expect("save");

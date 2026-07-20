@@ -702,9 +702,9 @@ triggers_sheet_no_config = Налаштованих полів немає
 triggers_sheet_section_cooldown = ПЕРЕЗАРЯДКА
 triggers_sheet_cooldown_caption = секунди · 0 = вимк
 triggers_sheet_cooldown_value = перезарядка
-triggers_sheet_cooldown_scope = на глядача
-triggers_cooldown_global_suffix = { " · перезарядка=" }{ $secs }с
-triggers_cooldown_user_suffix = { " · перезарядка=" }{ $secs }{ "с на глядача" }
+triggers_sheet_cooldown_scope = Глобальна перезарядка
+triggers_cooldown_suffix_global = { " · перезарядка=" }{ $secs }{ "с глобально" }
+triggers_cooldown_suffix_per_user = { " · перезарядка=" }{ $secs }{ "с на глядача" }
 triggers_sheet_not_registered = Тип тригера не зареєстровано
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_section_platform = ПЛАТФОРМА

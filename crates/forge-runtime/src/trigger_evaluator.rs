@@ -32,8 +32,7 @@ pub struct TriggerEvaluator {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
-    global_cooldowns: HashMap<TriggerInstanceId, Instant>,
-    user_cooldowns: HashMap<(TriggerInstanceId, String), Instant>,
+    cooldowns: HashMap<(TriggerInstanceId, Option<String>), Instant>,
 }
 
 impl TriggerEvaluator {
@@ -52,8 +51,7 @@ impl TriggerEvaluator {
             trigger_instances,
             scheduler,
             subscription,
-            global_cooldowns: HashMap::new(),
-            user_cooldowns: HashMap::new(),
+            cooldowns: HashMap::new(),
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = Arc::clone(&cancel);
@@ -182,32 +180,27 @@ impl TriggerEvaluator {
     }
 
     fn throttled(&mut self, instance: &TriggerInstance, args: &ArgStack) -> bool {
-        let user = arg_stack_user(args);
+        if instance.cooldown_secs == 0 {
+            return false;
+        }
 
-        if instance.global_cooldown_secs > 0
-            && let Some(last) = self.global_cooldowns.get(&instance.id)
-            && last.elapsed() < Duration::from_secs(instance.global_cooldown_secs as u64)
+        let key = if instance.cooldown_global {
+            (instance.id, None)
+        } else {
+            match arg_stack_user(args) {
+                Some(user) => (instance.id, Some(user)),
+                None => return false,
+            }
+        };
+
+        let window = Duration::from_secs(instance.cooldown_secs as u64);
+        if let Some(last) = self.cooldowns.get(&key)
+            && last.elapsed() < window
         {
             return true;
         }
 
-        if instance.user_cooldown_secs > 0
-            && let Some(user) = &user
-            && let Some(last) = self.user_cooldowns.get(&(instance.id, user.clone()))
-            && last.elapsed() < Duration::from_secs(instance.user_cooldown_secs as u64)
-        {
-            return true;
-        }
-
-        let now = Instant::now();
-        if instance.global_cooldown_secs > 0 {
-            self.global_cooldowns.insert(instance.id, now);
-        }
-        if instance.user_cooldown_secs > 0
-            && let Some(user) = user
-        {
-            self.user_cooldowns.insert((instance.id, user), now);
-        }
+        self.cooldowns.insert(key, Instant::now());
         false
     }
 }
@@ -321,8 +314,8 @@ mod tests {
             enabled: true,
             user_defined: true,
             platform_scope: Default::default(),
-            global_cooldown_secs: 0,
-            user_cooldown_secs: 0,
+            cooldown_secs: 0,
+            cooldown_global: true,
         }
     }
 
@@ -534,8 +527,8 @@ mod tests {
             enabled: true,
             user_defined: true,
             platform_scope: scope,
-            global_cooldown_secs: 0,
-            user_cooldown_secs: 0,
+            cooldown_secs: 0,
+            cooldown_global: true,
         }
     }
 

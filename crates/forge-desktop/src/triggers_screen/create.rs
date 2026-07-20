@@ -215,8 +215,8 @@ impl TriggersRegistryView {
             enabled: true,
             user_defined: true,
             platform_scope: PlatformScope::Any,
-            global_cooldown_secs: 0,
-            user_cooldown_secs: 0,
+            cooldown_secs: 0,
+            cooldown_global: true,
         };
 
         if let Some(CreateStage::Fill(form)) = self.create.as_mut() {

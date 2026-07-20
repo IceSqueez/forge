@@ -1843,8 +1843,8 @@ impl ScreenActionsView {
             enabled: true,
             user_defined: true,
             platform_scope: PlatformScope::Any,
-            global_cooldown_secs: 0,
-            user_cooldown_secs: 0,
+            cooldown_secs: 0,
+            cooldown_global: true,
         };
 
         if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
@@ -3295,8 +3295,8 @@ impl ScreenActionsView {
             .map(|d| d.condition_display(&instance.overrides))
             .unwrap_or_default();
         condition.push_str(&crate::triggers_screen::cooldown_suffix(
-            instance.global_cooldown_secs,
-            instance.user_cooldown_secs,
+            instance.cooldown_secs,
+            instance.cooldown_global,
         ));
         let glyph = Icon::from_name(
             descriptor

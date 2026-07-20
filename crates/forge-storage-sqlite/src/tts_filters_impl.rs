@@ -126,6 +126,7 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
     }
 }
 
+// Split across two tuples - sqlx's tuple `FromRow` tops out at 16 columns.
 #[allow(clippy::type_complexity)]
 type SettingsRow = (
     String,
@@ -144,8 +145,12 @@ type SettingsRow = (
     i64,
     i64,
 );
+type SettingsExtRow = (Option<String>, i64, i64, String, i64);
 
-fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageError> {
+fn decode_settings_row(
+    row: SettingsRow,
+    ext: SettingsExtRow,
+) -> Result<TtsPipelineSettings, StorageError> {
     let (
         url_mode_str,
         max_length,
@@ -163,6 +168,13 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
         output_read_display_name_first,
         output_emote_to_word,
     ) = row;
+    let (
+        skip_prefix,
+        skip_emote_only,
+        skip_mostly_non_latin,
+        skip_custom_regexes_json,
+        output_sanitize_punctuation,
+    ) = ext;
 
     let url_mode: UrlMode = serde_json::from_str(&format!("\"{url_mode_str}\""))
         .map_err(|_| StorageError::Parse(format!("unknown url_mode: {url_mode_str}")))?;
@@ -176,6 +188,13 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
         StorageError::Parse(format!("invalid bot_accounts json: {bot_accounts_json}"))
     })?;
 
+    let skip_custom_regexes: Vec<String> = serde_json::from_str(&skip_custom_regexes_json)
+        .map_err(|_| {
+            StorageError::Parse(format!(
+                "invalid skip_custom_regexes json: {skip_custom_regexes_json}"
+            ))
+        })?;
+
     Ok(TtsPipelineSettings {
         url_mode,
         max_length: max_length.map(|v| v as u32),
@@ -184,6 +203,7 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
         strip_reward_emotes: strip_reward != 0,
         skip_contains_url: skip_contains_url != 0,
         skip_starts_with_bang: skip_starts_with_bang != 0,
+        skip_prefix,
         skip_from_bot_accounts: skip_from_bot_accounts != 0,
         bot_accounts,
         skip_longer_than: skip_longer_than != 0,
@@ -192,6 +212,10 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
         repeat_of_recent_window: repeat_of_recent_window as u32,
         output_read_display_name_first: output_read_display_name_first != 0,
         output_emote_to_word: output_emote_to_word != 0,
+        skip_emote_only: skip_emote_only != 0,
+        skip_mostly_non_latin: skip_mostly_non_latin != 0,
+        skip_custom_regexes,
+        output_sanitize_punctuation: output_sanitize_punctuation != 0,
     })
 }
 
@@ -252,10 +276,20 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        match row {
-            None => Ok(TtsPipelineSettings::default()),
-            Some(r) => decode_settings_row(r),
-        }
+        let Some(row) = row else {
+            return Ok(TtsPipelineSettings::default());
+        };
+
+        let ext: SettingsExtRow = sqlx::query_as(
+            "SELECT skip_prefix, skip_emote_only, skip_mostly_non_latin,
+                    skip_custom_regexes, output_sanitize_punctuation
+             FROM tts_pipeline_settings WHERE id = 1",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        decode_settings_row(row, ext)
     }
 
     async fn set_pipeline_settings(
@@ -272,14 +306,18 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
             .to_owned();
         let bot_accounts_json =
             serde_json::to_string(&settings.bot_accounts).map_err(StorageError::Serialization)?;
+        let skip_custom_regexes_json = serde_json::to_string(&settings.skip_custom_regexes)
+            .map_err(StorageError::Serialization)?;
 
         sqlx::query(
             "INSERT INTO tts_pipeline_settings
                 (id, url_mode, max_length, blocklist_mode, strip_twitch_emotes, strip_reward_emotes,
                  skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts, bot_accounts,
                  skip_longer_than, longer_than_max_chars, skip_repeat_of_recent,
-                 repeat_of_recent_window, output_read_display_name_first, output_emote_to_word)
-             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 repeat_of_recent_window, output_read_display_name_first, output_emote_to_word,
+                 skip_prefix, skip_emote_only, skip_mostly_non_latin, skip_custom_regexes,
+                 output_sanitize_punctuation)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 url_mode                       = excluded.url_mode,
                 max_length                     = excluded.max_length,
@@ -295,7 +333,12 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
                 skip_repeat_of_recent          = excluded.skip_repeat_of_recent,
                 repeat_of_recent_window        = excluded.repeat_of_recent_window,
                 output_read_display_name_first = excluded.output_read_display_name_first,
-                output_emote_to_word           = excluded.output_emote_to_word",
+                output_emote_to_word           = excluded.output_emote_to_word,
+                skip_prefix                    = excluded.skip_prefix,
+                skip_emote_only                = excluded.skip_emote_only,
+                skip_mostly_non_latin          = excluded.skip_mostly_non_latin,
+                skip_custom_regexes            = excluded.skip_custom_regexes,
+                output_sanitize_punctuation    = excluded.output_sanitize_punctuation",
         )
         .bind(&url_mode_str)
         .bind(settings.max_length.map(|v| v as i64))
@@ -312,6 +355,11 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
         .bind(settings.repeat_of_recent_window as i64)
         .bind(settings.output_read_display_name_first as i64)
         .bind(settings.output_emote_to_word as i64)
+        .bind(&settings.skip_prefix)
+        .bind(settings.skip_emote_only as i64)
+        .bind(settings.skip_mostly_non_latin as i64)
+        .bind(&skip_custom_regexes_json)
+        .bind(settings.output_sanitize_punctuation as i64)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;

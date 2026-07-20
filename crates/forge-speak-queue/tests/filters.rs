@@ -180,6 +180,7 @@ mod filters {
                     "error must carry the offending pattern verbatim"
                 );
             }
+            other => panic!("expected InvalidRegex, got {other:?}"),
         }
     }
 

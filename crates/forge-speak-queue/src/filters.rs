@@ -19,12 +19,21 @@ pub enum FilterMappingError {
         pattern: String,
         source: regex::Error,
     },
+    #[error("skip rule custom regex #{index} has invalid pattern `{pattern}`: {source}")]
+    InvalidSkipRegex {
+        index: usize,
+        pattern: String,
+        source: regex::Error,
+    },
 }
 
 impl From<FilterMappingError> for PipelineError {
     fn from(e: FilterMappingError) -> Self {
         match e {
             FilterMappingError::InvalidRegex {
+                pattern, source, ..
+            }
+            | FilterMappingError::InvalidSkipRegex {
                 pattern, source, ..
             } => PipelineError::InvalidRegex { pattern, source },
         }
@@ -70,23 +79,86 @@ fn migrate_max_length(max_length: Option<u32>, skip_rules: &mut SkipRulesConfig)
     }
 }
 
-fn skip_rules_from_settings(settings: &TtsPipelineSettings) -> SkipRulesConfig {
+/// Old `skip_starts_with_bang` stays readable for one-time conversion; an explicit
+/// non-empty `skip_prefix` always wins over it.
+fn effective_skip_prefix(settings: &TtsPipelineSettings) -> Option<String> {
+    match &settings.skip_prefix {
+        Some(prefix) if !prefix.is_empty() => Some(prefix.clone()),
+        _ if settings.skip_starts_with_bang => Some("!".to_owned()),
+        _ => None,
+    }
+}
+
+fn skip_rules_base(settings: &TtsPipelineSettings) -> SkipRulesConfig {
     SkipRulesConfig {
         contains_url: settings.skip_contains_url,
-        starts_with_bang: settings.skip_starts_with_bang,
+        skip_prefix: effective_skip_prefix(settings),
         from_bot_accounts: settings.skip_from_bot_accounts,
         bot_accounts: settings.bot_accounts.clone(),
         longer_than: settings.skip_longer_than,
         max_chars: settings.longer_than_max_chars as usize,
         repeat_of_recent: settings.skip_repeat_of_recent,
         window: settings.repeat_of_recent_window as usize,
+        emote_only: settings.skip_emote_only,
+        mostly_non_latin: settings.skip_mostly_non_latin,
+        custom_regexes: Vec::new(),
     }
+}
+
+fn compile_skip_regexes_lenient(patterns: &[String]) -> Vec<regex::Regex> {
+    patterns
+        .iter()
+        .enumerate()
+        .filter_map(|(index, pattern)| match regex::Regex::new(pattern) {
+            Ok(compiled) => Some(compiled),
+            Err(source) => {
+                tracing::warn!(
+                    regex_index = index,
+                    pattern = %pattern,
+                    error = %source,
+                    "invalid skip custom regex; dropping"
+                );
+                None
+            }
+        })
+        .collect()
+}
+
+fn compile_skip_regexes_strict(
+    patterns: &[String],
+) -> Result<Vec<regex::Regex>, FilterMappingError> {
+    patterns
+        .iter()
+        .enumerate()
+        .map(|(index, pattern)| {
+            regex::Regex::new(pattern).map_err(|source| FilterMappingError::InvalidSkipRegex {
+                index,
+                pattern: pattern.clone(),
+                source,
+            })
+        })
+        .collect()
+}
+
+fn skip_rules_from_settings_lenient(settings: &TtsPipelineSettings) -> SkipRulesConfig {
+    let mut skip_rules = skip_rules_base(settings);
+    skip_rules.custom_regexes = compile_skip_regexes_lenient(&settings.skip_custom_regexes);
+    skip_rules
+}
+
+fn skip_rules_from_settings_strict(
+    settings: &TtsPipelineSettings,
+) -> Result<SkipRulesConfig, FilterMappingError> {
+    let mut skip_rules = skip_rules_base(settings);
+    skip_rules.custom_regexes = compile_skip_regexes_strict(&settings.skip_custom_regexes)?;
+    Ok(skip_rules)
 }
 
 fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
     OutputConfig {
         read_display_name_first: settings.output_read_display_name_first,
         emote_to_word: settings.output_emote_to_word,
+        sanitize_punctuation: settings.output_sanitize_punctuation,
     }
 }
 
@@ -221,7 +293,7 @@ pub fn build_config_strict(
 ) -> Result<PipelineConfig, FilterMappingError> {
     let mapped = map_rules(rules, settings, true)?;
     let mut replacement_rules = mapped.replacement_rules;
-    let mut skip_rules = skip_rules_from_settings(settings);
+    let mut skip_rules = skip_rules_from_settings_strict(settings)?;
     migrate_url_mode(settings.url_mode, &mut replacement_rules, &mut skip_rules);
     migrate_max_length(settings.max_length, &mut skip_rules);
     Ok(PipelineConfig::new(
@@ -255,7 +327,7 @@ pub fn build_config_lenient(
         }
     });
     let mut replacement_rules = mapped.replacement_rules;
-    let mut skip_rules = skip_rules_from_settings(settings);
+    let mut skip_rules = skip_rules_from_settings_lenient(settings);
     migrate_url_mode(settings.url_mode, &mut replacement_rules, &mut skip_rules);
     migrate_max_length(settings.max_length, &mut skip_rules);
     PipelineConfig::new(
@@ -304,12 +376,14 @@ impl FilterMappingError {
     fn name_for_log(&self) -> &str {
         match self {
             FilterMappingError::InvalidRegex { name, .. } => name.as_str(),
+            FilterMappingError::InvalidSkipRegex { .. } => "skip rule",
         }
     }
 
     fn pattern_for_log(&self) -> &str {
         match self {
-            FilterMappingError::InvalidRegex { pattern, .. } => pattern.as_str(),
+            FilterMappingError::InvalidRegex { pattern, .. }
+            | FilterMappingError::InvalidSkipRegex { pattern, .. } => pattern.as_str(),
         }
     }
 }

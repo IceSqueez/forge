@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, Radius, Spacing, TextArea, TextInput, card, icon,
-    primary_button, radius, secondary_button, spacing, toggle, tr, with_alpha,
+    ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius, Spacing, TextArea,
+    TextInput, card, field_label, ghost_button, icon, modal, overlay, primary_button_with_icon,
+    radius, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
     PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -22,47 +23,30 @@ use crate::presentation::ActivePresentation;
 
 const STAGE_CIRCLE: Pixels = px(22.0);
 const PREVIEW_W: Pixels = px(320.0);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DraftKind {
-    Literal,
-    Regex,
-    Blocklist,
-}
-
-impl DraftKind {
-    fn key(self) -> &'static str {
-        match self {
-            DraftKind::Literal => "text",
-            DraftKind::Regex => "regex",
-            DraftKind::Blocklist => "blocklist",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DraftScope {
-    Replacement,
-    Blocklist,
-}
+const MODAL_W: Pixels = px(480.0);
+const DISABLED_ROW_OPACITY: f32 = 0.5;
+const RADIO_SIZE: Pixels = px(15.0);
+const RADIO_DOT: Pixels = px(7.0);
 
 #[derive(Clone, Copy)]
 enum SkipRule {
     ContainsUrl,
-    StartsBang,
     BotAccounts,
     LongerThan,
     Repeat,
+    EmoteOnly,
+    MostlyNonLatin,
 }
 
 impl SkipRule {
     fn key(self) -> &'static str {
         match self {
             SkipRule::ContainsUrl => "url",
-            SkipRule::StartsBang => "bang",
             SkipRule::BotAccounts => "bots",
             SkipRule::LongerThan => "length",
             SkipRule::Repeat => "repeat",
+            SkipRule::EmoteOnly => "emote-only",
+            SkipRule::MostlyNonLatin => "non-latin",
         }
     }
 }
@@ -71,6 +55,7 @@ impl SkipRule {
 enum OutputOpt {
     ReadName,
     EmoteWord,
+    Sanitize,
 }
 
 impl OutputOpt {
@@ -78,18 +63,161 @@ impl OutputOpt {
         match self {
             OutputOpt::ReadName => "name",
             OutputOpt::EmoteWord => "emote",
+            OutputOpt::Sanitize => "sanitize",
         }
     }
 }
 
-struct RuleDraft {
-    editing: Option<usize>,
-    kind: DraftKind,
-    scope: DraftScope,
-    name: Entity<TextInput>,
-    pattern: Entity<TextInput>,
-    replacement: Entity<TextInput>,
-    words: Entity<TextInput>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModalStage {
+    Skip,
+    Blocklist,
+    Replace,
+    Output,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SkipPreset {
+    Url,
+    Prefix,
+    Bots,
+    Length,
+    Repeat,
+    EmoteOnly,
+    NonLatin,
+    Regex,
+}
+
+const SKIP_PRESETS: [SkipPreset; 8] = [
+    SkipPreset::Url,
+    SkipPreset::Prefix,
+    SkipPreset::Bots,
+    SkipPreset::Length,
+    SkipPreset::Repeat,
+    SkipPreset::EmoteOnly,
+    SkipPreset::NonLatin,
+    SkipPreset::Regex,
+];
+
+impl SkipPreset {
+    fn key(self) -> &'static str {
+        match self {
+            SkipPreset::Url => "url",
+            SkipPreset::Prefix => "prefix",
+            SkipPreset::Bots => "bots",
+            SkipPreset::Length => "length",
+            SkipPreset::Repeat => "repeat",
+            SkipPreset::EmoteOnly => "emote-only",
+            SkipPreset::NonLatin => "non-latin",
+            SkipPreset::Regex => "regex",
+        }
+    }
+
+    fn label(self) -> SharedString {
+        match self {
+            SkipPreset::Url => tr!("tts_filters_preset_skip_url"),
+            SkipPreset::Prefix => tr!("tts_filters_preset_skip_prefix"),
+            SkipPreset::Bots => tr!("tts_filters_preset_skip_bots"),
+            SkipPreset::Length => tr!("tts_filters_preset_skip_length"),
+            SkipPreset::Repeat => tr!("tts_filters_preset_skip_repeat"),
+            SkipPreset::EmoteOnly => tr!("tts_filters_preset_skip_emote_only"),
+            SkipPreset::NonLatin => tr!("tts_filters_preset_skip_non_latin"),
+            SkipPreset::Regex => tr!("tts_filters_preset_skip_regex"),
+        }
+        .into()
+    }
+
+    fn param_label(self) -> Option<SharedString> {
+        match self {
+            SkipPreset::Prefix => Some(tr!("tts_filters_preset_skip_prefix_label").into()),
+            SkipPreset::Length => Some(tr!("tts_filters_preset_skip_length_label").into()),
+            SkipPreset::Regex => Some(tr!("tts_filters_preset_skip_regex_label").into()),
+            _ => None,
+        }
+    }
+
+    fn placeholder(self) -> SharedString {
+        match self {
+            SkipPreset::Prefix => tr!("tts_filters_preset_skip_prefix_placeholder").into(),
+            SkipPreset::Length => tr!("tts_filters_preset_skip_length_placeholder").into(),
+            SkipPreset::Regex => tr!("tts_filters_preset_skip_regex_placeholder").into(),
+            _ => SharedString::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputPreset {
+    Name,
+    Emote,
+    Lang,
+    MaxDur,
+    Sanitize,
+}
+
+const OUTPUT_PRESETS: [OutputPreset; 5] = [
+    OutputPreset::Name,
+    OutputPreset::Emote,
+    OutputPreset::Lang,
+    OutputPreset::MaxDur,
+    OutputPreset::Sanitize,
+];
+
+impl OutputPreset {
+    fn key(self) -> &'static str {
+        match self {
+            OutputPreset::Name => "name",
+            OutputPreset::Emote => "emote",
+            OutputPreset::Lang => "lang",
+            OutputPreset::MaxDur => "maxdur",
+            OutputPreset::Sanitize => "sanitize",
+        }
+    }
+
+    fn label(self) -> SharedString {
+        match self {
+            OutputPreset::Name => tr!("tts_filters_output_read_name"),
+            OutputPreset::Emote => tr!("tts_filters_output_emote"),
+            OutputPreset::Lang => tr!("tts_filters_preset_output_lang"),
+            OutputPreset::MaxDur => tr!("tts_filters_preset_output_maxdur"),
+            OutputPreset::Sanitize => tr!("tts_filters_output_sanitize"),
+        }
+        .into()
+    }
+
+    fn hint(self) -> SharedString {
+        match self {
+            OutputPreset::Name => tr!("tts_filters_preset_output_name_hint"),
+            OutputPreset::Emote => tr!("tts_filters_preset_output_emote_hint"),
+            OutputPreset::Lang => tr!("tts_filters_preset_output_lang_hint"),
+            OutputPreset::MaxDur => tr!("tts_filters_preset_output_maxdur_hint"),
+            OutputPreset::Sanitize => tr!("tts_filters_preset_output_sanitize_hint"),
+        }
+        .into()
+    }
+
+    /// Rendered so users see the full design surface, but never selectable.
+    fn disabled(self) -> bool {
+        matches!(self, OutputPreset::Lang | OutputPreset::MaxDur)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReplaceKind {
+    Text,
+    Regex,
+}
+
+struct AddFilterModal {
+    stage: ModalStage,
+    skip_preset: SkipPreset,
+    output_preset: OutputPreset,
+    param: Entity<TextInput>,
+    blocklist_words: Entity<TextArea>,
+    blocklist_mode: BlocklistMode,
+    replace_kind: ReplaceKind,
+    replace_from: Entity<TextInput>,
+    replace_to: Entity<TextInput>,
 }
 
 struct CachedPreview {
@@ -104,7 +232,7 @@ pub struct TtsFiltersView {
     rt_handle: tokio::runtime::Handle,
     rules: Vec<FilterRule>,
     settings: TtsPipelineSettings,
-    draft: Option<RuleDraft>,
+    add_modal: Option<AddFilterModal>,
     save_error: Option<String>,
     blocklist_expanded: bool,
     preview_input: Entity<TextArea>,
@@ -144,7 +272,7 @@ impl TtsFiltersView {
             rt_handle,
             rules: Vec::new(),
             settings: TtsPipelineSettings::default(),
-            draft: None,
+            add_modal: None,
             save_error: None,
             blocklist_expanded: false,
             preview_input,
@@ -269,13 +397,36 @@ impl TtsFiltersView {
         .detach();
     }
 
+    /// Applies `mutate`, then re-validates the whole pipeline config; rolls back and
+    /// surfaces `save_error` on failure instead of persisting a broken regex.
+    fn try_apply(&mut self, cx: &mut Context<Self>, mutate: impl FnOnce(&mut Self)) -> bool {
+        let backup_settings = self.settings.clone();
+        let backup_rules = self.rules.clone();
+        mutate(self);
+        renumber(&mut self.rules);
+        match build_config_strict(&self.rules, &self.settings) {
+            Ok(_) => {
+                self.after_change(cx);
+                true
+            }
+            Err(e) => {
+                self.settings = backup_settings;
+                self.rules = backup_rules;
+                self.save_error = Some(e.to_string());
+                cx.notify();
+                false
+            }
+        }
+    }
+
     fn skip_flag(&self, rule: SkipRule) -> bool {
         match rule {
             SkipRule::ContainsUrl => self.settings.skip_contains_url,
-            SkipRule::StartsBang => self.settings.skip_starts_with_bang,
             SkipRule::BotAccounts => self.settings.skip_from_bot_accounts,
             SkipRule::LongerThan => self.settings.skip_longer_than,
             SkipRule::Repeat => self.settings.skip_repeat_of_recent,
+            SkipRule::EmoteOnly => self.settings.skip_emote_only,
+            SkipRule::MostlyNonLatin => self.settings.skip_mostly_non_latin,
         }
     }
 
@@ -285,10 +436,11 @@ impl TtsFiltersView {
         }
         match rule {
             SkipRule::ContainsUrl => self.settings.skip_contains_url = value,
-            SkipRule::StartsBang => self.settings.skip_starts_with_bang = value,
             SkipRule::BotAccounts => self.settings.skip_from_bot_accounts = value,
             SkipRule::LongerThan => self.settings.skip_longer_than = value,
             SkipRule::Repeat => self.settings.skip_repeat_of_recent = value,
+            SkipRule::EmoteOnly => self.settings.skip_emote_only = value,
+            SkipRule::MostlyNonLatin => self.settings.skip_mostly_non_latin = value,
         }
         self.after_change(cx);
     }
@@ -298,10 +450,27 @@ impl TtsFiltersView {
         self.set_skip(rule, value, cx);
     }
 
+    fn clear_skip_prefix(&mut self, cx: &mut Context<Self>) {
+        if self.settings.skip_prefix.is_none() && !self.settings.skip_starts_with_bang {
+            return;
+        }
+        self.settings.skip_prefix = None;
+        self.settings.skip_starts_with_bang = false;
+        self.after_change(cx);
+    }
+
+    fn remove_skip_regex(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index < self.settings.skip_custom_regexes.len() {
+            self.settings.skip_custom_regexes.remove(index);
+        }
+        self.after_change(cx);
+    }
+
     fn output_flag(&self, opt: OutputOpt) -> bool {
         match opt {
             OutputOpt::ReadName => self.settings.output_read_display_name_first,
             OutputOpt::EmoteWord => self.settings.output_emote_to_word,
+            OutputOpt::Sanitize => self.settings.output_sanitize_punctuation,
         }
     }
 
@@ -312,6 +481,7 @@ impl TtsFiltersView {
         match opt {
             OutputOpt::ReadName => self.settings.output_read_display_name_first = value,
             OutputOpt::EmoteWord => self.settings.output_emote_to_word = value,
+            OutputOpt::Sanitize => self.settings.output_sanitize_punctuation = value,
         }
         self.after_change(cx);
     }
@@ -373,109 +543,220 @@ impl TtsFiltersView {
         self.after_change(cx);
     }
 
-    fn open_add_replacement(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let draft = self.build_draft(
-            None,
-            DraftKind::Literal,
-            DraftScope::Replacement,
-            "",
-            "",
-            "",
-            "",
-            cx,
-        );
-        draft.pattern.update(cx, |f, cx| f.focus(window, cx));
-        self.draft = Some(draft);
-        cx.notify();
-    }
-
-    fn open_add_blocklist(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let draft = self.build_draft(
-            None,
-            DraftKind::Blocklist,
-            DraftScope::Blocklist,
-            "",
-            "",
-            "",
-            "",
-            cx,
-        );
-        draft.words.update(cx, |f, cx| f.focus(window, cx));
-        self.draft = Some(draft);
-        cx.notify();
-    }
-
-    fn set_draft_kind(&mut self, kind: DraftKind, cx: &mut Context<Self>) {
-        if let Some(draft) = self.draft.as_mut() {
-            draft.kind = kind;
-        }
-        cx.notify();
-    }
-
-    fn cancel_draft(&mut self, cx: &mut Context<Self>) {
-        self.draft = None;
+    fn open_add_modal(&mut self, stage: ModalStage, cx: &mut Context<Self>) {
+        let palette = cx.palette();
+        let param = cx.new(|cx| TextInput::new(SharedString::default(), cx).with_palette(palette));
+        let blocklist_words = cx.new(|cx| {
+            TextArea::new(tr!("tts_filters_modal_blocklist_words_placeholder"), cx)
+                .with_palette(palette)
+                .on_surface()
+                .with_height(px(62.0))
+        });
+        let replace_from = cx.new(|cx| {
+            TextInput::new(tr!("tts_filters_modal_replace_find_placeholder"), cx)
+                .with_palette(palette)
+        });
+        let replace_to = cx.new(|cx| {
+            TextInput::new(
+                tr!("tts_filters_modal_replace_replace_text_placeholder"),
+                cx,
+            )
+            .with_palette(palette)
+        });
+        self.add_modal = Some(AddFilterModal {
+            stage,
+            skip_preset: SkipPreset::Url,
+            output_preset: OutputPreset::Name,
+            param,
+            blocklist_words,
+            blocklist_mode: self.settings.blocklist_mode,
+            replace_kind: ReplaceKind::Text,
+            replace_from,
+            replace_to,
+        });
         self.save_error = None;
         cx.notify();
     }
 
-    fn submit_draft(&mut self, cx: &mut Context<Self>) {
-        let Some(draft) = self.draft.as_ref() else {
+    fn close_add_modal(&mut self, cx: &mut Context<Self>) {
+        self.add_modal = None;
+        self.save_error = None;
+        cx.notify();
+    }
+
+    fn set_skip_preset(&mut self, preset: SkipPreset, cx: &mut Context<Self>) {
+        if let Some(modal) = self.add_modal.as_mut() {
+            modal.skip_preset = preset;
+            let placeholder = preset.placeholder();
+            modal.param.update(cx, |field, cx| {
+                field.set_placeholder(placeholder, cx);
+                field.set_content("", cx);
+            });
+        }
+        cx.notify();
+    }
+
+    fn set_output_preset(&mut self, preset: OutputPreset, cx: &mut Context<Self>) {
+        if preset.disabled() {
+            return;
+        }
+        if let Some(modal) = self.add_modal.as_mut() {
+            modal.output_preset = preset;
+        }
+        cx.notify();
+    }
+
+    fn set_modal_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
+        if let Some(modal) = self.add_modal.as_mut() {
+            modal.blocklist_mode = mode;
+        }
+        cx.notify();
+    }
+
+    fn set_replace_kind(&mut self, kind: ReplaceKind, cx: &mut Context<Self>) {
+        if let Some(modal) = self.add_modal.as_mut() {
+            modal.replace_kind = kind;
+        }
+        cx.notify();
+    }
+
+    fn modal_valid(&self, modal: &AddFilterModal, cx: &Context<Self>) -> bool {
+        match modal.stage {
+            ModalStage::Skip => match modal.skip_preset {
+                SkipPreset::Prefix | SkipPreset::Regex => {
+                    !modal.param.read(cx).content().trim().is_empty()
+                }
+                SkipPreset::Length => modal.param.read(cx).content().trim().parse::<u32>().is_ok(),
+                _ => true,
+            },
+            ModalStage::Output => !modal.output_preset.disabled(),
+            ModalStage::Blocklist => !modal.blocklist_words.read(cx).content().trim().is_empty(),
+            ModalStage::Replace => !modal.replace_from.read(cx).content().trim().is_empty(),
+        }
+    }
+
+    fn submit_add_modal(&mut self, cx: &mut Context<Self>) {
+        let Some(modal) = self.add_modal.take() else {
             return;
         };
-        let name = draft.name.read(cx).content().trim().to_owned();
-        let kind = match draft.kind {
-            DraftKind::Literal => FilterRuleKind::Literal {
-                pattern: draft.pattern.read(cx).content().trim().to_owned(),
-                replacement: draft.replacement.read(cx).content().trim().to_owned(),
-            },
-            DraftKind::Regex => FilterRuleKind::Regex {
-                pattern: draft.pattern.read(cx).content().trim().to_owned(),
-                replacement: draft.replacement.read(cx).content().trim().to_owned(),
-            },
-            DraftKind::Blocklist => FilterRuleKind::Blocklist {
-                words: draft
-                    .words
-                    .read(cx)
-                    .content()
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|w| !w.is_empty())
-                    .map(str::to_owned)
-                    .collect(),
-                mode: self.settings.blocklist_mode,
-            },
+        if !self.modal_valid(&modal, cx) {
+            self.add_modal = Some(modal);
+            return;
+        }
+        let applied = match modal.stage {
+            ModalStage::Skip => self.apply_skip_preset(&modal, cx),
+            ModalStage::Output => self.apply_output_preset(&modal, cx),
+            ModalStage::Blocklist => self.apply_blocklist_words(&modal, cx),
+            ModalStage::Replace => self.apply_replacement(&modal, cx),
         };
-        let editing = draft.editing;
+        if !applied {
+            self.add_modal = Some(modal);
+        }
+    }
 
-        let mut prospective = self.rules.clone();
-        match editing {
-            Some(i) if i < prospective.len() => {
-                prospective[i].name = name;
-                prospective[i].kind = kind;
+    fn apply_skip_preset(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
+        let param = modal.param.read(cx).content().trim().to_owned();
+        let preset = modal.skip_preset;
+        self.try_apply(cx, |this| match preset {
+            SkipPreset::Url => this.settings.skip_contains_url = true,
+            SkipPreset::Prefix => {
+                this.settings.skip_prefix = Some(param);
+                this.settings.skip_starts_with_bang = false;
             }
-            _ => {
-                let position = prospective.len() as u32;
-                prospective.push(FilterRule {
+            SkipPreset::Bots => this.settings.skip_from_bot_accounts = true,
+            SkipPreset::Length => {
+                this.settings.skip_longer_than = true;
+                if let Ok(n) = param.parse::<u32>() {
+                    this.settings.longer_than_max_chars = n;
+                }
+            }
+            SkipPreset::Repeat => this.settings.skip_repeat_of_recent = true,
+            SkipPreset::EmoteOnly => this.settings.skip_emote_only = true,
+            SkipPreset::NonLatin => this.settings.skip_mostly_non_latin = true,
+            SkipPreset::Regex => this.settings.skip_custom_regexes.push(param),
+        })
+    }
+
+    fn apply_output_preset(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
+        let preset = modal.output_preset;
+        self.try_apply(cx, |this| match preset {
+            OutputPreset::Name => this.settings.output_read_display_name_first = true,
+            OutputPreset::Emote => this.settings.output_emote_to_word = true,
+            OutputPreset::Sanitize => this.settings.output_sanitize_punctuation = true,
+            OutputPreset::Lang | OutputPreset::MaxDur => {}
+        })
+    }
+
+    fn apply_blocklist_words(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
+        let words: Vec<String> = modal
+            .blocklist_words
+            .read(cx)
+            .content()
+            .split([',', '\n'])
+            .map(str::trim)
+            .filter(|w| !w.is_empty())
+            .map(str::to_owned)
+            .collect();
+        if words.is_empty() {
+            return false;
+        }
+        let mode = modal.blocklist_mode;
+        self.try_apply(cx, |this| {
+            this.settings.blocklist_mode = mode;
+            if let Some(rule) = this
+                .rules
+                .iter_mut()
+                .find(|r| matches!(r.kind, FilterRuleKind::Blocklist { .. }))
+            {
+                if let FilterRuleKind::Blocklist {
+                    words: existing,
+                    mode: m,
+                } = &mut rule.kind
+                {
+                    for word in &words {
+                        if !existing.iter().any(|e| e.eq_ignore_ascii_case(word)) {
+                            existing.push(word.clone());
+                        }
+                    }
+                    *m = mode;
+                }
+            } else {
+                let position = this.rules.len() as u32;
+                this.rules.push(FilterRule {
                     id: ulid::Ulid::generate().to_string(),
-                    name,
+                    name: String::new(),
                     enabled: true,
                     position,
-                    kind,
+                    kind: FilterRuleKind::Blocklist { words, mode },
                 });
             }
-        }
-        renumber(&mut prospective);
+        })
+    }
 
-        if let Err(e) = build_config_strict(&prospective, &self.settings) {
-            self.save_error = Some(e.to_string());
-            cx.notify();
-            return;
-        }
-
-        self.rules = prospective;
-        self.draft = None;
-        self.save_error = None;
-        self.after_change(cx);
+    fn apply_replacement(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
+        let from = modal.replace_from.read(cx).content().trim().to_owned();
+        let to = modal.replace_to.read(cx).content().trim().to_owned();
+        let kind = modal.replace_kind;
+        self.try_apply(cx, |this| {
+            let filter_kind = match kind {
+                ReplaceKind::Text => FilterRuleKind::Literal {
+                    pattern: from,
+                    replacement: to,
+                },
+                ReplaceKind::Regex => FilterRuleKind::Regex {
+                    pattern: from,
+                    replacement: to,
+                },
+            };
+            let position = this.rules.len() as u32;
+            this.rules.push(FilterRule {
+                id: ulid::Ulid::generate().to_string(),
+                name: String::new(),
+                enabled: true,
+                position,
+                kind: filter_kind,
+            });
+        })
     }
 
     fn speak_preview(&self, cx: &mut Context<Self>) {
@@ -504,45 +785,6 @@ impl TtsFiltersView {
                 eprintln!("forge-desktop: filter preview speak failed: {e}");
             }
         });
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn build_draft(
-        &self,
-        editing: Option<usize>,
-        kind: DraftKind,
-        scope: DraftScope,
-        name: &str,
-        pattern: &str,
-        replacement: &str,
-        words: &str,
-        cx: &mut Context<Self>,
-    ) -> RuleDraft {
-        let palette = cx.palette();
-        RuleDraft {
-            editing,
-            kind,
-            scope,
-            name: draft_field(tr!("tts_filters_draft_name_placeholder"), name, palette, cx),
-            pattern: draft_field(
-                tr!("tts_filters_draft_pattern_placeholder"),
-                pattern,
-                palette,
-                cx,
-            ),
-            replacement: draft_field(
-                tr!("tts_filters_draft_replacement_placeholder"),
-                replacement,
-                palette,
-                cx,
-            ),
-            words: draft_field(
-                tr!("tts_filters_draft_words_placeholder"),
-                words,
-                palette,
-                cx,
-            ),
-        }
     }
 
     fn pipeline_column(
@@ -586,10 +828,6 @@ impl TtsFiltersView {
             .child(self.blocklist_card(palette, density, cx))
             .child(self.replacements_card(palette, density, cx))
             .child(self.output_card(palette, density, cx));
-
-        if self.draft.is_some() {
-            col = col.child(self.draft_card(palette, density, cx));
-        }
 
         div()
             .id("filt-pipeline")
@@ -762,21 +1000,14 @@ impl TtsFiltersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let rows: [(SkipRule, SharedString, bool); 5] = [
+        let fixed: [(SkipRule, SharedString); 6] = [
             (
                 SkipRule::ContainsUrl,
                 tr!("tts_filters_skip_contains_url").into(),
-                self.settings.skip_contains_url,
-            ),
-            (
-                SkipRule::StartsBang,
-                tr!("tts_filters_skip_starts_bang").into(),
-                self.settings.skip_starts_with_bang,
             ),
             (
                 SkipRule::BotAccounts,
                 tr!("tts_filters_skip_bot_accounts").into(),
-                self.settings.skip_from_bot_accounts,
             ),
             (
                 SkipRule::LongerThan,
@@ -785,7 +1016,6 @@ impl TtsFiltersView {
                     chars = self.settings.longer_than_max_chars as i64
                 )
                 .into(),
-                self.settings.skip_longer_than,
             ),
             (
                 SkipRule::Repeat,
@@ -794,22 +1024,40 @@ impl TtsFiltersView {
                     window = self.settings.repeat_of_recent_window as i64
                 )
                 .into(),
-                self.settings.skip_repeat_of_recent,
+            ),
+            (
+                SkipRule::EmoteOnly,
+                tr!("tts_filters_skip_emote_only").into(),
+            ),
+            (
+                SkipRule::MostlyNonLatin,
+                tr!("tts_filters_skip_mostly_non_latin").into(),
             ),
         ];
 
-        let last = rows.len() - 1;
+        let prefix_display = self
+            .settings
+            .skip_prefix
+            .clone()
+            .filter(|p| !p.is_empty())
+            .or_else(|| self.settings.skip_starts_with_bang.then(|| "!".to_owned()));
+        let regex_count = self.settings.skip_custom_regexes.len();
+        let total = fixed.len() + usize::from(prefix_display.is_some()) + regex_count;
+
         let mut body = div().flex().flex_col();
-        for (i, (rule, label, on)) in rows.into_iter().enumerate() {
+        let mut i = 0usize;
+        for (rule, label) in fixed {
+            let on = self.skip_flag(rule);
             let toggle_id = SharedString::from(format!("filt-skip-t-{}", rule.key()));
             let x_id = SharedString::from(format!("filt-skip-x-{}", rule.key()));
+            i += 1;
             body = body.child(self.stage_row(
                 label,
                 on,
                 None,
                 toggle_id,
                 x_id,
-                i != last,
+                i != total,
                 true,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_skip(rule, cx)),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.set_skip(rule, false, cx)),
@@ -817,13 +1065,54 @@ impl TtsFiltersView {
                 density,
             ));
         }
+        if let Some(prefix) = prefix_display {
+            i += 1;
+            body = body.child(self.stage_row(
+                tr!("tts_filters_skip_prefix", prefix = prefix).into(),
+                true,
+                None,
+                "filt-skip-t-prefix".into(),
+                "filt-skip-x-prefix".into(),
+                i != total,
+                true,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_skip_prefix(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_skip_prefix(cx)),
+                palette,
+                density,
+            ));
+        }
+        for (ri, pattern) in self.settings.skip_custom_regexes.iter().enumerate() {
+            i += 1;
+            let x_id = SharedString::from(format!("filt-skip-regex-x-{ri}"));
+            let toggle_id = SharedString::from(format!("filt-skip-regex-t-{ri}"));
+            body = body.child(self.stage_row(
+                tr!("tts_filters_skip_regex_row", pattern = pattern.clone()).into(),
+                true,
+                Some(tr!("tts_filters_badge_regex").into()),
+                toggle_id,
+                x_id,
+                i != total,
+                true,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_skip_regex(ri, cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_skip_regex(ri, cx)),
+                palette,
+                density,
+            ));
+        }
+
+        let add = self.add_button(
+            "filt-skip-add",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.open_add_modal(ModalStage::Skip, cx)),
+            palette,
+            density,
+        );
 
         self.stage_frame(
             1,
             Icon::FilterOff,
             palette.random,
             tr!("tts_filters_stage_skip_title"),
-            None,
+            Some(add),
             body.into_any_element(),
             palette,
             density,
@@ -875,7 +1164,9 @@ impl TtsFiltersView {
 
         let add = self.add_button(
             "filt-bl-add",
-            cx.listener(|this, _: &ClickEvent, window, cx| this.open_add_blocklist(window, cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.open_add_modal(ModalStage::Blocklist, cx)
+            }),
             palette,
             density,
         );
@@ -1034,7 +1325,7 @@ impl TtsFiltersView {
 
         let add = self.add_button(
             "filt-rep-add",
-            cx.listener(|this, _: &ClickEvent, window, cx| this.open_add_replacement(window, cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.open_add_modal(ModalStage::Replace, cx)),
             palette,
             density,
         );
@@ -1057,7 +1348,7 @@ impl TtsFiltersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let rows: [(OutputOpt, SharedString, SharedString, bool); 2] = [
+        let rows: [(OutputOpt, SharedString, SharedString, bool); 3] = [
             (
                 OutputOpt::ReadName,
                 tr!("tts_filters_output_read_name").into(),
@@ -1069,6 +1360,12 @@ impl TtsFiltersView {
                 tr!("tts_filters_output_emote").into(),
                 tr!("tts_filters_output_emote_meta").into(),
                 self.settings.output_emote_to_word,
+            ),
+            (
+                OutputOpt::Sanitize,
+                tr!("tts_filters_output_sanitize").into(),
+                tr!("tts_filters_output_sanitize_meta").into(),
+                self.settings.output_sanitize_punctuation,
             ),
         ];
 
@@ -1092,96 +1389,438 @@ impl TtsFiltersView {
             ));
         }
 
+        let add = self.add_button(
+            "filt-out-add",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.open_add_modal(ModalStage::Output, cx)),
+            palette,
+            density,
+        );
+
         self.stage_frame(
             4,
             Icon::Send,
             palette.success,
             tr!("tts_filters_stage_output_title"),
-            None,
+            Some(add),
             body.into_any_element(),
             palette,
             density,
         )
     }
 
-    fn draft_card(
+    fn modal_meta(
+        stage: ModalStage,
+    ) -> (Icon, fn(&ForgePalette) -> Rgba, SharedString, SharedString) {
+        match stage {
+            ModalStage::Skip => (
+                Icon::FilterOff,
+                (|p: &ForgePalette| p.random) as fn(&ForgePalette) -> Rgba,
+                tr!("tts_filters_modal_skip_title").into(),
+                tr!("tts_filters_modal_skip_subtitle").into(),
+            ),
+            ModalStage::Blocklist => (
+                Icon::Ban,
+                (|p: &ForgePalette| p.warning) as fn(&ForgePalette) -> Rgba,
+                tr!("tts_filters_modal_blocklist_title").into(),
+                tr!("tts_filters_modal_blocklist_subtitle").into(),
+            ),
+            ModalStage::Replace => (
+                Icon::Replace,
+                (|p: &ForgePalette| p.info) as fn(&ForgePalette) -> Rgba,
+                tr!("tts_filters_modal_replace_title").into(),
+                tr!("tts_filters_modal_replace_subtitle").into(),
+            ),
+            ModalStage::Output => (
+                Icon::Send,
+                (|p: &ForgePalette| p.success) as fn(&ForgePalette) -> Rgba,
+                tr!("tts_filters_modal_output_title").into(),
+                tr!("tts_filters_modal_output_subtitle").into(),
+            ),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn radio_row(
         &self,
+        id: SharedString,
+        label: SharedString,
+        hint: Option<SharedString>,
+        selected: bool,
+        disabled: bool,
+        color: Rgba,
+        palette: &ForgePalette,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> AnyElement {
+        let mut dot = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(RADIO_SIZE)
+            .rounded(radius(Radius::Pill))
+            .border(px(1.5))
+            .border_color(if selected {
+                color
+            } else {
+                palette.border_regular
+            });
+        if selected {
+            dot = dot.child(
+                div()
+                    .size(RADIO_DOT)
+                    .rounded(radius(Radius::Pill))
+                    .bg(color),
+            );
+        }
+
+        let label_color = if selected {
+            palette.text_primary
+        } else {
+            palette.text_secondary
+        };
+
+        let mut row = div()
+            .id(id)
+            .flex()
+            .items_center()
+            .gap(px(10.0))
+            .px(px(11.0))
+            .py(px(9.0))
+            .rounded(radius(Radius::Sm))
+            .bg(if selected {
+                palette.surface_overlay
+            } else {
+                palette.shell
+            })
+            .border(BORDER_THIN)
+            .border_color(if selected {
+                color
+            } else {
+                palette.border_regular
+            })
+            .child(dot)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_SM)
+                    .text_color(label_color)
+                    .child(label),
+            );
+        if let Some(hint) = hint {
+            row = row.child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(hint),
+            );
+        }
+
+        if disabled {
+            row.opacity(DISABLED_ROW_OPACITY).into_any_element()
+        } else {
+            row.cursor_pointer().on_click(handler).into_any_element()
+        }
+    }
+
+    fn render_skip_body(
+        &self,
+        modal: &AddFilterModal,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(draft) = self.draft.as_ref() else {
-            return div().into_any_element();
-        };
-
-        let params: AnyElement = match draft.scope {
-            DraftScope::Replacement => {
-                let mut kind_row = div().flex().flex_row().gap(spacing(Spacing::Xs, density));
-                for (kind, label) in [
-                    (DraftKind::Literal, tr!("tts_filters_badge_text")),
-                    (DraftKind::Regex, tr!("tts_filters_badge_regex")),
-                ] {
-                    let active = draft.kind == kind;
-                    kind_row = kind_row.child(seg_button(
-                        SharedString::from(format!("filt-draft-kind-{}", kind.key())),
-                        label,
-                        active,
-                        palette.info,
-                        palette,
-                        density,
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.set_draft_kind(kind, cx)
-                        }),
-                    ));
-                }
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(kind_row)
-                    .child(draft.pattern.clone())
-                    .child(draft.replacement.clone())
-                    .child(draft.name.clone())
-                    .into_any_element()
-            }
-            DraftScope::Blocklist => div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xs, density))
-                .child(draft.words.clone())
-                .into_any_element(),
-        };
-
-        let submit_label = if draft.editing.is_some() {
-            tr!("common_save")
-        } else {
-            tr!("tts_filters_draft_add")
-        };
-        let actions = div()
-            .flex()
-            .flex_row()
-            .gap(spacing(Spacing::Xs, density))
-            .child(primary_button(submit_label, palette).on_click(
-                "filt-draft-submit",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_draft(cx)),
-            ))
-            .child(secondary_button(tr!("common_cancel"), palette).on_click(
-                "filt-draft-cancel",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_draft(cx)),
+        let color = palette.random;
+        let mut list = div().flex().flex_col().gap(px(5.0));
+        for preset in SKIP_PRESETS {
+            let selected = modal.skip_preset == preset;
+            let id = SharedString::from(format!("filt-modal-skip-{}", preset.key()));
+            list = list.child(self.radio_row(
+                id,
+                preset.label(),
+                None,
+                selected,
+                false,
+                color,
+                palette,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_skip_preset(preset, cx)),
             ));
+        }
 
-        let body = div()
+        let mut body = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(mono_caption(tr!("tts_filters_draft_header"), palette))
-            .child(params)
-            .child(actions);
+            .gap(spacing(Spacing::Sm, density))
+            .child(field_label(
+                palette,
+                tr!("tts_filters_modal_condition_label"),
+                list,
+            ));
 
-        card(body, palette)
-            .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Sm, density))
-            .full_width()
+        if let Some(param_label) = modal.skip_preset.param_label() {
+            body = body.child(field_label(palette, param_label, modal.param.clone()));
+        }
+
+        body.into_any_element()
+    }
+
+    fn render_output_body(
+        &self,
+        modal: &AddFilterModal,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let color = palette.success;
+        let mut list = div().flex().flex_col().gap(px(5.0));
+        for preset in OUTPUT_PRESETS {
+            let selected = modal.output_preset == preset;
+            let disabled = preset.disabled();
+            let id = SharedString::from(format!("filt-modal-output-{}", preset.key()));
+            list = list.child(self.radio_row(
+                id,
+                preset.label(),
+                Some(preset.hint()),
+                selected,
+                disabled,
+                color,
+                palette,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_output_preset(preset, cx)),
+            ));
+        }
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(field_label(
+                palette,
+                tr!("tts_filters_modal_condition_label"),
+                list,
+            ))
             .into_any_element()
+    }
+
+    fn render_blocklist_body(
+        &self,
+        modal: &AddFilterModal,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let note = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
+            .child(tr!("tts_filters_modal_blocklist_note"));
+
+        let censor_selected = modal.blocklist_mode == BlocklistMode::Censor;
+        let skip_selected = modal.blocklist_mode == BlocklistMode::Suppress;
+        let mode_list = div()
+            .flex()
+            .flex_col()
+            .gap(px(5.0))
+            .child(self.radio_row(
+                "filt-modal-bl-censor".into(),
+                tr!("tts_filters_modal_blocklist_censor_row").into(),
+                Some(tr!("tts_filters_modal_blocklist_censor_row_hint").into()),
+                censor_selected,
+                false,
+                palette.warning,
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.set_modal_blocklist_mode(BlocklistMode::Censor, cx)
+                }),
+            ))
+            .child(self.radio_row(
+                "filt-modal-bl-skip".into(),
+                tr!("tts_filters_modal_blocklist_skip_row").into(),
+                Some(tr!("tts_filters_modal_blocklist_skip_row_hint").into()),
+                skip_selected,
+                false,
+                palette.warning,
+                palette,
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.set_modal_blocklist_mode(BlocklistMode::Suppress, cx)
+                }),
+            ));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(field_label(
+                palette,
+                tr!("tts_filters_modal_blocklist_words_label"),
+                modal.blocklist_words.clone(),
+            ))
+            .child(note)
+            .child(field_label(
+                palette,
+                tr!("tts_filters_modal_blocklist_when_matched_label"),
+                mode_list,
+            ))
+            .into_any_element()
+    }
+
+    fn render_replace_body(
+        &self,
+        modal: &AddFilterModal,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let is_regex = modal.replace_kind == ReplaceKind::Regex;
+        let mut tabs = div()
+            .flex()
+            .p(px(2.0))
+            .gap(px(2.0))
+            .rounded(radius(Radius::Sm))
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular);
+        for (kind, label) in [
+            (ReplaceKind::Text, tr!("tts_filters_modal_replace_text_tab")),
+            (
+                ReplaceKind::Regex,
+                tr!("tts_filters_modal_replace_regex_tab"),
+            ),
+        ] {
+            let active = modal.replace_kind == kind;
+            let id = SharedString::from(format!("filt-modal-replace-tab-{}", tab_key(kind)));
+            let fg = if active {
+                palette.shell
+            } else {
+                palette.text_secondary
+            };
+            let mut chip = div()
+                .id(id)
+                .py(px(5.0))
+                .px(px(14.0))
+                .rounded(radius(Radius::Sm))
+                .cursor_pointer()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(fg)
+                .on_click(
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.set_replace_kind(kind, cx)),
+                )
+                .child(label);
+            chip = if active { chip.bg(palette.info) } else { chip };
+            tabs = tabs.child(chip);
+        }
+
+        let find_label = if is_regex {
+            tr!("tts_filters_modal_replace_match_label")
+        } else {
+            tr!("tts_filters_modal_replace_find_label")
+        };
+        let note = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
+            .child(tr!("tts_filters_modal_replace_note"));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(tabs)
+            .child(field_label(palette, find_label, modal.replace_from.clone()))
+            .child(field_label(
+                palette,
+                tr!("tts_filters_modal_replace_replace_label"),
+                modal.replace_to.clone(),
+            ))
+            .child(note)
+            .into_any_element()
+    }
+
+    fn render_add_modal(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let modal_state = self.add_modal.as_ref()?;
+        let (glyph, color_fn, title, subtitle) = Self::modal_meta(modal_state.stage);
+        let color = color_fn(palette);
+
+        let body: AnyElement = match modal_state.stage {
+            ModalStage::Skip => self.render_skip_body(modal_state, palette, density, cx),
+            ModalStage::Output => self.render_output_body(modal_state, palette, density, cx),
+            ModalStage::Blocklist => self.render_blocklist_body(modal_state, palette, density, cx),
+            ModalStage::Replace => self.render_replace_body(modal_state, palette, density, cx),
+        };
+
+        let valid = self.modal_valid(modal_state, cx);
+        let status_text = if valid {
+            tr!("tts_filters_modal_footer_valid")
+        } else {
+            tr!("tts_filters_modal_footer_invalid")
+        };
+        let submit_label = if modal_state.stage == ModalStage::Blocklist {
+            tr!("tts_filters_modal_add_words")
+        } else {
+            tr!("tts_filters_modal_add_rule")
+        };
+
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_faint)
+                    .child(status_text),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(
+                        ghost_button(tr!("tts_filters_modal_cancel"), palette).on_click(
+                            "filt-modal-cancel",
+                            cx.listener(|this, _: &ClickEvent, _, cx| this.close_add_modal(cx)),
+                        ),
+                    )
+                    .child(
+                        primary_button_with_icon(Icon::Plus, submit_label, palette)
+                            .disabled(!valid)
+                            .on_click(
+                                "filt-modal-submit",
+                                cx.listener(|this, _: &ClickEvent, _, cx| {
+                                    this.submit_add_modal(cx)
+                                }),
+                            ),
+                    ),
+            );
+
+        let card = modal(title, body, palette)
+            .subtitle(subtitle)
+            .header_icon(glyph, color)
+            .size(ModalSize::Md)
+            .width(MODAL_W)
+            .footer(footer)
+            .on_close(
+                "filt-modal-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.close_add_modal(cx)),
+            );
+
+        let view = cx.entity();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("filt-modal-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_add_modal(cx));
+                })
+                .into_any_element(),
+        )
     }
 
     fn preview_column(
@@ -1309,6 +1948,7 @@ impl Render for TtsFiltersView {
 
         let pipeline = self.pipeline_column(&palette, density, cx);
         let preview = self.preview_column(&palette, density, cx);
+        let modal_overlay = self.render_add_modal(&palette, density, cx);
 
         div()
             .size_full()
@@ -1317,6 +1957,7 @@ impl Render for TtsFiltersView {
             .bg(palette.base)
             .child(pipeline)
             .child(preview)
+            .children(modal_overlay)
     }
 }
 
@@ -1328,55 +1969,11 @@ fn mono_caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl 
         .child(label.into())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn seg_button(
-    id: SharedString,
-    label: impl Into<SharedString>,
-    active: bool,
-    active_bg: Rgba,
-    palette: &ForgePalette,
-    density: Density,
-    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> impl IntoElement {
-    let fg = if active {
-        palette.shell
-    } else {
-        palette.text_secondary
-    };
-    let mut chip = div()
-        .id(id)
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Xs, density))
-        .rounded(radius(Radius::Sm))
-        .cursor_pointer()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(fg)
-        .on_click(handler)
-        .child(label.into());
-    if active {
-        chip = chip.bg(active_bg);
-    } else {
-        let hover = with_alpha(palette.border_regular, 0.06);
-        chip = chip.hover(move |s| s.bg(hover));
+fn tab_key(kind: ReplaceKind) -> &'static str {
+    match kind {
+        ReplaceKind::Text => "text",
+        ReplaceKind::Regex => "regex",
     }
-    chip
-}
-
-fn draft_field(
-    placeholder: impl Into<SharedString>,
-    initial: &str,
-    palette: ForgePalette,
-    cx: &mut Context<TtsFiltersView>,
-) -> Entity<TextInput> {
-    let initial = initial.to_owned();
-    cx.new(|cx| {
-        let mut input = TextInput::new(placeholder, cx).with_palette(palette);
-        if !initial.is_empty() {
-            input.set_content(initial, cx);
-        }
-        input
-    })
 }
 
 fn preview_stage_card(

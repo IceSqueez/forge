@@ -77,10 +77,11 @@ pub enum BlocklistMode {
 
 /// Independently toggleable conditions evaluated against the original message.
 /// Any enabled condition that matches short-circuits the whole pipeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct SkipRulesConfig {
     pub contains_url: bool,
-    pub starts_with_bang: bool,
+    /// `None` disables the condition; `Some(prefix)` matches messages starting with it.
+    pub skip_prefix: Option<String>,
     pub from_bot_accounts: bool,
     /// User-added accounts, merged with the built-in bot list at evaluation time.
     pub bot_accounts: Vec<String>,
@@ -90,19 +91,26 @@ pub struct SkipRulesConfig {
     /// Caller-supplied `recent_messages` window this many entries wide; the pipeline
     /// only compares against whatever slice it is handed.
     pub window: usize,
+    pub emote_only: bool,
+    pub mostly_non_latin: bool,
+    /// Pre-compiled at config build; an invalid pattern never reaches this list.
+    pub custom_regexes: Vec<regex::Regex>,
 }
 
 impl Default for SkipRulesConfig {
     fn default() -> Self {
         Self {
             contains_url: false,
-            starts_with_bang: false,
+            skip_prefix: None,
             from_bot_accounts: false,
             bot_accounts: Vec::new(),
             longer_than: false,
             max_chars: 200,
             repeat_of_recent: false,
             window: 3,
+            emote_only: false,
+            mostly_non_latin: false,
+            custom_regexes: Vec::new(),
         }
     }
 }
@@ -111,6 +119,7 @@ impl Default for SkipRulesConfig {
 pub struct OutputConfig {
     pub read_display_name_first: bool,
     pub emote_to_word: bool,
+    pub sanitize_punctuation: bool,
 }
 
 /// Per-message facts the pipeline needs but that never belong in the shared,
@@ -240,26 +249,78 @@ fn is_repeat_of_recent(text: &str, recent: &[String]) -> bool {
     recent.iter().any(|r| r.trim() == trimmed)
 }
 
+fn is_colon_emote_token(token: &str) -> bool {
+    COLON_EMOTE_RE
+        .find(token)
+        .is_some_and(|m| m.start() == 0 && m.end() == token.len())
+}
+
+fn is_emote_only(text: &str, tokens: &EmoteTokenSet) -> bool {
+    let mut saw_token = false;
+    for word in text.split_whitespace() {
+        saw_token = true;
+        if !tokens.tokens.contains(word) && !is_colon_emote_token(word) {
+            return false;
+        }
+    }
+    saw_token
+}
+
+fn is_latin_alpha(c: char) -> bool {
+    c.is_ascii_alphabetic() || matches!(c as u32, 0x00C0..=0x024F | 0x1E00..=0x1EFF)
+}
+
+fn is_mostly_non_latin(text: &str) -> bool {
+    let mut latin = 0usize;
+    let mut non_latin = 0usize;
+    for c in text.chars().filter(|c| c.is_alphabetic()) {
+        if is_latin_alpha(c) {
+            latin += 1;
+        } else {
+            non_latin += 1;
+        }
+    }
+    non_latin > latin
+}
+
 fn stage_skip_rules(
     text: &str,
-    config: &SkipRulesConfig,
+    config: &PipelineConfig,
     context: &PipelineContext,
 ) -> Option<SkipReason> {
-    if config.contains_url && URL_RE.is_match(text) {
+    let skip_rules = &config.skip_rules;
+    if skip_rules.contains_url && URL_RE.is_match(text) {
         return Some(SkipReason::MatchedSkipRule("message contains a url"));
     }
-    if config.starts_with_bang && text.starts_with('!') {
+    if let Some(prefix) = skip_rules.skip_prefix.as_deref()
+        && !prefix.is_empty()
+        && text.starts_with(prefix)
+    {
         return Some(SkipReason::MatchedSkipRule("message starts with a prefix"));
     }
-    if config.from_bot_accounts && is_bot_account(context.viewer_name, &config.bot_accounts) {
+    if skip_rules.from_bot_accounts && is_bot_account(context.viewer_name, &skip_rules.bot_accounts)
+    {
         return Some(SkipReason::MatchedSkipRule("message is from a bot account"));
     }
-    if config.longer_than && text.chars().count() > config.max_chars {
+    if skip_rules.longer_than && text.chars().count() > skip_rules.max_chars {
         return Some(SkipReason::MatchedSkipRule("message exceeds max length"));
     }
-    if config.repeat_of_recent && is_repeat_of_recent(text, context.recent_messages) {
+    if skip_rules.repeat_of_recent && is_repeat_of_recent(text, context.recent_messages) {
         return Some(SkipReason::MatchedSkipRule(
             "message repeats a recent message",
+        ));
+    }
+    if skip_rules.emote_only && is_emote_only(text, &config.emote_tokens) {
+        return Some(SkipReason::MatchedSkipRule("message is emote-only"));
+    }
+    if skip_rules.mostly_non_latin && is_mostly_non_latin(text) {
+        return Some(SkipReason::MatchedSkipRule(
+            "message is mostly non-latin script",
+        ));
+    }
+    if skip_rules.custom_regexes.iter().any(|re| re.is_match(text)) {
+        return Some(SkipReason::MatchedSkipRule(
+            "message matches a custom skip regex",
         ));
     }
     None
@@ -351,6 +412,19 @@ fn transform_emotes(text: &str, config: &PipelineConfig) -> String {
     }
 }
 
+fn sanitize_punctuation(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut last: Option<char> = None;
+    for c in text.chars() {
+        if c.is_ascii_punctuation() && last == Some(c) {
+            continue;
+        }
+        result.push(c);
+        last = Some(c);
+    }
+    result
+}
+
 fn stage_output(text: &str, config: &PipelineConfig, context: &PipelineContext) -> String {
     let emote_pass = transform_emotes(text, config);
     let emoji_pass: String = if config.emote_sources.emoji {
@@ -358,10 +432,15 @@ fn stage_output(text: &str, config: &PipelineConfig, context: &PipelineContext) 
     } else {
         emote_pass
     };
-    if config.output.read_display_name_first {
+    let named = if config.output.read_display_name_first {
         format!("{} says: {}", context.viewer_name, emoji_pass)
     } else {
         emoji_pass
+    };
+    if config.output.sanitize_punctuation {
+        sanitize_punctuation(&named)
+    } else {
+        named
     }
 }
 
@@ -377,7 +456,7 @@ fn run_stage(
     context: &PipelineContext,
 ) -> StageOut {
     match stage {
-        StageName::SkipRules => match stage_skip_rules(text, &config.skip_rules, context) {
+        StageName::SkipRules => match stage_skip_rules(text, config, context) {
             Some(reason) => StageOut::Skip(reason),
             None => StageOut::Ok(text.to_owned()),
         },
@@ -528,7 +607,7 @@ mod tests {
     fn skip_rules_starts_with_bang() {
         let config = PipelineConfig {
             skip_rules: SkipRulesConfig {
-                starts_with_bang: true,
+                skip_prefix: Some("!".into()),
                 ..SkipRulesConfig::default()
             },
             ..PipelineConfig::default()

@@ -958,10 +958,13 @@ tts_filters_stage_output_title = Output
 ## TTS Filters - skip rules
 
 tts_filters_skip_contains_url = Contains URL
-tts_filters_skip_starts_bang = Starts with !
+tts_filters_skip_prefix = Starts with { $prefix }
 tts_filters_skip_bot_accounts = From bot accounts
 tts_filters_skip_longer_than = Message longer than { $chars } chars
 tts_filters_skip_repeat = Identical to last { $window } messages
+tts_filters_skip_emote_only = Emote-only messages
+tts_filters_skip_mostly_non_latin = Mostly non-Latin script
+tts_filters_skip_regex_row = Regex: { $pattern }
 
 ## TTS Filters - word blocklist
 
@@ -981,6 +984,8 @@ tts_filters_output_read_name = Read display name first
 tts_filters_output_read_name_meta = e.g. "koval_dev says: ..."
 tts_filters_output_emote = Emote → word
 tts_filters_output_emote_meta = convert :pog: → "pog"
+tts_filters_output_sanitize = Strip repeated punctuation
+tts_filters_output_sanitize_meta = "!!!" → "!"
 
 ## TTS Filters - rule list
 
@@ -996,16 +1001,66 @@ tts_filters_badge_regex = REGEX
 tts_filters_badge_block = BLOCK
 tts_filters_stage_add = Add
 
-## TTS Filters - rule draft editor
+## TTS Filters - add filter modal
 
-tts_filters_draft_header = RULE
-tts_filters_draft_name_placeholder = Rule name (optional)
-tts_filters_draft_pattern_placeholder = Match pattern
-tts_filters_draft_replacement_placeholder = Replacement
-tts_filters_draft_words_placeholder = Blocked words (comma-separated)
-tts_filters_draft_add = Add rule
-tts_filters_mode_censor = Censor
-tts_filters_mode_skip = Skip msg
+tts_filters_modal_skip_title = Add skip rule
+tts_filters_modal_skip_subtitle = Messages matching this are never spoken
+tts_filters_modal_blocklist_title = Add blocked words
+tts_filters_modal_blocklist_subtitle = Matched words are censored or drop the message
+tts_filters_modal_replace_title = Add text replacement
+tts_filters_modal_replace_subtitle = Rewrite text before it is spoken
+tts_filters_modal_output_title = Add output option
+tts_filters_modal_output_subtitle = Shape the final spoken output
+
+tts_filters_modal_condition_label = CONDITION
+tts_filters_modal_cancel = Cancel
+tts_filters_modal_add_rule = Add rule
+tts_filters_modal_add_words = Add words
+tts_filters_modal_footer_valid = Runs top-to-bottom within this stage
+tts_filters_modal_footer_invalid = Fill required fields
+
+tts_filters_preset_skip_url = Contains a URL
+tts_filters_preset_skip_prefix = Starts with a prefix
+tts_filters_preset_skip_prefix_label = PREFIX
+tts_filters_preset_skip_prefix_placeholder = !
+tts_filters_preset_skip_bots = From bot accounts
+tts_filters_preset_skip_length = Longer than N characters
+tts_filters_preset_skip_length_label = MAX CHARACTERS
+tts_filters_preset_skip_length_placeholder = 200
+tts_filters_preset_skip_repeat = Identical to recent messages
+tts_filters_preset_skip_emote_only = Emote-only messages
+tts_filters_preset_skip_non_latin = Mostly non-Latin script
+tts_filters_preset_skip_regex = Custom regex match
+tts_filters_preset_skip_regex_label = REGEX PATTERN
+tts_filters_preset_skip_regex_placeholder = (buy|cheap) followers
+
+tts_filters_preset_output_name_hint = e.g. "koval_dev says: ..."
+tts_filters_preset_output_emote_hint = convert :pog: → "pog"
+tts_filters_preset_output_lang = Auto-detect language
+tts_filters_preset_output_lang_hint = pick voice per message language
+tts_filters_preset_output_maxdur = Cut off after N seconds
+tts_filters_preset_output_maxdur_hint = stop long messages early
+tts_filters_preset_output_sanitize_hint = "!!!" → "!"
+
+tts_filters_modal_blocklist_words_label = WORDS OR PHRASES
+tts_filters_modal_blocklist_words_placeholder = one per line, or comma-separated...
+tts_filters_modal_blocklist_note = Matching is case-insensitive and matches whole words only; multi-word phrases will not match as a unit.
+tts_filters_modal_blocklist_when_matched_label = WHEN MATCHED
+tts_filters_modal_blocklist_censor_row = Censor the word
+tts_filters_modal_blocklist_censor_row_hint = replace with ***
+tts_filters_modal_blocklist_skip_row = Skip the whole message
+tts_filters_modal_blocklist_skip_row_hint = nothing is spoken
+
+tts_filters_modal_replace_text_tab = TEXT
+tts_filters_modal_replace_regex_tab = REGEX
+tts_filters_modal_replace_find_label = FIND
+tts_filters_modal_replace_match_label = MATCH PATTERN
+tts_filters_modal_replace_find_placeholder = POG
+tts_filters_modal_replace_match_placeholder = https?://\S+
+tts_filters_modal_replace_replace_label = REPLACE WITH
+tts_filters_modal_replace_replace_text_placeholder = respect
+tts_filters_modal_replace_replace_regex_placeholder = "link" or $1
+tts_filters_modal_replace_note = Leave replacement empty to strip matched text.
 
 ## TTS Filters - pipeline settings
 

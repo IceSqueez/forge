@@ -963,10 +963,13 @@ tts_filters_stage_output_title = Вивід
 ## TTS Filters - стоп-правила
 
 tts_filters_skip_contains_url = Містить URL
-tts_filters_skip_starts_bang = Починається з !
+tts_filters_skip_prefix = Починається з { $prefix }
 tts_filters_skip_bot_accounts = Від бот-акаунтів
 tts_filters_skip_longer_than = Повідомлення довше за { $chars } символів
 tts_filters_skip_repeat = Ідентичне останнім { $window } повідомленням
+tts_filters_skip_emote_only = Повідомлення лише з емоцій
+tts_filters_skip_mostly_non_latin = Переважно не латиниця
+tts_filters_skip_regex_row = Regex: { $pattern }
 
 ## TTS Filters - блок-список слів
 
@@ -986,6 +989,8 @@ tts_filters_output_read_name = Спершу читати відображува�
 tts_filters_output_read_name_meta = напр. "koval_dev каже: ..."
 tts_filters_output_emote = Емоція → слово
 tts_filters_output_emote_meta = перетворити :pog: → "pog"
+tts_filters_output_sanitize = Прибирати повтори пунктуації
+tts_filters_output_sanitize_meta = "!!!" → "!"
 
 ## TTS Filters - список правил
 
@@ -1001,16 +1006,66 @@ tts_filters_badge_regex = REGEX
 tts_filters_badge_block = БЛОК
 tts_filters_stage_add = Додати
 
-## TTS Filters - редактор правила
+## TTS Filters - модальне вікно додавання фільтра
 
-tts_filters_draft_header = ПРАВИЛО
-tts_filters_draft_name_placeholder = Назва правила (необов'язково)
-tts_filters_draft_pattern_placeholder = Шаблон збігу
-tts_filters_draft_replacement_placeholder = Заміна
-tts_filters_draft_words_placeholder = Заблоковані слова (через кому)
-tts_filters_draft_add = Додати правило
-tts_filters_mode_censor = Цензура
-tts_filters_mode_skip = Пропустити
+tts_filters_modal_skip_title = Додати стоп-правило
+tts_filters_modal_skip_subtitle = Повідомлення, що збігаються, ніколи не озвучуються
+tts_filters_modal_blocklist_title = Додати заблоковані слова
+tts_filters_modal_blocklist_subtitle = Збіги цензуруються або повідомлення пропускається
+tts_filters_modal_replace_title = Додати заміну тексту
+tts_filters_modal_replace_subtitle = Переписати текст перед озвученням
+tts_filters_modal_output_title = Додати опцію виводу
+tts_filters_modal_output_subtitle = Сформувати остаточний озвучений текст
+
+tts_filters_modal_condition_label = УМОВА
+tts_filters_modal_cancel = Скасувати
+tts_filters_modal_add_rule = Додати правило
+tts_filters_modal_add_words = Додати слова
+tts_filters_modal_footer_valid = Виконується по черзі в межах цього етапу
+tts_filters_modal_footer_invalid = Заповніть обов'язкові поля
+
+tts_filters_preset_skip_url = Містить URL
+tts_filters_preset_skip_prefix = Починається з префіксу
+tts_filters_preset_skip_prefix_label = ПРЕФІКС
+tts_filters_preset_skip_prefix_placeholder = !
+tts_filters_preset_skip_bots = Від бот-акаунтів
+tts_filters_preset_skip_length = Довше за N символів
+tts_filters_preset_skip_length_label = МАКС. СИМВОЛІВ
+tts_filters_preset_skip_length_placeholder = 200
+tts_filters_preset_skip_repeat = Ідентичне нещодавнім повідомленням
+tts_filters_preset_skip_emote_only = Повідомлення лише з емоцій
+tts_filters_preset_skip_non_latin = Переважно не латиниця
+tts_filters_preset_skip_regex = Власний regex-збіг
+tts_filters_preset_skip_regex_label = REGEX-ШАБЛОН
+tts_filters_preset_skip_regex_placeholder = (buy|cheap) followers
+
+tts_filters_preset_output_name_hint = напр. "koval_dev каже: ..."
+tts_filters_preset_output_emote_hint = перетворити :pog: → "pog"
+tts_filters_preset_output_lang = Автовизначення мови
+tts_filters_preset_output_lang_hint = обирати голос за мовою повідомлення
+tts_filters_preset_output_maxdur = Обрізати після N секунд
+tts_filters_preset_output_maxdur_hint = зупиняти довгі повідомлення раніше
+tts_filters_preset_output_sanitize_hint = "!!!" → "!"
+
+tts_filters_modal_blocklist_words_label = СЛОВА АБО ФРАЗИ
+tts_filters_modal_blocklist_words_placeholder = по одному на рядок або через кому...
+tts_filters_modal_blocklist_note = Збіг не чутливий до регістру та шукає лише цілі слова; багатослівні фрази не збігаються як одне ціле.
+tts_filters_modal_blocklist_when_matched_label = ПРИ ЗБІГУ
+tts_filters_modal_blocklist_censor_row = Цензурувати слово
+tts_filters_modal_blocklist_censor_row_hint = замінити на ***
+tts_filters_modal_blocklist_skip_row = Пропустити все повідомлення
+tts_filters_modal_blocklist_skip_row_hint = нічого не озвучується
+
+tts_filters_modal_replace_text_tab = ТЕКСТ
+tts_filters_modal_replace_regex_tab = REGEX
+tts_filters_modal_replace_find_label = ЗНАЙТИ
+tts_filters_modal_replace_match_label = ШАБЛОН ЗБІГУ
+tts_filters_modal_replace_find_placeholder = POG
+tts_filters_modal_replace_match_placeholder = https?://\S+
+tts_filters_modal_replace_replace_label = ЗАМІНИТИ НА
+tts_filters_modal_replace_replace_text_placeholder = повага
+tts_filters_modal_replace_replace_regex_placeholder = "посилання" або $1
+tts_filters_modal_replace_note = Залиште заміну порожньою, щоб прибрати збіг.
 
 ## TTS Filters - налаштування конвеєра
 

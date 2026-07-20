@@ -84,8 +84,12 @@ pub struct TtsPipelineSettings {
     pub strip_reward_emotes: bool,
     #[serde(default)]
     pub skip_contains_url: bool,
+    /// Retired by `skip_prefix` but stays readable so existing rows one-time-convert
+    /// (`true` becomes `skip_prefix: Some("!")`) without breaking deserialization.
     #[serde(default)]
     pub skip_starts_with_bang: bool,
+    #[serde(default)]
+    pub skip_prefix: Option<String>,
     #[serde(default)]
     pub skip_from_bot_accounts: bool,
     /// User-added bot accounts merged with the built-in list at evaluation time.
@@ -103,6 +107,15 @@ pub struct TtsPipelineSettings {
     pub output_read_display_name_first: bool,
     #[serde(default)]
     pub output_emote_to_word: bool,
+    #[serde(default)]
+    pub skip_emote_only: bool,
+    #[serde(default)]
+    pub skip_mostly_non_latin: bool,
+    /// Source patterns only - compiled form is never persisted, matching `FilterRuleKind::Regex`.
+    #[serde(default)]
+    pub skip_custom_regexes: Vec<String>,
+    #[serde(default)]
+    pub output_sanitize_punctuation: bool,
 }
 
 fn default_longer_than_max_chars() -> u32 {
@@ -123,6 +136,7 @@ impl Default for TtsPipelineSettings {
             strip_reward_emotes: true,
             skip_contains_url: false,
             skip_starts_with_bang: false,
+            skip_prefix: None,
             skip_from_bot_accounts: false,
             bot_accounts: Vec::new(),
             skip_longer_than: false,
@@ -131,6 +145,10 @@ impl Default for TtsPipelineSettings {
             repeat_of_recent_window: default_repeat_of_recent_window(),
             output_read_display_name_first: false,
             output_emote_to_word: false,
+            skip_emote_only: false,
+            skip_mostly_non_latin: false,
+            skip_custom_regexes: Vec::new(),
+            output_sanitize_punctuation: false,
         }
     }
 }

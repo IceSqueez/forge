@@ -224,7 +224,7 @@ impl TtsEngine for PiperEngine {
             .args(&args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(TtsError::Io)?;
 
@@ -245,9 +245,19 @@ impl TtsEngine for PiperEngine {
             .map_err(TtsError::Io)?;
 
         if !output.status.success() {
+            let stderr: String = String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(200)
+                .collect();
+            let stderr = stderr.trim();
+            let detail = if stderr.is_empty() {
+                format!("piper exited with {}", output.status)
+            } else {
+                format!("piper exited with {}: {stderr}", output.status)
+            };
             return Err(TtsError::EngineUnavailable {
                 id: piper_engine_id(),
-                detail: format!("piper exited with {}", output.status),
+                detail,
             });
         }
 

@@ -17,20 +17,47 @@ use forge_voice::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAli
 
 use crate::cloud_tts_boot::register_cloud_engines;
 
-fn find_piper_binary() -> Option<PathBuf> {
+async fn is_piper_tts(path: &PathBuf) -> bool {
+    let probe = tokio::process::Command::new(path)
+        .arg("--help")
+        .stdin(std::process::Stdio::null())
+        .output();
+    match tokio::time::timeout(std::time::Duration::from_secs(2), probe).await {
+        Ok(Ok(out)) => {
+            let mut text = out.stdout;
+            text.extend_from_slice(&out.stderr);
+            String::from_utf8_lossy(&text).contains("--model")
+        }
+        _ => false,
+    }
+}
+
+async fn find_piper_binary() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
-        let bundled = dir.join("piper");
-        if bundled.exists() {
-            return Some(bundled);
+        candidates.push(dir.join("piper"));
+    }
+    if let Some(paths) = std::env::var_os("PATH") {
+        for name in ["piper-tts", "piper"] {
+            for dir in std::env::split_paths(&paths) {
+                candidates.push(dir.join(name));
+            }
         }
     }
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|p| p.join("piper"))
-            .find(|p| p.exists())
-    })
+    for candidate in candidates {
+        if candidate.exists() {
+            if is_piper_tts(&candidate).await {
+                return Some(candidate);
+            }
+            eprintln!(
+                "forge-desktop: ignoring {} - not a piper TTS binary",
+                candidate.display()
+            );
+        }
+    }
+    None
 }
 
 async fn resolve_audio_output_device(backend: &Arc<dyn DataProvider>) -> Option<DeviceId> {
@@ -66,8 +93,8 @@ async fn resolve_audio_output_device(backend: &Arc<dyn DataProvider>) -> Option<
         .or_else(|| devices.first().map(|d| d.id.clone()))
 }
 
-fn register_local_engines(registry: &mut TtsRegistry) {
-    if let Some(piper_binary) = find_piper_binary() {
+async fn register_local_engines(registry: &mut TtsRegistry) {
+    if let Some(piper_binary) = find_piper_binary().await {
         let voices_dir = PiperEngine::voices_dir(&paths::data_dir());
         if let Err(e) = std::fs::create_dir_all(&voices_dir) {
             eprintln!(
@@ -166,7 +193,7 @@ pub async fn build_speak_queue(
     Option<Arc<std::sync::RwLock<TtsRegistry>>>,
 ) {
     let mut registry = TtsRegistry::new();
-    register_local_engines(&mut registry);
+    register_local_engines(&mut registry).await;
 
     let registry = std::sync::RwLock::new(registry);
     let creds: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;

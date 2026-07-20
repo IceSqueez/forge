@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -214,6 +214,7 @@ pub(crate) async fn run_actor(
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
     depth: Arc<AtomicUsize>,
     voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
+    disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
 ) {
     let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
     let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
@@ -222,12 +223,14 @@ pub(crate) async fn run_actor(
     let mut voicegate_active = false;
     let mut active_request_id: Option<RequestId> = None;
     let mut last_successful: Option<SpeakRequest> = None;
+    let mut disabled: HashSet<EngineId> = deps.disabled_engines.clone();
 
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
     let (catalog_tx, mut catalog_rx) = tokio::sync::mpsc::channel::<Arc<Vec<TtsVoice>>>(1);
 
-    let voice_catalog = Arc::new(build_voice_catalog(&deps.registry).await);
+    let voice_catalog = Arc::new(build_voice_catalog(&deps.registry, &disabled).await);
     *voices.write().unwrap_or_else(|e| e.into_inner()) = voice_catalog.clone();
+    *disabled_engines.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(disabled.clone());
     let mut task_deps = SynthTaskDeps {
         resolver: deps.resolver.clone(),
         pipeline: deps.pipeline.clone(),
@@ -276,12 +279,17 @@ pub(crate) async fn run_actor(
                 match cmd {
                     None => break,
                     Some(SpeakCommand::RefreshVoiceCatalog) => {
-                        let registry = deps.registry.clone();
-                        let tx = catalog_tx.clone();
-                        tokio::spawn(async move {
-                            let catalog = Arc::new(build_voice_catalog(&registry).await);
-                            let _ = tx.send(catalog).await;
-                        });
+                        spawn_catalog_rebuild(deps.registry.clone(), disabled.clone(), catalog_tx.clone());
+                    }
+                    Some(SpeakCommand::SetEngineEnabled(engine_id, enabled)) => {
+                        if enabled {
+                            disabled.remove(&engine_id);
+                        } else {
+                            disabled.insert(engine_id);
+                        }
+                        *disabled_engines.write().unwrap_or_else(|e| e.into_inner()) =
+                            Arc::new(disabled.clone());
+                        spawn_catalog_rebuild(deps.registry.clone(), disabled.clone(), catalog_tx.clone());
                     }
                     Some(c) => handle_command(
                         c,
@@ -558,7 +566,7 @@ fn handle_command(
         }
         // Intercepted in `run_actor` before dispatch (needs to spawn an async
         // rebuild); never reaches this synchronous handler.
-        SpeakCommand::RefreshVoiceCatalog => {}
+        SpeakCommand::RefreshVoiceCatalog | SpeakCommand::SetEngineEnabled(_, _) => {}
         SpeakCommand::Pause => {
             *paused = true;
             let _ = event_tx.send(SpeakEvent::Paused {
@@ -639,8 +647,20 @@ fn pop_next(
     req
 }
 
+fn spawn_catalog_rebuild(
+    registry: Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>,
+    disabled: HashSet<EngineId>,
+    tx: tokio::sync::mpsc::Sender<Arc<Vec<TtsVoice>>>,
+) {
+    tokio::spawn(async move {
+        let catalog = Arc::new(build_voice_catalog(&registry, &disabled).await);
+        let _ = tx.send(catalog).await;
+    });
+}
+
 async fn build_voice_catalog(
     registry: &std::sync::RwLock<forge_tts_core::TtsRegistry>,
+    disabled: &HashSet<EngineId>,
 ) -> Vec<TtsVoice> {
     let engine_ids = registry
         .read()
@@ -648,6 +668,9 @@ async fn build_voice_catalog(
         .engine_ids();
     let mut catalog = Vec::new();
     for engine_id in engine_ids {
+        if disabled.contains(&engine_id) {
+            continue;
+        }
         let factory = registry
             .read()
             .unwrap_or_else(|e| e.into_inner())
@@ -702,6 +725,7 @@ mod tests {
             ),
             audio_sink: Arc::new(SilentSink),
             event_bus: Arc::new(NullPublisher),
+            disabled_engines: HashSet::new(),
         }
     }
 

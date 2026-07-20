@@ -39,6 +39,7 @@ pub mod reserved_keys {
     pub const CHAT_HISTORY_DISPLAY_LIMIT_KEY: &str = "chat_history.display_limit";
     pub const PICKER_FAVORITES_SUB_ACTIONS_KEY: &str = "picker.favorites.sub_actions";
     pub const PICKER_FAVORITES_TRIGGERS_KEY: &str = "picker.favorites.triggers";
+    pub const TTS_DISABLED_ENGINES_KEY: &str = "tts.disabled_engines";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -241,6 +242,26 @@ pub async fn set_chat_history_store_limit(
         &limit.to_string(),
     )
     .await
+}
+
+/// Absent or corrupt key returns an empty set (no engines disabled).
+pub async fn disabled_tts_engines(repo: &dyn SettingsRepo) -> Result<Vec<String>, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::TTS_DISABLED_ENGINES_KEY)
+        .await?;
+    Ok(raw
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+        .unwrap_or_default())
+}
+
+pub async fn set_disabled_tts_engines(
+    repo: &dyn SettingsRepo,
+    engine_ids: &[String],
+) -> Result<(), StorageError> {
+    let json = serde_json::to_string(engine_ids).map_err(|e| StorageError::Parse(e.to_string()))?;
+    repo.set_string(reserved_keys::TTS_DISABLED_ENGINES_KEY, &json)
+        .await
 }
 
 pub async fn chat_history_display_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {

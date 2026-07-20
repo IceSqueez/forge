@@ -1,6 +1,7 @@
 mod actor;
 pub mod filters;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -89,6 +90,10 @@ pub enum SpeakCommand {
     /// catalog (and `SpeakQueueHandle::engines`/`available_voices`) picks it up
     /// without an app restart.
     RefreshVoiceCatalog,
+    /// Disables or re-enables an engine. A disabled engine's voices are excluded
+    /// from the rebuilt catalog, which in turn removes it from resolution,
+    /// `available_voices()`, and `engines()` without unregistering the factory.
+    SetEngineEnabled(EngineId, bool),
     /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
     VoiceGateActivated,
     /// Sent by `forge-audio` when the VoiceGate mic level drops below threshold.
@@ -182,6 +187,9 @@ pub struct QueueDeps {
     pub pipeline: PipelineConfigHandle,
     pub audio_sink: Arc<dyn forge_audio::AudioSink>,
     pub event_bus: Arc<dyn forge_events::EventPublisher>,
+    /// Loaded from persisted settings at boot so the first catalog build already
+    /// excludes these engines.
+    pub disabled_engines: HashSet<EngineId>,
 }
 
 #[derive(Clone)]
@@ -193,6 +201,7 @@ pub struct SpeakQueueHandle {
     // same statement, so the lock is never held across an `.await`. Lets queries
     // read the catalog without an actor round-trip.
     voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
+    disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
 }
 
 impl SpeakQueueHandle {
@@ -206,6 +215,13 @@ impl SpeakQueueHandle {
 
     pub fn available_voices(&self) -> Arc<Vec<TtsVoice>> {
         self.voices
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub fn disabled_engines(&self) -> Arc<HashSet<EngineId>> {
+        self.disabled_engines
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
@@ -260,10 +276,12 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
 
     let depth = Arc::new(AtomicUsize::new(0));
     let voices = Arc::new(std::sync::RwLock::new(Arc::new(Vec::<TtsVoice>::new())));
+    let disabled_engines = Arc::new(std::sync::RwLock::new(Arc::new(HashSet::<EngineId>::new())));
 
     let event_tx_clone = event_tx.clone();
     let depth_clone = depth.clone();
     let voices_clone = voices.clone();
+    let disabled_engines_clone = disabled_engines.clone();
     tokio::spawn(async move {
         actor::run_actor(
             config,
@@ -272,6 +290,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             event_tx_clone,
             depth_clone,
             voices_clone,
+            disabled_engines_clone,
         )
         .await;
     });
@@ -282,6 +301,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             event_tx,
             depth,
             voices,
+            disabled_engines,
         },
         SpeakEventStream(event_rx),
     )
@@ -302,6 +322,7 @@ mod tests {
             event_tx,
             depth: Arc::new(AtomicUsize::new(0)),
             voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
+            disabled_engines: Arc::new(std::sync::RwLock::new(Arc::new(HashSet::new()))),
         };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
@@ -316,6 +337,7 @@ mod tests {
             event_tx: event_tx.clone(),
             depth: Arc::new(AtomicUsize::new(0)),
             voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
+            disabled_engines: Arc::new(std::sync::RwLock::new(Arc::new(HashSet::new()))),
         };
         let mut sub = handle.subscribe();
         event_tx

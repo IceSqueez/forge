@@ -166,6 +166,20 @@ async fn load_resolver(backend: &Arc<dyn DataProvider>) -> VoiceAliasResolver {
     VoiceAliasResolver::new(aliases, strategy, profile, SynthesisDefaults::default())
 }
 
+async fn load_disabled_engines(
+    backend: &Arc<dyn DataProvider>,
+) -> std::collections::HashSet<EngineId> {
+    match forge_storage::disabled_tts_engines(backend.as_ref()).await {
+        Ok(ids) => ids.into_iter().map(EngineId).collect(),
+        Err(e) => {
+            eprintln!(
+                "forge-desktop: failed to load disabled TTS engines on boot; using none: {e}"
+            );
+            std::collections::HashSet::new()
+        }
+    }
+}
+
 async fn load_pipeline(backend: &Arc<dyn DataProvider>) -> forge_tts_pipeline::PipelineConfig {
     let filters_repo = backend.tts_filters_repo();
     let loaded = async {
@@ -202,6 +216,7 @@ pub async fn build_speak_queue(
 
     let resolver = Arc::new(std::sync::RwLock::new(load_resolver(backend).await));
     let pipeline = PipelineConfigHandle::new(load_pipeline(backend).await);
+    let disabled_engines = load_disabled_engines(backend).await;
 
     let audio_sink: Arc<dyn forge_audio::AudioSink> = match resolve_audio_output_device(backend)
         .await
@@ -230,6 +245,7 @@ pub async fn build_speak_queue(
         pipeline: pipeline.clone(),
         audio_sink,
         event_bus: Arc::clone(bus) as Arc<dyn EventPublisher>,
+        disabled_engines,
     };
     let (handle, stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
     (Some(handle), Some(stream), Some(pipeline), Some(registry))

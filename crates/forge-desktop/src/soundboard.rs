@@ -1,65 +1,117 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
-    FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    breadcrumb, field_label, ghost_button_with_icon, icon, modal, overlay, primary_button,
-    primary_button_with_icon, radius, row_card, secondary_button, slider, spacing, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
+    breadcrumb, chip, ghost_button_with_icon, icon, modal, overlay, primary_button, radius,
+    search_input, secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
-use forge_soundboard::SoundboardPlayer;
-use forge_storage::{SoundboardClipsRepo, StoredClip};
+use forge_soundboard::builtin_library::{
+    BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
+};
+use forge_soundboard::{SoundboardPlayer, SoundboardSettings};
+use forge_storage::{
+    SettingsRepo, SoundboardClipsRepo, StoredClip, set_soundboard_also_headphones,
+    set_soundboard_enabled, set_soundboard_master_volume, set_soundboard_output_device,
+};
 use forge_types::{ClipId, OutputDevice};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
+    prelude::*, px, relative,
 };
 use time::OffsetDateTime;
 
 use crate::presentation::ActivePresentation;
 
-const CARD_ACTION_RADIUS: Pixels = px(5.0);
-const CARD_ACTION_GLYPH: Pixels = px(12.0);
-const EMPTY_GLYPH: Pixels = px(24.0);
-const CARDS_PER_ROW: usize = 3;
-const VOLUME_MAX: f32 = 1.5;
-const MODAL_WIDTH: Pixels = px(480.0);
+const SCROLL_PAD_X: Pixels = px(22.0);
+const SCROLL_PAD_Y: Pixels = px(18.0);
+const SECTION_GAP: Pixels = px(14.0);
+const HERO_ICON_TILE: Pixels = px(40.0);
+const HERO_ICON_TILE_RADIUS: Pixels = px(10.0);
+const HERO_GLYPH: Pixels = px(20.0);
+const HERO_TITLE_FS: Pixels = px(15.0);
+const HERO_GAP: Pixels = px(14.0);
+const LABEL_FS: Pixels = px(11.5);
+const SECTION_LABEL_FS: Pixels = px(9.5);
+const HEADER_ICON: Pixels = px(13.0);
+const SEARCH_WIDTH: Pixels = px(220.0);
+const GRID_GAP: Pixels = px(10.0);
+const PADS_PER_ROW: usize = 4;
+const PAD_RADIUS: Pixels = px(10.0);
+const PAD_PAD_Y: Pixels = px(12.0);
+const PAD_PAD_X: Pixels = px(13.0);
+const PAD_ICON_TILE: Pixels = px(30.0);
+const PAD_ICON_TILE_RADIUS: Pixels = px(8.0);
+const PAD_GLYPH: Pixels = px(15.0);
+const PAD_NAME_FS: Pixels = px(12.5);
+const HOTKEY_FS: Pixels = px(10.0);
+const HOTKEY_RADIUS: Pixels = px(4.0);
+const LOOP_ICON: Pixels = px(10.0);
+const PROGRESS_H: Pixels = px(2.0);
+const PROGRESS_WIDTH: f32 = 0.46;
+const STOP_ICON: Pixels = px(12.0);
+const ADD_ICON: Pixels = px(13.0);
+const ADDBAR_RADIUS: Pixels = px(9.0);
+const ADDBAR_PAD_Y: Pixels = px(9.0);
+const ADDBAR_PAD_X: Pixels = px(12.0);
+const ROUTING_PAD: Pixels = px(14.0);
+const ROUTING_GAP: Pixels = px(16.0);
+const SELECT_RADIUS: Pixels = px(7.0);
+const SELECT_PAD_Y: Pixels = px(8.0);
+const SELECT_PAD_X: Pixels = px(11.0);
+const HINT_FS: Pixels = px(10.5);
+const FOOTER_FS: Pixels = px(10.5);
+const FOOTER_DOT: Pixels = px(6.0);
+const FOOTER_PAD_Y: Pixels = px(7.0);
+const FOOTER_PAD_X: Pixels = px(14.0);
+const HOTKEY_SEQUENCE: &[&str] = &[
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Q", "W", "E", "R", "T", "Y",
+];
+const CATEGORY_ORDER: &[&str] = &["memes", "alerts", "music", "voice"];
 
 struct SoundClip {
     id: ClipId,
     name: String,
     file_path: PathBuf,
     hotkey: Option<String>,
-    device_label: String,
-    output_device: OutputDevice,
-    /// Playback gain, `0.0..=VOLUME_MAX` (`1.0` = 100%).
-    volume: f32,
-    duration_label: String,
+    category: String,
+    loop_playback: bool,
+    duration_secs: Option<f32>,
+    builtin_id: Option<String>,
+    glyph: Icon,
 }
 
-struct AddClipModal {
-    editing: Option<ClipId>,
+struct AddModal {
     file_path: Option<PathBuf>,
     name_input: Entity<TextInput>,
-    hotkey_input: Entity<TextInput>,
-    device_idx: usize,
-    volume: f32,
+    category: String,
     saving: bool,
     error: Option<SharedString>,
     _name_sub: Subscription,
-    _hotkey_sub: Subscription,
 }
 
 pub struct SoundboardView {
     clips: Vec<SoundClip>,
     loading: bool,
     error: Option<SharedString>,
-    feedback: Option<SharedString>,
-    modal: Option<AddClipModal>,
     devices: Vec<DeviceInfo>,
+    importable: Vec<BuiltinSoundEntry>,
+    total_size: Option<u64>,
+    playing: HashSet<ClipId>,
+    settings: SoundboardSettings,
+    device_menu_open: bool,
+    search: Entity<TextInput>,
+    search_query: String,
+    category_filter: Option<String>,
+    modal: Option<AddModal>,
+    _search_sub: Subscription,
     player: Arc<SoundboardPlayer>,
     clips_repo: Arc<dyn SoundboardClipsRepo>,
+    settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
 }
 
@@ -67,18 +119,33 @@ impl SoundboardView {
     pub fn new(
         player: Arc<SoundboardPlayer>,
         clips_repo: Arc<dyn SoundboardClipsRepo>,
+        settings_repo: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
+        let palette = cx.palette();
+        let search = cx.new(|cx| search_input(tr!("soundboard_search_placeholder"), palette, cx));
+        let search_sub = cx.subscribe(&search, Self::on_search_event);
+        let settings = (*player.settings_handle().load()).clone();
+
         let view = Self {
             clips: Vec::new(),
             loading: true,
             error: None,
-            feedback: None,
-            modal: None,
             devices: Vec::new(),
+            importable: Vec::new(),
+            total_size: None,
+            playing: HashSet::new(),
+            settings,
+            device_menu_open: false,
+            search,
+            search_query: String::new(),
+            category_filter: None,
+            modal: None,
+            _search_sub: search_sub,
             player,
             clips_repo,
+            settings_repo,
             rt_handle,
         };
         view.reload(cx);
@@ -86,67 +153,15 @@ impl SoundboardView {
         view
     }
 
-    fn reload_devices(&self, cx: &mut Context<Self>) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn_blocking(move || {
-            let _ = tx.send(list_output_devices().map_err(|e| e.to_string()));
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_devices(result, cx));
-            }
-        })
-        .detach();
-    }
-
-    fn apply_devices(&mut self, result: Result<Vec<DeviceInfo>, String>, cx: &mut Context<Self>) {
-        match result {
-            Ok(devices) => self.devices = devices,
-            Err(message) => {
-                tracing::warn!(error = %message, "soundboard output-device enumeration failed");
-                self.devices = Vec::new();
-                if let Some(modal) = self.modal.as_mut() {
-                    modal.error = Some(
-                        tr!(
-                            "soundboard_modal_device_load_error",
-                            error = message.as_str()
-                        )
-                        .into(),
-                    );
-                }
-            }
-        }
-        cx.notify();
-    }
-
-    fn device_entries(&self) -> Vec<String> {
-        let mut entries = vec![tr!("soundboard_device_system_default")];
-        entries.extend(self.devices.iter().map(|d| d.name.clone()));
-        entries
-    }
-
-    fn device_from_idx(&self, idx: usize) -> OutputDevice {
-        match idx.checked_sub(1).and_then(|i| self.devices.get(i)) {
-            Some(device) => OutputDevice::ByName {
-                name: device.name.clone(),
-            },
-            None => OutputDevice::Default,
-        }
-    }
-
-    fn device_idx_for(&self, device: &OutputDevice) -> usize {
-        match device {
-            OutputDevice::Default => 0,
-            OutputDevice::ByName { name } => self
-                .devices
-                .iter()
-                .position(|d| &d.name == name)
-                .map_or(0, |pos| pos + 1),
-            OutputDevice::ById { id } => self
-                .devices
-                .iter()
-                .position(|d| &d.id.0 == id)
-                .map_or(0, |pos| pos + 1),
+    fn on_search_event(
+        &mut self,
+        _input: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if let InputEvent::Changed(text) = event {
+            self.search_query = text.to_string();
+            cx.notify();
         }
     }
 
@@ -154,7 +169,7 @@ impl SoundboardView {
         let repo = Arc::clone(&self.clips_repo);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let _ = tx.send(load_clips(repo).await);
+            let _ = tx.send(repo.list().await.map_err(|e| e.to_string()));
         });
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(clips)) => {
@@ -172,6 +187,15 @@ impl SoundboardView {
         self.clips = clips.into_iter().map(stored_to_clip).collect();
         self.loading = false;
         self.error = None;
+        if self
+            .category_filter
+            .as_ref()
+            .is_some_and(|c| !self.clips.iter().any(|clip| &clip.category == c))
+        {
+            self.category_filter = None;
+        }
+        self.recompute_size(cx);
+        self.refresh_builtins(cx);
         cx.notify();
     }
 
@@ -181,63 +205,245 @@ impl SoundboardView {
         cx.notify();
     }
 
-    fn play(&mut self, id: ClipId, cx: &mut Context<Self>) {
-        self.error = None;
-        let info = self
-            .clips
-            .iter()
-            .find(|c| c.id == id)
-            .map(|c| (c.name.clone(), c.device_label.clone()));
-        let player = Arc::clone(&self.player);
+    fn recompute_size(&self, cx: &mut Context<Self>) {
+        let paths: Vec<PathBuf> = self.clips.iter().map(|c| c.file_path.clone()).collect();
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(play_clip(player, id).await);
+        self.rt_handle.spawn_blocking(move || {
+            let total: u64 = paths
+                .iter()
+                .filter_map(|p| std::fs::metadata(p).ok().map(|m| m.len()))
+                .sum();
+            let _ = tx.send(total);
         });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.on_play_ok(info, cx));
+        cx.spawn(async move |this, cx| {
+            if let Ok(total) = rx.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.total_size = Some(total);
+                    cx.notify();
+                });
             }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_play_error(message, cx));
-            }
-            Err(_) => {}
         })
         .detach();
     }
 
-    fn on_play_ok(&mut self, info: Option<(String, String)>, cx: &mut Context<Self>) {
-        if let Some((name, device)) = info {
-            self.feedback = Some(
-                tr!(
-                    "soundboard_playing_feedback",
-                    name = name.as_str(),
-                    device = device.as_str()
-                )
-                .into(),
-            );
-        }
-        cx.notify();
+    fn refresh_builtins(&self, cx: &mut Context<Self>) {
+        let imported_ids: HashSet<String> = self.imported_builtin_ids();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn_blocking(move || {
+            let data_dir = forge_platform_core::paths::data_dir();
+            let available = builtin_availability(&data_dir);
+            let entries: Vec<BuiltinSoundEntry> = available
+                .into_iter()
+                .filter(|(entry, present)| *present && !imported_ids.contains(entry.builtin_id))
+                .map(|(entry, _)| entry)
+                .collect();
+            let _ = tx.send(entries);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(entries) = rx.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.importable = entries;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
-    fn on_play_error(&mut self, message: String, cx: &mut Context<Self>) {
-        self.error = Some(message.into());
-        cx.notify();
-    }
-
-    fn delete(&mut self, id: ClipId, cx: &mut Context<Self>) {
-        let name = self
-            .clips
+    fn imported_builtin_ids(&self) -> HashSet<String> {
+        self.clips
             .iter()
-            .find(|c| c.id == id)
-            .map(|c| c.name.clone());
+            .filter_map(|clip| clip.builtin_id.clone())
+            .collect()
+    }
+
+    fn reload_devices(&self, cx: &mut Context<Self>) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.rt_handle.spawn_blocking(move || {
+            let _ = tx.send(list_output_devices().map_err(|e| e.to_string()));
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(devices)) = rx.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.devices = devices;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn toggle_play(&mut self, id: ClipId, cx: &mut Context<Self>) {
+        if self.playing.contains(&id) {
+            self.player.stop(id);
+            self.playing.remove(&id);
+            cx.notify();
+            return;
+        }
+        let Some(clip) = self.clips.iter().find(|c| c.id == id) else {
+            return;
+        };
+        let loop_playback = clip.loop_playback;
+        let known = clip.duration_secs;
+        self.error = None;
+        self.playing.insert(id);
+        cx.notify();
+
+        let player_play = Arc::clone(&self.player);
+        let player_dur = Arc::clone(&self.player);
+        let rt = self.rt_handle.clone();
+        cx.spawn(async move |this, cx| {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            rt.spawn(async move {
+                let _ = tx.send(player_play.play(id, None).await.map_err(|e| e.to_string()));
+            });
+            match rx.await {
+                Ok(Ok(())) => {}
+                Ok(Err(message)) => {
+                    let _ = this.update(cx, |this, cx| this.on_play_error(id, message, cx));
+                    return;
+                }
+                Err(_) => return,
+            }
+            if loop_playback {
+                return;
+            }
+            let secs = match known {
+                Some(d) => Some(d),
+                None => {
+                    let (tx2, rx2) = tokio::sync::oneshot::channel();
+                    rt.spawn(async move {
+                        let _ = tx2.send(player_dur.ensure_clip_duration(id).await.ok().flatten());
+                    });
+                    rx2.await.ok().flatten()
+                }
+            };
+            if let Some(d) = secs {
+                cx.background_executor()
+                    .timer(Duration::from_secs_f32(d.max(0.1)))
+                    .await;
+                let _ = this.update(cx, |this, cx| this.clear_playing(id, cx));
+            }
+        })
+        .detach();
+    }
+
+    fn on_play_error(&mut self, id: ClipId, message: String, cx: &mut Context<Self>) {
+        self.playing.remove(&id);
+        self.error = Some(tr!("soundboard_playback_error_prefix", error = message.as_str()).into());
+        cx.notify();
+    }
+
+    fn clear_playing(&mut self, id: ClipId, cx: &mut Context<Self>) {
+        if self.playing.remove(&id) {
+            cx.notify();
+        }
+    }
+
+    fn stop_all(&mut self, cx: &mut Context<Self>) {
+        self.player.stop_all();
+        self.playing.clear();
+        cx.notify();
+    }
+
+    fn set_category_filter(&mut self, filter: Option<String>, cx: &mut Context<Self>) {
+        self.category_filter = filter;
+        cx.notify();
+    }
+
+    fn toggle_enabled(&mut self, cx: &mut Context<Self>) {
+        self.settings.enabled = !self.settings.enabled;
+        self.player.update_settings(self.settings.clone());
+        let repo = Arc::clone(&self.settings_repo);
+        let value = self.settings.enabled;
+        self.rt_handle.spawn(async move {
+            if let Err(e) = set_soundboard_enabled(repo.as_ref(), value).await {
+                tracing::warn!(error = %e, "failed to persist soundboard enabled");
+            }
+        });
+        cx.notify();
+    }
+
+    fn toggle_headphones(&mut self, cx: &mut Context<Self>) {
+        self.settings.also_headphones = !self.settings.also_headphones;
+        self.player.update_settings(self.settings.clone());
+        let repo = Arc::clone(&self.settings_repo);
+        let value = self.settings.also_headphones;
+        self.rt_handle.spawn(async move {
+            if let Err(e) = set_soundboard_also_headphones(repo.as_ref(), value).await {
+                tracing::warn!(error = %e, "failed to persist soundboard headphones");
+            }
+        });
+        cx.notify();
+    }
+
+    fn set_master_volume(&mut self, fraction: f32, cx: &mut Context<Self>) {
+        let value = (fraction / 100.0).clamp(0.0, 1.0);
+        self.settings.master_volume = value;
+        self.player.update_settings(self.settings.clone());
+        let repo = Arc::clone(&self.settings_repo);
+        self.rt_handle.spawn(async move {
+            if let Err(e) = set_soundboard_master_volume(repo.as_ref(), value).await {
+                tracing::warn!(error = %e, "failed to persist soundboard master volume");
+            }
+        });
+        cx.notify();
+    }
+
+    fn set_output_device(&mut self, device_id: Option<String>, cx: &mut Context<Self>) {
+        self.settings.output_device_id = device_id.clone();
+        self.device_menu_open = false;
+        self.player.update_settings(self.settings.clone());
+        let repo = Arc::clone(&self.settings_repo);
+        self.rt_handle.spawn(async move {
+            if let Err(e) = set_soundboard_output_device(repo.as_ref(), device_id).await {
+                tracing::warn!(error = %e, "failed to persist soundboard output device");
+            }
+        });
+        cx.notify();
+    }
+
+    fn toggle_device_menu(&mut self, cx: &mut Context<Self>) {
+        self.device_menu_open = !self.device_menu_open;
+        cx.notify();
+    }
+
+    fn import_builtin(&mut self, entry: BuiltinSoundEntry, cx: &mut Context<Self>) {
+        let hotkey = if self.hotkey_is_free(entry.suggested_hotkey) {
+            Some(entry.suggested_hotkey.to_owned())
+        } else {
+            self.next_free_hotkey()
+        };
+        let builtin_id = entry.builtin_id.to_owned();
+        let name = entry.display_name.to_owned();
+        let category = entry.category.to_owned();
+        let loop_playback = entry.loop_playback;
         let repo = Arc::clone(&self.clips_repo);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let _ = tx.send(delete_clip(repo, id).await);
+            let data_dir = forge_platform_core::paths::data_dir();
+            let Some(path) = resolve_builtin_path(&data_dir, &builtin_id) else {
+                let _ = tx.send(Err("builtin audio file missing".to_owned()));
+                return;
+            };
+            let clip = StoredClip {
+                id: ClipId::new(),
+                name,
+                file_path: path,
+                volume: 1.0,
+                output_device: OutputDevice::Default,
+                hotkey,
+                created_at: OffsetDateTime::now_utc(),
+                category,
+                loop_playback,
+                duration_secs: None,
+                builtin_id: Some(builtin_id),
+            };
+            let _ = tx.send(repo.save(&clip).await.map_err(|e| e.to_string()));
         });
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.on_deleted(name, cx));
+                let _ = this.update(cx, |this, cx| this.reload(cx));
             }
             Ok(Err(message)) => {
                 let _ = this.update(cx, |this, cx| this.on_load_error(message, cx));
@@ -247,96 +453,54 @@ impl SoundboardView {
         .detach();
     }
 
-    fn on_deleted(&mut self, name: Option<String>, cx: &mut Context<Self>) {
-        if let Some(name) = name {
-            self.feedback = Some(tr!("soundboard_removed_feedback", name = name.as_str()).into());
-        }
-        self.reload(cx);
+    fn hotkey_is_free(&self, hotkey: &str) -> bool {
+        !self
+            .clips
+            .iter()
+            .any(|c| c.hotkey.as_deref() == Some(hotkey))
+    }
+
+    fn next_free_hotkey(&self) -> Option<String> {
+        HOTKEY_SEQUENCE
+            .iter()
+            .find(|k| self.hotkey_is_free(k))
+            .map(|k| (*k).to_owned())
     }
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let modal = Self::build_modal(None, "", None, "", 1.0, 0, cx);
-        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
-        self.modal = Some(modal);
-        self.reload_devices(cx);
-        cx.notify();
-    }
-
-    fn open_edit(&mut self, id: ClipId, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(clip) = self.clips.iter().find(|c| c.id == id) else {
-            return;
-        };
-        let name = clip.name.clone();
-        let file = Some(clip.file_path.clone());
-        let hotkey = clip.hotkey.clone().unwrap_or_default();
-        let volume = clip.volume;
-        let device_idx = self.device_idx_for(&clip.output_device);
-        let modal = Self::build_modal(Some(id), &name, file, &hotkey, volume, device_idx, cx);
-        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
-        self.modal = Some(modal);
-        self.reload_devices(cx);
-        cx.notify();
-    }
-
-    fn build_modal(
-        editing: Option<ClipId>,
-        name_seed: &str,
-        file_seed: Option<PathBuf>,
-        hotkey_seed: &str,
-        volume: f32,
-        device_idx: usize,
-        cx: &mut Context<Self>,
-    ) -> AddClipModal {
         let palette = cx.palette();
-        let name_seed = name_seed.to_owned();
-        let hotkey_seed = hotkey_seed.to_owned();
-
         let name_input = cx.new(|cx| {
-            let mut ti =
-                TextInput::new(tr!("soundboard_modal_name_placeholder"), cx).with_palette(palette);
-            ti.set_content(name_seed, cx);
-            ti
+            TextInput::new(tr!("soundboard_modal_name_placeholder"), cx).with_palette(palette)
         });
-        let hotkey_input = cx.new(|cx| {
-            let mut ti = TextInput::new(tr!("soundboard_modal_hotkey_placeholder"), cx)
-                .with_palette(palette);
-            ti.set_content(hotkey_seed, cx);
-            ti
-        });
-
         let name_sub = cx.subscribe(
             &name_input,
-            |this, _f, event: &InputEvent, cx| match event {
+            |this, _input, event: &InputEvent, cx| match event {
                 InputEvent::Submitted(_) => this.save(cx),
                 InputEvent::Cancelled => this.close_modal(cx),
                 InputEvent::Changed(_) => cx.notify(),
             },
         );
-        let hotkey_sub = cx.subscribe(
-            &hotkey_input,
-            |this, _f, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.save(cx),
-                InputEvent::Cancelled => this.close_modal(cx),
-                InputEvent::Changed(_) => cx.notify(),
-            },
-        );
-
-        AddClipModal {
-            editing,
-            file_path: file_seed,
+        name_input.update(cx, |f, cx| f.focus(window, cx));
+        self.modal = Some(AddModal {
+            file_path: None,
             name_input,
-            hotkey_input,
-            device_idx,
-            volume,
+            category: CATEGORY_ORDER[0].to_owned(),
             saving: false,
             error: None,
             _name_sub: name_sub,
-            _hotkey_sub: hotkey_sub,
-        }
+        });
+        cx.notify();
     }
 
     fn close_modal(&mut self, cx: &mut Context<Self>) {
         self.modal = None;
+        cx.notify();
+    }
+
+    fn set_modal_category(&mut self, category: String, cx: &mut Context<Self>) {
+        if let Some(modal) = self.modal.as_mut() {
+            modal.category = category;
+        }
         cx.notify();
     }
 
@@ -378,20 +542,6 @@ impl SoundboardView {
         cx.notify();
     }
 
-    fn set_device(&mut self, idx: usize, cx: &mut Context<Self>) {
-        if let Some(modal) = self.modal.as_mut() {
-            modal.device_idx = idx;
-        }
-        cx.notify();
-    }
-
-    fn set_volume(&mut self, value: f32, cx: &mut Context<Self>) {
-        if let Some(modal) = self.modal.as_mut() {
-            modal.volume = value;
-        }
-        cx.notify();
-    }
-
     fn modal_saveable(&self, cx: &Context<Self>) -> bool {
         self.modal.as_ref().is_some_and(|modal| {
             !modal.saving
@@ -408,59 +558,39 @@ impl SoundboardView {
             cx.notify();
             return;
         }
-
         let Some(modal) = self.modal.as_ref() else {
             return;
         };
         let name = modal.name_input.read(cx).content().trim().to_owned();
-        let hotkey_raw = modal.hotkey_input.read(cx).content().trim().to_owned();
-        let hotkey = (!hotkey_raw.is_empty()).then_some(hotkey_raw);
         let file_path = modal.file_path.clone().unwrap_or_default();
-        let output_device = self.device_from_idx(modal.device_idx);
-        let volume = modal.volume;
-        let editing = modal.editing;
-        let clip_id = editing.unwrap_or_else(ClipId::new);
+        let category = modal.category.clone();
+        let hotkey = self.next_free_hotkey();
 
         if let Some(modal) = self.modal.as_mut() {
             modal.saving = true;
             modal.error = None;
         }
-
         let repo = Arc::clone(&self.clips_repo);
-        let name_for_clip = name.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            // Fetch the existing row on edit so fields not yet exposed in this
-            // modal (category, loop_playback, duration_secs, builtin_id) survive
-            // a rename/volume-tweak instead of being reset to their defaults.
-            let existing = match editing {
-                Some(id) => repo.get(id).await.ok().flatten(),
-                None => None,
-            };
             let clip = StoredClip {
-                id: clip_id,
-                name: name_for_clip,
+                id: ClipId::new(),
+                name,
                 file_path,
-                volume,
-                output_device,
+                volume: 1.0,
+                output_device: OutputDevice::Default,
                 hotkey,
-                created_at: existing
-                    .as_ref()
-                    .map(|c| c.created_at)
-                    .unwrap_or_else(OffsetDateTime::now_utc),
-                category: existing
-                    .as_ref()
-                    .map(|c| c.category.clone())
-                    .unwrap_or_default(),
-                loop_playback: existing.as_ref().is_some_and(|c| c.loop_playback),
-                duration_secs: existing.as_ref().and_then(|c| c.duration_secs),
-                builtin_id: existing.as_ref().and_then(|c| c.builtin_id.clone()),
+                created_at: OffsetDateTime::now_utc(),
+                category,
+                loop_playback: false,
+                duration_secs: None,
+                builtin_id: None,
             };
-            let _ = tx.send(save_clip(repo, clip).await);
+            let _ = tx.send(repo.save(&clip).await.map_err(|e| e.to_string()));
         });
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.on_saved(name, cx));
+                let _ = this.update(cx, |this, cx| this.on_saved(cx));
             }
             Ok(Err(message)) => {
                 let _ = this.update(cx, |this, cx| this.on_save_error(message, cx));
@@ -471,9 +601,8 @@ impl SoundboardView {
         cx.notify();
     }
 
-    fn on_saved(&mut self, name: String, cx: &mut Context<Self>) {
+    fn on_saved(&mut self, cx: &mut Context<Self>) {
         self.modal = None;
-        self.feedback = Some(tr!("soundboard_saved_feedback", name = name.as_str()).into());
         self.reload(cx);
     }
 
@@ -485,206 +614,349 @@ impl SoundboardView {
         cx.notify();
     }
 
-    fn clip_card(
+    fn categories_present(&self) -> Vec<String> {
+        let mut seen: Vec<String> = Vec::new();
+        for cat in CATEGORY_ORDER {
+            if self.clips.iter().any(|c| c.category == *cat) {
+                seen.push((*cat).to_owned());
+            }
+        }
+        for clip in &self.clips {
+            if !clip.category.is_empty() && !seen.iter().any(|c| c == &clip.category) {
+                seen.push(clip.category.clone());
+            }
+        }
+        seen
+    }
+
+    fn filtered_indices(&self) -> Vec<usize> {
+        let query = self.search_query.trim().to_lowercase();
+        self.clips
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| {
+                self.category_filter
+                    .as_ref()
+                    .is_none_or(|f| &c.category == f)
+            })
+            .filter(|(_, c)| query.is_empty() || c.name.to_lowercase().contains(&query))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn device_short_label(&self) -> String {
+        match &self.settings.output_device_id {
+            Some(id) => self
+                .devices
+                .iter()
+                .find(|d| &d.id.0 == id)
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| tr!("soundboard_device_system_default").to_string()),
+            None => tr!("soundboard_device_system_default").to_string(),
+        }
+    }
+
+    fn output_ready(&self) -> bool {
+        match &self.settings.output_device_id {
+            Some(id) => self.devices.iter().any(|d| &d.id.0 == id),
+            None => true,
+        }
+    }
+
+    fn render_header_right(&self, palette: &ForgePalette) -> AnyElement {
+        let device = self.device_short_label();
+        let summary = tr!(
+            "soundboard_header_summary",
+            device = device.as_str(),
+            count = self.clips.len() as i64
+        );
+        div()
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .child(icon(Icon::Volume, HEADER_ICON, palette.success))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(LABEL_FS)
+                    .text_color(palette.text_muted)
+                    .child(summary),
+            )
+            .into_any_element()
+    }
+
+    fn render_hero(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let enabled = self.settings.enabled;
+        let label_color = if enabled {
+            palette.success
+        } else {
+            palette.text_faint
+        };
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(HERO_GAP)
+            .py(ROUTING_PAD)
+            .px(spacing(Spacing::Lg, density))
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .bg(palette.elevated)
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .size(HERO_ICON_TILE)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(HERO_ICON_TILE_RADIUS)
+                    .bg(palette.surface_overlay)
+                    .child(icon(Icon::Music, HERO_GLYPH, palette.bits)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(HERO_TITLE_FS)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(palette.text_primary)
+                            .child(tr!("soundboard_hero_title")),
+                    )
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(tr!("soundboard_hero_blurb")),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Sm, density))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(LABEL_FS)
+                            .text_color(label_color)
+                            .child(if enabled {
+                                tr!("soundboard_hero_enabled")
+                            } else {
+                                tr!("soundboard_hero_disabled")
+                            }),
+                    )
+                    .child(toggle(enabled, palette).on_click(
+                        "sb-enabled",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enabled(cx)),
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn render_controls(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut chips = div().flex().items_center().gap(px(4.0)).child(
+            chip(
+                tr!("soundboard_category_all", count = self.clips.len() as i64),
+                ChipGlyph::None,
+                self.category_filter.is_none(),
+                palette,
+            )
+            .density(density)
+            .on_click(
+                "sb-cat-all",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.set_category_filter(None, cx)),
+            ),
+        );
+        for (idx, cat) in self.categories_present().into_iter().enumerate() {
+            let active = self.category_filter.as_deref() == Some(cat.as_str());
+            let color = category_color(&cat, palette);
+            let for_click = cat.clone();
+            chips = chips.child(
+                chip(category_label(&cat), ChipGlyph::Dot(color), active, palette)
+                    .density(density)
+                    .on_click(
+                        ("sb-cat", idx),
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.set_category_filter(Some(for_click.clone()), cx)
+                        }),
+                    ),
+            );
+        }
+
+        let stop_all = div()
+            .id("sb-stop-all")
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .cursor_pointer()
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Xs, density))
+            .rounded(radius(Radius::Sm))
+            .hover(|s| s.bg(palette.surface_overlay))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.stop_all(cx)))
+            .child(icon(Icon::PlayerStop, STOP_ICON, palette.random))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.random)
+                    .child(tr!("soundboard_stop_all")),
+            );
+
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(GRID_GAP)
+            .child(div().w(SEARCH_WIDTH).child(self.search.clone()))
+            .child(chips)
+            .child(div().flex_1())
+            .child(stop_all)
+            .into_any_element()
+    }
+
+    fn render_pad(
         &self,
         index: usize,
         clip: &SoundClip,
         palette: &ForgePalette,
-        density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = clip.id;
+        let playing = self.playing.contains(&id);
+        let color = category_color(&clip.category, palette);
+        let border_color = if playing {
+            color
+        } else {
+            palette.surface_overlay
+        };
+        let bg = if playing {
+            palette.surface_overlay
+        } else {
+            palette.elevated
+        };
+        let glyph = if playing {
+            Icon::PlayerPause
+        } else {
+            clip.glyph
+        };
+
+        let hotkey_badge = clip.hotkey.clone().map(|hk| {
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(HOTKEY_FS)
+                .text_color(palette.text_secondary)
+                .bg(palette.shell)
+                .border(BORDER_THIN)
+                .border_color(palette.surface_overlay)
+                .rounded(HOTKEY_RADIUS)
+                .px(px(6.0))
+                .py(px(1.0))
+                .child(hk)
+        });
+
+        let top = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .mb(PAD_PAD_Y)
+            .child(
+                div()
+                    .size(PAD_ICON_TILE)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(PAD_ICON_TILE_RADIUS)
+                    .bg(palette.surface_overlay)
+                    .child(icon(glyph, PAD_GLYPH, color)),
+            )
+            .children(hotkey_badge);
 
         let name = div()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
+            .text_ellipsis()
             .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_SM)
+            .text_size(PAD_NAME_FS)
+            .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(palette.text_primary)
             .child(clip.name.clone());
 
-        let mut chips = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(card_chip(
-                clip.duration_label.clone(),
-                palette.text_muted,
-                palette,
-            ));
-        if let Some(hotkey) = clip.hotkey.clone() {
-            chips = chips.child(card_chip(hotkey, palette.warning, palette));
+        let dur_color = if playing { color } else { palette.text_faint };
+        let mut bottom = div().flex().items_center().gap(px(5.0)).mt(px(3.0));
+        if clip.loop_playback {
+            bottom = bottom.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
         }
+        bottom = bottom.child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(dur_color)
+                .child(if playing {
+                    tr!("soundboard_pad_playing")
+                } else {
+                    duration_label(clip.duration_secs)
+                }),
+        );
 
-        let pct = (clip.volume * 100.0).round() as i32;
-        let pct_color = if clip.volume > 1.0 {
-            palette.warning
-        } else {
-            palette.text_secondary
-        };
-        let device_row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .flex_1()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(clip.device_label.clone()),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(pct_color)
-                    .child(format!("{pct}%")),
-            );
-
-        let separator = div().w_full().h(px(1.0)).bg(palette.border_regular);
-
-        let actions = div()
-            .flex()
-            .items_center()
-            .justify_end()
-            .gap(spacing(Spacing::Xs, density))
-            .child(self.card_action(
-                ("sb-play", index),
-                Icon::PlayerPlay,
-                palette.success,
-                palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.play(id, cx)),
-            ))
-            .child(self.card_action(
-                ("sb-edit", index),
-                Icon::InfoCircle,
-                palette.info,
-                palette,
-                cx.listener(move |this, _: &ClickEvent, window, cx| this.open_edit(id, window, cx)),
-            ))
-            .child(self.card_action(
-                ("sb-delete", index),
-                Icon::X,
-                palette.random,
-                palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.delete(id, cx)),
-            ));
-
-        div()
-            .w_full()
+        let mut pad = div()
+            .id(("sb-pad", index))
+            .relative()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Lg))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(name)
-            .child(chips)
-            .child(device_row)
-            .child(separator)
-            .child(actions)
-            .into_any_element()
-    }
-
-    fn card_action(
-        &self,
-        id: impl Into<gpui::ElementId>,
-        glyph: Icon,
-        hue: gpui::Rgba,
-        palette: &ForgePalette,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> impl IntoElement {
-        let wash = with_alpha(hue, 0.1);
-        div()
-            .id(id.into())
-            .flex()
-            .items_center()
-            .justify_center()
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .rounded(CARD_ACTION_RADIUS)
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
             .cursor_pointer()
-            .hover(move |s| s.bg(wash))
-            .on_click(handler)
-            .child(icon(glyph, CARD_ACTION_GLYPH, hue))
-    }
+            .py(PAD_PAD_Y)
+            .px(PAD_PAD_X)
+            .rounded(PAD_RADIUS)
+            .border(BORDER_THIN)
+            .border_color(border_color)
+            .bg(bg)
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_play(id, cx)))
+            .child(top)
+            .child(name)
+            .child(bottom);
 
-    fn render_body(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let inner = if self.loading {
-            centered_message(tr!("soundboard_loading"), palette.text_muted, density)
-        } else if let Some(error) = self.error.clone() {
-            centered_message(error, palette.random, density)
-        } else if self.clips.is_empty() {
-            self.empty_state(palette, density)
-        } else {
-            self.clip_grid(palette, density, cx)
-        };
-
-        div()
-            .id("sb-scroll")
-            .flex_1()
-            .h_full()
-            .overflow_y_scroll()
-            .bg(palette.base)
-            .child(div().w_full().p(spacing(Spacing::Md, density)).child(inner))
-            .into_any_element()
-    }
-
-    fn empty_state(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Lg, density))
-            .child(icon(Icon::Music, EMPTY_GLYPH, palette.text_faint))
-            .child(
+        if playing {
+            pad = pad.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("soundboard_empty_title")),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_faint)
-                    .child(tr!("soundboard_empty_hint")),
-            )
-            .into_any_element()
+                    .absolute()
+                    .left_0()
+                    .bottom_0()
+                    .h(PROGRESS_H)
+                    .w(relative(PROGRESS_WIDTH))
+                    .rounded(px(2.0))
+                    .bg(color),
+            );
+        }
+        pad.into_any_element()
     }
 
-    fn clip_grid(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let gap = spacing(Spacing::Md, density);
-        let cards: Vec<AnyElement> = self
-            .clips
-            .iter()
-            .enumerate()
-            .map(|(index, clip)| self.clip_card(index, clip, palette, density, cx))
-            .collect();
-
-        let mut grid = div().w_full().flex().flex_col().gap(gap);
-        let mut iter = cards.into_iter().peekable();
+    fn render_grid(&self, elements: Vec<AnyElement>) -> AnyElement {
+        let mut grid = div().w_full().flex().flex_col().gap(GRID_GAP);
+        let mut iter = elements.into_iter().peekable();
         while iter.peek().is_some() {
-            let mut row = div().w_full().flex().flex_row().gap(gap);
-            for _ in 0..CARDS_PER_ROW {
+            let mut row = div().w_full().flex().flex_row().gap(GRID_GAP);
+            for _ in 0..PADS_PER_ROW {
                 match iter.next() {
-                    Some(card) => row = row.child(div().flex_1().child(card)),
+                    Some(el) => row = row.child(div().flex_1().min_w_0().child(el)),
                     None => row = row.child(div().flex_1()),
                 }
             }
@@ -693,19 +965,416 @@ impl SoundboardView {
         grid.into_any_element()
     }
 
-    fn render_modal(
+    fn render_pads(
         &self,
-        modal_state: &AddClipModal,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let title = if modal_state.editing.is_some() {
-            tr!("soundboard_modal_title_edit")
-        } else {
-            tr!("soundboard_modal_title_add")
-        };
+        let indices = self.filtered_indices();
+        if indices.is_empty() {
+            return div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(spacing(Spacing::Sm, density))
+                .py(spacing(Spacing::Lg, density))
+                .child(icon(Icon::Music, px(24.0), palette.text_faint))
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_muted)
+                        .child(if self.clips.is_empty() {
+                            tr!("soundboard_empty_title")
+                        } else {
+                            tr!("soundboard_no_matches")
+                        }),
+                )
+                .into_any_element();
+        }
+        let pads: Vec<AnyElement> = indices
+            .into_iter()
+            .map(|i| self.render_pad(i, &self.clips[i], palette, cx))
+            .collect();
+        self.render_grid(pads)
+    }
 
+    fn render_library(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if self.importable.is_empty() {
+            return None;
+        }
+        let cards: Vec<AnyElement> = self
+            .importable
+            .iter()
+            .enumerate()
+            .map(|(idx, entry)| self.render_library_pad(idx, *entry, palette, cx))
+            .collect();
+        Some(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xs, density))
+                .child(section_label(tr!("soundboard_library_section"), palette))
+                .child(self.render_grid(cards))
+                .into_any_element(),
+        )
+    }
+
+    fn render_library_pad(
+        &self,
+        index: usize,
+        entry: BuiltinSoundEntry,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let color = category_color(entry.category, palette);
+        let glyph =
+            glyph_for_name(entry.icon_name).unwrap_or_else(|| category_glyph(entry.category));
+        div()
+            .id(("sb-lib", index))
+            .flex()
+            .flex_col()
+            .cursor_pointer()
+            .py(PAD_PAD_Y)
+            .px(PAD_PAD_X)
+            .rounded(PAD_RADIUS)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .bg(palette.base)
+            .hover(|s| s.border_color(color))
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.import_builtin(entry, cx)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .mb(PAD_PAD_Y)
+                    .child(
+                        div()
+                            .size(PAD_ICON_TILE)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(PAD_ICON_TILE_RADIUS)
+                            .bg(palette.surface_overlay)
+                            .child(icon(glyph, PAD_GLYPH, color)),
+                    )
+                    .child(icon(Icon::Plus, HOTKEY_FS, palette.text_faint)),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(PAD_NAME_FS)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(palette.text_primary)
+                    .child(entry.display_name.to_owned()),
+            )
+            .child(
+                div()
+                    .mt(px(3.0))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("soundboard_library_import")),
+            )
+            .into_any_element()
+    }
+
+    fn render_add_bar(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .id("sb-add-bar")
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(px(6.0))
+            .py(ADDBAR_PAD_Y)
+            .px(ADDBAR_PAD_X)
+            .rounded(ADDBAR_RADIUS)
+            .border(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .bg(palette.shell)
+            .cursor_pointer()
+            .hover(|s| s.border_color(palette.bits).bg(palette.surface_overlay))
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)))
+            .child(icon(Icon::Plus, ADD_ICON, palette.bits))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(palette.bits)
+                    .child(tr!("soundboard_add_sound")),
+            )
+            .into_any_element()
+    }
+
+    fn render_routing(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let device_label = self.device_short_label();
+        let mut device_col = div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .child(field_lite_label(tr!("soundboard_routing_device"), palette))
+            .child(self.render_device_select(&device_label, palette, cx));
+        device_col = device_col.child(
+            div()
+                .mt(px(5.0))
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(HINT_FS)
+                .text_color(palette.text_faint)
+                .child(tr!("soundboard_routing_hint")),
+        );
+
+        let pct = (self.settings.master_volume * 100.0).round() as i64;
+        let volume_col = div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .child(field_lite_label(
+                tr!("soundboard_routing_volume", pct = pct),
+                palette,
+            ))
+            .child(
+                slider(self.settings.master_volume * 100.0, 0.0, 100.0, palette)
+                    .accent(palette.bits)
+                    .on_change(
+                        "sb-master-volume",
+                        cx.listener(|this, value: &f32, _, cx| this.set_master_volume(*value, cx)),
+                    ),
+            )
+            .child(
+                div()
+                    .mt(spacing(Spacing::Xs, density))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(
+                        toggle(self.settings.also_headphones, palette)
+                            .on_color(palette.bits)
+                            .on_click(
+                                "sb-headphones",
+                                cx.listener(|this, _: &ClickEvent, _, cx| {
+                                    this.toggle_headphones(cx)
+                                }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(LABEL_FS)
+                            .text_color(palette.text_secondary)
+                            .child(tr!("soundboard_routing_headphones")),
+                    ),
+            );
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .p(ROUTING_PAD)
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .bg(palette.elevated)
+            .child(section_label(tr!("soundboard_routing_section"), palette))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_row()
+                    .items_start()
+                    .gap(ROUTING_GAP)
+                    .child(device_col)
+                    .child(volume_col),
+            )
+            .into_any_element()
+    }
+
+    fn render_device_select(
+        &self,
+        current_label: &str,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let trigger = div()
+            .id("sb-device-trigger")
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .py(SELECT_PAD_Y)
+            .px(SELECT_PAD_X)
+            .rounded(SELECT_RADIUS)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .bg(palette.shell)
+            .cursor_pointer()
+            .hover(|s| s.border_color(palette.border_active))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_device_menu(cx)))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(current_label.to_owned()),
+            )
+            .child(icon(Icon::ChevronDown, HOTKEY_FS, palette.text_faint));
+
+        let mut col = div().w_full().flex().flex_col().gap(px(4.0)).child(trigger);
+        if self.device_menu_open {
+            let mut list = div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .p(px(4.0))
+                .rounded(SELECT_RADIUS)
+                .border(BORDER_THIN)
+                .border_color(palette.border_regular)
+                .bg(palette.elevated)
+                .child(self.device_option(
+                    "sb-dev-default",
+                    tr!("soundboard_device_system_default"),
+                    self.settings.output_device_id.is_none(),
+                    None,
+                    palette,
+                    cx,
+                ));
+            for (idx, device) in self.devices.iter().enumerate() {
+                let selected =
+                    self.settings.output_device_id.as_deref() == Some(device.id.0.as_str());
+                let id = device.id.0.clone();
+                list = list.child(self.device_option(
+                    ("sb-dev", idx),
+                    device.name.clone(),
+                    selected,
+                    Some(id),
+                    palette,
+                    cx,
+                ));
+            }
+            col = col.child(list);
+        }
+        col.into_any_element()
+    }
+
+    fn device_option(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        label: impl Into<SharedString>,
+        selected: bool,
+        value: Option<String>,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let ink = if selected {
+            palette.text_primary
+        } else {
+            palette.text_secondary
+        };
+        div()
+            .id(id.into())
+            .w_full()
+            .flex()
+            .items_center()
+            .py(px(6.0))
+            .px(px(8.0))
+            .rounded(radius(Radius::Sm))
+            .cursor_pointer()
+            .when(selected, |s| s.bg(palette.surface_overlay))
+            .hover(|s| s.bg(palette.surface_overlay))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.set_output_device(value.clone(), cx)
+            }))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(ink)
+                    .child(label.into()),
+            )
+            .into_any_element()
+    }
+
+    fn render_footer(&self, palette: &ForgePalette) -> AnyElement {
+        let category_count = self.categories_present().len();
+        let size_label = self
+            .total_size
+            .map(humanize_bytes)
+            .unwrap_or_else(|| "\u{2014}".to_owned());
+        let ready = self.output_ready();
+        let (dot, status_text) = if ready {
+            (palette.success, tr!("soundboard_output_ready"))
+        } else {
+            (palette.warning, tr!("soundboard_output_missing"))
+        };
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .py(FOOTER_PAD_Y)
+            .px(FOOTER_PAD_X)
+            .border_t(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .bg(palette.shell)
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FOOTER_FS)
+                    .text_color(palette.text_faint)
+                    .child(tr!(
+                        "soundboard_footer_left",
+                        sounds = self.clips.len() as i64,
+                        categories = category_count as i64,
+                        size = size_label.as_str()
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(status_dot(dot, FOOTER_DOT))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FOOTER_FS)
+                            .text_color(palette.text_faint)
+                            .child(status_text),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_modal(
+        &self,
+        modal_state: &AddModal,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let file_set = modal_state.file_path.is_some();
         let file_label: String = modal_state
             .file_path
@@ -713,7 +1382,7 @@ impl SoundboardView {
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .map(str::to_owned)
-            .unwrap_or_else(|| tr!("soundboard_modal_no_file"));
+            .unwrap_or_else(|| tr!("soundboard_modal_no_file").to_string());
         let browse = ghost_button_with_icon(
             Icon::FolderOpen,
             tr!("soundboard_modal_browse_btn"),
@@ -731,8 +1400,11 @@ impl SoundboardView {
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
                     .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(if file_set {
                         palette.text_secondary
                     } else {
@@ -742,91 +1414,42 @@ impl SoundboardView {
             )
             .child(browse);
 
-        let mut device_list = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
-        for (idx, label) in self.device_entries().into_iter().enumerate() {
-            let selected = modal_state.device_idx == idx;
-            let title_ink = if selected {
-                palette.text_primary
-            } else {
-                palette.text_secondary
-            };
-            let device_title = div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(title_ink)
-                .child(label);
-            let leading_tint = if selected {
-                palette.brand
-            } else {
-                palette.text_faint
-            };
-            device_list = device_list.child(
-                row_card(device_title, palette)
+        let mut category_row = div().flex().items_center().gap(px(4.0));
+        for (idx, cat) in CATEGORY_ORDER.iter().enumerate() {
+            let active = modal_state.category == *cat;
+            let color = category_color(cat, palette);
+            let value = (*cat).to_owned();
+            category_row = category_row.child(
+                chip(category_label(cat), ChipGlyph::Dot(color), active, palette)
                     .density(density)
-                    .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Sm))
-                    .selected(selected)
-                    .leading(icon(Icon::Volume, FONT_SM, leading_tint))
                     .on_click(
-                        ("sb-device", idx),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| this.set_device(idx, cx)),
+                        ("sb-modal-cat", idx),
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.set_modal_category(value.clone(), cx)
+                        }),
                     ),
             );
         }
-
-        let pct = (modal_state.volume * 100.0).round() as i32;
-        let pct_color = if modal_state.volume > 1.0 {
-            palette.warning
-        } else {
-            palette.text_secondary
-        };
-        let volume_row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(div().flex_1().child(
-                slider(modal_state.volume, 0.0, VOLUME_MAX, palette).on_change(
-                    "sb-modal-volume",
-                    cx.listener(|this, value: &f32, _, cx| this.set_volume(*value, cx)),
-                ),
-            ))
-            .child(
-                div()
-                    .w(px(40.0))
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(pct_color)
-                    .child(format!("{pct}%")),
-            );
 
         let mut body = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .child(field_label(
-                palette,
-                tr!("soundboard_modal_section_file"),
-                file_row,
-            ))
-            .child(field_label(
-                palette,
+            .child(field_lite_label(
                 tr!("soundboard_modal_section_name"),
-                div().child(modal_state.name_input.clone()),
-            ))
-            .child(field_label(
                 palette,
-                tr!("soundboard_modal_section_hotkey"),
-                div().child(modal_state.hotkey_input.clone()),
             ))
-            .child(field_label(
+            .child(div().child(modal_state.name_input.clone()))
+            .child(field_lite_label(
+                tr!("soundboard_modal_section_category"),
                 palette,
-                tr!("soundboard_modal_section_device"),
-                device_list,
             ))
-            .child(field_label(
+            .child(category_row)
+            .child(field_lite_label(
+                tr!("soundboard_modal_section_file"),
                 palette,
-                tr!("soundboard_modal_section_volume"),
-                volume_row,
-            ));
+            ))
+            .child(file_row);
 
         if let Some(error) = modal_state.error.clone() {
             body = body.child(
@@ -852,6 +1475,16 @@ impl SoundboardView {
         }
 
         let saveable = self.modal_saveable(cx);
+        let hint = div()
+            .flex_1()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(LABEL_FS)
+            .text_color(palette.text_faint)
+            .child(if saveable {
+                tr!("soundboard_modal_ready")
+            } else {
+                tr!("soundboard_modal_fill_required")
+            });
         let cancel = secondary_button(tr!("soundboard_modal_cancel_btn"), palette).on_click(
             "sb-modal-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
@@ -867,19 +1500,25 @@ impl SoundboardView {
             .flex()
             .items_center()
             .justify_between()
-            .child(cancel)
-            .child(save);
+            .gap(spacing(Spacing::Sm, density))
+            .child(hint)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(cancel)
+                    .child(save),
+            );
 
-        let card = modal(title, body, palette)
-            .header_icon(Icon::Music, palette.brand)
-            .width(MODAL_WIDTH)
+        let card = modal(tr!("soundboard_modal_title_add"), body, palette)
+            .header_icon(Icon::Music, palette.bits)
+            .width(px(440.0))
             .footer(footer)
-            .kbd_hint(tr!("soundboard_modal_kbd_hint"))
             .on_close(
                 "sb-modal-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
             );
-
         let view = cx.entity();
         overlay(card, palette)
             .position(OverlayPosition::Center)
@@ -888,32 +1527,6 @@ impl SoundboardView {
             })
             .into_any_element()
     }
-
-    fn feedback_banner(
-        &self,
-        message: SharedString,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> impl IntoElement {
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .bg(with_alpha(palette.success, 0.10))
-            .border_b(BORDER_THIN)
-            .border_color(with_alpha(palette.success, 0.25))
-            .child(icon(Icon::Volume, FONT_XS, palette.success))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_secondary)
-                    .child(message),
-            )
-    }
 }
 
 impl Render for SoundboardView {
@@ -921,13 +1534,6 @@ impl Render for SoundboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let add_btn =
-            primary_button_with_icon(Icon::Plus, tr!("soundboard_add_clip_btn"), &palette)
-                .density(density)
-                .on_click(
-                    "sb-add",
-                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)),
-                );
         let header = breadcrumb(
             vec![
                 BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_builtin")),
@@ -935,14 +1541,74 @@ impl Render for SoundboardView {
             ],
             &palette,
         )
-        .right(add_btn);
+        .right(self.render_header_right(&palette));
 
-        let feedback = self
-            .feedback
-            .clone()
-            .map(|message| self.feedback_banner(message, &palette, density));
+        let inner = if self.loading {
+            div()
+                .w_full()
+                .flex()
+                .justify_center()
+                .py(spacing(Spacing::Lg, density))
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_muted)
+                        .child(tr!("soundboard_loading")),
+                )
+                .into_any_element()
+        } else {
+            let error_banner = self.error.clone().map(|message| {
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .p(spacing(Spacing::Xs, density))
+                    .rounded(radius(Radius::Sm))
+                    .bg(with_alpha(palette.random, 0.10))
+                    .border(BORDER_THIN)
+                    .border_color(with_alpha(palette.random, 0.30))
+                    .child(icon(Icon::AlertCircle, FONT_XS, palette.random))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_primary)
+                            .child(message),
+                    )
+            });
 
-        let body = self.render_body(&palette, density, cx);
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(SECTION_GAP)
+                .children(error_banner)
+                .child(self.render_hero(&palette, density, cx))
+                .child(self.render_controls(&palette, density, cx))
+                .child(self.render_pads(&palette, density, cx))
+                .children(self.render_library(&palette, density, cx))
+                .child(self.render_add_bar(&palette, cx))
+                .child(self.render_routing(&palette, density, cx))
+                .child(self.render_footer(&palette))
+                .into_any_element()
+        };
+
+        let body = div()
+            .id("sb-scroll")
+            .flex_1()
+            .h_full()
+            .overflow_y_scroll()
+            .bg(palette.base)
+            .child(
+                div()
+                    .w_full()
+                    .py(SCROLL_PAD_Y)
+                    .px(SCROLL_PAD_X)
+                    .child(inner),
+            );
+
         let modal_overlay = self
             .modal
             .as_ref()
@@ -954,87 +1620,109 @@ impl Render for SoundboardView {
             .flex_col()
             .bg(palette.base)
             .child(header)
-            .children(feedback)
             .child(body)
             .children(modal_overlay)
     }
 }
 
-fn card_chip(
-    label: impl Into<SharedString>,
-    ink: gpui::Rgba,
-    palette: &ForgePalette,
-) -> impl IntoElement {
+fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
-        .rounded(radius(Radius::Sm))
-        .bg(palette.surface_overlay)
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(ink)
-                .child(label.into()),
-        )
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(SECTION_LABEL_FS)
+        .text_color(palette.text_muted)
+        .child(label.into())
 }
 
-fn centered_message(
-    message: impl Into<SharedString>,
-    ink: gpui::Rgba,
-    density: Density,
-) -> AnyElement {
+fn field_lite_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .py(spacing(Spacing::Lg, density))
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(ink)
-                .child(message.into()),
-        )
-        .into_any_element()
+        .mb(px(5.0))
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(HOTKEY_FS)
+        .text_color(palette.text_muted)
+        .child(label.into())
+}
+
+fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
+    match cat {
+        "memes" => palette.bits,
+        "alerts" => palette.random,
+        "music" => palette.brand,
+        "voice" => palette.info,
+        _ => palette.text_muted,
+    }
+}
+
+fn category_label(cat: &str) -> SharedString {
+    match cat {
+        "memes" => tr!("soundboard_category_memes").into(),
+        "alerts" => tr!("soundboard_category_alerts").into(),
+        "music" => tr!("soundboard_category_music").into(),
+        "voice" => tr!("soundboard_category_voice").into(),
+        other => other.to_owned().into(),
+    }
+}
+
+fn category_glyph(cat: &str) -> Icon {
+    match cat {
+        "memes" => Icon::MoodSmile,
+        "alerts" => Icon::Star,
+        "music" => Icon::Music,
+        "voice" => Icon::MessageCircle,
+        _ => Icon::Music,
+    }
+}
+
+fn glyph_for_name(name: &str) -> Option<Icon> {
+    Some(match name {
+        "music" => Icon::Music,
+        "repeat" => Icon::Repeat,
+        "star" => Icon::Star,
+        "flag" => Icon::Flag,
+        "speakerphone" => Icon::Volume,
+        "sparkles" => Icon::Wand,
+        "wave-sine" | "wave-saw-tool" | "ripple" => Icon::Activity,
+        "hand-click" => Icon::TargetArrow,
+        "user-plus" => Icon::Users,
+        "mood-crazy-happy" | "mood-sad" => Icon::MoodSmile,
+        _ => return None,
+    })
 }
 
 fn stored_to_clip(c: StoredClip) -> SoundClip {
+    let glyph = c
+        .builtin_id
+        .as_deref()
+        .and_then(|id| BUILTIN_SOUNDS.iter().find(|e| e.builtin_id == id))
+        .and_then(|e| glyph_for_name(e.icon_name).or_else(|| Some(category_glyph(e.category))))
+        .unwrap_or(Icon::Music);
     SoundClip {
         id: c.id,
         name: c.name,
         file_path: c.file_path,
         hotkey: c.hotkey,
-        device_label: device_display_label(&c.output_device),
-        output_device: c.output_device,
-        volume: c.volume,
-        duration_label: "\u{2014}".to_owned(),
+        category: c.category,
+        loop_playback: c.loop_playback,
+        duration_secs: c.duration_secs,
+        builtin_id: c.builtin_id,
+        glyph,
     }
 }
 
-fn device_display_label(dev: &OutputDevice) -> String {
-    match dev {
-        OutputDevice::Default => tr!("soundboard_device_system_default"),
-        OutputDevice::ByName { name } => name.clone(),
-        OutputDevice::ById { id } => id.clone(),
+fn duration_label(secs: Option<f32>) -> String {
+    match secs {
+        Some(s) => {
+            let total = s.max(0.0).round() as u64;
+            format!("{}:{:02}", total / 60, total % 60)
+        }
+        None => "\u{2014}".to_owned(),
     }
 }
 
-async fn load_clips(repo: Arc<dyn SoundboardClipsRepo>) -> Result<Vec<StoredClip>, String> {
-    repo.list().await.map_err(|e| e.to_string())
-}
-
-async fn save_clip(repo: Arc<dyn SoundboardClipsRepo>, clip: StoredClip) -> Result<(), String> {
-    repo.save(&clip).await.map_err(|e| e.to_string())
-}
-
-async fn delete_clip(repo: Arc<dyn SoundboardClipsRepo>, id: ClipId) -> Result<(), String> {
-    repo.delete(id).await.map(|_| ()).map_err(|e| e.to_string())
-}
-
-async fn play_clip(player: Arc<SoundboardPlayer>, id: ClipId) -> Result<(), String> {
-    player.play(id, None).await.map_err(|e| e.to_string())
+fn humanize_bytes(bytes: u64) -> String {
+    let mb = bytes as f64 / (1024.0 * 1024.0);
+    if mb >= 0.1 {
+        format!("{mb:.1} MB")
+    } else {
+        format!("{:.0} KB", bytes as f64 / 1024.0)
+    }
 }

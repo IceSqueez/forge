@@ -1244,6 +1244,37 @@ soundboard_removed_feedback = Removed "{ $name }".
 soundboard_saved_feedback = Saved "{ $name }". Playback routing is wired via the runtime soon.
 soundboard_modal_kbd_hint = Enter to save · Esc to cancel
 
+## Soundboard - redesigned screen
+
+soundboard_search_placeholder = Search sounds…
+soundboard_header_summary = { $device } Output · { $count } sounds
+soundboard_hero_title = Soundboard
+soundboard_hero_blurb = Trigger sound clips from pads, hotkeys, or actions. Routed to a virtual output OBS can capture.
+soundboard_hero_enabled = Enabled
+soundboard_hero_disabled = Disabled
+soundboard_category_all = All { $count }
+soundboard_category_memes = Memes
+soundboard_category_alerts = Alerts
+soundboard_category_music = Stingers
+soundboard_category_voice = Voice
+soundboard_stop_all = Stop all
+soundboard_pad_playing = playing…
+soundboard_no_matches = No sounds match your filter
+soundboard_library_section = Library
+soundboard_library_import = Import
+soundboard_add_sound = Add sound
+soundboard_modal_section_category = CATEGORY
+soundboard_modal_ready = Ready to add
+soundboard_modal_fill_required = Fill required fields
+soundboard_routing_section = Output routing
+soundboard_routing_device = DEVICE
+soundboard_routing_hint = Add this device as an Audio Input Capture in OBS.
+soundboard_routing_volume = MASTER VOLUME · { $pct }%
+soundboard_routing_headphones = Also play in headphones
+soundboard_footer_left = { $sounds } sounds · { $categories } categories · { $size }
+soundboard_output_ready = Output device ready
+soundboard_output_missing = Output device missing
+
 ## Queues - page header
 
 queues_breadcrumb_automation = Automation

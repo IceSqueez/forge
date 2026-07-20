@@ -260,8 +260,10 @@ impl AppShell {
             Screen::Soundboard => {
                 let player = handles.soundboard_player.clone();
                 let clips_repo = handles.backend.soundboard_clips_repo();
+                let settings_repo =
+                    Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| SoundboardView::new(player, clips_repo, rt_handle, cx))
+                cx.new(|cx| SoundboardView::new(player, clips_repo, settings_repo, rt_handle, cx))
                     .into()
             }
             Screen::Tts => {

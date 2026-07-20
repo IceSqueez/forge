@@ -1251,6 +1251,37 @@ soundboard_removed_feedback = Видалено "{ $name }".
 soundboard_saved_feedback = Збережено "{ $name }". Маршрутизацію відтворення буде під'єднано через рантайм незабаром.
 soundboard_modal_kbd_hint = Enter - зберегти · Esc - скасувати
 
+## Soundboard - redesigned screen
+
+soundboard_search_placeholder = Пошук звуків…
+soundboard_header_summary = Вихід { $device } · { $count } звуків
+soundboard_hero_title = Звукова панель
+soundboard_hero_blurb = Запускайте звукові кліпи з падів, гарячих клавіш або дій. Спрямовується на віртуальний вихід, який може захопити OBS.
+soundboard_hero_enabled = Увімкнено
+soundboard_hero_disabled = Вимкнено
+soundboard_category_all = Усі { $count }
+soundboard_category_memes = Меми
+soundboard_category_alerts = Сповіщення
+soundboard_category_music = Стингери
+soundboard_category_voice = Голос
+soundboard_stop_all = Зупинити все
+soundboard_pad_playing = грає…
+soundboard_no_matches = Немає звуків за фільтром
+soundboard_library_section = Бібліотека
+soundboard_library_import = Імпорт
+soundboard_add_sound = Додати звук
+soundboard_modal_section_category = КАТЕГОРІЯ
+soundboard_modal_ready = Готово до додавання
+soundboard_modal_fill_required = Заповніть обовʼязкові поля
+soundboard_routing_section = Маршрутизація виходу
+soundboard_routing_device = ПРИСТРІЙ
+soundboard_routing_hint = Додайте цей пристрій як Audio Input Capture в OBS.
+soundboard_routing_volume = ГОЛОСНІСТЬ · { $pct }%
+soundboard_routing_headphones = Також відтворювати в навушниках
+soundboard_footer_left = { $sounds } звуків · { $categories } категорій · { $size }
+soundboard_output_ready = Пристрій виходу готовий
+soundboard_output_missing = Пристрій виходу відсутній
+
 ## Черги - заголовок сторінки
 
 queues_breadcrumb_automation = Автоматизація

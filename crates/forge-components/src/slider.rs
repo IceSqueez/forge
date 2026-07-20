@@ -74,6 +74,14 @@ struct SliderDrag {
 }
 
 impl Slider {
+    /// Recolors the filled portion and thumb; rail stays `surface_overlay`.
+    #[must_use]
+    pub fn accent(mut self, fill: Rgba) -> Self {
+        self.fill = fill;
+        self.thumb = fill;
+        self
+    }
+
     /// Makes the slider draggable; without it the slider is a static read-only bar. The
     /// handler gets each new (already-clamped) value as the drag moves.
     #[must_use]

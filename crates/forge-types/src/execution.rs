@@ -33,17 +33,23 @@ pub struct SubActionTelemetry {
 }
 
 pub fn variant_preview(value: &Variant) -> String {
+    const MAX_CHARS: usize = 800;
     let rendered = match value {
-        Variant::Array(_) | Variant::Object(_) => value.to_json().to_string(),
+        Variant::Array(_) | Variant::Object(_) => {
+            serde_json::to_string_pretty(&value.to_plain_json())
+                .unwrap_or_else(|_| value.to_string())
+        }
         scalar => scalar.to_string(),
     };
-    const MAX_CHARS: usize = 120;
     if rendered.chars().count() <= MAX_CHARS {
         return rendered;
     }
-    let mut clipped: String = rendered.chars().take(MAX_CHARS).collect();
-    clipped.push_str("...");
-    clipped
+    let clipped: String = rendered.chars().take(MAX_CHARS).collect();
+    let clipped = match clipped.rfind('\n') {
+        Some(pos) => &clipped[..pos],
+        None => clipped.as_str(),
+    };
+    format!("{clipped}\n...")
 }
 
 impl SubActionTelemetry {

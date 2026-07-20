@@ -365,6 +365,29 @@ impl Variant {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
+
+    pub fn to_plain_json(&self) -> serde_json::Value {
+        match self {
+            Variant::Int(n) => serde_json::Value::from(*n),
+            Variant::Float(f) => serde_json::Number::from_f64(*f)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            Variant::Bool(b) => serde_json::Value::Bool(*b),
+            Variant::String(s) => serde_json::Value::String(s.clone()),
+            Variant::Datetime(dt) => serde_json::Value::String(
+                dt.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_else(|_| dt.to_string()),
+            ),
+            Variant::Array(items) => {
+                serde_json::Value::Array(items.iter().map(Variant::to_plain_json).collect())
+            }
+            Variant::Object(map) => serde_json::Value::Object(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), v.to_plain_json()))
+                    .collect(),
+            ),
+        }
+    }
 }
 
 fn from_json_inner(value: serde_json::Value, depth: u8) -> Result<Variant, VariantError> {

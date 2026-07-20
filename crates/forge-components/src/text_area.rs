@@ -2,10 +2,11 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
-    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, ScrollWheelEvent, SharedString, Style, TextAlign, TextRun, UTF16Selection,
-    UnderlineStyle, Window, WrappedLine, actions, div, fill, point, prelude::*, px, relative, size,
+    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId,
+    HighlightStyle, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, ScrollWheelEvent, SharedString, Style, StyledText,
+    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill,
+    point, prelude::*, px, relative, size,
 };
 
 use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, with_alpha};
@@ -820,7 +821,7 @@ fn json_literal_at(chars: &[(usize, char)], i: usize) -> Option<usize> {
 /// Byte-length foreground runs covering the whole buffer: object keys, string
 /// values, numbers, and `true`/`false`/`null` literals each get their design hue;
 /// everything else (punctuation, whitespace) stays the primary text color.
-fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
+pub fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let n = chars.len();
     let total = text.len();
@@ -879,6 +880,20 @@ fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
         }
     }
     runs
+}
+
+pub fn json_highlighted(text: impl Into<SharedString>, palette: &ForgePalette) -> StyledText {
+    let text = text.into();
+    let mut offset = 0usize;
+    let highlights: Vec<(Range<usize>, HighlightStyle)> = json_syntax_runs(&text, palette)
+        .into_iter()
+        .map(|(len, color)| {
+            let start = offset;
+            offset += len;
+            (start..offset, HighlightStyle::from(color))
+        })
+        .collect();
+    StyledText::new(text).with_highlights(highlights)
 }
 
 fn is_rhai_keyword(word: &str) -> bool {

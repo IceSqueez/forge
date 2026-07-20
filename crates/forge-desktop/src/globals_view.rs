@@ -1498,7 +1498,7 @@ impl GlobalsView {
         let (count_key, count) = inspect_count(&g.value);
         let subtitle = tr!(count_key, kind = kind_word(kind), count = count as i64);
 
-        let json = serde_json::to_string_pretty(&variant_to_json(&g.value)).unwrap_or_default();
+        let json = serde_json::to_string_pretty(&g.value.to_plain_json()).unwrap_or_default();
         let mut listing = div().flex().flex_col();
         for (i, line) in json.lines().enumerate() {
             let mut code_line = div().flex_1().flex();
@@ -1818,7 +1818,7 @@ fn single_line_seed(value: &Variant) -> Option<String> {
 fn json_seed(value: &Variant) -> Option<String> {
     match value {
         Variant::Array(_) | Variant::Object(_) => {
-            serde_json::to_string_pretty(&variant_to_json(value)).ok()
+            serde_json::to_string_pretty(&value.to_plain_json()).ok()
         }
         _ => None,
     }
@@ -1839,27 +1839,4 @@ fn parse_json_variant(
         return Err(reason);
     }
     Variant::from_json(value).map_err(|_| reason)
-}
-
-fn variant_to_json(value: &Variant) -> serde_json::Value {
-    match value {
-        Variant::Int(n) => serde_json::Value::from(*n),
-        Variant::Float(f) => serde_json::Number::from_f64(*f)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        Variant::Bool(b) => serde_json::Value::Bool(*b),
-        Variant::String(s) => serde_json::Value::String(s.clone()),
-        Variant::Datetime(dt) => serde_json::Value::String(
-            dt.format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_default(),
-        ),
-        Variant::Array(items) => {
-            serde_json::Value::Array(items.iter().map(variant_to_json).collect())
-        }
-        Variant::Object(map) => serde_json::Value::Object(
-            map.iter()
-                .map(|(k, v)| (k.clone(), variant_to_json(v)))
-                .collect(),
-        ),
-    }
 }

@@ -74,7 +74,7 @@ pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use sparkline::{Sparkline, sparkline};
 pub use status::{StatusVariant, badge, connection_status_badge, status_dot};
-pub use text_area::{TextArea, bind_text_area_keys};
+pub use text_area::{TextArea, bind_text_area_keys, json_highlighted, json_syntax_runs};
 pub use text_input::{
     InputEvent, TextInput, bind_text_input_keys, search_input, search_input_on_surface,
 };

@@ -10,8 +10,8 @@ use forge_components::{
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
     GridPickerSubtitle, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition,
     Radius, Spacing, TextInput, anchored_popover, context_menu, ghost_button_with_icon, icon,
-    menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius, row_card,
-    secondary_button, spacing, status_dot, toggle, tr,
+    json_highlighted, menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius,
+    row_card, secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_registry::{
     CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
@@ -20,7 +20,7 @@ use forge_registry::{
 use forge_types::{
     ExecutionContext, ExecutionMetadata, ExecutionOutcome, PlatformScope, SubActionConfig,
     SubActionOutcome, SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId,
-    Variant, variant_preview,
+    Variant,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -2696,18 +2696,21 @@ impl ScreenActionsView {
             .child(header);
 
         if !ctx.arg_stack_snapshot.is_empty() {
-            let joined = ctx
-                .arg_stack_snapshot
-                .iter()
-                .map(|(name, value)| format!("{name} = {}", variant_preview(value)))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let mut object = serde_json::Map::new();
+            for (name, value) in &ctx.arg_stack_snapshot {
+                object.insert(name.clone(), value.to_plain_json());
+            }
+            let json = serde_json::to_string_pretty(&serde_json::Value::Object(object))
+                .unwrap_or_default();
             section = section.child(
                 div()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .pl(spacing(Spacing::Xs, Density::Cozy))
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(joined),
+                    .child(json_highlighted(json, palette)),
             );
         }
 
@@ -2795,57 +2798,24 @@ impl ScreenActionsView {
         }
         row = row.child(line);
 
-        let io_indent = spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy);
-
-        if !step.args_in.is_empty() {
-            let joined = step
-                .args_in
-                .iter()
-                .map(|(name, value)| format!("{name} = {value}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            row = row.child(
-                div()
-                    .pl(io_indent)
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_muted)
-                    .child(format!(
-                        "{} {joined}",
-                        tr!("action_editor_run_history_step_args_in")
-                    )),
-            );
+        for (name, value) in &step.args_in {
+            row = row.child(self.render_io_var(
+                tr!("action_editor_run_history_step_args_in"),
+                name,
+                value,
+                palette.text_muted,
+                palette,
+            ));
         }
 
-        if !step.produced.is_empty() {
-            let mut produced = div()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
-                .pl(io_indent)
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .child(
-                    div()
-                        .text_color(palette.text_muted)
-                        .child(tr!("action_editor_run_history_step_produced")),
-                );
-            for (name, value) in &step.produced {
-                produced = produced.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .child(div().text_color(palette.warning).child(name.clone()))
-                        .child(div().text_color(palette.text_muted).child(" = "))
-                        .child(
-                            div()
-                                .text_color(palette.text_secondary)
-                                .child(value.clone()),
-                        ),
-                );
-            }
-            row = row.child(produced);
+        for (name, value) in &step.produced {
+            row = row.child(self.render_io_var(
+                tr!("action_editor_run_history_step_produced"),
+                name,
+                value,
+                palette.warning,
+                palette,
+            ));
         }
 
         if let Some(text) = message {
@@ -2859,6 +2829,81 @@ impl ScreenActionsView {
             );
         }
         row.into_any_element()
+    }
+
+    fn render_io_var(
+        &self,
+        tag: impl Into<SharedString>,
+        name: &str,
+        value: &str,
+        name_color: Rgba,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let io_indent = spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy);
+        let multiline = value.contains('\n')
+            || matches!(
+                serde_json::from_str::<serde_json::Value>(value),
+                Ok(serde_json::Value::Array(_) | serde_json::Value::Object(_))
+            );
+
+        let mut head = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(tag.into()),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(name_color)
+                    .child(name.to_owned()),
+            );
+
+        if !multiline {
+            head = head.child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_secondary)
+                    .child(value.to_owned()),
+            );
+            return div()
+                .pl(io_indent)
+                .min_w(px(0.))
+                .overflow_hidden()
+                .child(head)
+                .into_any_element();
+        }
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .pl(io_indent)
+            .min_w(px(0.))
+            .overflow_hidden()
+            .child(head)
+            .child(
+                div()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .pl(spacing(Spacing::Xs, Density::Cozy))
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_secondary)
+                    .child(json_highlighted(value.to_owned(), palette)),
+            )
+            .into_any_element()
     }
 
     fn render_stats_row(

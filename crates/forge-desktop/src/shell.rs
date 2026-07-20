@@ -263,8 +263,11 @@ impl AppShell {
                 let settings_repo =
                     Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| SoundboardView::new(player, clips_repo, settings_repo, rt_handle, cx))
-                    .into()
+                let bus = Arc::clone(&handles.bus);
+                cx.new(|cx| {
+                    SoundboardView::new(player, clips_repo, settings_repo, rt_handle, bus, cx)
+                })
+                .into()
             }
             Screen::Tts => {
                 let speak_state = topics.speak.clone();

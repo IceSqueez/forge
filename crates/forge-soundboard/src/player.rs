@@ -132,9 +132,15 @@ impl SoundboardPlayer {
             let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
             guard.remove(&clip_id).unwrap_or_default()
         };
+        if tokens.is_empty() {
+            return;
+        }
         for (_id, token) in &tokens {
             token.stop();
         }
+        self.event_sink.emit(AudioEvent::PlaybackFinished {
+            clip_id: Some(clip_id),
+        });
     }
 
     pub fn stop_all(&self) {
@@ -142,10 +148,13 @@ impl SoundboardPlayer {
             let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
             std::mem::take(&mut *guard)
         };
-        for tokens in drained.values() {
+        for (clip_id, tokens) in &drained {
             for (_id, token) in tokens {
                 token.stop();
             }
+            self.event_sink.emit(AudioEvent::PlaybackFinished {
+                clip_id: Some(*clip_id),
+            });
         }
     }
 
@@ -248,6 +257,8 @@ impl SoundboardPlayer {
         self.event_sink.emit(AudioEvent::PlaybackStarted {
             clip_id: Some(clip_id),
             device: device_label,
+            duration_secs: Some(duration_ms as f64 / 1000.0),
+            looped: clip.loop_playback,
         });
 
         if clip.loop_playback {
@@ -258,9 +269,6 @@ impl SoundboardPlayer {
         match play_target(&sinks, buffer).await {
             Ok(handle) => {
                 self.register(clip_id, handle, duration_ms);
-                self.event_sink.emit(AudioEvent::PlaybackFinished {
-                    clip_id: Some(clip_id),
-                });
                 Ok(())
             }
             Err(e) => {
@@ -301,7 +309,10 @@ impl SoundboardPlayer {
     /// Stores the stop token and schedules its removal once the clip's own
     /// duration (plus tail) has elapsed, so the registry self-drains even when no
     /// explicit stop arrives. An earlier `stop`/`stop_all` removes it first; the
-    /// scheduled cleanup then finds nothing and is inert.
+    /// scheduled cleanup then finds nothing and is inert - in that case `stop`/
+    /// `stop_all` already emitted `PlaybackFinished` for this clip, so this task
+    /// only emits it when it is the one that actually found and removed its own
+    /// `play_id` (natural completion, not a pre-empted stop).
     fn register(&self, clip_id: ClipId, handle: PlaybackHandle, duration_ms: u64) {
         let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
         {
@@ -313,14 +324,28 @@ impl SoundboardPlayer {
         }
 
         let active = Arc::clone(&self.active);
+        let event_sink = Arc::clone(&self.event_sink);
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(duration_ms + PLAYBACK_TAIL_MS)).await;
-            let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(plays) = guard.get_mut(&clip_id) {
-                plays.retain(|(id, _)| *id != play_id);
-                if plays.is_empty() {
-                    guard.remove(&clip_id);
+            let completed_naturally = {
+                let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
+                match guard.get_mut(&clip_id) {
+                    Some(plays) => {
+                        let before = plays.len();
+                        plays.retain(|(id, _)| *id != play_id);
+                        let removed = plays.len() < before;
+                        if plays.is_empty() {
+                            guard.remove(&clip_id);
+                        }
+                        removed
+                    }
+                    None => false,
                 }
+            };
+            if completed_naturally {
+                event_sink.emit(AudioEvent::PlaybackFinished {
+                    clip_id: Some(clip_id),
+                });
             }
         });
     }
@@ -718,6 +743,14 @@ mod tests {
         player.play(clip_id, None).await.unwrap();
 
         assert_eq!(*play_count.lock().unwrap(), 1, "sink must be called once");
+
+        // PlaybackFinished now fires once the clip's own decoded duration has
+        // actually elapsed (natural-completion cleanup task), not synchronously
+        // after `play` returns - poll with a bound instead of asserting inline.
+        let deadline = std::time::Instant::now() + Duration::from_millis(2_000);
+        while events.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         let recorded = events.lock().unwrap();
         assert_eq!(recorded.len(), 2);

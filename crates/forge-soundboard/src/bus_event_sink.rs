@@ -18,12 +18,19 @@ impl BusAudioEventSink {
 impl AudioEventSink for BusAudioEventSink {
     fn emit(&self, event: AudioEvent) {
         let bus_event = match event {
-            AudioEvent::PlaybackStarted { clip_id, device } => Event::new(
+            AudioEvent::PlaybackStarted {
+                clip_id,
+                device,
+                duration_secs,
+                looped,
+            } => Event::new(
                 EventSource::Audio,
                 "playback.started",
                 json!({
                     "clip_id": clip_id.map(|id| id.to_string()),
                     "device": device,
+                    "duration_secs": duration_secs,
+                    "looped": looped,
                 }),
             ),
             AudioEvent::PlaybackFinished { clip_id } => Event::new(
@@ -66,6 +73,8 @@ mod tests {
         sink.emit(AudioEvent::PlaybackStarted {
             clip_id: Some(clip_id),
             device: "default".to_string(),
+            duration_secs: Some(1.5),
+            looped: false,
         });
 
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())

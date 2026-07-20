@@ -247,6 +247,8 @@ fn run_playback(
     event_sink.emit(AudioEvent::PlaybackStarted {
         clip_id: None,
         device: device_name,
+        duration_secs: Some(duration_ms as f64 / 1000.0),
+        looped: false,
     });
 
     let total_ms = duration_ms + 50;

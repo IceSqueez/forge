@@ -5,6 +5,8 @@ pub enum AudioEvent {
     PlaybackStarted {
         clip_id: Option<ClipId>,
         device: String,
+        duration_secs: Option<f64>,
+        looped: bool,
     },
     PlaybackFinished {
         clip_id: Option<ClipId>,

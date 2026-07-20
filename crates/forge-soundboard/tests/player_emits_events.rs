@@ -149,6 +149,14 @@ async fn play_emits_playback_started_then_finished_in_order() {
 
     player.play(clip_id, None).await.unwrap();
 
+    // PlaybackFinished now fires once the clip's own decoded duration has
+    // actually elapsed (natural-completion cleanup task), not synchronously
+    // after `play` returns - poll with a bound instead of asserting inline.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2_000);
+    while events.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
     let recorded = events.lock().unwrap();
     assert_eq!(recorded.len(), 2, "exactly 2 events must be emitted");
 

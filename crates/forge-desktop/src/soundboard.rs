@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
@@ -10,6 +9,8 @@ use forge_components::{
     breadcrumb, chip, ghost_button_with_icon, icon, modal, overlay, primary_button, radius,
     search_input, secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
+use forge_events::{Event, EventSource, EventsError};
+use forge_runtime::EventBus;
 use forge_soundboard::builtin_library::{
     BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
 };
@@ -20,8 +21,8 @@ use forge_storage::{
 };
 use forge_types::{ClipId, OutputDevice};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
-    prelude::*, px, relative,
+    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Task,
+    Window, div, prelude::*, px, relative,
 };
 use time::OffsetDateTime;
 
@@ -113,6 +114,7 @@ pub struct SoundboardView {
     clips_repo: Arc<dyn SoundboardClipsRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
+    _event_bridge: Task<()>,
 }
 
 impl SoundboardView {
@@ -121,12 +123,32 @@ impl SoundboardView {
         clips_repo: Arc<dyn SoundboardClipsRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,
+        bus: Arc<EventBus>,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
         let search = cx.new(|cx| search_input(tr!("soundboard_search_placeholder"), palette, cx));
         let search_sub = cx.subscribe(&search, Self::on_search_event);
         let settings = (*player.settings_handle().load()).clone();
+
+        let subscription = bus.subscribe();
+        let event_bridge = cx.spawn(async move |this, cx| {
+            let mut sub = subscription;
+            loop {
+                match sub.recv().await {
+                    Ok(event) => {
+                        if this
+                            .update(cx, |this, cx| this.on_bus_event(&event, cx))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(EventsError::LaggingReceiver) => continue,
+                    Err(_) => break,
+                }
+            }
+        });
 
         let view = Self {
             clips: Vec::new(),
@@ -147,10 +169,42 @@ impl SoundboardView {
             clips_repo,
             settings_repo,
             rt_handle,
+            _event_bridge: event_bridge,
         };
         view.reload(cx);
         view.reload_devices(cx);
         view
+    }
+
+    /// Correlates `AudioEvent`s forwarded over the bus back to this view's pad
+    /// state, so plays triggered outside this screen (hotkey, sub-action, chat
+    /// command) also reflect in the grid, and clearing a pad tracks the clip's
+    /// real end (stop/skip/completion) instead of a client-side duration guess.
+    fn on_bus_event(&mut self, event: &Event, cx: &mut Context<Self>) {
+        if event.source != EventSource::Audio {
+            return;
+        }
+        let Some(clip_id) = event
+            .payload
+            .get("clip_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| {
+                serde_json::from_value::<ClipId>(serde_json::Value::String(s.to_string())).ok()
+            })
+        else {
+            return;
+        };
+        match event.kind.as_str() {
+            "playback.started" => {
+                if self.playing.insert(clip_id) {
+                    cx.notify();
+                }
+            }
+            "playback.finished" | "playback.failed" => {
+                self.clear_playing(clip_id, cx);
+            }
+            _ => {}
+        }
     }
 
     fn on_search_event(
@@ -283,7 +337,6 @@ impl SoundboardView {
         let Some(clip) = self.clips.iter().find(|c| c.id == id) else {
             return;
         };
-        let loop_playback = clip.loop_playback;
         let known = clip.duration_secs;
         self.error = None;
         self.playing.insert(id);
@@ -305,24 +358,13 @@ impl SoundboardView {
                 }
                 Err(_) => return,
             }
-            if loop_playback {
-                return;
-            }
-            let secs = match known {
-                Some(d) => Some(d),
-                None => {
-                    let (tx2, rx2) = tokio::sync::oneshot::channel();
-                    rt.spawn(async move {
-                        let _ = tx2.send(player_dur.ensure_clip_duration(id).await.ok().flatten());
-                    });
-                    rx2.await.ok().flatten()
-                }
-            };
-            if let Some(d) = secs {
-                cx.background_executor()
-                    .timer(Duration::from_secs_f32(d.max(0.1)))
-                    .await;
-                let _ = this.update(cx, |this, cx| this.clear_playing(id, cx));
+            // Clearing `playing` now happens via the bus bridge (`on_bus_event`)
+            // once the real `playback.finished`/`playback.failed` event arrives;
+            // this backfill only persists the probed duration for the idle label.
+            if known.is_none() {
+                rt.spawn(async move {
+                    let _ = player_dur.ensure_clip_duration(id).await;
+                });
             }
         })
         .detach();
@@ -1687,6 +1729,13 @@ fn glyph_for_name(name: &str) -> Option<Icon> {
         "user-plus" => Icon::UserPlus,
         "mood-crazy-happy" => Icon::MoodCrazyHappy,
         "mood-sad" => Icon::MoodSmile,
+        "alert-triangle" => Icon::AlertTriangle,
+        "player-skip-forward" => Icon::PlayerSkipForward,
+        "bolt" => Icon::Bolt,
+        "volume" => Icon::Volume,
+        "eye" => Icon::Eye,
+        "x" => Icon::X,
+        "message-circle" => Icon::MessageCircle,
         _ => return None,
     })
 }

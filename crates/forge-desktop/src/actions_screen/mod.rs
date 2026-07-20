@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, RwLock};
 
+mod analyzer;
 mod branch;
 mod editor;
 mod list;
@@ -53,6 +54,7 @@ const PILL_RADIUS: Pixels = px(8.0);
 const PILL_DOT: Pixels = px(5.0);
 const CARD_GLYPH: Pixels = px(13.0);
 const TRIGGER_DOT: Pixels = px(7.0);
+const STEP_HEALTH_DOT: Pixels = px(7.0);
 const TRIGGER_GLYPH: Pixels = px(13.0);
 const UNLINK_GLYPH: Pixels = px(13.0);
 const STEP_CIRCLE: Pixels = px(22.0);
@@ -200,6 +202,9 @@ pub struct ScreenActionsView {
     nav_path: Vec<nav::NavFrame>,
     /// Keyed by `(step_index, case_index)` within the current chain.
     case_fields: BTreeMap<(usize, usize), CaseField>,
+    /// Per top-level step variable-availability + last-run health, index-aligned
+    /// to `detail.action.sub_actions`.
+    step_health: Vec<analyzer::StepHealth>,
     _search_sub: Subscription,
 }
 
@@ -272,6 +277,7 @@ impl ScreenActionsView {
             datetime_picker: None,
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
+            step_health: Vec::new(),
             _search_sub: search_sub,
         };
         view.reload(cx);
@@ -467,7 +473,21 @@ impl ScreenActionsView {
         }
         self.detail = Some(detail);
         self.sync_case_fields(cx);
+        self.recompute_step_health();
         cx.notify();
+    }
+
+    fn recompute_step_health(&mut self) {
+        self.step_health = match &self.detail {
+            Some(detail) => analyzer::analyze(
+                &detail.action,
+                &detail.trigger_instances,
+                &detail.last_step_outcomes,
+                &self.sub_action_registry,
+                &self.trigger_registry,
+            ),
+            None => Vec::new(),
+        };
     }
 
     fn apply_telemetry(

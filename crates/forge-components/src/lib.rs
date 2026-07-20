@@ -84,7 +84,10 @@ pub use tokens::{
     BORDER_ACCENT, BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ModalSize, Radius, Spacing, modal_width, radius, spacing,
 };
-pub use tooltip::{Tooltip, tooltip, tooltip_builder, tooltip_surface};
+pub use tooltip::{
+    Tooltip, TooltipLines, tooltip, tooltip_builder, tooltip_lines, tooltip_lines_builder,
+    tooltip_surface,
+};
 pub use type_to_confirm::{
     BulletItem, BulletKind, TypeToConfirm, TypeToConfirmEvent, type_to_confirm,
 };

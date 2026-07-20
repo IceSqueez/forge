@@ -86,7 +86,7 @@ pub(super) fn encode_chain(steps: &[SubActionStep]) -> Variant {
     Variant::Array(items)
 }
 
-fn chain_value_at<'a>(
+pub(super) fn chain_value_at<'a>(
     config: &'a SubActionConfig,
     chain_key: &str,
     case_index: Option<usize>,

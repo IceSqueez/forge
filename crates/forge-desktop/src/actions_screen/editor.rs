@@ -11,7 +11,7 @@ use forge_components::{
     GridPickerSubtitle, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition,
     Radius, Spacing, TextInput, anchored_popover, context_menu, ghost_button_with_icon, icon,
     json_highlighted, menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius,
-    row_card, secondary_button, spacing, status_dot, toggle, tr,
+    row_card, secondary_button, spacing, status_dot, toggle, tooltip_lines_builder, tr,
 };
 use forge_registry::{
     CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
@@ -29,6 +29,30 @@ use gpui::{
 use std::collections::HashMap;
 
 const EXPORT_CANCELLED: &str = "export cancelled";
+
+fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
+    let text = match finding {
+        analyzer::Finding::UnknownVariable(name) => {
+            tr!("action_editor_health_unknown_var", name = name.clone())
+        }
+        analyzer::Finding::ProducedLater(name) => {
+            tr!("action_editor_health_produced_later", name = name.clone())
+        }
+        analyzer::Finding::IsolatedSibling(name) => {
+            tr!("action_editor_health_isolated_sibling", name = name.clone())
+        }
+        analyzer::Finding::SomeTriggersOnly(name) => {
+            tr!("action_editor_health_some_triggers", name = name.clone())
+        }
+        analyzer::Finding::LastRunFailed(message) => {
+            tr!(
+                "action_editor_health_last_run_failed",
+                message = message.clone()
+            )
+        }
+    };
+    SharedString::from(text)
+}
 
 fn sanitize_action_stem(name: &str) -> String {
     let mut out = String::new();
@@ -3316,6 +3340,35 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
+    fn render_health_dot(
+        &self,
+        health: &analyzer::StepHealth,
+        i: usize,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let severity = health.severity();
+        let color = match severity {
+            analyzer::HealthSeverity::Green => palette.success,
+            analyzer::HealthSeverity::Yellow => palette.warning,
+            analyzer::HealthSeverity::Red => palette.random,
+        };
+        let dot = status_dot(color, STEP_HEALTH_DOT);
+        if health.findings.is_empty() {
+            return div().flex_none().child(dot).into_any_element();
+        }
+        let lines: Vec<SharedString> = health
+            .findings
+            .iter()
+            .map(analyzer_finding_message)
+            .collect();
+        div()
+            .id(SharedString::from(format!("actions-step-health-{i}")))
+            .flex_none()
+            .child(dot)
+            .tooltip(tooltip_lines_builder(lines, palette))
+            .into_any_element()
+    }
+
     fn render_step_block(
         &self,
         step: &SubActionStep,
@@ -3374,11 +3427,19 @@ impl ScreenActionsView {
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(title);
+        let health_dot = if depth == 0 {
+            self.step_health
+                .get(i)
+                .map(|health| self.render_health_dot(health, i, palette))
+        } else {
+            None
+        };
         let title_el = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(title_text);
+            .child(title_text)
+            .children(health_dot);
 
         let enabled = step.enabled;
         let mut card = row_card(title_el, palette)

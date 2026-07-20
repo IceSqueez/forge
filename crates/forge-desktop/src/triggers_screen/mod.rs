@@ -159,18 +159,14 @@ struct TriggerDetail {
 
 pub(crate) fn cooldown_suffix(global_cooldown_secs: u32, user_cooldown_secs: u32) -> String {
     let mut out = String::new();
-    if global_cooldown_secs > 0 {
-        out.push_str(&tr!(
-            "triggers_cooldown_global_suffix",
-            secs = global_cooldown_secs as i64
-        ));
-    }
-    if user_cooldown_secs > 0 {
-        out.push_str(&tr!(
-            "triggers_cooldown_user_suffix",
-            secs = user_cooldown_secs as i64
-        ));
-    }
+    out.push_str(&tr!(
+        "triggers_cooldown_global_suffix",
+        secs = global_cooldown_secs as i64
+    ));
+    out.push_str(&tr!(
+        "triggers_cooldown_user_suffix",
+        secs = user_cooldown_secs as i64
+    ));
     out
 }
 

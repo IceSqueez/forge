@@ -47,6 +47,7 @@ impl SubActionRunner for SpeakWithEngineRunner {
         let mut cfg = SubActionConfig::new();
         cfg.insert("text".to_owned(), Variant::String(String::new()));
         cfg.insert("engine_id".to_owned(), Variant::String("piper".to_owned()));
+        cfg.insert("wait_for_completion".to_owned(), Variant::Bool(true));
         cfg
     }
 
@@ -60,6 +61,10 @@ impl SubActionRunner for SpeakWithEngineRunner {
                 key: "engine_id",
                 label: "Engine ID",
                 options_key: "tts.engine_ids",
+            },
+            FormField::Toggle {
+                key: "wait_for_completion",
+                label: "Wait for completion",
             },
         ]
     }
@@ -101,7 +106,18 @@ impl SubActionRunner for SpeakWithEngineRunner {
                 .unwrap_or_default(),
         );
 
-        let outcome = match self.speak.speak_with_engine(text, engine_id).await {
+        let wait_for_completion = config
+            .get("wait_for_completion")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let dispatch_result = if wait_for_completion {
+            self.speak
+                .speak_with_engine_and_wait(text, engine_id, ctx.cancel.clone())
+                .await
+        } else {
+            self.speak.speak_with_engine(text, engine_id).await
+        };
+        let outcome = match dispatch_result {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };

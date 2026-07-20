@@ -36,7 +36,11 @@ impl CpalSink {
         }
     }
 
-    fn spawn_playback(&self, buffer: PcmBuffer, stop: Arc<AtomicBool>) {
+    fn spawn_playback(
+        &self,
+        buffer: PcmBuffer,
+        stop: Arc<AtomicBool>,
+    ) -> tokio::task::JoinHandle<()> {
         let device_id_str = self.device_id.0.clone();
         let event_sink = Arc::clone(&self.event_sink);
         let target_sr = self.target_sample_rate;
@@ -51,7 +55,7 @@ impl CpalSink {
                 event_sink,
                 stop,
             );
-        });
+        })
     }
 }
 
@@ -59,8 +63,9 @@ impl CpalSink {
 impl AudioSink for CpalSink {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
         let stop = Arc::new(AtomicBool::new(false));
-        self.spawn_playback(buffer, stop);
-        Ok(())
+        self.spawn_playback(buffer, stop)
+            .await
+            .map_err(|e| AudioError::JoinFailed(e.to_string()))
     }
 
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {

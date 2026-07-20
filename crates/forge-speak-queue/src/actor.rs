@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use forge_audio::PcmBuffer;
 use forge_events::{Event, EventPublisher, EventSource};
@@ -416,7 +417,25 @@ async fn handle_synth_result(
                 }),
             );
             let adjusted = apply_master_volume(pcm, config.master_volume);
-            match deps.audio_sink.play(adjusted).await {
+            let play_result = {
+                let mut ticker = tokio::time::interval(Duration::from_secs(1));
+                ticker.tick().await;
+                let mut play_fut = deps.audio_sink.play(adjusted);
+                let mut elapsed_secs = 0u32;
+                loop {
+                    tokio::select! {
+                        play_res = &mut play_fut => break play_res,
+                        _ = ticker.tick() => {
+                            elapsed_secs += 1;
+                            let _ = event_tx.send(SpeakEvent::Progress {
+                                request_id: result.request_id.clone(),
+                                elapsed_secs,
+                            });
+                        }
+                    }
+                }
+            };
+            match play_result {
                 Ok(()) => {
                     *last_successful = Some(result.request);
                     let _ = event_tx.send(SpeakEvent::Finished {

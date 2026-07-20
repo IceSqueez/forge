@@ -105,6 +105,7 @@ impl SubActionRunner for SpeakRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("text".to_owned(), Variant::String(String::new()));
+        cfg.insert("wait_for_completion".to_owned(), Variant::Bool(true));
         cfg
     }
 
@@ -122,6 +123,10 @@ impl SubActionRunner for SpeakRunner {
                     label: "Voice alias",
                     placeholder: "e.g. piper/en_US-amy-medium",
                 }),
+            },
+            FormField::Toggle {
+                key: "wait_for_completion",
+                label: "Wait for completion",
             },
         ]
     }
@@ -176,7 +181,15 @@ impl SubActionRunner for SpeakRunner {
         }
 
         let is_reward = matches!(origin, Some(SpeakOrigin::ChannelPoints));
-        let dispatch_result = if is_reward {
+        let wait_for_completion = config
+            .get("wait_for_completion")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let dispatch_result = if wait_for_completion {
+            self.speak
+                .speak_and_wait(text, voice_alias, is_reward, ctx.cancel.clone())
+                .await
+        } else if is_reward {
             self.speak.speak_reward_sourced(text, voice_alias).await
         } else {
             self.speak.speak(text, voice_alias).await

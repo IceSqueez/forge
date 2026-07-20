@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_registry::CancelSignal;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpeakDispatchError {
@@ -71,6 +72,31 @@ pub trait SpeakDispatcher: Send + Sync {
         voice_id_override: Option<String>,
     ) -> Result<(), SpeakDispatchError> {
         self.speak(text, voice_id_override).await
+    }
+
+    async fn speak_and_wait(
+        &self,
+        text: String,
+        voice_id_override: Option<String>,
+        is_reward: bool,
+        cancel: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let _ = cancel;
+        if is_reward {
+            self.speak_reward_sourced(text, voice_id_override).await
+        } else {
+            self.speak(text, voice_id_override).await
+        }
+    }
+
+    async fn speak_with_engine_and_wait(
+        &self,
+        text: String,
+        engine_id: String,
+        cancel: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let _ = cancel;
+        self.speak_with_engine(text, engine_id).await
     }
 
     /// Stop the active item; the queue then advances to the next.

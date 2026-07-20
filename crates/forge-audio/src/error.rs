@@ -28,4 +28,7 @@ pub enum AudioError {
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("playback task failed: {0}")]
+    JoinFailed(String),
 }

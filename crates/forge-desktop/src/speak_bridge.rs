@@ -1,11 +1,18 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use forge_registry::CancelSignal;
 use forge_runtime::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
 use forge_script::SpeakRequester;
-use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_speak_queue::{
+    Priority, RequestId, SpeakCommand, SpeakEvent, SpeakQueueHandle, SpeakRequest,
+};
 use forge_tts_core::{EngineId, VoiceId};
 use forge_voice::{AliasId, AliasState, VoiceAlias};
+
+const SPEAK_WAIT_HARD_CAP: Duration = Duration::from_secs(600);
+const SPEAK_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 pub struct SpeakBridge {
     handle: Arc<SpeakQueueHandle>,
@@ -24,9 +31,10 @@ impl SpeakBridge {
         engine_override: Option<EngineId>,
         voice_override: Option<VoiceId>,
         is_reward: bool,
-    ) -> Result<(), String> {
+    ) -> Result<RequestId, String> {
+        let request_id = RequestId::new();
         let request = SpeakRequest {
-            request_id: RequestId::new(),
+            request_id: request_id.clone(),
             viewer_id: "system".to_owned(),
             viewer_name: "Forge".to_owned(),
             text,
@@ -40,7 +48,8 @@ impl SpeakBridge {
         self.handle
             .send(SpeakCommand::Enqueue(request))
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(request_id)
     }
 
     async fn dispatch(&self, cmd: SpeakCommand) -> Result<(), SpeakDispatchError> {
@@ -48,6 +57,58 @@ impl SpeakBridge {
             .send(cmd)
             .await
             .map_err(|e| SpeakDispatchError::Dispatch(e.to_string()))
+    }
+}
+
+async fn wait_for_terminal(
+    events: &mut tokio::sync::broadcast::Receiver<SpeakEvent>,
+    request_id: &RequestId,
+    cancel: CancelSignal,
+) -> Result<(), SpeakDispatchError> {
+    let wait = async {
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(SPEAK_WAIT_POLL_INTERVAL) => {
+                    if cancel.is_cancelled() {
+                        return Err(SpeakDispatchError::Dispatch(
+                            "speak wait cancelled".to_owned(),
+                        ));
+                    }
+                }
+                event = events.recv() => {
+                    match event {
+                        Ok(SpeakEvent::Finished { request_id: rid }) if &rid == request_id => {
+                            return Ok(());
+                        }
+                        Ok(SpeakEvent::Failed { request_id: rid, error }) if &rid == request_id => {
+                            return Err(SpeakDispatchError::Dispatch(error));
+                        }
+                        Ok(SpeakEvent::Skipped { request_id: rid, reason }) if &rid == request_id => {
+                            return Err(SpeakDispatchError::Dispatch(format!(
+                                "speak skipped: {reason}"
+                            )));
+                        }
+                        Ok(SpeakEvent::Rejected { request_id: rid, reason }) if &rid == request_id => {
+                            return Err(SpeakDispatchError::Dispatch(format!(
+                                "speak rejected: {reason}"
+                            )));
+                        }
+                        Ok(_) => continue,
+                        Err(_) => {
+                            return Err(SpeakDispatchError::Dispatch(
+                                "speak event stream closed".to_owned(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    };
+    match tokio::time::timeout(SPEAK_WAIT_HARD_CAP, wait).await {
+        Ok(result) => result,
+        Err(_) => Err(SpeakDispatchError::Dispatch(
+            "speak wait timed out".to_owned(),
+        )),
     }
 }
 
@@ -60,6 +121,7 @@ impl SpeakDispatcher for SpeakBridge {
     ) -> Result<(), SpeakDispatchError> {
         self.enqueue(text, voice_id_override.map(AliasId), None, None, false)
             .await
+            .map(|_| ())
             .map_err(SpeakDispatchError::Dispatch)
     }
 
@@ -70,6 +132,7 @@ impl SpeakDispatcher for SpeakBridge {
     ) -> Result<(), SpeakDispatchError> {
         self.enqueue(text, voice_id_override.map(AliasId), None, None, true)
             .await
+            .map(|_| ())
             .map_err(SpeakDispatchError::Dispatch)
     }
 
@@ -80,6 +143,7 @@ impl SpeakDispatcher for SpeakBridge {
     ) -> Result<(), SpeakDispatchError> {
         self.enqueue(text, Some(AliasId(alias_id)), None, None, false)
             .await
+            .map(|_| ())
             .map_err(SpeakDispatchError::Dispatch)
     }
 
@@ -90,6 +154,7 @@ impl SpeakDispatcher for SpeakBridge {
     ) -> Result<(), SpeakDispatchError> {
         self.enqueue(text, None, Some(EngineId(engine_id)), None, false)
             .await
+            .map(|_| ())
             .map_err(SpeakDispatchError::Dispatch)
     }
 
@@ -100,7 +165,37 @@ impl SpeakDispatcher for SpeakBridge {
     ) -> Result<(), SpeakDispatchError> {
         self.enqueue(text, None, None, Some(VoiceId(voice_id)), false)
             .await
+            .map(|_| ())
             .map_err(SpeakDispatchError::Dispatch)
+    }
+
+    async fn speak_and_wait(
+        &self,
+        text: String,
+        voice_id_override: Option<String>,
+        is_reward: bool,
+        cancel: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let mut events = self.handle.subscribe();
+        let request_id = self
+            .enqueue(text, voice_id_override.map(AliasId), None, None, is_reward)
+            .await
+            .map_err(SpeakDispatchError::Dispatch)?;
+        wait_for_terminal(&mut events, &request_id, cancel).await
+    }
+
+    async fn speak_with_engine_and_wait(
+        &self,
+        text: String,
+        engine_id: String,
+        cancel: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let mut events = self.handle.subscribe();
+        let request_id = self
+            .enqueue(text, None, Some(EngineId(engine_id)), None, false)
+            .await
+            .map_err(SpeakDispatchError::Dispatch)?;
+        wait_for_terminal(&mut events, &request_id, cancel).await
     }
 
     async fn stop_current(&self) -> Result<(), SpeakDispatchError> {

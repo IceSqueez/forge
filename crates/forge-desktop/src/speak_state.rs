@@ -2,6 +2,7 @@ use forge_speak_queue::{RequestId, SpeakEvent};
 
 #[derive(Clone)]
 pub struct NowSpeaking {
+    pub request_id: RequestId,
     pub viewer_name: String,
     pub engine_voice: String,
     pub text: String,
@@ -88,6 +89,7 @@ impl SpeakState {
                 self.queue.retain(|item| item.request_id != request_id);
                 self.last_drop = None;
                 self.now_speaking = Some(NowSpeaking {
+                    request_id,
                     viewer_name,
                     engine_voice: if voice_id.0.is_empty() {
                         String::new()
@@ -100,6 +102,16 @@ impl SpeakState {
                 });
                 true
             }
+            SpeakEvent::Progress {
+                request_id,
+                elapsed_secs,
+            } => match self.now_speaking.as_mut() {
+                Some(ns) if ns.request_id == request_id => {
+                    ns.elapsed_secs = elapsed_secs;
+                    true
+                }
+                _ => false,
+            },
             SpeakEvent::Finished { .. } => {
                 self.now_speaking = None;
                 self.stats.spoken = self.stats.spoken.saturating_add(1);

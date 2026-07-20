@@ -120,6 +120,10 @@ pub enum SpeakEvent {
         /// `Started` ships this as 0, same as `voice_id`/`engine_id`).
         duration_secs: u32,
     },
+    Progress {
+        request_id: RequestId,
+        elapsed_secs: u32,
+    },
     Finished {
         request_id: RequestId,
     },

@@ -532,6 +532,7 @@ impl SoundboardView {
         let category = entry.category.to_owned();
         let loop_playback = entry.loop_playback;
         let repo = Arc::clone(&self.clips_repo);
+        let player = Arc::clone(&self.player);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let data_dir = forge_platform_core::paths::data_dir();
@@ -539,8 +540,9 @@ impl SoundboardView {
                 let _ = tx.send(Err("builtin audio file missing".to_owned()));
                 return;
             };
+            let clip_id = ClipId::new();
             let clip = StoredClip {
-                id: ClipId::new(),
+                id: clip_id,
                 name,
                 file_path: path,
                 volume: 1.0,
@@ -552,7 +554,11 @@ impl SoundboardView {
                 duration_secs: None,
                 builtin_id: Some(builtin_id),
             };
-            let _ = tx.send(repo.save(&clip).await.map_err(|e| e.to_string()));
+            let result = repo.save(&clip).await.map_err(|e| e.to_string());
+            if result.is_ok() {
+                let _ = player.ensure_clip_duration(clip_id).await;
+            }
+            let _ = tx.send(result);
         });
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(())) => {
@@ -752,6 +758,7 @@ impl SoundboardView {
             modal.error = None;
         }
         let repo = Arc::clone(&self.clips_repo);
+        let player = Arc::clone(&self.player);
         let (tx, rx) = tokio::sync::oneshot::channel();
         match edit_id {
             Some(id) => {
@@ -762,19 +769,26 @@ impl SoundboardView {
                             return Err(missing_msg);
                         };
                         clip.name = name;
-                        clip.file_path = file_path;
+                        if clip.file_path != file_path {
+                            clip.file_path = file_path;
+                            clip.duration_secs = None;
+                        }
                         clip.category = category;
                         repo.save(&clip).await.map_err(|e| e.to_string())
                     }
                     .await;
+                    if result.is_ok() {
+                        let _ = player.ensure_clip_duration(id).await;
+                    }
                     let _ = tx.send(result);
                 });
             }
             None => {
                 let hotkey = self.next_free_hotkey();
                 self.rt_handle.spawn(async move {
+                    let clip_id = ClipId::new();
                     let clip = StoredClip {
-                        id: ClipId::new(),
+                        id: clip_id,
                         name,
                         file_path,
                         volume: 1.0,
@@ -786,7 +800,11 @@ impl SoundboardView {
                         duration_secs: None,
                         builtin_id: None,
                     };
-                    let _ = tx.send(repo.save(&clip).await.map_err(|e| e.to_string()));
+                    let result = repo.save(&clip).await.map_err(|e| e.to_string());
+                    if result.is_ok() {
+                        let _ = player.ensure_clip_duration(clip_id).await;
+                    }
+                    let _ = tx.send(result);
                 });
             }
         }

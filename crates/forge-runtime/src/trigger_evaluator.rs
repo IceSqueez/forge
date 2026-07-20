@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use forge_events::{Event, EventSource};
 use forge_registry::{TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
-use forge_types::{ArgStack, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
+use forge_types::{ArgStack, EventId, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
 use serde_json::json;
 use tracing::warn;
 
@@ -32,7 +32,7 @@ pub struct TriggerEvaluator {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
-    cooldowns: HashMap<(TriggerInstanceId, Option<String>), Instant>,
+    cooldowns: HashMap<(TriggerInstanceId, Option<String>), (Instant, EventId)>,
 }
 
 impl TriggerEvaluator {
@@ -147,7 +147,7 @@ impl TriggerEvaluator {
                 }
 
                 let args = descriptor.build_arg_stack(&event);
-                if self.throttled(instance, &args) {
+                if self.throttled(instance, &args, event.id) {
                     continue;
                 }
 
@@ -179,7 +179,12 @@ impl TriggerEvaluator {
         }
     }
 
-    fn throttled(&mut self, instance: &TriggerInstance, args: &ArgStack) -> bool {
+    fn throttled(
+        &mut self,
+        instance: &TriggerInstance,
+        args: &ArgStack,
+        event_id: EventId,
+    ) -> bool {
         if instance.cooldown_secs == 0 {
             return false;
         }
@@ -194,13 +199,16 @@ impl TriggerEvaluator {
         };
 
         let window = Duration::from_secs(instance.cooldown_secs as u64);
-        if let Some(last) = self.cooldowns.get(&key)
-            && last.elapsed() < window
-        {
-            return true;
+        if let Some((last, stamped_event)) = self.cooldowns.get(&key) {
+            if *stamped_event == event_id {
+                return false;
+            }
+            if last.elapsed() < window {
+                return true;
+            }
         }
 
-        self.cooldowns.insert(key, Instant::now());
+        self.cooldowns.insert(key, (Instant::now(), event_id));
         false
     }
 }

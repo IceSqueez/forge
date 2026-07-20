@@ -89,7 +89,12 @@ const STEP_MODAL_W: Pixels = px(560.0);
 const STEP_TILE: Pixels = px(32.0);
 const STEP_TILE_GLYPH: Pixels = px(16.0);
 const GRID_COL_GAP: Pixels = px(12.0);
-const HISTORY_MAX_H: Pixels = px(360.0);
+const HISTORY_MODAL_W: Pixels = px(880.0);
+const HISTORY_BODY_H: Pixels = px(560.0);
+const HISTORY_RAIL_W: Pixels = px(220.0);
+const HISTORY_RAIL_ENTRY_GAP: Pixels = px(8.0);
+const HISTORY_RAIL_ENTRY_PAD_V: Pixels = px(6.0);
+const HISTORY_RAIL_ENTRY_PAD_H: Pixels = px(8.0);
 const HISTORY_ROW_DOT: Pixels = px(7.0);
 const HISTORY_STEP_DOT: Pixels = px(5.0);
 const HISTORY_STEP_NEST_INDENT: Pixels = px(14.0);
@@ -157,6 +162,7 @@ struct HistoryModal {
     action_id: ActionId,
     action_name: SharedString,
     runs: Option<Vec<ExecutionContext>>,
+    selected: usize,
 }
 
 pub struct ScreenActionsView {

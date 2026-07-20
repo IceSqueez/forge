@@ -2470,6 +2470,7 @@ impl ScreenActionsView {
             action_id: id,
             action_name: action_name.into(),
             runs: None,
+            selected: 0,
         });
         let service = Arc::clone(&self.actions_service);
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -2499,6 +2500,7 @@ impl ScreenActionsView {
             && modal.action_id == id
         {
             modal.runs = Some(runs);
+            modal.selected = 0;
             cx.notify();
         }
     }
@@ -2508,19 +2510,27 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    fn select_history_run(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(modal) = self.history_modal.as_mut() {
+            modal.selected = index;
+        }
+        cx.notify();
+    }
+
     pub(super) fn render_history_modal(
         &self,
         state: &HistoryModal,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let has_runs = matches!(&state.runs, Some(runs) if !runs.is_empty());
         let body = match &state.runs {
             None => self.render_history_loading(palette),
             Some(runs) if runs.is_empty() => self.render_history_empty(palette),
-            Some(runs) => self.render_history_list(runs, palette),
+            Some(runs) => self.render_history_master_detail(runs, state.selected, palette, cx),
         };
 
-        let card = modal(tr!("action_editor_run_history_title"), body, palette)
+        let mut card = modal(tr!("action_editor_run_history_title"), body, palette)
             .size(ModalSize::Lg)
             .header_icon(Icon::History, palette.brand)
             .subtitle(state.action_name.clone())
@@ -2529,6 +2539,9 @@ impl ScreenActionsView {
                 "actions-history-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_history_modal(cx)),
             );
+        if has_runs {
+            card = card.width(HISTORY_MODAL_W);
+        }
 
         let view = cx.entity();
         overlay(card, palette)
@@ -2579,27 +2592,121 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
-    fn render_history_list(&self, runs: &[ExecutionContext], palette: &ForgePalette) -> AnyElement {
-        let mut col = div()
-            .w_full()
+    fn render_history_master_detail(
+        &self,
+        runs: &[ExecutionContext],
+        selected: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let selected = selected.min(runs.len().saturating_sub(1));
+
+        let mut rail = div()
+            .id("actions-history-rail")
+            .flex_none()
+            .w(HISTORY_RAIL_W)
+            .h_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, Density::Cozy));
-        for ctx in runs {
-            col = col.child(self.render_history_row(ctx, palette));
-        }
-        div()
-            .id("actions-history-scroll")
-            .w_full()
-            .flex()
-            .flex_col()
-            .max_h(HISTORY_MAX_H)
+            .gap(px(2.0))
+            .pr(spacing(Spacing::Sm, Density::Cozy))
             .overflow_y_scroll()
-            .child(col)
+            .border_r(HALF_BORDER)
+            .border_color(palette.border_regular);
+        for (index, ctx) in runs.iter().enumerate() {
+            rail = rail.child(self.render_history_rail_entry(
+                index,
+                ctx,
+                index == selected,
+                palette,
+                cx,
+            ));
+        }
+
+        let detail = div()
+            .id("actions-history-detail")
+            .flex_1()
+            .min_w(px(0.0))
+            .h_full()
+            .overflow_y_scroll()
+            .pl(spacing(Spacing::Md, Density::Cozy))
+            .child(self.render_history_detail(&runs[selected], palette));
+
+        div()
+            .w_full()
+            .h(HISTORY_BODY_H)
+            .flex()
+            .child(rail)
+            .child(detail)
             .into_any_element()
     }
 
-    fn render_history_row(&self, ctx: &ExecutionContext, palette: &ForgePalette) -> AnyElement {
+    fn render_history_rail_entry(
+        &self,
+        index: usize,
+        ctx: &ExecutionContext,
+        active: bool,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let dot_color = match &ctx.outcome {
+            ExecutionOutcome::Success => palette.success,
+            ExecutionOutcome::Failed(_) => palette.random,
+            ExecutionOutcome::Cancelled => palette.text_muted,
+        };
+        let when = fmt_relative_time(Some(ctx.started_at));
+        let duration = match ctx.completed_at {
+            Some(done) => {
+                let ms = (done - ctx.started_at).whole_milliseconds().max(0);
+                tr!("action_editor_run_history_duration_ms", count = ms as i64)
+            }
+            None => "-".to_owned(),
+        };
+        let (bg, time_color) = if active {
+            (palette.surface_overlay, palette.text_primary)
+        } else {
+            (gpui::transparent_black().into(), palette.text_secondary)
+        };
+        let hover_bg = palette.surface_overlay;
+
+        div()
+            .id(SharedString::from(format!("actions-history-rail-{index}")))
+            .flex()
+            .items_center()
+            .gap(HISTORY_RAIL_ENTRY_GAP)
+            .w_full()
+            .py(HISTORY_RAIL_ENTRY_PAD_V)
+            .px(HISTORY_RAIL_ENTRY_PAD_H)
+            .rounded(radius(Radius::Sm))
+            .bg(bg)
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover_bg))
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_history_run(index, cx)),
+            )
+            .child(status_dot(dot_color, HISTORY_ROW_DOT))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .truncate()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(time_color)
+                    .child(when),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(duration),
+            )
+            .into_any_element()
+    }
+
+    fn render_history_detail(&self, ctx: &ExecutionContext, palette: &ForgePalette) -> AnyElement {
         let when = fmt_relative_time(Some(ctx.started_at));
         let duration = match ctx.completed_at {
             Some(done) => {
@@ -2665,23 +2772,17 @@ impl ScreenActionsView {
             .iter()
             .any(|step| matches!(step.outcome, SubActionOutcome::Failed(_)));
 
-        let mut card = div()
+        let mut col = div()
             .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(CARD_PAD_V)
-            .px(CARD_PAD_H)
-            .rounded(radius(Radius::Md))
-            .border(HALF_BORDER)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
+            .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(top)
             .child(self.render_run_trigger(ctx, palette));
         if let Some(message) = error_message
             && !step_failed
         {
-            card = card.child(
+            col = col.child(
                 div()
                     .pl(HISTORY_ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
                     .font_family(DEFAULT_MONO_FAMILY)
@@ -2695,17 +2796,17 @@ impl ScreenActionsView {
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xxs, Density::Cozy))
-                .pt(spacing(Spacing::Xxs, Density::Cozy))
-                .mt(spacing(Spacing::Xxs, Density::Cozy))
+                .pt(spacing(Spacing::Xs, Density::Cozy))
+                .mt(spacing(Spacing::Xs, Density::Cozy))
                 .pl(HISTORY_ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
                 .border_t(HALF_BORDER)
                 .border_color(palette.border_regular);
             for step in &ctx.telemetry {
                 steps = steps.child(self.render_telemetry_row(step, palette));
             }
-            card = card.child(steps);
+            col = col.child(steps);
         }
-        card.into_any_element()
+        col.into_any_element()
     }
 
     fn render_run_trigger(&self, ctx: &ExecutionContext, palette: &ForgePalette) -> AnyElement {

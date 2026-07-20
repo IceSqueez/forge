@@ -189,15 +189,13 @@ impl SubActionRunner for ScriptRunNamedRunner {
 
         let duration_ms = wall_start.elapsed().as_millis() as u64;
 
-        let outcome = match exec_result {
+        let (outcome, updated_stack) = match exec_result {
             Ok(Ok(value)) => match value {
                 Some(value) if !target_var.is_empty() => {
-                    match self.globals.set(&target_var, value, false).await {
-                        Ok(()) => SubActionOutcome::Success,
-                        Err(e) => SubActionOutcome::Failed(format!("global write failed: {e}")),
-                    }
+                    let stack = ctx.arg_stack.clone().set(target_var.clone(), value);
+                    (SubActionOutcome::Success, Some(stack))
                 }
-                _ => SubActionOutcome::Success,
+                _ => (SubActionOutcome::Success, None),
             },
             Ok(Err(script_err)) => {
                 let message = format!("script '{name}' failed: {}", body_free_message(&script_err));
@@ -212,7 +210,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     }),
                     script_event_id,
                 ));
-                SubActionOutcome::Failed(message)
+                (SubActionOutcome::Failed(message), None)
             }
             Err(join_err) => {
                 self.publisher.publish(Event::caused_by(
@@ -226,7 +224,10 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     }),
                     script_event_id,
                 ));
-                SubActionOutcome::Failed(format!("script task panicked: {join_err}"))
+                (
+                    SubActionOutcome::Failed(format!("script task panicked: {join_err}")),
+                    None,
+                )
             }
         };
 
@@ -253,7 +254,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                 outcome,
                 index: ctx.index,
             },
-            None,
+            updated_stack,
         )
     }
 }

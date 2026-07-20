@@ -19,18 +19,41 @@ use crate::action_engine::{
     condition_failed_telemetry, condition_skipped_telemetry, disabled_telemetry, skipped_telemetry,
 };
 use crate::condition::ConditionGate;
-use crate::sub_action_runners::interpolate::extract_referenced_names;
 
-fn capture_args_in(step: &SubActionStep, scope: &ArgStack) -> BTreeMap<String, String> {
+fn capture_args_in(
+    registry: &SubActionRegistry,
+    step: &SubActionStep,
+    scope: &ArgStack,
+) -> BTreeMap<String, String> {
+    let Some(runner) = registry.get(&step.kind_id) else {
+        return BTreeMap::new();
+    };
+    let hidden: Vec<&str> = runner
+        .config_fields()
+        .iter()
+        .filter_map(|field| match field {
+            forge_registry::FormField::SubChain { key, .. }
+            | forge_registry::FormField::Code { key, .. } => Some(*key),
+            _ => None,
+        })
+        .collect();
+    let resolved = effective_config(&runner.default_config(), &step.config);
     let mut captured = BTreeMap::new();
-    for value in step.config.values() {
-        if let Variant::String(text) = value {
-            for name in extract_referenced_names(text) {
-                if let Some(bound) = scope.get(&name) {
-                    captured.insert(name, variant_preview(bound));
-                }
-            }
+    for (key, value) in &resolved {
+        if hidden.contains(&key.as_str()) {
+            continue;
         }
+        let preview = match value {
+            Variant::String(text) => {
+                let interpolated = scope.interpolate(text);
+                if interpolated.is_empty() {
+                    continue;
+                }
+                variant_preview(&Variant::String(interpolated))
+            }
+            other => variant_preview(other),
+        };
+        captured.insert(key.clone(), preview);
     }
     captured
 }
@@ -176,7 +199,7 @@ impl ChainEngine {
         for (index, step) in steps.iter().enumerate() {
             if !step.enabled {
                 let mut tel = disabled_telemetry(index, &step.kind_id);
-                tel.args_in = capture_args_in(step, &current);
+                tel.args_in = capture_args_in(&self.registry, step, &current);
                 publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                 telemetry.push(tel);
                 continue;
@@ -193,14 +216,14 @@ impl ChainEngine {
                 ConditionVerdict::Run => {}
                 ConditionVerdict::Skip => {
                     let mut tel = condition_skipped_telemetry(index, &step.kind_id);
-                    tel.args_in = capture_args_in(step, &current);
+                    tel.args_in = capture_args_in(&self.registry, step, &current);
                     publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                     telemetry.push(tel);
                     continue;
                 }
                 ConditionVerdict::Fail(msg) => {
                     let mut tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
-                    tel.args_in = capture_args_in(step, &current);
+                    tel.args_in = capture_args_in(&self.registry, step, &current);
                     publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                     telemetry.push(tel);
                     if !step.continue_on_error {
@@ -214,7 +237,7 @@ impl ChainEngine {
                 }
             }
 
-            let args_in = capture_args_in(step, &current);
+            let args_in = capture_args_in(&self.registry, step, &current);
 
             let run_event = Event::caused_by(
                 EventSource::Core,
@@ -335,7 +358,7 @@ impl ChainEngine {
                 async move {
                     if !step.enabled {
                         let mut tel = disabled_telemetry(index, &step.kind_id);
-                        tel.args_in = capture_args_in(step, arg_stack);
+                        tel.args_in = capture_args_in(&self.registry, step, arg_stack);
                         publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                         return (tel, Vec::new(), None);
                     }
@@ -344,14 +367,14 @@ impl ChainEngine {
                         ConditionVerdict::Run => {}
                         ConditionVerdict::Skip => {
                             let mut tel = condition_skipped_telemetry(index, &step.kind_id);
-                            tel.args_in = capture_args_in(step, arg_stack);
+                            tel.args_in = capture_args_in(&self.registry, step, arg_stack);
                             publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                             return (tel, Vec::new(), None);
                         }
                         ConditionVerdict::Fail(msg) => {
                             let mut tel =
                                 condition_failed_telemetry(index, &step.kind_id, msg.clone());
-                            tel.args_in = capture_args_in(step, arg_stack);
+                            tel.args_in = capture_args_in(&self.registry, step, arg_stack);
                             publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
                             let failure = if step.continue_on_error {
                                 None
@@ -371,7 +394,7 @@ impl ChainEngine {
                     let run_event_id = run_event.id;
                     self.publisher.publish(run_event);
 
-                    let args_in = capture_args_in(step, arg_stack);
+                    let args_in = capture_args_in(&self.registry, step, arg_stack);
                     let nested_sink = TelemetrySink::new();
                     let run_ctx = RunContext {
                         arg_stack,

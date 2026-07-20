@@ -10,6 +10,7 @@ use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, Spe
 use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo};
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
 use forge_types::EventId;
+use forge_voice::SynthesisDefaults;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -54,6 +55,9 @@ pub struct TtsEnginesView {
     engines: Vec<EngineEntry>,
     selected: Selection,
     disabled: HashSet<String>,
+    pitch_semitones: f32,
+    rate_multiplier: f32,
+    volume: f32,
     add_open: bool,
     regions: HashMap<String, String>,
     cloud: Entity<CloudCredentialsView>,
@@ -73,6 +77,11 @@ impl TtsEnginesView {
             .as_ref()
             .map(|h| h.disabled_engines().iter().map(|e| e.0.clone()).collect())
             .unwrap_or_default();
+        let synthesis_defaults = speak
+            .as_ref()
+            .map(|h| h.synthesis_defaults())
+            .unwrap_or_default();
+        let volume = speak.as_ref().map(|h| h.master_volume()).unwrap_or(1.0);
 
         let cloud = cx.new(|cx| {
             CloudCredentialsView::new(
@@ -99,6 +108,9 @@ impl TtsEnginesView {
             rt_handle,
             selected: Selection::None,
             disabled,
+            pitch_semitones: synthesis_defaults.pitch_semitones,
+            rate_multiplier: synthesis_defaults.rate_multiplier,
+            volume,
             add_open: false,
             regions: HashMap::new(),
             cloud,
@@ -172,6 +184,61 @@ impl TtsEnginesView {
                 eprintln!("forge-desktop: persist disabled tts engines failed: {e}");
             }
         });
+    }
+
+    fn set_pitch(&mut self, value: f32, cx: &mut Context<Self>) {
+        self.pitch_semitones = value.clamp(-12.0, 12.0);
+        self.push_synthesis_defaults();
+        cx.notify();
+    }
+
+    fn set_speed(&mut self, value: f32, cx: &mut Context<Self>) {
+        self.rate_multiplier = value.clamp(0.5, 2.0);
+        self.push_synthesis_defaults();
+        cx.notify();
+    }
+
+    fn push_synthesis_defaults(&self) {
+        let defaults = SynthesisDefaults {
+            pitch_semitones: self.pitch_semitones,
+            rate_multiplier: self.rate_multiplier,
+        };
+        if let Some(speak) = self.speak.clone() {
+            self.rt_handle.spawn(async move {
+                if let Err(e) = speak
+                    .send(SpeakCommand::SetSynthesisDefaults(defaults))
+                    .await
+                {
+                    eprintln!("forge-desktop: set synthesis defaults failed: {e}");
+                }
+            });
+        }
+        let settings = Arc::clone(&self.settings);
+        self.rt_handle.spawn(async move {
+            if let Err(e) = forge_storage::set_synthesis_defaults(settings.as_ref(), defaults).await
+            {
+                eprintln!("forge-desktop: persist synthesis defaults failed: {e}");
+            }
+        });
+    }
+
+    fn set_engine_volume(&mut self, value: f32, cx: &mut Context<Self>) {
+        self.volume = value.clamp(0.0, 1.0);
+        let volume = self.volume;
+        if let Some(speak) = self.speak.clone() {
+            self.rt_handle.spawn(async move {
+                if let Err(e) = speak.send(SpeakCommand::SetVolume(volume)).await {
+                    eprintln!("forge-desktop: set volume failed: {e}");
+                }
+            });
+        }
+        let settings = Arc::clone(&self.settings);
+        self.rt_handle.spawn(async move {
+            if let Err(e) = forge_storage::set_master_volume(settings.as_ref(), volume).await {
+                eprintln!("forge-desktop: persist master volume failed: {e}");
+            }
+        });
+        cx.notify();
     }
 
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
@@ -547,7 +614,7 @@ impl TtsEnginesView {
         if is_cloud {
             col = col.child(self.cloud.clone());
         }
-        col.child(params_section(palette, density))
+        col.child(self.params_section(palette, density, cx))
             .child(self.voices_section(engine, &voices, palette, density, cx))
             .into_any_element()
     }
@@ -808,6 +875,65 @@ impl TtsEnginesView {
             )
             .into_any_element()
     }
+
+    fn params_section(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let rows = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .child(param_row(
+                tr!("tts_engines_param_pitch"),
+                format!("{:+.0} st", self.pitch_semitones),
+                self.pitch_semitones,
+                -12.0,
+                12.0,
+                "tts-engines-pitch",
+                cx.listener(|this, v: &f32, _, cx| this.set_pitch(*v, cx)),
+                palette,
+                density,
+            ))
+            .child(param_row(
+                tr!("tts_engines_param_speed"),
+                format!("{:.1}x", self.rate_multiplier),
+                self.rate_multiplier,
+                0.5,
+                2.0,
+                "tts-engines-speed",
+                cx.listener(|this, v: &f32, _, cx| this.set_speed(*v, cx)),
+                palette,
+                density,
+            ))
+            .child(param_row(
+                tr!("tts_engines_param_volume"),
+                format!("{}%", (self.volume * 100.0).round() as i64),
+                self.volume,
+                0.0,
+                1.0,
+                "tts-engines-volume",
+                cx.listener(|this, v: &f32, _, cx| this.set_engine_volume(*v, cx)),
+                palette,
+                density,
+            ));
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .mb(spacing(Spacing::Md, density))
+            .child(section_label(tr!("tts_engines_section_params"), palette))
+            .child(
+                card(rows, palette)
+                    .radius(Radius::Md)
+                    .padding(spacing(Spacing::Md, density))
+                    .full_width(),
+            )
+    }
 }
 
 impl Render for TtsEnginesView {
@@ -829,52 +955,15 @@ impl Render for TtsEnginesView {
     }
 }
 
-fn params_section(palette: &ForgePalette, density: Density) -> impl IntoElement {
-    let rows = div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .child(param_row(
-            tr!("tts_engines_param_pitch"),
-            "+0 st",
-            0.5,
-            palette,
-            density,
-        ))
-        .child(param_row(
-            tr!("tts_engines_param_speed"),
-            "1.0x",
-            0.5,
-            palette,
-            density,
-        ))
-        .child(param_row(
-            tr!("tts_engines_param_volume"),
-            "100%",
-            1.0,
-            palette,
-            density,
-        ));
-
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xs, density))
-        .mb(spacing(Spacing::Md, density))
-        .child(section_label(tr!("tts_engines_section_params"), palette))
-        .child(
-            card(rows, palette)
-                .radius(Radius::Md)
-                .padding(spacing(Spacing::Md, density))
-                .full_width(),
-        )
-}
-
+#[allow(clippy::too_many_arguments)]
 fn param_row(
     label: impl Into<SharedString>,
-    value: &'static str,
-    fraction: f32,
+    value_text: impl Into<SharedString>,
+    value: f32,
+    min: f32,
+    max: f32,
+    id: &'static str,
+    on_change: impl Fn(&f32, &mut Window, &mut gpui::App) + 'static,
     palette: &ForgePalette,
     density: Density,
 ) -> impl IntoElement {
@@ -898,7 +987,7 @@ fn param_row(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .child(slider(fraction, 0.0, 1.0, palette)),
+                .child(slider(value, min, max, palette).on_change(id, on_change)),
         )
         .child(
             div()
@@ -908,7 +997,7 @@ fn param_row(
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FS_11_5)
                 .text_color(palette.text_primary)
-                .child(value),
+                .child(value_text.into()),
         )
 }
 

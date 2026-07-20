@@ -74,7 +74,7 @@ impl IgnoreProfile {
 }
 
 /// Pitch and rate fallback values when a voice has no per-alias override.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SynthesisDefaults {
     pub pitch_semitones: f32,
     pub rate_multiplier: f32,

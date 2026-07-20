@@ -3,6 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use async_trait::async_trait;
+use forge_voice::SynthesisDefaults;
 use serde::{Deserialize, Serialize};
 
 use crate::StorageError;
@@ -40,6 +41,8 @@ pub mod reserved_keys {
     pub const PICKER_FAVORITES_SUB_ACTIONS_KEY: &str = "picker.favorites.sub_actions";
     pub const PICKER_FAVORITES_TRIGGERS_KEY: &str = "picker.favorites.triggers";
     pub const TTS_DISABLED_ENGINES_KEY: &str = "tts.disabled_engines";
+    pub const TTS_SYNTHESIS_DEFAULTS_KEY: &str = "tts.synthesis_defaults";
+    pub const TTS_MASTER_VOLUME_KEY: &str = "tts.master_volume";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -262,6 +265,42 @@ pub async fn set_disabled_tts_engines(
     let json = serde_json::to_string(engine_ids).map_err(|e| StorageError::Parse(e.to_string()))?;
     repo.set_string(reserved_keys::TTS_DISABLED_ENGINES_KEY, &json)
         .await
+}
+
+pub async fn synthesis_defaults(
+    repo: &dyn SettingsRepo,
+) -> Result<SynthesisDefaults, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::TTS_SYNTHESIS_DEFAULTS_KEY)
+        .await?;
+    Ok(raw
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default())
+}
+
+pub async fn set_synthesis_defaults(
+    repo: &dyn SettingsRepo,
+    defaults: SynthesisDefaults,
+) -> Result<(), StorageError> {
+    let json = serde_json::to_string(&defaults).map_err(|e| StorageError::Parse(e.to_string()))?;
+    repo.set_string(reserved_keys::TTS_SYNTHESIS_DEFAULTS_KEY, &json)
+        .await
+}
+
+pub async fn master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::TTS_MASTER_VOLUME_KEY)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
+}
+
+pub async fn set_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::TTS_MASTER_VOLUME_KEY,
+        &volume.clamp(0.0, 1.0).to_string(),
+    )
+    .await
 }
 
 pub async fn chat_history_display_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {

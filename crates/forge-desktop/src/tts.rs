@@ -89,18 +89,19 @@ impl TtsView {
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let credentials: Arc<dyn CredentialsRepo> =
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
+        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
         let dashboard = cx.new(|cx| {
             TtsDashboardView::new(
                 speak_state,
                 speak.clone(),
+                Arc::clone(&settings),
                 tts_registry.clone(),
                 rt_handle.clone(),
                 cx,
             )
         });
-        let credentials: Arc<dyn CredentialsRepo> =
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
-        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
         let engines = cx.new(|cx| {
             TtsEnginesView::new(
                 tts_registry.clone(),

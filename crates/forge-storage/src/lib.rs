@@ -32,8 +32,9 @@ pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{
     Language, SettingsRepo, UnknownLanguage, chat_history_display_limit, chat_history_store_limit,
-    disabled_tts_engines, reserved_keys, set_chat_history_display_limit,
-    set_chat_history_store_limit, set_disabled_tts_engines,
+    disabled_tts_engines, master_volume, reserved_keys, set_chat_history_display_limit,
+    set_chat_history_store_limit, set_disabled_tts_engines, set_master_volume,
+    set_synthesis_defaults, synthesis_defaults,
 };
 pub use soundboard::{SoundboardClipsRepo, StoredClip};
 pub use transit::{

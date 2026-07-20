@@ -3,7 +3,7 @@ pub mod filters;
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ pub use filters::{
 };
 pub use forge_tts_core::TtsError;
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceId};
-use forge_voice::{AliasId, AssignmentStrategy, VoiceAlias, VoiceAliasResolver};
+use forge_voice::{AliasId, AssignmentStrategy, SynthesisDefaults, VoiceAlias, VoiceAliasResolver};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequestId(pub String);
@@ -83,6 +83,7 @@ pub enum SpeakCommand {
     SetStrategy(AssignmentStrategy),
     /// Sets `QueueConfig::master_volume`, clamped to `0.0..=1.0`.
     SetVolume(f32),
+    SetSynthesisDefaults(SynthesisDefaults),
     /// Drops an alias from the live resolver by id; no-op when the id is absent.
     RemoveAlias(AliasId),
     /// Rebuilds the voice catalog from the live `TtsRegistry`. Send this after
@@ -202,6 +203,8 @@ pub struct SpeakQueueHandle {
     // read the catalog without an actor round-trip.
     voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
     disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
+    resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
+    master_volume_bits: Arc<AtomicU32>,
 }
 
 impl SpeakQueueHandle {
@@ -225,6 +228,17 @@ impl SpeakQueueHandle {
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    pub fn synthesis_defaults(&self) -> SynthesisDefaults {
+        self.resolver
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .defaults
+    }
+
+    pub fn master_volume(&self) -> f32 {
+        f32::from_bits(self.master_volume_bits.load(Ordering::Relaxed))
     }
 
     pub fn engines(&self) -> Vec<EngineId> {
@@ -277,11 +291,14 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let depth = Arc::new(AtomicUsize::new(0));
     let voices = Arc::new(std::sync::RwLock::new(Arc::new(Vec::<TtsVoice>::new())));
     let disabled_engines = Arc::new(std::sync::RwLock::new(Arc::new(HashSet::<EngineId>::new())));
+    let resolver = deps.resolver.clone();
+    let master_volume_bits = Arc::new(AtomicU32::new(config.master_volume.to_bits()));
 
     let event_tx_clone = event_tx.clone();
     let depth_clone = depth.clone();
     let voices_clone = voices.clone();
     let disabled_engines_clone = disabled_engines.clone();
+    let master_volume_bits_clone = master_volume_bits.clone();
     tokio::spawn(async move {
         actor::run_actor(
             config,
@@ -291,6 +308,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             depth_clone,
             voices_clone,
             disabled_engines_clone,
+            master_volume_bits_clone,
         )
         .await;
     });
@@ -302,6 +320,8 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             depth,
             voices,
             disabled_engines,
+            resolver,
+            master_volume_bits,
         },
         SpeakEventStream(event_rx),
     )
@@ -323,6 +343,13 @@ mod tests {
             depth: Arc::new(AtomicUsize::new(0)),
             voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
             disabled_engines: Arc::new(std::sync::RwLock::new(Arc::new(HashSet::new()))),
+            resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
+                vec![],
+                AssignmentStrategy::default(),
+                forge_voice::IgnoreProfile::default(),
+                SynthesisDefaults::default(),
+            ))),
+            master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
@@ -338,6 +365,13 @@ mod tests {
             depth: Arc::new(AtomicUsize::new(0)),
             voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
             disabled_engines: Arc::new(std::sync::RwLock::new(Arc::new(HashSet::new()))),
+            resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
+                vec![],
+                AssignmentStrategy::default(),
+                forge_voice::IgnoreProfile::default(),
+                SynthesisDefaults::default(),
+            ))),
+            master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         };
         let mut sub = handle.subscribe();
         event_tx

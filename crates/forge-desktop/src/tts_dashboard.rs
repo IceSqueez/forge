@@ -7,6 +7,7 @@ use forge_components::{
 use std::sync::{Arc, RwLock};
 
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_storage::SettingsRepo;
 use forge_tts_core::TtsRegistry;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
@@ -30,7 +31,6 @@ const EQ_BAR_W: Pixels = px(2.0);
 const EQ_BAR_MAX_H: Pixels = px(11.0);
 const EQ_BAR_HEIGHTS: [f32; 4] = [5.0, 11.0, 7.0, 9.0];
 const VOLUME_GLYPH: Pixels = px(14.0);
-const SEED_VOLUME: f32 = 0.72;
 
 const TOOLBAR_PAD_V: Pixels = px(9.0);
 const BTN_PAD_V: Pixels = px(5.0);
@@ -76,6 +76,7 @@ struct EngineStatus {
 pub struct TtsDashboardView {
     speak_state: Entity<SpeakState>,
     speak: Option<SpeakQueueHandle>,
+    settings: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
     volume: f32,
     rail_width: Pixels,
@@ -90,11 +91,13 @@ impl TtsDashboardView {
     pub fn new(
         speak_state: Entity<SpeakState>,
         speak: Option<SpeakQueueHandle>,
+        settings: Arc<dyn SettingsRepo>,
         registry: Option<Arc<RwLock<TtsRegistry>>>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
+        let volume = speak.as_ref().map(|h| h.master_volume()).unwrap_or(1.0);
         let test_input = cx.new(|cx| {
             TextInput::new(tr!("tts_dash_test_placeholder"), cx)
                 .with_palette(palette)
@@ -114,8 +117,9 @@ impl TtsDashboardView {
         Self {
             speak_state,
             speak,
+            settings,
             rt_handle,
-            volume: SEED_VOLUME,
+            volume,
             rail_width: RAIL_DEFAULT_W,
             engines: load_engine_roster(registry.as_ref()),
             pending_stop_all: false,
@@ -178,6 +182,12 @@ impl TtsDashboardView {
     fn set_volume(&mut self, volume: f32, cx: &mut Context<Self>) {
         self.volume = volume;
         self.dispatch(SpeakCommand::SetVolume(volume));
+        let settings = Arc::clone(&self.settings);
+        self.rt_handle.spawn(async move {
+            if let Err(e) = forge_storage::set_master_volume(settings.as_ref(), volume).await {
+                eprintln!("forge-desktop: persist master volume failed: {e}");
+            }
+        });
         cx.notify();
     }
 

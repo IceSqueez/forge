@@ -169,7 +169,26 @@ async fn load_resolver(backend: &Arc<dyn DataProvider>) -> VoiceAliasResolver {
             )
         }
     };
-    VoiceAliasResolver::new(aliases, strategy, profile, SynthesisDefaults::default())
+    let defaults = match forge_storage::synthesis_defaults(backend.as_ref()).await {
+        Ok(defaults) => defaults,
+        Err(e) => {
+            eprintln!(
+                "forge-desktop: failed to load synthesis defaults on boot; using defaults: {e}"
+            );
+            SynthesisDefaults::default()
+        }
+    };
+    VoiceAliasResolver::new(aliases, strategy, profile, defaults)
+}
+
+async fn load_master_volume(backend: &Arc<dyn DataProvider>) -> f32 {
+    match forge_storage::master_volume(backend.as_ref()).await {
+        Ok(volume) => volume,
+        Err(e) => {
+            eprintln!("forge-desktop: failed to load master volume on boot; using 1.0: {e}");
+            1.0
+        }
+    }
 }
 
 async fn load_disabled_engines(
@@ -253,6 +272,10 @@ pub async fn build_speak_queue(
         event_bus: Arc::clone(bus) as Arc<dyn EventPublisher>,
         disabled_engines,
     };
-    let (handle, stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
+    let queue_config = QueueConfig {
+        master_volume: load_master_volume(backend).await,
+        ..QueueConfig::default()
+    };
+    let (handle, stream) = forge_speak_queue::spawn(queue_config, deps);
     (Some(handle), Some(stream), Some(pipeline), Some(registry))
 }

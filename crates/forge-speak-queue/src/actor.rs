@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use forge_audio::PcmBuffer;
 use forge_events::{Event, EventPublisher, EventSource};
@@ -207,6 +207,7 @@ fn publish(bus: &dyn EventPublisher, kind: &str, payload: serde_json::Value) {
     bus.publish(Event::new(EventSource::Audio, kind, payload));
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_actor(
     mut config: QueueConfig,
     deps: QueueDeps,
@@ -215,6 +216,7 @@ pub(crate) async fn run_actor(
     depth: Arc<AtomicUsize>,
     voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
     disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
+    master_volume_bits: Arc<AtomicU32>,
 ) {
     let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
     let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
@@ -290,6 +292,22 @@ pub(crate) async fn run_actor(
                         *disabled_engines.write().unwrap_or_else(|e| e.into_inner()) =
                             Arc::new(disabled.clone());
                         spawn_catalog_rebuild(deps.registry.clone(), disabled.clone(), catalog_tx.clone());
+                    }
+                    Some(SpeakCommand::SetVolume(volume)) => {
+                        handle_command(
+                            SpeakCommand::SetVolume(volume),
+                            &mut config,
+                            &deps,
+                            &event_tx,
+                            &mut high_queue,
+                            &mut normal_queue,
+                            &mut per_user_counts,
+                            &mut paused,
+                            &mut voicegate_active,
+                            &mut active_request_id,
+                            &last_successful,
+                        );
+                        master_volume_bits.store(config.master_volume.to_bits(), Ordering::Relaxed);
                     }
                     Some(c) => handle_command(
                         c,
@@ -559,6 +577,10 @@ fn handle_command(
         }
         SpeakCommand::SetVolume(volume) => {
             config.master_volume = volume.clamp(0.0, 1.0);
+        }
+        SpeakCommand::SetSynthesisDefaults(defaults) => {
+            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
+            guard.defaults = defaults;
         }
         SpeakCommand::RemoveAlias(id) => {
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());

@@ -1,8 +1,9 @@
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    InputEvent, Radius, Spacing, TextInput, ToastKind, card, radius, spacing, tr,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InputEvent, Radius, Spacing, TextInput, ToastKind, card, icon, radius,
+    spacing, tr,
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::{CredentialId, CredentialsRepo};
@@ -16,20 +17,28 @@ use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
 use forge_tts_core::{EngineId, TtsEngineFactory, TtsRegistry};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window,
-    div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::cloud_tts_boot;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
-const STATUS_DOT: Pixels = px(7.0);
 const RESULT_DOT: Pixels = px(6.0);
-const LABEL_W: Pixels = px(120.0);
+const BOX_RADIUS: Pixels = px(7.0);
+const BOX_PAD_X: Pixels = px(11.0);
+const BOX_PAD_Y: Pixels = px(7.0);
+const FS_12: Pixels = px(12.0);
+const NOTE_FS: Pixels = px(11.0);
+const EYE_GLYPH: Pixels = px(12.0);
+const LOCK_GLYPH: Pixels = px(11.0);
+const GRID_GAP: Pixels = px(12.0);
+const CARD_PAD: Pixels = px(14.0);
+const CARD_MB: Pixels = px(18.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CloudEngineKind {
+pub enum CloudEngineKind {
     Azure,
     ElevenLabs,
     OpenAI,
@@ -37,7 +46,14 @@ enum CloudEngineKind {
 }
 
 impl CloudEngineKind {
-    fn key(self) -> &'static str {
+    pub const ALL: [CloudEngineKind; 4] = [
+        CloudEngineKind::Azure,
+        CloudEngineKind::ElevenLabs,
+        CloudEngineKind::OpenAI,
+        CloudEngineKind::Polly,
+    ];
+
+    pub fn key(self) -> &'static str {
         match self {
             CloudEngineKind::Azure => "azure",
             CloudEngineKind::ElevenLabs => "elevenlabs",
@@ -46,7 +62,7 @@ impl CloudEngineKind {
         }
     }
 
-    fn display_name(self) -> &'static str {
+    pub fn display_name(self) -> &'static str {
         match self {
             CloudEngineKind::Azure => "Azure Speech",
             CloudEngineKind::ElevenLabs => "ElevenLabs",
@@ -55,7 +71,17 @@ impl CloudEngineKind {
         }
     }
 
-    fn credential_id(self) -> &'static str {
+    pub fn from_engine_id(id: &str) -> Option<CloudEngineKind> {
+        match id {
+            "azure" => Some(CloudEngineKind::Azure),
+            "elevenlabs" => Some(CloudEngineKind::ElevenLabs),
+            "openai" => Some(CloudEngineKind::OpenAI),
+            "polly" => Some(CloudEngineKind::Polly),
+            _ => None,
+        }
+    }
+
+    pub fn credential_id(self) -> &'static str {
         match self {
             CloudEngineKind::Azure => AZURE_CREDENTIAL_ID,
             CloudEngineKind::ElevenLabs => ELEVENLABS_CREDENTIAL_ID,
@@ -68,6 +94,19 @@ impl CloudEngineKind {
         EngineId(self.key().to_owned())
     }
 }
+
+#[derive(Clone, Copy)]
+enum SecureField {
+    AzureApi,
+    ElevenApi,
+    OpenAiApi,
+    PollyAccess,
+    PollySecret,
+}
+
+/// Emitted after a cloud engine registers into the live registry so the parent
+/// engines view can refresh its rail roster and select the new entry.
+pub struct CloudEngineRegistered(pub EngineId);
 
 enum CloudCreds {
     Azure(AzureCredentials),
@@ -112,6 +151,7 @@ enum TestStatus {
 struct AzureForm {
     api_key: Entity<TextInput>,
     region: Entity<TextInput>,
+    api_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
     is_registered: bool,
@@ -119,6 +159,7 @@ struct AzureForm {
 
 struct ElevenLabsForm {
     api_key: Entity<TextInput>,
+    api_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
     is_registered: bool,
@@ -126,6 +167,7 @@ struct ElevenLabsForm {
 
 struct OpenAiForm {
     api_key: Entity<TextInput>,
+    api_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
     is_registered: bool,
@@ -135,17 +177,20 @@ struct PollyForm {
     access_key: Entity<TextInput>,
     secret_key: Entity<TextInput>,
     region: Entity<TextInput>,
+    access_revealed: bool,
+    secret_revealed: bool,
     dirty: bool,
     test_status: TestStatus,
     is_registered: bool,
 }
 
-pub struct CloudTtsEnginesView {
+pub struct CloudCredentialsView {
     /// `None` only when the speak subsystem didn't build; persistence still happens without it.
     registry: Option<Arc<RwLock<TtsRegistry>>>,
     credentials: Arc<dyn CredentialsRepo>,
     rt_handle: tokio::runtime::Handle,
     speak: Option<SpeakQueueHandle>,
+    active: Option<CloudEngineKind>,
     azure: AzureForm,
     elevenlabs: ElevenLabsForm,
     openai: OpenAiForm,
@@ -153,7 +198,9 @@ pub struct CloudTtsEnginesView {
     _subs: Vec<Subscription>,
 }
 
-impl CloudTtsEnginesView {
+impl EventEmitter<CloudEngineRegistered> for CloudCredentialsView {}
+
+impl CloudCredentialsView {
     pub fn new(
         registry: Option<Arc<RwLock<TtsRegistry>>>,
         credentials: Arc<dyn CredentialsRepo>,
@@ -178,7 +225,7 @@ impl CloudTtsEnginesView {
         let azure_region = field("e.g. eastus", false, palette, cx);
         let eleven_api = field("xi-api-key", true, palette, cx);
         let openai_api = field("sk-...", true, palette, cx);
-        let polly_access = field("AKIA...", false, palette, cx);
+        let polly_access = field("AKIA...", true, palette, cx);
         let polly_secret = field("secret access key", true, palette, cx);
         let polly_region = field("e.g. us-east-1", false, palette, cx);
 
@@ -206,21 +253,25 @@ impl CloudTtsEnginesView {
             credentials,
             rt_handle,
             speak,
+            active: None,
             azure: AzureForm {
                 api_key: azure_api,
                 region: azure_region,
+                api_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
                 is_registered: is_registered(CloudEngineKind::Azure),
             },
             elevenlabs: ElevenLabsForm {
                 api_key: eleven_api,
+                api_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
                 is_registered: is_registered(CloudEngineKind::ElevenLabs),
             },
             openai: OpenAiForm {
                 api_key: openai_api,
+                api_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
                 is_registered: is_registered(CloudEngineKind::OpenAI),
@@ -229,11 +280,20 @@ impl CloudTtsEnginesView {
                 access_key: polly_access,
                 secret_key: polly_secret,
                 region: polly_region,
+                access_revealed: false,
+                secret_revealed: false,
                 dirty: false,
                 test_status: TestStatus::Idle,
                 is_registered: is_registered(CloudEngineKind::Polly),
             },
             _subs: subs,
+        }
+    }
+
+    pub fn set_active(&mut self, kind: Option<CloudEngineKind>, cx: &mut Context<Self>) {
+        if self.active != kind {
+            self.active = kind;
+            cx.notify();
         }
     }
 
@@ -244,6 +304,36 @@ impl CloudTtsEnginesView {
             CloudEngineKind::OpenAI => self.openai.dirty = true,
             CloudEngineKind::Polly => self.polly.dirty = true,
         }
+        cx.notify();
+    }
+
+    fn toggle_reveal(&mut self, field: SecureField, cx: &mut Context<Self>) {
+        let (input, revealed) = match field {
+            SecureField::AzureApi => {
+                self.azure.api_revealed = !self.azure.api_revealed;
+                (self.azure.api_key.clone(), self.azure.api_revealed)
+            }
+            SecureField::ElevenApi => {
+                self.elevenlabs.api_revealed = !self.elevenlabs.api_revealed;
+                (
+                    self.elevenlabs.api_key.clone(),
+                    self.elevenlabs.api_revealed,
+                )
+            }
+            SecureField::OpenAiApi => {
+                self.openai.api_revealed = !self.openai.api_revealed;
+                (self.openai.api_key.clone(), self.openai.api_revealed)
+            }
+            SecureField::PollyAccess => {
+                self.polly.access_revealed = !self.polly.access_revealed;
+                (self.polly.access_key.clone(), self.polly.access_revealed)
+            }
+            SecureField::PollySecret => {
+                self.polly.secret_revealed = !self.polly.secret_revealed;
+                (self.polly.secret_key.clone(), self.polly.secret_revealed)
+            }
+        };
+        input.update(cx, |input, cx| input.set_secure(!revealed, cx));
         cx.notify();
     }
 
@@ -348,7 +438,7 @@ impl CloudTtsEnginesView {
             CloudEngineKind::OpenAI => self.openai.dirty = false,
             CloudEngineKind::Polly => self.polly.dirty = false,
         }
-        self.hot_register(kind, creds);
+        self.hot_register(kind, creds, cx);
         cx.push_toast(
             ToastKind::Info,
             tr!("tts_cloud_saved_toast", name = kind.display_name()),
@@ -368,7 +458,7 @@ impl CloudTtsEnginesView {
         cx.notify();
     }
 
-    fn hot_register(&mut self, kind: CloudEngineKind, creds: CloudCreds) {
+    fn hot_register(&mut self, kind: CloudEngineKind, creds: CloudCreds, cx: &mut Context<Self>) {
         let Some(registry) = self.registry.as_ref() else {
             return;
         };
@@ -391,6 +481,7 @@ impl CloudTtsEnginesView {
                 }
             });
         }
+        cx.emit(CloudEngineRegistered(kind.engine_id()));
     }
 
     fn test(&mut self, kind: CloudEngineKind, cx: &mut Context<Self>) {
@@ -426,219 +517,236 @@ impl CloudTtsEnginesView {
         }
     }
 
-    fn azure_card(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let has_key = nonempty(&self.azure.api_key, cx);
-        let has_region = nonempty(&self.azure.region, cx);
-        let can_save = self.azure.dirty && has_key && has_region;
-        let can_test = has_key && has_region && self.azure.test_status != TestStatus::Testing;
-
-        let fields = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(labeled_field(
-                tr!("tts_cloud_field_api_key"),
-                self.azure.api_key.clone(),
-                palette,
-                density,
-            ))
-            .child(labeled_field(
-                tr!("tts_cloud_field_region"),
-                self.azure.region.clone(),
-                palette,
-                density,
-            ))
-            .into_any_element();
-
-        self.engine_card(
-            "Azure Speech",
-            palette.info,
-            &self.azure.test_status,
-            self.azure.is_registered,
-            fields,
-            CloudEngineKind::Azure,
-            can_save,
-            can_test,
-            palette,
-            density,
-            cx,
-        )
+    fn is_registered(&self, kind: CloudEngineKind) -> bool {
+        match kind {
+            CloudEngineKind::Azure => self.azure.is_registered,
+            CloudEngineKind::ElevenLabs => self.elevenlabs.is_registered,
+            CloudEngineKind::OpenAI => self.openai.is_registered,
+            CloudEngineKind::Polly => self.polly.is_registered,
+        }
     }
 
-    fn elevenlabs_card(
+    fn credentials_card(
         &self,
+        kind: CloudEngineKind,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let has_key = nonempty(&self.elevenlabs.api_key, cx);
-        let can_save = self.elevenlabs.dirty && has_key;
-        let can_test = has_key && self.elevenlabs.test_status != TestStatus::Testing;
+        let (grid, extra, test_status, can_save, can_test): (
+            AnyElement,
+            Option<AnyElement>,
+            &TestStatus,
+            bool,
+            bool,
+        ) = match kind {
+            CloudEngineKind::Azure => {
+                let has_key = nonempty(&self.azure.api_key, cx);
+                let has_region = nonempty(&self.azure.region, cx);
+                let grid = two_col(
+                    self.cred_field(
+                        tr!("tts_cloud_field_api_key"),
+                        self.azure.api_key.clone(),
+                        Some((SecureField::AzureApi, self.azure.api_revealed)),
+                        palette,
+                        cx,
+                    ),
+                    self.cred_field(
+                        tr!("tts_cloud_field_region"),
+                        self.azure.region.clone(),
+                        None,
+                        palette,
+                        cx,
+                    ),
+                );
+                (
+                    grid,
+                    None,
+                    &self.azure.test_status,
+                    self.azure.dirty && has_key && has_region,
+                    has_key && has_region && self.azure.test_status != TestStatus::Testing,
+                )
+            }
+            CloudEngineKind::ElevenLabs => {
+                let has_key = nonempty(&self.elevenlabs.api_key, cx);
+                let grid = self.cred_field(
+                    tr!("tts_cloud_field_api_key"),
+                    self.elevenlabs.api_key.clone(),
+                    Some((SecureField::ElevenApi, self.elevenlabs.api_revealed)),
+                    palette,
+                    cx,
+                );
+                (
+                    grid,
+                    None,
+                    &self.elevenlabs.test_status,
+                    self.elevenlabs.dirty && has_key,
+                    has_key && self.elevenlabs.test_status != TestStatus::Testing,
+                )
+            }
+            CloudEngineKind::OpenAI => {
+                let has_key = nonempty(&self.openai.api_key, cx);
+                let grid = self.cred_field(
+                    tr!("tts_cloud_field_api_key"),
+                    self.openai.api_key.clone(),
+                    Some((SecureField::OpenAiApi, self.openai.api_revealed)),
+                    palette,
+                    cx,
+                );
+                (
+                    grid,
+                    None,
+                    &self.openai.test_status,
+                    self.openai.dirty && has_key,
+                    has_key && self.openai.test_status != TestStatus::Testing,
+                )
+            }
+            CloudEngineKind::Polly => {
+                let has_access = nonempty(&self.polly.access_key, cx);
+                let has_secret = nonempty(&self.polly.secret_key, cx);
+                let has_region = nonempty(&self.polly.region, cx);
+                let grid = two_col(
+                    self.cred_field(
+                        tr!("tts_cloud_field_access_key_id"),
+                        self.polly.access_key.clone(),
+                        Some((SecureField::PollyAccess, self.polly.access_revealed)),
+                        palette,
+                        cx,
+                    ),
+                    self.cred_field(
+                        tr!("tts_cloud_field_secret_key"),
+                        self.polly.secret_key.clone(),
+                        Some((SecureField::PollySecret, self.polly.secret_revealed)),
+                        palette,
+                        cx,
+                    ),
+                );
+                let region = self.cred_field(
+                    tr!("tts_cloud_field_region"),
+                    self.polly.region.clone(),
+                    None,
+                    palette,
+                    cx,
+                );
+                (
+                    grid,
+                    Some(region),
+                    &self.polly.test_status,
+                    self.polly.dirty && has_access && has_secret && has_region,
+                    has_access
+                        && has_secret
+                        && has_region
+                        && self.polly.test_status != TestStatus::Testing,
+                )
+            }
+        };
 
-        let fields = div()
+        let mut body = div()
+            .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(labeled_field(
-                tr!("tts_cloud_field_api_key"),
-                self.elevenlabs.api_key.clone(),
-                palette,
-                density,
-            ))
-            .into_any_element();
-
-        self.engine_card(
-            "ElevenLabs",
-            palette.bits,
-            &self.elevenlabs.test_status,
-            self.elevenlabs.is_registered,
-            fields,
-            CloudEngineKind::ElevenLabs,
+            .gap(spacing(Spacing::Sm, density))
+            .child(grid);
+        if let Some(extra) = extra {
+            body = body.child(extra);
+        }
+        body = body.child(encryption_note(palette)).child(self.action_row(
+            kind,
+            test_status,
             can_save,
             can_test,
             palette,
             density,
             cx,
-        )
+        ));
+        if let Some(result) = test_result_row(test_status, palette, density) {
+            body = body.child(result);
+        }
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .mb(CARD_MB)
+            .child(section_label(
+                tr!("tts_engines_section_credentials"),
+                palette,
+            ))
+            .child(card(body, palette).padding(CARD_PAD).full_width())
+            .into_any_element()
     }
 
-    fn openai_card(
+    fn cred_field(
         &self,
+        label: impl Into<SharedString>,
+        input: Entity<TextInput>,
+        eye: Option<(SecureField, bool)>,
         palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
+        cx: &Context<Self>,
     ) -> AnyElement {
-        let has_key = nonempty(&self.openai.api_key, cx);
-        let can_save = self.openai.dirty && has_key;
-        let can_test = has_key && self.openai.test_status != TestStatus::Testing;
+        let label: SharedString = label.into();
+        let label = label.to_uppercase();
 
-        let fields = div()
+        let mut value_box = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(8.0))
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(palette.border_input)
+            .rounded(BOX_RADIUS)
+            .px(BOX_PAD_X)
+            .py(BOX_PAD_Y)
+            .child(div().flex_1().min_w(px(0.0)).child(input));
+
+        if let Some((field, revealed)) = eye {
+            let glyph = if revealed { Icon::EyeOff } else { Icon::Eye };
+            value_box =
+                value_box.child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "cred-eye-{}",
+                            secure_field_id(field)
+                        )))
+                        .flex_shrink_0()
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.toggle_reveal(field, cx)
+                        }))
+                        .child(icon(glyph, EYE_GLYPH, palette.text_faint)),
+                );
+        }
+
+        div()
+            .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(labeled_field(
-                tr!("tts_cloud_field_api_key"),
-                self.openai.api_key.clone(),
-                palette,
-                density,
-            ))
-            .into_any_element();
-
-        self.engine_card(
-            "OpenAI TTS",
-            palette.success,
-            &self.openai.test_status,
-            self.openai.is_registered,
-            fields,
-            CloudEngineKind::OpenAI,
-            can_save,
-            can_test,
-            palette,
-            density,
-            cx,
-        )
-    }
-
-    fn polly_card(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let has_access = nonempty(&self.polly.access_key, cx);
-        let has_secret = nonempty(&self.polly.secret_key, cx);
-        let has_region = nonempty(&self.polly.region, cx);
-        let can_save = self.polly.dirty && has_access && has_secret && has_region;
-        let can_test =
-            has_access && has_secret && has_region && self.polly.test_status != TestStatus::Testing;
-
-        let fields = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(labeled_field(
-                tr!("tts_cloud_field_access_key_id"),
-                self.polly.access_key.clone(),
-                palette,
-                density,
-            ))
-            .child(labeled_field(
-                tr!("tts_cloud_field_secret_key"),
-                self.polly.secret_key.clone(),
-                palette,
-                density,
-            ))
-            .child(labeled_field(
-                tr!("tts_cloud_field_region"),
-                self.polly.region.clone(),
-                palette,
-                density,
-            ))
-            .into_any_element();
-
-        self.engine_card(
-            "Amazon Polly",
-            palette.warning,
-            &self.polly.test_status,
-            self.polly.is_registered,
-            fields,
-            CloudEngineKind::Polly,
-            can_save,
-            can_test,
-            palette,
-            density,
-            cx,
-        )
+            .gap(px(6.0))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(label),
+            )
+            .child(value_box)
+            .into_any_element()
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn engine_card(
+    fn action_row(
         &self,
-        name: &'static str,
-        dot_color: Rgba,
-        test_status: &TestStatus,
-        is_registered: bool,
-        fields: AnyElement,
         kind: CloudEngineKind,
+        test_status: &TestStatus,
         can_save: bool,
         can_test: bool,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let dot = div()
-            .flex_none()
-            .size(STATUS_DOT)
-            .rounded(radius(Radius::Pill))
-            .bg(dot_color);
-
-        let header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(dot)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(name),
-            )
-            .child(config_status_badge(
-                test_status,
-                is_registered,
-                palette,
-                density,
-            ));
-
         let test_label = if *test_status == TestStatus::Testing {
             tr!("tts_cloud_testing_btn")
         } else {
@@ -656,7 +764,7 @@ impl CloudTtsEnginesView {
             .border(BORDER_THIN)
             .border_color(test_border)
             .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_SM)
+            .text_size(FONT_XS)
             .text_color(test_fg)
             .child(test_label);
         let test_btn: AnyElement = if can_test {
@@ -679,7 +787,7 @@ impl CloudTtsEnginesView {
                 .cursor_pointer()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.save(kind, cx)))
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(tr!("tts_cloud_save_credentials_btn"))
                 .into_any_element()
@@ -692,68 +800,88 @@ impl CloudTtsEnginesView {
                 .border(BORDER_THIN)
                 .border_color(palette.disabled)
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .text_size(FONT_XS)
                 .text_color(palette.disabled)
                 .child(tr!("tts_cloud_save_credentials_btn"))
                 .into_any_element()
         };
 
-        let action = div()
+        div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
-            .child(test_btn)
-            .child(save_btn);
-
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(header)
-            .child(fields)
-            .child(action);
-        if let Some(result) = test_result_row(test_status, palette, density) {
-            body = body.child(result);
-        }
-
-        card(body, palette)
-            .radius(Radius::Lg)
-            .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Md, density))
-            .full_width()
+            .child(config_status_badge(
+                test_status,
+                self.is_registered(kind),
+                palette,
+                density,
+            ))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(test_btn)
+                    .child(save_btn),
+            )
             .into_any_element()
     }
 }
 
-impl Render for CloudTtsEnginesView {
+impl Render for CloudCredentialsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-
-        let header = div()
-            .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_muted)
-            .child(tr!("tts_cloud_header"));
-
-        let column = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Md, density))
-            .child(header)
-            .child(self.azure_card(&palette, density, cx))
-            .child(self.elevenlabs_card(&palette, density, cx))
-            .child(self.openai_card(&palette, density, cx))
-            .child(self.polly_card(&palette, density, cx));
-
-        div()
-            .id("cloud-engines-scroll")
-            .size_full()
-            .overflow_y_scroll()
-            .bg(palette.base)
-            .child(column)
+        match self.active {
+            Some(kind) => self.credentials_card(kind, &palette, density, cx),
+            None => div().into_any_element(),
+        }
     }
+}
+
+fn secure_field_id(field: SecureField) -> &'static str {
+    match field {
+        SecureField::AzureApi => "azure-api",
+        SecureField::ElevenApi => "eleven-api",
+        SecureField::OpenAiApi => "openai-api",
+        SecureField::PollyAccess => "polly-access",
+        SecureField::PollySecret => "polly-secret",
+    }
+}
+
+fn two_col(left: AnyElement, right: AnyElement) -> AnyElement {
+    div()
+        .w_full()
+        .flex()
+        .gap(GRID_GAP)
+        .child(div().flex_1().min_w(px(0.0)).child(left))
+        .child(div().flex_1().min_w(px(0.0)).child(right))
+        .into_any_element()
+}
+
+fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    let label: SharedString = label.into();
+    div()
+        .font_family(DEFAULT_MONO_FAMILY)
+        .text_size(FONT_XXS)
+        .text_color(palette.text_muted)
+        .child(label)
+}
+
+fn encryption_note(palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(5.0))
+        .child(icon(Icon::Lock, LOCK_GLYPH, palette.success))
+        .child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(NOTE_FS)
+                .text_color(palette.text_muted)
+                .child(tr!("tts_engines_creds_encrypted_note")),
+        )
 }
 
 fn config_status_badge(
@@ -821,40 +949,18 @@ fn test_result_row(
     )
 }
 
-fn labeled_field(
-    label: impl Into<SharedString>,
-    input: Entity<TextInput>,
-    palette: &ForgePalette,
-    density: Density,
-) -> impl IntoElement {
-    let label: SharedString = label.into();
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Sm, density))
-        .child(
-            div()
-                .w(LABEL_W)
-                .flex_none()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(label),
-        )
-        .child(div().flex_1().min_w(px(0.0)).child(input))
-}
-
 fn field(
     placeholder: impl Into<SharedString>,
     secure: bool,
     palette: ForgePalette,
-    cx: &mut Context<CloudTtsEnginesView>,
+    cx: &mut Context<CloudCredentialsView>,
 ) -> Entity<TextInput> {
     cx.new(|cx| {
         TextInput::new(placeholder, cx)
             .with_palette(palette)
-            .with_font_size(FONT_SM)
+            .plain()
+            .mono()
+            .with_font_size(FS_12)
             .secure(secure)
     })
 }

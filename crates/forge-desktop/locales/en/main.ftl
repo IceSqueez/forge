@@ -856,7 +856,6 @@ tts_tab_engines = Engines
 tts_tab_aliases = Voice aliases
 tts_tab_filters = Filters
 tts_tab_triggers = Triggers
-tts_tab_cloud_engines = Cloud engines
 
 ## TTS - breadcrumb
 
@@ -902,8 +901,8 @@ tts_dash_engine_no_voices = no voices installed
 
 tts_engines_header_prefix = CONFIGURED
 tts_engines_add_engine = Add engine
+tts_engines_add_none_left = All cloud engines configured
 tts_engines_select_hint = Select an engine to configure
-tts_engines_status_ready = Ready
 tts_header_engines_ready = { $count ->
     [one] { $count } engine ready
    *[other] { $count } engines ready
@@ -919,9 +918,15 @@ tts_engines_detail_sub = { $kind } engine · { $count ->
     [one] { $count } voice
    *[other] { $count } voices
 }
+tts_engines_detail_sub_region = { $kind } engine · { $region } · { $count ->
+    [one] { $count } voice
+   *[other] { $count } voices
+}
 
 ## TTS Engines - sections
 
+tts_engines_section_credentials = CREDENTIALS
+tts_engines_creds_encrypted_note = Stored encrypted in the local database
 tts_engines_section_params = DEFAULT VOICE PARAMETERS
 tts_engines_param_pitch = Pitch
 tts_engines_param_speed = Speed
@@ -1053,10 +1058,6 @@ tts_triggers_role_subscribers = Subscribers
 tts_triggers_role_vips = VIPs
 tts_triggers_role_mods = Mods
 tts_triggers_role_everyone = Everyone
-
-## Cloud TTS Engines - header
-
-tts_cloud_header = CLOUD ENGINES · 4
 
 ## Cloud TTS Engines - card buttons
 

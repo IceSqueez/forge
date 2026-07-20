@@ -1,17 +1,21 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, card, icon, radius, slider, spacing, status_dot, tr,
+    ForgePalette, Icon, Radius, Spacing, card, icon, radius, slider, spacing, status_dot, toggle,
+    tr,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo};
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
 use forge_types::EventId;
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString, Window,
-    div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
+use crate::cloud_credentials::{CloudCredentialsView, CloudEngineKind, CloudEngineRegistered};
 use crate::presentation::ActivePresentation;
 
 const RAIL_W: Pixels = px(240.0);
@@ -28,35 +32,77 @@ const FS_10: Pixels = px(10.0);
 const FS_11: Pixels = px(11.0);
 const FS_11_5: Pixels = px(11.5);
 
-pub struct AddEngineRequested;
-
 struct EngineEntry {
     id: String,
     name: String,
     kind: &'static str,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Selection {
+    None,
+    Engine(usize),
+    Adding(CloudEngineKind),
+}
+
 pub struct TtsEnginesView {
+    registry: Option<Arc<RwLock<TtsRegistry>>>,
+    credentials: Arc<dyn CredentialsRepo>,
+    settings: Arc<dyn SettingsRepo>,
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     engines: Vec<EngineEntry>,
-    selected: Option<usize>,
+    selected: Selection,
+    disabled: HashSet<String>,
+    add_open: bool,
+    regions: HashMap<String, String>,
+    cloud: Entity<CloudCredentialsView>,
+    _subs: Vec<Subscription>,
 }
-
-impl EventEmitter<AddEngineRequested> for TtsEnginesView {}
 
 impl TtsEnginesView {
     pub fn new(
         registry: Option<Arc<RwLock<TtsRegistry>>>,
+        credentials: Arc<dyn CredentialsRepo>,
+        settings: Arc<dyn SettingsRepo>,
         speak: Option<SpeakQueueHandle>,
         rt_handle: tokio::runtime::Handle,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> Self {
+        let disabled = speak
+            .as_ref()
+            .map(|h| h.disabled_engines().iter().map(|e| e.0.clone()).collect())
+            .unwrap_or_default();
+
+        let cloud = cx.new(|cx| {
+            CloudCredentialsView::new(
+                registry.clone(),
+                Arc::clone(&credentials),
+                rt_handle.clone(),
+                speak.clone(),
+                cx,
+            )
+        });
+        let sub = cx.subscribe(
+            &cloud,
+            |this, _entity, event: &CloudEngineRegistered, cx| {
+                this.on_engine_registered(&event.0, cx);
+            },
+        );
+
         Self {
             engines: load_roster(registry.as_ref()),
+            registry,
+            credentials,
+            settings,
             speak,
             rt_handle,
-            selected: None,
+            selected: Selection::None,
+            disabled,
+            add_open: false,
+            regions: HashMap::new(),
+            cloud,
+            _subs: vec![sub],
         }
     }
 
@@ -68,12 +114,108 @@ impl TtsEnginesView {
     }
 
     fn select_engine(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.selected = Some(index);
+        self.selected = Selection::Engine(index);
+        self.add_open = false;
+        let kind = self
+            .engines
+            .get(index)
+            .and_then(|e| CloudEngineKind::from_engine_id(&e.id));
+        self.cloud
+            .update(cx, |cloud, cx| cloud.set_active(kind, cx));
+        if let Some(engine) = self.engines.get(index) {
+            let id = engine.id.clone();
+            self.ensure_region_loaded(&id, cx);
+        }
         cx.notify();
     }
 
-    fn request_add_engine(&mut self, cx: &mut Context<Self>) {
-        cx.emit(AddEngineRequested);
+    fn toggle_add_picker(&mut self, cx: &mut Context<Self>) {
+        self.add_open = !self.add_open;
+        cx.notify();
+    }
+
+    fn choose_add(&mut self, kind: CloudEngineKind, cx: &mut Context<Self>) {
+        self.selected = Selection::Adding(kind);
+        self.add_open = false;
+        self.cloud
+            .update(cx, |cloud, cx| cloud.set_active(Some(kind), cx));
+        cx.notify();
+    }
+
+    fn toggle_engine(&mut self, engine_id: String, cx: &mut Context<Self>) {
+        if self.disabled.contains(&engine_id) {
+            self.disabled.remove(&engine_id);
+        } else {
+            self.disabled.insert(engine_id.clone());
+        }
+        let now_enabled = !self.disabled.contains(&engine_id);
+        if let Some(speak) = self.speak.clone() {
+            let eid = EngineId(engine_id);
+            self.rt_handle.spawn(async move {
+                if let Err(e) = speak
+                    .send(SpeakCommand::SetEngineEnabled(eid, now_enabled))
+                    .await
+                {
+                    eprintln!("forge-desktop: set engine enabled failed: {e}");
+                }
+            });
+        }
+        self.persist_disabled();
+        cx.notify();
+    }
+
+    fn persist_disabled(&self) {
+        let settings = Arc::clone(&self.settings);
+        let ids: Vec<String> = self.disabled.iter().cloned().collect();
+        self.rt_handle.spawn(async move {
+            if let Err(e) = forge_storage::set_disabled_tts_engines(settings.as_ref(), &ids).await {
+                eprintln!("forge-desktop: persist disabled tts engines failed: {e}");
+            }
+        });
+    }
+
+    fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
+        self.engines = load_roster(self.registry.as_ref());
+        if let Some(index) = self.engines.iter().position(|e| e.id == engine_id.0) {
+            self.selected = Selection::Engine(index);
+        }
+        self.ensure_region_loaded(&engine_id.0.clone(), cx);
+        cx.notify();
+    }
+
+    fn ensure_region_loaded(&mut self, engine_id: &str, cx: &mut Context<Self>) {
+        if self.regions.contains_key(engine_id) {
+            return;
+        }
+        let Some(kind) = CloudEngineKind::from_engine_id(engine_id) else {
+            return;
+        };
+        let cred_id = kind.credential_id();
+        let repo = Arc::clone(&self.credentials);
+        let id = engine_id.to_owned();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+        self.rt_handle.spawn(async move {
+            let region = match repo.load(&CredentialId::new(cred_id)).await {
+                Ok(Some(json)) => serde_json::from_str::<serde_json::Value>(&json)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("region")
+                            .and_then(|r| r.as_str())
+                            .map(|s| s.to_owned())
+                    }),
+                _ => None,
+            };
+            let _ = tx.send(region);
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Some(region)) = rx.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.regions.insert(id, region);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     fn preview_voice(&self, engine_id: String, voice_id: String) {
@@ -98,6 +240,13 @@ impl TtsEnginesView {
                 eprintln!("forge-desktop: voice preview enqueue failed: {err}");
             }
         });
+    }
+
+    fn configured_cloud_kinds(&self) -> HashSet<&'static str> {
+        self.engines
+            .iter()
+            .filter_map(|e| CloudEngineKind::from_engine_id(&e.id).map(|k| k.key()))
+            .collect()
     }
 
     fn engine_list(
@@ -135,7 +284,9 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xxs, density));
         for (index, engine) in self.engines.iter().enumerate() {
             let count = engine_voice_count(catalog, &engine.id);
-            entries = entries.child(self.engine_entry(index, engine, count, palette, density, cx));
+            let disabled = self.disabled.contains(&engine.id);
+            entries = entries
+                .child(self.engine_entry(index, engine, count, disabled, palette, density, cx));
         }
 
         let column = div()
@@ -144,7 +295,8 @@ impl TtsEnginesView {
             .flex_col()
             .child(header)
             .child(entries)
-            .child(self.add_engine_button(palette, density, cx));
+            .child(self.add_engine_button(palette, density, cx))
+            .child(self.add_picker(palette, density, cx));
 
         div()
             .id("tts-engines-list")
@@ -161,20 +313,29 @@ impl TtsEnginesView {
             .into_any_element()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn engine_entry(
         &self,
         index: usize,
         engine: &EngineEntry,
         voice_count: usize,
+        disabled: bool,
         palette: &ForgePalette,
         density: Density,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let selected = self.selected == Some(index);
-        let name_color = if selected {
+        let selected = self.selected == Selection::Engine(index);
+        let name_color = if disabled {
+            palette.text_faint
+        } else if selected {
             palette.text_primary
         } else {
             palette.text_secondary
+        };
+        let dot_color = if disabled {
+            palette.text_faint
+        } else {
+            engine_status_color(engine.kind, palette)
         };
 
         let identity = div()
@@ -214,10 +375,7 @@ impl TtsEnginesView {
             .when(selected, |d| d.bg(palette.surface_overlay))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_engine(index, cx)))
-            .child(status_dot(
-                engine_status_color(engine.kind, palette),
-                STATUS_DOT,
-            ))
+            .child(status_dot(dot_color, STATUS_DOT))
             .child(identity)
             .into_any_element()
     }
@@ -243,7 +401,7 @@ impl TtsEnginesView {
             .border_dashed()
             .border_color(palette.border_regular)
             .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.request_add_engine(cx)))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_add_picker(cx)))
             .child(icon(Icon::Plus, PLUS_GLYPH, palette.brand))
             .child(
                 div()
@@ -255,6 +413,67 @@ impl TtsEnginesView {
             .into_any_element()
     }
 
+    fn add_picker(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        if !self.add_open {
+            return div().into_any_element();
+        }
+        let configured = self.configured_cloud_kinds();
+        let mut list = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .mt(spacing(Spacing::Xxs, density));
+        let mut any = false;
+        for kind in CloudEngineKind::ALL {
+            if configured.contains(kind.key()) {
+                continue;
+            }
+            any = true;
+            list = list.child(
+                div()
+                    .id(SharedString::from(format!("tts-add-pick-{}", kind.key())))
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .py(spacing(Spacing::Xs, density))
+                    .px(spacing(Spacing::Sm, density))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(palette.surface_overlay))
+                    .on_click(
+                        cx.listener(move |this, _: &ClickEvent, _, cx| this.choose_add(kind, cx)),
+                    )
+                    .child(icon(Icon::Cloud, PLUS_GLYPH, palette.brand))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_secondary)
+                            .child(kind.display_name()),
+                    ),
+            );
+        }
+        if !any {
+            list = list.child(
+                div()
+                    .px(spacing(Spacing::Sm, density))
+                    .py(spacing(Spacing::Xs, density))
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FS_11)
+                    .text_color(palette.text_faint)
+                    .child(tr!("tts_engines_add_none_left")),
+            );
+        }
+        list.into_any_element()
+    }
+
     fn detail_pane(
         &self,
         catalog: &[TtsVoice],
@@ -262,21 +481,13 @@ impl TtsEnginesView {
         density: Density,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let inner: AnyElement = match self.selected.and_then(|i| self.engines.get(i)) {
-            Some(engine) => self.engine_detail(engine, catalog, palette, density, cx),
-            None => div()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_muted)
-                        .child(tr!("tts_engines_select_hint")),
-                )
-                .into_any_element(),
+        let inner: AnyElement = match self.selected {
+            Selection::Engine(index) => match self.engines.get(index) {
+                Some(engine) => self.engine_detail(engine, catalog, palette, density, cx),
+                None => self.detail_hint(palette),
+            },
+            Selection::Adding(kind) => self.adding_detail(kind, palette, density, cx),
+            Selection::None => self.detail_hint(palette),
         };
 
         div()
@@ -292,6 +503,22 @@ impl TtsEnginesView {
             .into_any_element()
     }
 
+    fn detail_hint(&self, palette: &ForgePalette) -> AnyElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("tts_engines_select_hint")),
+            )
+            .into_any_element()
+    }
+
     fn engine_detail(
         &self,
         engine: &EngineEntry,
@@ -304,26 +531,64 @@ impl TtsEnginesView {
             .iter()
             .filter(|v| v.engine_id.0 == engine.id)
             .collect();
+        let is_cloud = CloudEngineKind::from_engine_id(&engine.id).is_some();
+        let region = self.regions.get(&engine.id).map(|s| s.as_str());
 
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .child(self.detail_header(engine, voices.len(), palette, density))
-            .child(params_section(palette, density))
+        let mut col = div().w_full().flex().flex_col().child(self.detail_header(
+            &engine.name,
+            engine.kind,
+            region,
+            voices.len(),
+            Some(&engine.id),
+            palette,
+            density,
+            cx,
+        ));
+        if is_cloud {
+            col = col.child(self.cloud.clone());
+        }
+        col.child(params_section(palette, density))
             .child(self.voices_section(engine, &voices, palette, density, cx))
             .into_any_element()
     }
 
-    fn detail_header(
+    fn adding_detail(
         &self,
-        engine: &EngineEntry,
-        voice_count: usize,
+        kind: CloudEngineKind,
         palette: &ForgePalette,
         density: Density,
+        cx: &Context<Self>,
     ) -> AnyElement {
-        let status_color = engine_status_color(engine.kind, palette);
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .child(self.detail_header(
+                kind.display_name(),
+                "cloud",
+                None,
+                0,
+                None,
+                palette,
+                density,
+                cx,
+            ))
+            .child(self.cloud.clone())
+            .into_any_element()
+    }
 
+    #[allow(clippy::too_many_arguments)]
+    fn detail_header(
+        &self,
+        name: &str,
+        kind: &str,
+        region: Option<&str>,
+        voice_count: usize,
+        engine_id: Option<&str>,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let tile = div()
             .w(TILE)
             .h(TILE)
@@ -333,7 +598,21 @@ impl TtsEnginesView {
             .justify_center()
             .rounded(radius(Radius::Md))
             .bg(palette.surface_overlay)
-            .child(icon(engine_glyph(engine.kind), TILE_GLYPH, palette.brand));
+            .child(icon(engine_glyph(kind), TILE_GLYPH, palette.brand));
+
+        let subtitle = match region {
+            Some(region) => tr!(
+                "tts_engines_detail_sub_region",
+                kind = kind,
+                region = region,
+                count = voice_count as i64
+            ),
+            None => tr!(
+                "tts_engines_detail_sub",
+                kind = kind,
+                count = voice_count as i64
+            ),
+        };
 
         let identity = div()
             .flex_1()
@@ -347,33 +626,31 @@ impl TtsEnginesView {
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
-                    .child(engine.name.clone()),
+                    .child(name.to_owned()),
             )
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FS_11_5)
                     .text_color(palette.text_muted)
-                    .child(tr!(
-                        "tts_engines_detail_sub",
-                        kind = engine.kind,
-                        count = voice_count as i64
-                    )),
+                    .child(subtitle),
             );
 
-        let ready = div()
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(status_dot(status_color, STATUS_DOT))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(status_color)
-                    .child(tr!("tts_engines_status_ready")),
-            );
+        let right: AnyElement = match engine_id {
+            Some(id) => {
+                let on = !self.disabled.contains(id);
+                let id_owned = id.to_owned();
+                toggle(on, palette)
+                    .on_click(
+                        SharedString::from(format!("engine-toggle-{id}")),
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.toggle_engine(id_owned.clone(), cx)
+                        }),
+                    )
+                    .into_any_element()
+            }
+            None => div().into_any_element(),
+        };
 
         div()
             .w_full()
@@ -383,7 +660,7 @@ impl TtsEnginesView {
             .mb(spacing(Spacing::Md, density))
             .child(tile)
             .child(identity)
-            .child(ready)
+            .child(right)
             .into_any_element()
     }
 

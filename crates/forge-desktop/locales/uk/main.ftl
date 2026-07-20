@@ -858,7 +858,6 @@ tts_tab_engines = Рушії
 tts_tab_aliases = Псевдоніми голосів
 tts_tab_filters = Фільтри
 tts_tab_triggers = Тригери
-tts_tab_cloud_engines = Хмарні рушії
 
 ## TTS - хлібні крихти
 
@@ -904,8 +903,8 @@ tts_dash_engine_no_voices = голоси не встановлено
 
 tts_engines_header_prefix = НАЛАШТОВАНО
 tts_engines_add_engine = Додати рушій
+tts_engines_add_none_left = Усі хмарні рушії налаштовано
 tts_engines_select_hint = Оберіть рушій для налаштування
-tts_engines_status_ready = Готовий
 tts_header_engines_ready = Готово рушіїв: { $count }
 tts_engines_rail_sub = { $kind } · { $count ->
     [one] { $count } голос
@@ -922,9 +921,17 @@ tts_engines_detail_sub = рушій { $kind } · { $count ->
     [many] { $count } голосів
    *[other] { $count } голосів
 }
+tts_engines_detail_sub_region = рушій { $kind } · { $region } · { $count ->
+    [one] { $count } голос
+    [few] { $count } голоси
+    [many] { $count } голосів
+   *[other] { $count } голосів
+}
 
 ## TTS Engines - секції
 
+tts_engines_section_credentials = ОБЛІКОВІ ДАНІ
+tts_engines_creds_encrypted_note = Зберігається зашифровано в локальній базі даних
 tts_engines_section_params = ПАРАМЕТРИ ГОЛОСУ ЗА ЗАМОВЧУВАННЯМ
 tts_engines_param_pitch = Висота тону
 tts_engines_param_speed = Швидкість
@@ -1056,10 +1063,6 @@ tts_triggers_role_subscribers = Підписники
 tts_triggers_role_vips = VIP
 tts_triggers_role_mods = Модератори
 tts_triggers_role_everyone = Усі
-
-## Хмарні рушії - заголовок
-
-tts_cloud_header = ХМАРНІ РУШІЇ · 4
 
 ## Хмарні рушії - кнопки картки
 

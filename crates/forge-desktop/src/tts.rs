@@ -5,17 +5,16 @@ use forge_components::{
     status_dot, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
-use forge_storage::{CredentialsRepo, DataProvider};
+use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use forge_tts_core::TtsRegistry;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
 };
 
-use crate::cloud_tts_engines::CloudTtsEnginesView;
 use crate::presentation::ActivePresentation;
 use crate::speak_state::SpeakState;
 use crate::tts_dashboard::TtsDashboardView;
-use crate::tts_engines::{AddEngineRequested, TtsEnginesView};
+use crate::tts_engines::TtsEnginesView;
 use crate::tts_filters::TtsFiltersView;
 use crate::tts_triggers::TtsTriggersView;
 use crate::voice_aliases::VoiceAliasesView;
@@ -35,17 +34,15 @@ pub enum TtsSection {
     Aliases,
     Filters,
     Triggers,
-    CloudEngines,
 }
 
 impl TtsSection {
-    const ALL: [TtsSection; 6] = [
+    const ALL: [TtsSection; 5] = [
         TtsSection::Dashboard,
         TtsSection::Engines,
         TtsSection::Aliases,
         TtsSection::Filters,
         TtsSection::Triggers,
-        TtsSection::CloudEngines,
     ];
 
     fn label(self) -> String {
@@ -55,7 +52,6 @@ impl TtsSection {
             TtsSection::Aliases => tr!("tts_tab_aliases"),
             TtsSection::Filters => tr!("tts_tab_filters"),
             TtsSection::Triggers => tr!("tts_tab_triggers"),
-            TtsSection::CloudEngines => tr!("tts_tab_cloud_engines"),
         }
     }
 
@@ -66,7 +62,6 @@ impl TtsSection {
             TtsSection::Aliases => "aliases",
             TtsSection::Filters => "filters",
             TtsSection::Triggers => "triggers",
-            TtsSection::CloudEngines => "cloud-engines",
         }
     }
 }
@@ -78,7 +73,6 @@ pub struct TtsView {
     aliases: Entity<VoiceAliasesView>,
     filters: Entity<TtsFiltersView>,
     triggers: Entity<TtsTriggersView>,
-    cloud: Entity<CloudTtsEnginesView>,
     tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
     speak: Option<SpeakQueueHandle>,
 }
@@ -104,16 +98,19 @@ impl TtsView {
                 cx,
             )
         });
+        let credentials: Arc<dyn CredentialsRepo> =
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
+        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
         let engines = cx.new(|cx| {
-            TtsEnginesView::new(tts_registry.clone(), speak.clone(), rt_handle.clone(), cx)
+            TtsEnginesView::new(
+                tts_registry.clone(),
+                Arc::clone(&credentials),
+                settings,
+                speak.clone(),
+                rt_handle.clone(),
+                cx,
+            )
         });
-        cx.subscribe(
-            &engines,
-            |this, _entity, _event: &AddEngineRequested, cx| {
-                this.select_section(TtsSection::CloudEngines, cx);
-            },
-        )
-        .detach();
         let filters = cx.new(|cx| {
             TtsFiltersView::new(
                 backend.tts_filters_repo(),
@@ -139,17 +136,6 @@ impl TtsView {
                 cx,
             )
         });
-        let credentials: Arc<dyn CredentialsRepo> =
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
-        let cloud = cx.new(|cx| {
-            CloudTtsEnginesView::new(
-                tts_registry.clone(),
-                credentials,
-                rt_handle,
-                speak.clone(),
-                cx,
-            )
-        });
         Self {
             section: TtsSection::Dashboard,
             dashboard,
@@ -157,7 +143,6 @@ impl TtsView {
             aliases,
             filters,
             triggers,
-            cloud,
             tts_registry,
             speak,
         }
@@ -275,7 +260,6 @@ impl TtsView {
             TtsSection::Aliases => self.aliases.clone().into_any_element(),
             TtsSection::Filters => self.filters.clone().into_any_element(),
             TtsSection::Triggers => self.triggers.clone().into_any_element(),
-            TtsSection::CloudEngines => self.cloud.clone().into_any_element(),
         }
     }
 }

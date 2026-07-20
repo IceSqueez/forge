@@ -2871,15 +2871,29 @@ impl ScreenActionsView {
             );
 
         if !multiline {
-            head = head.child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.))
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
+            let is_string = value.len() >= 2 && value.starts_with('"') && value.ends_with('"');
+            let mut value_el = div()
+                .flex_1()
+                .min_w(px(0.))
+                .flex()
+                .flex_wrap()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS);
+            if is_string {
+                for (chunk, is_var) in parse_variable_segments(value) {
+                    let color = if is_var {
+                        palette.warning
+                    } else {
+                        palette.success
+                    };
+                    value_el = value_el.child(div().text_color(color).child(chunk.to_owned()));
+                }
+            } else {
+                value_el = value_el
                     .text_color(palette.text_secondary)
-                    .child(value.to_owned()),
-            );
+                    .child(value.to_owned());
+            }
+            head = head.child(value_el);
             return div()
                 .pl(io_indent)
                 .min_w(px(0.))

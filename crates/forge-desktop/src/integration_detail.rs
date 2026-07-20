@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
-    PickerItem, PickerLabels, Radius, Spacing, breadcrumb, confirm_modal, icon, overlay, radius,
-    spacing, tr, with_alpha,
+    PickerItem, PickerLabels, Radius, Spacing, ToastKind, breadcrumb, confirm_modal, icon, overlay,
+    radius, spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -23,12 +23,14 @@ use gpui::{
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::{content_sections, format_uptime, health_grid};
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use crate::toasts::PushToast;
 use crate::twitch_panel::{TwitchFlowHandle, TwitchPanelState};
 
 pub struct IntegrationDetail {
@@ -67,7 +69,6 @@ pub struct IntegrationDetail {
     quick_actions: Vec<QuickAction>,
     pending_disconnect: bool,
     pending_picker: Option<PendingPicker>,
-    toast: Option<String>,
     _conn_obs: Subscription,
 }
 
@@ -156,7 +157,6 @@ impl IntegrationDetail {
             quick_actions,
             pending_disconnect: false,
             pending_picker: None,
-            toast: None,
             _conn_obs: conn_obs,
         }
     }
@@ -193,29 +193,31 @@ impl IntegrationDetail {
                 self.pending_disconnect = true;
                 cx.notify();
             }
-            HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect),
-            HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken),
+            HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect, cx),
+            HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken, cx),
             HeaderAction::Settings => {
-                self.toast = Some(tr!("integration_settings_coming_soon"));
-                cx.notify();
+                cx.push_toast(ToastKind::Info, tr!("integration_settings_coming_soon"));
             }
         }
     }
 
-    fn dispatch_control(&self, verb: ControlVerb) {
+    fn dispatch_control(&mut self, verb: ControlVerb, cx: &mut Context<Self>) {
         let Some(ctrl) = self.control.clone() else {
             return;
         };
-        self.rt_handle.spawn(async move {
-            let outcome = match verb {
-                ControlVerb::Reconnect => ctrl.reconnect().await,
-                ControlVerb::Disconnect => ctrl.disconnect().await,
-                ControlVerb::RefreshToken => ctrl.refresh_token().await,
-            };
-            if let Err(failure) = outcome {
-                eprintln!("forge-desktop: integration control action failed: {failure}");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move {
+                match verb {
+                    ControlVerb::Reconnect => ctrl.reconnect().await,
+                    ControlVerb::Disconnect => ctrl.disconnect().await,
+                    ControlVerb::RefreshToken => ctrl.refresh_token().await,
+                }
+            },
+            ErrorSink::Toast,
+            tr!("integration_control_failed"),
+            cx,
+        );
     }
 
     fn cancel_disconnect(&mut self, cx: &mut Context<Self>) {
@@ -225,7 +227,7 @@ impl IntegrationDetail {
 
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
         self.pending_disconnect = false;
-        self.dispatch_control(ControlVerb::Disconnect);
+        self.dispatch_control(ControlVerb::Disconnect, cx);
         cx.notify();
     }
 
@@ -244,11 +246,13 @@ impl IntegrationDetail {
         let builtin_id = self.status.id().as_str().to_owned();
         let label = action.label.clone();
         let engine = self.action_engine.clone();
-        self.rt_handle.spawn(async move {
-            if let Err(failure) = engine.execute_quick_action(step, builtin_id, label).await {
-                eprintln!("forge-desktop: quick action dispatch failed: {failure}");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { engine.execute_quick_action(step, builtin_id, label).await },
+            ErrorSink::Toast,
+            tr!("integration_quick_action_failed"),
+            cx,
+        );
     }
 
     fn open_picker(
@@ -329,7 +333,7 @@ impl IntegrationDetail {
                 });
             }
             Err(reason) => {
-                eprintln!("forge-desktop: obs picker load failed: {reason}");
+                ErrorSink::Toast.report(reason, cx);
                 picker.update(cx, |picker, cx| picker.set_loading(false, cx));
             }
         }
@@ -389,16 +393,13 @@ impl IntegrationDetail {
         }
 
         let engine = self.action_engine.clone();
-        self.rt_handle.spawn(async move {
-            if let Err(failure) = engine.execute_quick_action(step, builtin_id, label).await {
-                eprintln!("forge-desktop: quick action dispatch failed: {failure}");
-            }
-        });
-        cx.notify();
-    }
-
-    fn dismiss_toast(&mut self, cx: &mut Context<Self>) {
-        self.toast = None;
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { engine.execute_quick_action(step, builtin_id, label).await },
+            ErrorSink::Toast,
+            tr!("integration_quick_action_failed"),
+            cx,
+        );
         cx.notify();
     }
 
@@ -805,40 +806,6 @@ impl IntegrationDetail {
                 .into_any_element(),
         )
     }
-
-    fn toast_banner(
-        &self,
-        message: String,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        div()
-            .absolute()
-            .right(spacing(Spacing::Md, density))
-            .bottom(spacing(Spacing::Md, density))
-            .id("integration-toast")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.success)
-            .bg(palette.elevated)
-            .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss_toast(cx)))
-            .child(icon(Icon::CircleCheck, FONT_SM, palette.success))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(message),
-            )
-            .into_any_element()
-    }
 }
 
 impl Render for IntegrationDetail {
@@ -920,11 +887,6 @@ impl Render for IntegrationDetail {
                 })
                 .into_any_element()
         });
-        let toast = self
-            .toast
-            .clone()
-            .map(|m| self.toast_banner(m, &palette, density, cx));
-
         div()
             .relative()
             .size_full()
@@ -935,7 +897,6 @@ impl Render for IntegrationDetail {
             .child(scroll)
             .children(disconnect_overlay)
             .children(picker_overlay)
-            .children(toast)
     }
 }
 

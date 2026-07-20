@@ -1,5 +1,6 @@
 mod actions;
 mod actions_screen;
+mod async_bridge;
 mod boot;
 mod builtin_sections;
 mod chat;

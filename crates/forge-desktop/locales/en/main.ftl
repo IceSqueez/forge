@@ -939,6 +939,8 @@ tts_engines_voices_header_prefix = VOICES
 tts_engines_voices_available = { $count } available
 tts_engines_voices_empty = No voices found
 tts_engines_voice_preview_sample = This is my voice.
+tts_engines_toggle_failed = Failed to change engine state
+tts_engines_persist_disabled_failed = Failed to save engine state
 
 ## TTS Filters - pipeline column
 
@@ -1853,6 +1855,8 @@ builtin_obs_not_supported = Not supported for OBS
 builtin_disconnect_confirm_hint = You will be disconnected and will need to reconnect manually. Live events from this integration stop arriving until then.
 integration_disconnect_title = Disconnect integration
 integration_settings_coming_soon = Settings coming soon
+integration_control_failed = Control command failed
+integration_quick_action_failed = Quick action failed
 integration_quick_action_na = N/A
 integration_state_connecting_title = Connecting…
 integration_state_connecting_detail = Establishing a session with this integration.

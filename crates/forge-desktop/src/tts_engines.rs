@@ -16,6 +16,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
+use crate::async_bridge::{self, ErrorSink};
 use crate::cloud_credentials::{CloudCredentialsView, CloudEngineKind, CloudEngineRegistered};
 use crate::presentation::ActivePresentation;
 
@@ -37,6 +38,12 @@ struct EngineEntry {
     id: String,
     name: String,
     kind: &'static str,
+}
+
+struct EngineParamSnapshot {
+    pitch: f32,
+    rate: f32,
+    volume: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -177,48 +184,64 @@ impl TtsEnginesView {
         let now_enabled = !self.disabled.contains(&engine_id);
         if let Some(speak) = self.speak.clone() {
             let eid = EngineId(engine_id);
-            self.rt_handle.spawn(async move {
-                if let Err(e) = speak
-                    .send(SpeakCommand::SetEngineEnabled(eid, now_enabled))
-                    .await
-                {
-                    eprintln!("forge-desktop: set engine enabled failed: {e}");
-                }
-            });
+            async_bridge::report_failure(
+                &self.rt_handle,
+                async move {
+                    speak
+                        .send(SpeakCommand::SetEngineEnabled(eid, now_enabled))
+                        .await
+                },
+                ErrorSink::Toast,
+                tr!("tts_engines_toggle_failed"),
+                cx,
+            );
         }
-        self.persist_disabled();
+        self.persist_disabled(cx);
         cx.notify();
     }
 
-    fn persist_disabled(&self) {
+    fn persist_disabled(&self, cx: &mut Context<Self>) {
         let settings = Arc::clone(&self.settings);
         let ids: Vec<String> = self.disabled.iter().cloned().collect();
-        self.rt_handle.spawn(async move {
-            if let Err(e) = forge_storage::set_disabled_tts_engines(settings.as_ref(), &ids).await {
-                eprintln!("forge-desktop: persist disabled tts engines failed: {e}");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { forge_storage::set_disabled_tts_engines(settings.as_ref(), &ids).await },
+            ErrorSink::Toast,
+            tr!("tts_engines_persist_disabled_failed"),
+            cx,
+        );
+    }
+
+    fn param_snapshot(&self) -> EngineParamSnapshot {
+        EngineParamSnapshot {
+            pitch: self.pitch_semitones,
+            rate: self.rate_multiplier,
+            volume: self.volume,
+        }
     }
 
     fn set_pitch(&mut self, value: f32, cx: &mut Context<Self>) {
+        let snapshot = self.param_snapshot();
         self.pitch_semitones = value.clamp(-12.0, 12.0);
-        self.push_engine_params();
+        self.push_engine_params(snapshot, cx);
         cx.notify();
     }
 
     fn set_speed(&mut self, value: f32, cx: &mut Context<Self>) {
+        let snapshot = self.param_snapshot();
         self.rate_multiplier = value.clamp(0.5, 2.0);
-        self.push_engine_params();
+        self.push_engine_params(snapshot, cx);
         cx.notify();
     }
 
     fn set_engine_volume(&mut self, value: f32, cx: &mut Context<Self>) {
+        let snapshot = self.param_snapshot();
         self.volume = value.clamp(0.0, 1.0);
-        self.push_engine_params();
+        self.push_engine_params(snapshot, cx);
         cx.notify();
     }
 
-    fn push_engine_params(&self) {
+    fn push_engine_params(&mut self, snapshot: EngineParamSnapshot, cx: &mut Context<Self>) {
         let Some(engine_id) = self.selected_engine_id() else {
             return;
         };
@@ -227,30 +250,37 @@ impl TtsEnginesView {
             rate_multiplier: self.rate_multiplier,
         };
         let gain = self.volume;
-        if let Some(speak) = self.speak.clone() {
-            let eid = EngineId(engine_id.clone());
-            self.rt_handle.spawn(async move {
-                if let Err(e) = speak
-                    .send(SpeakCommand::SetEngineParams(eid, defaults, gain))
-                    .await
-                {
-                    eprintln!("forge-desktop: set engine params failed: {e}");
-                }
-            });
-        }
+        let speak = self.speak.clone();
         let settings = Arc::clone(&self.settings);
         let params = EngineParams {
             pitch_semitones: defaults.pitch_semitones,
             rate_multiplier: defaults.rate_multiplier,
             gain,
         };
-        self.rt_handle.spawn(async move {
-            if let Err(e) =
-                forge_storage::set_engine_params(settings.as_ref(), &engine_id, params).await
-            {
-                eprintln!("forge-desktop: persist engine params failed: {e}");
-            }
-        });
+        let persist_id = engine_id.clone();
+        let eid = EngineId(engine_id);
+        async_bridge::optimistic(
+            &self.rt_handle,
+            snapshot,
+            async move {
+                if let Some(speak) = speak {
+                    speak
+                        .send(SpeakCommand::SetEngineParams(eid, defaults, gain))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+                forge_storage::set_engine_params(settings.as_ref(), &persist_id, params)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
+            |this, snapshot, message, cx| {
+                this.pitch_semitones = snapshot.pitch;
+                this.rate_multiplier = snapshot.rate;
+                this.volume = snapshot.volume;
+                ErrorSink::Toast.report(message, cx);
+            },
+            cx,
+        );
     }
 
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
@@ -298,9 +328,9 @@ impl TtsEnginesView {
         .detach();
     }
 
-    fn preview_voice(&self, engine_id: String, voice_id: String) {
+    fn preview_voice(&self, engine_id: String, voice_id: String, cx: &mut Context<Self>) {
         let Some(speak) = self.speak.clone() else {
-            eprintln!("forge-desktop: voice preview dropped - speak queue unavailable");
+            tracing::warn!("voice preview dropped - speak queue unavailable");
             return;
         };
         let request = SpeakRequest {
@@ -315,11 +345,13 @@ impl TtsEnginesView {
             source_event_id: EventId::new(),
             is_reward: false,
         };
-        self.rt_handle.spawn(async move {
-            if let Err(err) = speak.send(SpeakCommand::Enqueue(request)).await {
-                eprintln!("forge-desktop: voice preview enqueue failed: {err}");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { speak.send(SpeakCommand::Enqueue(request)).await },
+            ErrorSink::Silent,
+            "voice preview enqueue",
+            cx,
+        );
     }
 
     fn configured_cloud_kinds(&self) -> HashSet<&'static str> {
@@ -866,8 +898,8 @@ impl TtsEnginesView {
             .id(SharedString::from(format!("tts-voice-play-{voice_id}")))
             .flex_shrink_0()
             .cursor_pointer()
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, _| {
-                this.preview_voice(engine_id.clone(), voice_id.clone())
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.preview_voice(engine_id.clone(), voice_id.clone(), cx)
             }))
             .child(icon(Icon::PlayerPlay, PLAY_GLYPH, palette.success));
 

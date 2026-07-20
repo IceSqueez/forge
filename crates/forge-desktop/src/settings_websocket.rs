@@ -15,6 +15,7 @@ use gpui::{
     SharedString, Subscription, Window, div, prelude::*, px, relative,
 };
 
+use crate::async_bridge::{self, ErrorSink};
 use crate::presentation::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
@@ -218,12 +219,38 @@ impl SettingsWebSocketView {
         cx.notify();
     }
 
+    fn persist_bool(
+        &mut self,
+        prev: bool,
+        set: fn(&mut Self, bool),
+        fut: impl Future<Output = Result<(), String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_error = None;
+        self.all_changes_saved = true;
+        async_bridge::optimistic(
+            &self.rt_handle,
+            prev,
+            fut,
+            move |this, prev, message, cx| {
+                set(this, prev);
+                this.all_changes_saved = false;
+                this.save_error = ErrorSink::Banner.report(message, cx);
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
     fn toggle_enable(&mut self, cx: &mut Context<Self>) {
-        let value = !self.enable_server;
+        let prev = self.enable_server;
+        let value = !prev;
         self.enable_server = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let server = self.server.clone();
-        self.apply_persist(
+        self.persist_bool(
+            prev,
+            |this, v| this.enable_server = v,
             async move {
                 ServerSettings::save_enabled(repo.as_ref(), value)
                     .await
@@ -344,10 +371,13 @@ impl SettingsWebSocketView {
     }
 
     fn toggle_require_ws_token(&mut self, cx: &mut Context<Self>) {
-        let value = !self.require_ws_token;
+        let prev = self.require_ws_token;
+        let value = !prev;
         self.require_ws_token = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.apply_persist(
+        self.persist_bool(
+            prev,
+            |this, v| this.require_ws_token = v,
             async move {
                 ServerSettings::save_auth_required_for_reads(repo.as_ref(), value)
                     .await
@@ -358,10 +388,13 @@ impl SettingsWebSocketView {
     }
 
     fn toggle_require_http_token(&mut self, cx: &mut Context<Self>) {
-        let value = !self.require_http_overlay_token;
+        let prev = self.require_http_overlay_token;
+        let value = !prev;
         self.require_http_overlay_token = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.apply_persist(
+        self.persist_bool(
+            prev,
+            |this, v| this.require_http_overlay_token = v,
             async move {
                 ServerSettings::save_http_overlay_require_token(repo.as_ref(), value)
                     .await
@@ -372,10 +405,13 @@ impl SettingsWebSocketView {
     }
 
     fn toggle_cors(&mut self, cx: &mut Context<Self>) {
-        let value = !self.cors_any_origin;
+        let prev = self.cors_any_origin;
+        let value = !prev;
         self.cors_any_origin = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.apply_persist(
+        self.persist_bool(
+            prev,
+            |this, v| this.cors_any_origin = v,
             async move {
                 ServerSettings::save_overlay_cors_any_origin(repo.as_ref(), value)
                     .await

@@ -944,6 +944,8 @@ tts_engines_voices_header_prefix = ГОЛОСИ
 tts_engines_voices_available = доступно: { $count }
 tts_engines_voices_empty = Голосів не знайдено
 tts_engines_voice_preview_sample = Це мій голос.
+tts_engines_toggle_failed = Не вдалося змінити стан рушія
+tts_engines_persist_disabled_failed = Не вдалося зберегти стан рушія
 
 ## TTS Filters - колонка пайплайну
 
@@ -1877,6 +1879,8 @@ builtin_obs_not_supported = Не підтримується для OBS
 builtin_disconnect_confirm_hint = Вас буде відключено, і потрібно буде підключитися повторно вручну. Живі події від цієї інтеграції перестануть надходити до цього моменту.
 integration_disconnect_title = Відключити інтеграцію
 integration_settings_coming_soon = Налаштування зʼявляться згодом
+integration_control_failed = Команда керування не виконалася
+integration_quick_action_failed = Швидка дія не виконалася
 integration_quick_action_na = Н/Д
 integration_state_connecting_title = Підключення…
 integration_state_connecting_detail = Встановлення сеансу з цією інтеграцією.

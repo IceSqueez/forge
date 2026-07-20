@@ -68,6 +68,8 @@ tabler_icons! {
     FileText => "file-text.svg",
     Refresh => "refresh.svg",
     AlertTriangle => "alert-triangle.svg",
+    AlertCircle => "alert-circle.svg",
+    Heartbeat => "heartbeat.svg",
     Lock => "lock.svg",
     X => "x.svg",
     CircleCheck => "circle-check.svg",
@@ -165,6 +167,8 @@ impl Icon {
             "refresh" => Icon::Refresh,
             "loader" | "loader-2" => Icon::Loader2,
             "alert-triangle" | "warning" => Icon::AlertTriangle,
+            "alert-circle" => Icon::AlertCircle,
+            "heartbeat" => Icon::Heartbeat,
             "lock" | "key" => Icon::Lock,
             "x" | "close" => Icon::X,
             "circle-check" | "check" | "check-circle" | "shield-check" | "circle" => {

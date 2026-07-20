@@ -11,7 +11,7 @@ use forge_components::{
     GridPickerSubtitle, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition,
     Radius, Spacing, TextInput, anchored_popover, context_menu, ghost_button_with_icon, icon,
     json_highlighted, menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius,
-    row_card, secondary_button, spacing, status_dot, toggle, tooltip_lines_builder, tr,
+    row_card, secondary_button, spacing, status_dot, toggle, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
     CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
@@ -3352,19 +3352,25 @@ impl ScreenActionsView {
             analyzer::HealthSeverity::Yellow => palette.warning,
             analyzer::HealthSeverity::Red => palette.random,
         };
-        let dot = status_dot(color, STEP_HEALTH_DOT);
-        if health.findings.is_empty() {
-            return div().flex_none().child(dot).into_any_element();
-        }
-        let lines: Vec<SharedString> = health
-            .findings
-            .iter()
-            .map(analyzer_finding_message)
-            .collect();
+        let tile = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(STEP_HEALTH_TILE)
+            .rounded(px(5.0))
+            .bg(with_alpha(color, STEP_HEALTH_TILE_ALPHA))
+            .child(icon(Icon::Heartbeat, STEP_HEALTH_GLYPH, color));
+        let mut lines: Vec<SharedString> = vec![match severity {
+            analyzer::HealthSeverity::Green => tr!("action_editor_health_ok").into(),
+            analyzer::HealthSeverity::Yellow => tr!("action_editor_health_warn").into(),
+            analyzer::HealthSeverity::Red => tr!("action_editor_health_error").into(),
+        }];
+        lines.extend(health.findings.iter().map(analyzer_finding_message));
         div()
             .id(SharedString::from(format!("actions-step-health-{i}")))
             .flex_none()
-            .child(dot)
+            .child(tile)
             .tooltip(tooltip_lines_builder(lines, palette))
             .into_any_element()
     }

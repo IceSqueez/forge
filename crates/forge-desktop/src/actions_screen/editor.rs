@@ -20,7 +20,7 @@ use forge_registry::{
 use forge_types::{
     ExecutionContext, ExecutionMetadata, ExecutionOutcome, PlatformScope, SubActionConfig,
     SubActionOutcome, SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId,
-    Variant,
+    Variant, normalize_var_name,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -75,10 +75,6 @@ async fn pick_file_path() -> Option<String> {
 
 fn is_var_key(key: &str) -> bool {
     matches!(key, "target_var" | "into_var" | "into_arg")
-}
-
-fn sanitize_var_value(raw: &str) -> String {
-    raw.trim().trim_matches('%').trim().to_owned()
 }
 
 fn normalize_condition(raw: &str) -> Option<String> {
@@ -451,6 +447,7 @@ fn build_input_field(
         .map(nav::variant_to_display_str)
         .unwrap_or_default();
     let is_var = is_var_key(key);
+    let invalid_seed = is_var && !seed.trim().is_empty() && normalize_var_name(&seed).is_none();
     let input = cx.new(|cx| {
         let ph = if is_var { "%result%" } else { placeholder };
         let mut input = TextInput::new(ph, cx).with_palette(palette);
@@ -465,6 +462,10 @@ fn build_input_field(
         }
         input
     });
+    if invalid_seed {
+        input.update(cx, |input, cx| input.set_invalid(true, cx));
+    }
+    let sub = is_var.then(|| cx.subscribe(&input, ScreenActionsView::on_var_input_event));
     SubFormField::Input {
         key: key.to_owned(),
         label: label.to_owned(),
@@ -473,6 +474,7 @@ fn build_input_field(
         datetime,
         gate,
         input,
+        _sub: sub,
     }
 }
 
@@ -1277,10 +1279,36 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    fn on_var_input_event(
+        &mut self,
+        field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if let InputEvent::Changed(text) = event {
+            let invalid = !text.trim().is_empty() && normalize_var_name(text).is_none();
+            field.update(cx, |input, cx| input.set_invalid(invalid, cx));
+        }
+    }
+
     fn submit_sub_action(&mut self, cx: &mut Context<Self>) {
         let Some(form) = self.sub_form.as_ref() else {
             return;
         };
+        let mut has_invalid = false;
+        for field in &form.fields {
+            if let SubFormField::Input { key, input, .. } = field
+                && is_var_key(key)
+            {
+                let text = input.read(cx).content().to_owned();
+                let invalid = !text.trim().is_empty() && normalize_var_name(&text).is_none();
+                input.update(cx, |input, cx| input.set_invalid(invalid, cx));
+                has_invalid |= invalid;
+            }
+        }
+        if has_invalid {
+            return;
+        }
         let target = form.target;
         let kind_id = form.kind_id.clone();
         let continue_on_error = form.continue_on_error;
@@ -1326,7 +1354,8 @@ impl ScreenActionsView {
                             overrides.push((key.clone(), Variant::Int(n)));
                         }
                     } else if is_var_key(key) {
-                        overrides.push((key.clone(), Variant::String(sanitize_var_value(&text))));
+                        let name = normalize_var_name(&text).unwrap_or_default();
+                        overrides.push((key.clone(), Variant::String(name)));
                     } else {
                         overrides.push((key.clone(), Variant::String(text)));
                     }

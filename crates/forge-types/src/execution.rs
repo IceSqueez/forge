@@ -32,6 +32,24 @@ pub struct SubActionTelemetry {
     pub produced: BTreeMap<String, String>,
 }
 
+pub fn normalize_var_name(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let unwrapped = trimmed
+        .strip_prefix('%')
+        .and_then(|inner| inner.strip_suffix('%'))
+        .unwrap_or(trimmed)
+        .trim();
+    if !unwrapped.is_empty()
+        && unwrapped
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        Some(unwrapped.to_owned())
+    } else {
+        None
+    }
+}
+
 pub fn variant_preview(value: &Variant) -> String {
     const MAX_CHARS: usize = 800;
     let rendered = match value {

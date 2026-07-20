@@ -703,6 +703,7 @@ enum SubFormField {
         datetime: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
+        _sub: Option<Subscription>,
     },
     Area {
         key: String,

@@ -18,7 +18,7 @@ pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
-    SubActionTelemetry, variant_preview,
+    SubActionTelemetry, normalize_var_name, variant_preview,
 };
 pub use ids::{ActionId, ClipId, EventId, GlobalId, QueueId, ScriptId, TriggerInstanceId, UserId};
 pub use platform::PlatformId;

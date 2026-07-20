@@ -117,6 +117,7 @@ pub struct TextInput {
     static_chrome: Option<(Rgba, Radius)>,
     plain: bool,
     mono: bool,
+    invalid: bool,
     blink_visible: bool,
     focused_cached: bool,
 }
@@ -149,6 +150,7 @@ impl TextInput {
             static_chrome: None,
             plain: false,
             mono: false,
+            invalid: false,
             blink_visible: true,
             focused_cached: false,
         }
@@ -229,6 +231,14 @@ impl TextInput {
 
     pub fn set_static_chrome(&mut self, chrome: Option<(Rgba, Radius)>) {
         self.static_chrome = chrome;
+    }
+
+    /// Forces a red error border that wins over the idle and focus border colors.
+    pub fn set_invalid(&mut self, invalid: bool, cx: &mut Context<Self>) {
+        if self.invalid != invalid {
+            self.invalid = invalid;
+            cx.notify();
+        }
     }
 
     pub fn set_placeholder(
@@ -862,6 +872,11 @@ impl Render for TextInput {
                 };
                 (border, Radius::Md)
             }
+        };
+        let border_color = if self.invalid {
+            self.palette.random
+        } else {
+            border_color
         };
         let text_color = if self.read_only {
             self.palette.text_muted

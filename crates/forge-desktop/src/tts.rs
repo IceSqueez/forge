@@ -1,8 +1,8 @@
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XXS, ForgePalette,
-    Spacing, StatusVariant, badge, breadcrumb, spacing, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
+    Spacing, breadcrumb, spacing, status_dot, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider};
@@ -23,7 +23,7 @@ use crate::voice_aliases::VoiceAliasesView;
 const TAB_PAD_V: Pixels = px(7.0);
 const TAB_PAD_H: Pixels = px(14.0);
 const TAB_INDICATOR_H: Pixels = px(2.0);
-const SEEDED_ENGINE_COUNT: usize = 3;
+const ENGINES_READY_DOT: Pixels = px(7.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TtsSection {
@@ -76,6 +76,7 @@ pub struct TtsView {
     filters: Entity<TtsFiltersView>,
     triggers: Entity<TtsTriggersView>,
     cloud: Entity<CloudTtsEnginesView>,
+    tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
 }
 
 impl TtsView {
@@ -127,8 +128,9 @@ impl TtsView {
         });
         let credentials: Arc<dyn CredentialsRepo> =
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
-        let cloud =
-            cx.new(|cx| CloudTtsEnginesView::new(tts_registry, credentials, rt_handle, speak, cx));
+        let cloud = cx.new(|cx| {
+            CloudTtsEnginesView::new(tts_registry.clone(), credentials, rt_handle, speak, cx)
+        });
         Self {
             section: TtsSection::Dashboard,
             dashboard,
@@ -137,6 +139,7 @@ impl TtsView {
             filters,
             triggers,
             cloud,
+            tts_registry,
         }
     }
 
@@ -146,17 +149,24 @@ impl TtsView {
     }
 
     fn render_header(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
-        let (chip_bg, chip_fg) = StatusVariant::Positive.colors(palette);
-        let chip = badge(
-            chip_bg,
-            chip_fg,
-            tr!(
-                "tts_header_engines_ready",
-                count = SEEDED_ENGINE_COUNT as i64
-            ),
-            false,
-            FONT_XXS,
-        );
+        let engine_count = self
+            .tts_registry
+            .as_ref()
+            .map(|r| {
+                r.read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .engine_ids()
+                    .len()
+            })
+            .unwrap_or(0);
+        let chip = div()
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .text_size(FONT_XS)
+            .text_color(palette.success)
+            .child(status_dot(palette.success, ENGINES_READY_DOT))
+            .child(tr!("tts_header_engines_ready", count = engine_count as i64));
         breadcrumb(
             vec![
                 BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_builtin")),

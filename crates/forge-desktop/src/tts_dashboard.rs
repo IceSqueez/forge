@@ -21,6 +21,11 @@ const RIGHT_PANE_W: Pixels = px(236.0);
 const QUEUE_POS_W: Pixels = px(14.0);
 const ENGINE_DOT: Pixels = px(7.0);
 const PAUSE_GLYPH: Pixels = px(13.0);
+const STRIP_BTN_GLYPH: Pixels = px(13.0);
+const SPEAK_BTN_GLYPH: Pixels = px(11.0);
+const EQ_BAR_W: Pixels = px(2.0);
+const EQ_BAR_MAX_H: Pixels = px(11.0);
+const EQ_BAR_HEIGHTS: [f32; 4] = [5.0, 11.0, 7.0, 9.0];
 const VOLUME_GLYPH: Pixels = px(14.0);
 const SEED_VOLUME: f32 = 0.72;
 
@@ -185,6 +190,7 @@ impl TtsDashboardView {
 
         let skip_btn = self.ghost_strip_button(
             "tts-skip",
+            (Icon::PlayerSkipForward, palette.text_secondary),
             tr!("tts_dash_skip_btn"),
             palette,
             density,
@@ -192,6 +198,7 @@ impl TtsDashboardView {
         );
         let stop_btn = self.ghost_strip_button(
             "tts-stop",
+            (Icon::PlayerStop, palette.random),
             tr!("tts_dash_stop_all_btn"),
             palette,
             density,
@@ -233,12 +240,14 @@ impl TtsDashboardView {
             .id("tts-speak")
             .flex()
             .items_center()
+            .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.speak_test(cx)))
+            .child(icon(Icon::PlayerPlayFilled, SPEAK_BTN_GLYPH, palette.shell))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
@@ -271,16 +280,19 @@ impl TtsDashboardView {
     fn ghost_strip_button(
         &self,
         id: &'static str,
+        look: (Icon, Rgba),
         label: impl Into<SharedString>,
         palette: &ForgePalette,
         density: Density,
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
     ) -> AnyElement {
+        let (glyph, text_color) = look;
         let hover = palette.elevated;
         div()
             .id(id)
             .flex()
             .items_center()
+            .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
@@ -290,11 +302,12 @@ impl TtsDashboardView {
             .cursor_pointer()
             .hover(move |s| s.bg(hover))
             .on_click(handler)
+            .child(icon(glyph, STRIP_BTN_GLYPH, text_color))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
-                    .text_color(palette.text_secondary)
+                    .text_color(text_color)
                     .child(label.into()),
             )
             .into_any_element()
@@ -493,11 +506,27 @@ fn now_speaking_panel(
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
+    let bar_color = if now.is_some() {
+        palette.success
+    } else {
+        palette.text_faint
+    };
+    let mut bars = div().flex().items_end().gap(px(1.0)).h(EQ_BAR_MAX_H);
+    for h in EQ_BAR_HEIGHTS {
+        bars = bars.child(div().w(EQ_BAR_W).h(px(h)).rounded(px(1.0)).bg(bar_color));
+    }
     let header = div()
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.text_muted)
-        .child(tr!("tts_dash_now_speaking_header"));
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, density))
+        .child(
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XS)
+                .text_color(palette.text_muted)
+                .child(tr!("tts_dash_now_speaking_header")),
+        )
+        .child(bars);
 
     let body = match now {
         Some(ns) => {

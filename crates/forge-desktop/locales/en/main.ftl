@@ -861,7 +861,7 @@ tts_tab_cloud_engines = Cloud engines
 ## TTS - breadcrumb
 
 tts_breadcrumb_builtin = Builtin
-tts_breadcrumb_tts = TTS
+tts_breadcrumb_tts = Text-to-Speech
 
 ## TTS Dashboard - control strip
 

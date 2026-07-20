@@ -863,7 +863,7 @@ tts_tab_cloud_engines = Хмарні рушії
 ## TTS - хлібні крихти
 
 tts_breadcrumb_builtin = Вбудоване
-tts_breadcrumb_tts = TTS
+tts_breadcrumb_tts = Text-to-Speech
 
 ## TTS Dashboard - смуга керування
 

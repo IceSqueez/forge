@@ -2842,6 +2842,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
     ) -> AnyElement {
         let io_indent = spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy);
+        let value = if value.is_empty() { "\"\"" } else { value };
         let multiline = value.contains('\n')
             || matches!(
                 serde_json::from_str::<serde_json::Value>(value),

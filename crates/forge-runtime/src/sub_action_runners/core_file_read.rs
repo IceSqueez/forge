@@ -145,12 +145,8 @@ impl SubActionRunner for CoreFileReadRunner {
                             }),
                         _ => Ok(Variant::Array(
                             contents
-                                .split('\n')
-                                .map(|line| {
-                                    Variant::String(
-                                        line.strip_suffix('\r').unwrap_or(line).to_owned(),
-                                    )
-                                })
+                                .lines()
+                                .map(|line| Variant::String(line.to_owned()))
                                 .collect(),
                         )),
                     };

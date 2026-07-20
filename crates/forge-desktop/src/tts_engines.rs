@@ -1,244 +1,269 @@
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    InputEvent, Radius, Spacing, TextInput, card, radius, search_input, slider, spacing,
-    status_dot, tr,
+    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, Radius, Spacing, card, icon, radius, slider, spacing, status_dot, tr,
 };
-use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender};
+use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
+use forge_types::EventId;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString, Window,
+    div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
 
-const ENGINE_LIST_W: Pixels = px(220.0);
-const VOICE_SEARCH_W: Pixels = px(90.0);
-const VOICE_CELL_W: Pixels = px(140.0);
-const PARAM_LABEL_W: Pixels = px(70.0);
-const PARAM_VALUE_W: Pixels = px(42.0);
+const RAIL_W: Pixels = px(240.0);
+const TILE: Pixels = px(36.0);
+const AVATAR: Pixels = px(26.0);
+const PARAM_LABEL_W: Pixels = px(60.0);
+const PARAM_VALUE_W: Pixels = px(60.0);
 const STATUS_DOT: Pixels = px(7.0);
+const PLUS_GLYPH: Pixels = px(12.0);
+const TILE_GLYPH: Pixels = px(18.0);
+const PLAY_GLYPH: Pixels = px(14.0);
+const GRID_COLS: usize = 3;
+const FS_10: Pixels = px(10.0);
+const FS_11: Pixels = px(11.0);
+const FS_11_5: Pixels = px(11.5);
 
-struct VoiceRow {
-    display_name: String,
-    locale: String,
-    quality: &'static str,
-    gender: &'static str,
-}
+pub struct AddEngineRequested;
 
 struct EngineEntry {
     id: String,
     name: String,
     kind: &'static str,
-    is_default: bool,
-    voices: Vec<VoiceRow>,
 }
 
 pub struct TtsEnginesView {
-    registry: Option<Arc<RwLock<TtsRegistry>>>,
+    speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     engines: Vec<EngineEntry>,
     selected: Option<usize>,
-    voices_loading: bool,
-    voice_search: Entity<TextInput>,
-    _voice_search_sub: Subscription,
 }
+
+impl EventEmitter<AddEngineRequested> for TtsEnginesView {}
 
 impl TtsEnginesView {
     pub fn new(
         registry: Option<Arc<RwLock<TtsRegistry>>>,
+        speak: Option<SpeakQueueHandle>,
         rt_handle: tokio::runtime::Handle,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> Self {
-        let palette = cx.palette();
-        let voice_search =
-            cx.new(|cx| search_input(tr!("tts_engines_voices_filter_placeholder"), palette, cx));
-        let voice_search_sub =
-            cx.subscribe(&voice_search, |_this, _input, event: &InputEvent, cx| {
-                if let InputEvent::Changed(_) = event {
-                    cx.notify();
-                }
-            });
-
         Self {
             engines: load_roster(registry.as_ref()),
-            registry,
+            speak,
             rt_handle,
             selected: None,
-            voices_loading: false,
-            voice_search,
-            _voice_search_sub: voice_search_sub,
         }
+    }
+
+    fn catalog(&self) -> Arc<Vec<TtsVoice>> {
+        self.speak
+            .as_ref()
+            .map(|h| h.available_voices())
+            .unwrap_or_default()
     }
 
     fn select_engine(&mut self, index: usize, cx: &mut Context<Self>) {
         self.selected = Some(index);
-        if let Some(engine) = self.engines.get_mut(index) {
-            engine.voices.clear();
-        }
-        let Some(registry) = self.registry.clone() else {
-            self.voices_loading = false;
-            cx.notify();
-            return;
-        };
-        let Some(engine_id) = self.engines.get(index).map(|e| EngineId(e.id.clone())) else {
-            cx.notify();
-            return;
-        };
-        self.voices_loading = true;
         cx.notify();
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(fetch_engine_voices(registry, engine_id).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.on_voices_loaded(index, result, cx));
-            }
-        })
-        .detach();
     }
 
-    fn on_voices_loaded(
-        &mut self,
-        index: usize,
-        result: Result<Vec<VoiceRow>, String>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.selected != Some(index) {
+    fn request_add_engine(&mut self, cx: &mut Context<Self>) {
+        cx.emit(AddEngineRequested);
+    }
+
+    fn preview_voice(&self, engine_id: String, voice_id: String) {
+        let Some(speak) = self.speak.clone() else {
+            eprintln!("forge-desktop: voice preview dropped - speak queue unavailable");
             return;
-        }
-        self.voices_loading = false;
-        match result {
-            Ok(voices) => {
-                if let Some(engine) = self.engines.get_mut(index) {
-                    engine.voices = voices;
-                }
+        };
+        let request = SpeakRequest {
+            request_id: RequestId::new(),
+            viewer_id: String::new(),
+            viewer_name: String::new(),
+            text: tr!("tts_engines_voice_preview_sample"),
+            priority: Priority::Normal,
+            alias_override: None,
+            engine_override: Some(EngineId(engine_id)),
+            voice_override: Some(VoiceId(voice_id)),
+            source_event_id: EventId::new(),
+            is_reward: false,
+        };
+        self.rt_handle.spawn(async move {
+            if let Err(err) = speak.send(SpeakCommand::Enqueue(request)).await {
+                eprintln!("forge-desktop: voice preview enqueue failed: {err}");
             }
-            Err(err) => {
-                let engine = self
-                    .engines
-                    .get(index)
-                    .map(|e| e.name.as_str())
-                    .unwrap_or("");
-                tracing::warn!(error = %err, engine, "failed to list engine voices");
-            }
-        }
-        cx.notify();
+        });
     }
 
     fn engine_list(
         &self,
+        catalog: &[TtsVoice],
         palette: &ForgePalette,
         density: Density,
-        cx: &mut Context<Self>,
+        cx: &Context<Self>,
     ) -> AnyElement {
         let header = div()
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, density))
+            .justify_between()
+            .px(spacing(Spacing::Xs, density))
+            .pb(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .flex_1()
                     .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(format!(
-                        "{} · {}",
-                        tr!("tts_engines_header_prefix"),
-                        self.engines.len()
-                    )),
+                    .child(tr!("tts_engines_header_prefix")),
+            )
+            .child(
+                div()
+                    .text_size(FS_10)
+                    .text_color(palette.text_faint)
+                    .child(self.engines.len().to_string()),
             );
 
-        let mut col = div()
+        let mut entries = div()
             .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(header);
+            .gap(spacing(Spacing::Xxs, density));
         for (index, engine) in self.engines.iter().enumerate() {
-            col = col.child(self.engine_card(index, engine, palette, density, cx));
+            let count = engine_voice_count(catalog, &engine.id);
+            entries = entries.child(self.engine_entry(index, engine, count, palette, density, cx));
         }
-        col = col.child(engine_list_placeholder(palette, density));
+
+        let column = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .child(header)
+            .child(entries)
+            .child(self.add_engine_button(palette, density, cx));
 
         div()
             .id("tts-engines-list")
-            .w(ENGINE_LIST_W)
+            .w(RAIL_W)
             .flex_shrink_0()
             .h_full()
+            .bg(palette.shell)
+            .border_r(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Xs, density))
             .overflow_y_scroll()
-            .child(col)
+            .child(column)
             .into_any_element()
     }
 
-    fn engine_card(
+    fn engine_entry(
         &self,
         index: usize,
         engine: &EngineEntry,
+        voice_count: usize,
         palette: &ForgePalette,
         density: Density,
-        cx: &mut Context<Self>,
+        cx: &Context<Self>,
     ) -> AnyElement {
         let selected = self.selected == Some(index);
-        let (border_color, border_w) = if selected {
-            (palette.brand, px(1.0))
+        let name_color = if selected {
+            palette.text_primary
         } else {
-            (palette.border_regular, BORDER_THIN)
+            palette.text_secondary
         };
 
-        let name_row = div()
-            .w_full()
+        let identity = div()
+            .flex_1()
+            .min_w(px(0.0))
             .flex()
-            .items_center()
+            .flex_col()
             .child(
                 div()
-                    .flex_1()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
+                    .text_color(name_color)
                     .child(engine.name.clone()),
             )
-            .child(status_dot(
-                engine_status_color(engine.kind, palette),
-                STATUS_DOT,
-            ));
-
-        let meta = div()
-            .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_muted)
-            .child(engine.kind);
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FS_10)
+                    .text_color(palette.text_faint)
+                    .child(tr!(
+                        "tts_engines_rail_sub",
+                        kind = engine.kind,
+                        count = voice_count as i64
+                    )),
+            );
 
         div()
             .id(("tts-engine", index))
             .w_full()
             .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Md))
-            .bg(palette.elevated)
-            .border(border_w)
-            .border_color(border_color)
+            .rounded(radius(Radius::Sm))
+            .when(selected, |d| d.bg(palette.surface_overlay))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_engine(index, cx)))
-            .child(name_row)
-            .child(meta)
+            .child(status_dot(
+                engine_status_color(engine.kind, palette),
+                STATUS_DOT,
+            ))
+            .child(identity)
             .into_any_element()
     }
 
-    fn detail_pane(
+    fn add_engine_button(
         &self,
         palette: &ForgePalette,
         density: Density,
         cx: &Context<Self>,
     ) -> AnyElement {
+        div()
+            .id("tts-add-engine")
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .mt(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .border(BORDER_THIN)
+            .border_dashed()
+            .border_color(palette.border_regular)
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.request_add_engine(cx)))
+            .child(icon(Icon::Plus, PLUS_GLYPH, palette.brand))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FS_11_5)
+                    .text_color(palette.brand)
+                    .child(tr!("tts_engines_add_engine")),
+            )
+            .into_any_element()
+    }
+
+    fn detail_pane(
+        &self,
+        catalog: &[TtsVoice],
+        palette: &ForgePalette,
+        density: Density,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let inner: AnyElement = match self.selected.and_then(|i| self.engines.get(i)) {
-            Some(engine) => self.engine_detail(engine, palette, density, cx),
+            Some(engine) => self.engine_detail(engine, catalog, palette, density, cx),
             None => div()
                 .size_full()
                 .flex()
@@ -247,7 +272,7 @@ impl TtsEnginesView {
                 .child(
                     div()
                         .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
+                        .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(tr!("tts_engines_select_hint")),
                 )
@@ -255,13 +280,14 @@ impl TtsEnginesView {
         };
 
         div()
+            .id("tts-engine-detail-scroll")
             .flex_1()
             .min_w(px(0.0))
             .h_full()
-            .bg(palette.elevated)
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .rounded(radius(Radius::Lg))
+            .bg(palette.base)
+            .py(spacing(Spacing::Md, density))
+            .px(spacing(Spacing::Lg, density))
+            .overflow_y_scroll()
             .child(inner)
             .into_any_element()
     }
@@ -269,25 +295,23 @@ impl TtsEnginesView {
     fn engine_detail(
         &self,
         engine: &EngineEntry,
+        catalog: &[TtsVoice],
         palette: &ForgePalette,
         density: Density,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let voice_count = engine.voices.len();
-        let column = div()
+        let voices: Vec<&TtsVoice> = catalog
+            .iter()
+            .filter(|v| v.engine_id.0 == engine.id)
+            .collect();
+
+        div()
             .w_full()
             .flex()
             .flex_col()
-            .child(self.detail_header(engine, voice_count, palette, density))
-            .child(credentials_section(palette, density))
+            .child(self.detail_header(engine, voices.len(), palette, density))
             .child(params_section(palette, density))
-            .child(self.voices_section(engine, palette, density, cx));
-
-        div()
-            .id("tts-engine-detail-scroll")
-            .size_full()
-            .overflow_y_scroll()
-            .child(column)
+            .child(self.voices_section(engine, &voices, palette, density, cx))
             .into_any_element()
     }
 
@@ -300,48 +324,53 @@ impl TtsEnginesView {
     ) -> AnyElement {
         let status_color = engine_status_color(engine.kind, palette);
 
-        let mut title_row = div()
+        let tile = div()
+            .w(TILE)
+            .h(TILE)
+            .flex_shrink_0()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(engine.name.clone()),
-            );
-        if engine.is_default {
-            title_row = title_row.child(default_badge(palette, density));
-        }
-
-        let sub = div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_SM)
-            .text_color(palette.text_muted)
-            .child(format!(
-                "{} · {}",
-                engine.kind,
-                tr!("tts_engines_detail_voice_count", count = voice_count as i64)
-            ));
+            .justify_center()
+            .rounded(radius(Radius::Md))
+            .bg(palette.surface_overlay)
+            .child(icon(engine_glyph(engine.kind), TILE_GLYPH, palette.brand));
 
         let identity = div()
             .flex_1()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
-            .child(title_row)
-            .child(sub);
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_MD)
+                    .text_color(palette.text_primary)
+                    .child(engine.name.clone()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FS_11_5)
+                    .text_color(palette.text_muted)
+                    .child(tr!(
+                        "tts_engines_detail_sub",
+                        kind = engine.kind,
+                        count = voice_count as i64
+                    )),
+            );
 
-        let credentials_status = div()
+        let ready = div()
+            .flex_shrink_0()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
+            .gap(spacing(Spacing::Xxs, density))
             .child(status_dot(status_color, STATUS_DOT))
             .child(
                 div()
                     .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(status_color)
                     .child(tr!("tts_engines_status_ready")),
             );
@@ -351,75 +380,69 @@ impl TtsEnginesView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
+            .mb(spacing(Spacing::Md, density))
+            .child(tile)
             .child(identity)
-            .child(credentials_status)
+            .child(ready)
             .into_any_element()
     }
 
     fn voices_section(
         &self,
         engine: &EngineEntry,
+        voices: &[&TtsVoice],
         palette: &ForgePalette,
         density: Density,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let search = self.voice_search.read(cx).content();
-
         let header = div()
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
+            .justify_between()
+            .child(section_label(
+                tr!("tts_engines_voices_header_prefix"),
+                palette,
+            ))
             .child(
                 div()
-                    .flex_1()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(format!(
-                        "{} · {}",
-                        tr!("tts_engines_voices_header_prefix"),
-                        engine.voices.len()
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!(
+                        "tts_engines_voices_available",
+                        count = voices.len() as i64
                     )),
-            )
-            .child(div().w(VOICE_SEARCH_W).child(self.voice_search.clone()));
+            );
 
-        let body: AnyElement = if self.voices_loading {
+        let body: AnyElement = if voices.is_empty() {
             div()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child(tr!("tts_engines_voices_loading"))
+                .child(tr!("tts_engines_voices_empty"))
                 .into_any_element()
         } else {
-            let visible: Vec<&VoiceRow> = engine
-                .voices
-                .iter()
-                .filter(|v| voice_matches(&v.display_name, search))
-                .collect();
-
-            if visible.is_empty() {
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("tts_engines_voices_empty"))
-                    .into_any_element()
-            } else {
-                let mut grid = div()
-                    .w_full()
-                    .flex()
-                    .flex_wrap()
-                    .gap(spacing(Spacing::Xs, density));
-                for voice in visible {
-                    grid = grid.child(voice_cell(voice, palette, density));
+            let mut grid = div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xs, density));
+            for row in voices.chunks(GRID_COLS) {
+                let mut line = div().w_full().flex().gap(spacing(Spacing::Xs, density));
+                for voice in row {
+                    line = line.child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .child(self.voice_cell(&engine.id, voice, palette, density, cx)),
+                    );
                 }
-                grid.into_any_element()
+                for _ in row.len()..GRID_COLS {
+                    line = line.child(div().flex_1());
+                }
+                grid = grid.child(line);
             }
+            grid.into_any_element()
         };
 
         div()
@@ -427,12 +450,85 @@ impl TtsEnginesView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
             .child(header)
             .child(body)
+            .into_any_element()
+    }
+
+    fn voice_cell(
+        &self,
+        engine_id: &str,
+        voice: &TtsVoice,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let avatar = div()
+            .w(AVATAR)
+            .h(AVATAR)
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(radius(Radius::Sm))
+            .bg(avatar_color(&voice.name, palette))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(FS_11)
+                    .text_color(palette.shell)
+                    .child(voice_initial(&voice.name)),
+            );
+
+        let body = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(voice.name.clone()),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FS_10)
+                    .text_color(palette.text_faint)
+                    .child(format!("{} · {}", voice.locale, voice_descriptor(voice))),
+            );
+
+        let engine_id = engine_id.to_owned();
+        let voice_id = voice.id.0.clone();
+        let play = div()
+            .id(SharedString::from(format!("tts-voice-play-{voice_id}")))
+            .flex_shrink_0()
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, _| {
+                this.preview_voice(engine_id.clone(), voice_id.clone())
+            }))
+            .child(icon(Icon::PlayerPlay, PLAY_GLYPH, palette.success));
+
+        let row = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(avatar)
+            .child(body)
+            .child(play);
+
+        div()
+            .child(
+                card(row, palette)
+                    .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Sm, density))
+                    .full_width(),
+            )
             .into_any_element()
     }
 }
@@ -441,118 +537,29 @@ impl Render for TtsEnginesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
+        let catalog = self.catalog();
 
-        let list = self.engine_list(&palette, density, cx);
-        let detail = self.detail_pane(&palette, density, cx);
+        let list = self.engine_list(&catalog, &palette, density, cx);
+        let detail = self.detail_pane(&catalog, &palette, density, cx);
 
         div()
             .size_full()
             .flex()
             .flex_row()
-            .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Md, density))
             .bg(palette.base)
             .child(list)
             .child(detail)
     }
 }
 
-fn engine_list_placeholder(palette: &ForgePalette, density: Density) -> impl IntoElement {
-    div()
-        .w_full()
-        .py(spacing(Spacing::Sm, density))
-        .px(spacing(Spacing::Sm, density))
-        .rounded(radius(Radius::Md))
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(tr!("tts_engines_more_placeholder")),
-        )
-}
-
-fn default_badge(palette: &ForgePalette, density: Density) -> impl IntoElement {
-    div()
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Xs, density))
-        .rounded(radius(Radius::Pill))
-        .bg(palette.surface_overlay)
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(FONT_XS)
-                .text_color(palette.brand)
-                .child(tr!("tts_engines_default_badge")),
-        )
-}
-
-fn credentials_section(palette: &ForgePalette, density: Density) -> impl IntoElement {
-    let no_credentials = div()
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Xs, density))
-        .rounded(radius(Radius::Sm))
-        .bg(palette.surface_overlay)
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.success)
-                .child(tr!("tts_engines_no_credentials")),
-        );
-
-    let notice_row = div()
-        .w_full()
-        .flex()
-        .items_center()
-        .child(
-            div()
-                .flex_1()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(tr!("tts_engines_credentials_notice")),
-        )
-        .child(no_credentials);
-
-    let notice = card(notice_row, palette)
-        .background(palette.shell)
-        .radius(Radius::Sm)
-        .padding_xy(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
-        .full_width();
-
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xs, density))
-        .py(spacing(Spacing::Sm, density))
-        .px(spacing(Spacing::Md, density))
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(section_label(tr!("tts_engines_section_engine"), palette))
-        .child(notice)
-}
-
 fn params_section(palette: &ForgePalette, density: Density) -> impl IntoElement {
-    div()
+    let rows = div()
         .w_full()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xs, density))
-        .py(spacing(Spacing::Sm, density))
-        .px(spacing(Spacing::Md, density))
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(section_label(tr!("tts_engines_section_params"), palette))
         .child(param_row(
             tr!("tts_engines_param_pitch"),
-            "0 st",
+            "+0 st",
             0.5,
             palette,
             density,
@@ -566,11 +573,25 @@ fn params_section(palette: &ForgePalette, density: Density) -> impl IntoElement 
         ))
         .child(param_row(
             tr!("tts_engines_param_volume"),
-            "0 dB",
+            "100%",
             1.0,
             palette,
             density,
-        ))
+        ));
+
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xs, density))
+        .mb(spacing(Spacing::Md, density))
+        .child(section_label(tr!("tts_engines_section_params"), palette))
+        .child(
+            card(rows, palette)
+                .radius(Radius::Md)
+                .padding(spacing(Spacing::Md, density))
+                .full_width(),
+        )
 }
 
 fn param_row(
@@ -585,13 +606,14 @@ fn param_row(
         .w_full()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Sm, density))
+        .gap(spacing(Spacing::Md, density))
+        .py(spacing(Spacing::Xs, density))
         .child(
             div()
                 .w(PARAM_LABEL_W)
                 .flex_shrink_0()
                 .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
+                .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(label),
         )
@@ -605,50 +627,19 @@ fn param_row(
             div()
                 .w(PARAM_VALUE_W)
                 .flex_shrink_0()
+                .text_right()
                 .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
+                .text_size(FS_11_5)
+                .text_color(palette.text_primary)
                 .child(value),
         )
-}
-
-fn voice_cell(voice: &VoiceRow, palette: &ForgePalette, density: Density) -> impl IntoElement {
-    let body = div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, density))
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_primary)
-                .child(voice.display_name.clone()),
-        )
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_muted)
-                .child(format!(
-                    "{} · {} · {}",
-                    voice.locale, voice.quality, voice.gender
-                )),
-        );
-
-    div().w(VOICE_CELL_W).child(
-        card(body, palette)
-            .background(palette.shell)
-            .radius(Radius::Sm)
-            .padding(spacing(Spacing::Xs, density))
-            .full_width(),
-    )
 }
 
 fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     let label: SharedString = label.into();
     div()
         .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
+        .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label)
 }
@@ -661,11 +652,56 @@ fn engine_status_color(kind: &str, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn voice_matches(display_name: &str, search: &str) -> bool {
-    search.is_empty()
-        || display_name
-            .to_ascii_lowercase()
-            .contains(&search.to_ascii_lowercase())
+fn engine_glyph(kind: &str) -> Icon {
+    if kind == "cloud" {
+        Icon::Cloud
+    } else {
+        Icon::Cpu
+    }
+}
+
+fn engine_voice_count(catalog: &[TtsVoice], engine_id: &str) -> usize {
+    catalog
+        .iter()
+        .filter(|v| v.engine_id.0 == engine_id)
+        .count()
+}
+
+fn voice_descriptor(voice: &TtsVoice) -> &'static str {
+    match voice.gender {
+        VoiceGender::Male => "male",
+        VoiceGender::Female => "female",
+        VoiceGender::Neutral => {
+            if voice.is_neural {
+                "neural"
+            } else {
+                "standard"
+            }
+        }
+    }
+}
+
+fn voice_initial(name: &str) -> String {
+    name.chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_default()
+}
+
+fn avatar_color(name: &str, palette: &ForgePalette) -> Rgba {
+    let accents = [
+        palette.brand,
+        palette.info,
+        palette.success,
+        palette.warning,
+        palette.bits,
+        palette.accent_teal,
+        palette.accent_pink_light,
+    ];
+    let hash = name
+        .bytes()
+        .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
+    accents[hash % accents.len()]
 }
 
 fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> {
@@ -677,48 +713,12 @@ fn load_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<EngineEntry> 
         .unwrap_or_else(|e| e.into_inner())
         .engine_ids();
     ids.into_iter()
-        .enumerate()
-        .map(|(index, id)| EngineEntry {
+        .map(|id| EngineEntry {
             kind: engine_kind(&id.0),
             name: engine_label(&id.0),
-            is_default: index == 0,
-            voices: Vec::new(),
             id: id.0,
         })
         .collect()
-}
-
-async fn fetch_engine_voices(
-    registry: Arc<RwLock<TtsRegistry>>,
-    engine_id: EngineId,
-) -> Result<Vec<VoiceRow>, String> {
-    let factory = registry
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(&engine_id);
-    let Some(factory) = factory else {
-        return Err(format!("engine {} is not registered", engine_id.0));
-    };
-    let engine = factory.create().map_err(|e| e.to_string())?;
-    let voices = engine.list_voices().await.map_err(|e| e.to_string())?;
-    Ok(voices.into_iter().map(voice_row_from).collect())
-}
-
-fn voice_row_from(voice: TtsVoice) -> VoiceRow {
-    VoiceRow {
-        display_name: voice.name,
-        locale: voice.locale,
-        quality: if voice.is_neural {
-            "neural"
-        } else {
-            "standard"
-        },
-        gender: match voice.gender {
-            VoiceGender::Male => "M",
-            VoiceGender::Female => "F",
-            VoiceGender::Neutral => "N",
-        },
-    }
 }
 
 fn engine_label(id: &str) -> String {

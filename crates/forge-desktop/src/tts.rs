@@ -15,7 +15,7 @@ use crate::cloud_tts_engines::CloudTtsEnginesView;
 use crate::presentation::ActivePresentation;
 use crate::speak_state::SpeakState;
 use crate::tts_dashboard::TtsDashboardView;
-use crate::tts_engines::TtsEnginesView;
+use crate::tts_engines::{AddEngineRequested, TtsEnginesView};
 use crate::tts_filters::TtsFiltersView;
 use crate::tts_triggers::TtsTriggersView;
 use crate::voice_aliases::VoiceAliasesView;
@@ -104,7 +104,16 @@ impl TtsView {
                 cx,
             )
         });
-        let engines = cx.new(|cx| TtsEnginesView::new(tts_registry.clone(), rt_handle.clone(), cx));
+        let engines = cx.new(|cx| {
+            TtsEnginesView::new(tts_registry.clone(), speak.clone(), rt_handle.clone(), cx)
+        });
+        cx.subscribe(
+            &engines,
+            |this, _entity, _event: &AddEngineRequested, cx| {
+                this.select_section(TtsSection::CloudEngines, cx);
+            },
+        )
+        .detach();
         let filters = cx.new(|cx| {
             TtsFiltersView::new(
                 backend.tts_filters_repo(),

@@ -901,28 +901,27 @@ tts_dash_engine_no_voices = no voices installed
 ## TTS Engines - list
 
 tts_engines_header_prefix = CONFIGURED
-tts_engines_more_placeholder = + More engines in future releases
+tts_engines_add_engine = Add engine
 tts_engines_select_hint = Select an engine to configure
 tts_engines_status_ready = Ready
 tts_header_engines_ready = { $count ->
     [one] { $count } engine ready
    *[other] { $count } engines ready
 }
+tts_engines_rail_sub = { $kind } · { $count ->
+    [one] { $count } voice
+   *[other] { $count } voices
+}
 
 ## TTS Engines - detail header
 
-tts_engines_local_meta = local TTS engine
-tts_engines_default_badge = DEFAULT
-tts_engines_detail_voice_count = { $count ->
+tts_engines_detail_sub = { $kind } engine · { $count ->
     [one] { $count } voice
    *[other] { $count } voices
 }
 
 ## TTS Engines - sections
 
-tts_engines_section_engine = ENGINE
-tts_engines_credentials_notice = Credentials stored encrypted in the local database, never in config files
-tts_engines_no_credentials = LOCAL - no credentials
 tts_engines_section_params = DEFAULT VOICE PARAMETERS
 tts_engines_param_pitch = Pitch
 tts_engines_param_speed = Speed
@@ -930,10 +929,10 @@ tts_engines_param_volume = Volume
 
 ## TTS Engines - voices section
 
-tts_engines_voices_header_prefix = AVAILABLE VOICES
-tts_engines_voices_filter_placeholder = Filter voices…
-tts_engines_voices_loading = Loading voices…
+tts_engines_voices_header_prefix = VOICES
+tts_engines_voices_available = { $count } available
 tts_engines_voices_empty = No voices found
+tts_engines_voice_preview_sample = This is my voice.
 
 ## TTS Filters - pipeline column
 

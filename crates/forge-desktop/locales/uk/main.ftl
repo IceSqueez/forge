@@ -903,16 +903,20 @@ tts_dash_engine_no_voices = голоси не встановлено
 ## TTS Engines - список
 
 tts_engines_header_prefix = НАЛАШТОВАНО
-tts_engines_more_placeholder = + Більше рушіїв у майбутніх оновленнях
+tts_engines_add_engine = Додати рушій
 tts_engines_select_hint = Оберіть рушій для налаштування
 tts_engines_status_ready = Готовий
 tts_header_engines_ready = Готово рушіїв: { $count }
+tts_engines_rail_sub = { $kind } · { $count ->
+    [one] { $count } голос
+    [few] { $count } голоси
+    [many] { $count } голосів
+   *[other] { $count } голосів
+}
 
 ## TTS Engines - заголовок деталей
 
-tts_engines_local_meta = локальний TTS-рушій
-tts_engines_default_badge = ТИПОВИЙ
-tts_engines_detail_voice_count = { $count ->
+tts_engines_detail_sub = рушій { $kind } · { $count ->
     [one] { $count } голос
     [few] { $count } голоси
     [many] { $count } голосів
@@ -921,9 +925,6 @@ tts_engines_detail_voice_count = { $count ->
 
 ## TTS Engines - секції
 
-tts_engines_section_engine = РУШІЙ
-tts_engines_credentials_notice = Облікові дані зберігаються зашифрованими в локальній базі, ніколи у файлах конфігурації
-tts_engines_no_credentials = ЛОКАЛЬНИЙ - облікові дані не потрібні
 tts_engines_section_params = ПАРАМЕТРИ ГОЛОСУ ЗА ЗАМОВЧУВАННЯМ
 tts_engines_param_pitch = Висота тону
 tts_engines_param_speed = Швидкість
@@ -931,10 +932,10 @@ tts_engines_param_volume = Гучність
 
 ## TTS Engines - секція голосів
 
-tts_engines_voices_header_prefix = ДОСТУПНІ ГОЛОСИ
-tts_engines_voices_filter_placeholder = Фільтр голосів…
-tts_engines_voices_loading = Завантаження голосів…
+tts_engines_voices_header_prefix = ГОЛОСИ
+tts_engines_voices_available = доступно: { $count }
 tts_engines_voices_empty = Голосів не знайдено
+tts_engines_voice_preview_sample = Це мій голос.
 
 ## TTS Filters - колонка пайплайну
 

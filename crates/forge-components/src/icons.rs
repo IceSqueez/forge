@@ -119,6 +119,8 @@ tabler_icons! {
     Piano => "piano.svg",
     BrandDiscord => "brand-discord.svg",
     Network => "network.svg",
+    Cloud => "cloud.svg",
+    Cpu => "cpu.svg",
 }
 
 impl Icon {
@@ -215,6 +217,8 @@ impl Icon {
             "arrow-down" => Icon::ArrowDown,
             "arrow-bar-up" | "arrow-to-top" => Icon::ArrowBarUp,
             "arrow-bar-down" | "arrow-to-bottom" => Icon::ArrowBarDown,
+            "cloud" => Icon::Cloud,
+            "cpu" | "chip" | "processor" => Icon::Cpu,
             _ => Icon::InfoCircle,
         }
     }

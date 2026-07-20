@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
 
 const SEND_ENDPOINT: &str = "https://api.kick.com/public/v1/chat";
 const DELETE_BASE: &str = "https://api.kick.com/public/v1/chat";
@@ -40,15 +40,7 @@ impl KickSendChat {
         token: &str,
         broadcaster_user_id: u64,
     ) -> Result<(), PlatformError> {
-        let outcome = self
-            .limiter
-            .acquire(1)
-            .await
-            .map_err(|_| PlatformError::RateLimitExhausted)?;
-
-        if matches!(outcome, RateLimitOutcome::Exhausted) {
-            return Err(PlatformError::RateLimitExhausted);
-        }
+        acquire_or_wait(self.limiter.as_ref(), 1).await?;
 
         let response = self
             .client
@@ -89,15 +81,7 @@ impl KickSendChat {
     }
 
     pub async fn delete(&self, message_id: &str, token: &str) -> Result<(), PlatformError> {
-        let outcome = self
-            .limiter
-            .acquire(1)
-            .await
-            .map_err(|_| PlatformError::RateLimitExhausted)?;
-
-        if matches!(outcome, RateLimitOutcome::Exhausted) {
-            return Err(PlatformError::RateLimitExhausted);
-        }
+        acquire_or_wait(self.limiter.as_ref(), 1).await?;
 
         let url = format!("{}/{}", self.delete_base, message_id);
         let response = self

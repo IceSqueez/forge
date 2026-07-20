@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
 use serde::{Deserialize, Serialize};
 
 const REWARDS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels/rewards";
@@ -375,17 +375,7 @@ impl KickRewards {
     }
 
     async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        let outcome = self
-            .limiter
-            .acquire(1)
-            .await
-            .map_err(|_| PlatformError::RateLimitExhausted)?;
-
-        if matches!(outcome, RateLimitOutcome::Exhausted) {
-            return Err(PlatformError::RateLimitExhausted);
-        }
-
-        Ok(())
+        acquire_or_wait(self.limiter.as_ref(), 1).await
     }
 }
 
@@ -421,6 +411,7 @@ async fn map_rewards_error<T>(
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use forge_platform_core::RateLimitOutcome;
     use std::time::Duration;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};

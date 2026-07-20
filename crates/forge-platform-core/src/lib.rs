@@ -25,4 +25,7 @@ pub use chat::{
 pub use error::PlatformError;
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::is_private_or_special;
-pub use rate_limit::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
+pub use rate_limit::{
+    MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome, RateLimiter, TokenBucketRateLimiter,
+    acquire_or_wait,
+};

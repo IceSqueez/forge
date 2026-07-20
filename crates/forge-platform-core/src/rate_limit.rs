@@ -19,6 +19,29 @@ pub trait RateLimiter: Send + Sync {
     async fn observe_remote_throttle(&self, retry_after: Duration);
 }
 
+pub const MAX_THROTTLE_WAIT: Duration = Duration::from_secs(10);
+pub const MAX_ACQUIRE_ATTEMPTS: u32 = 3;
+
+pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(), PlatformError> {
+    let mut waited = Duration::ZERO;
+    let mut attempts = 0;
+    loop {
+        match limiter.acquire(weight).await? {
+            RateLimitOutcome::Granted => return Ok(()),
+            RateLimitOutcome::Throttled { wait_for } => {
+                attempts += 1;
+                if attempts >= MAX_ACQUIRE_ATTEMPTS || waited >= MAX_THROTTLE_WAIT {
+                    return Err(PlatformError::RateLimitExhausted);
+                }
+                let sleep_for = wait_for.min(MAX_THROTTLE_WAIT);
+                tokio::time::sleep(sleep_for).await;
+                waited += sleep_for;
+            }
+            RateLimitOutcome::Exhausted => return Err(PlatformError::RateLimitExhausted),
+        }
+    }
+}
+
 /// Leaky-token-bucket limiter shared across every API path that draws on a
 /// single per-credential budget (e.g. one Twitch client-id has one Helix
 /// budget regardless of how many transports issue requests).

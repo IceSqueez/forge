@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
+use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
 use serde::{Deserialize, Serialize};
 
 const CHANNELS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels";
@@ -137,17 +137,7 @@ impl KickChannel {
     }
 
     async fn acquire_slot(&self) -> Result<(), PlatformError> {
-        let outcome = self
-            .limiter
-            .acquire(1)
-            .await
-            .map_err(|_| PlatformError::RateLimitExhausted)?;
-
-        if matches!(outcome, RateLimitOutcome::Exhausted) {
-            return Err(PlatformError::RateLimitExhausted);
-        }
-
-        Ok(())
+        acquire_or_wait(self.limiter.as_ref(), 1).await
     }
 }
 

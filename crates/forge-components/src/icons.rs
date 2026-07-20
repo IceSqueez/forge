@@ -126,6 +126,9 @@ tabler_icons! {
     Microphone2 => "microphone-2.svg",
     BrandAws => "brand-aws.svg",
     VolumeOff => "volume-off.svg",
+    FilterOff => "filter-off.svg",
+    Ban => "ban.svg",
+    Replace => "replace.svg",
 }
 
 impl Icon {
@@ -178,6 +181,9 @@ impl Icon {
             "refresh" => Icon::Refresh,
             "loader" | "loader-2" => Icon::Loader2,
             "alert-triangle" | "warning" => Icon::AlertTriangle,
+            "filter-off" | "filter" => Icon::FilterOff,
+            "ban" | "forbid" | "prohibited" => Icon::Ban,
+            "replace" | "text-replace" => Icon::Replace,
             "alert-circle" => Icon::AlertCircle,
             "heartbeat" => Icon::Heartbeat,
             "lock" | "key" => Icon::Lock,

@@ -950,13 +950,42 @@ tts_engines_voice_preview_sample = Це мій голос.
 
 tts_filters_pipeline_header = КОНВЕЄР ОБРОБКИ
 tts_filters_pipeline_hint = Кожне повідомлення проходить ці етапи по черзі перед озвученням
+tts_filters_pipeline_intro = Конвеєр, який текст проходить перед озвученням.
 
 ## TTS Filters - нумеровані картки етапів
 
 tts_filters_stage_emote_url_title = Емоції та обробка URL
+tts_filters_stage_skip_title = Стоп-правила
 tts_filters_stage_replacements_title = Заміни тексту
 tts_filters_stage_blocklist_title = Блок-список слів
-tts_filters_stage_output_title = Обмеження виводу
+tts_filters_stage_output_title = Вивід
+
+## TTS Filters - стоп-правила
+
+tts_filters_skip_contains_url = Містить URL
+tts_filters_skip_starts_bang = Починається з !
+tts_filters_skip_bot_accounts = Від бот-акаунтів
+tts_filters_skip_longer_than = Повідомлення довше за { $chars } символів
+tts_filters_skip_repeat = Ідентичне останнім { $window } повідомленням
+
+## TTS Filters - блок-список слів
+
+tts_filters_blocklist_censor = Цензурувати збіги
+tts_filters_blocklist_censor_meta = замінити на ***
+tts_filters_blocklist_skip = Пропустити все повідомлення при збігу
+tts_filters_blocklist_more = +{ $count } ще
+tts_filters_blocklist_empty = Заблокованих слів ще немає
+
+## TTS Filters - заміни тексту
+
+tts_filters_replacements_empty = Замін ще немає
+
+## TTS Filters - вивід
+
+tts_filters_output_read_name = Спершу читати відображуване ім'я
+tts_filters_output_read_name_meta = напр. "koval_dev каже: ..."
+tts_filters_output_emote = Емоція → слово
+tts_filters_output_emote_meta = перетворити :pog: → "pog"
 
 ## TTS Filters - список правил
 

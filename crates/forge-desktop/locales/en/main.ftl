@@ -945,13 +945,42 @@ tts_engines_voice_preview_sample = This is my voice.
 
 tts_filters_pipeline_header = PROCESSING PIPELINE
 tts_filters_pipeline_hint = Each message passes through these stages in order before being spoken
+tts_filters_pipeline_intro = Pipeline that text passes through before being spoken.
 
 ## TTS Filters - numbered stage cards
 
 tts_filters_stage_emote_url_title = Emote & URL handling
+tts_filters_stage_skip_title = Skip rules
 tts_filters_stage_replacements_title = Text replacements
 tts_filters_stage_blocklist_title = Word blocklist
-tts_filters_stage_output_title = Output length
+tts_filters_stage_output_title = Output
+
+## TTS Filters - skip rules
+
+tts_filters_skip_contains_url = Contains URL
+tts_filters_skip_starts_bang = Starts with !
+tts_filters_skip_bot_accounts = From bot accounts
+tts_filters_skip_longer_than = Message longer than { $chars } chars
+tts_filters_skip_repeat = Identical to last { $window } messages
+
+## TTS Filters - word blocklist
+
+tts_filters_blocklist_censor = Censor matched words
+tts_filters_blocklist_censor_meta = replace with ***
+tts_filters_blocklist_skip = Skip entire message if matched
+tts_filters_blocklist_more = +{ $count } more
+tts_filters_blocklist_empty = No blocked words yet
+
+## TTS Filters - text replacements
+
+tts_filters_replacements_empty = No replacements yet
+
+## TTS Filters - output
+
+tts_filters_output_read_name = Read display name first
+tts_filters_output_read_name_meta = e.g. "koval_dev says: ..."
+tts_filters_output_emote = Emote → word
+tts_filters_output_emote_meta = convert :pog: → "pog"
 
 ## TTS Filters - rule list
 

@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ForgePalette, Icon, PlatformKind, Radius, Spacing, icon, platform_color, radius, spacing, tr,
-    with_alpha,
+    ForgePalette, Icon, PlatformKind, Radius, Spacing, avatar_tile, icon, platform_color, radius,
+    spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_platform_core::ChatPlatform;
@@ -209,22 +209,10 @@ impl IntegrationDetail {
         let accent = platform_accent(platform, palette);
         let (letter, desc, features) = connect_copy(platform);
 
-        let tile = div()
-            .flex_none()
+        let tile = avatar_tile(letter, accent, palette)
             .size(px(48.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(11.0))
-            .bg(accent)
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(24.0))
-                    .text_color(palette.shell)
-                    .child(letter),
-            );
+            .corner(px(11.0))
+            .font(px(24.0));
 
         let status_badge = div()
             .flex_none()

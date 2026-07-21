@@ -1,14 +1,14 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ForgePalette, Icon, Radius, Spacing, breadcrumb, connection_status_badge, icon, radius,
-    spacing, tr,
+    ForgePalette, Icon, Radius, Spacing, avatar_tile, breadcrumb, connection_status_badge, icon,
+    radius, spacing, tr,
 };
 use std::collections::HashMap;
 
 use forge_platform_core::{BuiltinId, ConnectionState};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::home_stats::Integration;
@@ -133,22 +133,10 @@ impl PlatformsView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let tile = div()
-            .flex_none()
+        let tile = avatar_tile(letter, integ.dot_color(palette), palette)
             .size(TILE_SIZE)
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(TILE_RADIUS)
-            .bg(integ.dot_color(palette))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(TILE_GLYPH)
-                    .text_color(palette.shell)
-                    .child(letter),
-            );
+            .corner(TILE_RADIUS)
+            .font(TILE_GLYPH);
 
         let badge_label = if connected {
             tr!("platforms_status_connected")

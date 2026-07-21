@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange,
-    Spacing, TextInput, badge, confirm_modal, empty_state, fmt_clock, icon, install_resize,
-    overlay, radius, slider, spacing, status_dot, tooltip_builder, tr,
+    Spacing, TextInput, badge, confirm_modal, empty_state, fmt_clock, hash_accent, icon,
+    install_resize, overlay, radius, slider, spacing, status_dot, tooltip_builder, tr,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -17,7 +17,6 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
-use crate::tts::name_accent;
 
 const VOL_SLIDER_W: Pixels = px(90.0);
 const TEST_INPUT_W: Pixels = px(160.0);
@@ -687,7 +686,7 @@ impl TtsDashboardView {
                 .font_family(DEFAULT_BODY_FAMILY)
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(QUEUE_NAME_FONT)
-                .text_color(name_accent(&item.viewer_name, palette))
+                .text_color(hash_accent(&item.viewer_name, palette))
                 .child(item.viewer_name.clone()),
         );
         if item.is_high_priority {
@@ -925,7 +924,7 @@ fn now_speaking_panel(
                         .font_family(DEFAULT_BODY_FAMILY)
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(NOW_NAME_FONT)
-                        .text_color(name_accent(&ns.viewer_name, palette))
+                        .text_color(hash_accent(&ns.viewer_name, palette))
                         .child(ns.viewer_name.clone()),
                 );
             if let Some(voice) = now_voice {

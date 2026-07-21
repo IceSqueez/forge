@@ -287,12 +287,6 @@ pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
         .text_color(color)
 }
 
-/// Declares no `text_color`, so a hovered ancestor's text color cascades down and
-/// re-tints the glyph. Use [`icon`] for a fixed tint.
-pub fn icon_inherit(icon: Icon, size: Pixels) -> impl IntoElement {
-    svg().flex_none().size(size).path(icon.path())
-}
-
 /// Continuously rotates `glyph`. Each live instance needs a distinct `id`, or gpui
 /// shares one animation clock across them.
 pub fn spinner(

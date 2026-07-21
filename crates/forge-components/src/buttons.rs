@@ -1,9 +1,9 @@
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px, svg,
 };
 
-use crate::icons::{Icon, icon, icon_inherit};
+use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_XS, Radius, Spacing, radius, spacing,
@@ -12,6 +12,7 @@ use crate::tokens::{
 type ButtonClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 const ICON_LABEL_GAP: Pixels = px(5.0);
+const ICON_BUTTON_GROUP: &str = "forge-icon-button";
 
 const FILL_HOVER_ALPHA: f32 = 0.92;
 const FILL_DISABLED_ALPHA: f32 = 0.4;
@@ -232,8 +233,16 @@ impl RenderOnce for Button {
         }
 
         if let Some(leading) = self.leading {
-            root = if icon_only {
-                root.child(icon_inherit(leading, glyph_size))
+            root = if icon_only && !self.disabled {
+                let hover_text = c.hover_text;
+                root.group(ICON_BUTTON_GROUP).child(
+                    svg()
+                        .flex_none()
+                        .size(glyph_size)
+                        .path(leading.path())
+                        .text_color(text)
+                        .group_hover(ICON_BUTTON_GROUP, move |s| s.text_color(hover_text)),
+                )
             } else {
                 root.child(icon(leading, glyph_size, text))
             };

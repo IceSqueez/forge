@@ -1,3 +1,4 @@
+pub mod avatar;
 pub mod breadcrumb;
 pub mod buttons;
 pub mod cards;
@@ -19,6 +20,7 @@ pub mod overlay;
 pub mod palette;
 pub mod picker;
 pub mod resize_handle;
+pub mod section_label;
 pub mod side_sheet;
 pub mod slider;
 pub mod sparkline;
@@ -32,6 +34,7 @@ pub mod tokens;
 pub mod tooltip;
 pub mod type_to_confirm;
 
+pub use avatar::{AvatarTile, avatar_tile, hash_accent};
 pub use breadcrumb::{Breadcrumb, BreadcrumbCrumb, breadcrumb};
 pub use buttons::{
     Button, destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
@@ -54,7 +57,7 @@ pub use grid_picker::{
     GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
     GridPickerItemState, GridPickerSubtitle,
 };
-pub use icons::{Icon, IconAssets, icon, icon_inherit, spinner};
+pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
 pub use locale::{
@@ -75,6 +78,7 @@ pub use palette::{
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
+pub use section_label::section_label;
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use sparkline::{Sparkline, sparkline};

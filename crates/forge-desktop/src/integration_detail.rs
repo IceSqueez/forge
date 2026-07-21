@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
-    PickerItem, PickerLabels, Radius, Spacing, ToastKind, badge, breadcrumb, confirm_modal,
-    fmt_uptime, icon, overlay, radius, spacing, tr, with_alpha,
+    PickerItem, PickerLabels, Radius, Spacing, ToastKind, avatar_tile, badge, breadcrumb,
+    confirm_modal, fmt_uptime, icon, overlay, radius, spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -453,22 +453,10 @@ impl IntegrationDetail {
     ) -> AnyElement {
         let (letter, brand) = hero_identity(self.icon.as_str(), &self.display_name, palette);
 
-        let tile = div()
-            .flex_none()
+        let tile = avatar_tile(letter, brand, palette)
             .size(px(48.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(11.0))
-            .bg(brand)
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(24.0))
-                    .text_color(palette.shell)
-                    .child(letter),
-            );
+            .corner(px(11.0))
+            .font(px(24.0));
 
         let mut name_row = div()
             .flex()

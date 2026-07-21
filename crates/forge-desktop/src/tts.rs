@@ -8,7 +8,7 @@ use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use forge_tts_core::TtsRegistry;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -25,22 +25,6 @@ const TAB_GAP: Pixels = px(2.0);
 const TAB_BAR_PAD_T: Pixels = px(8.0);
 const TAB_BAR_PAD_H: Pixels = px(14.0);
 const ENGINES_READY_DOT: Pixels = px(7.0);
-
-pub(crate) fn name_accent(name: &str, palette: &ForgePalette) -> Rgba {
-    let accents = [
-        palette.brand,
-        palette.info,
-        palette.success,
-        palette.warning,
-        palette.bits,
-        palette.accent_teal,
-        palette.accent_pink_light,
-    ];
-    let hash = name
-        .bytes()
-        .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
-    accents[hash % accents.len()]
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TtsSection {

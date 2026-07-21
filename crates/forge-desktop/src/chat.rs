@@ -7,10 +7,10 @@ use forge_components::{
     BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY,
     DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge,
-    ResizeRange, Spacing, TextInput, ToastKind, badge, badge_color, badge_label, breadcrumb,
-    chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider,
-    menu_header, menu_item, platform_color, radius, search_input, search_input_on_surface, spacing,
-    status_dot, tr,
+    ResizeRange, Spacing, TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label,
+    breadcrumb, chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button,
+    menu_divider, menu_header, menu_item, platform_color, radius, search_input,
+    search_input_on_surface, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -2019,19 +2019,10 @@ fn viewer_avatar(
     font: Pixels,
     palette: &ForgePalette,
 ) -> impl IntoElement {
-    div()
-        .flex_none()
+    avatar_tile(letter.to_string(), color, palette)
         .size(size)
-        .rounded(radius(corner))
-        .bg(color)
-        .flex()
-        .items_center()
-        .justify_center()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_size(font)
-        .text_color(palette.shell)
-        .child(letter.to_string())
+        .corner(radius(corner))
+        .font(font)
 }
 
 fn drawer_role_badge(kind: BadgeKind, size: Pixels, palette: &ForgePalette) -> impl IntoElement {

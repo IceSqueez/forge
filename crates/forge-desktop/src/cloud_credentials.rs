@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, Radius, Spacing, TextInput, ToastKind, card, icon, radius,
-    spacing, tr,
+    section_label, spacing, tr,
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::{CredentialId, CredentialsRepo};
@@ -856,15 +856,6 @@ fn two_col(left: AnyElement, right: AnyElement) -> AnyElement {
         .child(div().flex_1().min_w(px(0.0)).child(left))
         .child(div().flex_1().min_w(px(0.0)).child(right))
         .into_any_element()
-}
-
-fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    let label: SharedString = label.into();
-    div()
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XXS)
-        .text_color(palette.text_muted)
-        .child(label)
 }
 
 fn encryption_note(palette: &ForgePalette) -> impl IntoElement {

@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge,
-    card, confirm_modal, empty_state, field_label, icon, modal, overlay, primary_button,
-    primary_button_with_icon, radius, search_input, secondary_button, spacing, toggle, tr,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Spacing, TextInput, avatar_tile,
+    badge, card, confirm_modal, empty_state, field_label, hash_accent, icon, modal, overlay,
+    primary_button, primary_button_with_icon, search_input, secondary_button, spacing, toggle, tr,
     with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
@@ -17,7 +17,6 @@ use gpui::{
 };
 
 use crate::presentation::ActivePresentation;
-use crate::tts::name_accent;
 
 const SEARCH_W: Pixels = px(240.0);
 const MODAL_W: Pixels = px(440.0);
@@ -753,27 +752,15 @@ impl VoiceAliasesView {
             .to_uppercase()
             .next()
             .unwrap_or('?');
-        let (avatar_bg, avatar_fg) = if muted {
-            (palette.text_extreme_faint, palette.shell)
+        let avatar_bg = if muted {
+            palette.text_extreme_faint
         } else {
-            (name_accent(&row.viewer_name, palette), palette.shell)
+            hash_accent(&row.viewer_name, palette)
         };
-        let avatar = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
+        let avatar = avatar_tile(initial.to_string(), avatar_bg, palette)
             .size(AVATAR)
-            .rounded(radius(Radius::Sm))
-            .bg(avatar_bg)
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(FONT_XXS)
-                    .text_color(avatar_fg)
-                    .child(initial.to_string()),
-            );
+            .font(FONT_XXS)
+            .mono();
         let mut viewer_inner = div()
             .flex()
             .items_center()

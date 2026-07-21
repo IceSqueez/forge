@@ -3,8 +3,8 @@ use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, card, empty_state, icon, radius, slider, spacing,
-    status_dot, toggle, tr,
+    ForgePalette, Icon, Radius, Spacing, avatar_tile, card, empty_state, hash_accent, icon, radius,
+    section_label, slider, spacing, status_dot, toggle, tr,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo};
@@ -849,23 +849,13 @@ impl TtsEnginesView {
         density: Density,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let avatar = div()
-            .w(AVATAR)
-            .h(AVATAR)
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(radius(Radius::Sm))
-            .bg(crate::tts::name_accent(&voice.name, palette))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(FS_11)
-                    .text_color(palette.shell)
-                    .child(voice_initial(&voice.name)),
-            );
+        let avatar = avatar_tile(
+            voice_initial(&voice.name),
+            hash_accent(&voice.name, palette),
+            palette,
+        )
+        .size(AVATAR)
+        .font(FS_11);
 
         let body = div()
             .flex_1()
@@ -1041,15 +1031,6 @@ fn param_row(
                 .text_color(palette.text_primary)
                 .child(value_text.into()),
         )
-}
-
-fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    let label: SharedString = label.into();
-    div()
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XXS)
-        .text_color(palette.text_muted)
-        .child(label)
 }
 
 fn engine_status_color(kind: &str, palette: &ForgePalette) -> Rgba {

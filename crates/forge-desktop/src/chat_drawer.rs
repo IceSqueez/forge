@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use forge_components::{BadgeKind, ForgePalette, fmt_relative_time};
+use forge_components::{BadgeKind, ForgePalette, fmt_relative_time, hash_accent};
 use forge_storage::Viewer;
 use gpui::Rgba;
 use time::OffsetDateTime;
@@ -85,7 +85,7 @@ pub(crate) fn synthesize_from_chat(
         message_count: count as u64,
         last_seen_label: fmt_relative_time(Some(last.received_at)),
         avatar_letter,
-        avatar_color: viewer_hash_color(username, palette),
+        avatar_color: hash_accent(username, palette),
         watch_time: DASH.to_owned(),
         sub: sub_status(role),
         follow: DASH.to_owned(),
@@ -115,23 +115,6 @@ pub(crate) fn selected_summary(
     let last = messages.iter().rev().find(|m| !m.username.is_empty())?;
     synthesize_from_chat(last.username.as_ref(), messages, palette)
         .map(|s| enrich_with_storage(s, viewers))
-}
-
-pub(crate) fn viewer_hash_color(username: &str, palette: &ForgePalette) -> Rgba {
-    let idx = username
-        .bytes()
-        .fold(0u32, |acc, b| acc.wrapping_add(u32::from(b))) as usize
-        % 8;
-    [
-        palette.brand,
-        palette.success,
-        palette.warning,
-        palette.info,
-        palette.random,
-        palette.bits,
-        palette.accent_pink_light,
-        palette.accent_teal,
-    ][idx]
 }
 
 fn watch_time_since(first_seen: OffsetDateTime) -> String {

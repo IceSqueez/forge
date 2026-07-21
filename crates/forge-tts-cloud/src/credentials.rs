@@ -1,20 +1,9 @@
-use forge_tts_core::EngineId;
 use serde::{Deserialize, Serialize};
 
 pub const AZURE_CREDENTIAL_ID: &str = "audio:azure";
 pub const ELEVENLABS_CREDENTIAL_ID: &str = "audio:elevenlabs";
 pub const OPENAI_CREDENTIAL_ID: &str = "audio:openai";
 pub const POLLY_CREDENTIAL_ID: &str = "audio:polly";
-
-pub fn engine_id_for_credential(credential_id: &str) -> Option<EngineId> {
-    match credential_id {
-        AZURE_CREDENTIAL_ID => Some(EngineId("azure".into())),
-        ELEVENLABS_CREDENTIAL_ID => Some(EngineId("elevenlabs".into())),
-        OPENAI_CREDENTIAL_ID => Some(EngineId("openai".into())),
-        POLLY_CREDENTIAL_ID => Some(EngineId("polly".into())),
-        _ => None,
-    }
-}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AzureCredentials {
@@ -240,18 +229,5 @@ mod tests {
         assert!(!s.contains("very-secret-access-key"));
         assert!(s.contains("***"));
         assert!(s.contains("us-east-1"));
-    }
-
-    #[test]
-    fn engine_id_for_known_credentials() {
-        assert_eq!(
-            engine_id_for_credential(AZURE_CREDENTIAL_ID),
-            Some(EngineId("azure".into()))
-        );
-        assert_eq!(
-            engine_id_for_credential(POLLY_CREDENTIAL_ID),
-            Some(EngineId("polly".into()))
-        );
-        assert_eq!(engine_id_for_credential("audio:unknown"), None);
     }
 }

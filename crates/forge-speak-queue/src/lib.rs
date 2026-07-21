@@ -155,18 +155,6 @@ pub enum SpeakEvent {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpeakError {
-    #[error("speak queue is full (max {max})")]
-    QueueFull { max: usize },
-
-    #[error("per-user limit reached for viewer {viewer_id}")]
-    PerUserLimitReached { viewer_id: String },
-
-    #[error("no voices available for synthesis")]
-    NoVoiceAvailable,
-
-    #[error("synthesis failed: {0}")]
-    Synthesis(#[from] TtsError),
-
     #[error("speak queue actor has stopped")]
     ActorGone,
 }
@@ -238,13 +226,6 @@ impl SpeakQueueHandle {
             .clone()
     }
 
-    pub fn synthesis_defaults(&self) -> SynthesisDefaults {
-        self.resolver
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .defaults
-    }
-
     pub fn engine_synthesis_defaults(&self, engine_id: &EngineId) -> SynthesisDefaults {
         self.resolver
             .read()
@@ -274,12 +255,6 @@ impl SpeakQueueHandle {
             }
         }
         engines
-    }
-
-    pub fn blocking_send(&self, cmd: SpeakCommand) -> Result<(), SpeakError> {
-        self.tx
-            .blocking_send(cmd)
-            .map_err(|_| SpeakError::ActorGone)
     }
 
     pub async fn notify_voicegate_active(&self) -> Result<(), SpeakError> {

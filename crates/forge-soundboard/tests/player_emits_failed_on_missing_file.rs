@@ -45,12 +45,12 @@ impl AudioSinkFactory for NullFactory {
     }
 }
 
-struct DeviceNotFoundFactory;
+struct NoDefaultDeviceFactory;
 
 #[async_trait]
-impl AudioSinkFactory for DeviceNotFoundFactory {
+impl AudioSinkFactory for NoDefaultDeviceFactory {
     async fn build(&self, _device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
-        Err(AudioError::DeviceNotFound("test-device".to_string()))
+        Err(AudioError::NoDefaultDevice)
     }
 }
 
@@ -128,10 +128,10 @@ async fn play_missing_file_emits_playback_failed_and_returns_err() {
     );
 }
 
-/// Regression: play() when sink factory returns DeviceNotFound must emit
+/// Regression: play() when sink factory returns NoDefaultDevice must emit
 /// PlaybackFailed and return Err - covers audio device disconnect before playback.
 #[tokio::test]
-async fn play_device_not_found_emits_playback_failed_and_returns_err() {
+async fn play_no_default_device_emits_playback_failed_and_returns_err() {
     let clip_id = ClipId::new();
     let tmp = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     std::fs::write(
@@ -144,7 +144,7 @@ async fn play_device_not_found_emits_playback_failed_and_returns_err() {
 
     let (event_sink, events) = RecordingEventSink::new();
     let player = SoundboardPlayer::with_settings(
-        Arc::new(DeviceNotFoundFactory),
+        Arc::new(NoDefaultDeviceFactory),
         Arc::new(event_sink),
         Arc::new(MockClipsRepo { clip }),
         SoundboardSettingsHandle::default(),
@@ -154,7 +154,7 @@ async fn play_device_not_found_emits_playback_failed_and_returns_err() {
 
     assert!(
         result.is_err(),
-        "play with device-not-found must return Err"
+        "play with no-default-device must return Err"
     );
 
     let recorded = events.lock().unwrap();

@@ -3,7 +3,6 @@ pub mod synth;
 pub mod voices;
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::PcmBuffer;
@@ -62,11 +61,6 @@ impl OpenAiEngine {
             limiter: Arc::new(SynthesisRateLimiter::new()),
             retry_cfg: RetryConfig::default(),
         }
-    }
-
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.retry_cfg.timeout = timeout;
-        self
     }
 }
 

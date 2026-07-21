@@ -20,7 +20,7 @@ pub use device::{
 };
 pub use error::AudioError;
 pub use events::{AudioEvent, AudioEventSink, NullAudioEventSink};
-pub use fan_out::{fan_out, fan_out_stoppable};
+pub use fan_out::fan_out_stoppable;
 pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use pcm::PcmBuffer;
 pub use route::{

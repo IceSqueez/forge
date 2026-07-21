@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, Radius, Spacing, card, ghost_button, icon, overlay,
-    primary_button, radius, spacing, tr, with_alpha,
+    BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, confirm_modal,
+    drive_overlay_focus, ghost_button, icon, overlay, radius, spacing, tr, with_alpha,
 };
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, set_json_setting};
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Keystroke, SharedString, Subscription, Window,
-    div, prelude::*, px,
+    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, Keystroke, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::actions::{
@@ -34,6 +34,8 @@ pub struct SettingsShortcutsView {
     conflict: Option<ShortcutConflict>,
     save_error: Option<String>,
     capture_sub: Option<Subscription>,
+    overlay_focus: FocusHandle,
+    focus_restore: Option<FocusHandle>,
 }
 
 impl SettingsShortcutsView {
@@ -51,6 +53,8 @@ impl SettingsShortcutsView {
             conflict: None,
             save_error: None,
             capture_sub: None,
+            overlay_focus: cx.focus_handle(),
+            focus_restore: None,
         };
         view.load(cx);
         view
@@ -423,7 +427,6 @@ impl SettingsShortcutsView {
         &self,
         conflict: &ShortcutConflict,
         palette: &ForgePalette,
-        density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let owner_label = SHORTCUTS
@@ -432,42 +435,31 @@ impl SettingsShortcutsView {
             .map(|entry| tr!(entry.label_key))
             .unwrap_or_default();
 
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .w(px(440.0))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_secondary)
-                    .child(tr!(
-                        "settings_shortcuts_conflict_body",
-                        chord = conflict.chord.as_str(),
-                        owner = owner_label
-                    )),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(spacing(Spacing::Sm, density))
-                    .child(ghost_button(tr!("common_cancel"), palette).on_click(
-                        "shortcut-conflict-cancel",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_cancel(cx)),
-                    ))
-                    .child(
-                        primary_button(tr!("settings_shortcuts_conflict_steal"), palette).on_click(
-                            "shortcut-conflict-steal",
-                            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_steal(cx)),
-                        ),
-                    ),
-            );
+        let card = confirm_modal(
+            tr!("settings_shortcuts_conflict_title"),
+            tr!(
+                "settings_shortcuts_conflict_body",
+                chord = conflict.chord.as_str(),
+                owner = owner_label
+            ),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .on_cancel(
+            "shortcut-conflict-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_cancel(cx)),
+        )
+        .on_confirm(
+            "shortcut-conflict-steal",
+            tr!("settings_shortcuts_conflict_steal"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_steal(cx)),
+        );
 
         let weak = cx.entity().downgrade();
-        overlay(card(body, palette), palette)
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("shortcut-conflict-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.conflict_cancel(cx));
             })
@@ -476,9 +468,17 @@ impl SettingsShortcutsView {
 }
 
 impl Render for SettingsShortcutsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
+
+        drive_overlay_focus(
+            self.conflict.is_some(),
+            &self.overlay_focus,
+            &mut self.focus_restore,
+            window,
+            cx,
+        );
 
         let mut list = div().flex().flex_col();
         for entry in SHORTCUTS {
@@ -507,7 +507,7 @@ impl Render for SettingsShortcutsView {
 
         let mut root = div().relative().size_full().child(body);
         if let Some(conflict) = &self.conflict {
-            let overlay = self.conflict_overlay(conflict, &palette, density, cx);
+            let overlay = self.conflict_overlay(conflict, &palette, cx);
             root = root.child(overlay);
         }
         root

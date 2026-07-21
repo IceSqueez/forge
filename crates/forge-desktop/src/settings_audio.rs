@@ -3,10 +3,13 @@ use std::sync::Arc;
 use forge_audio::{DeviceId, DeviceInfo, list_output_devices, refresh_output_devices};
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, Spacing, anchored_popover_below, icon, radius, spacing, tr, with_alpha,
+    Radius, Spacing, anchored_popover_below, drive_overlay_focus, icon, radius, spacing, tr,
+    with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo};
-use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, ClickEvent, Context, FocusHandle, Pixels, SharedString, Window, div, prelude::*, px,
+};
 
 use crate::presentation::ActivePresentation;
 
@@ -43,6 +46,8 @@ pub struct SettingsAudioView {
     test_playing: bool,
     test_error: Option<String>,
     picker_open: bool,
+    overlay_focus: FocusHandle,
+    focus_restore: Option<FocusHandle>,
 }
 
 impl SettingsAudioView {
@@ -63,6 +68,8 @@ impl SettingsAudioView {
             test_playing: false,
             test_error: None,
             picker_open: false,
+            overlay_focus: cx.focus_handle(),
+            focus_restore: None,
         };
         view.load_devices(false, cx);
         view
@@ -381,6 +388,7 @@ impl SettingsAudioView {
 
         let view = cx.entity();
         anchored_popover_below(TRIGGER_HEIGHT, panel)
+            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_picker(cx));
             })
@@ -441,7 +449,15 @@ impl SettingsAudioView {
 }
 
 impl Render for SettingsAudioView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.picker_open,
+            &self.overlay_focus,
+            &mut self.focus_restore,
+            window,
+            cx,
+        );
+
         let palette = cx.palette();
         let density = cx.density();
 

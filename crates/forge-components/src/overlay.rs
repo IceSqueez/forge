@@ -10,6 +10,26 @@ use gpui::{
 
 use crate::palette::{ForgePalette, with_alpha};
 
+/// Focuses `handle` while an overlay is open (so gpui routes keys, incl. Escape, to it) and
+/// restores the previously focused element once it closes. Call from the opener view's `render`;
+/// [`FocusHandle::is_focused`] gates the work so a steady-open overlay does no per-frame focus churn.
+pub fn drive_overlay_focus(
+    open: bool,
+    handle: &FocusHandle,
+    restore: &mut Option<FocusHandle>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if open {
+        if !handle.is_focused(window) {
+            *restore = window.focused(cx);
+            window.focus(handle, cx);
+        }
+    } else if let Some(prev) = restore.take() {
+        window.focus(&prev, cx);
+    }
+}
+
 const ENTER_MS: u64 = 200;
 
 const OVERLAY_PRIORITY: usize = 1;
@@ -234,6 +254,7 @@ pub struct AnchoredPopover {
     placement: PopoverPlacement,
     content: AnyElement,
     on_dismiss: Option<DismissHandler>,
+    escape_focus: Option<FocusHandle>,
 }
 
 /// A free-floating panel anchored at a window-space position with a full-window
@@ -244,6 +265,7 @@ pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> A
         placement: PopoverPlacement::Window(position),
         content: content.into_any_element(),
         on_dismiss: None,
+        escape_focus: None,
     }
 }
 
@@ -254,6 +276,7 @@ pub fn anchored_popover_below(offset: Pixels, content: impl IntoElement) -> Anch
         placement: PopoverPlacement::BelowAnchor(offset),
         content: content.into_any_element(),
         on_dismiss: None,
+        escape_focus: None,
     }
 }
 
@@ -261,6 +284,14 @@ impl AnchoredPopover {
     #[must_use]
     pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_dismiss = Some(Rc::new(handler));
+        self
+    }
+
+    /// The caller must focus `focus_handle` when the popover opens or Escape stays inert
+    /// (gpui routes keys only down the focus path); outside-click dismissal is unaffected.
+    #[must_use]
+    pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
+        self.escape_focus = Some(focus_handle.clone());
         self
     }
 }
@@ -295,7 +326,19 @@ impl RenderOnce for AnchoredPopover {
                 .child(self.content),
         };
 
-        deferred(div().child(backdrop_layer).child(panel_layer)).with_priority(OVERLAY_PRIORITY)
+        let mut root = div().child(backdrop_layer).child(panel_layer);
+        if let (Some(handle), Some(dismiss)) = (self.escape_focus.as_ref(), self.on_dismiss.clone())
+        {
+            root = root
+                .track_focus(handle)
+                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        dismiss(window, cx);
+                    }
+                });
+        }
+
+        deferred(root).with_priority(OVERLAY_PRIORITY)
     }
 }
 

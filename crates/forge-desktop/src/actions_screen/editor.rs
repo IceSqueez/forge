@@ -2432,6 +2432,7 @@ impl ScreenActionsView {
     ) -> AnyElement {
         let view = cx.entity();
         anchored_popover(form.pos, form.picker.clone())
+            .dismiss_on_escape(&self.datetime_focus)
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_datetime_picker(cx));
             })

@@ -206,6 +206,7 @@ settings_shortcuts_fixed_enter = Confirm a form or dialog
 settings_shortcuts_fixed_escape = Close a modal or cancel capture
 settings_shortcuts_fixed_note = These keys are built in and cannot be rebound.
 settings_shortcuts_error_needs_modifier = Combine the key with Ctrl, Alt or Meta, or pick an F-key - plain keys would interfere with typing.
+settings_shortcuts_conflict_title = Shortcut already assigned
 settings_shortcuts_conflict_body = { $chord } is currently assigned to “{ $owner }”. Reassign it? The previous shortcut becomes unbound.
 settings_shortcuts_conflict_steal = Reassign
 
@@ -259,7 +260,7 @@ settings_hotkeys_backend_section = BACKEND
 settings_hotkeys_select_action = Select action…
 settings_hotkeys_bind_btn = Bind
 settings_hotkeys_no_bindings = No hotkeys registered yet.
-settings_hotkeys_conflict_body_prefix = Combo
+settings_hotkeys_conflict_title = Hotkey already registered
 settings_hotkeys_conflict_body_suffix = is already registered. Replace or cancel?
 settings_hotkeys_replace_btn = Replace
 settings_hotkeys_error_no_combo = Capture a hotkey combo first.

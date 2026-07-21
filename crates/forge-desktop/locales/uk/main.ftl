@@ -206,6 +206,7 @@ settings_shortcuts_fixed_enter = Підтвердити форму чи діал
 settings_shortcuts_fixed_escape = Закрити модальне вікно чи скасувати захоплення
 settings_shortcuts_fixed_note = Ці клавіші вбудовані, їх не можна перепризначити.
 settings_shortcuts_error_needs_modifier = Поєднайте клавішу з Ctrl, Alt чи Meta або оберіть F-клавішу - звичайні клавіші заважали б набору тексту.
+settings_shortcuts_conflict_title = Скорочення вже призначено
 settings_shortcuts_conflict_body = { $chord } зараз призначено дії «{ $owner }». Перепризначити? Попереднє скорочення стане непризначеним.
 settings_shortcuts_conflict_steal = Перепризначити
 
@@ -259,7 +260,7 @@ settings_hotkeys_backend_section = БЕКЕНД
 settings_hotkeys_select_action = Оберіть дію…
 settings_hotkeys_bind_btn = Прив'язати
 settings_hotkeys_no_bindings = Хоткеїв ще не зареєстровано.
-settings_hotkeys_conflict_body_prefix = Комбінація
+settings_hotkeys_conflict_title = Комбінацію вже зареєстровано
 settings_hotkeys_conflict_body_suffix = вже зареєстрована. Замінити або скасувати?
 settings_hotkeys_replace_btn = Замінити
 settings_hotkeys_error_no_combo = Спочатку захопіть комбінацію хоткея.

@@ -73,7 +73,8 @@ pub use menu::{
 };
 pub use modal::{Modal, modal};
 pub use overlay::{
-    AnchoredPopover, Overlay, OverlayPosition, anchored_popover, anchored_popover_below, overlay,
+    AnchoredPopover, Overlay, OverlayPosition, anchored_popover, anchored_popover_below,
+    drive_overlay_focus, overlay,
 };
 pub use palette::{
     FORGE_DEFAULT, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, platform_color,

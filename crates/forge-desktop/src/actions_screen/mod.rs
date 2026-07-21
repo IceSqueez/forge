@@ -4,7 +4,8 @@ use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
     DateTimePicker, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, TextArea,
-    TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay, search_input, tr,
+    TextInput, ToastKind, drive_overlay_focus, fmt_number, fmt_relative_time, icon, overlay,
+    search_input, tr,
 };
 use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
@@ -18,8 +19,8 @@ use forge_types::{
     Action, ActionId, ExecutionContext, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FocusHandle, Pixels,
+    Point, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -211,6 +212,8 @@ pub struct ScreenActionsView {
     /// Keyed by `(step_index, case_index)` within the current chain.
     case_fields: BTreeMap<(usize, usize), CaseField>,
     step_health: Vec<analyzer::StepHealth>,
+    datetime_focus: FocusHandle,
+    datetime_focus_restore: Option<FocusHandle>,
     _search_sub: Subscription,
 }
 
@@ -284,6 +287,8 @@ impl ScreenActionsView {
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
             step_health: Vec::new(),
+            datetime_focus: cx.focus_handle(),
+            datetime_focus_restore: None,
             _search_sub: search_sub,
         };
         view.reload(cx);
@@ -561,8 +566,16 @@ impl ScreenActionsView {
 impl EventEmitter<NavRequested> for ScreenActionsView {}
 
 impl Render for ScreenActionsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
+
+        drive_overlay_focus(
+            self.datetime_picker.is_some(),
+            &self.datetime_focus,
+            &mut self.datetime_focus_restore,
+            window,
+            cx,
+        );
 
         let header = self.render_header(&palette, cx);
         let tree = self.render_tree(&palette, cx);

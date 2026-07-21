@@ -2,16 +2,17 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, anchored_popover_below, card, empty_state, ghost_button,
-    icon, overlay, primary_button, radius, spacing, tr, with_alpha,
+    BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, anchored_popover_below,
+    confirm_modal, drive_overlay_focus, empty_state, icon, overlay, primary_button, radius,
+    spacing, tr, with_alpha,
 };
 use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_storage::DataProvider;
 use forge_types::{Action, ActionId, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 use gpui::{
-    AnyElement, ClickEvent, Context, Keystroke, Pixels, SharedString, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, FocusHandle, Keystroke, Pixels, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -47,6 +48,8 @@ pub struct SettingsHotkeysView {
     picker_open: bool,
     bindings_loading: bool,
     bind_in_progress: bool,
+    overlay_focus: FocusHandle,
+    focus_restore: Option<FocusHandle>,
 }
 
 impl SettingsHotkeysView {
@@ -71,6 +74,8 @@ impl SettingsHotkeysView {
             picker_open: false,
             bindings_loading: false,
             bind_in_progress: false,
+            overlay_focus: cx.focus_handle(),
+            focus_restore: None,
         };
         view.load(cx);
         view
@@ -514,6 +519,7 @@ impl SettingsHotkeysView {
 
         let view = cx.entity();
         anchored_popover_below(TRIGGER_HEIGHT, panel)
+            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_picker(cx));
             })
@@ -643,59 +649,28 @@ impl SettingsHotkeysView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, Density::Cozy))
-            .w(px(440.0))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .flex_wrap()
-                    .gap(px(4.0))
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_secondary)
-                            .child(tr!("settings_hotkeys_conflict_body_prefix")),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(palette.warning)
-                            .child(modal.combo.clone()),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_secondary)
-                            .child(tr!("settings_hotkeys_conflict_body_suffix")),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(spacing(Spacing::Sm, Density::Cozy))
-                    .child(ghost_button(tr!("common_cancel"), palette).on_click(
-                        "settings-hotkeys-conflict-cancel",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_cancel(cx)),
-                    ))
-                    .child(
-                        primary_button(tr!("settings_hotkeys_replace_btn"), palette).on_click(
-                            "settings-hotkeys-conflict-replace",
-                            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_replace(cx)),
-                        ),
-                    ),
-            );
+        let card = confirm_modal(
+            tr!("settings_hotkeys_conflict_title"),
+            tr!("settings_hotkeys_conflict_body_suffix"),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .item_name(modal.combo.clone())
+        .on_cancel(
+            "settings-hotkeys-conflict-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_cancel(cx)),
+        )
+        .on_confirm(
+            "settings-hotkeys-conflict-replace",
+            tr!("settings_hotkeys_replace_btn"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_replace(cx)),
+        );
 
         let weak = cx.entity().downgrade();
-        overlay(card(body, palette), palette)
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("settings-hotkeys-conflict-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.conflict_cancel(cx));
             })
@@ -726,9 +701,17 @@ impl SettingsHotkeysView {
 }
 
 impl Render for SettingsHotkeysView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
+
+        drive_overlay_focus(
+            self.picker_open || self.conflict.is_some(),
+            &self.overlay_focus,
+            &mut self.focus_restore,
+            window,
+            cx,
+        );
 
         let subtitle = div()
             .font_family(DEFAULT_BODY_FAMILY)

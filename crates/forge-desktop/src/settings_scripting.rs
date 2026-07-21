@@ -8,7 +8,9 @@ use forge_components::{
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
 };
-use forge_storage::{DataProvider, SettingsRepo, reserved_keys, set_bool_setting};
+use forge_storage::{
+    DataProvider, SettingsRepo, reserved_keys, set_bool_setting, set_json_setting,
+};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div,
     prelude::*, px, relative,
@@ -27,7 +29,7 @@ struct ScriptingSnapshot {
 }
 
 struct SavePayload {
-    domains_csv: String,
+    allowed_domains: Vec<String>,
     max_calls: u32,
     http_timeout_ms: u32,
     allow_local: bool,
@@ -245,7 +247,7 @@ impl SettingsScriptingView {
             .unwrap_or(engine_defaults.wall_time_ms);
 
         let payload = SavePayload {
-            domains_csv: self.allowed_domains.join(","),
+            allowed_domains: self.allowed_domains.clone(),
             max_calls,
             http_timeout_ms,
             allow_local: self.allow_local,
@@ -646,9 +648,10 @@ async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> Result<Scriptin
 }
 
 async fn do_save(repo: Arc<dyn SettingsRepo>, p: SavePayload) -> Result<(), String> {
-    repo.set_string(
+    set_json_setting(
+        repo.as_ref(),
         reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY,
-        &p.domains_csv,
+        &p.allowed_domains,
     )
     .await
     .map_err(|e| e.to_string())?;

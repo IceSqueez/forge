@@ -1,7 +1,7 @@
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::Arc;
 
 use forge_storage::SettingsRepo;
-use forge_types::OutputDevice;
+use forge_types::{OutputDevice, Shared};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundboardSettings {
@@ -32,21 +32,19 @@ impl SoundboardSettings {
 }
 
 #[derive(Clone)]
-pub struct SoundboardSettingsHandle(Arc<RwLock<Arc<SoundboardSettings>>>);
+pub struct SoundboardSettingsHandle(Shared<SoundboardSettings>);
 
 impl SoundboardSettingsHandle {
     pub fn new(initial: SoundboardSettings) -> Self {
-        Self(Arc::new(RwLock::new(Arc::new(initial))))
+        Self(Shared::new(initial))
     }
 
     pub fn load(&self) -> Arc<SoundboardSettings> {
-        let guard = self.0.read().unwrap_or_else(PoisonError::into_inner);
-        Arc::clone(&guard)
+        self.0.load()
     }
 
     pub fn swap(&self, settings: SoundboardSettings) {
-        let mut guard = self.0.write().unwrap_or_else(PoisonError::into_inner);
-        *guard = Arc::new(settings);
+        self.0.store(settings);
     }
 }
 

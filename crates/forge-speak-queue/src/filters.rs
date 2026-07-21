@@ -5,6 +5,7 @@ use forge_tts_pipeline::{
     BlocklistMode, EmoteSources, EmoteTokenSet, OutputConfig, PipelineConfig, PipelineError,
     ReplacementRule, SkipRulesConfig,
 };
+use forge_types::Shared;
 
 /// Errors produced when translating persisted rules into a validated pipeline config.
 ///
@@ -334,31 +335,20 @@ pub fn build_config_lenient(
     )
 }
 
-/// Shared, swappable pipeline config.
-///
-/// Readers clone the inner `Arc<PipelineConfig>` (atomic increment only) under the
-/// read guard, then drop the guard before any `.await`. The write guard is held only
-/// for the pointer swap, never across an await point.
 #[derive(Clone)]
-pub struct PipelineConfigHandle(Arc<std::sync::RwLock<Arc<PipelineConfig>>>);
+pub struct PipelineConfigHandle(Shared<PipelineConfig>);
 
 impl PipelineConfigHandle {
     pub fn new(initial: PipelineConfig) -> Self {
-        Self(Arc::new(std::sync::RwLock::new(Arc::new(initial))))
+        Self(Shared::new(initial))
     }
 
-    /// Returns an owned `Arc` to the current config without holding the lock.
     pub fn load(&self) -> Arc<PipelineConfig> {
-        self.0.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.0.load()
     }
 
-    /// Replaces the active config with `next`.
-    ///
-    /// The write guard is held only for this pointer swap; no async work happens
-    /// inside, so the no-lock-across-await invariant is trivially satisfied.
     pub fn swap(&self, next: PipelineConfig) {
-        let mut guard = self.0.write().unwrap_or_else(|e| e.into_inner());
-        *guard = Arc::new(next);
+        self.0.store(next);
     }
 }
 

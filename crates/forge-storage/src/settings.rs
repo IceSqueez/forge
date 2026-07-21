@@ -260,6 +260,26 @@ pub async fn set_bool_setting(
         .await
 }
 
+/// Absent key, read error, or malformed JSON all yield `None`; callers apply their default.
+pub async fn get_json_setting<T: serde::de::DeserializeOwned>(
+    repo: &dyn SettingsRepo,
+    key: &str,
+) -> Option<T> {
+    match repo.get_string(key).await {
+        Ok(Some(s)) => serde_json::from_str(&s).ok(),
+        _ => None,
+    }
+}
+
+pub async fn set_json_setting<T: Serialize>(
+    repo: &dyn SettingsRepo,
+    key: &str,
+    value: &T,
+) -> Result<(), StorageError> {
+    let json = serde_json::to_string(value).map_err(|e| StorageError::Parse(e.to_string()))?;
+    repo.set_string(key, &json).await
+}
+
 pub async fn chat_history_store_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
     let raw = repo
         .get_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT_KEY)

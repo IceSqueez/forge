@@ -293,25 +293,27 @@ impl ScreenActionsView {
 
     fn load_favorites(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.settings_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<(Option<String>, Option<String>)>();
+        let (tx, rx) = tokio::sync::oneshot::channel::<(Vec<String>, Vec<String>)>();
         self.rt_handle.spawn(async move {
-            let subs = repo
-                .get_string(reserved_keys::PICKER_FAVORITES_SUB_ACTIONS_KEY)
-                .await
-                .ok()
-                .flatten();
-            let trigs = repo
-                .get_string(reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY)
-                .await
-                .ok()
-                .flatten();
+            let subs = forge_storage::get_json_setting::<Vec<String>>(
+                repo.as_ref(),
+                reserved_keys::PICKER_FAVORITES_SUB_ACTIONS_KEY,
+            )
+            .await
+            .unwrap_or_default();
+            let trigs = forge_storage::get_json_setting::<Vec<String>>(
+                repo.as_ref(),
+                reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY,
+            )
+            .await
+            .unwrap_or_default();
             let _ = tx.send((subs, trigs));
         });
         cx.spawn(async move |this, cx| {
             if let Ok((subs, trigs)) = rx.await {
                 let _ = this.update(cx, |this, _cx| {
-                    this.sub_action_favorites = crate::picker_favorites::parse(subs);
-                    this.trigger_favorites = crate::picker_favorites::parse(trigs);
+                    this.sub_action_favorites = crate::picker_favorites::to_set(subs);
+                    this.trigger_favorites = crate::picker_favorites::to_set(trigs);
                 });
             }
         })
@@ -325,10 +327,14 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         let repo = Arc::clone(&self.settings_repo);
-        let json = crate::picker_favorites::encode(&favorites);
+        let ids = crate::picker_favorites::to_ids(&favorites);
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
         self.rt_handle.spawn(async move {
-            let _ = tx.send(repo.set_string(key, &json).await.map_err(|e| e.to_string()));
+            let _ = tx.send(
+                forge_storage::set_json_setting(repo.as_ref(), key, &ids)
+                    .await
+                    .map_err(|e| e.to_string()),
+            );
         });
         cx.spawn(async move |this, cx| {
             if let Ok(Err(message)) = rx.await {

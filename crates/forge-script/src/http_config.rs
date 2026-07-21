@@ -1,4 +1,4 @@
-use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
+use forge_storage::{SettingsRepo, get_bool_setting, get_json_setting, reserved_keys};
 
 pub struct ScriptHttpConfig {
     pub allowed_domains: Vec<String>,
@@ -24,18 +24,13 @@ impl Default for ScriptHttpConfig {
 pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfig {
     let defaults = ScriptHttpConfig::default();
 
-    let allowed_domains = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY)
-        .await
-        .ok()
-        .flatten()
-        .map(|s| {
-            s.split(',')
-                .map(|d| d.trim().to_string())
-                .filter(|d| !d.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+    let allowed_domains =
+        match get_json_setting::<Vec<String>>(repo, reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY)
+            .await
+        {
+            Some(domains) => domains,
+            None => legacy_csv_domains(repo).await,
+        };
 
     let max_calls_per_script = repo
         .get_string(reserved_keys::SCRIPT_HTTP_MAX_CALLS_KEY)
@@ -75,6 +70,21 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
         allow_local,
         max_response_bytes,
     }
+}
+
+/// Tolerant read of the comma-separated allow-list rows written before the JSON format.
+async fn legacy_csv_domains(repo: &dyn SettingsRepo) -> Vec<String> {
+    repo.get_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY)
+        .await
+        .ok()
+        .flatten()
+        .map(|s| {
+            s.split(',')
+                .map(|d| d.trim().to_string())
+                .filter(|d| !d.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

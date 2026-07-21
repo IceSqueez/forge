@@ -13,6 +13,7 @@ pub use filters::{
 };
 pub use forge_tts_core::TtsError;
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceId};
+use forge_types::Shared;
 use forge_voice::{AliasId, AssignmentStrategy, SynthesisDefaults, VoiceAlias, VoiceAliasResolver};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -193,14 +194,11 @@ pub struct SpeakQueueHandle {
     tx: tokio::sync::mpsc::Sender<SpeakCommand>,
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
     depth: Arc<AtomicUsize>,
-    // std RwLock holding an Arc: a read clones the Arc and drops the guard in the
-    // same statement, so the lock is never held across an `.await`. Lets queries
-    // read the catalog without an actor round-trip.
-    voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
-    disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
+    voices: Shared<Vec<TtsVoice>>,
+    disabled_engines: Shared<HashSet<EngineId>>,
     resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     master_volume_bits: Arc<AtomicU32>,
-    engine_gains: Arc<std::sync::RwLock<Arc<HashMap<EngineId, f32>>>>,
+    engine_gains: Shared<HashMap<EngineId, f32>>,
 }
 
 impl SpeakQueueHandle {
@@ -213,17 +211,11 @@ impl SpeakQueueHandle {
     }
 
     pub fn available_voices(&self) -> Arc<Vec<TtsVoice>> {
-        self.voices
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.voices.load()
     }
 
     pub fn disabled_engines(&self) -> Arc<HashSet<EngineId>> {
-        self.disabled_engines
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.disabled_engines.load()
     }
 
     pub fn engine_synthesis_defaults(&self, engine_id: &EngineId) -> SynthesisDefaults {
@@ -235,8 +227,7 @@ impl SpeakQueueHandle {
 
     pub fn engine_gain(&self, engine_id: &EngineId) -> f32 {
         self.engine_gains
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .load()
             .get(engine_id)
             .copied()
             .unwrap_or(1.0)
@@ -288,13 +279,11 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let (event_tx, event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(256);
 
     let depth = Arc::new(AtomicUsize::new(0));
-    let voices = Arc::new(std::sync::RwLock::new(Arc::new(Vec::<TtsVoice>::new())));
-    let disabled_engines = Arc::new(std::sync::RwLock::new(Arc::new(HashSet::<EngineId>::new())));
+    let voices = Shared::<Vec<TtsVoice>>::new(Vec::new());
+    let disabled_engines = Shared::<HashSet<EngineId>>::new(HashSet::new());
     let resolver = deps.resolver.clone();
     let master_volume_bits = Arc::new(AtomicU32::new(config.master_volume.to_bits()));
-    let engine_gains = Arc::new(std::sync::RwLock::new(Arc::new(
-        HashMap::<EngineId, f32>::new(),
-    )));
+    let engine_gains = Shared::<HashMap<EngineId, f32>>::new(HashMap::new());
 
     let event_tx_clone = event_tx.clone();
     let depth_clone = depth.clone();
@@ -346,8 +335,8 @@ mod tests {
             tx: cmd_tx,
             event_tx,
             depth: Arc::new(AtomicUsize::new(0)),
-            voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
-            disabled_engines: Arc::new(std::sync::RwLock::new(Arc::new(HashSet::new()))),
+            voices: Shared::new(Vec::new()),
+            disabled_engines: Shared::new(HashSet::new()),
             resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
                 vec![],
                 AssignmentStrategy::default(),
@@ -355,7 +344,7 @@ mod tests {
                 SynthesisDefaults::default(),
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            engine_gains: Arc::new(std::sync::RwLock::new(Arc::new(HashMap::new()))),
+            engine_gains: Shared::new(HashMap::new()),
         };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
@@ -369,8 +358,8 @@ mod tests {
             tx: cmd_tx,
             event_tx: event_tx.clone(),
             depth: Arc::new(AtomicUsize::new(0)),
-            voices: Arc::new(std::sync::RwLock::new(Arc::new(Vec::new()))),
-            disabled_engines: Arc::new(std::sync::RwLock::new(Arc::new(HashSet::new()))),
+            voices: Shared::new(Vec::new()),
+            disabled_engines: Shared::new(HashSet::new()),
             resolver: Arc::new(std::sync::RwLock::new(VoiceAliasResolver::new(
                 vec![],
                 AssignmentStrategy::default(),
@@ -378,7 +367,7 @@ mod tests {
                 SynthesisDefaults::default(),
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            engine_gains: Arc::new(std::sync::RwLock::new(Arc::new(HashMap::new()))),
+            engine_gains: Shared::new(HashMap::new()),
         };
         let mut sub = handle.subscribe();
         event_tx

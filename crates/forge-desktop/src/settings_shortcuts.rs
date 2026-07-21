@@ -7,7 +7,7 @@ use forge_components::{
     primary_button, radius, spacing, tr, with_alpha,
 };
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::{DataProvider, SettingsRepo, set_json_setting};
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, Keystroke, SharedString, Subscription, Window,
     div, prelude::*, px,
@@ -518,8 +518,7 @@ async fn save_overrides(
     repo: Arc<dyn SettingsRepo>,
     map: HashMap<String, String>,
 ) -> Result<(), String> {
-    let json = serde_json::to_string(&map).map_err(|e| e.to_string())?;
-    repo.set_string(KEYBOARD_SHORTCUTS, &json)
+    set_json_setting(repo.as_ref(), KEYBOARD_SHORTCUTS, &map)
         .await
         .map_err(|e| e.to_string())
 }

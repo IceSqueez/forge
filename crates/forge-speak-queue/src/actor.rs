@@ -7,6 +7,7 @@ use forge_audio::PcmBuffer;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice, VoiceId};
 use forge_tts_pipeline::PipelineResult;
+use forge_types::Shared;
 use forge_voice::{AliasState, ResolveResult, VoiceAliasResolver};
 
 use crate::{
@@ -233,10 +234,10 @@ pub(crate) async fn run_actor(
     mut cmd_rx: tokio::sync::mpsc::Receiver<SpeakCommand>,
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
     depth: Arc<AtomicUsize>,
-    voices: Arc<std::sync::RwLock<Arc<Vec<TtsVoice>>>>,
-    disabled_engines: Arc<std::sync::RwLock<Arc<HashSet<EngineId>>>>,
+    voices: Shared<Vec<TtsVoice>>,
+    disabled_engines: Shared<HashSet<EngineId>>,
     master_volume_bits: Arc<AtomicU32>,
-    engine_gains: Arc<std::sync::RwLock<Arc<HashMap<EngineId, f32>>>>,
+    engine_gains: Shared<HashMap<EngineId, f32>>,
 ) {
     let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
     let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
@@ -245,8 +246,6 @@ pub(crate) async fn run_actor(
     let mut voicegate_active = false;
     let mut active_request_id: Option<RequestId> = None;
     let mut last_successful: Option<SpeakRequest> = None;
-    let mut disabled: HashSet<EngineId> = deps.disabled_engines.clone();
-    let mut gains: HashMap<EngineId, f32> = deps.engine_gains.clone();
     let mut current_playback: Option<CurrentPlayback> = None;
     let mut progress_ticker: Option<tokio::time::Interval> = None;
     let mut recent_messages: VecDeque<String> = VecDeque::new();
@@ -254,10 +253,10 @@ pub(crate) async fn run_actor(
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
     let (catalog_tx, mut catalog_rx) = tokio::sync::mpsc::channel::<Arc<Vec<TtsVoice>>>(1);
 
-    let voice_catalog = Arc::new(build_voice_catalog(&deps.registry, &disabled).await);
-    *voices.write().unwrap_or_else(|e| e.into_inner()) = voice_catalog.clone();
-    *disabled_engines.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(disabled.clone());
-    *engine_gains.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(gains.clone());
+    let voice_catalog = Arc::new(build_voice_catalog(&deps.registry, &deps.disabled_engines).await);
+    voices.store_arc(voice_catalog.clone());
+    disabled_engines.store(deps.disabled_engines.clone());
+    engine_gains.store(deps.engine_gains.clone());
     let mut task_deps = SynthTaskDeps {
         resolver: deps.resolver.clone(),
         pipeline: deps.pipeline.clone(),
@@ -312,17 +311,21 @@ pub(crate) async fn run_actor(
                 match cmd {
                     None => break,
                     Some(SpeakCommand::RefreshVoiceCatalog) => {
-                        spawn_catalog_rebuild(deps.registry.clone(), disabled.clone(), catalog_tx.clone());
+                        spawn_catalog_rebuild(
+                            deps.registry.clone(),
+                            (*disabled_engines.load()).clone(),
+                            catalog_tx.clone(),
+                        );
                     }
                     Some(SpeakCommand::SetEngineEnabled(engine_id, enabled)) => {
+                        let mut next = (*disabled_engines.load()).clone();
                         if enabled {
-                            disabled.remove(&engine_id);
+                            next.remove(&engine_id);
                         } else {
-                            disabled.insert(engine_id);
+                            next.insert(engine_id);
                         }
-                        *disabled_engines.write().unwrap_or_else(|e| e.into_inner()) =
-                            Arc::new(disabled.clone());
-                        spawn_catalog_rebuild(deps.registry.clone(), disabled.clone(), catalog_tx.clone());
+                        disabled_engines.store(next.clone());
+                        spawn_catalog_rebuild(deps.registry.clone(), next, catalog_tx.clone());
                     }
                     Some(SpeakCommand::SetVolume(volume)) => {
                         handle_command(
@@ -348,9 +351,9 @@ pub(crate) async fn run_actor(
                             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
                             guard.engine_defaults.insert(engine_id.clone(), defaults);
                         }
-                        gains.insert(engine_id, gain.clamp(0.0, 1.0));
-                        *engine_gains.write().unwrap_or_else(|e| e.into_inner()) =
-                            Arc::new(gains.clone());
+                        let mut next = (*engine_gains.load()).clone();
+                        next.insert(engine_id, gain.clamp(0.0, 1.0));
+                        engine_gains.store(next);
                     }
                     Some(c) => handle_command(
                         c,
@@ -372,6 +375,7 @@ pub(crate) async fn run_actor(
             }
             result = synth_rx.recv() => {
                 if let Some(r) = result {
+                    let gains = engine_gains.load();
                     handle_synth_result(
                         r,
                         &config,
@@ -382,13 +386,13 @@ pub(crate) async fn run_actor(
                         &mut progress_ticker,
                         &high_queue,
                         &normal_queue,
-                        &gains,
+                        gains.as_ref(),
                     ).await;
                 }
             }
             result = catalog_rx.recv() => {
                 if let Some(catalog) = result {
-                    *voices.write().unwrap_or_else(|e| e.into_inner()) = catalog.clone();
+                    voices.store_arc(catalog.clone());
                     task_deps.voice_catalog = catalog;
                 }
             }

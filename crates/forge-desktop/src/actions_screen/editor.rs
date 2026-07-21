@@ -4060,63 +4060,27 @@ impl ScreenActionsView {
             .child(grid)
             .child(advanced);
 
-        let close_hover = palette.surface_overlay;
-        let header = div()
+        let title_slot = div()
+            .flex_1()
             .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .py(spacing(Spacing::Sm, Density::Cozy))
-            .px(spacing(Spacing::Md, Density::Cozy))
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
+            .flex_col()
+            .gap(px(2.0))
+            .overflow_hidden()
             .child(
                 div()
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(STEP_TILE)
-                    .rounded(radius(Radius::Sm))
-                    .bg(palette.surface_overlay)
-                    .child(icon(header_glyph, STEP_TILE_GLYPH, header_color)),
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(form.name_input.clone()),
             )
             .child(
                 div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.0))
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(form.name_input.clone()),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_XXS)
-                            .text_color(palette.text_faint)
-                            .child(tr!(
-                                "actions_step_subtitle",
-                                index = step_index as i64,
-                                total = step_total as i64
-                            )),
-                    ),
-            )
-            .child(
-                div()
-                    .id("actions-sub-close")
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .p(spacing(Spacing::Xxs, Density::Cozy))
-                    .rounded(radius(Radius::Sm))
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(close_hover))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)))
-                    .child(icon(Icon::X, px(16.0), palette.text_faint)),
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!(
+                        "actions_step_subtitle",
+                        index = step_index as i64,
+                        total = step_total as i64
+                    )),
             );
 
         let cancel = secondary_button(tr!("common_cancel"), palette).on_click(
@@ -4133,26 +4097,20 @@ impl ScreenActionsView {
             .items_center()
             .justify_end()
             .gap(spacing(Spacing::Xs, Density::Cozy))
-            .py(spacing(Spacing::Sm, Density::Cozy))
-            .px(spacing(Spacing::Md, Density::Cozy))
-            .bg(palette.shell)
-            .border_t(BORDER_THIN)
-            .border_color(palette.border_regular)
             .child(cancel)
             .child(save);
 
-        let card = div()
-            .flex()
-            .flex_col()
-            .w(STEP_MODAL_W)
-            .bg(palette.elevated)
-            .rounded(radius(Radius::Lg))
-            .overflow_hidden()
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(header)
-            .child(body)
-            .child(footer);
+        let card = modal("", body, palette)
+            .width(STEP_MODAL_W)
+            .header_icon(header_glyph, header_color)
+            .header_tile_size(STEP_TILE, STEP_TILE_GLYPH)
+            .title_slot(title_slot)
+            .flush_body()
+            .footer(footer)
+            .on_close(
+                "actions-sub-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_sub_action(cx)),
+            );
 
         let view = cx.entity();
         overlay(card, palette)

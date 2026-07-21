@@ -26,9 +26,12 @@ type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 pub struct Modal {
     title: SharedString,
     subtitle: Option<SharedString>,
+    title_slot: Option<AnyElement>,
     body: AnyElement,
+    pad_body: bool,
     footer: Option<AnyElement>,
     header_icon: Option<(Icon, Rgba)>,
+    tile_size: Option<(Pixels, Pixels)>,
     size: ModalSize,
     width_override: Option<Pixels>,
     close_id: Option<ElementId>,
@@ -51,9 +54,12 @@ pub fn modal(
     Modal {
         title: title.into(),
         subtitle: None,
+        title_slot: None,
         body: body.into_any_element(),
+        pad_body: true,
         footer: None,
         header_icon: None,
+        tile_size: None,
         size: ModalSize::Md,
         width_override: None,
         close_id: None,
@@ -76,9 +82,30 @@ impl Modal {
         self
     }
 
+    /// Replaces the whole title/subtitle column with a caller-owned element (e.g. an
+    /// editable name input as the title); when set, `title` and `subtitle` are ignored.
+    #[must_use]
+    pub fn title_slot(mut self, slot: impl IntoElement) -> Self {
+        self.title_slot = Some(slot.into_any_element());
+        self
+    }
+
     #[must_use]
     pub fn header_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
         self.header_icon = Some((glyph, tint));
+        self
+    }
+
+    #[must_use]
+    pub fn header_tile_size(mut self, tile: Pixels, glyph: Pixels) -> Self {
+        self.tile_size = Some((tile, glyph));
+        self
+    }
+
+    /// Drops the default body padding so the caller owns the body's own padding/scroll frame.
+    #[must_use]
+    pub fn flush_body(mut self) -> Self {
+        self.pad_body = false;
         self
     }
 
@@ -128,42 +155,47 @@ impl Modal {
             .border_color(self.border);
 
         if let Some((glyph, tint)) = self.header_icon {
+            let (tile, glyph_size) = self.tile_size.unwrap_or((HEADER_TILE, HEADER_TILE_ICON));
             row = row.child(
                 div()
                     .flex_none()
                     .flex()
                     .items_center()
                     .justify_center()
-                    .size(HEADER_TILE)
+                    .size(tile)
                     .rounded(radius(Radius::Sm))
                     .bg(self.tile_bg)
-                    .child(icon(glyph, HEADER_TILE_ICON, tint)),
+                    .child(icon(glyph, glyph_size, tint)),
             );
         }
 
-        let mut titles = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .gap(TITLE_GAP)
-            .overflow_hidden()
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_MD)
-                    .text_color(self.title_color)
-                    .child(self.title.clone()),
-            );
-        if let Some(subtitle) = self.subtitle.clone() {
-            titles = titles.child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(self.subtitle_color)
-                    .child(subtitle),
-            );
+        if let Some(slot) = self.title_slot.take() {
+            row = row.child(slot);
+        } else {
+            let mut titles = div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .gap(TITLE_GAP)
+                .overflow_hidden()
+                .child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_MD)
+                        .text_color(self.title_color)
+                        .child(self.title.clone()),
+                );
+            if let Some(subtitle) = self.subtitle.clone() {
+                titles = titles.child(
+                    div()
+                        .font_family(DEFAULT_BODY_FAMILY)
+                        .text_size(FONT_XS)
+                        .text_color(self.subtitle_color)
+                        .child(subtitle),
+                );
+            }
+            row = row.child(titles);
         }
-        row = row.child(titles);
 
         if let (Some(id), Some(handler)) = (self.close_id.take(), self.on_close.take()) {
             let hover = self.close_hover;
@@ -211,12 +243,11 @@ impl RenderOnce for Modal {
         let header = self.render_header();
         let footer = self.render_footer();
 
-        let body = div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .p(pad(Spacing::Md))
-            .child(std::mem::replace(&mut self.body, div().into_any_element()));
+        let mut body = div().w_full().flex().flex_col();
+        if self.pad_body {
+            body = body.p(pad(Spacing::Md));
+        }
+        let body = body.child(std::mem::replace(&mut self.body, div().into_any_element()));
 
         // `overflow_hidden` clips the header/footer bands to the rounded card so the
         // footer's `shell` fill does not square off the bottom corners.

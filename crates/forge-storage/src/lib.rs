@@ -36,8 +36,8 @@ pub use settings::{
     set_chat_history_display_limit, set_chat_history_store_limit, set_disabled_tts_engines,
     set_engine_params, set_json_setting, set_master_volume, set_soundboard_also_headphones,
     set_soundboard_enabled, set_soundboard_master_volume, set_soundboard_output_device,
-    set_synthesis_defaults, soundboard_also_headphones, soundboard_enabled,
-    soundboard_master_volume, soundboard_output_device, synthesis_defaults,
+    soundboard_also_headphones, soundboard_enabled, soundboard_master_volume,
+    soundboard_output_device, synthesis_defaults,
 };
 pub use soundboard::{SoundboardClipsRepo, StoredClip};
 pub use transit::{

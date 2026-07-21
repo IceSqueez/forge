@@ -627,6 +627,8 @@ settings_scripting_max_response_label = Max response size (KiB)
 settings_scripting_max_response_hint = Range 1 - 10 240 (default 1 024 KiB = 1 MiB)
 settings_scripting_allow_local_label = Allow localhost / private IPs
 settings_scripting_allow_local_description = Disables SSRF protections. Only enable for local development.
+settings_scripting_core_allow_local_label = Allow localhost / private IPs (HTTP action)
+settings_scripting_core_allow_local_description = Disables SSRF protections for the HTTP request action. Only enable for local development.
 settings_scripting_ssrf_warning = WARNING - disables SSRF protections. Only enable for local development.
 
 ## Actions trigger picker - category labels

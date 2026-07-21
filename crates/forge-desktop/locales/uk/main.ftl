@@ -629,6 +629,8 @@ settings_scripting_max_response_label = Максимальний розмір в
 settings_scripting_max_response_hint = Діапазон 1 - 10 240 (за замовчуванням 1 024 КіБ = 1 МіБ)
 settings_scripting_allow_local_label = Дозволити localhost / приватні IP
 settings_scripting_allow_local_description = Вимикає захист від SSRF. Вмикайте лише для локальної розробки.
+settings_scripting_core_allow_local_label = Дозволити localhost / приватні IP (HTTP-дія)
+settings_scripting_core_allow_local_description = Вимикає захист від SSRF для дії HTTP-запиту. Вмикайте лише для локальної розробки.
 settings_scripting_ssrf_warning = УВАГА - вимикає захист від SSRF. Вмикайте лише для локальної розробки.
 
 ## Actions trigger picker - category labels

@@ -9,7 +9,7 @@ use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
 };
 use forge_storage::{
-    DataProvider, SettingsRepo, reserved_keys, set_bool_setting, set_json_setting,
+    DataProvider, SettingsRepo, get_bool_setting, reserved_keys, set_bool_setting, set_json_setting,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div,
@@ -23,6 +23,7 @@ struct ScriptingSnapshot {
     max_calls_per_script: u32,
     http_timeout_ms: u32,
     allow_local: bool,
+    core_allow_local: bool,
     max_response_bytes: u32,
     op_limit: u64,
     engine_timeout_ms: u64,
@@ -33,6 +34,7 @@ struct SavePayload {
     max_calls: u32,
     http_timeout_ms: u32,
     allow_local: bool,
+    core_allow_local: bool,
     max_response_bytes: u32,
     op_limit: u64,
     engine_timeout_ms: u64,
@@ -43,6 +45,7 @@ pub struct SettingsScriptingView {
     rt_handle: tokio::runtime::Handle,
     allowed_domains: Vec<String>,
     allow_local: bool,
+    core_allow_local: bool,
     loading: bool,
     saving: bool,
     save_error: Option<String>,
@@ -109,6 +112,7 @@ impl SettingsScriptingView {
             rt_handle,
             allowed_domains: http.allowed_domains,
             allow_local: http.allow_local,
+            core_allow_local: false,
             loading: false,
             saving: false,
             save_error: None,
@@ -153,6 +157,7 @@ impl SettingsScriptingView {
             Ok(snap) => {
                 self.allowed_domains = snap.allowed_domains;
                 self.allow_local = snap.allow_local;
+                self.core_allow_local = snap.core_allow_local;
                 self.op_limit
                     .update(cx, |i, cx| i.set_content(snap.op_limit.to_string(), cx));
                 self.engine_timeout.update(cx, |i, cx| {
@@ -198,6 +203,12 @@ impl SettingsScriptingView {
 
     fn toggle_allow_local(&mut self, cx: &mut Context<Self>) {
         self.allow_local = !self.allow_local;
+        self.all_changes_saved = false;
+        cx.notify();
+    }
+
+    fn toggle_core_allow_local(&mut self, cx: &mut Context<Self>) {
+        self.core_allow_local = !self.core_allow_local;
         self.all_changes_saved = false;
         cx.notify();
     }
@@ -251,6 +262,7 @@ impl SettingsScriptingView {
             max_calls,
             http_timeout_ms,
             allow_local: self.allow_local,
+            core_allow_local: self.core_allow_local,
             max_response_bytes,
             op_limit,
             engine_timeout_ms,
@@ -530,9 +542,19 @@ impl Render for SettingsScriptingView {
                 ),
                 &palette,
                 density,
+            ))
+            .child(setting_row(
+                tr!("settings_scripting_core_allow_local_label"),
+                Some(tr!("settings_scripting_core_allow_local_description").into()),
+                toggle(self.core_allow_local, &palette).on_click(
+                    "settings-scripting-core-allow-local",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_core_allow_local(cx)),
+                ),
+                &palette,
+                density,
             ));
 
-        if self.allow_local {
+        if self.allow_local || self.core_allow_local {
             http_section = http_section.child(
                 div()
                     .py(px(4.0))
@@ -636,11 +658,18 @@ fn labeled_row(
 async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> Result<ScriptingSnapshot, String> {
     let http = load_script_http_config(repo.as_ref()).await;
     let engine = load_script_engine_config(repo.as_ref()).await;
+    let core_allow_local = get_bool_setting(
+        repo.as_ref(),
+        reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY,
+        false,
+    )
+    .await;
     Ok(ScriptingSnapshot {
         allowed_domains: http.allowed_domains,
         max_calls_per_script: http.max_calls_per_script,
         http_timeout_ms: http.timeout_ms,
         allow_local: http.allow_local,
+        core_allow_local,
         max_response_bytes: http.max_response_bytes,
         op_limit: engine.op_limit,
         engine_timeout_ms: engine.wall_time_ms,
@@ -671,6 +700,13 @@ async fn do_save(repo: Arc<dyn SettingsRepo>, p: SavePayload) -> Result<(), Stri
         repo.as_ref(),
         reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL_KEY,
         p.allow_local,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    set_bool_setting(
+        repo.as_ref(),
+        reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY,
+        p.core_allow_local,
     )
     .await
     .map_err(|e| e.to_string())?;

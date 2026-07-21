@@ -9,10 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::StorageError;
 
 pub mod reserved_keys {
-    pub const ONBOARDING_COMPLETED: &str = "onboarding_completed";
-    pub const LAST_ONBOARDING_STEP: &str = "last_onboarding_step";
     pub const THEME: &str = "theme";
-    pub const ACCENT_COLOR: &str = "accent_color";
     pub const DENSITY: &str = "density";
     pub const FONT_BODY: &str = "font_body";
     pub const FONT_MONO: &str = "font_mono";
@@ -327,15 +324,6 @@ pub async fn synthesis_defaults(
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default())
-}
-
-pub async fn set_synthesis_defaults(
-    repo: &dyn SettingsRepo,
-    defaults: SynthesisDefaults,
-) -> Result<(), StorageError> {
-    let json = serde_json::to_string(&defaults).map_err(|e| StorageError::Parse(e.to_string()))?;
-    repo.set_string(reserved_keys::TTS_SYNTHESIS_DEFAULTS_KEY, &json)
-        .await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

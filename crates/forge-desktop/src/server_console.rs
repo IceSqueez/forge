@@ -62,11 +62,9 @@ struct OwnedSubscriptionChip {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 enum ClientLiveness {
     Active,
     Idle,
-    Disconnecting,
 }
 
 #[derive(Debug, Clone)]
@@ -1323,7 +1321,6 @@ impl ServerConsoleView {
         let dot_color = match row.liveness {
             ClientLiveness::Active => palette.success,
             ClientLiveness::Idle => palette.warning,
-            ClientLiveness::Disconnecting => palette.random,
         };
 
         let id_col = div()

@@ -91,21 +91,6 @@ async fn set_string_overwrites_existing_value() {
 }
 
 #[tokio::test]
-async fn last_onboarding_step_roundtrips() {
-    use forge_storage::reserved_keys::LAST_ONBOARDING_STEP;
-
-    let repo = setup().await;
-    repo.set_string(LAST_ONBOARDING_STEP, "connect_obs")
-        .await
-        .expect("set last_onboarding_step");
-    let got = repo
-        .get_string(LAST_ONBOARDING_STEP)
-        .await
-        .expect("get last_onboarding_step");
-    assert_eq!(got, Some("connect_obs".to_owned()));
-}
-
-#[tokio::test]
 async fn language_seeds_en_and_round_trips_through_typed_repo() {
     let repo = setup().await;
     // Migration 0016 seeds 'en' so a fresh install reads En through the typed accessor.
@@ -114,24 +99,6 @@ async fn language_seeds_en_and_round_trips_through_typed_repo() {
     assert_eq!(repo.language().await.expect("read after Uk"), Language::Uk);
     repo.set_language(Language::En).await.expect("write En");
     assert_eq!(repo.language().await.expect("read after En"), Language::En);
-}
-
-#[tokio::test]
-async fn last_onboarding_step_overwrites_correctly() {
-    use forge_storage::reserved_keys::LAST_ONBOARDING_STEP;
-
-    let repo = setup().await;
-    repo.set_string(LAST_ONBOARDING_STEP, "welcome")
-        .await
-        .expect("set welcome");
-    repo.set_string(LAST_ONBOARDING_STEP, "starter_pack")
-        .await
-        .expect("set starter_pack");
-    let got = repo
-        .get_string(LAST_ONBOARDING_STEP)
-        .await
-        .expect("get after overwrite");
-    assert_eq!(got, Some("starter_pack".to_owned()));
 }
 
 #[tokio::test]

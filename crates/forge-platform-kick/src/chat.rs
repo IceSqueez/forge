@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
+use forge_platform_core::Backoff;
 use forge_platform_core::chat::ConnectionState;
 use futures_util::StreamExt;
 use serde::Deserialize;
@@ -10,7 +11,6 @@ use tracing::{debug, info, warn};
 
 use crate::channel_info::ChannelInfoFetcher;
 use crate::error::KickError;
-use crate::reconnect;
 
 /// Community-observed Pusher app key used by kick.com as of 2024.
 /// If Pusher events stop arriving, verify the current key via DevTools:
@@ -162,7 +162,7 @@ async fn run_loop(
         http,
         state_tx,
     } = ctx;
-    let mut attempt: u32 = 0;
+    let mut backoff = Backoff::default();
 
     if let Err(e) = send_subscribe(&mut ws_stream, chatroom_id).await {
         warn!(error = %e, "subscribe send failed");
@@ -212,8 +212,7 @@ async fn run_loop(
 
     // Broken out of 'session - enter the reconnect loop.
     let _ = state_tx.send(ConnectionState::Reconnecting);
-    attempt += 1;
-    reconnect::wait(attempt.saturating_sub(1)).await;
+    tokio::time::sleep(backoff.next_delay()).await;
 
     loop {
         if matches!(
@@ -230,16 +229,14 @@ async fn run_loop(
             Ok(info) => info.chatroom_id,
             Err(e) => {
                 warn!(error = %e, "channel info fetch failed on reconnect");
-                reconnect::wait(attempt).await;
-                attempt += 1;
+                tokio::time::sleep(backoff.next_delay()).await;
                 continue;
             }
         };
 
         let Ok(new_ws) = connect_ws(&ws_url).await else {
             warn!("kick chat WS reconnect failed");
-            reconnect::wait(attempt).await;
-            attempt += 1;
+            tokio::time::sleep(backoff.next_delay()).await;
             continue;
         };
 
@@ -251,7 +248,7 @@ async fn run_loop(
         // WS re-established and subscribe sent after backoff - treat as Connected again.
         let _ = state_tx.send(ConnectionState::Connected);
         ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-        attempt = 0;
+        backoff.reset();
 
         'session: loop {
             tokio::select! {
@@ -290,8 +287,7 @@ async fn run_loop(
 
         // Dropped out of inner 'session - still in the outer reconnect loop.
         let _ = state_tx.send(ConnectionState::Reconnecting);
-        reconnect::wait(attempt).await;
-        attempt += 1;
+        tokio::time::sleep(backoff.next_delay()).await;
     }
 }
 

@@ -1,8 +1,7 @@
-use crate::chat::reconnect;
 use crate::chat::subscriber::{SubscribeError, subscribe_all};
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{ConnectionState, connection_state_changed_event};
+use forge_platform_core::{Backoff, ConnectionState, connection_state_changed_event};
 use forge_types::{
     ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, OAuthToken,
 };
@@ -74,10 +73,11 @@ impl ChatSession {
     }
 
     pub(crate) async fn run(mut self) {
-        let mut attempt: u32 = 0;
+        let mut backoff = Backoff::default();
         let mut url = EVENTSUB_WS_URL.to_owned();
 
         loop {
+            let attempt = backoff.attempt();
             self.set_state(if attempt == 0 {
                 ChatConnectionState::Connecting
             } else {
@@ -93,7 +93,7 @@ impl ChatSession {
             match outcome {
                 SessionOutcome::Reconnect(new_url) => {
                     url = new_url;
-                    attempt = 0;
+                    backoff.reset();
                     continue;
                 }
                 SessionOutcome::Disconnected => {}
@@ -106,8 +106,7 @@ impl ChatSession {
                 }
             }
 
-            attempt += 1;
-            reconnect::wait(attempt.saturating_sub(1)).await;
+            tokio::time::sleep(backoff.next_delay()).await;
 
             if self.is_shutdown_requested() {
                 break;

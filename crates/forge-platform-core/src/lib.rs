@@ -1,6 +1,7 @@
 #![doc = "ChatPlatform trait, AuthFlow taxonomy, RateLimiter, Integration page traits."]
 
 pub mod auth;
+pub mod backoff;
 pub mod builtin;
 pub mod capabilities;
 pub mod chat;
@@ -10,6 +11,7 @@ pub mod net;
 pub mod paths;
 pub mod rate_limit;
 pub use auth::AuthFlow;
+pub use backoff::Backoff;
 pub use builtin::{
     ActiveRow, BadgeTone, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId,
     BuiltinStatus, CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome,

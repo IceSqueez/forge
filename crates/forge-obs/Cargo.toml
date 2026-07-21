@@ -27,4 +27,3 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 futures-core = { workspace = true }
 futures-util = { workspace = true }
-rand = { workspace = true }

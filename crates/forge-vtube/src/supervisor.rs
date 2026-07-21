@@ -9,7 +9,7 @@ use tokio::sync::{Notify, broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::HealthDelta;
+use forge_platform_core::{Backoff, HealthDelta};
 use forge_storage::CredentialsRepo;
 
 use crate::auth::AuthState;
@@ -21,10 +21,7 @@ use crate::health::{HealthSnapshot, update_from_event};
 use crate::protocol::new_request;
 use crate::request::PendingRequest;
 
-pub(crate) fn compute_backoff(attempt: u32) -> Duration {
-    const DELAYS_SECS: [u64; 6] = [1, 2, 4, 8, 16, 30];
-    Duration::from_secs(DELAYS_SECS[attempt.min(5) as usize])
-}
+const VTS_BACKOFF_CAP: Duration = Duration::from_secs(30);
 
 fn emit_connection_changed(
     publisher: &dyn EventPublisher,
@@ -189,14 +186,14 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         content_notifier,
     } = ctx;
 
-    let mut attempt: u32 = 0;
+    let mut backoff = Backoff::with_cap(VTS_BACKOFF_CAP);
+    let mut reconnecting = false;
 
     loop {
-        if attempt > 0 {
-            let delay = compute_backoff(attempt - 1);
+        if reconnecting {
+            let delay = backoff.next_delay();
             tracing::info!(
                 endpoint = %endpoint,
-                attempt,
                 delay_ms = delay.as_millis(),
                 "reconnecting to VTube Studio"
             );
@@ -210,25 +207,24 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             }
         }
 
-        let conn_state = if attempt == 0 {
-            STATE_CONNECTING
-        } else {
+        let conn_state = if reconnecting {
             STATE_RECONNECTING
+        } else {
+            STATE_CONNECTING
         };
         state.store(conn_state, Ordering::Release);
-        tracing::debug!(endpoint = %endpoint, attempt, "attempting VTube Studio connection");
+        tracing::debug!(endpoint = %endpoint, "attempting VTube Studio connection");
 
         let mut ws = match tokio_tungstenite::connect_async(&endpoint).await {
             Ok((ws, _)) => ws,
             Err(e) => {
                 tracing::debug!(
                     endpoint = %endpoint,
-                    attempt,
                     error = %e,
                     "VTube Studio connection attempt failed"
                 );
                 emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
-                attempt = attempt.saturating_add(1);
+                reconnecting = true;
                 continue;
             }
         };
@@ -268,7 +264,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     "auth failed, will retry"
                 );
                 emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
-                attempt = attempt.saturating_add(1);
+                reconnecting = true;
                 continue;
             }
         }
@@ -276,7 +272,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         if let Err(e) = crate::events::subscribe_all(&mut ws).await {
             tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
             emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
-            attempt = attempt.saturating_add(1);
+            reconnecting = true;
             continue;
         }
 
@@ -355,24 +351,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             *g = AuthState::Cold;
         }
         emit_connection_changed(&*publisher, &endpoint, false, None);
-        attempt = 1;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::compute_backoff;
-
-    #[test]
-    fn compute_backoff_sequence_matches_spec() {
-        assert_eq!(compute_backoff(0), Duration::from_secs(1));
-        assert_eq!(compute_backoff(1), Duration::from_secs(2));
-        assert_eq!(compute_backoff(2), Duration::from_secs(4));
-        assert_eq!(compute_backoff(3), Duration::from_secs(8));
-        assert_eq!(compute_backoff(4), Duration::from_secs(16));
-        assert_eq!(compute_backoff(5), Duration::from_secs(30));
-        assert_eq!(compute_backoff(99), Duration::from_secs(30));
+        backoff.reset();
+        reconnecting = true;
     }
 }

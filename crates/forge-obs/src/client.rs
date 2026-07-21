@@ -5,15 +5,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use rand::RngExt;
 use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
-    BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, ControlFailure,
-    ControlOutcome, HeaderAction, HealthDelta, HealthValue,
+    Backoff, BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
+    ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HealthValue,
 };
 use forge_types::EventId;
 
@@ -291,13 +290,6 @@ impl BuiltinControl for ObsClient {
     }
 }
 
-pub(crate) fn compute_backoff(attempt: u32) -> Duration {
-    let base_secs = (1u64 << attempt.min(6)).min(60);
-    let max_jitter_ms = base_secs * 100;
-    let jitter_ms = rand::rng().random_range(0..=max_jitter_ms);
-    Duration::from_millis(base_secs * 1000 + jitter_ms)
-}
-
 struct SupervisorContext {
     inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
     state: Arc<AtomicU8>,
@@ -326,15 +318,15 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         item_cache,
         last_set_scene_event_id,
     } = ctx;
-    let mut attempt: u32 = 0;
+    let mut backoff = Backoff::default();
+    let mut reconnecting = false;
 
     loop {
-        if attempt > 0 {
-            let delay = compute_backoff(attempt - 1);
+        if reconnecting {
+            let delay = backoff.next_delay();
             tracing::info!(
                 host = %host,
                 port,
-                attempt,
                 delay_ms = delay.as_millis(),
                 "reconnecting to OBS"
             );
@@ -347,13 +339,13 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             }
         }
 
-        let conn_state = if attempt == 0 {
-            STATE_CONNECTING
-        } else {
+        let conn_state = if reconnecting {
             STATE_RECONNECTING
+        } else {
+            STATE_CONNECTING
         };
         state.store(conn_state, Ordering::Release);
-        tracing::debug!(host = %host, port, attempt, "attempting OBS connection");
+        tracing::debug!(host = %host, port, "attempting OBS connection");
 
         let connect_config = obws::client::ConnectConfig {
             host: host.as_str(),
@@ -451,7 +443,8 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
                 stats_handle.abort();
                 inner.write().await.take();
-                attempt = 1;
+                backoff.reset();
+                reconnecting = true;
             }
 
             Err(ObsError::Authentication) => {
@@ -464,8 +457,8 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             }
 
             Err(e) => {
-                tracing::debug!(host = %host, port, attempt, error = %e, "OBS connection attempt failed");
-                attempt = attempt.saturating_add(1);
+                tracing::debug!(host = %host, port, error = %e, "OBS connection attempt failed");
+                reconnecting = true;
             }
         }
     }
@@ -797,43 +790,6 @@ mod tests {
     #[test]
     fn parse_endpoint_invalid_port_errors() {
         assert!(parse_endpoint("localhost:notaport").is_err());
-    }
-
-    #[test]
-    fn compute_backoff_caps_at_60s_for_attempt_six() {
-        let d = compute_backoff(6);
-        assert!(d.as_secs() >= 60);
-    }
-
-    #[test]
-    fn compute_backoff_caps_at_60s_for_attempt_seven() {
-        let d = compute_backoff(7);
-        assert!(d.as_secs() >= 60);
-    }
-
-    #[test]
-    fn compute_backoff_first_attempt_under_two_seconds() {
-        let d = compute_backoff(0);
-        assert!(d.as_millis() < 2_000);
-    }
-
-    #[test]
-    fn compute_backoff_attempt_five_under_60s() {
-        let d = compute_backoff(5);
-        assert!(d.as_secs() < 60);
-    }
-
-    #[test]
-    fn compute_backoff_total_millis_at_least_base_secs() {
-        for attempt in 0u32..=7 {
-            let d = compute_backoff(attempt);
-            let base_secs = (1u64 << attempt.min(6)).min(60);
-            assert!(
-                d.as_millis() >= (base_secs * 1000) as u128,
-                "backoff for attempt {attempt} must be >= {base_secs}s but was {}ms",
-                d.as_millis()
-            );
-        }
     }
 
     // Compile-time object-safety guard for the lifecycle trait.

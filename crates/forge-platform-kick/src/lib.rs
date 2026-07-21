@@ -12,7 +12,6 @@ pub mod error;
 mod event_channel;
 pub mod moderation;
 pub mod poller;
-pub(crate) mod reconnect;
 pub mod rewards;
 pub mod send;
 pub mod sub_actions;

@@ -28,7 +28,6 @@ time = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
-rand = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

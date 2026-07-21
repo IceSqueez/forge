@@ -448,6 +448,7 @@ pub struct RowCard {
     border_width: Pixels,
     corner_radius: Pixels,
     density: Density,
+    align_top: bool,
     pad_v: Option<Pixels>,
     pad_h: Option<Pixels>,
     reveal_trailing_group: Option<SharedString>,
@@ -474,6 +475,7 @@ pub fn row_card(title: impl IntoElement, palette: &ForgePalette) -> RowCard {
         border_width: ROW_BORDER,
         corner_radius: px(0.0),
         density: Density::default(),
+        align_top: false,
         pad_v: None,
         pad_h: None,
         reveal_trailing_group: None,
@@ -534,6 +536,14 @@ impl RowCard {
         self
     }
 
+    /// Top-aligns leading / body / trailing instead of centering - for multi-line
+    /// cards whose leading tile and trailing glyph should sit at the top edge.
+    #[must_use]
+    pub fn align_top(mut self) -> Self {
+        self.align_top = true;
+        self
+    }
+
     /// Keeps the trailing element hidden (its width still reserved) until the pointer
     /// enters the row, then reveals it. `group` must be unique per rendered row.
     #[must_use]
@@ -575,10 +585,13 @@ impl RenderOnce for RowCard {
         };
         let (rest_bg, rest_border) = colors.resolve(rest_state);
 
-        let mut root = div()
-            .w_full()
-            .flex()
-            .items_center()
+        let aligned = div().w_full().flex();
+        let aligned = if self.align_top {
+            aligned.items_start()
+        } else {
+            aligned.items_center()
+        };
+        let mut root = aligned
             .gap(spacing(Spacing::Xs, d))
             .py(self.pad_v.unwrap_or_else(|| spacing(Spacing::Xs, d)))
             .px(self.pad_h.unwrap_or_else(|| spacing(Spacing::Md, d)))
@@ -634,6 +647,132 @@ impl RenderOnce for RowCard {
             }
             _ => root.into_any_element(),
         }
+    }
+}
+
+const NAV_CHEVRON: Pixels = px(16.0);
+
+pub fn nav_card(
+    leading: impl IntoElement,
+    body: impl IntoElement,
+    palette: &ForgePalette,
+) -> RowCard {
+    row_card(body, palette)
+        .leading(leading)
+        .trailing(icon(Icon::ChevronRight, NAV_CHEVRON, palette.text_faint))
+        .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
+        .idle_background(palette.elevated)
+        .align_top()
+}
+
+#[derive(IntoElement)]
+pub struct ToolbarRow {
+    left: AnyElement,
+    right: AnyElement,
+    attached: Option<(Rgba, Rgba)>,
+    density: Density,
+    pad_top: Option<Pixels>,
+    pad_bottom: Option<Pixels>,
+    pad_x: Option<Pixels>,
+    gap: Option<Pixels>,
+    flex_none: bool,
+}
+
+pub fn toolbar_row(left: impl IntoElement, right: impl IntoElement) -> ToolbarRow {
+    ToolbarRow {
+        left: left.into_any_element(),
+        right: right.into_any_element(),
+        attached: None,
+        density: Density::default(),
+        pad_top: None,
+        pad_bottom: None,
+        pad_x: None,
+        gap: None,
+        flex_none: false,
+    }
+}
+
+impl ToolbarRow {
+    /// Elevated fill + bottom rule - the bar reads as chrome docked above the body.
+    #[must_use]
+    pub fn attached(mut self, palette: &ForgePalette) -> Self {
+        self.attached = Some((palette.elevated, palette.border_regular));
+        self
+    }
+
+    #[must_use]
+    pub fn density(mut self, density: Density) -> Self {
+        self.density = density;
+        self
+    }
+
+    #[must_use]
+    pub fn py(mut self, pad: Pixels) -> Self {
+        self.pad_top = Some(pad);
+        self.pad_bottom = Some(pad);
+        self
+    }
+
+    #[must_use]
+    pub fn pb(mut self, pad: Pixels) -> Self {
+        self.pad_bottom = Some(pad);
+        self
+    }
+
+    #[must_use]
+    pub fn px(mut self, pad: Pixels) -> Self {
+        self.pad_x = Some(pad);
+        self
+    }
+
+    #[must_use]
+    pub fn gap(mut self, gap: Pixels) -> Self {
+        self.gap = Some(gap);
+        self
+    }
+
+    #[must_use]
+    pub fn flex_none(mut self) -> Self {
+        self.flex_none = true;
+        self
+    }
+}
+
+impl RenderOnce for ToolbarRow {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let d = self.density;
+        let attached = self.attached.is_some();
+        let default_v = if attached {
+            spacing(Spacing::Xs, d)
+        } else {
+            px(0.0)
+        };
+        let default_x = if attached {
+            spacing(Spacing::Md, d)
+        } else {
+            px(0.0)
+        };
+
+        let mut root = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .pt(self.pad_top.unwrap_or(default_v))
+            .pb(self.pad_bottom.unwrap_or(default_v))
+            .px(self.pad_x.unwrap_or(default_x));
+
+        if self.flex_none {
+            root = root.flex_none();
+        }
+        if let Some(gap) = self.gap {
+            root = root.gap(gap);
+        }
+        if let Some((bg, border)) = self.attached {
+            root = root.bg(bg).border_b(BORDER_THIN).border_color(border);
+        }
+
+        root.child(self.left).child(self.right)
     }
 }
 

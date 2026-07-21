@@ -12,7 +12,7 @@ use forge_components::{
     breadcrumb, chip, column, confirm_modal, context_menu, empty_state, fmt_relative_time,
     hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, primary_button,
     primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
-    tr, virtual_table, with_alpha,
+    toolbar_row, tr, virtual_table, with_alpha,
 };
 use std::path::PathBuf;
 
@@ -854,18 +854,7 @@ impl GlobalsView {
             .child(export)
             .child(new_btn);
 
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .bg(palette.elevated)
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(left)
-            .child(right)
+        toolbar_row(left, right).attached(palette).density(density)
     }
 
     fn render_table(

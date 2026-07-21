@@ -6,7 +6,7 @@ use forge_components::{
     Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, OverlayPosition, Spacing,
     TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal, context_menu,
     ghost_button_with_icon, icon, inline_edit, menu_divider, menu_item, overlay,
-    primary_button_with_icon, spacing, status_dot, toggle, tr,
+    primary_button_with_icon, spacing, status_dot, toggle, toolbar_row, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
@@ -526,20 +526,12 @@ impl TriggersRegistryView {
                 cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
             );
 
-        div()
-            .w_full()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
+        toolbar_row(left, new_trigger)
+            .attached(palette)
+            .density(Density::Cozy)
             .py(FILTER_PAD_V)
-            .px(spacing(Spacing::Md, Density::Cozy))
-            .bg(palette.elevated)
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(left)
-            .child(new_trigger)
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .flex_none()
             .into_any_element()
     }
 

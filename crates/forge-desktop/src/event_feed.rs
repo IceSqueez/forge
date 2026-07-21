@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
     FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, SheetWidth, Spacing, ToastKind, badge,
-    breadcrumb, chip, empty_state, icon, platform_color, radius, spacing, status_dot, tr,
-    with_alpha,
+    breadcrumb, chip, empty_state, icon, platform_color, radius, spacing, status_dot, toolbar_row,
+    tr, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -352,18 +352,9 @@ impl EventFeedView {
             .child(export)
             .child(auto_scroll);
 
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .bg(palette.elevated)
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(chips)
-            .child(actions)
+        toolbar_row(chips, actions)
+            .attached(palette)
+            .density(density)
     }
 
     fn outcome_tag(

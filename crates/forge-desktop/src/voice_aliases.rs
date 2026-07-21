@@ -6,7 +6,7 @@ use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Spacing,
     TextInput, avatar_tile, badge, card, column, confirm_modal, data_table, empty_state,
     field_label, hash_accent, icon, modal, overlay, primary_button, primary_button_with_icon,
-    search_input, secondary_button, spacing, toggle, tr, virtual_table, with_alpha,
+    search_input, secondary_button, spacing, toggle, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
@@ -649,15 +649,10 @@ impl VoiceAliasesView {
             .child(count)
             .child(assign);
 
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
+        toolbar_row(div().w(SEARCH_W).child(self.search.clone()), right)
+            .density(density)
             .px(PAGE_PAD_H)
             .pb(px(12.0))
-            .child(div().w(SEARCH_W).child(self.search.clone()))
-            .child(right)
             .into_any_element()
     }
 

@@ -10,7 +10,7 @@ use forge_components::{
     ResizeRange, Spacing, TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label,
     breadcrumb, chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button,
     menu_divider, menu_header, menu_item, platform_color, radius, search_input,
-    search_input_on_surface, spacing, status_dot, tr,
+    search_input_on_surface, spacing, status_dot, toolbar_row, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -1211,18 +1211,9 @@ impl ChatView {
         }
         let search_control = search_control.child(search_toggle).child(export_btn);
 
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .bg(palette.elevated)
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(chips)
-            .child(search_control)
+        toolbar_row(chips, search_control)
+            .attached(palette)
+            .density(density)
     }
 
     fn render_chat_area(

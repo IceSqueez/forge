@@ -1,7 +1,6 @@
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ForgePalette, Icon, Radius, Spacing, avatar_tile, breadcrumb, connection_status_badge, icon,
-    radius, spacing, tr,
+    BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, ForgePalette, Radius,
+    Spacing, avatar_tile, breadcrumb, connection_status_badge, nav_card, radius, spacing, tr,
 };
 use std::collections::HashMap;
 
@@ -26,8 +25,6 @@ const TILE_GLYPH: Pixels = px(22.0);
 
 const CARD_PAD_V: Pixels = px(16.0);
 const CARD_PAD_H: Pixels = px(18.0);
-
-const CHEVRON_SIZE: Pixels = px(16.0);
 
 const CHIP_PAD_V: Pixels = px(2.0);
 const CHIP_PAD_H: Pixels = px(7.0);
@@ -177,27 +174,18 @@ impl PlatformsView {
             info = info.child(chip_row);
         }
 
-        let hover_border = palette.border_input;
         let target = integ.screen();
         div()
-            .id(("platform-card", integ as usize))
             .flex_1()
-            .flex()
-            .flex_row()
-            .items_start()
-            .gap(spacing(Spacing::Sm, density))
-            .py(CARD_PAD_V)
-            .px(CARD_PAD_H)
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .cursor_pointer()
-            .hover(move |s| s.border_color(hover_border))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
-            .child(tile)
-            .child(info)
-            .child(icon(Icon::ChevronRight, CHEVRON_SIZE, palette.text_faint))
+            .child(
+                nav_card(tile, info, palette)
+                    .density(density)
+                    .padding_xy(CARD_PAD_V, CARD_PAD_H)
+                    .on_click(
+                        ("platform-card", integ as usize),
+                        cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)),
+                    ),
+            )
             .into_any_element()
     }
 

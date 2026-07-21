@@ -8,7 +8,7 @@ use forge_components::{
     OverlayPosition, Radius, Spacing, TextInput, badge, breadcrumb, card, confirm_modal,
     empty_state, ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal,
     overlay, primary_button, primary_button_with_icon, radius, secondary_button, slider, spacing,
-    spinner, tr, with_alpha,
+    spinner, toolbar_row, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -1163,32 +1163,22 @@ impl Render for QueuesView {
         )
         .right(stats);
 
-        let toolbar = div()
-            .w_full()
-            .flex_none()
+        let subtitle = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(STATS_FS)
+            .text_color(palette.text_muted)
+            .child(tr!("queues_subtitle"));
+        let toolbar_actions = div()
             .flex()
             .items_center()
-            .justify_between()
+            .gap(spacing(Spacing::Xs, density))
+            .child(pause_all)
+            .child(new_queue);
+        let toolbar = toolbar_row(subtitle, toolbar_actions)
+            .attached(&palette)
+            .density(density)
             .py(HEADER_PAD_V)
-            .px(spacing(Spacing::Md, density))
-            .bg(palette.elevated)
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(STATS_FS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("queues_subtitle")),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(pause_all)
-                    .child(new_queue),
-            );
+            .flex_none();
 
         let feedback = self
             .feedback

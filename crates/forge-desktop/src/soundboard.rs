@@ -9,7 +9,7 @@ use forge_components::{
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
     TextInput, breadcrumb, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock,
     ghost_button_with_icon, icon, modal, overlay, primary_button, radius, search_input,
-    secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
+    secondary_button, slider, spacing, status_dot, toggle, toolbar_row, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
@@ -1036,16 +1036,14 @@ impl SoundboardView {
                     .child(tr!("soundboard_stop_all")),
             );
 
-        div()
-            .w_full()
+        let left = div()
             .flex()
             .items_center()
             .gap(GRID_GAP)
             .child(div().w(SEARCH_WIDTH).child(self.search.clone()))
-            .child(chips)
-            .child(div().flex_1())
-            .child(stop_all)
-            .into_any_element()
+            .child(chips);
+
+        toolbar_row(left, stop_all).into_any_element()
     }
 
     fn render_pad(

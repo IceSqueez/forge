@@ -49,7 +49,9 @@ pub use chat_row::{
 };
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
-pub use data::{ColumnWidth, DataRow, DataTable, data_table, hover_reveal};
+pub use data::{
+    Column, ColumnWidth, DataRow, DataTable, HeaderAlign, column, data_table, hover_reveal,
+};
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};

@@ -1,6 +1,6 @@
 use gpui::{
-    AnyElement, App, Div, InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Rgba,
-    SharedString, Styled, Window, div, px, relative,
+    AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
+    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px, relative,
 };
 
 use crate::palette::ForgePalette;
@@ -12,6 +12,12 @@ use crate::tokens::{DEFAULT_MONO_FAMILY, Density, FONT_XXS, Spacing, spacing};
 pub enum ColumnWidth {
     Fixed(Pixels),
     Flex(f32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderAlign {
+    Start,
+    End,
 }
 
 pub(crate) struct FlexSpec {
@@ -32,6 +38,27 @@ pub(crate) fn column_flex(width: ColumnWidth) -> FlexSpec {
             shrink: 1.0,
             fixed: None,
         },
+    }
+}
+
+pub struct Column {
+    label: SharedString,
+    width: ColumnWidth,
+    align: HeaderAlign,
+}
+
+pub fn column(label: impl Into<SharedString>, width: ColumnWidth) -> Column {
+    Column {
+        label: label.into(),
+        width,
+        align: HeaderAlign::Start,
+    }
+}
+
+impl Column {
+    pub fn align_end(mut self) -> Self {
+        self.align = HeaderAlign::End;
+        self
     }
 }
 
@@ -74,23 +101,20 @@ struct DataTableColors {
 
 #[derive(IntoElement)]
 pub struct DataTable {
-    headers: Vec<SharedString>,
-    widths: Vec<ColumnWidth>,
+    columns: Vec<Column>,
     rows: Vec<DataRow>,
     colors: DataTableColors,
     density: Density,
+    header_pad: Option<(Pixels, Pixels)>,
+    row_pad: Option<(Pixels, Pixels)>,
+    cell_gap: Pixels,
+    trailing_rule: bool,
+    scroll_id: Option<ElementId>,
 }
 
-/// Padding resolves at `Density::Cozy` unless overridden via [`DataTable::density`].
-pub fn data_table(
-    palette: &ForgePalette,
-    headers: Vec<SharedString>,
-    widths: Vec<ColumnWidth>,
-    rows: Vec<DataRow>,
-) -> DataTable {
+pub fn data_table(palette: &ForgePalette, columns: Vec<Column>, rows: Vec<DataRow>) -> DataTable {
     DataTable {
-        headers,
-        widths,
+        columns,
         rows,
         colors: DataTableColors {
             header_bg: palette.shell,
@@ -99,12 +123,60 @@ pub fn data_table(
             hover: palette.base,
         },
         density: Density::default(),
+        header_pad: None,
+        row_pad: None,
+        cell_gap: px(0.0),
+        trailing_rule: true,
+        scroll_id: None,
     }
 }
 
 impl DataTable {
     pub fn density(mut self, density: Density) -> Self {
         self.density = density;
+        self
+    }
+
+    pub fn header_bg(mut self, color: Rgba) -> Self {
+        self.colors.header_bg = color;
+        self
+    }
+
+    pub fn separator(mut self, color: Rgba) -> Self {
+        self.colors.separator = color;
+        self
+    }
+
+    pub fn row_hover(mut self, color: Rgba) -> Self {
+        self.colors.hover = color;
+        self
+    }
+
+    pub fn header_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+        self.header_pad = Some((vertical, horizontal));
+        self
+    }
+
+    pub fn row_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+        self.row_pad = Some((vertical, horizontal));
+        self
+    }
+
+    pub fn cell_gap(mut self, gap: Pixels) -> Self {
+        self.cell_gap = gap;
+        self
+    }
+
+    /// Drops the rule below the final row so an enclosing frame border owns the
+    /// bottom edge instead of doubling it.
+    pub fn trailing_rule(mut self, on: bool) -> Self {
+        self.trailing_rule = on;
+        self
+    }
+
+    /// Pins the header and scrolls the rows inside a `flex_1` viewport.
+    pub fn scroll_body(mut self, id: impl Into<ElementId>) -> Self {
+        self.scroll_id = Some(id.into());
         self
     }
 }
@@ -129,38 +201,48 @@ impl RenderOnce for DataTable {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let d = self.density;
         let colors = self.colors;
-        let widths = self.widths;
+        let gap = self.cell_gap;
+        let (h_py, h_px) = self
+            .header_pad
+            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
+        let (r_py, r_px) = self
+            .row_pad
+            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
+
         let separator = colors.separator;
         let rule = move || div().flex_none().h(px(1.0)).w_full().bg(separator);
 
+        let widths: Vec<ColumnWidth> = self.columns.iter().map(|c| c.width).collect();
+
         let header_ink = colors.header_ink;
-        let header_cells =
-            self.headers
-                .into_iter()
-                .zip(widths.iter().copied())
-                .map(move |(label, width)| {
-                    let label_el = div()
-                        .font_family(DEFAULT_MONO_FAMILY)
-                        .text_size(FONT_XXS)
-                        .whitespace_nowrap()
-                        .text_color(header_ink)
-                        .child(label);
-                    column_cell(width, label_el)
-                });
+        let header_cells = self.columns.into_iter().map(move |c| {
+            let label_el = div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .whitespace_nowrap()
+                .text_color(header_ink)
+                .child(c.label);
+            let cell = column_cell(c.width, label_el);
+            match c.align {
+                HeaderAlign::Start => cell,
+                HeaderAlign::End => cell.flex().justify_end(),
+            }
+        });
 
         let header = div()
             .flex()
             .items_center()
             .w_full()
-            .py(spacing(Spacing::Xs, d))
-            .px(spacing(Spacing::Md, d))
+            .gap(gap)
+            .py(h_py)
+            .px(h_px)
             .bg(colors.header_bg)
             .children(header_cells);
 
-        let mut root = div().flex().flex_col().w_full().child(header).child(rule());
-
         let hover = colors.hover;
-        for row in self.rows {
+        let total = self.rows.len();
+        let mut body_children: Vec<AnyElement> = Vec::new();
+        for (index, row) in self.rows.into_iter().enumerate() {
             let cells = row
                 .cells
                 .into_iter()
@@ -171,8 +253,9 @@ impl RenderOnce for DataTable {
                 .flex()
                 .items_center()
                 .w_full()
-                .py(spacing(Spacing::Xs, d))
-                .px(spacing(Spacing::Md, d))
+                .gap(gap)
+                .py(r_py)
+                .px(r_px)
                 .hover(move |s| s.bg(hover))
                 .children(cells);
 
@@ -180,10 +263,33 @@ impl RenderOnce for DataTable {
                 row_el = row_el.group(group);
             }
 
-            root = root.child(row_el).child(rule());
+            body_children.push(row_el.into_any_element());
+            let last = index + 1 == total;
+            if !last || self.trailing_rule {
+                body_children.push(rule().into_any_element());
+            }
         }
 
-        root
+        let body_inner = div().flex().flex_col().w_full().children(body_children);
+
+        let has_scroll = self.scroll_id.is_some();
+        let body = match self.scroll_id {
+            Some(id) => div()
+                .id(id)
+                .flex_1()
+                .min_h(px(0.0))
+                .w_full()
+                .overflow_y_scroll()
+                .child(body_inner)
+                .into_any_element(),
+            None => body_inner.into_any_element(),
+        };
+
+        let mut root = div().flex().flex_col().w_full();
+        if has_scroll {
+            root = root.flex_1().min_h(px(0.0));
+        }
+        root.child(header).child(rule()).child(body)
     }
 }
 

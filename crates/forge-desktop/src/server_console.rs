@@ -1,9 +1,10 @@
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
-    BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, badge,
-    breadcrumb, card, confirm_modal, empty_state, fmt_bytes, fmt_uptime, fmt_uptime_short, icon,
-    metric_card, overlay, platform_color, radius, spacing, sparkline, status_dot, tr, with_alpha,
+    BORDER_THIN, ColumnWidth, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
+    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition, PlatformKind, Radius,
+    Spacing, badge, breadcrumb, card, column, confirm_modal, data_table, empty_state, fmt_bytes,
+    fmt_uptime, fmt_uptime_short, icon, metric_card, overlay, platform_color, radius, spacing,
+    sparkline, status_dot, tr, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -1239,52 +1240,60 @@ impl ServerConsoleView {
             )
             .child(count_badge);
 
-        let col_header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Sm, density))
-            .child(div().w(DOT_CELL_W).flex_none())
-            .child(weighted(
-                CLIENT_GROW,
-                col_caption(tr!("server_col_client"), palette),
-            ))
-            .child(weighted(
-                SUBS_GROW,
-                col_caption(tr!("server_col_subscriptions"), palette),
-            ))
-            .child(
-                div()
-                    .w(EVS_CELL_W)
-                    .flex_none()
-                    .child(col_caption(tr!("server_col_evs"), palette)),
-            )
-            .child(
-                div()
-                    .w(UPTIME_CELL_W)
-                    .flex_none()
-                    .child(col_caption(tr!("server_col_uptime"), palette)),
-            )
-            .child(div().w(X_CELL_W).flex_none());
+        let columns = vec![
+            column("", ColumnWidth::Fixed(DOT_CELL_W)),
+            column(tr!("server_col_client"), ColumnWidth::Flex(CLIENT_GROW)),
+            column(
+                tr!("server_col_subscriptions"),
+                ColumnWidth::Flex(SUBS_GROW),
+            ),
+            column(tr!("server_col_evs"), ColumnWidth::Fixed(EVS_CELL_W)),
+            column(tr!("server_col_uptime"), ColumnWidth::Fixed(UPTIME_CELL_W)),
+            column("", ColumnWidth::Fixed(X_CELL_W)),
+        ];
 
-        let rows: AnyElement = if self.connected_clients.is_empty() {
-            empty_state(tr!("server_clients_empty"), palette)
+        let table: AnyElement = if self.connected_clients.is_empty() {
+            let header_only = data_table(palette, columns, Vec::new())
                 .density(density)
-                .into_any_element()
-        } else {
-            let mut col = div().w_full().flex().flex_col();
-            for (index, row) in self.connected_clients.iter().enumerate() {
-                col = col.child(self.client_row(index, row, palette, density, cx));
-            }
+                .header_bg(palette.elevated)
+                .separator(palette.elevated)
+                .header_padding(
+                    spacing(Spacing::Xxs, density),
+                    spacing(Spacing::Sm, density),
+                )
+                .cell_gap(spacing(Spacing::Xxs, density));
             div()
-                .id("srv-clients-scroll")
                 .w_full()
                 .flex_1()
                 .min_h(px(0.0))
-                .overflow_y_scroll()
-                .child(col)
+                .flex()
+                .flex_col()
+                .child(header_only)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h(px(0.0))
+                        .child(empty_state(tr!("server_clients_empty"), palette).density(density)),
+                )
+                .into_any_element()
+        } else {
+            let rows: Vec<DataRow> = self
+                .connected_clients
+                .iter()
+                .enumerate()
+                .map(|(index, row)| self.client_row(index, row, palette, density, cx))
+                .collect();
+            data_table(palette, columns, rows)
+                .density(density)
+                .header_bg(palette.elevated)
+                .separator(palette.elevated)
+                .header_padding(
+                    spacing(Spacing::Xxs, density),
+                    spacing(Spacing::Sm, density),
+                )
+                .row_padding(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
+                .cell_gap(spacing(Spacing::Xxs, density))
+                .scroll_body("srv-clients-scroll")
                 .into_any_element()
         };
 
@@ -1293,9 +1302,8 @@ impl ServerConsoleView {
             .flex()
             .flex_col()
             .child(header)
-            .child(hline(palette.border_regular))
-            .child(col_header)
-            .child(rows);
+            .child(div().w_full().h(px(1.0)).bg(palette.border_regular))
+            .child(table);
 
         card(inner, palette)
             .padding(px(0.0))
@@ -1311,7 +1319,7 @@ impl ServerConsoleView {
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
+    ) -> DataRow {
         let dot_color = match row.liveness {
             ClientLiveness::Active => palette.success,
             ClientLiveness::Idle => palette.warning,
@@ -1350,52 +1358,25 @@ impl ServerConsoleView {
             )
             .child(icon(Icon::X, X_GLYPH, palette.text_faint));
 
-        let content = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .hover(move |s| s.bg(palette.surface_overlay))
-            .child(
-                div()
-                    .w(DOT_CELL_W)
-                    .flex_none()
-                    .child(status_dot(dot_color, CLIENT_DOT)),
-            )
-            .child(weighted(CLIENT_GROW, id_col))
-            .child(weighted(
-                SUBS_GROW,
-                chips_row(&row.subscriptions, palette, density),
-            ))
-            .child(
-                div()
-                    .w(EVS_CELL_W)
-                    .flex_none()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_primary)
-                    .child(format!("{:.1}", row.events_per_second)),
-            )
-            .child(
-                div()
-                    .w(UPTIME_CELL_W)
-                    .flex_none()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(row.uptime_short.clone()),
-            )
-            .child(div().w(X_CELL_W).flex_none().child(x_button));
+        let evs = div()
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(palette.text_primary)
+            .child(format!("{:.1}", row.events_per_second));
+        let uptime = div()
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(palette.text_muted)
+            .child(row.uptime_short.clone());
 
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .child(content)
-            .child(hline(palette.elevated))
-            .into_any_element()
+        DataRow::new(vec![
+            status_dot(dot_color, CLIENT_DOT).into_any_element(),
+            id_col.into_any_element(),
+            chips_row(&row.subscriptions, palette, density),
+            evs.into_any_element(),
+            uptime.into_any_element(),
+            x_button.into_any_element(),
+        ])
     }
 
     fn footer_bar(&self, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -1584,14 +1565,6 @@ fn caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoE
         .font_family(DEFAULT_MONO_FAMILY)
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
-        .child(label.into())
-}
-
-fn col_caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .font_family(DEFAULT_MONO_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.text_faint)
         .child(label.into())
 }
 

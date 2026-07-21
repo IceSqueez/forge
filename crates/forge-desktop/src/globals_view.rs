@@ -9,10 +9,10 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
     OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge,
-    breadcrumb, chip, confirm_modal, context_menu, data_table, empty_state, fmt_relative_time,
-    hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, primary_button,
-    primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
-    tr, with_alpha,
+    breadcrumb, chip, column, confirm_modal, context_menu, data_table, empty_state,
+    fmt_relative_time, hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay,
+    primary_button, primary_button_with_icon, radius, search_input, secondary_button, spacing,
+    status_dot, toggle, tr, with_alpha,
 };
 use std::path::PathBuf;
 
@@ -893,32 +893,28 @@ impl GlobalsView {
                 .child(state)
                 .into_any_element()
         } else {
-            let headers: Vec<SharedString> = vec![
-                "".into(),
-                tr!("globals_editor_section_name").into(),
-                tr!("globals_editor_section_type").into(),
-                tr!("globals_editor_section_value").into(),
-                tr!("globals_col_modified").into(),
-                tr!("globals_col_reads_writes").into(),
-                tr!("globals_col_persist").into(),
-                tr!("globals_col_actions").into(),
-            ];
-            let widths = vec![
-                ColumnWidth::Fixed(px(24.0)),
-                ColumnWidth::Flex(8.0),
-                ColumnWidth::Fixed(px(80.0)),
-                ColumnWidth::Flex(8.0),
-                ColumnWidth::Fixed(px(120.0)),
-                ColumnWidth::Fixed(px(96.0)),
-                ColumnWidth::Fixed(px(64.0)),
-                ColumnWidth::Fixed(px(84.0)),
+            let columns = vec![
+                column("", ColumnWidth::Fixed(px(24.0))),
+                column(tr!("globals_editor_section_name"), ColumnWidth::Flex(8.0)),
+                column(
+                    tr!("globals_editor_section_type"),
+                    ColumnWidth::Fixed(px(80.0)),
+                ),
+                column(tr!("globals_editor_section_value"), ColumnWidth::Flex(8.0)),
+                column(tr!("globals_col_modified"), ColumnWidth::Fixed(px(120.0))),
+                column(
+                    tr!("globals_col_reads_writes"),
+                    ColumnWidth::Fixed(px(96.0)),
+                ),
+                column(tr!("globals_col_persist"), ColumnWidth::Fixed(px(64.0))),
+                column(tr!("globals_col_actions"), ColumnWidth::Fixed(px(84.0))),
             ];
             let data_rows: Vec<DataRow> = rows
                 .iter()
                 .enumerate()
                 .map(|(idx, g)| self.build_row(idx, g, palette, cx))
                 .collect();
-            data_table(palette, headers, widths, data_rows)
+            data_table(palette, columns, data_rows)
                 .density(Density::Compact)
                 .into_any_element()
         };

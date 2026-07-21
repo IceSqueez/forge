@@ -2,18 +2,18 @@ use std::future::Future;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Spacing, TextInput, avatar_tile,
-    badge, card, confirm_modal, empty_state, field_label, hash_accent, icon, modal, overlay,
-    primary_button, primary_button_with_icon, search_input, secondary_button, spacing, toggle, tr,
-    with_alpha,
+    BORDER_THIN, ColumnWidth, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
+    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Spacing,
+    TextInput, avatar_tile, badge, card, column, confirm_modal, data_table, empty_state,
+    field_label, hash_accent, icon, modal, overlay, primary_button, primary_button_with_icon,
+    search_input, secondary_button, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
 use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px, relative,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -645,11 +645,20 @@ impl VoiceAliasesView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let header = card(header_row(palette), palette)
-            .background(palette.shell)
-            .split_radius(TABLE_RADIUS, px(0.0))
-            .padding_xy(px(7.0), px(12.0))
-            .full_width();
+        let columns = vec![
+            column(
+                tr!("tts_aliases_col_viewer"),
+                ColumnWidth::Flex(VIEWER_GROW),
+            ),
+            column(tr!("tts_aliases_col_voice"), ColumnWidth::Flex(VOICE_GROW)),
+            column(tr!("tts_aliases_col_pitch"), ColumnWidth::Flex(PITCH_GROW)),
+            column(tr!("tts_aliases_col_speed"), ColumnWidth::Flex(SPEED_GROW)),
+            column(
+                tr!("tts_aliases_col_actions"),
+                ColumnWidth::Fixed(ACTIONS_W),
+            )
+            .align_end(),
+        ];
 
         let needle = self.search.read(cx).content().to_ascii_lowercase();
         let visible: Vec<(usize, &AliasRow)> = self
@@ -661,7 +670,19 @@ impl VoiceAliasesView {
             })
             .collect();
 
-        let body: AnyElement = if visible.is_empty() {
+        let hover_bg = with_alpha(palette.border_regular, 0.08);
+        let mut frame = div()
+            .w_full()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_col()
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .rounded(TABLE_RADIUS)
+            .overflow_hidden();
+
+        if visible.is_empty() {
             let caption = if self.loading {
                 tr!("tts_aliases_loading")
             } else {
@@ -671,32 +692,28 @@ impl VoiceAliasesView {
             if self.loading {
                 state = state.loading("voice-aliases-loading");
             }
-            state.into_any_element()
+            let header_only = data_table(palette, columns, Vec::new())
+                .density(density)
+                .header_padding(px(7.0), px(12.0))
+                .trailing_rule(false);
+            frame = frame
+                .child(header_only)
+                .child(div().flex_1().min_h(px(0.0)).child(state));
         } else {
-            let total = visible.len();
-            let mut col = div().w_full().flex().flex_col();
-            for (pos, (index, row)) in visible.iter().enumerate() {
-                let last = pos + 1 == total;
-                col = col.child(self.alias_row(*index, row, last, palette, density, cx));
-            }
-            col.into_any_element()
-        };
-
-        let body_frame = div()
-            .w_full()
-            .flex_1()
-            .min_h(px(0.0))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .rounded_b(TABLE_RADIUS)
-            .overflow_hidden()
-            .child(
-                div()
-                    .id("va-table-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .child(body),
+            let rows: Vec<DataRow> = visible
+                .iter()
+                .map(|(index, row)| self.alias_row(*index, row, palette, density, cx))
+                .collect();
+            frame = frame.child(
+                data_table(palette, columns, rows)
+                    .density(density)
+                    .header_padding(px(7.0), px(12.0))
+                    .row_padding(ROW_PAD_V, ROW_PAD_H)
+                    .row_hover(hover_bg)
+                    .trailing_rule(false)
+                    .scroll_body("va-table-scroll"),
             );
+        }
 
         let auto = self.viewer_count.saturating_sub(self.total_count);
         let footer = div()
@@ -720,22 +737,19 @@ impl VoiceAliasesView {
             .flex_col()
             .px(PAGE_PAD_H)
             .pb(px(16.0))
-            .child(header)
-            .child(body_frame)
+            .child(frame)
             .child(footer)
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn alias_row(
         &self,
         index: usize,
         row: &AliasRow,
-        last: bool,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
+    ) -> DataRow {
         let muted = row.blocked;
         let row_key: SharedString = row.id.0.clone().into();
         let name_color = if muted {
@@ -852,8 +866,7 @@ impl VoiceAliasesView {
             )
             .child(icon(Icon::Trash, ACTION_GLYPH, palette.text_faint));
         let actions = div()
-            .w(ACTIONS_W)
-            .flex_none()
+            .w_full()
             .flex()
             .items_center()
             .justify_end()
@@ -862,26 +875,13 @@ impl VoiceAliasesView {
             .child(edit)
             .child(delete);
 
-        let hover_bg = with_alpha(palette.border_regular, 0.08);
-        let mut root = div()
-            .id((gpui::ElementId::from("va-row"), row_key.clone()))
-            .w_full()
-            .flex()
-            .items_center()
-            .py(ROW_PAD_V)
-            .px(ROW_PAD_H)
-            .hover(move |s| s.bg(hover_bg))
-            .child(weighted(VIEWER_GROW, viewer_inner))
-            .child(weighted(VOICE_GROW, voice_inner))
-            .child(weighted(PITCH_GROW, pitch_cell))
-            .child(weighted(SPEED_GROW, speed_cell))
-            .child(actions);
-        if !last {
-            root = root
-                .border_b(BORDER_THIN)
-                .border_color(palette.border_regular);
-        }
-        root.into_any_element()
+        DataRow::new(vec![
+            viewer_inner.into_any_element(),
+            voice_inner,
+            pitch_cell.into_any_element(),
+            speed_cell.into_any_element(),
+            actions.into_any_element(),
+        ])
     }
 
     fn active_overlay(
@@ -1117,52 +1117,6 @@ impl Render for VoiceAliasesView {
             .child(table)
             .children(overlay)
     }
-}
-
-fn weighted(grow: f32, child: impl IntoElement) -> Div {
-    let mut cell = div().min_w(px(0.0)).child(child);
-    let style = cell.style();
-    style.flex_grow = Some(grow);
-    style.flex_basis = Some(relative(0.0).into());
-    cell
-}
-
-fn header_row(palette: &ForgePalette) -> impl IntoElement {
-    let caption = |text: SharedString| {
-        div()
-            .font_family(DEFAULT_MONO_FAMILY)
-            .text_size(FONT_XXS)
-            .text_color(palette.text_faint)
-            .child(text)
-    };
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .child(weighted(
-            VIEWER_GROW,
-            caption(tr!("tts_aliases_col_viewer").into()),
-        ))
-        .child(weighted(
-            VOICE_GROW,
-            caption(tr!("tts_aliases_col_voice").into()),
-        ))
-        .child(weighted(
-            PITCH_GROW,
-            caption(tr!("tts_aliases_col_pitch").into()),
-        ))
-        .child(weighted(
-            SPEED_GROW,
-            caption(tr!("tts_aliases_col_speed").into()),
-        ))
-        .child(
-            div()
-                .w(ACTIONS_W)
-                .flex_none()
-                .flex()
-                .justify_end()
-                .child(caption(tr!("tts_aliases_col_actions").into())),
-        )
 }
 
 fn mono_cell(value: String, color: Rgba) -> impl IntoElement {

@@ -5,7 +5,9 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
@@ -96,25 +98,16 @@ impl SubActionRunner for UpdateInfoRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let category_id = config
-            .get("category_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let tags_raw = config
-            .get("tags")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let title = config.str("title").unwrap_or_default();
+        let category_id = config.str("category_id").unwrap_or_default();
+        let tags_raw = config.str("tags").unwrap_or_default();
 
         let has_title = !title.is_empty();
         let has_category = !category_id.is_empty();
         let has_tags = !tags_raw.is_empty();
 
         if !has_title && !has_category && !has_tags {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: at least one of 'title', 'category_id', or 'tags' must be provided"
             )));
         }
@@ -122,7 +115,7 @@ impl SubActionRunner for UpdateInfoRunner {
         if has_tags {
             let count = parse_tags(tags_raw).len();
             if count > MAX_TAGS {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: tags count {count} exceeds the maximum of {MAX_TAGS}"
                 )));
             }
@@ -139,18 +132,9 @@ impl SubActionRunner for UpdateInfoRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_title = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let raw_category = config
-            .get("category_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let raw_tags = config
-            .get("tags")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw_title = config.str("title").unwrap_or_default();
+        let raw_category = config.str("category_id").unwrap_or_default();
+        let raw_tags = config.str("tags").unwrap_or_default();
 
         let title_resolved = ctx.arg_stack.interpolate(raw_title);
         let category_resolved = ctx.arg_stack.interpolate(raw_category);

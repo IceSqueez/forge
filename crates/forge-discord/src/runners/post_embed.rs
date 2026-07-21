@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -81,7 +83,7 @@ impl SubActionRunner for PostEmbedRunner {
         if matches!(config.get("webhook_name"), Some(Variant::String(_))) {
             Ok(())
         } else {
-            Err(RegistryError::UnknownKindId(
+            Err(RegistryError::InvalidConfig(
                 "discord.webhook.send_embed: 'webhook_name' must be a string".to_owned(),
             ))
         }
@@ -95,18 +97,9 @@ impl SubActionRunner for PostEmbedRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let webhook_name = ctx.arg_stack.interpolate(
-            config
-                .get("webhook_name")
-                .and_then(|v| {
-                    if let Variant::String(s) = v {
-                        Some(s.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-        );
+        let webhook_name = ctx
+            .arg_stack
+            .interpolate(config.str("webhook_name").unwrap_or_default());
         let title = interp_opt(config, ctx, "embed_title");
         let description = interp_opt(config, ctx, "embed_description");
         let footer_text = interp_opt(config, ctx, "embed_footer_text");
@@ -164,13 +157,7 @@ impl SubActionRunner for PostEmbedRunner {
 }
 
 fn interp_opt(config: &SubActionConfig, ctx: &RunContext<'_>, key: &str) -> Option<String> {
-    let raw = config.get(key).and_then(|v| {
-        if let Variant::String(s) = v {
-            Some(s.as_str())
-        } else {
-            None
-        }
-    })?;
+    let raw = config.str(key)?;
     let s = ctx.arg_stack.interpolate(raw);
     if s.is_empty() { None } else { Some(s) }
 }

@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -63,7 +65,7 @@ impl SubActionRunner for UpdateCategoryRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("category_id") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'category_id' must be a non-empty string"
             ))),
         }
@@ -77,19 +79,13 @@ impl SubActionRunner for UpdateCategoryRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("category_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("category_id").unwrap_or_default();
         let category_id = ctx.arg_stack.interpolate(template);
 
         let outcome = if category_id.is_empty() {
             SubActionOutcome::Failed("category_id is empty after interpolation".to_owned())
         } else {
-            match self.metadata.set_category(&category_id).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
+            SubActionOutcome::from_result(&self.metadata.set_category(&category_id).await)
         };
 
         (

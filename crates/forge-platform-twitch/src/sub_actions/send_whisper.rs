@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -52,10 +54,7 @@ impl SendWhisperRunner {
             .query("from_user_id", from_user_id)
             .query("to_user_id", to_user_id)
             .body(serde_json::json!({ "message": message }));
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -110,7 +109,7 @@ impl SubActionRunner for SendWhisperRunner {
         match config.get("to_user_login") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'to_user_login' must be a non-empty string"
                 )));
             }
@@ -118,7 +117,7 @@ impl SubActionRunner for SendWhisperRunner {
         match config.get("message") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'message' must be a non-empty string"
                 )));
             }
@@ -134,16 +133,10 @@ impl SubActionRunner for SendWhisperRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config
-            .get("to_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let login_template = config.str("to_user_login").unwrap_or_default();
         let to_user_login = ctx.arg_stack.interpolate(login_template);
 
-        let msg_template = config
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let msg_template = config.str("message").unwrap_or_default();
         let message = ctx.arg_stack.interpolate(msg_template);
 
         let outcome = self.whisper(&to_user_login, &message).await;

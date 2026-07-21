@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -62,7 +64,7 @@ impl SubActionRunner for SetPreviewSceneRunner {
         if matches!(config.get("scene"), Some(Variant::String(_))) {
             Ok(())
         } else {
-            Err(RegistryError::UnknownKindId(
+            Err(RegistryError::InvalidConfig(
                 "obs.scenes.set_preview: 'scene' must be a string".to_owned(),
             ))
         }
@@ -76,23 +78,11 @@ impl SubActionRunner for SetPreviewSceneRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_scene = config
-            .get("scene")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_scene = config.str("scene").unwrap_or_default();
 
         let scene = ctx.arg_stack.interpolate(raw_scene);
 
-        let outcome = match self.sink.set_preview_scene(&scene).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(&self.sink.set_preview_scene(&scene).await);
 
         (
             SubActionTelemetry {

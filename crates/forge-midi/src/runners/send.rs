@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -110,7 +112,7 @@ impl SubActionRunner for MidiSendRunner {
         match config.get("port") {
             Some(Variant::String(_)) => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(
+                return Err(RegistryError::InvalidConfig(
                     "midi.send: 'port' must be a string".to_owned(),
                 ));
             }
@@ -119,7 +121,7 @@ impl SubActionRunner for MidiSendRunner {
             Some(Variant::String(k))
                 if matches!(k.as_str(), "note_on" | "note_off" | "cc" | "raw") => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(
+                return Err(RegistryError::InvalidConfig(
                     "midi.send: 'message_kind' must be note_on|note_off|cc|raw".to_owned(),
                 ));
             }
@@ -135,29 +137,11 @@ impl SubActionRunner for MidiSendRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let port = ctx.arg_stack.interpolate(
-            config
-                .get("port")
-                .and_then(|v| {
-                    if let Variant::String(s) = v {
-                        Some(s.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-        );
+        let port = ctx
+            .arg_stack
+            .interpolate(config.str("port").unwrap_or_default());
 
-        let message_kind = config
-            .get("message_kind")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let message_kind = config.str("message_kind").unwrap_or_default().to_owned();
 
         let channel = extract_u8_clamped(config, "channel", 0, 15).unwrap_or(0);
 

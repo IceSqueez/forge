@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -69,7 +71,7 @@ impl SubActionRunner for UpdatePrivacyRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("privacy_status") {
             Some(Variant::String(s)) if PRIVACY_OPTIONS.contains(&s.as_str()) => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'privacy_status' must be one of public, unlisted, private"
             ))),
         }
@@ -83,19 +85,13 @@ impl SubActionRunner for UpdatePrivacyRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("privacy_status")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("privacy_status").unwrap_or_default();
         let privacy_status = ctx.arg_stack.interpolate(template);
 
         let outcome = if privacy_status.is_empty() {
             SubActionOutcome::Failed("privacy_status is empty after interpolation".to_owned())
         } else {
-            match self.metadata.set_privacy(&privacy_status).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
+            SubActionOutcome::from_result(&self.metadata.set_privacy(&privacy_status).await)
         };
 
         (

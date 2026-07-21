@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -93,15 +95,12 @@ impl SetModeRunner {
             .query("moderator_id", user_id)
             .body(serde_json::Value::Object(body));
 
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
 fn mode_toggle<'a>(config: &'a SubActionConfig, key: &str) -> Option<&'a str> {
-    config.get(key).and_then(|v| v.as_str())
+    config.str(key)
 }
 
 fn int_field(config: &SubActionConfig, key: &str) -> Option<i64> {
@@ -235,7 +234,7 @@ impl SubActionRunner for SetModeRunner {
                 None => {}
                 Some(Variant::String(s)) if TOGGLE_OPTIONS.contains(&s.as_str()) => {}
                 _ => {
-                    return Err(RegistryError::UnknownKindId(format!(
+                    return Err(RegistryError::InvalidConfig(format!(
                         "{KIND_ID}: '{key}' must be one of: unchanged, on, off"
                     )));
                 }
@@ -244,14 +243,14 @@ impl SubActionRunner for SetModeRunner {
         if let Some(Variant::Int(n)) = config.get("follower_mode_min_minutes")
             && (*n < FOLLOWER_MODE_MIN_MINUTES || *n > FOLLOWER_MODE_MAX_MINUTES)
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'follower_mode_min_minutes' must be {FOLLOWER_MODE_MIN_MINUTES}..={FOLLOWER_MODE_MAX_MINUTES}"
             )));
         }
         if let Some(Variant::Int(n)) = config.get("slow_mode_wait_seconds")
             && (*n < SLOW_MODE_MIN_WAIT_SECONDS || *n > SLOW_MODE_MAX_WAIT_SECONDS)
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'slow_mode_wait_seconds' must be {SLOW_MODE_MIN_WAIT_SECONDS}..={SLOW_MODE_MAX_WAIT_SECONDS}"
             )));
         }

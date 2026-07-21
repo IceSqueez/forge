@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -53,10 +55,7 @@ impl WarnUserRunner {
                     "reason": reason,
                 }
             }));
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -114,7 +113,7 @@ impl SubActionRunner for WarnUserRunner {
         match config.get("target_user_login") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'target_user_login' must be a non-empty string"
                 )));
             }
@@ -122,13 +121,13 @@ impl SubActionRunner for WarnUserRunner {
         match config.get("reason") {
             Some(Variant::String(r)) if !r.is_empty() => {
                 if r.chars().count() > MAX_REASON_CHARS {
-                    return Err(RegistryError::UnknownKindId(format!(
+                    return Err(RegistryError::InvalidConfig(format!(
                         "{KIND_ID}: 'reason' must not exceed {MAX_REASON_CHARS} characters"
                     )));
                 }
             }
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'reason' is required and must be a non-empty string"
                 )));
             }
@@ -144,14 +143,10 @@ impl SubActionRunner for WarnUserRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config
-            .get("target_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let login_template = config.str("target_user_login").unwrap_or_default();
         let target_login = ctx.arg_stack.interpolate(login_template);
         let reason = config
-            .get("reason")
-            .and_then(|v| v.as_str())
+            .str("reason")
             .map(|s| ctx.arg_stack.interpolate(s))
             .unwrap_or_default();
 

@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -72,14 +74,14 @@ impl SubActionRunner for ParamSetRunner {
         match config.get("param_id") {
             Some(Variant::String(_)) => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(
+                return Err(RegistryError::InvalidConfig(
                     "vtube.param.set: 'param_id' must be a string".to_owned(),
                 ));
             }
         }
         match config.get("value") {
             Some(Variant::Float(_)) => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+            _ => Err(RegistryError::InvalidConfig(
                 "vtube.param.set: 'value' must be a float".to_owned(),
             )),
         }
@@ -93,16 +95,7 @@ impl SubActionRunner for ParamSetRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_id = config
-            .get("param_id")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_id = config.str("param_id").unwrap_or_default();
         let param_id = ctx.arg_stack.interpolate(raw_id);
 
         let value = match config.get("value") {
@@ -110,10 +103,7 @@ impl SubActionRunner for ParamSetRunner {
             _ => 0.0,
         };
 
-        let outcome = match self.sink.set_param(&param_id, value).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(&self.sink.set_param(&param_id, value).await);
 
         (
             SubActionTelemetry {

@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -48,7 +50,7 @@ pub(crate) fn validate_automod_config(
 ) -> Result<(), RegistryError> {
     match config.get("message_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'message_id' is required"
         ))),
     }
@@ -100,10 +102,7 @@ pub(crate) async fn execute_automod_runner(
     let started_at = OffsetDateTime::now_utc();
     let start = Instant::now();
 
-    let message_id_template = config
-        .get("message_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
+    let message_id_template = config.str("message_id").unwrap_or_default();
     let message_id = ctx.arg_stack.interpolate(message_id_template);
 
     let outcome = if message_id.is_empty() {

@@ -24,10 +24,7 @@ async fn set_shield(
         .query("broadcaster_id", self_id.clone())
         .query("moderator_id", self_id)
         .body(serde_json::json!({ "is_active": is_active }));
-    match transport.execute(request).await {
-        Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(e.to_string()),
-    }
+    SubActionOutcome::from_result(&transport.execute(request).await)
 }
 
 // ─── Shield Mode On ──────────────────────────────────────────────────────────

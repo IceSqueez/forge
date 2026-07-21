@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -47,10 +49,7 @@ impl EndPollRunner {
                 "status": status_uppercase,
             }));
 
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -114,7 +113,7 @@ impl SubActionRunner for EndPollRunner {
             _ => "",
         };
         if poll_id.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'poll_id' is required"
             )));
         }
@@ -122,7 +121,7 @@ impl SubActionRunner for EndPollRunner {
         match config.get("status") {
             Some(Variant::String(s)) if s == STATUS_TERMINATED || s == STATUS_ARCHIVED => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'status' must be '{STATUS_TERMINATED}' or '{STATUS_ARCHIVED}'"
                 )));
             }
@@ -139,10 +138,7 @@ impl SubActionRunner for EndPollRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let poll_id_template = config
-            .get("poll_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let poll_id_template = config.str("poll_id").unwrap_or_default();
         let poll_id = ctx.arg_stack.interpolate(poll_id_template);
 
         if poll_id.is_empty() {
@@ -161,10 +157,7 @@ impl SubActionRunner for EndPollRunner {
         }
 
         // Config stores lowercase ("terminated"/"archived"); Twitch requires uppercase.
-        let status_lower = config
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or(STATUS_TERMINATED);
+        let status_lower = config.str("status").unwrap_or(STATUS_TERMINATED);
         let status_uppercase = status_lower.to_uppercase();
 
         let outcome = self.end(&poll_id, &status_uppercase).await;

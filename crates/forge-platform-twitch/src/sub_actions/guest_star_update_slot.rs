@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -88,7 +90,7 @@ impl GuestStarUpdateSlotRunner {
 }
 
 fn mode_toggle<'a>(config: &'a SubActionConfig, key: &str) -> Option<&'a str> {
-    config.get(key).and_then(|v| v.as_str())
+    config.str(key)
 }
 
 fn toggle_to_bool(value: Option<&str>) -> Option<bool> {
@@ -186,7 +188,7 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
         match config.get("slot_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'slot_id' is required"
                 )));
             }
@@ -197,7 +199,7 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
                 None => {}
                 Some(Variant::String(s)) if TOGGLE_OPTIONS.contains(&s.as_str()) => {}
                 _ => {
-                    return Err(RegistryError::UnknownKindId(format!(
+                    return Err(RegistryError::InvalidConfig(format!(
                         "{KIND_ID}: '{key}' must be one of: unchanged, on, off"
                     )));
                 }
@@ -207,7 +209,7 @@ impl SubActionRunner for GuestStarUpdateSlotRunner {
         if let Some(vol) = read_opt_int(config, "volume")
             && !(VOLUME_MIN..=VOLUME_MAX).contains(&vol)
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'volume' must be {VOLUME_MIN}..={VOLUME_MAX}"
             )));
         }

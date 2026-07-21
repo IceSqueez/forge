@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -42,10 +44,7 @@ impl UpdateTitleRunner {
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({ "title": title }));
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -90,17 +89,17 @@ impl SubActionRunner for UpdateTitleRunner {
         match config.get("title") {
             Some(Variant::String(s)) if !s.is_empty() && s.chars().count() <= MAX_TITLE_CHARS => {}
             Some(Variant::String(s)) if s.is_empty() => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'title' must not be empty"
                 )));
             }
             Some(Variant::String(_)) => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'title' must be ≤{MAX_TITLE_CHARS} characters"
                 )));
             }
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'title' must be a non-empty string"
                 )));
             }
@@ -116,10 +115,7 @@ impl SubActionRunner for UpdateTitleRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("title").unwrap_or_default();
         let title = ctx.arg_stack.interpolate(template);
 
         let outcome = self.apply(&title).await;

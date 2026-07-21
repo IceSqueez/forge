@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -39,10 +41,7 @@ impl DeleteMessageRunner {
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
             .query("message_id", message_id);
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -91,7 +90,7 @@ impl SubActionRunner for DeleteMessageRunner {
         match config.get("message_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'message_id' must be a non-empty string"
                 )));
             }
@@ -107,10 +106,7 @@ impl SubActionRunner for DeleteMessageRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("message_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("message_id").unwrap_or_default();
         let message_id = ctx.arg_stack.interpolate(template);
 
         let outcome = self.delete(&message_id).await;

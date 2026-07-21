@@ -1,5 +1,5 @@
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError};
+use forge_registry::{FormField, RegistryError, SubActionConfigExt};
 use forge_types::Variant;
 
 use super::identity::{SelfIdentity, resolve_user_id};
@@ -53,7 +53,7 @@ pub(crate) fn validate_session_id(
 ) -> Result<(), RegistryError> {
     match config.get("session_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'session_id' is required"
         ))),
     }
@@ -66,7 +66,7 @@ pub(crate) fn validate_target_login(
 ) -> Result<(), RegistryError> {
     match config.get("target_user_login") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'target_user_login' is required"
         ))),
     }
@@ -79,7 +79,7 @@ pub(crate) fn interpolate(
     arg_stack: &forge_types::ArgStack,
     key: &str,
 ) -> String {
-    let template = config.get(key).and_then(|v| v.as_str()).unwrap_or_default();
+    let template = config.str(key).unwrap_or_default();
     arg_stack.interpolate(template)
 }
 

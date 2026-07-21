@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -70,7 +72,7 @@ impl SubActionRunner for SetMuteRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("source") {
             Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+            _ => Err(RegistryError::InvalidConfig(
                 "obs.audio.set_mute: 'source' must be a string".to_owned(),
             )),
         }
@@ -84,23 +86,12 @@ impl SubActionRunner for SetMuteRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw = config
-            .get("source")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw = config.str("source").unwrap_or_default();
         let source = ctx.arg_stack.interpolate(raw);
         let muted = matches!(config.get("muted"), Some(Variant::Bool(true)));
 
-        let outcome = match self.sink.set_input_mute(&source, muted).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome =
+            SubActionOutcome::from_result(&self.sink.set_input_mute(&source, muted).await);
 
         (
             SubActionTelemetry {

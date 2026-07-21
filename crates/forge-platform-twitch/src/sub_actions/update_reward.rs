@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -52,10 +54,7 @@ impl UpdateRewardRunner {
             .query("id", reward_id.to_owned())
             .body(serde_json::Value::Object(body));
 
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -85,7 +84,7 @@ fn toggle_to_bool(value: Option<&str>) -> Option<bool> {
 }
 
 fn mode_toggle<'a>(config: &'a SubActionConfig, key: &str) -> Option<&'a str> {
-    config.get(key).and_then(|v| v.as_str())
+    config.str(key)
 }
 
 fn is_valid_hex_color(s: &str) -> bool {
@@ -319,7 +318,7 @@ impl SubActionRunner for UpdateRewardRunner {
         match config.get("reward_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'reward_id' is required"
                 )));
             }
@@ -328,7 +327,7 @@ impl SubActionRunner for UpdateRewardRunner {
         if let Some(title) = read_opt_str(config, "title") {
             let count = title.chars().count();
             if !(1..=MAX_TITLE_CHARS).contains(&count) {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'title' must be 1..={MAX_TITLE_CHARS} characters"
                 )));
             }
@@ -337,7 +336,7 @@ impl SubActionRunner for UpdateRewardRunner {
         if let Some(cost) = read_opt_int(config, "cost")
             && cost < 1
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'cost' must be ≥1"
             )));
         }
@@ -345,7 +344,7 @@ impl SubActionRunner for UpdateRewardRunner {
         if let Some(prompt) = read_opt_str(config, "prompt")
             && prompt.chars().count() > MAX_PROMPT_CHARS
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'prompt' must be ≤{MAX_PROMPT_CHARS} characters"
             )));
         }
@@ -354,7 +353,7 @@ impl SubActionRunner for UpdateRewardRunner {
             && !hex.is_empty()
             && !is_valid_hex_color(&hex)
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'background_color_hex' must be empty or a '#RRGGBB' hex color"
             )));
         }
@@ -369,7 +368,7 @@ impl SubActionRunner for UpdateRewardRunner {
                 None => {}
                 Some(Variant::String(s)) if TOGGLE_OPTIONS.contains(&s.as_str()) => {}
                 _ => {
-                    return Err(RegistryError::UnknownKindId(format!(
+                    return Err(RegistryError::InvalidConfig(format!(
                         "{KIND_ID}: '{key}' must be one of: unchanged, on, off"
                     )));
                 }
@@ -387,10 +386,7 @@ impl SubActionRunner for UpdateRewardRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let reward_id_template = config
-            .get("reward_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let reward_id_template = config.str("reward_id").unwrap_or_default();
         let reward_id = ctx.arg_stack.interpolate(reward_id_template);
 
         let outcome = if reward_id.is_empty() {

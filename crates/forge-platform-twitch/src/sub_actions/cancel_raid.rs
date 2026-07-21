@@ -33,10 +33,7 @@ impl CancelRaidRunner {
         };
         let request =
             HelixRequest::new(HelixMethod::Delete, "/helix/raids").query("broadcaster_id", self_id);
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 

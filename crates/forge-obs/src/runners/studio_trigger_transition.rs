@@ -66,10 +66,7 @@ impl SubActionRunner for StudioTriggerTransitionRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let outcome = match self.sink.trigger_studio_transition().await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(&self.sink.trigger_studio_transition().await);
 
         (
             SubActionTelemetry {

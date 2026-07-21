@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -48,10 +50,7 @@ impl SendShoutoutRunner {
             .query("from_broadcaster_id", self_id.clone())
             .query("to_broadcaster_id", to_broadcaster_id)
             .query("moderator_id", self_id);
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -99,7 +98,7 @@ impl SubActionRunner for SendShoutoutRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("to_broadcaster_login") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'to_broadcaster_login' must be a non-empty string"
             ))),
         }
@@ -113,10 +112,7 @@ impl SubActionRunner for SendShoutoutRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config
-            .get("to_broadcaster_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let login_template = config.str("to_broadcaster_login").unwrap_or_default();
         let to_broadcaster_login = ctx.arg_stack.interpolate(login_template);
 
         let outcome = self.shoutout(&to_broadcaster_login).await;

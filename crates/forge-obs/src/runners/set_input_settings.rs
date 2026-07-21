@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -75,7 +77,7 @@ impl SubActionRunner for SetInputSettingsRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let source_ok = matches!(config.get("source"), Some(Variant::String(_)));
         if !source_ok {
-            return Err(RegistryError::UnknownKindId(
+            return Err(RegistryError::InvalidConfig(
                 "obs.sources.set_input_settings: 'source' must be a string".to_owned(),
             ));
         }
@@ -88,7 +90,7 @@ impl SubActionRunner for SetInputSettingsRunner {
             }
         });
         if !json_ok {
-            return Err(RegistryError::UnknownKindId(
+            return Err(RegistryError::InvalidConfig(
                 "obs.sources.set_input_settings: 'settings_json' must be valid JSON".to_owned(),
             ));
         }
@@ -104,16 +106,7 @@ impl SubActionRunner for SetInputSettingsRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_source = config
-            .get("source")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_source = config.str("source").unwrap_or_default();
 
         let source = ctx.arg_stack.interpolate(raw_source);
         let overlay = matches!(config.get("overlay"), Some(Variant::Bool(true)));
@@ -130,14 +123,12 @@ impl SubActionRunner for SetInputSettingsRunner {
             })
             .unwrap_or_else(|| Variant::Object(BTreeMap::new()));
 
-        let outcome = match self
-            .sink
-            .set_input_settings(&source, &settings_variant, overlay)
-            .await
-        {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .set_input_settings(&source, &settings_variant, overlay)
+                .await,
+        );
 
         (
             SubActionTelemetry {

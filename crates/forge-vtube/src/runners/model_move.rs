@@ -119,10 +119,9 @@ impl SubActionRunner for ModelMoveRunner {
             SubActionOutcome::Success
         } else {
             let time_in_seconds = duration.unwrap_or(0.0);
-            match self.sink.move_model(x, y, rotation, time_in_seconds).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
+            SubActionOutcome::from_result(
+                &self.sink.move_model(x, y, rotation, time_in_seconds).await,
+            )
         };
 
         (

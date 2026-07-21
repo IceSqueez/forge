@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub struct CoreTimeFormatRunner;
@@ -109,7 +107,7 @@ impl SubActionRunner for CoreTimeFormatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.time.format");
 
         let source_v = config
             .get("source")
@@ -119,28 +117,23 @@ impl SubActionRunner for CoreTimeFormatRunner {
 
         let dt = match resolve_datetime(&source_v, &source_str) {
             Ok(dt) => dt,
-            Err(e) => return fail(started_at, ctx.index, e),
+            Err(e) => return (timer.failed(e), None),
         };
 
         let fmt_str = config
-            .get("format_string")
-            .and_then(|v| v.as_str())
+            .str("format_string")
             .unwrap_or("[year]-[month]-[day] [hour]:[minute]:[second]")
             .to_owned();
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("time.formatted"),
+            config.str_nonempty("into_var").unwrap_or("time.formatted"),
         );
 
         let formatted = match time::format_description::parse_borrowed::<2>(&fmt_str) {
             Ok(desc) => match dt.format(&desc) {
                 Ok(s) => s,
-                Err(e) => return fail(started_at, ctx.index, format!("format error: {e}")),
+                Err(e) => return (timer.failed(format!("format error: {e}")), None),
             },
-            Err(e) => return fail(started_at, ctx.index, format!("invalid format_string: {e}")),
+            Err(e) => return (timer.failed(format!("invalid format_string: {e}")), None),
         };
 
         let new_stack = ctx
@@ -148,45 +141,8 @@ impl SubActionRunner for CoreTimeFormatRunner {
             .clone()
             .set(into_var, Variant::String(formatted));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.time.format".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
-}
-
-fn fail(
-    started_at: OffsetDateTime,
-    index: usize,
-    msg: String,
-) -> (SubActionTelemetry, Option<ArgStack>) {
-    let duration_ms = (OffsetDateTime::now_utc() - started_at)
-        .whole_milliseconds()
-        .max(0) as u64;
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            index,
-            kind: "core.time.format".to_owned(),
-            started_at,
-            duration_ms,
-            outcome: SubActionOutcome::Failed(msg),
-        },
-        None,
-    )
 }
 
 #[cfg(test)]
@@ -194,7 +150,7 @@ fn fail(
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
     use time::{Date, Month, Time};
 
     struct NullPublisher;

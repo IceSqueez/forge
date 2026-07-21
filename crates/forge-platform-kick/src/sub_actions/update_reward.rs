@@ -5,7 +5,9 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
@@ -94,31 +96,19 @@ impl SubActionRunner for UpdateRewardRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let reward_id = config
-            .get("reward_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let reward_id = config.str("reward_id").unwrap_or_default();
         if reward_id.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'reward_id' must be a non-empty string"
             )));
         }
 
-        let title = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let cost = config
-            .get("cost")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let description = config
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let title = config.str("title").unwrap_or_default();
+        let cost = config.str("cost").unwrap_or_default();
+        let description = config.str("description").unwrap_or_default();
 
         if title.is_empty() && cost.is_empty() && description.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: at least one of 'title', 'cost', or 'description' must be provided"
             )));
         }
@@ -134,22 +124,10 @@ impl SubActionRunner for UpdateRewardRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_reward_id = config
-            .get("reward_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let raw_title = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let raw_cost = config
-            .get("cost")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let raw_description = config
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw_reward_id = config.str("reward_id").unwrap_or_default();
+        let raw_title = config.str("title").unwrap_or_default();
+        let raw_cost = config.str("cost").unwrap_or_default();
+        let raw_description = config.str("description").unwrap_or_default();
 
         let reward_id = ctx.arg_stack.interpolate(raw_reward_id);
         let title_str = ctx.arg_stack.interpolate(raw_title);

@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -62,14 +64,14 @@ pub(crate) fn validate_redemption_config(
     match config.get("redemption_id") {
         Some(Variant::String(s)) if !s.is_empty() => {}
         _ => {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{kind_id}: 'redemption_id' is required"
             )));
         }
     }
     match config.get("reward_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'reward_id' is required"
         ))),
     }
@@ -120,16 +122,10 @@ pub(crate) async fn execute_redemption_runner(
     let started_at = OffsetDateTime::now_utc();
     let start = Instant::now();
 
-    let redemption_id_template = config
-        .get("redemption_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
+    let redemption_id_template = config.str("redemption_id").unwrap_or_default();
     let redemption_id = ctx.arg_stack.interpolate(redemption_id_template);
 
-    let reward_id_template = config
-        .get("reward_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
+    let reward_id_template = config.str("reward_id").unwrap_or_default();
     let reward_id = ctx.arg_stack.interpolate(reward_id_template);
 
     let outcome = if redemption_id.is_empty() {

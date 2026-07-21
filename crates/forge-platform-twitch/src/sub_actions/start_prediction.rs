@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -172,12 +174,12 @@ impl SubActionRunner for StartPredictionRunner {
             _ => "",
         };
         if title.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'title' is required"
             )));
         }
         if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'title' must be \u{2264}{MAX_TITLE_CHARS} characters"
             )));
         }
@@ -187,12 +189,12 @@ impl SubActionRunner for StartPredictionRunner {
             _ => "",
         };
         parse_outcomes(raw_outcomes)
-            .map_err(|msg| RegistryError::UnknownKindId(format!("{KIND_ID}: {msg}")))?;
+            .map_err(|msg| RegistryError::InvalidConfig(format!("{KIND_ID}: {msg}")))?;
 
         match config.get("prediction_window_seconds") {
             Some(Variant::Int(n)) if *n >= MIN_WINDOW_SECS && *n <= MAX_WINDOW_SECS => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'prediction_window_seconds' must be {MIN_WINDOW_SECS}..={MAX_WINDOW_SECS}"
                 )));
             }
@@ -209,10 +211,7 @@ impl SubActionRunner for StartPredictionRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let title_template = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let title_template = config.str("title").unwrap_or_default();
         let title = ctx.arg_stack.interpolate(title_template);
 
         if title.is_empty() {
@@ -246,10 +245,7 @@ impl SubActionRunner for StartPredictionRunner {
             );
         }
 
-        let outcomes_template = config
-            .get("outcomes")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let outcomes_template = config.str("outcomes").unwrap_or_default();
         let raw_outcomes = ctx.arg_stack.interpolate(outcomes_template);
 
         let outcomes = match parse_outcomes(&raw_outcomes) {

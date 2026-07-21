@@ -5,7 +5,9 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
@@ -74,7 +76,7 @@ impl SubActionRunner for DeleteRewardRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("reward_id") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'reward_id' must be a non-empty string"
             ))),
         }
@@ -88,10 +90,7 @@ impl SubActionRunner for DeleteRewardRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_reward_id = config
-            .get("reward_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw_reward_id = config.str("reward_id").unwrap_or_default();
         let reward_id = ctx.arg_stack.interpolate(raw_reward_id);
 
         if reward_id.is_empty() {

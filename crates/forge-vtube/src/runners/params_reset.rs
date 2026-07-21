@@ -66,10 +66,7 @@ impl SubActionRunner for ParamsResetRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let outcome = match self.sink.reset_params().await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(&self.sink.reset_params().await);
 
         (
             SubActionTelemetry {

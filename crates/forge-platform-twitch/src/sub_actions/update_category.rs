@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -38,10 +40,7 @@ impl UpdateCategoryRunner {
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({ "game_id": category_id }));
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -98,7 +97,7 @@ impl SubActionRunner for UpdateCategoryRunner {
         match config.get("category_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'category_id' must be a non-empty string"
                 )));
             }
@@ -114,10 +113,7 @@ impl SubActionRunner for UpdateCategoryRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("category_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("category_id").unwrap_or_default();
         let category_id = ctx.arg_stack.interpolate(template);
 
         let outcome = self.apply(&category_id).await;

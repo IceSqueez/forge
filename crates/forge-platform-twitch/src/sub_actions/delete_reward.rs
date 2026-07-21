@@ -3,7 +3,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
@@ -73,10 +75,7 @@ impl SubActionRunner for DeleteRewardRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let reward_id_template = config
-            .get("reward_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let reward_id_template = config.str("reward_id").unwrap_or_default();
         let reward_id = ctx.arg_stack.interpolate(reward_id_template);
 
         let outcome = if reward_id.is_empty() {
@@ -114,10 +113,7 @@ impl DeleteRewardRunner {
                 .query("broadcaster_id", user_id)
                 .query("id", reward_id.to_owned());
 
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 

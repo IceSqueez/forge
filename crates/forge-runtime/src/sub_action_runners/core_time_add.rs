@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{Date, Duration, Month, OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub struct CoreTimeAddRunner;
@@ -125,7 +123,7 @@ impl SubActionRunner for CoreTimeAddRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.time.add");
 
         let base_v = config
             .get("base")
@@ -134,23 +132,13 @@ impl SubActionRunner for CoreTimeAddRunner {
         let base_str = ctx.arg_stack.interpolate(base_v.as_str().unwrap_or(""));
         let base_dt = match resolve_datetime(&base_v, &base_str) {
             Ok(dt) => dt,
-            Err(e) => return fail(started_at, ctx.index, format!("'base': {e}")),
+            Err(e) => return (timer.failed(format!("'base': {e}")), None),
         };
 
-        let add_amount = config
-            .get("add_amount")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0);
-        let unit = config
-            .get("unit")
-            .and_then(|v| v.as_str())
-            .unwrap_or("seconds");
+        let add_amount = config.int("add_amount").unwrap_or(0);
+        let unit = config.str("unit").unwrap_or("seconds");
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("time.result"),
+            config.str_nonempty("into_var").unwrap_or("time.result"),
         );
 
         let result = match unit {
@@ -172,45 +160,8 @@ impl SubActionRunner for CoreTimeAddRunner {
             .clone()
             .set(into_var, Variant::Datetime(result));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.time.add".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
-}
-
-fn fail(
-    started_at: OffsetDateTime,
-    index: usize,
-    msg: String,
-) -> (SubActionTelemetry, Option<ArgStack>) {
-    let duration_ms = (OffsetDateTime::now_utc() - started_at)
-        .whole_milliseconds()
-        .max(0) as u64;
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            index,
-            kind: "core.time.add".to_owned(),
-            started_at,
-            duration_ms,
-            outcome: SubActionOutcome::Failed(msg),
-        },
-        None,
-    )
 }
 
 #[cfg(test)]
@@ -218,7 +169,7 @@ fn fail(
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
     use time::Time;
 
     struct NullPublisher;

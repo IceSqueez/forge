@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -50,10 +52,7 @@ pub(crate) async fn patch_reward_bool(
         .query("id", reward_id.to_owned())
         .body(serde_json::Value::Object(body));
 
-    match transport.execute(request).await {
-        Ok(_) => SubActionOutcome::Success,
-        Err(e) => SubActionOutcome::Failed(e.to_string()),
-    }
+    SubActionOutcome::from_result(&transport.execute(request).await)
 }
 
 pub(crate) fn default_config() -> SubActionConfig {
@@ -77,7 +76,7 @@ pub(crate) fn validate_reward_id(
 ) -> Result<(), RegistryError> {
     match config.get("reward_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'reward_id' is required"
         ))),
     }
@@ -95,10 +94,7 @@ pub(crate) async fn execute_bool_runner(
     let started_at = OffsetDateTime::now_utc();
     let start = Instant::now();
 
-    let reward_id_template = config
-        .get("reward_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
+    let reward_id_template = config.str("reward_id").unwrap_or_default();
     let reward_id = ctx.arg_stack.interpolate(reward_id_template);
 
     let outcome = if reward_id.is_empty() {

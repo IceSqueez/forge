@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -196,12 +198,12 @@ impl SubActionRunner for StartPollRunner {
             _ => "",
         };
         if title.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'title' is required"
             )));
         }
         if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'title' must be ≤{MAX_TITLE_CHARS} characters"
             )));
         }
@@ -211,12 +213,12 @@ impl SubActionRunner for StartPollRunner {
             _ => "",
         };
         parse_choices(raw_choices)
-            .map_err(|msg| RegistryError::UnknownKindId(format!("{KIND_ID}: {msg}")))?;
+            .map_err(|msg| RegistryError::InvalidConfig(format!("{KIND_ID}: {msg}")))?;
 
         match config.get("duration_seconds") {
             Some(Variant::Int(n)) if *n >= MIN_DURATION_SECS && *n <= MAX_DURATION_SECS => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'duration_seconds' must be {MIN_DURATION_SECS}..={MAX_DURATION_SECS}"
                 )));
             }
@@ -233,10 +235,7 @@ impl SubActionRunner for StartPollRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let title_template = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let title_template = config.str("title").unwrap_or_default();
         let title = ctx.arg_stack.interpolate(title_template);
 
         if title.is_empty() {
@@ -270,10 +269,7 @@ impl SubActionRunner for StartPollRunner {
             );
         }
 
-        let choices_template = config
-            .get("choices")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let choices_template = config.str("choices").unwrap_or_default();
         let raw_choices = ctx.arg_stack.interpolate(choices_template);
 
         let choices = match parse_choices(&raw_choices) {

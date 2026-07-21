@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -62,7 +64,7 @@ impl SubActionRunner for SendMessageRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("message") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'message' must be a non-empty string"
             ))),
         }
@@ -76,19 +78,13 @@ impl SubActionRunner for SendMessageRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("message").unwrap_or_default();
         let message = ctx.arg_stack.interpolate(template);
 
         let outcome = if message.is_empty() {
             SubActionOutcome::Failed("message is empty after interpolation".to_owned())
         } else {
-            match self.sender.send(&message).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
+            SubActionOutcome::from_result(&self.sender.send(&message).await)
         };
 
         (

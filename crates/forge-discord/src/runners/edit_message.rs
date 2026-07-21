@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -80,7 +82,7 @@ impl SubActionRunner for EditMessageRunner {
         if ok {
             Ok(())
         } else {
-            Err(RegistryError::UnknownKindId(
+            Err(RegistryError::InvalidConfig(
                 "discord.webhook.update_message: 'webhook_name' and 'message_id' must be strings"
                     .to_owned(),
             ))
@@ -95,51 +97,19 @@ impl SubActionRunner for EditMessageRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let webhook_name = ctx.arg_stack.interpolate(
-            config
-                .get("webhook_name")
-                .and_then(|v| {
-                    if let Variant::String(s) = v {
-                        Some(s.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-        );
-        let message_id = ctx.arg_stack.interpolate(
-            config
-                .get("message_id")
-                .and_then(|v| {
-                    if let Variant::String(s) = v {
-                        Some(s.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-        );
+        let webhook_name = ctx
+            .arg_stack
+            .interpolate(config.str("webhook_name").unwrap_or_default());
+        let message_id = ctx
+            .arg_stack
+            .interpolate(config.str("message_id").unwrap_or_default());
         let content = config
-            .get("content")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
+            .str("content")
             .map(|raw| ctx.arg_stack.interpolate(raw))
             .filter(|s| !s.is_empty());
 
         let embed_title = config
-            .get("embed_title")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
+            .str("embed_title")
             .map(|raw| ctx.arg_stack.interpolate(raw))
             .filter(|s| !s.is_empty());
 
@@ -164,14 +134,12 @@ impl SubActionRunner for EditMessageRunner {
             ..Default::default()
         });
 
-        let outcome = match self
-            .sink
-            .edit_message(&webhook_name, &message_id, content.as_deref(), embed)
-            .await
-        {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .edit_message(&webhook_name, &message_id, content.as_deref(), embed)
+                .await,
+        );
 
         (
             SubActionTelemetry {

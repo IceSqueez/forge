@@ -5,7 +5,9 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
@@ -88,22 +90,16 @@ impl SubActionRunner for CreateRewardRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let title = config.str("title").unwrap_or_default();
         if title.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'title' must be a non-empty string"
             )));
         }
 
-        let cost_raw = config
-            .get("cost")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let cost_raw = config.str("cost").unwrap_or_default();
         if cost_raw.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'cost' must be provided"
             )));
         }
@@ -119,18 +115,9 @@ impl SubActionRunner for CreateRewardRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_title = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let raw_cost = config
-            .get("cost")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let raw_description = config
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw_title = config.str("title").unwrap_or_default();
+        let raw_cost = config.str("cost").unwrap_or_default();
+        let raw_description = config.str("description").unwrap_or_default();
 
         let title = ctx.arg_stack.interpolate(raw_title);
         let cost_str = ctx.arg_stack.interpolate(raw_cost);

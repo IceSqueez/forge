@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -79,7 +81,7 @@ impl SubActionRunner for SetVisibleRunner {
         if scene_ok && source_ok {
             Ok(())
         } else {
-            Err(RegistryError::UnknownKindId(
+            Err(RegistryError::InvalidConfig(
                 "obs.sources.set_visible: 'scene' and 'source' must be strings".to_owned(),
             ))
         }
@@ -93,35 +95,16 @@ impl SubActionRunner for SetVisibleRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_scene = config
-            .get("scene")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-        let raw_source = config
-            .get("source")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_scene = config.str("scene").unwrap_or_default();
+        let raw_source = config.str("source").unwrap_or_default();
         let visible = matches!(config.get("visible"), Some(Variant::Bool(true)));
 
         let scene = ctx.arg_stack.interpolate(raw_scene);
         let source = ctx.arg_stack.interpolate(raw_source);
 
-        let outcome = match self.sink.set_source_visible(&scene, &source, visible).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(
+            &self.sink.set_source_visible(&scene, &source, visible).await,
+        );
 
         (
             SubActionTelemetry {

@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -54,13 +56,13 @@ pub(crate) fn validate_blocked_term_config(
         {
             Ok(())
         }
-        Some(Variant::String(s)) if s.is_empty() => Err(RegistryError::UnknownKindId(format!(
+        Some(Variant::String(s)) if s.is_empty() => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'text' is required"
         ))),
-        Some(Variant::String(_)) => Err(RegistryError::UnknownKindId(format!(
+        Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'text' must be between {MIN_TERM_CHARS} and {MAX_TERM_CHARS} characters"
         ))),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'text' is required"
         ))),
     }
@@ -112,10 +114,7 @@ impl SubActionRunner for AddBlockedTermRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let text_template = config
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let text_template = config.str("text").unwrap_or_default();
         let text = ctx.arg_stack.interpolate(text_template);
 
         if text.is_empty() {

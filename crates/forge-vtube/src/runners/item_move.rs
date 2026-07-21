@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -152,7 +154,7 @@ impl SubActionRunner for ItemMoveRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("item_instance_id") {
             Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+            _ => Err(RegistryError::InvalidConfig(
                 "vtube.item.move: 'item_instance_id' must be a string".to_owned(),
             )),
         }
@@ -166,16 +168,7 @@ impl SubActionRunner for ItemMoveRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_id = config
-            .get("item_instance_id")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_id = config.str("item_instance_id").unwrap_or_default();
         let item_instance_id = ctx.arg_stack.interpolate(raw_id);
 
         let x = read_opt_float(config, "x");
@@ -200,23 +193,21 @@ impl SubActionRunner for ItemMoveRunner {
             SubActionOutcome::Success
         } else {
             let time_in_seconds = duration.unwrap_or(0.0);
-            match self
-                .sink
-                .move_item(
-                    &item_instance_id,
-                    x,
-                    y,
-                    size,
-                    rotation,
-                    order,
-                    time_in_seconds,
-                    fade_mode,
-                )
-                .await
-            {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
+            SubActionOutcome::from_result(
+                &self
+                    .sink
+                    .move_item(
+                        &item_instance_id,
+                        x,
+                        y,
+                        size,
+                        rotation,
+                        order,
+                        time_in_seconds,
+                        fade_mode,
+                    )
+                    .await,
+            )
         };
 
         (

@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -52,7 +54,7 @@ pub(crate) fn validate_remove_blocked_term_config(
 ) -> Result<(), RegistryError> {
     match config.get("term_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'term_id' is required"
         ))),
     }
@@ -104,10 +106,7 @@ impl SubActionRunner for RemoveBlockedTermRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let term_id_template = config
-            .get("term_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let term_id_template = config.str("term_id").unwrap_or_default();
         let term_id = ctx.arg_stack.interpolate(term_id_template);
 
         if term_id.is_empty() {

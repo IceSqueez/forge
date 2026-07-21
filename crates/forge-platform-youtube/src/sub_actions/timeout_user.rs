@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -75,14 +77,14 @@ impl SubActionRunner for TimeoutUserRunner {
         match config.get("channel_id") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'channel_id' must be a non-empty string"
                 )));
             }
         }
         match config.get("duration_seconds") {
             Some(Variant::Int(n)) if (1..=86_400).contains(n) => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'duration_seconds' must be between 1 and 86400"
             ))),
         }
@@ -96,10 +98,7 @@ impl SubActionRunner for TimeoutUserRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("channel_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("channel_id").unwrap_or_default();
         let channel_id = ctx.arg_stack.interpolate(template);
         let duration = config
             .get("duration_seconds")
@@ -112,10 +111,7 @@ impl SubActionRunner for TimeoutUserRunner {
         let outcome = if channel_id.is_empty() {
             SubActionOutcome::Failed("channel_id is empty after interpolation".to_owned())
         } else {
-            match self.moderation.timeout(&channel_id, duration).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            }
+            SubActionOutcome::from_result(&self.moderation.timeout(&channel_id, duration).await)
         };
 
         (

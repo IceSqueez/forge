@@ -78,7 +78,7 @@ impl SubActionRunner for ResolvePredictionRunner {
         // winning_outcome_id is only required for RESOLVED; other status runners omit this field.
         match config.get("winning_outcome_id") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'winning_outcome_id' is required"
             ))),
         }

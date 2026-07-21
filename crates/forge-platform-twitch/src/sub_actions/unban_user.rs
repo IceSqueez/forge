@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -44,10 +46,7 @@ impl UnbanUserRunner {
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
             .query("user_id", target_user_id);
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -96,7 +95,7 @@ impl SubActionRunner for UnbanUserRunner {
         match config.get("target_user_login") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'target_user_login' must be a non-empty string"
                 )));
             }
@@ -112,10 +111,7 @@ impl SubActionRunner for UnbanUserRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config
-            .get("target_user_login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let login_template = config.str("target_user_login").unwrap_or_default();
         let target_login = ctx.arg_stack.interpolate(login_template);
 
         let outcome = self.unban(&target_login).await;

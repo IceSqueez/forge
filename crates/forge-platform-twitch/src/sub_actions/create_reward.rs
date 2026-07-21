@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -250,12 +252,12 @@ impl SubActionRunner for CreateRewardRunner {
             _ => "",
         };
         if title.is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'title' is required"
             )));
         }
         if title.chars().count() > MAX_TITLE_CHARS {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'title' must be ≤{MAX_TITLE_CHARS} characters"
             )));
         }
@@ -263,7 +265,7 @@ impl SubActionRunner for CreateRewardRunner {
         match config.get("cost") {
             Some(Variant::Int(n)) if *n >= 1 => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'cost' must be ≥1"
                 )));
             }
@@ -272,7 +274,7 @@ impl SubActionRunner for CreateRewardRunner {
         if let Some(Variant::String(s)) = config.get("prompt")
             && s.chars().count() > MAX_PROMPT_CHARS
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'prompt' must be ≤{MAX_PROMPT_CHARS} characters"
             )));
         }
@@ -281,7 +283,7 @@ impl SubActionRunner for CreateRewardRunner {
             && !s.is_empty()
             && !is_valid_hex_color(s)
         {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'background_color_hex' must be empty or a '#RRGGBB' hex color"
             )));
         }
@@ -297,10 +299,7 @@ impl SubActionRunner for CreateRewardRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let title_template = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let title_template = config.str("title").unwrap_or_default();
         let title = ctx.arg_stack.interpolate(title_template);
 
         if title.is_empty() {
@@ -352,10 +351,7 @@ impl SubActionRunner for CreateRewardRunner {
             }
         };
 
-        let prompt_template = config
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let prompt_template = config.str("prompt").unwrap_or_default();
         let prompt = ctx.arg_stack.interpolate(prompt_template);
 
         let is_enabled = config
@@ -386,8 +382,7 @@ impl SubActionRunner for CreateRewardRunner {
             .unwrap_or(0)
             .max(0);
         let background_color_hex = config
-            .get("background_color_hex")
-            .and_then(|v| v.as_str())
+            .str("background_color_hex")
             .unwrap_or_default()
             .to_owned();
 

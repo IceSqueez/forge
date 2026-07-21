@@ -66,10 +66,7 @@ impl SubActionRunner for StreamStopRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let outcome = match self.sink.stop_stream().await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(&self.sink.stop_stream().await);
 
         (
             SubActionTelemetry {

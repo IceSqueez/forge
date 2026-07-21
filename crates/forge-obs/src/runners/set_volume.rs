@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -71,7 +73,7 @@ impl SubActionRunner for SetVolumeRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         let source_ok = matches!(config.get("source"), Some(Variant::String(_)));
         if !source_ok {
-            return Err(RegistryError::UnknownKindId(
+            return Err(RegistryError::InvalidConfig(
                 "obs.audio.set_volume: 'source' must be a string".to_owned(),
             ));
         }
@@ -81,7 +83,7 @@ impl SubActionRunner for SetVolumeRunner {
             _ => false,
         });
         if !db_ok {
-            return Err(RegistryError::UnknownKindId(
+            return Err(RegistryError::InvalidConfig(
                 "obs.audio.set_volume: 'volume_db' must be a valid number".to_owned(),
             ));
         }
@@ -96,16 +98,7 @@ impl SubActionRunner for SetVolumeRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_source = config
-            .get("source")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_source = config.str("source").unwrap_or_default();
 
         let source = ctx.arg_stack.interpolate(raw_source);
 
@@ -119,10 +112,8 @@ impl SubActionRunner for SetVolumeRunner {
             })
             .unwrap_or(0.0);
 
-        let outcome = match self.sink.set_input_volume_db(&source, db).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome =
+            SubActionOutcome::from_result(&self.sink.set_input_volume_db(&source, db).await);
 
         (
             SubActionTelemetry {

@@ -5,7 +5,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -22,18 +24,8 @@ impl SendFileRunner {
 }
 
 fn interpolated_string(config: &SubActionConfig, ctx: &RunContext<'_>, key: &str) -> String {
-    ctx.arg_stack.interpolate(
-        config
-            .get(key)
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default(),
-    )
+    ctx.arg_stack
+        .interpolate(config.str(key).unwrap_or_default())
 }
 
 #[async_trait]
@@ -95,7 +87,7 @@ impl SubActionRunner for SendFileRunner {
         if ok {
             Ok(())
         } else {
-            Err(RegistryError::UnknownKindId(
+            Err(RegistryError::InvalidConfig(
                 "discord.webhook.send_file: 'webhook_name' and 'file_path' must be strings"
                     .to_owned(),
             ))
@@ -150,14 +142,12 @@ impl SubActionRunner for SendFileRunner {
             Err(e) => return fail(format!("cannot read file: {e}"), start),
         };
 
-        let outcome = match self
-            .sink
-            .send_file(&webhook_name, caption.as_deref(), &file_name, &file_bytes)
-            .await
-        {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .send_file(&webhook_name, caption.as_deref(), &file_name, &file_bytes)
+                .await,
+        );
 
         (
             SubActionTelemetry {

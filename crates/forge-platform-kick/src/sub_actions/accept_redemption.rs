@@ -5,7 +5,9 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
@@ -83,18 +85,15 @@ impl SubActionRunner for AcceptRedemptionRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let raw = config
-            .get("redemption_ids")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw = config.str("redemption_ids").unwrap_or_default();
         if raw.trim().is_empty() {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'redemption_ids' must not be empty"
             )));
         }
         let ids = parse_ids(raw);
         if ids.len() > MAX_BATCH {
-            return Err(RegistryError::UnknownKindId(format!(
+            return Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: config contains {} ids, maximum is {MAX_BATCH}",
                 ids.len()
             )));
@@ -110,10 +109,7 @@ impl SubActionRunner for AcceptRedemptionRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw = config
-            .get("redemption_ids")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw = config.str("redemption_ids").unwrap_or_default();
         let interpolated = ctx.arg_stack.interpolate(raw);
         let ids = parse_ids(&interpolated);
 

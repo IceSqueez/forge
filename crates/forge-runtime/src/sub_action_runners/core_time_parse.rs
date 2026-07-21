@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{OffsetDateTime, PrimitiveDateTime};
 
 pub struct CoreTimeParseRunner;
@@ -89,31 +87,22 @@ impl SubActionRunner for CoreTimeParseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.time.parse");
 
-        let source_template = config
-            .get("source")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let source_template = config.str("source").unwrap_or("").to_owned();
         let source = ctx.arg_stack.interpolate(&source_template);
 
         let format_str = config
-            .get("format")
-            .and_then(|v| v.as_str())
+            .str("format")
             .unwrap_or("[year]-[month]-[day] [hour]:[minute]:[second]")
             .to_owned();
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("time.parsed"),
+            config.str_nonempty("into_var").unwrap_or("time.parsed"),
         );
 
         let desc = match time::format_description::parse_borrowed::<2>(&format_str) {
             Ok(d) => d,
-            Err(e) => return fail(started_at, ctx.index, format!("invalid format: {e}")),
+            Err(e) => return (timer.failed(format!("invalid format: {e}")), None),
         };
 
         // Try OffsetDateTime first (format includes offset), fall back to
@@ -124,50 +113,13 @@ impl SubActionRunner for CoreTimeParseRunner {
 
         let dt = match dt {
             Ok(dt) => dt,
-            Err(e) => return fail(started_at, ctx.index, e),
+            Err(e) => return (timer.failed(e), None),
         };
 
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Datetime(dt));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.time.parse".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
-}
-
-fn fail(
-    started_at: OffsetDateTime,
-    index: usize,
-    msg: String,
-) -> (SubActionTelemetry, Option<ArgStack>) {
-    let duration_ms = (OffsetDateTime::now_utc() - started_at)
-        .whole_milliseconds()
-        .max(0) as u64;
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            index,
-            kind: "core.time.parse".to_owned(),
-            started_at,
-            duration_ms,
-            outcome: SubActionOutcome::Failed(msg),
-        },
-        None,
-    )
 }
 
 #[cfg(test)]
@@ -175,7 +127,7 @@ fn fail(
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
     use time::{Date, Month, Time};
 
     struct NullPublisher;

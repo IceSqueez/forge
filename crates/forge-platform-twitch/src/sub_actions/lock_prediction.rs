@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -48,7 +50,7 @@ pub(crate) fn validate_prediction_config(
 ) -> Result<(), RegistryError> {
     match config.get("prediction_id") {
         Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-        _ => Err(RegistryError::UnknownKindId(format!(
+        _ => Err(RegistryError::InvalidConfig(format!(
             "{kind_id}: 'prediction_id' is required"
         ))),
     }
@@ -100,10 +102,7 @@ pub(crate) async fn execute_prediction_runner(
     let started_at = OffsetDateTime::now_utc();
     let start = Instant::now();
 
-    let prediction_id_template = config
-        .get("prediction_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
+    let prediction_id_template = config.str("prediction_id").unwrap_or_default();
     let prediction_id = ctx.arg_stack.interpolate(prediction_id_template);
 
     if prediction_id.is_empty() {
@@ -122,12 +121,8 @@ pub(crate) async fn execute_prediction_runner(
     }
 
     // winning_outcome_id is only present for the resolve runner (status RESOLVED).
-    let winning_outcome_id_owned = winning_outcome_id_key.and_then(|key| {
-        config
-            .get(key)
-            .and_then(|v| v.as_str())
-            .map(|t| ctx.arg_stack.interpolate(t))
-    });
+    let winning_outcome_id_owned = winning_outcome_id_key
+        .and_then(|key| config.str(key).map(|t| ctx.arg_stack.interpolate(t)));
 
     if let Some(ref wid) = winning_outcome_id_owned
         && wid.is_empty()

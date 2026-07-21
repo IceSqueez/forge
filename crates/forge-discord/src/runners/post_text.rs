@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -73,7 +75,7 @@ impl SubActionRunner for PostTextRunner {
         if ok {
             Ok(())
         } else {
-            Err(RegistryError::UnknownKindId(
+            Err(RegistryError::InvalidConfig(
                 "discord.webhook.send_message: 'webhook_name' and 'content' must be strings"
                     .to_owned(),
             ))
@@ -88,30 +90,12 @@ impl SubActionRunner for PostTextRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let webhook_name = ctx.arg_stack.interpolate(
-            config
-                .get("webhook_name")
-                .and_then(|v| {
-                    if let Variant::String(s) = v {
-                        Some(s.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-        );
-        let content = ctx.arg_stack.interpolate(
-            config
-                .get("content")
-                .and_then(|v| {
-                    if let Variant::String(s) = v {
-                        Some(s.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default(),
-        );
+        let webhook_name = ctx
+            .arg_stack
+            .interpolate(config.str("webhook_name").unwrap_or_default());
+        let content = ctx
+            .arg_stack
+            .interpolate(config.str("content").unwrap_or_default());
 
         if content.trim().is_empty() {
             return (
@@ -128,10 +112,8 @@ impl SubActionRunner for PostTextRunner {
             );
         }
 
-        let outcome = match self.sink.post_text(&webhook_name, &content).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome =
+            SubActionOutcome::from_result(&self.sink.post_text(&webhook_name, &content).await);
 
         (
             SubActionTelemetry {

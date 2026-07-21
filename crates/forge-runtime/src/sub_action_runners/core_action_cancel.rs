@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{
     ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
-use time::OffsetDateTime;
 
 use crate::action_cancel::ActionCancelRegistry;
 
@@ -19,10 +21,7 @@ impl CoreActionCancelRunner {
     }
 
     fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config
-            .get("action_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw = config.str("action_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(raw);
         let resolved = resolved.trim();
 
@@ -90,23 +89,9 @@ impl SubActionRunner for CoreActionCancelRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.action.cancel");
         let outcome = self.run(config, ctx);
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.action.cancel".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

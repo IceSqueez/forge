@@ -112,7 +112,7 @@ impl SubActionRunner for GuestStarRemoveGuestRunner {
         validate_target_login(KIND_ID, config)?;
         match config.get("slot_id") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(format!(
+            _ => Err(RegistryError::InvalidConfig(format!(
                 "{KIND_ID}: 'slot_id' is required"
             ))),
         }

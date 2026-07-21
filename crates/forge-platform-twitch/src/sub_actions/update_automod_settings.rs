@@ -94,10 +94,7 @@ impl UpdateAutomodSettingsRunner {
             .query("moderator_id", user_id)
             .body(body);
 
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 
     async fn fetch_current(&self, user_id: &str) -> Result<serde_json::Value, HelixError> {
@@ -221,7 +218,7 @@ impl SubActionRunner for UpdateAutomodSettingsRunner {
                 None => {}
                 Some(Variant::String(s)) if LEVEL_OPTIONS.contains(&s.as_str()) => {}
                 _ => {
-                    return Err(RegistryError::UnknownKindId(format!(
+                    return Err(RegistryError::InvalidConfig(format!(
                         "{KIND_ID}: '{key}' must be one of: unchanged, 0, 1, 2, 3, 4"
                     )));
                 }

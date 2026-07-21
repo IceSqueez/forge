@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -45,10 +47,7 @@ impl SendAnnouncementRunner {
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
             .body(serde_json::json!({ "message": message, "color": color }));
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -106,7 +105,7 @@ impl SubActionRunner for SendAnnouncementRunner {
         match config.get("message") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'message' must be a non-empty string"
                 )));
             }
@@ -115,7 +114,7 @@ impl SubActionRunner for SendAnnouncementRunner {
             None => {}
             Some(Variant::String(c)) if COLORS.contains(&c.as_str()) => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'color' must be one of blue, green, orange, purple, primary"
                 )));
             }
@@ -131,14 +130,10 @@ impl SubActionRunner for SendAnnouncementRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("message").unwrap_or_default();
         let message = ctx.arg_stack.interpolate(template);
         let color = config
-            .get("color")
-            .and_then(|v| v.as_str())
+            .str("color")
             .filter(|c| COLORS.contains(c))
             .unwrap_or(DEFAULT_COLOR);
 

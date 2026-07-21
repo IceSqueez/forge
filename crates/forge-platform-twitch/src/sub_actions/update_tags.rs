@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -38,10 +40,7 @@ impl UpdateTagsRunner {
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({ "tags": tags }));
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -109,12 +108,12 @@ impl SubActionRunner for UpdateTagsRunner {
             Some(Variant::String(s)) => s.as_str(),
             None => "",
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'tags' must be a string"
                 )));
             }
         };
-        parse_tags(raw).map_err(|msg| RegistryError::UnknownKindId(format!("{KIND_ID}: {msg}")))?;
+        parse_tags(raw).map_err(|msg| RegistryError::InvalidConfig(format!("{KIND_ID}: {msg}")))?;
         Ok(())
     }
 
@@ -126,10 +125,7 @@ impl SubActionRunner for UpdateTagsRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let template = config
-            .get("tags")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let template = config.str("tags").unwrap_or_default();
         let raw = ctx.arg_stack.interpolate(template);
 
         let outcome = match parse_tags(&raw) {

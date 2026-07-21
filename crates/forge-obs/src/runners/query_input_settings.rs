@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -61,7 +63,7 @@ impl SubActionRunner for QueryInputSettingsRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("source") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+            _ => Err(RegistryError::InvalidConfig(
                 "obs.sources.get_input_settings: 'source' must be a non-empty string".to_owned(),
             )),
         }
@@ -75,16 +77,7 @@ impl SubActionRunner for QueryInputSettingsRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_source = config
-            .get("source")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_source = config.str("source").unwrap_or_default();
         let source = ctx.arg_stack.interpolate(raw_source);
 
         match self.sink.get_input_settings(&source).await {

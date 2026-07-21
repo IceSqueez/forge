@@ -41,10 +41,7 @@ impl RunAdRunner {
         // how the Twitch Helix /channels/commercial endpoint is specified.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channels/commercial")
             .body(serde_json::json!({ "broadcaster_id": user_id, "length": duration }));
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 
@@ -93,7 +90,7 @@ impl SubActionRunner for RunAdRunner {
         match config.get("duration_seconds") {
             Some(Variant::String(s)) if ALLOWED_DURATIONS.contains(&s.as_str()) => {}
             _ => {
-                return Err(RegistryError::UnknownKindId(format!(
+                return Err(RegistryError::InvalidConfig(format!(
                     "{KIND_ID}: 'duration_seconds' must be one of 30, 60, 90, 120, 150, 180"
                 )));
             }

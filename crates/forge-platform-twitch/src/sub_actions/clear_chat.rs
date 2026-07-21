@@ -34,10 +34,7 @@ impl ClearChatRunner {
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/chat")
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id);
-        match self.transport.execute(request).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        }
+        SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
 }
 

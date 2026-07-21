@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -70,7 +72,7 @@ impl SubActionRunner for ExpressionSetRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("expression_file") {
             Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+            _ => Err(RegistryError::InvalidConfig(
                 "vtube.expression.set: 'expression_file' must be a string".to_owned(),
             )),
         }
@@ -84,23 +86,13 @@ impl SubActionRunner for ExpressionSetRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw = config
-            .get("expression_file")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw = config.str("expression_file").unwrap_or_default();
         let expression_file = ctx.arg_stack.interpolate(raw);
         let active = matches!(config.get("active"), Some(Variant::Bool(true)));
 
-        let outcome = match self.sink.set_expression(&expression_file, active).await {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome = SubActionOutcome::from_result(
+            &self.sink.set_expression(&expression_file, active).await,
+        );
 
         (
             SubActionTelemetry {

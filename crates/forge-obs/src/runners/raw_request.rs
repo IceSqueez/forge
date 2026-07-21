@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
@@ -70,7 +72,7 @@ impl SubActionRunner for RawRequestRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("request_type") {
             Some(Variant::String(_)) => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+            _ => Err(RegistryError::InvalidConfig(
                 "obs.misc.raw_request: 'request_type' must be a string".to_owned(),
             )),
         }
@@ -84,28 +86,10 @@ impl SubActionRunner for RawRequestRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let raw_type = config
-            .get("request_type")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let raw_type = config.str("request_type").unwrap_or_default();
         let request_type = ctx.arg_stack.interpolate(raw_type);
 
-        let raw_data = config
-            .get("request_data")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("{}");
+        let raw_data = config.str("request_data").unwrap_or("{}");
         let interpolated_data = ctx.arg_stack.interpolate(raw_data);
 
         let payload = if interpolated_data.is_empty() {
@@ -150,10 +134,8 @@ impl SubActionRunner for RawRequestRunner {
             }
         };
 
-        let outcome = match self.sink.raw_request(&request_type, &payload).await {
-            Ok(_) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+        let outcome =
+            SubActionOutcome::from_result(&self.sink.raw_request(&request_type, &payload).await);
 
         (
             SubActionTelemetry {

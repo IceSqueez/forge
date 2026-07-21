@@ -38,3 +38,54 @@ impl<T: Default> Default for Shared<T> {
         Self::new(T::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_snapshot_is_frozen_while_later_store_swaps_subsequent_loads() {
+        let shared = Shared::new(vec![1, 2, 3]);
+        let snapshot = shared.load();
+
+        shared.store(vec![9, 9]);
+
+        assert_eq!(
+            *snapshot,
+            vec![1, 2, 3],
+            "old snapshot must not observe the store"
+        );
+        assert_eq!(
+            *shared.load(),
+            vec![9, 9],
+            "a fresh load must observe the store"
+        );
+    }
+
+    #[test]
+    fn store_arc_keeps_the_callers_arc_identity() {
+        let shared = Shared::new(0u32);
+        let arc = Arc::new(42u32);
+
+        shared.store_arc(Arc::clone(&arc));
+
+        assert!(
+            Arc::ptr_eq(&shared.load(), &arc),
+            "store_arc must publish the exact Arc, not wrap the value in a new allocation",
+        );
+    }
+
+    #[test]
+    fn clones_share_one_cell_so_a_store_through_one_is_seen_by_the_other() {
+        let a = Shared::new(1u32);
+        let b = a.clone();
+        let published = Arc::new(7u32);
+
+        a.store_arc(Arc::clone(&published));
+
+        assert!(
+            Arc::ptr_eq(&b.load(), &published),
+            "a clone must alias the same cell, not a detached copy",
+        );
+    }
+}

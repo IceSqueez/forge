@@ -10,7 +10,8 @@ use std::collections::BTreeSet;
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent, SpeakQueueHandle};
 
 use common::{make_deps, recording_sink, request, standard_registry, wait_for};
-use forge_voice::AssignmentStrategy;
+use forge_tts_core::EngineId;
+use forge_voice::{AssignmentStrategy, SynthesisDefaults};
 
 async fn wait_until_depth(handle: &SpeakQueueHandle, expected: usize, max_ms: u64) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
@@ -97,4 +98,50 @@ async fn engines_returns_each_engine_once_despite_multiple_voices() {
     let mut engines: Vec<String> = handle.engines().into_iter().map(|e| e.0).collect();
     engines.sort();
     assert_eq!(engines, vec!["alpha".to_string(), "beta".to_string()]);
+}
+
+// A later command whose event we can observe acts as an ordering barrier: because the
+// actor drains the command channel one at a time, seeing `Paused` proves the prior
+// engine-mutating command already ran and published into the shared cell.
+async fn quiesce_after(
+    handle: &SpeakQueueHandle,
+    stream: &mut forge_speak_queue::SpeakEventStream,
+) {
+    handle.send(SpeakCommand::Pause).await.unwrap();
+    wait_for(stream, |e| matches!(e, SpeakEvent::Paused { .. }), 1_000).await;
+}
+
+#[tokio::test]
+async fn disabled_engines_reader_observes_actor_side_toggle() {
+    let (handle, mut stream) = spawn_standard();
+    let alpha = EngineId("alpha".into());
+
+    handle
+        .send(SpeakCommand::SetEngineEnabled(alpha.clone(), false))
+        .await
+        .unwrap();
+    quiesce_after(&handle, &mut stream).await;
+
+    // Split-mirror regression: the handle read side must alias the actor's live set,
+    // not a snapshot frozen at spawn (which would report the engine still enabled).
+    assert!(handle.disabled_engines().contains(&alpha));
+}
+
+#[tokio::test]
+async fn engine_gain_reader_observes_actor_side_set_engine_params() {
+    let (handle, mut stream) = spawn_standard();
+    let beta = EngineId("beta".into());
+
+    handle
+        .send(SpeakCommand::SetEngineParams(
+            beta.clone(),
+            SynthesisDefaults::default(),
+            0.5,
+        ))
+        .await
+        .unwrap();
+    quiesce_after(&handle, &mut stream).await;
+
+    // A stale mirror would return the 1.0 absent-engine default instead of 0.5.
+    assert_eq!(handle.engine_gain(&beta), 0.5);
 }

@@ -477,9 +477,84 @@ pub async fn set_soundboard_also_headphones(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{Density, Language};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use serde::{Deserialize, Serialize};
+
+    use super::{
+        Density, Language, SettingsRepo, StorageError, get_json_setting, set_json_setting,
+    };
 
     fn _trait_is_dyn_safe(_: &dyn super::SettingsRepo) {}
+
+    #[derive(Default)]
+    struct MapRepo {
+        map: Mutex<HashMap<String, String>>,
+    }
+
+    #[async_trait]
+    impl SettingsRepo for MapRepo {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self.map.lock().unwrap().get(key).cloned())
+        }
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.map
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), value.to_owned());
+            Ok(())
+        }
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            Ok(self.map.lock().unwrap().remove(key).is_some())
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(self.map.lock().unwrap().clone())
+        }
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Sample {
+        name: String,
+        count: u32,
+    }
+
+    #[tokio::test]
+    async fn get_json_setting_yields_none_for_absent_malformed_and_wrong_shape() {
+        let repo = MapRepo::default();
+        // Absent, non-JSON, and valid-JSON-but-wrong-type all collapse to None so
+        // every caller falls back to its own default instead of surfacing an error.
+        repo.set_string("malformed", "{not json").await.unwrap();
+        repo.set_string("wrong_shape", "42").await.unwrap();
+
+        for key in ["absent", "malformed", "wrong_shape"] {
+            let decoded: Option<Vec<String>> = get_json_setting(&repo, key).await;
+            assert!(decoded.is_none(), "expected None for {key:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn json_setting_round_trips_a_vec_and_a_struct() {
+        let repo = MapRepo::default();
+
+        let list = vec!["a.com".to_owned(), "b.com".to_owned()];
+        set_json_setting(&repo, "list", &list).await.unwrap();
+        assert_eq!(
+            get_json_setting::<Vec<String>>(&repo, "list").await,
+            Some(list)
+        );
+
+        let sample = Sample {
+            name: "nova".into(),
+            count: 3,
+        };
+        set_json_setting(&repo, "sample", &sample).await.unwrap();
+        assert_eq!(
+            get_json_setting::<Sample>(&repo, "sample").await,
+            Some(sample)
+        );
+    }
 
     #[test]
     fn language_round_trips_through_display_and_from_str() {

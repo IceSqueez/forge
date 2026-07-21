@@ -22,3 +22,6 @@ mockall = { workspace = true, optional = true }
 
 [features]
 test-mocks = ["dep:mockall"]
+
+[dev-dependencies]
+tokio = { workspace = true }

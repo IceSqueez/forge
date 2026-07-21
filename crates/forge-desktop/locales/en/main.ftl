@@ -1328,9 +1328,6 @@ chat_viewers_unit = viewers
 chat_no_filter_matches = No messages match these filters.
 chat_send_placeholder_connected = Send to chat...
 chat_send_placeholder_to = Send to {$platform} chat...
-}
-}
-}
 chat_show_viewers = Show viewers
 chat_hide_viewers = Hide viewers
 chat_search_placeholder = Search messages...

@@ -1340,9 +1340,6 @@ chat_viewers_unit = глядачів
 chat_no_filter_matches = Жодне повідомлення не відповідає цим фільтрам.
 chat_send_placeholder_connected = Надіслати в чат...
 chat_send_placeholder_to = Надіслати в чат {$platform}...
-}
-}
-}
 chat_show_viewers = Показати глядачів
 chat_hide_viewers = Сховати глядачів
 chat_search_placeholder = Пошук повідомлень...

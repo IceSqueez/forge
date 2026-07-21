@@ -96,11 +96,26 @@ impl SubActionRunner for CoreStringUppercaseRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
+    }
+
+    #[tokio::test]
+    async fn uppercase_emits_facade_telemetry_shape() {
+        // Mass-migration safety net: a migrated runner must route telemetry
+        // through StepTimer verbatim - kind/index from ctx, empty arg maps.
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("source".to_owned(), Variant::String("hi".to_owned()));
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 4, EventId::new(), &NullPublisher);
+        let tel = CoreStringUppercaseRunner.execute(&cfg, &ctx).await.0;
+        assert_eq!(tel.kind, "core.string.uppercase");
+        assert_eq!(tel.index, 4);
+        assert!(tel.args_in.is_empty() && tel.produced.is_empty());
+        assert!(matches!(tel.outcome, SubActionOutcome::Success));
     }
 
     #[tokio::test]

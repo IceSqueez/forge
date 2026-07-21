@@ -51,3 +51,67 @@ impl StepTimer {
         self.finish(SubActionOutcome::Skipped(message.into()))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::{ArgStack, EventId};
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    static NULL_PUBLISHER: NullPublisher = NullPublisher;
+
+    fn ctx(stack: &ArgStack, index: usize) -> RunContext<'_> {
+        RunContext::leaf(stack, index, EventId::new(), &NULL_PUBLISHER)
+    }
+
+    #[test]
+    fn finish_copies_kind_and_index_from_context_and_leaves_arg_maps_empty() {
+        let stack = ArgStack::new();
+        let tel = StepTimer::start(&ctx(&stack, 3), "core.demo").finish(SubActionOutcome::Success);
+        assert_eq!(tel.kind, "core.demo");
+        assert_eq!(tel.index, 3);
+        // Why (RFC-101): the chain driver alone fills args_in/produced; the facade
+        // MUST leave them empty or run-history @in/@out capture is corrupted.
+        assert!(tel.args_in.is_empty());
+        assert!(tel.produced.is_empty());
+    }
+
+    #[test]
+    fn named_helpers_map_to_their_outcome_variant_and_carry_the_message() {
+        let stack = ArgStack::new();
+        assert_eq!(
+            StepTimer::start(&ctx(&stack, 0), "k").success().outcome,
+            SubActionOutcome::Success
+        );
+        assert_eq!(
+            StepTimer::start(&ctx(&stack, 0), "k")
+                .failed("boom")
+                .outcome,
+            SubActionOutcome::Failed("boom".to_owned())
+        );
+        assert_eq!(
+            StepTimer::start(&ctx(&stack, 0), "k")
+                .skipped("off")
+                .outcome,
+            SubActionOutcome::Skipped("off".to_owned())
+        );
+    }
+
+    #[test]
+    fn started_at_accessor_matches_emitted_row_and_is_a_real_instant() {
+        let stack = ArgStack::new();
+        let before = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(&ctx(&stack, 0), "k");
+        let captured = timer.started_at();
+        let tel = timer.success();
+        let after = OffsetDateTime::now_utc();
+        assert_eq!(tel.started_at, captured);
+        assert!(captured >= before && captured <= after);
+    }
+}

@@ -342,6 +342,27 @@ mod tests {
     }
 
     #[test]
+    fn from_result_maps_ok_to_success_and_err_to_failed_with_display_text() {
+        let ok: Result<(), std::io::Error> = Ok(());
+        assert_eq!(
+            SubActionOutcome::from_result(&ok),
+            SubActionOutcome::Success
+        );
+
+        struct DisplayErr;
+        impl core::fmt::Display for DisplayErr {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("disk full")
+            }
+        }
+        let err: Result<(), DisplayErr> = Err(DisplayErr);
+        assert_eq!(
+            SubActionOutcome::from_result(&err),
+            SubActionOutcome::Failed("disk full".to_owned())
+        );
+    }
+
+    #[test]
     fn sub_action_outcome_variants_serde_roundtrip() {
         let outcomes = [
             SubActionOutcome::Success,

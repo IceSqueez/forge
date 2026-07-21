@@ -256,11 +256,7 @@ mod tests {
     }
 
     fn platform(repo: Arc<InMemRepo>, limiter: Arc<dyn RateLimiter>) -> KickPlatform {
-        let manager = Arc::new(KickCredentialsManager::new(
-            repo,
-            reqwest::Client::new(),
-            "test_cid".to_owned(),
-        ));
+        let manager = Arc::new(KickCredentialsManager::new(repo, "test_cid".to_owned()));
         KickPlatform::new("test_channel".to_owned(), manager, limiter)
     }
 

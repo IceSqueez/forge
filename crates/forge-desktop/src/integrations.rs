@@ -555,7 +555,6 @@ async fn build_kick(
     let http = reqwest::Client::new();
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
         creds_of(backend),
-        http.clone(),
         client_id,
     ));
     let creds = match manager.load().await {

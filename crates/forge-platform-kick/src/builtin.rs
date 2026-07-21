@@ -385,7 +385,6 @@ mod tests {
         fn disconnected_bundle() -> Arc<KickIntegrationBundle> {
             let manager = Arc::new(KickCredentialsManager::new(
                 Arc::new(EmptyRepo),
-                reqwest::Client::new(),
                 "test_cid".to_owned(),
             ));
             let platform = Arc::new(KickPlatform::new(

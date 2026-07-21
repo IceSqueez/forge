@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use forge_platform_core::auth::LocalCallbackDriver;
+use forge_platform_core::auth::{CALLBACK_PATH, PkceClientConfig, PkceFlow};
 use forge_platform_core::{AuthFlow, PlatformError};
 use serde::Deserialize;
-use thiserror::Error;
 use time::OffsetDateTime;
 
 pub const KICK_AUTHORIZE_ENDPOINT: &str = "https://id.kick.com/oauth/authorize";
@@ -20,13 +19,12 @@ const KICK_SCOPES: &[&str] = &[
     "moderation:chat_message:manage",
     "moderation:ban",
 ];
-const CALLBACK_REDIRECT_PATH: &str = "/oauth/callback";
 
 pub fn kick_auth_flow() -> AuthFlow {
     AuthFlow::LocalCallback {
         authorize_url: KICK_AUTHORIZE_ENDPOINT.to_owned(),
         token_endpoint: KICK_TOKEN_ENDPOINT.to_owned(),
-        redirect_path: CALLBACK_REDIRECT_PATH.to_owned(),
+        redirect_path: CALLBACK_PATH.to_owned(),
         scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
     }
 }
@@ -46,28 +44,11 @@ pub struct KickAuthBundle {
     pub expires_at: OffsetDateTime,
 }
 
-#[derive(Debug, Error)]
-pub enum KickAuthError {
-    #[error("HTTP {status}: {body}")]
-    Http { status: u16, body: String },
-
-    #[error("network error: {0}")]
-    Network(String),
-
-    #[error("wait_for_authorization called before start")]
-    NotStarted,
-
-    #[error("loopback callback failed: {0}")]
-    Loopback(#[from] PlatformError),
-}
-
 pub struct KickAuthFlow {
     client_id: String,
     http: reqwest::Client,
-    authorize_endpoint: String,
-    token_endpoint: String,
     users_endpoint: String,
-    pending: Option<LocalCallbackDriver>,
+    pkce: PkceFlow,
 }
 
 impl KickAuthFlow {
@@ -86,23 +67,32 @@ impl KickAuthFlow {
         token_endpoint: String,
         users_endpoint: String,
     ) -> Self {
+        let pkce = PkceFlow::new(PkceClientConfig {
+            client_id: client_id.clone(),
+            client_secret: None,
+            authorize_endpoint,
+            token_endpoint,
+            scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
+            // "redirect=127.0.0.1" must precede "redirect_uri" to prevent NextJS
+            // host-rewriting on id.kick.com.
+            authorize_pre_redirect_params: vec![("redirect".to_owned(), "127.0.0.1".to_owned())],
+            authorize_trailing_params: Vec::new(),
+        });
         Self {
             client_id,
             http: reqwest::Client::new(),
-            authorize_endpoint,
-            token_endpoint,
             users_endpoint,
-            pending: None,
+            pkce,
         }
     }
 
     /// Binds a loopback listener, generates PKCE + state, stores the driver, and returns
     /// the URL the caller should open in the user's browser.
-    pub async fn start(&mut self) -> Result<LoopbackCode, KickAuthError> {
-        let driver = LocalCallbackDriver::bind().await?;
-        let auth_url = build_authorize_url(&self.authorize_endpoint, &self.client_id, &driver)?;
-        self.pending = Some(driver);
-        Ok(LoopbackCode { auth_url })
+    pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
+        let url = self.pkce.start(&[]).await?;
+        Ok(LoopbackCode {
+            auth_url: url.auth_url,
+        })
     }
 
     /// Consumes the pending driver, waits for the loopback callback, exchanges the code for a
@@ -111,98 +101,26 @@ impl KickAuthFlow {
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,
-    ) -> Result<KickAuthBundle, KickAuthError> {
-        let driver = self.pending.take().ok_or(KickAuthError::NotStarted)?;
-        let redirect_uri = driver.redirect_uri().to_owned();
-        let code_verifier = driver.code_verifier().to_owned();
-        let callback = driver.await_callback(timeout).await?;
-
-        let token = exchange_code(
-            &self.http,
-            &self.token_endpoint,
-            &self.client_id,
-            &callback.code,
-            &redirect_uri,
-            &code_verifier,
-        )
-        .await?;
+    ) -> Result<KickAuthBundle, PlatformError> {
+        let token = self.pkce.exchange(timeout).await?;
+        let refresh_token = token.refresh_token.ok_or_else(|| PlatformError::Auth {
+            reason: "Kick token exchange did not return a refresh_token".into(),
+        })?;
+        let expires_in = token.expires_in.unwrap_or(0);
 
         let user = fetch_user_info(&self.http, &self.users_endpoint, &token.access_token).await?;
 
-        let expires_at =
-            OffsetDateTime::now_utc() + time::Duration::seconds(token.expires_in as i64);
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::seconds(expires_in as i64);
 
         Ok(KickAuthBundle {
             access_token: token.access_token,
-            refresh_token: token.refresh_token,
+            refresh_token,
             user_id: user.user_id,
             username: user.name,
             client_id: self.client_id.clone(),
             expires_at,
         })
     }
-}
-
-fn build_authorize_url(
-    endpoint: &str,
-    client_id: &str,
-    driver: &LocalCallbackDriver,
-) -> Result<String, KickAuthError> {
-    let scope_string = KICK_SCOPES.join(" ");
-    // "redirect=127.0.0.1" must precede "redirect_uri" to prevent NextJS host-rewriting on id.kick.com.
-    let url = reqwest::Url::parse_with_params(
-        endpoint,
-        &[
-            ("response_type", "code"),
-            ("client_id", client_id),
-            ("redirect", "127.0.0.1"),
-            ("redirect_uri", driver.redirect_uri()),
-            ("scope", scope_string.as_str()),
-            ("state", driver.state()),
-            ("code_challenge", driver.code_challenge()),
-            ("code_challenge_method", "S256"),
-        ],
-    )
-    .map_err(|e| KickAuthError::Network(format!("invalid authorize endpoint URL: {e}")))?;
-    Ok(url.to_string())
-}
-
-#[derive(Debug, Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    refresh_token: String,
-    expires_in: u64,
-}
-
-async fn exchange_code(
-    http: &reqwest::Client,
-    token_endpoint: &str,
-    client_id: &str,
-    code: &str,
-    redirect_uri: &str,
-    code_verifier: &str,
-) -> Result<TokenResponse, KickAuthError> {
-    let resp = http
-        .post(token_endpoint)
-        .form(&[
-            ("client_id", client_id),
-            ("code", code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-        ])
-        .send()
-        .await
-        .map_err(|e| KickAuthError::Network(e.to_string()))?;
-
-    let status = resp.status().as_u16();
-    if status != 200 {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(KickAuthError::Http { status, body });
-    }
-    resp.json::<TokenResponse>()
-        .await
-        .map_err(|e| KickAuthError::Network(format!("token response parse failed: {e}")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -220,7 +138,7 @@ async fn fetch_user_info(
     http: &reqwest::Client,
     users_endpoint: &str,
     access_token: &str,
-) -> Result<UserRecord, KickAuthError> {
+) -> Result<UserRecord, PlatformError> {
     let resp = http
         .get(users_endpoint)
         .header(
@@ -229,24 +147,28 @@ async fn fetch_user_info(
         )
         .send()
         .await
-        .map_err(|e| KickAuthError::Network(e.to_string()))?;
+        .map_err(|e| PlatformError::Network {
+            reason: e.without_url().to_string(),
+        })?;
 
     let status = resp.status().as_u16();
     if status != 200 {
         let body = resp.text().await.unwrap_or_default();
-        return Err(KickAuthError::Http { status, body });
+        return Err(PlatformError::Http { status, body });
     }
 
     let parsed = resp
         .json::<UsersResponse>()
         .await
-        .map_err(|e| KickAuthError::Network(format!("users response parse failed: {e}")))?;
+        .map_err(|e| PlatformError::Network {
+            reason: format!("users response parse failed: {e}"),
+        })?;
 
     parsed
         .data
         .into_iter()
         .next()
-        .ok_or_else(|| KickAuthError::Http {
+        .ok_or_else(|| PlatformError::Http {
             status: 200,
             body: "users endpoint returned empty data array".to_owned(),
         })
@@ -275,7 +197,7 @@ fn resolve_client_id(
 mod tests {
     use super::*;
     use serde_json::json;
-    use wiremock::matchers::{body_string_contains, header, method, path};
+    use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
@@ -292,7 +214,7 @@ mod tests {
         };
         assert_eq!(authorize_url, KICK_AUTHORIZE_ENDPOINT);
         assert_eq!(token_endpoint, KICK_TOKEN_ENDPOINT);
-        assert_eq!(redirect_path, CALLBACK_REDIRECT_PATH);
+        assert_eq!(redirect_path, CALLBACK_PATH);
         // Why: a silently-dropped write scope breaks moderation / rewards / chat-send
         // features at runtime with an opaque 403. Pin each by literal string so an
         // accidental removal from KICK_SCOPES fails here, not in production.
@@ -346,95 +268,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authorize_url_contains_required_pkce_params() {
-        let driver = LocalCallbackDriver::bind().await.unwrap();
-        let url = build_authorize_url(KICK_AUTHORIZE_ENDPOINT, "test_client", &driver).unwrap();
+    async fn start_builds_authorize_url_with_kick_endpoint_and_redirect_quirk() {
+        let mut flow = KickAuthFlow::new("test_client".to_owned());
+        let url = flow.start().await.unwrap().auth_url;
         assert!(url.starts_with(KICK_AUTHORIZE_ENDPOINT));
-        assert!(url.contains("response_type=code"));
         assert!(url.contains("client_id=test_client"));
-        assert!(url.contains("code_challenge_method=S256"));
-        assert!(url.contains(&format!("code_challenge={}", driver.code_challenge())));
-        assert!(url.contains(&format!("state={}", driver.state())));
-        assert!(url.contains("scope="));
-        assert!(
-            !url.to_lowercase().contains("client_secret"),
-            "client_secret must not appear in authorize URL - public client PKCE"
-        );
-    }
-
-    #[tokio::test]
-    async fn authorize_url_contains_sacrificial_redirect_before_redirect_uri() {
-        let driver = LocalCallbackDriver::bind().await.unwrap();
-        let url = build_authorize_url(KICK_AUTHORIZE_ENDPOINT, "test_client", &driver).unwrap();
-        assert!(
-            url.contains("redirect=127.0.0.1"),
-            "sacrificial redirect param must be present in authorize URL"
-        );
+        assert!(!url.to_lowercase().contains("client_secret"));
         let redirect_pos = url.find("redirect=127.0.0.1").unwrap();
         let redirect_uri_pos = url.find("redirect_uri=").unwrap();
         assert!(
             redirect_pos < redirect_uri_pos,
             "redirect=127.0.0.1 must precede redirect_uri in the URL"
         );
-    }
-
-    #[tokio::test]
-    async fn exchange_code_sends_pkce_form_no_client_secret() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .and(body_string_contains("grant_type=authorization_code"))
-            .and(body_string_contains("code_verifier=verifier123"))
-            .and(body_string_contains("code=auth_code_xyz"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "kick_access_abc",
-                "refresh_token": "kick_refresh_xyz",
-                "token_type": "bearer",
-                "expires_in": 3600,
-            })))
-            .mount(&server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let token_url = format!("{}/token", server.uri());
-        let resp = exchange_code(
-            &http,
-            &token_url,
-            "test_client",
-            "auth_code_xyz",
-            "http://127.0.0.1:0/oauth/callback",
-            "verifier123",
-        )
-        .await
-        .unwrap();
-        assert_eq!(resp.access_token, "kick_access_abc");
-        assert_eq!(resp.refresh_token, "kick_refresh_xyz");
-    }
-
-    #[tokio::test]
-    async fn exchange_code_propagates_http_error_on_4xx() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
-            )
-            .mount(&server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let token_url = format!("{}/token", server.uri());
-        let err = exchange_code(
-            &http,
-            &token_url,
-            "test_client",
-            "bad_code",
-            "http://127.0.0.1:0/oauth/callback",
-            "verifier",
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, KickAuthError::Http { status: 400, .. }));
     }
 
     #[tokio::test]
@@ -471,7 +316,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(err, KickAuthError::Http { status: 200, .. }),
+            matches!(err, PlatformError::Http { status: 200, .. }),
             "empty data array must yield an Http error"
         );
     }
@@ -490,7 +335,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(err, KickAuthError::Http { status: 401, .. }),
+            matches!(err, PlatformError::Http { status: 401, .. }),
             "401 from users endpoint must yield Http error"
         );
     }

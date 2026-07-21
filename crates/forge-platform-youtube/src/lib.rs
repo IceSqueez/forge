@@ -20,8 +20,7 @@ pub mod viewer_poll;
 pub use active_broadcast_id::ActiveBroadcastIdHandle;
 pub use auth::{
     GOOGLE_AUTHORIZE_ENDPOINT, GOOGLE_TOKEN_ENDPOINT, GoogleAuthFlow, LoopbackCode,
-    YOUTUBE_BROADCASTER_SCOPES, YoutubeAuthBundle, YoutubeAuthError, client_credentials,
-    youtube_auth_flow,
+    YOUTUBE_BROADCASTER_SCOPES, YoutubeAuthBundle, client_credentials, youtube_auth_flow,
 };
 pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
 pub use chat_platform::YoutubePlatform;

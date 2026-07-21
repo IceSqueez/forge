@@ -1,37 +1,50 @@
 use std::sync::Arc;
 
 use forge_platform_core::PlatformError;
+use forge_platform_core::auth::{
+    PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
+};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
-use serde::Deserialize;
 use time::{Duration, OffsetDateTime};
 
 use crate::auth::KickAuthBundle;
 use crate::credentials::{CREDENTIAL_KEY, KickCredentials};
 
 const PLATFORM: &str = "kick";
-const REFRESH_BUFFER: Duration = Duration::minutes(5);
+const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
 
 pub struct KickCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
-    client: reqwest::Client,
-    client_id: String,
-    refresh_endpoint: String,
+    refresher: PkceRefresher,
 }
 
 impl KickCredentialsManager {
-    pub fn new(repo: Arc<dyn CredentialsRepo>, client: reqwest::Client, client_id: String) -> Self {
-        Self {
-            repo,
-            client,
+    pub fn new(repo: Arc<dyn CredentialsRepo>, client_id: String) -> Self {
+        Self::with_refresh_endpoint(repo, client_id, crate::auth::KICK_TOKEN_ENDPOINT.to_owned())
+    }
+
+    fn with_refresh_endpoint(
+        repo: Arc<dyn CredentialsRepo>,
+        client_id: String,
+        refresh_endpoint: String,
+    ) -> Self {
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: PLATFORM.to_owned(),
             client_id,
-            refresh_endpoint: crate::auth::KICK_TOKEN_ENDPOINT.to_owned(),
-        }
+            client_secret: None,
+            token_endpoint: refresh_endpoint,
+            reauth_policy: ReauthPolicy::AnyClientError,
+        });
+        Self { repo, refresher }
     }
 
     #[cfg(test)]
-    pub(crate) fn with_refresh_endpoint(mut self, url: String) -> Self {
-        self.refresh_endpoint = url;
-        self
+    pub(crate) fn for_test(
+        repo: Arc<dyn CredentialsRepo>,
+        client_id: String,
+        refresh_endpoint: String,
+    ) -> Self {
+        Self::with_refresh_endpoint(repo, client_id, refresh_endpoint)
     }
 
     /// Returns `None` if no credentials row exists for this account.
@@ -73,34 +86,8 @@ impl KickCredentialsManager {
     /// `Err(PlatformError::ReauthRequired)` on 400 or 401 from the upstream.
     pub async fn refresh(&self, refresh_token: &str) -> Result<KickCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
-
-        let response = self
-            .client
-            .post(&self.refresh_endpoint)
-            .form(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token),
-                ("client_id", self.client_id.as_str()),
-            ])
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
-            })?;
-
-        let status = response.status().as_u16();
-        if status != 200 {
-            let body = response.text().await.unwrap_or_default();
-            if status == 400 || status == 401 {
-                return Err(reauth_err());
-            }
-            return Err(PlatformError::Http { status, body });
-        }
-
-        let body_text = response.text().await.map_err(|e| PlatformError::Network {
-            reason: e.to_string(),
-        })?;
-        let parsed: RefreshResponse = serde_json::from_str(&body_text)?;
+        let parsed = self.refresher.refresh(refresh_token).await?;
+        let expires_in = parsed.expires_in.unwrap_or(0);
 
         let updated = KickCredentials {
             access_token: parsed.access_token,
@@ -110,7 +97,7 @@ impl KickCredentialsManager {
             user_id: existing.user_id,
             username: existing.username,
             client_id: existing.client_id,
-            expires_at: OffsetDateTime::now_utc() + Duration::seconds(parsed.expires_in as i64),
+            expires_at: OffsetDateTime::now_utc() + Duration::seconds(expires_in as i64),
         };
         self.persist(&updated).await?;
         Ok(updated)
@@ -141,13 +128,6 @@ fn reauth_err() -> PlatformError {
     PlatformError::ReauthRequired {
         platform: PLATFORM.to_owned(),
     }
-}
-
-#[derive(Deserialize)]
-struct RefreshResponse {
-    access_token: String,
-    expires_in: u64,
-    refresh_token: Option<String>,
 }
 
 #[cfg(test)]
@@ -244,8 +224,11 @@ mod tests {
         repo: Arc<dyn CredentialsRepo>,
         server: &MockServer,
     ) -> KickCredentialsManager {
-        KickCredentialsManager::new(repo, reqwest::Client::new(), "test_cid".to_owned())
-            .with_refresh_endpoint(format!("{}/token", server.uri()))
+        KickCredentialsManager::for_test(
+            repo,
+            "test_cid".to_owned(),
+            format!("{}/token", server.uri()),
+        )
     }
 
     #[tokio::test]

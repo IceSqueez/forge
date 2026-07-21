@@ -3,21 +3,21 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
+use forge_platform_core::auth::{
+    PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
+};
 use forge_storage::{CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
-use serde::Deserialize;
 
 use crate::auth::TWITCH_TOKEN_ENDPOINT;
 use crate::credentials::{StoredCredential, load, store_credential};
 
 const PLATFORM: &str = "twitch";
-const REFRESH_BUFFER: Duration = Duration::from_secs(5 * 60);
+const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
 
 pub struct TwitchCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
-    client: reqwest::Client,
-    client_id: String,
-    refresh_endpoint: String,
+    refresher: PkceRefresher,
 }
 
 impl TwitchCredentialsManager {
@@ -30,12 +30,14 @@ impl TwitchCredentialsManager {
         client_id: String,
         refresh_endpoint: String,
     ) -> Self {
-        Self {
-            repo,
-            client: reqwest::Client::new(),
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: PLATFORM.to_owned(),
             client_id,
-            refresh_endpoint,
-        }
+            client_secret: None,
+            token_endpoint: refresh_endpoint,
+            reauth_policy: ReauthPolicy::AnyClientError,
+        });
+        Self { repo, refresher }
     }
 
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
@@ -69,34 +71,7 @@ impl TwitchCredentialsManager {
         refresh_token: &OAuthToken,
     ) -> Result<StoredCredential, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
-
-        let response = self
-            .client
-            .post(&self.refresh_endpoint)
-            .form(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token.expose()),
-                ("client_id", self.client_id.as_str()),
-            ])
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        let status = response.status().as_u16();
-        if status != 200 {
-            let body = response.text().await.unwrap_or_default();
-            if status == 400 || status == 401 {
-                return Err(reauth_err());
-            }
-            return Err(PlatformError::Http { status, body });
-        }
-
-        let body = response.text().await.map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
-        let parsed: RefreshResponse = serde_json::from_str(&body)?;
+        let parsed = self.refresher.refresh(refresh_token.expose()).await?;
 
         let renewed = StoredCredential {
             access_token: OAuthToken::new(parsed.access_token),
@@ -158,13 +133,6 @@ fn reauth_err() -> PlatformError {
     PlatformError::ReauthRequired {
         platform: PLATFORM.to_owned(),
     }
-}
-
-#[derive(Deserialize)]
-struct RefreshResponse {
-    access_token: String,
-    expires_in: Option<u64>,
-    refresh_token: Option<String>,
 }
 
 #[cfg(test)]

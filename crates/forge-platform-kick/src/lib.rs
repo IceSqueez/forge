@@ -19,9 +19,7 @@ pub mod sub_actions;
 pub mod triggers;
 pub mod viewer_poll;
 
-pub use auth::{
-    KickAuthBundle, KickAuthError, KickAuthFlow, LoopbackCode, client_credentials, kick_auth_flow,
-};
+pub use auth::{KickAuthBundle, KickAuthFlow, LoopbackCode, client_credentials, kick_auth_flow};
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
 pub use capabilities::kick_capabilities;
 pub use channel::{ChannelSnapshot, KickChannel};

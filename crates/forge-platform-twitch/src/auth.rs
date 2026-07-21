@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use forge_platform_core::auth::LocalCallbackDriver;
+use forge_platform_core::auth::{CALLBACK_PATH, PkceClientConfig, PkceFlow};
 use forge_platform_core::{AuthFlow, PlatformError};
 use forge_types::OAuthToken;
-use serde::Deserialize;
 use twitch_api::HelixClient;
 use twitch_api::twitch_oauth2::{AccessToken, ClientId, TwitchToken, UserToken};
 
@@ -63,13 +62,11 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "channel:manage:guest_star",
 ];
 
-const CALLBACK_REDIRECT_PATH: &str = "/oauth/callback";
-
 pub fn twitch_auth_flow() -> AuthFlow {
     AuthFlow::LocalCallback {
         authorize_url: TWITCH_AUTHORIZE_ENDPOINT.to_owned(),
         token_endpoint: TWITCH_TOKEN_ENDPOINT.to_owned(),
-        redirect_path: CALLBACK_REDIRECT_PATH.to_owned(),
+        redirect_path: CALLBACK_PATH.to_owned(),
         scopes: TWITCH_BROADCASTER_SCOPES
             .iter()
             .map(|s| (*s).to_owned())
@@ -115,11 +112,8 @@ impl std::fmt::Debug for TwitchAuthBundle {
 
 pub struct TwitchAuthFlow {
     client_id: String,
-    http: reqwest::Client,
     helix: HelixClient<'static, reqwest::Client>,
-    authorize_endpoint: String,
-    token_endpoint: String,
-    pending: Option<LocalCallbackDriver>,
+    pkce: PkceFlow,
 }
 
 impl TwitchAuthFlow {
@@ -136,15 +130,23 @@ impl TwitchAuthFlow {
         authorize_endpoint: String,
         token_endpoint: String,
     ) -> Self {
-        let http = reqwest::Client::new();
-        let helix = HelixClient::with_client(http.clone());
-        Self {
-            client_id,
-            http,
-            helix,
+        let helix = HelixClient::with_client(reqwest::Client::new());
+        let pkce = PkceFlow::new(PkceClientConfig {
+            client_id: client_id.clone(),
+            client_secret: None,
             authorize_endpoint,
             token_endpoint,
-            pending: None,
+            scopes: TWITCH_BROADCASTER_SCOPES
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+            authorize_pre_redirect_params: Vec::new(),
+            authorize_trailing_params: Vec::new(),
+        });
+        Self {
+            client_id,
+            helix,
+            pkce,
         }
     }
 
@@ -152,10 +154,10 @@ impl TwitchAuthFlow {
     /// returns the URL the caller should open in the user's browser. Subsequent
     /// `wait_for_authorization` will consume the stored driver.
     pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
-        let driver = LocalCallbackDriver::bind().await?;
-        let auth_url = build_authorize_url(&self.authorize_endpoint, &self.client_id, &driver)?;
-        self.pending = Some(driver);
-        Ok(LoopbackCode { auth_url })
+        let url = self.pkce.start(&[]).await?;
+        Ok(LoopbackCode {
+            auth_url: url.auth_url,
+        })
     }
 
     /// Consumes the pending driver, waits for the loopback callback, exchanges
@@ -165,22 +167,7 @@ impl TwitchAuthFlow {
         &mut self,
         timeout: Duration,
     ) -> Result<TwitchAuthBundle, PlatformError> {
-        let driver = self.pending.take().ok_or_else(|| PlatformError::Auth {
-            reason: "wait_for_authorization called before start".into(),
-        })?;
-        let redirect_uri = driver.redirect_uri().to_owned();
-        let code_verifier = driver.code_verifier().to_owned();
-        let callback = driver.await_callback(timeout).await?;
-
-        let token_response = exchange_code(
-            &self.http,
-            &self.token_endpoint,
-            &self.client_id,
-            &callback.code,
-            &redirect_uri,
-            &code_verifier,
-        )
-        .await?;
+        let token_response = self.pkce.exchange(timeout).await?;
 
         let access = AccessToken::new(token_response.access_token.clone());
         let user_token = UserToken::from_existing(&self.helix, access, None, None)
@@ -213,72 +200,6 @@ impl TwitchAuthFlow {
             expires_at,
         })
     }
-}
-
-fn build_authorize_url(
-    endpoint: &str,
-    client_id: &str,
-    driver: &LocalCallbackDriver,
-) -> Result<String, PlatformError> {
-    let scope_string = TWITCH_BROADCASTER_SCOPES.join(" ");
-    let url = reqwest::Url::parse_with_params(
-        endpoint,
-        &[
-            ("response_type", "code"),
-            ("client_id", client_id),
-            ("redirect_uri", driver.redirect_uri()),
-            ("scope", scope_string.as_str()),
-            ("state", driver.state()),
-            ("code_challenge", driver.code_challenge()),
-            ("code_challenge_method", "S256"),
-        ],
-    )
-    .map_err(|e| PlatformError::Auth {
-        reason: format!("invalid authorize endpoint URL: {e}"),
-    })?;
-    Ok(url.into())
-}
-
-#[derive(Debug, Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    refresh_token: Option<String>,
-    expires_in: Option<u64>,
-}
-
-async fn exchange_code(
-    http: &reqwest::Client,
-    token_endpoint: &str,
-    client_id: &str,
-    code: &str,
-    redirect_uri: &str,
-    code_verifier: &str,
-) -> Result<TokenResponse, PlatformError> {
-    let resp = http
-        .post(token_endpoint)
-        .form(&[
-            ("client_id", client_id),
-            ("code", code),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-            ("code_verifier", code_verifier),
-        ])
-        .send()
-        .await
-        .map_err(|e| PlatformError::Network {
-            reason: e.without_url().to_string(),
-        })?;
-
-    let status = resp.status().as_u16();
-    if status != 200 {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(PlatformError::Http { status, body });
-    }
-    resp.json::<TokenResponse>()
-        .await
-        .map_err(|e| PlatformError::Network {
-            reason: format!("token response parse failed: {e}"),
-        })
 }
 
 fn expires_at_from_token(token: &UserToken) -> Option<std::time::SystemTime> {
@@ -387,9 +308,6 @@ where
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use serde_json::json;
-    use wiremock::matchers::{body_string_contains, method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn twitch_auth_flow_yields_local_callback_variant() {
@@ -405,7 +323,7 @@ mod tests {
         };
         assert_eq!(authorize_url, TWITCH_AUTHORIZE_ENDPOINT);
         assert_eq!(token_endpoint, TWITCH_TOKEN_ENDPOINT);
-        assert_eq!(redirect_path, CALLBACK_REDIRECT_PATH);
+        assert_eq!(redirect_path, CALLBACK_PATH);
         assert_eq!(
             scopes,
             TWITCH_BROADCASTER_SCOPES
@@ -448,116 +366,14 @@ mod tests {
     fn client_id_treats_empty_compile_time_as_absent() {
         assert_eq!(resolve_client_id(None, Some("")), None);
     }
-
     #[tokio::test]
-    async fn authorize_url_contains_required_pkce_params() {
-        let driver = LocalCallbackDriver::bind().await.unwrap();
-        let url = build_authorize_url(TWITCH_AUTHORIZE_ENDPOINT, "test_client", &driver).unwrap();
+    async fn start_builds_authorize_url_with_twitch_endpoint_client_id_and_no_secret() {
+        let mut flow = TwitchAuthFlow::new("test_client".to_owned());
+        let url = flow.start().await.unwrap().auth_url;
         assert!(url.starts_with(TWITCH_AUTHORIZE_ENDPOINT));
-        assert!(url.contains("response_type=code"));
         assert!(url.contains("client_id=test_client"));
         assert!(url.contains("code_challenge_method=S256"));
-        assert!(url.contains(&format!("code_challenge={}", driver.code_challenge())));
-        assert!(url.contains(&format!("state={}", driver.state())));
-        assert!(url.contains("scope="));
         assert!(!url.to_lowercase().contains("client_secret"));
-    }
-
-    #[tokio::test]
-    async fn exchange_code_sends_pkce_form_and_parses_token() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .and(body_string_contains("grant_type=authorization_code"))
-            .and(body_string_contains("code_verifier=verifier123"))
-            .and(body_string_contains("code=auth_code_xyz"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "twitch_access_abc",
-                "token_type": "bearer",
-                "scope": ["chat:read"],
-                "expires_in": 14400,
-            })))
-            .mount(&server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let token_url = format!("{}/token", server.uri());
-        let resp = exchange_code(
-            &http,
-            &token_url,
-            "test_client",
-            "auth_code_xyz",
-            "http://127.0.0.1:0/oauth/callback",
-            "verifier123",
-        )
-        .await
-        .unwrap();
-        assert_eq!(resp.access_token, "twitch_access_abc");
-    }
-
-    /// RFC-091: token exchange now captures refresh_token and expires_in.
-    /// Verify both survive the parse and are correctly typed (Option).
-    #[tokio::test]
-    async fn exchange_code_captures_refresh_token_and_lifetime() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "twitch_access_xyz",
-                "refresh_token": "twitch_refresh_xyz",
-                "expires_in": 14400,
-                "token_type": "bearer",
-                "scope": ["chat:read"],
-            })))
-            .mount(&server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let resp = exchange_code(
-            &http,
-            &format!("{}/token", server.uri()),
-            "test_client",
-            "code_abc",
-            "http://127.0.0.1:0/oauth/callback",
-            "verifier_abc",
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(resp.access_token, "twitch_access_xyz");
-        assert_eq!(resp.refresh_token.as_deref(), Some("twitch_refresh_xyz"));
-        assert_eq!(resp.expires_in, Some(14400));
-    }
-
-    /// RFC-091: when the upstream response omits refresh_token and expires_in,
-    /// both fields deserialise to None (not a parse error).
-    #[tokio::test]
-    async fn exchange_code_handles_response_without_refresh_token_or_lifetime() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "access_only",
-                "token_type": "bearer",
-            })))
-            .mount(&server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let resp = exchange_code(
-            &http,
-            &format!("{}/token", server.uri()),
-            "client",
-            "code",
-            "http://127.0.0.1:0/callback",
-            "verifier",
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(resp.access_token, "access_only");
-        assert!(resp.refresh_token.is_none());
-        assert!(resp.expires_in.is_none());
     }
 
     #[test]
@@ -579,50 +395,5 @@ mod tests {
         let msg = sanitize_validation_error(&e);
         assert!(!msg.contains("FAKE_BEARER_VALUE_123"));
         assert!(!msg.is_empty());
-    }
-
-    #[tokio::test]
-    async fn exchange_code_network_error_strips_url() {
-        let http = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(1))
-            .build()
-            .unwrap();
-        let err = exchange_code(
-            &http,
-            "https://192.0.2.1/token",
-            "client",
-            "code",
-            "http://127.0.0.1:0/callback",
-            "verifier",
-        )
-        .await
-        .unwrap_err();
-        assert!(!format!("{err}").contains("192.0.2.1"));
-    }
-
-    #[tokio::test]
-    async fn exchange_code_propagates_http_error_on_4xx() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
-            )
-            .mount(&server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let token_url = format!("{}/token", server.uri());
-        let err = exchange_code(
-            &http,
-            &token_url,
-            "test_client",
-            "bad_code",
-            "http://127.0.0.1:0/oauth/callback",
-            "verifier",
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(err, PlatformError::Http { status: 400, .. }));
     }
 }

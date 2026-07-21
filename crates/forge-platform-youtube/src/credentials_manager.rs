@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use forge_platform_core::PlatformError;
+use forge_platform_core::auth::{PkceRefresher, REFRESH_BUFFER_SECS};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use time::{Duration, OffsetDateTime};
 
@@ -9,16 +10,17 @@ use crate::auth::{GoogleAuthFlow, YoutubeAuthBundle};
 use crate::credentials::{CREDENTIAL_KEY, YoutubeCredentials};
 
 const PLATFORM: &str = "youtube";
-const REFRESH_BUFFER: Duration = Duration::minutes(5);
+const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
 
 pub struct YoutubeCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
-    google: GoogleAuthFlow,
+    refresher: PkceRefresher,
 }
 
 impl YoutubeCredentialsManager {
     pub fn new(repo: Arc<dyn CredentialsRepo>, google: GoogleAuthFlow) -> Self {
-        Self { repo, google }
+        let refresher = PkceRefresher::new(google.refresh_config());
+        Self { repo, refresher }
     }
 
     /// Returns `None` if no credentials row exists for this account.
@@ -72,44 +74,8 @@ impl YoutubeCredentialsManager {
     /// preserved. Returns `Err(PlatformError::ReauthRequired)` on `invalid_grant`.
     pub async fn refresh(&self, refresh_token: &str) -> Result<YoutubeCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
-
-        let response = self
-            .google
-            .http_client()
-            .post(self.google.token_endpoint())
-            .form(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token),
-                ("client_id", existing.client_id.as_str()),
-                ("client_secret", self.google.client_secret()),
-            ])
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
-            })?;
-
-        let status = response.status().as_u16();
-
-        if status == 400 {
-            let body = response.text().await.unwrap_or_default();
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body)
-                && val.get("error").and_then(|v| v.as_str()) == Some("invalid_grant")
-            {
-                return Err(reauth_err());
-            }
-            return Err(PlatformError::Http { status, body });
-        }
-
-        if status != 200 {
-            let body = response.text().await.unwrap_or_default();
-            return Err(PlatformError::Http { status, body });
-        }
-
-        let body = response.text().await.map_err(|e| PlatformError::Network {
-            reason: e.to_string(),
-        })?;
-        let parsed: RefreshResponse = serde_json::from_str(&body)?;
+        let parsed = self.refresher.refresh(refresh_token).await?;
+        let expires_in = parsed.expires_in.unwrap_or(0);
 
         let updated = YoutubeCredentials {
             access_token: parsed.access_token,
@@ -119,7 +85,7 @@ impl YoutubeCredentialsManager {
             client_id: existing.client_id,
             channel_id: existing.channel_id,
             channel_title: existing.channel_title,
-            expires_at: OffsetDateTime::now_utc() + Duration::seconds(parsed.expires_in as i64),
+            expires_at: OffsetDateTime::now_utc() + Duration::seconds(expires_in as i64),
         };
         self.persist(&updated).await?;
         Ok(updated)
@@ -150,13 +116,6 @@ fn reauth_err() -> PlatformError {
     PlatformError::ReauthRequired {
         platform: PLATFORM.to_owned(),
     }
-}
-
-#[derive(serde::Deserialize)]
-struct RefreshResponse {
-    access_token: String,
-    expires_in: u64,
-    refresh_token: Option<String>,
 }
 
 #[cfg(test)]

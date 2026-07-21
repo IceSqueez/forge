@@ -5,8 +5,9 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BulletItem, BulletKind, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius,
-    Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, ghost_button_with_icon, icon, overlay,
-    radius, spacing, toggle, tr, type_to_confirm,
+    Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, field_hint, field_title,
+    ghost_button_with_icon, icon, overlay, radius, setting_row, spacing, toggle, tr,
+    type_to_confirm,
 };
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
@@ -537,44 +538,6 @@ impl SettingsWebSocketView {
             .child(self.save_indicator(palette))
     }
 
-    fn enable_row(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let labels = div()
-            .flex()
-            .flex_col()
-            .gap(px(2.0))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_ws_enable_label")),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_ws_enable_description")),
-            );
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Md, density))
-            .child(labels)
-            .child(toggle(self.enable_server, palette).on_click(
-                "settings-ws-enable",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enable(cx)),
-            ))
-    }
-
     fn bind_section(
         &self,
         palette: &ForgePalette,
@@ -1080,7 +1043,16 @@ impl Render for SettingsWebSocketView {
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_subtitle")),
             )
-            .child(self.enable_row(&palette, density, cx))
+            .child(setting_row(
+                tr!("settings_ws_enable_label"),
+                Some(tr!("settings_ws_enable_description").into()),
+                toggle(self.enable_server, &palette).on_click(
+                    "settings-ws-enable",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enable(cx)),
+                ),
+                &palette,
+                density,
+            ))
             .child(hline(palette.border_regular))
             .child(self.bind_section(&palette, density, cx))
             .child(hline(palette.border_regular))
@@ -1125,23 +1097,6 @@ fn lan_bind_bullets() -> Vec<BulletItem> {
         ),
         BulletItem::new(BulletKind::Info, tr!("settings_ws_lan_bullet_firewall")),
     ]
-}
-
-fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(FONT_SM)
-        .text_color(palette.text_primary)
-        .child(text.into())
-}
-
-fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.text_muted)
-        .child(text.into())
 }
 
 fn hline(color: Rgba) -> Div {

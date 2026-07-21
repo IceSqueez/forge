@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon,
-    InputEvent, Radius, Spacing, TextInput, icon, primary_button, radius, spacing, toggle, tr,
-    with_alpha,
+    InputEvent, Radius, Spacing, TextInput, icon, primary_button, radius, setting_row, spacing,
+    toggle, tr, with_alpha,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
@@ -457,39 +457,6 @@ impl SettingsScriptingView {
                     .child(icon(Icon::X, px(11.0), palette.text_muted)),
             )
     }
-
-    fn allow_local_row(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
-        let labels = div()
-            .flex()
-            .flex_col()
-            .gap(px(2.0))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("settings_scripting_allow_local_label")),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_scripting_allow_local_description")),
-            );
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Md, Density::Cozy))
-            .child(labels)
-            .child(toggle(self.allow_local, palette).on_click(
-                "settings-scripting-allow-local",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_allow_local(cx)),
-            ))
-    }
 }
 
 impl Render for SettingsScriptingView {
@@ -552,7 +519,16 @@ impl Render for SettingsScriptingView {
                 &palette,
                 density,
             ))
-            .child(self.allow_local_row(&palette, cx));
+            .child(setting_row(
+                tr!("settings_scripting_allow_local_label"),
+                Some(tr!("settings_scripting_allow_local_description").into()),
+                toggle(self.allow_local, &palette).on_click(
+                    "settings-scripting-allow-local",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_allow_local(cx)),
+                ),
+                &palette,
+                density,
+            ));
 
         if self.allow_local {
             http_section = http_section.child(

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ThemeId, badge,
-    breadcrumb, card, ghost_button_with_icon, icon, metric_card, primary_button,
-    primary_button_with_icon, radius, spacing, tr, with_alpha,
+    breadcrumb, card, field_hint, field_title, ghost_button_with_icon, icon, metric_card,
+    primary_button, primary_button_with_icon, radius, spacing, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -1036,25 +1036,6 @@ fn pane_header(
                 .text_color(palette.text_primary)
                 .child(title),
         )
-}
-
-fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    let text: SharedString = text.into();
-    div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(FONT_SM)
-        .text_color(palette.text_primary)
-        .child(text)
-}
-
-fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    let text: SharedString = text.into();
-    div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.text_muted)
-        .child(text)
 }
 
 fn info_row(

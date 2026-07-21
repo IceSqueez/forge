@@ -1,6 +1,7 @@
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, px,
 };
 
 use crate::icons::{Icon, icon, spinner};
@@ -26,6 +27,50 @@ pub fn field_label(
                 .text_color(palette.text_faint)
                 .child(label.into()),
         )
+        .child(control)
+}
+
+pub fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .font_family(DEFAULT_BODY_FAMILY)
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(FONT_SM)
+        .text_color(palette.text_primary)
+        .child(text.into())
+}
+
+pub fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .font_family(DEFAULT_BODY_FAMILY)
+        .text_size(FONT_XS)
+        .text_color(palette.text_muted)
+        .child(text.into())
+}
+
+const SETTING_LABEL_GAP: Pixels = px(2.0);
+
+pub fn setting_row(
+    title: impl Into<SharedString>,
+    hint: Option<SharedString>,
+    control: impl IntoElement,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
+    let mut labels = div()
+        .flex()
+        .flex_col()
+        .gap(SETTING_LABEL_GAP)
+        .child(field_title(title, palette));
+    if let Some(hint) = hint {
+        labels = labels.child(field_hint(hint, palette));
+    }
+
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(spacing(Spacing::Md, density))
+        .child(labels)
         .child(control)
 }
 

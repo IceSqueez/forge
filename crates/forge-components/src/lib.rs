@@ -38,7 +38,8 @@ pub use buttons::{
     primary_button_with_icon, secondary_button,
 };
 pub use cards::{
-    Card, EmptyState, RowCard, card, empty_state, field_label, metric_card, row_card, stat_row,
+    Card, EmptyState, RowCard, card, empty_state, field_hint, field_label, field_title,
+    metric_card, row_card, setting_row, stat_row,
 };
 pub use chat_row::{
     BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, badge_color, badge_label, chat_row,

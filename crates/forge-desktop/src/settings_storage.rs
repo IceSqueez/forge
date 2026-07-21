@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette,
-    Icon, InputEvent, Spacing, TextInput, card, icon, primary_button, spacing, tr,
+    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, ForgePalette, Icon,
+    InputEvent, Spacing, TextInput, card, field_hint, field_title, icon, primary_button, spacing,
+    tr,
 };
 use forge_storage::{
     DataProvider, SettingsRepo, chat_history_display_limit, chat_history_store_limit,
@@ -288,23 +289,6 @@ fn info_row(
                 .text_color(palette.text_muted)
                 .child(value.into()),
         )
-}
-
-fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(FONT_SM)
-        .text_color(palette.text_primary)
-        .child(text.into())
-}
-
-fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .text_size(FONT_XS)
-        .text_color(palette.text_muted)
-        .child(text.into())
 }
 
 #[cfg(test)]

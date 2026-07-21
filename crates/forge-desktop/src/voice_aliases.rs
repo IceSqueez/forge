@@ -738,6 +738,7 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let muted = row.blocked;
+        let row_key: SharedString = row.id.0.clone().into();
         let name_color = if muted {
             palette.text_muted
         } else {
@@ -838,18 +839,17 @@ impl VoiceAliasesView {
         } else {
             palette.success
         };
-        let mut preview = div().id(("va-preview", index)).flex().child(icon(
-            Icon::PlayerPlay,
-            ACTION_GLYPH,
-            preview_color,
-        ));
+        let mut preview = div()
+            .id((gpui::ElementId::from("va-preview"), row_key.clone()))
+            .flex()
+            .child(icon(Icon::PlayerPlay, ACTION_GLYPH, preview_color));
         if !muted {
             preview = preview
                 .cursor_pointer()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.preview(index)));
         }
         let edit = div()
-            .id(("va-edit", index))
+            .id((gpui::ElementId::from("va-edit"), row_key.clone()))
             .flex()
             .cursor_pointer()
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
@@ -857,7 +857,7 @@ impl VoiceAliasesView {
             }))
             .child(icon(Icon::Pencil, ACTION_GLYPH, palette.text_faint));
         let delete = div()
-            .id(("va-delete", index))
+            .id((gpui::ElementId::from("va-delete"), row_key.clone()))
             .flex()
             .cursor_pointer()
             .on_click(
@@ -877,7 +877,7 @@ impl VoiceAliasesView {
 
         let hover_bg = with_alpha(palette.border_regular, 0.08);
         let mut root = div()
-            .id(("va-row", index))
+            .id((gpui::ElementId::from("va-row"), row_key.clone()))
             .w_full()
             .flex()
             .items_center()

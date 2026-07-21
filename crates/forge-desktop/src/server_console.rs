@@ -70,6 +70,7 @@ enum ClientLiveness {
 
 #[derive(Debug, Clone)]
 struct OwnedClientRow {
+    key: String,
     identification: String,
     client_type_label: String,
     liveness: ClientLiveness,
@@ -1158,7 +1159,10 @@ impl ServerConsoleView {
                     )
                     .child(
                         div()
-                            .id(("srv-overlay-copy", index))
+                            .id((
+                                gpui::ElementId::from("srv-overlay-copy"),
+                                entry.name.clone(),
+                            ))
                             .flex()
                             .items_center()
                             .gap(spacing(Spacing::Xxs, density))
@@ -1173,7 +1177,10 @@ impl ServerConsoleView {
         }
 
         div()
-            .id(("srv-overlay-entry", index))
+            .id((
+                gpui::ElementId::from("srv-overlay-entry"),
+                entry.name.clone(),
+            ))
             .w_full()
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Xs, density))
@@ -1331,7 +1338,7 @@ impl ServerConsoleView {
             );
 
         let x_button = div()
-            .id(("srv-disconnect", index))
+            .id((gpui::ElementId::from("srv-disconnect"), row.key.clone()))
             .flex()
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xxs, density))
@@ -1797,6 +1804,7 @@ fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow 
         ClientLiveness::Idle
     };
     OwnedClientRow {
+        key: client.remote_addr.clone(),
         identification: client.identification.clone(),
         client_type_label: format!("{} · {}", client.remote_addr, client.client_type),
         liveness,

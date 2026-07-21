@@ -101,6 +101,7 @@ impl SourceHue {
 
 #[derive(Clone, Debug)]
 pub struct HomeEvent {
+    pub id: SharedString,
     pub time: SharedString,
     pub source: SharedString,
     pub name: SharedString,
@@ -116,6 +117,7 @@ impl HomeEvent {
         let ts = event.timestamp;
         let time = format!("{:02}:{:02}:{:02}", ts.hour(), ts.minute(), ts.second());
         Some(Self {
+            id: event.id.to_string().into(),
             time: time.into(),
             source: source_label(event.source).into(),
             name: event.kind.clone().into(),

@@ -476,7 +476,7 @@ impl TtsEnginesView {
             );
 
         div()
-            .id(("tts-engine", index))
+            .id((gpui::ElementId::from("tts-engine"), engine.id.clone()))
             .w_full()
             .flex()
             .items_center()

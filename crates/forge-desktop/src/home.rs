@@ -665,7 +665,6 @@ impl HomeView {
 
     fn event_row(
         &self,
-        idx: usize,
         ev: HomeEvent,
         has_border: bool,
         palette: &ForgePalette,
@@ -736,7 +735,7 @@ impl HomeView {
 
         let hover_bg = palette.shell;
         let mut row = div()
-            .id(("home-event", idx))
+            .id((gpui::ElementId::from("home-event"), ev.id.clone()))
             .w_full()
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
@@ -800,7 +799,7 @@ impl HomeView {
             let count = recent.len();
             let mut list = div().flex().flex_col();
             for (i, ev) in recent.into_iter().enumerate() {
-                list = list.child(self.event_row(i, ev, i + 1 < count, palette, cx));
+                list = list.child(self.event_row(ev, i + 1 < count, palette, cx));
             }
             list.into_any_element()
         };

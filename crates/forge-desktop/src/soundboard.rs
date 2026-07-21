@@ -1156,7 +1156,7 @@ impl SoundboardView {
         );
 
         let mut pad = div()
-            .id(("sb-pad", index))
+            .id((gpui::ElementId::from("sb-pad"), id.to_string()))
             .relative()
             .flex()
             .flex_col()
@@ -1284,8 +1284,7 @@ impl SoundboardView {
         let cards: Vec<AnyElement> = self
             .importable
             .iter()
-            .enumerate()
-            .map(|(idx, entry)| self.render_library_pad(idx, *entry, palette, cx))
+            .map(|entry| self.render_library_pad(*entry, palette, cx))
             .collect();
         Some(
             div()
@@ -1301,7 +1300,6 @@ impl SoundboardView {
 
     fn render_library_pad(
         &self,
-        index: usize,
         entry: BuiltinSoundEntry,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -1310,7 +1308,10 @@ impl SoundboardView {
         let glyph =
             glyph_for_name(entry.icon_name).unwrap_or_else(|| category_glyph(entry.category));
         div()
-            .id(("sb-lib", index))
+            .id((
+                gpui::ElementId::from("sb-lib"),
+                SharedString::new_static(entry.builtin_id),
+            ))
             .flex()
             .flex_col()
             .cursor_pointer()

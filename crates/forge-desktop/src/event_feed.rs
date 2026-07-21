@@ -60,11 +60,48 @@ pub struct EventFeedView {
     active_filter: EventFilter,
     /// `None` falls back to the newest row, keeping the inspector populated.
     selected: Option<gpui::SharedString>,
+    visible: Vec<EventItem>,
+    downstream: HashMap<gpui::SharedString, u32>,
+    matched: HashSet<gpui::SharedString>,
     auto_scroll: bool,
     inspector_width: f32,
     list_scroll: ScrollHandle,
     rt_handle: tokio::runtime::Handle,
     _log_obs: Subscription,
+}
+
+fn compute_projection(
+    log: &EventLog,
+    filter: EventFilter,
+) -> (
+    Vec<EventItem>,
+    HashMap<gpui::SharedString, u32>,
+    HashSet<gpui::SharedString>,
+) {
+    let mut downstream: HashMap<gpui::SharedString, u32> = HashMap::new();
+    let mut matched: HashSet<gpui::SharedString> = HashSet::new();
+    for item in log.items() {
+        match item.kind.as_ref() {
+            "action.start" => {
+                if let Some(cb) = &item.caused_by {
+                    *downstream.entry(cb.clone()).or_default() += 1;
+                }
+            }
+            "command.matched" => {
+                if let Some(cb) = &item.caused_by {
+                    matched.insert(cb.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    let visible: Vec<EventItem> = log
+        .items()
+        .iter()
+        .filter(|item| item.matches(filter))
+        .cloned()
+        .collect();
+    (visible, downstream, matched)
 }
 
 impl EventFeedView {
@@ -76,10 +113,15 @@ impl EventFeedView {
         let log_obs = cx.observe(&log, Self::on_log_changed);
         let list_scroll = ScrollHandle::new();
         list_scroll.scroll_to_bottom();
+        let (visible, downstream, matched) =
+            compute_projection(log.read(cx), EventFilter::default());
         Self {
             log,
             active_filter: EventFilter::default(),
             selected: None,
+            visible,
+            downstream,
+            matched,
             auto_scroll: true,
             inspector_width: INSPECTOR_INITIAL,
             list_scroll,
@@ -89,6 +131,7 @@ impl EventFeedView {
     }
 
     fn on_log_changed(&mut self, _log: Entity<EventLog>, cx: &mut Context<Self>) {
+        self.rebuild_projection(cx);
         if self.auto_scroll {
             self.list_scroll.scroll_to_bottom();
         }
@@ -97,7 +140,18 @@ impl EventFeedView {
 
     fn set_filter(&mut self, filter: EventFilter, cx: &mut Context<Self>) {
         self.active_filter = filter;
+        self.rebuild_projection(cx);
         cx.notify();
+    }
+
+    fn rebuild_projection(&mut self, cx: &mut Context<Self>) {
+        let (visible, downstream, matched) = {
+            let log = self.log.read(cx);
+            compute_projection(log, self.active_filter)
+        };
+        self.visible = visible;
+        self.downstream = downstream;
+        self.matched = matched;
     }
 
     fn select(&mut self, id: gpui::SharedString, cx: &mut Context<Self>) {
@@ -353,7 +407,6 @@ impl EventFeedView {
 
     fn render_row(
         &self,
-        idx: usize,
         item: &EventItem,
         selected: bool,
         tag: Option<gpui::SharedString>,
@@ -437,7 +490,7 @@ impl EventFeedView {
             }));
 
         let mut row = div()
-            .id(("event-row", idx))
+            .id((gpui::ElementId::from("event-row"), item.id.clone()))
             .w_full()
             .flex()
             .border_b(BORDER_THIN)
@@ -463,40 +516,12 @@ impl EventFeedView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let filter = self.active_filter;
-        let (visible, downstream, matched) = {
-            let log = self.log.read(cx);
-            let mut downstream: HashMap<gpui::SharedString, u32> = HashMap::new();
-            let mut matched: HashSet<gpui::SharedString> = HashSet::new();
-            for item in log.items() {
-                match item.kind.as_ref() {
-                    "action.start" => {
-                        if let Some(cb) = &item.caused_by {
-                            *downstream.entry(cb.clone()).or_default() += 1;
-                        }
-                    }
-                    "command.matched" => {
-                        if let Some(cb) = &item.caused_by {
-                            matched.insert(cb.clone());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            let visible: Vec<EventItem> = log
-                .items()
-                .iter()
-                .filter(|item| item.matches(filter))
-                .cloned()
-                .collect();
-            (visible, downstream, matched)
-        };
-
-        let empty = visible.is_empty();
+        let empty = self.visible.is_empty();
         let mut list = div().w_full().flex().flex_col();
-        for (idx, item) in visible.iter().enumerate() {
+        for item in self.visible.iter() {
             let is_sel = selected_id == Some(&item.id);
-            let tag = Self::outcome_tag(item, &downstream, &matched);
-            list = list.child(self.render_row(idx, item, is_sel, tag, palette, cx));
+            let tag = Self::outcome_tag(item, &self.downstream, &self.matched);
+            list = list.child(self.render_row(item, is_sel, tag, palette, cx));
         }
 
         let empty_note = empty.then(|| {

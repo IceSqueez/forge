@@ -133,6 +133,7 @@ pub struct GlobalsView {
     filter: GlobalsFilter,
     search: Entity<TextInput>,
     search_query: String,
+    visible: Vec<Global>,
     editor: Option<EditorState>,
     pending_delete: Option<SharedString>,
     inspecting: Option<Global>,
@@ -157,7 +158,7 @@ impl GlobalsView {
         let palette = cx.palette();
         let search = cx.new(|cx| search_input(tr!("globals_search_placeholder"), palette, cx));
 
-        let globals_obs = cx.observe(&globals, |_, _, cx| cx.notify());
+        let globals_obs = cx.observe(&globals, Self::on_globals_changed);
         let search_sub = cx.subscribe(&search, Self::on_search_event);
 
         let view = Self {
@@ -168,6 +169,7 @@ impl GlobalsView {
             filter: GlobalsFilter::default(),
             search,
             search_query: String::new(),
+            visible: Vec::new(),
             editor: None,
             pending_delete: None,
             inspecting: None,
@@ -238,6 +240,25 @@ impl GlobalsView {
         cx.notify();
     }
 
+    fn on_globals_changed(&mut self, _g: Entity<Globals>, cx: &mut Context<Self>) {
+        self.rebuild_visible(cx);
+        cx.notify();
+    }
+
+    fn rebuild_visible(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_query.trim().to_lowercase();
+        let rows: Vec<Global> = self
+            .globals
+            .read(cx)
+            .entries()
+            .iter()
+            .filter(|g| self.filter.keeps(g))
+            .filter(|g| query.is_empty() || g.name.to_lowercase().contains(&query))
+            .cloned()
+            .collect();
+        self.visible = rows;
+    }
+
     fn on_search_event(
         &mut self,
         _f: Entity<TextInput>,
@@ -246,12 +267,14 @@ impl GlobalsView {
     ) {
         if let InputEvent::Changed(text) = event {
             self.search_query = text.to_string();
+            self.rebuild_visible(cx);
             cx.notify();
         }
     }
 
     fn set_filter(&mut self, filter: GlobalsFilter, cx: &mut Context<Self>) {
         self.filter = filter;
+        self.rebuild_visible(cx);
         cx.notify();
     }
 
@@ -671,18 +694,6 @@ impl GlobalsView {
         cx.notify();
     }
 
-    fn visible_rows(&self, cx: &Context<Self>) -> Vec<Global> {
-        let query = self.search_query.trim().to_lowercase();
-        self.globals
-            .read(cx)
-            .entries()
-            .iter()
-            .filter(|g| self.filter.keeps(g))
-            .filter(|g| query.is_empty() || g.name.to_lowercase().contains(&query))
-            .cloned()
-            .collect()
-    }
-
     fn editor_saveable(&self, ed: &EditorState, cx: &Context<Self>) -> bool {
         let name = ed.name(cx);
         if name.is_empty() {
@@ -861,7 +872,7 @@ impl GlobalsView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let rows = self.visible_rows(cx);
+        let rows = &self.visible;
 
         let body = if rows.is_empty() {
             let caption: SharedString = if self.loading {
@@ -952,7 +963,7 @@ impl GlobalsView {
             px(9.5),
         ));
 
-        let value_cell = self.value_cell(idx, g, palette, cx);
+        let value_cell = self.value_cell(g, palette, cx);
 
         let modified_cell = div()
             .font_family(DEFAULT_BODY_FAMILY)
@@ -1158,7 +1169,6 @@ impl GlobalsView {
 
     fn value_cell(
         &self,
-        idx: usize,
         g: &Global,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -1176,14 +1186,14 @@ impl GlobalsView {
                 .child(text),
         );
         if complex {
-            let group: SharedString = format!("globals-inspect-{idx}").into();
+            let group: SharedString = format!("globals-inspect-{}", g.name).into();
             let hover_bg = palette.surface_overlay;
             let idle = palette.text_secondary;
             let active = palette.brand;
             let target = g.clone();
             cell = cell.child(
                 div()
-                    .id(("globals-inspect", idx))
+                    .id((gpui::ElementId::from("globals-inspect"), g.name.clone()))
                     .group(group.clone())
                     .flex()
                     .items_center()

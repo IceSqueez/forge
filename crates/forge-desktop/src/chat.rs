@@ -193,6 +193,7 @@ pub struct ChatView {
     hide_bots: bool,
     search_open: bool,
     search_query: String,
+    visible: Rc<Vec<ChatMessage>>,
     drawer_open: bool,
     drawer_width: Pixels,
     drawer_search: Entity<TextInput>,
@@ -280,7 +281,7 @@ impl ChatView {
 
         Self::spawn_viewer_refresh(viewer_repo, rt_handle.clone(), cx);
 
-        Self {
+        let mut this = Self {
             feed,
             home_stats,
             uptime_view,
@@ -295,6 +296,7 @@ impl ChatView {
             hide_bots: false,
             search_open: false,
             search_query: String::new(),
+            visible: Rc::new(Vec::new()),
             drawer_open: true,
             drawer_width: DRAWER_WIDTH,
             drawer_search,
@@ -319,7 +321,9 @@ impl ChatView {
             _drawer_search_sub: drawer_search_sub,
             _whisper_sub: whisper_sub,
             _reply_sub: reply_sub,
-        }
+        };
+        this.rebuild_visible(cx);
+        this
     }
 
     fn spawn_viewer_refresh(
@@ -364,7 +368,8 @@ impl ChatView {
 
     fn on_feed_changed(&mut self, feed: Entity<ChatFeed>, cx: &mut Context<Self>) {
         let len = feed.read(cx).messages().len();
-        self.sync_list_len(cx);
+        self.rebuild_visible(cx);
+        self.sync_list_len();
         if self.auto_scroll {
             self.chat_list.scroll_to_end();
             self.unread = 0;
@@ -378,17 +383,24 @@ impl ChatView {
         cx.notify();
     }
 
-    fn visible_count(&self, cx: &App) -> usize {
-        self.feed
+    fn rebuild_visible(&mut self, cx: &mut Context<Self>) {
+        let messages: Vec<ChatMessage> = self
+            .feed
             .read(cx)
             .messages()
             .iter()
             .filter(|m| self.row_visible(m))
-            .count()
+            .cloned()
+            .collect();
+        self.visible = Rc::new(messages);
     }
 
-    fn sync_list_len(&self, cx: &App) {
-        let count = self.visible_count(cx);
+    fn visible_count(&self) -> usize {
+        self.visible.len()
+    }
+
+    fn sync_list_len(&self) {
+        let count = self.visible_count();
         let current = self.chat_list.item_count();
         if count > current {
             self.chat_list.splice(current..current, count - current);
@@ -398,7 +410,8 @@ impl ChatView {
     }
 
     fn reset_chat_list(&mut self, cx: &mut Context<Self>) {
-        self.chat_list.reset(self.visible_count(cx));
+        self.rebuild_visible(cx);
+        self.chat_list.reset(self.visible_count());
         self.auto_scroll = true;
         self.unread = 0;
         self.last_seen_len = self.feed.read(cx).messages().len();
@@ -1221,15 +1234,7 @@ impl ChatView {
         let query = self.search_query.to_lowercase();
         let search_active = self.search_open && !query.is_empty();
 
-        let snapshot: Rc<Vec<ChatMessage>> = Rc::new(
-            self.feed
-                .read(cx)
-                .messages()
-                .iter()
-                .filter(|m| self.row_visible(m))
-                .cloned()
-                .collect(),
-        );
+        let snapshot: Rc<Vec<ChatMessage>> = self.visible.clone();
         let empty = snapshot.is_empty();
 
         let row_gap = spacing(Spacing::Xxs, density);
@@ -1240,7 +1245,7 @@ impl ChatView {
                 return div().into_any_element();
             };
             let data = ChatRow {
-                id: format!("chat-row-{ix}").into(),
+                id: msg.id.clone(),
                 timestamp: msg.timestamp.clone(),
                 platform: msg.platform,
                 badges: msg.badges.clone(),
@@ -1258,7 +1263,7 @@ impl ChatView {
             let has_user = !msg.username.is_empty();
             let view = view.clone();
             let row = chat_row(&pal, data).on_username_click(
-                ("chat-username", ix),
+                (gpui::ElementId::from("chat-username"), msg.id.clone()),
                 move |_: &ClickEvent, _, app| {
                     view.update(app, |this, cx| this.open_viewer(username.clone(), cx));
                 },

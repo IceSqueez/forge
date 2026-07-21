@@ -69,6 +69,16 @@ impl EventSubscription {
         }
     }
 
+    /// `Ok(None)` signals the channel is momentarily empty; the caller stops draining.
+    pub fn try_recv(&mut self) -> Result<Option<Event>, EventsError> {
+        match self.0.try_recv() {
+            Ok(event) => Ok(Some(event)),
+            Err(broadcast::error::TryRecvError::Empty) => Ok(None),
+            Err(broadcast::error::TryRecvError::Closed) => Err(EventsError::BusClosed),
+            Err(broadcast::error::TryRecvError::Lagged(_)) => Err(EventsError::LaggingReceiver),
+        }
+    }
+
     pub(crate) fn into_receiver(self) -> broadcast::Receiver<Event> {
         self.0
     }

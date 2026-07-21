@@ -1,12 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 pub struct CoreStringUppercaseRunner;
 
@@ -80,36 +77,17 @@ impl SubActionRunner for CoreStringUppercaseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.string.uppercase");
 
-        let source = config.get("source").and_then(|v| v.as_str()).unwrap_or("");
+        let source = config.str("source").unwrap_or("");
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("string.result"),
+            config.str_nonempty("into_var").unwrap_or("string.result"),
         );
 
         let result = source.to_uppercase();
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.string.uppercase".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
 }
 

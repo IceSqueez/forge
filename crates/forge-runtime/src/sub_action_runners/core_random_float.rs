@@ -1,13 +1,12 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
 use rand::RngExt;
-use time::OffsetDateTime;
 
 pub struct CoreRandomFloatRunner;
 
@@ -88,12 +87,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("into_var").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.random.float: into_var is required".to_owned(),
-            )),
-        }
+        config.require_str("into_var").map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -111,16 +105,12 @@ impl SubActionRunner for CoreRandomFloatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.random.float");
 
         let min = resolve_bound(config, ctx, "min", 0.0);
         let max = resolve_bound(config, ctx, "max", 1.0);
-        let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
+        let into_var =
+            super::interpolate::sanitize_var_name(config.str("into_var").unwrap_or_default());
 
         let (outcome, produced) = match (min, max) {
             (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),
@@ -135,22 +125,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
             }
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.random.float".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            produced,
-        )
+        (timer.finish(outcome), produced)
     }
 }
 

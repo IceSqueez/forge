@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
@@ -9,7 +9,6 @@ use forge_types::{
 use rand::RngExt;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
-use time::OffsetDateTime;
 
 pub struct CoreRandomPickRunner;
 
@@ -84,7 +83,7 @@ impl SubActionRunner for CoreRandomPickRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.random.pick");
 
         let items: Vec<Variant> = match config.get("items") {
             Some(Variant::Array(arr)) => arr.clone(),
@@ -99,11 +98,7 @@ impl SubActionRunner for CoreRandomPickRunner {
         };
 
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("picked"),
+            config.str_nonempty("into_var").unwrap_or("picked"),
         );
 
         let (outcome, produced) = if items.is_empty() {
@@ -148,22 +143,7 @@ impl SubActionRunner for CoreRandomPickRunner {
             }
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.random.pick".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            produced,
-        )
+        (timer.finish(outcome), produced)
     }
 }
 

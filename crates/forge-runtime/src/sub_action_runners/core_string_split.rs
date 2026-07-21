@@ -1,12 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 pub struct CoreStringSplitRunner;
 
@@ -98,28 +95,14 @@ impl SubActionRunner for CoreStringSplitRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.string.split");
 
-        let source = config.get("source").and_then(|v| v.as_str()).unwrap_or("");
-        let separator = config
-            .get("separator")
-            .and_then(|v| v.as_str())
-            .unwrap_or(",");
-        let trim_each = config
-            .get("trim_each")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let max_parts = config
-            .get("max_parts")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0)
-            .max(0) as usize;
+        let source = config.str("source").unwrap_or("");
+        let separator = config.str("separator").unwrap_or(",");
+        let trim_each = config.bool("trim_each").unwrap_or(false);
+        let max_parts = config.int("max_parts").unwrap_or(0).max(0) as usize;
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("string.parts"),
+            config.str_nonempty("into_var").unwrap_or("string.parts"),
         );
 
         let raw_parts: Vec<&str> = if separator.is_empty() {
@@ -140,22 +123,7 @@ impl SubActionRunner for CoreStringSplitRunner {
 
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Array(parts));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.string.split".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
 }
 

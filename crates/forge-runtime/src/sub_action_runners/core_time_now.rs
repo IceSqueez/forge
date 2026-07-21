@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub struct CoreTimeNowRunner;
@@ -86,101 +84,52 @@ impl SubActionRunner for CoreTimeNowRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.time.now");
+        let now: OffsetDateTime = timer.started_at();
 
-        let format = config
-            .get("format")
-            .and_then(|v| v.as_str())
-            .unwrap_or("iso8601");
-        let custom_fmt_string = config
-            .get("custom_format_string")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("now"),
-        );
+        let format = config.str("format").unwrap_or("iso8601");
+        let custom_fmt_string = config.str("custom_format_string").unwrap_or("").to_owned();
+        let into_var =
+            super::interpolate::sanitize_var_name(config.str_nonempty("into_var").unwrap_or("now"));
 
         let formatted = match format {
-            "unix_seconds" => started_at.unix_timestamp().to_string(),
+            "unix_seconds" => now.unix_timestamp().to_string(),
             "unix_millis" => {
-                let ms = started_at.unix_timestamp() * 1000 + i64::from(started_at.millisecond());
+                let ms = now.unix_timestamp() * 1000 + i64::from(now.millisecond());
                 ms.to_string()
             }
             "custom" => match time::format_description::parse_borrowed::<2>(&custom_fmt_string) {
-                Ok(desc) => match started_at.format(&desc) {
+                Ok(desc) => match now.format(&desc) {
                     Ok(s) => s,
                     Err(e) => {
-                        return fail(started_at, ctx.index, format!("time format error: {e}"));
+                        return (timer.failed(format!("time format error: {e}")), None);
                     }
                 },
                 Err(e) => {
-                    return fail(
-                        started_at,
-                        ctx.index,
-                        format!("invalid custom_format_string: {e}"),
+                    return (
+                        timer.failed(format!("invalid custom_format_string: {e}")),
+                        None,
                     );
                 }
             },
-            _ => match started_at.format(&Rfc3339) {
+            _ => match now.format(&Rfc3339) {
                 Ok(s) => s,
-                Err(e) => return fail(started_at, ctx.index, format!("time format error: {e}")),
+                Err(e) => return (timer.failed(format!("time format error: {e}")), None),
             },
         };
 
         let new_stack = ctx
             .arg_stack
             .clone()
-            .set(into_var, Variant::Datetime(started_at))
+            .set(into_var, Variant::Datetime(now))
             .set("time.formatted".to_owned(), Variant::String(formatted))
             .set(
                 "time.unix_seconds".to_owned(),
-                Variant::Int(started_at.unix_timestamp()),
+                Variant::Int(now.unix_timestamp()),
             );
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.time.now".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
-}
-
-fn fail(
-    started_at: OffsetDateTime,
-    index: usize,
-    msg: String,
-) -> (SubActionTelemetry, Option<ArgStack>) {
-    let duration_ms = (OffsetDateTime::now_utc() - started_at)
-        .whole_milliseconds()
-        .max(0) as u64;
-    (
-        SubActionTelemetry {
-            args_in: ::std::collections::BTreeMap::new(),
-            produced: ::std::collections::BTreeMap::new(),
-            index,
-            kind: "core.time.now".to_owned(),
-            started_at,
-            duration_ms,
-            outcome: SubActionOutcome::Failed(msg),
-        },
-        None,
-    )
 }
 
 #[cfg(test)]
@@ -188,7 +137,7 @@ fn fail(
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {

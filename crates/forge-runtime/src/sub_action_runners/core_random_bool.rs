@@ -1,12 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 pub struct CoreRandomBoolRunner;
 
@@ -59,12 +56,7 @@ impl SubActionRunner for CoreRandomBoolRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("into_var").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.random.bool: into_var is required".to_owned(),
-            )),
-        }
+        config.require_str("into_var").map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -82,40 +74,20 @@ impl SubActionRunner for CoreRandomBoolRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.random.bool");
 
         let probability = config
-            .get("probability_true")
-            .and_then(|v| v.as_float())
+            .float("probability_true")
             .unwrap_or(0.5)
             .clamp(0.0, 1.0);
 
-        let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
+        let into_var =
+            super::interpolate::sanitize_var_name(config.str("into_var").unwrap_or_default());
 
         let value = rand::random_bool(probability);
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::Bool(value));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.random.bool".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
 }
 
@@ -124,7 +96,7 @@ impl SubActionRunner for CoreRandomBoolRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {

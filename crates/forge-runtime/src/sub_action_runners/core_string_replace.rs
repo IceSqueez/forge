@@ -1,12 +1,11 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
-use time::OffsetDateTime;
 
 pub struct CoreStringReplaceRunner;
 
@@ -84,14 +83,11 @@ impl SubActionRunner for CoreStringReplaceRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let search = config.get("search").and_then(|v| v.as_str()).unwrap_or("");
-        let is_regex = config
-            .get("is_regex")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let search = config.str("search").unwrap_or("");
+        let is_regex = config.bool("is_regex").unwrap_or(false);
         if is_regex && !search.is_empty() {
             regex::Regex::new(search).map_err(|e| {
-                RegistryError::UnknownKindId(format!("core.string.replace: invalid regex: {e}"))
+                RegistryError::InvalidConfig(format!("core.string.replace: invalid regex: {e}"))
             })?;
         }
         Ok(())
@@ -112,28 +108,15 @@ impl SubActionRunner for CoreStringReplaceRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.string.replace");
 
-        let source = config.get("source").and_then(|v| v.as_str()).unwrap_or("");
-        let search = config.get("search").and_then(|v| v.as_str()).unwrap_or("");
-        let replace_with = config
-            .get("replace_with")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let case_sensitive = config
-            .get("case_sensitive")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let is_regex = config
-            .get("is_regex")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let source = config.str("source").unwrap_or("");
+        let search = config.str("search").unwrap_or("");
+        let replace_with = config.str("replace_with").unwrap_or("");
+        let case_sensitive = config.bool("case_sensitive").unwrap_or(true);
+        let is_regex = config.bool("is_regex").unwrap_or(false);
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("string.result"),
+            config.str_nonempty("into_var").unwrap_or("string.result"),
         );
 
         if search.is_empty() {
@@ -141,61 +124,18 @@ impl SubActionRunner for CoreStringReplaceRunner {
                 .arg_stack
                 .clone()
                 .set(into_var, Variant::String(source.to_owned()));
-            let duration_ms = (OffsetDateTime::now_utc() - started_at)
-                .whole_milliseconds()
-                .max(0) as u64;
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    index: ctx.index,
-                    kind: "core.string.replace".to_owned(),
-                    started_at,
-                    duration_ms,
-                    outcome: SubActionOutcome::Success,
-                },
-                Some(new_stack),
-            );
+            return (timer.success(), Some(new_stack));
         }
 
         let outcome = match apply_replace(source, search, replace_with, case_sensitive, is_regex) {
             Ok(result) => {
                 let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
-                let duration_ms = (OffsetDateTime::now_utc() - started_at)
-                    .whole_milliseconds()
-                    .max(0) as u64;
-                return (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        index: ctx.index,
-                        kind: "core.string.replace".to_owned(),
-                        started_at,
-                        duration_ms,
-                        outcome: SubActionOutcome::Success,
-                    },
-                    Some(new_stack),
-                );
+                return (timer.success(), Some(new_stack));
             }
             Err(msg) => SubActionOutcome::Failed(msg),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.string.replace".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

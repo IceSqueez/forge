@@ -1,12 +1,11 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
-use time::OffsetDateTime;
 
 pub struct CoreStringRegexMatchRunner;
 
@@ -77,14 +76,9 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let pattern = config.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-        if pattern.is_empty() {
-            return Err(RegistryError::UnknownKindId(
-                "core.string.regex_match: pattern is required".to_owned(),
-            ));
-        }
+        let pattern = config.require_str("pattern")?;
         regex::Regex::new(pattern).map_err(|e| {
-            RegistryError::UnknownKindId(format!("core.string.regex_match: invalid regex: {e}"))
+            RegistryError::InvalidConfig(format!("core.string.regex_match: invalid regex: {e}"))
         })?;
         Ok(())
     }
@@ -111,22 +105,16 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.string.regex_match");
 
-        let source = config.get("source").and_then(|v| v.as_str()).unwrap_or("");
-        let pattern = config.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+        let source = config.str("source").unwrap_or("");
+        let pattern = config.str("pattern").unwrap_or("");
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("regex.matched"),
+            config.str_nonempty("into_var").unwrap_or("regex.matched"),
         );
         let captures_into_var = super::interpolate::sanitize_var_name(
             config
-                .get("captures_into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
+                .str_nonempty("captures_into_var")
                 .unwrap_or("regex.captures"),
         );
 
@@ -136,21 +124,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
                 .clone()
                 .set(into_var, Variant::Bool(false))
                 .set(captures_into_var, Variant::Array(vec![]));
-            let duration_ms = (OffsetDateTime::now_utc() - started_at)
-                .whole_milliseconds()
-                .max(0) as u64;
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    index: ctx.index,
-                    kind: "core.string.regex_match".to_owned(),
-                    started_at,
-                    duration_ms,
-                    outcome: SubActionOutcome::Success,
-                },
-                Some(new_stack),
-            );
+            return (timer.success(), Some(new_stack));
         }
 
         let (outcome, new_stack_opt) = match regex::Regex::new(pattern) {
@@ -181,22 +155,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
             }
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.string.regex_match".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            new_stack_opt,
-        )
+        (timer.finish(outcome), new_stack_opt)
     }
 }
 

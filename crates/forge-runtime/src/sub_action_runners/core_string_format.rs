@@ -1,12 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 pub struct CoreStringFormatRunner;
 
@@ -79,18 +76,12 @@ impl SubActionRunner for CoreStringFormatRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.string.format");
 
-        let template = config
-            .get("template")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let template = config.str("template").unwrap_or("").to_owned();
         let into_var = super::interpolate::sanitize_var_name(
             config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
+                .str_nonempty("into_var")
                 .unwrap_or("string.formatted"),
         );
 
@@ -99,22 +90,7 @@ impl SubActionRunner for CoreStringFormatRunner {
             .clone()
             .set(into_var, Variant::String(template));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.string.format".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
 }
 

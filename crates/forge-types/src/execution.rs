@@ -18,6 +18,15 @@ pub enum SubActionOutcome {
     Skipped(String),
 }
 
+impl SubActionOutcome {
+    pub fn from_result<T, E: core::fmt::Display>(result: &Result<T, E>) -> Self {
+        match result {
+            Ok(_) => Self::Success,
+            Err(e) => Self::Failed(e.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubActionTelemetry {
     pub index: usize,

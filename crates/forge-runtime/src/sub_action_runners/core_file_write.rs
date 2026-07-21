@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use base64::Engine as _;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 use tokio::io::AsyncWriteExt as _;
 
 pub struct CoreFileWriteRunner;
@@ -72,17 +74,7 @@ impl SubActionRunner for CoreFileWriteRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let path_ok = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if path_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::UnknownKindId(
-                "core.file.write: path is required".to_owned(),
-            ))
-        }
+        config.require_str("path").map(|_| ())
     }
 
     async fn execute(
@@ -90,30 +82,13 @@ impl SubActionRunner for CoreFileWriteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.file.write");
 
-        let path_template = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let content_template = config
-            .get("content")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let encoding = config
-            .get("encoding")
-            .and_then(|v| v.as_str())
-            .unwrap_or("utf8")
-            .to_owned();
-        let mode = config
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("overwrite")
-            .to_owned();
-        let create_parent_dirs = config
-            .get("create_parent_dirs")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let path_template = config.str("path").unwrap_or_default();
+        let content_template = config.str("content").unwrap_or_default();
+        let encoding = config.str("encoding").unwrap_or("utf8").to_owned();
+        let mode = config.str("mode").unwrap_or("overwrite").to_owned();
+        let create_parent_dirs = config.bool("create_parent_dirs").unwrap_or(false);
 
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
         let content = ctx.arg_stack.interpolate(content_template);
@@ -139,22 +114,7 @@ impl SubActionRunner for CoreFileWriteRunner {
             }
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.file.write".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            updated,
-        )
+        (timer.finish(outcome), updated)
     }
 }
 

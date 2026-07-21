@@ -2,13 +2,12 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
-use time::OffsetDateTime;
 
 pub struct CoreFileListRunner;
 
@@ -80,21 +79,10 @@ impl SubActionRunner for CoreFileListRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let path_ok = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        let var_ok = config
-            .get("into_var")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if path_ok && var_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::UnknownKindId(
-                "core.file.list: path and into_var are required".to_owned(),
-            ))
-        }
+        config
+            .require_str("path")
+            .and(config.require_str("into_var"))
+            .map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -112,32 +100,14 @@ impl SubActionRunner for CoreFileListRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.file.list");
 
-        let path_template = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let pattern = config
-            .get("pattern")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("*")
-            .to_owned();
-        let recursive = config
-            .get("recursive")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let include_dirs = config
-            .get("include_dirs")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let path_template = config.str("path").unwrap_or_default();
+        let pattern = config.str_nonempty("pattern").unwrap_or("*").to_owned();
+        let recursive = config.bool("recursive").unwrap_or(false);
+        let include_dirs = config.bool("include_dirs").unwrap_or(false);
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("file.entries"),
+            config.str_nonempty("into_var").unwrap_or("file.entries"),
         );
 
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
@@ -172,22 +142,7 @@ impl SubActionRunner for CoreFileListRunner {
             },
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.file.list".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            produced,
-        )
+        (timer.finish(outcome), produced)
     }
 }
 

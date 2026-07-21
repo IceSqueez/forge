@@ -1,13 +1,11 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
-};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
-use super::core_logic_shared::{decode_chain, decode_steps, propagate, retag, telemetry};
+use super::core_logic_shared::{decode_chain, decode_steps, propagate, retag};
 
 pub struct CoreLogicSwitchCaseRunner;
 
@@ -63,12 +61,7 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("expression").and_then(Variant::as_str) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.logic.switch_case: expression is required".to_owned(),
-            )),
-        }
+        config.require_str("expression").map(|_| ())
     }
 
     async fn execute(
@@ -76,12 +69,9 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, self.id());
 
-        let template = config
-            .get("expression")
-            .and_then(Variant::as_str)
-            .unwrap_or_default();
+        let template = config.str("expression").unwrap_or_default();
         let value = ctx.arg_stack.interpolate(template);
 
         let (matched_index, steps) = select_case(config, &value);
@@ -109,17 +99,9 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
                     "switch.matched_case_index".to_owned(),
                     Variant::Int(matched_index),
                 );
-                (telemetry(ctx, self.id(), started_at, outcome), Some(stack))
+                (timer.finish(outcome), Some(stack))
             }
-            Err(e) => (
-                telemetry(
-                    ctx,
-                    self.id(),
-                    started_at,
-                    SubActionOutcome::Failed(format!("core.logic.switch_case: {e}")),
-                ),
-                None,
-            ),
+            Err(e) => (timer.failed(format!("core.logic.switch_case: {e}")), None),
         }
     }
 }

@@ -3,15 +3,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::{
     ChainExecutor, ChainSignal, CodeLanguage, ControlSignal, FormField, RegistryError, RunContext,
-    StopMark, SubActionCategory, SubActionRunner,
+    StepTimer, StopMark, SubActionCategory, SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{
     ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
     Variant,
 };
-use time::OffsetDateTime;
 
-use super::core_logic_shared::{decode_chain, retag, telemetry};
+use super::core_logic_shared::{decode_chain, retag};
 use crate::ConditionGate;
 
 const MAX_COUNT: i64 = 1000;
@@ -150,34 +149,19 @@ impl SubActionRunner for CoreLogicLoopRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, self.id());
 
-        let mode = config
-            .get("mode")
-            .and_then(Variant::as_str)
-            .unwrap_or("count");
+        let mode = config.str("mode").unwrap_or("count");
         let body = decode_chain(config, "body");
 
-        let count = config
-            .get("count")
-            .and_then(Variant::as_int)
-            .unwrap_or(1)
-            .clamp(0, MAX_COUNT);
+        let count = config.int("count").unwrap_or(1).clamp(0, MAX_COUNT);
         let max_iterations = config
-            .get("max_iterations")
-            .and_then(Variant::as_int)
+            .int("max_iterations")
             .unwrap_or(1000)
             .clamp(0, MAX_WHILE_ITERATIONS);
-        let while_condition = config
-            .get("while_condition")
-            .and_then(Variant::as_str)
-            .unwrap_or_default()
-            .to_owned();
+        let while_condition = config.str("while_condition").unwrap_or_default().to_owned();
         let items: Vec<Variant> = {
-            let source_template = config
-                .get("array_source")
-                .and_then(Variant::as_str)
-                .unwrap_or_default();
+            let source_template = config.str("array_source").unwrap_or_default();
             let source =
                 super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(source_template));
             ctx.arg_stack
@@ -279,6 +263,6 @@ impl SubActionRunner for CoreLogicLoopRunner {
             None => SubActionOutcome::Success,
         };
 
-        (telemetry(ctx, self.id(), started_at, outcome), Some(stack))
+        (timer.finish(outcome), Some(stack))
     }
 }

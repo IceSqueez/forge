@@ -1,7 +1,9 @@
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 pub struct CoreFileDeleteRunner;
 
@@ -53,17 +55,7 @@ impl SubActionRunner for CoreFileDeleteRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let path_ok = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if path_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::UnknownKindId(
-                "core.file.delete: path is required".to_owned(),
-            ))
-        }
+        config.require_str("path").map(|_| ())
     }
 
     async fn execute(
@@ -71,16 +63,10 @@ impl SubActionRunner for CoreFileDeleteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.file.delete");
 
-        let path_template = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let ignore_missing = config
-            .get("ignore_missing")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let path_template = config.str("path").unwrap_or_default();
+        let ignore_missing = config.bool("ignore_missing").unwrap_or(false);
 
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
 
@@ -99,22 +85,7 @@ impl SubActionRunner for CoreFileDeleteRunner {
             },
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.file.delete".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
-use super::core_logic_shared::{decode_chain, propagate, retag, telemetry};
+use super::core_logic_shared::{decode_chain, propagate, retag};
 use crate::ConditionGate;
 
 pub struct CoreLogicIfThenElseRunner {
@@ -76,12 +76,7 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("condition").and_then(Variant::as_str) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.logic.if_then_else: condition is required".to_owned(),
-            )),
-        }
+        config.require_str("condition").map(|_| ())
     }
 
     async fn execute(
@@ -89,31 +84,17 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, self.id());
 
-        let template = config
-            .get("condition")
-            .and_then(Variant::as_str)
-            .unwrap_or_default();
+        let template = config.str("condition").unwrap_or_default();
         let expr = ctx.arg_stack.interpolate(template);
-        let undefined_is_false = config
-            .get("treat_undefined_as_false")
-            .and_then(Variant::as_bool)
-            .unwrap_or(true);
+        let undefined_is_false = config.bool("treat_undefined_as_false").unwrap_or(true);
 
         let verdict = match self.gate.evaluate(&expr).await {
             Ok(value) => value,
             Err(_) if undefined_is_false => false,
             Err(e) => {
-                return (
-                    telemetry(
-                        ctx,
-                        self.id(),
-                        started_at,
-                        SubActionOutcome::Failed(format!("core.logic.if_then_else: {e}")),
-                    ),
-                    None,
-                );
+                return (timer.failed(format!("core.logic.if_then_else: {e}")), None);
             }
         };
 
@@ -137,17 +118,9 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
                     "branch.taken".to_owned(),
                     Variant::String(branch.to_owned()),
                 );
-                (telemetry(ctx, self.id(), started_at, outcome), Some(stack))
+                (timer.finish(outcome), Some(stack))
             }
-            Err(e) => (
-                telemetry(
-                    ctx,
-                    self.id(),
-                    started_at,
-                    SubActionOutcome::Failed(format!("core.logic.if_then_else: {e}")),
-                ),
-                None,
-            ),
+            Err(e) => (timer.failed(format!("core.logic.if_then_else: {e}")), None),
         }
     }
 }

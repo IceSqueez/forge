@@ -1,6 +1,5 @@
 use forge_registry::{ChainSignal, ControlSignal, RunContext};
 use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 /// Decodes an inline sub-chain stored under `key` as a serialized step array. A
 /// missing or malformed value yields an empty chain, so an unset branch is a no-op
@@ -104,24 +103,4 @@ pub(super) fn retag(
             child
         })
         .collect()
-}
-
-pub(super) fn telemetry(
-    ctx: &RunContext<'_>,
-    kind: &str,
-    started_at: OffsetDateTime,
-    outcome: SubActionOutcome,
-) -> SubActionTelemetry {
-    let duration_ms = (OffsetDateTime::now_utc() - started_at)
-        .whole_milliseconds()
-        .max(0) as u64;
-    SubActionTelemetry {
-        args_in: ::std::collections::BTreeMap::new(),
-        produced: ::std::collections::BTreeMap::new(),
-        index: ctx.index,
-        kind: kind.to_owned(),
-        started_at,
-        duration_ms,
-        outcome,
-    }
 }

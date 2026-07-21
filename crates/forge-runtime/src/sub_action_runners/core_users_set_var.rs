@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_storage::{GlobalsRepo, UserGlobalsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use super::core_users_shared::resolve_broadcaster_id;
 
@@ -80,21 +82,10 @@ impl SubActionRunner for CoreUsersSetVarRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let user_ok = config
-            .get("user_login")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        let var_ok = config
-            .get("var_name")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if user_ok && var_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::UnknownKindId(
-                "core.users.set_var: user_login and var_name are required".to_owned(),
-            ))
-        }
+        config
+            .require_str("user_login")
+            .and(config.require_str("var_name"))
+            .map(|_| ())
     }
 
     async fn execute(
@@ -102,28 +93,13 @@ impl SubActionRunner for CoreUsersSetVarRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.users.set_var");
 
         let resolve = |template: &str| ctx.arg_stack.interpolate(template);
 
-        let user_id = resolve(
-            config
-                .get("user_login")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
-        let var_name = resolve(
-            config
-                .get("var_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
-        let raw_value = resolve(
-            config
-                .get("value")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
+        let user_id = resolve(config.str("user_login").unwrap_or_default());
+        let var_name = resolve(config.str("var_name").unwrap_or_default());
+        let raw_value = resolve(config.str("value").unwrap_or_default());
         let value = super::interpolate::parse_variant(&raw_value);
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
 
@@ -136,21 +112,6 @@ impl SubActionRunner for CoreUsersSetVarRunner {
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.users.set_var".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }

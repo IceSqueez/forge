@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 const MAX_DELAY_MS: u64 = 60_000;
 
@@ -59,32 +61,13 @@ impl SubActionRunner for CoreLogicWaitRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.logic.wait");
 
-        let ms = config
-            .get("ms")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0)
-            .max(0) as u64;
+        let ms = config.int("ms").unwrap_or(0).max(0) as u64;
 
         tokio::time::sleep(Duration::from_millis(ms.min(MAX_DELAY_MS))).await;
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.logic.wait".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            None,
-        )
+        (timer.success(), None)
     }
 }
 
@@ -93,7 +76,7 @@ impl SubActionRunner for CoreLogicWaitRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {

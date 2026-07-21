@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_storage::ActionRepo;
 use forge_types::{
     ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
-use time::OffsetDateTime;
 
 pub struct CoreActionToggleRunner {
     actions: Arc<dyn ActionRepo>,
@@ -18,10 +20,7 @@ impl CoreActionToggleRunner {
     }
 
     async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config
-            .get("action_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw = config.str("action_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(raw);
         let Ok(action_id) = resolved.parse::<ActionId>() else {
             return SubActionOutcome::Failed(format!(
@@ -85,12 +84,7 @@ impl SubActionRunner for CoreActionToggleRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("action_id").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.action.toggle: action_id is required".to_owned(),
-            )),
-        }
+        config.require_str("action_id").map(|_| ())
     }
 
     async fn execute(
@@ -98,22 +92,8 @@ impl SubActionRunner for CoreActionToggleRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.action.toggle");
         let outcome = self.run(config, ctx).await;
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.action.toggle".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }

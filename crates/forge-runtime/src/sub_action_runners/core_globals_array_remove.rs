@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_storage::GlobalsRepo;
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
-use time::OffsetDateTime;
 
 pub struct CoreGlobalsArrayRemoveRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -73,12 +75,7 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("key").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.globals.array_remove: key is required".to_owned(),
-            )),
-        }
+        config.require_str("key").map(|_| ())
     }
 
     async fn execute(
@@ -86,20 +83,11 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.globals.array_remove");
 
-        let key_template = config
-            .get("key")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let value_template = config
-            .get("value")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let remove_all = config
-            .get("remove_all")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let key_template = config.str("key").unwrap_or_default();
+        let value_template = config.str("value").unwrap_or_default();
+        let remove_all = config.bool("remove_all").unwrap_or(false);
 
         let resolved_key =
             super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(key_template));
@@ -156,22 +144,7 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
             )),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.globals.array_remove".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 
@@ -184,6 +157,7 @@ mod tests {
     use forge_types::EventId;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
+    use time::OffsetDateTime;
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {

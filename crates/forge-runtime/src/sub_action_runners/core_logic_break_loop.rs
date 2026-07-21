@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ControlSignal, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    ControlSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
-
-use super::core_logic_shared::telemetry;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 pub struct CoreLogicBreakLoopRunner;
 
@@ -52,11 +50,8 @@ impl SubActionRunner for CoreLogicBreakLoopRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, self.id());
         ctx.control.set(ControlSignal::Break);
-        (
-            telemetry(ctx, self.id(), started_at, SubActionOutcome::Success),
-            None,
-        )
+        (timer.success(), None)
     }
 }

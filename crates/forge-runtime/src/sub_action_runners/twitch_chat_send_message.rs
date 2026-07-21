@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 pub struct TwitchChatSendMessageRunner;
 
@@ -54,12 +56,7 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("message").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "twitch.chat.send_message: message is required".to_owned(),
-            )),
-        }
+        config.require_str("message").map(|_| ())
     }
 
     async fn execute(
@@ -67,16 +64,10 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "twitch.chat.send_message");
 
-        let message_template = config
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let target_template = config
-            .get("target")
-            .and_then(|v| v.as_str())
-            .unwrap_or("twitch");
+        let message_template = config.str("message").unwrap_or_default();
+        let target_template = config.str("target").unwrap_or("twitch");
 
         let message = ctx.arg_stack.interpolate(message_template);
         let target = ctx.arg_stack.interpolate(target_template);
@@ -91,21 +82,6 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             ctx.parent_event_id,
         ));
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "twitch.chat.send_message".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            None,
-        )
+        (timer.success(), None)
     }
 }

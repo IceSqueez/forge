@@ -1,7 +1,9 @@
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 /// Values written here survive only for the duration of the current action execution; they are not persisted.
 pub struct CoreArgsSetRunner;
@@ -55,12 +57,7 @@ impl SubActionRunner for CoreArgsSetRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("name").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.args.set: name is required".to_owned(),
-            )),
-        }
+        config.require_str("name").map(|_| ())
     }
 
     async fn execute(
@@ -68,12 +65,9 @@ impl SubActionRunner for CoreArgsSetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.args.set");
 
-        let name_template = config
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let name_template = config.str("name").unwrap_or_default();
         let name = super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
 
         let value = match config.get("value") {
@@ -87,22 +81,7 @@ impl SubActionRunner for CoreArgsSetRunner {
 
         let new_stack = ctx.arg_stack.clone().set(name, value);
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.args.set".to_owned(),
-                started_at,
-                duration_ms,
-                outcome: SubActionOutcome::Success,
-            },
-            Some(new_stack),
-        )
+        (timer.success(), Some(new_stack))
     }
 }
 
@@ -111,7 +90,7 @@ impl SubActionRunner for CoreArgsSetRunner {
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_types::{EventId, SubActionOutcome};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {

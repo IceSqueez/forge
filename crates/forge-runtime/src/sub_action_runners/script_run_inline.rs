@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
 };
 use forge_script::{
     Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
@@ -81,12 +82,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("body").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "script.run.inline: body is required".to_owned(),
-            )),
-        }
+        config.require_str("body").map(|_| ())
     }
 
     async fn execute(
@@ -97,11 +93,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let started_at = OffsetDateTime::now_utc();
         let wall_start = Instant::now();
 
-        let body = config
-            .get("body")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let body = config.str("body").unwrap_or_default().to_owned();
 
         let publisher_arc = Arc::clone(&self.publisher);
         let globals_arc = Arc::clone(&self.globals);

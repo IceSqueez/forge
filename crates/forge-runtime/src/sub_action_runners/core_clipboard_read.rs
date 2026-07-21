@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
-use time::OffsetDateTime;
 
 use super::os_ports::ClipboardPort;
 
@@ -86,14 +85,10 @@ impl SubActionRunner for CoreClipboardReadRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.clipboard.read");
 
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or(DEFAULT_INTO_VAR),
+            config.str_nonempty("into_var").unwrap_or(DEFAULT_INTO_VAR),
         );
 
         let clipboard = Arc::clone(&self.clipboard);
@@ -107,22 +102,7 @@ impl SubActionRunner for CoreClipboardReadRunner {
                 Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
             };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.clipboard.read".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            updated_stack,
-        )
+        (timer.finish(outcome), updated_stack)
     }
 }
 

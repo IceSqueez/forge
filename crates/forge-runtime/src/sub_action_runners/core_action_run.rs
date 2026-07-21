@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChainSignal, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    ChainSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_storage::ActionRepo;
 use forge_types::{
     ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
-use time::OffsetDateTime;
 
 pub struct CoreActionRunRunner {
     actions: Arc<dyn ActionRepo>,
@@ -20,10 +20,7 @@ impl CoreActionRunRunner {
     }
 
     async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config
-            .get("action_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw = config.str("action_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(raw);
         let Ok(action_id) = resolved.parse::<ActionId>() else {
             return SubActionOutcome::Failed(format!(
@@ -41,10 +38,7 @@ impl CoreActionRunRunner {
             Err(e) => return SubActionOutcome::Failed(format!("core.action.run: {e}")),
         };
 
-        let inherit_args = config
-            .get("inherit_args")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+        let inherit_args = config.bool("inherit_args").unwrap_or(true);
         let child_stack = if inherit_args {
             ctx.arg_stack.clone()
         } else {
@@ -129,12 +123,7 @@ impl SubActionRunner for CoreActionRunRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("action_id").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.action.run: action_id is required".to_owned(),
-            )),
-        }
+        config.require_str("action_id").map(|_| ())
     }
 
     async fn execute(
@@ -142,22 +131,8 @@ impl SubActionRunner for CoreActionRunRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.action.run");
         let outcome = self.run(config, ctx).await;
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.action.run".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }

@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use super::os_ports::{DesktopNotice, NotifyPort, NotifyUrgency};
 
@@ -84,13 +86,9 @@ impl SubActionRunner for CoreNotifyShowRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let title_len = config
-            .get("title")
-            .and_then(|v| v.as_str())
-            .map(|s| s.chars().count())
-            .unwrap_or(0);
+        let title_len = config.str("title").map(|s| s.chars().count()).unwrap_or(0);
         if !(1..=100).contains(&title_len) {
-            return Err(RegistryError::UnknownKindId(
+            return Err(RegistryError::InvalidConfig(
                 "core.notify.show: title length must be 1..=100".to_owned(),
             ));
         }
@@ -102,25 +100,16 @@ impl SubActionRunner for CoreNotifyShowRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.notify.show");
 
-        let title = ctx
-            .arg_stack
-            .interpolate(config.get("title").and_then(|v| v.as_str()).unwrap_or(""));
-        let body = ctx
-            .arg_stack
-            .interpolate(config.get("body").and_then(|v| v.as_str()).unwrap_or(""));
-        let urgency = parse_urgency(config.get("urgency").and_then(|v| v.as_str()).unwrap_or(""));
+        let title = ctx.arg_stack.interpolate(config.str("title").unwrap_or(""));
+        let body = ctx.arg_stack.interpolate(config.str("body").unwrap_or(""));
+        let urgency = parse_urgency(config.str("urgency").unwrap_or(""));
         let icon_path = config
-            .get("icon_path")
-            .and_then(|v| v.as_str())
+            .str("icon_path")
             .map(|s| ctx.arg_stack.interpolate(s))
             .filter(|s| !s.is_empty());
-        let timeout_ms = config
-            .get("timeout_ms")
-            .and_then(|v| v.as_int())
-            .unwrap_or(5000)
-            .clamp(1000, 60000) as u32;
+        let timeout_ms = config.int("timeout_ms").unwrap_or(5000).clamp(1000, 60000) as u32;
 
         let notice = DesktopNotice {
             title,
@@ -137,22 +126,7 @@ impl SubActionRunner for CoreNotifyShowRunner {
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.notify.show".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

@@ -2,13 +2,12 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory, SubActionIo,
-    SubActionRunner,
+    FormField, ProducedVariable, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
-use time::OffsetDateTime;
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
 
@@ -71,21 +70,10 @@ impl SubActionRunner for CoreFileReadRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let path_ok = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        let var_ok = config
-            .get("target_var")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if path_ok && var_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::UnknownKindId(
-                "core.file.read: path and target_var are required".to_owned(),
-            ))
-        }
+        config
+            .require_str("path")
+            .and(config.require_str("target_var"))
+            .map(|_| ())
     }
 
     fn scope_io(&self) -> SubActionIo {
@@ -103,23 +91,12 @@ impl SubActionRunner for CoreFileReadRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.file.read");
 
-        let path_template = config
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let target_var = super::interpolate::sanitize_var_name(
-            config
-                .get("target_var")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
-        let read_as = config
-            .get("read_as")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Lines array")
-            .to_owned();
+        let path_template = config.str("path").unwrap_or_default();
+        let target_var =
+            super::interpolate::sanitize_var_name(config.str("target_var").unwrap_or_default());
+        let read_as = config.str("read_as").unwrap_or("Lines array").to_owned();
 
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
 
@@ -162,22 +139,7 @@ impl SubActionRunner for CoreFileReadRunner {
             Err(e) => (SubActionOutcome::Failed(format!("stat failed: {e}")), None),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.file.read".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            produced,
-        )
+        (timer.finish(outcome), produced)
     }
 }
 

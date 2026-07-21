@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_storage::TriggerInstanceRepo;
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, TriggerInstanceId, Variant,
 };
-use time::OffsetDateTime;
 
 pub struct CoreTriggerDisableRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -18,10 +20,7 @@ impl CoreTriggerDisableRunner {
     }
 
     async fn run(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
-        let raw = config
-            .get("trigger_instance_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw = config.str("trigger_instance_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(raw);
         let Ok(instance_id) = resolved.parse::<TriggerInstanceId>() else {
             return SubActionOutcome::Failed(format!(
@@ -79,12 +78,7 @@ impl SubActionRunner for CoreTriggerDisableRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("trigger_instance_id").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.trigger.disable: trigger_instance_id is required".to_owned(),
-            )),
-        }
+        config.require_str("trigger_instance_id").map(|_| ())
     }
 
     async fn execute(
@@ -92,22 +86,8 @@ impl SubActionRunner for CoreTriggerDisableRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.trigger.disable");
         let outcome = self.run(config, ctx).await;
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.trigger.disable".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }

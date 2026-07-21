@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 pub struct CoreGlobalsGetRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -65,21 +67,10 @@ impl SubActionRunner for CoreGlobalsGetRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let name_ok = config
-            .get("name")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        let arg_ok = config
-            .get("into_arg")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if name_ok && arg_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::UnknownKindId(
-                "core.globals.get: name and into_arg are required".to_owned(),
-            ))
-        }
+        config
+            .require_str("name")
+            .and(config.require_str("into_arg"))
+            .map(|_| ())
     }
 
     async fn execute(
@@ -87,16 +78,10 @@ impl SubActionRunner for CoreGlobalsGetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.globals.get");
 
-        let name_template = config
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let into_template = config
-            .get("into_arg")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let name_template = config.str("name").unwrap_or_default();
+        let into_template = config.str("into_arg").unwrap_or_default();
 
         let resolved_name =
             super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
@@ -112,21 +97,6 @@ impl SubActionRunner for CoreGlobalsGetRunner {
             Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.globals.get".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            updated_stack,
-        )
+        (timer.finish(outcome), updated_stack)
     }
 }

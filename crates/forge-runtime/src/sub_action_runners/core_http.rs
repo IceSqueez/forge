@@ -3,10 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
 
@@ -183,14 +185,11 @@ impl SubActionRunner for CoreHttpRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let url_ok = config
-            .get("url")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.trim().is_empty());
+        let url_ok = config.str("url").is_some_and(|s| !s.trim().is_empty());
         if url_ok {
             Ok(())
         } else {
-            Err(RegistryError::UnknownKindId(format!(
+            Err(RegistryError::InvalidConfig(format!(
                 "{}: url is required",
                 self.descriptor().id
             )))
@@ -202,13 +201,10 @@ impl SubActionRunner for CoreHttpRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
         let descriptor = self.descriptor();
+        let timer = StepTimer::start(ctx, descriptor.id);
 
-        let url_template = config
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let url_template = config.str("url").unwrap_or_default();
         let url = ctx.arg_stack.interpolate(url_template);
 
         let mut headers = interpolate_map(config_string_map(config, "headers"), ctx.arg_stack);
@@ -216,32 +212,20 @@ impl SubActionRunner for CoreHttpRunner {
             interpolate_map(config_string_map(config, "query_params"), ctx.arg_stack);
 
         let timeout_ms = config
-            .get("timeout_ms")
-            .and_then(|v| v.as_int())
+            .int("timeout_ms")
             .unwrap_or(10_000)
             .clamp(100, 60_000) as u64;
-        let follow_redirects = config
-            .get("follow_redirects")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let parse_as = config
-            .get("parse_response_as")
-            .and_then(|v| v.as_str())
-            .unwrap_or("json")
-            .to_owned();
+        let follow_redirects = config.bool("follow_redirects").unwrap_or(true);
+        let parse_as = config.str("parse_response_as").unwrap_or("json").to_owned();
 
         let (body, content_type) = if descriptor.has_body {
-            let body_template = config
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default();
+            let body_template = config.str("body").unwrap_or_default();
             let body = ctx.arg_stack.interpolate(body_template);
             let has_explicit_content_type = headers
                 .keys()
                 .any(|k| k.eq_ignore_ascii_case("content-type"));
             let content_type = config
-                .get("content_type")
-                .and_then(|v| v.as_str())
+                .str("content_type")
                 .filter(|s| !s.is_empty() && !has_explicit_content_type)
                 .map(|s| s.to_owned());
             (Some(body), content_type)
@@ -275,22 +259,7 @@ impl SubActionRunner for CoreHttpRunner {
             Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: descriptor.id.to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            updated_stack,
-        )
+        (timer.finish(outcome), updated_stack)
     }
 }
 

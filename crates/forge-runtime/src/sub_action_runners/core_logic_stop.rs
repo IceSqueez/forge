@@ -1,12 +1,9 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ControlSignal, FormField, RegistryError, RunContext, StopMark, SubActionCategory,
-    SubActionRunner,
+    ControlSignal, FormField, RegistryError, RunContext, StepTimer, StopMark, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
-
-use super::core_logic_shared::telemetry;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 pub struct CoreLogicStopRunner;
 
@@ -70,25 +67,20 @@ impl SubActionRunner for CoreLogicStopRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, self.id());
 
         let failed = config
-            .get("mark_as")
-            .and_then(Variant::as_str)
+            .str("mark_as")
             .is_some_and(|s| s.eq_ignore_ascii_case("failed"));
 
         let reason = config
-            .get("reason")
-            .and_then(Variant::as_str)
+            .str("reason")
             .map(|raw| ctx.arg_stack.interpolate(raw))
             .filter(|s| !s.is_empty());
 
         ctx.control
             .set(ControlSignal::Stop(StopMark { failed, reason }));
 
-        (
-            telemetry(ctx, self.id(), started_at, SubActionOutcome::Success),
-            None,
-        )
+        (timer.success(), None)
     }
 }

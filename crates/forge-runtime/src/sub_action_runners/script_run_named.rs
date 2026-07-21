@@ -3,7 +3,9 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
+};
 use forge_script::{
     Engine, ForgeApi, ScriptError, ScriptHttpClient, build_scope_for_contract,
     load_script_engine_config, load_script_http_config,
@@ -90,12 +92,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("script_name").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "script.run.named: script_name is required".to_owned(),
-            )),
-        }
+        config.require_str("script_name").map(|_| ())
     }
 
     async fn execute(
@@ -106,16 +103,10 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let started_at = OffsetDateTime::now_utc();
         let wall_start = Instant::now();
 
-        let name_template = config
-            .get("script_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let name_template = config.str("script_name").unwrap_or_default();
         let name = ctx.arg_stack.interpolate(name_template);
 
-        let target_var_template = config
-            .get("target_var")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let target_var_template = config.str("target_var").unwrap_or_default();
         let target_var =
             super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(target_var_template));
 

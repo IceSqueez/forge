@@ -3,9 +3,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 pub struct ServerBroadcastRunner {
     publisher: Arc<dyn EventPublisher>,
@@ -77,12 +79,7 @@ impl SubActionRunner for ServerBroadcastRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("event_name").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "server.broadcast: event_name is required".to_owned(),
-            )),
-        }
+        config.require_str("event_name").map(|_| ())
     }
 
     async fn execute(
@@ -90,12 +87,9 @@ impl SubActionRunner for ServerBroadcastRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "server.broadcast");
 
-        let name_template = config
-            .get("event_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let name_template = config.str("event_name").unwrap_or_default();
         let event_name = ctx.arg_stack.interpolate(name_template);
 
         let (outcome, updated_stack) = if event_name.is_empty() {
@@ -122,22 +116,7 @@ impl SubActionRunner for ServerBroadcastRunner {
             (SubActionOutcome::Success, Some(new_stack))
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "server.broadcast".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            updated_stack,
-        )
+        (timer.finish(outcome), updated_stack)
     }
 }
 

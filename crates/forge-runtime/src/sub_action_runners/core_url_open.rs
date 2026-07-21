@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use super::os_ports::UrlOpenPort;
 
@@ -66,11 +68,9 @@ impl SubActionRunner for CoreUrlOpenRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.url.open");
 
-        let url = ctx
-            .arg_stack
-            .interpolate(config.get("url").and_then(|v| v.as_str()).unwrap_or(""));
+        let url = ctx.arg_stack.interpolate(config.str("url").unwrap_or(""));
 
         let outcome = if is_browser_scheme(&url) {
             let opener = Arc::clone(&self.opener);
@@ -83,22 +83,7 @@ impl SubActionRunner for CoreUrlOpenRunner {
             SubActionOutcome::Failed(format!("rejected non-http(s) URL: {url}"))
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.url.open".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

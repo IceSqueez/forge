@@ -3,9 +3,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 pub struct ScriptEmitEventRunner {
     publisher: Arc<dyn EventPublisher>,
@@ -65,12 +67,7 @@ impl SubActionRunner for ScriptEmitEventRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("event_name").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "script.emit_event: event_name is required".to_owned(),
-            )),
-        }
+        config.require_str("event_name").map(|_| ())
     }
 
     async fn execute(
@@ -78,12 +75,9 @@ impl SubActionRunner for ScriptEmitEventRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "script.emit_event");
 
-        let name_template = config
-            .get("event_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let name_template = config.str("event_name").unwrap_or_default();
         let event_name = ctx.arg_stack.interpolate(name_template);
 
         let outcome = if event_name.is_empty() {
@@ -100,22 +94,7 @@ impl SubActionRunner for ScriptEmitEventRunner {
             SubActionOutcome::Success
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "script.emit_event".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

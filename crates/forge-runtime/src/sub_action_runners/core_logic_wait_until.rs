@@ -3,13 +3,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 use tokio::time::Instant;
 
-use super::core_logic_shared::telemetry;
 use crate::ConditionGate;
 
 const POLL_MIN_MS: i64 = 100;
@@ -84,12 +83,7 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("condition").and_then(Variant::as_str) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
-                "core.logic.wait_until: condition is required".to_owned(),
-            )),
-        }
+        config.require_str("condition").map(|_| ())
     }
 
     async fn execute(
@@ -97,25 +91,19 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, self.id());
         let begin = Instant::now();
 
-        let template = config
-            .get("condition")
-            .and_then(Variant::as_str)
-            .unwrap_or_default()
-            .to_owned();
+        let template = config.str("condition").unwrap_or_default().to_owned();
         let poll_interval = Duration::from_millis(
             config
-                .get("poll_interval_ms")
-                .and_then(Variant::as_int)
+                .int("poll_interval_ms")
                 .unwrap_or(500)
                 .clamp(POLL_MIN_MS, POLL_MAX_MS) as u64,
         );
         let timeout = Duration::from_millis(
             config
-                .get("timeout_ms")
-                .and_then(Variant::as_int)
+                .int("timeout_ms")
                 .unwrap_or(30_000)
                 .clamp(TIMEOUT_MIN_MS, TIMEOUT_MAX_MS) as u64,
         );
@@ -147,9 +135,6 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
             .set("wait.elapsed_ms".to_owned(), Variant::Int(elapsed_ms))
             .set("wait.timed_out".to_owned(), Variant::Bool(timed_out));
 
-        (
-            telemetry(ctx, self.id(), started_at, SubActionOutcome::Success),
-            Some(stack),
-        )
+        (timer.success(), Some(stack))
     }
 }

@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner,
+    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_script::{EngineConfig, MathEvaluator};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 pub struct CoreMathEvaluateRunner {
     evaluator: MathEvaluator,
@@ -84,17 +84,7 @@ impl SubActionRunner for CoreMathEvaluateRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let expr_ok = config
-            .get("expression")
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if expr_ok {
-            Ok(())
-        } else {
-            Err(RegistryError::UnknownKindId(
-                "core.math.evaluate: expression is required".to_owned(),
-            ))
-        }
+        config.require_str("expression").map(|_| ())
     }
 
     async fn execute(
@@ -102,25 +92,15 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "core.math.evaluate");
 
-        let expression = config
-            .get("expression")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let expression = config.str("expression").unwrap_or_default();
 
         let into_var = super::interpolate::sanitize_var_name(
-            config
-                .get("into_var")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("result"),
+            config.str_nonempty("into_var").unwrap_or("result"),
         );
 
-        let result_type = config
-            .get("result_type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("auto");
+        let result_type = config.str("result_type").unwrap_or("auto");
 
         let (outcome, updated_stack) = match self.evaluator.eval(expression) {
             Ok(variant) => {
@@ -141,22 +121,7 @@ impl SubActionRunner for CoreMathEvaluateRunner {
             Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "core.math.evaluate".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            updated_stack,
-        )
+        (timer.finish(outcome), updated_stack)
     }
 }
 

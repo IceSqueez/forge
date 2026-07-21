@@ -217,7 +217,7 @@ impl EventFeedView {
     }
 
     fn export(&mut self, cx: &mut Context<Self>) {
-        let events: Vec<EventItem> = self.log.read(cx).items().to_vec();
+        let events: Vec<EventItem> = self.log.read(cx).items().iter().cloned().collect();
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<PathBuf, String>>();
         self.rt_handle.spawn(async move {
             let outcome = async move {
@@ -851,7 +851,7 @@ impl EventFeedView {
         {
             return Some(found.clone());
         }
-        log.items().last().cloned()
+        log.items().back().cloned()
     }
 
     fn filter_counts(&self, cx: &Context<Self>) -> FilterCounts {

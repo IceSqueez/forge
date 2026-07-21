@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use forge_events::{Event, EventSource};
 use gpui::SharedString;
 use serde::Serialize;
@@ -62,19 +64,19 @@ impl EventItem {
 }
 
 pub struct EventLog {
-    items: Vec<EventItem>,
+    items: VecDeque<EventItem>,
     paused: bool,
 }
 
 impl EventLog {
     pub fn new() -> Self {
         Self {
-            items: Vec::new(),
+            items: VecDeque::new(),
             paused: false,
         }
     }
 
-    pub fn items(&self) -> &[EventItem] {
+    pub fn items(&self) -> &VecDeque<EventItem> {
         &self.items
     }
 
@@ -96,9 +98,9 @@ impl EventLog {
             return;
         }
         if self.items.len() >= RING_CAP {
-            self.items.remove(0);
+            self.items.pop_front();
         }
-        self.items.push(item);
+        self.items.push_back(item);
     }
 
     pub fn item_from_event(event: &Event) -> Option<EventItem> {

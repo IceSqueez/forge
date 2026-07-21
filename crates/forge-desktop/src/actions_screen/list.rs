@@ -717,7 +717,7 @@ impl ScreenActionsView {
         };
         let hover_bg = palette.elevated;
         div()
-            .id(SharedString::from(format!("actions-group-{index}")))
+            .id(("actions-group", index))
             .w_full()
             .flex()
             .items_center()

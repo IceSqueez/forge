@@ -178,9 +178,43 @@ struct ReplyTarget {
 
 struct DrawerResizeDrag;
 
+struct ChatViewerCount {
+    home_stats: Entity<HomeStats>,
+    _stats_obs: Subscription,
+}
+
+impl ChatViewerCount {
+    fn new(home_stats: Entity<HomeStats>, cx: &mut Context<Self>) -> Self {
+        let stats_obs = cx.observe(&home_stats, |_, _, cx| cx.notify());
+        Self {
+            home_stats,
+            _stats_obs: stats_obs,
+        }
+    }
+}
+
+impl Render for ChatViewerCount {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let viewer_count = self.home_stats.read(cx).viewers_display();
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(status_dot(palette.success, VIEWER_DOT))
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_secondary)
+                    .child(format!("{} {}", viewer_count, tr!("chat_viewers_unit"))),
+            )
+    }
+}
+
 pub struct ChatView {
     feed: Entity<ChatFeed>,
-    home_stats: Entity<HomeStats>,
+    viewer_count: Entity<ChatViewerCount>,
     uptime_view: Entity<UptimeView>,
     rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
@@ -212,7 +246,6 @@ pub struct ChatView {
     last_seen_len: usize,
     chat_list: ListState,
     _feed_obs: Subscription,
-    _stats_obs: Subscription,
     _input_sub: Subscription,
     _search_sub: Subscription,
     _drawer_search_sub: Subscription,
@@ -255,7 +288,7 @@ impl ChatView {
         let uptime_view = cx.new(|cx| UptimeView::new(status, cx));
 
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
-        let stats_obs = cx.observe(&home_stats, |_, _, cx| cx.notify());
+        let viewer_count = cx.new(|cx| ChatViewerCount::new(home_stats, cx));
         let input_sub = cx.subscribe(&input, Self::on_input_event);
         let search_sub = cx.subscribe(&search_field, Self::on_search_event);
         let drawer_search_sub = cx.subscribe(&drawer_search, Self::on_drawer_search_event);
@@ -283,7 +316,7 @@ impl ChatView {
 
         let mut this = Self {
             feed,
-            home_stats,
+            viewer_count,
             uptime_view,
             rt_handle,
             action_engine,
@@ -315,7 +348,6 @@ impl ChatView {
             last_seen_len,
             chat_list,
             _feed_obs: feed_obs,
-            _stats_obs: stats_obs,
             _input_sub: input_sub,
             _search_sub: search_sub,
             _drawer_search_sub: drawer_search_sub,
@@ -1015,21 +1047,6 @@ impl ChatView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let viewer_count = self.home_stats.read(cx).viewers_display();
-
-        let viewers = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(status_dot(palette.success, VIEWER_DOT))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_secondary)
-                    .child(format!("{} {}", viewer_count, tr!("chat_viewers_unit"))),
-            );
-
         let separator = div()
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(FONT_XS)
@@ -1068,7 +1085,7 @@ impl ChatView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(viewers)
+            .child(self.viewer_count.clone())
             .child(separator)
             .child(self.uptime_view.clone())
             .child(drawer_btn);

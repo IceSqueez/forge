@@ -7,9 +7,7 @@ use forge_components::{
     with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo};
-use gpui::{
-    AnyElement, ClickEvent, Context, FocusHandle, Pixels, SharedString, Window, div, prelude::*, px,
-};
+use gpui::{AnyElement, ClickEvent, Context, FocusHandle, Pixels, Window, div, prelude::*, px};
 
 use crate::presentation::ActivePresentation;
 
@@ -359,7 +357,7 @@ impl SettingsAudioView {
         for (idx, device) in self.devices.iter().enumerate() {
             let selected = idx == self.selected_idx;
             let mut item = div()
-                .id(SharedString::from(format!("settings-audio-device-{idx}")))
+                .id(("settings-audio-device", idx))
                 .flex()
                 .items_center()
                 .w_full()

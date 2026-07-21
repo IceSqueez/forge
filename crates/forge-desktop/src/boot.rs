@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
+use forge_components::{Density, ThemeId};
 use forge_events::EventPublisher;
 use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyConfig};
 use forge_platform_core::paths;
@@ -18,7 +20,7 @@ use forge_soundboard::{
 };
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
-    UserGlobalsRepo,
+    UserGlobalsRepo, reserved_keys,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::Variant;
@@ -37,6 +39,37 @@ pub enum BootFailure {
 
 fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
+}
+
+/// Blocks the calling thread (bounded by a timeout) so the window can open already themed.
+/// Uses a std channel, not `Handle::block_on`, because the caller sits inside `rt.enter()`.
+pub fn read_persisted_presentation(rt_handle: &tokio::runtime::Handle) -> (ThemeId, Density) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    rt_handle.spawn(async move {
+        let _ = tx.send(load_presentation_from_storage().await);
+    });
+    let (theme, density) = rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default();
+    tracing::info!(?theme, ?density, "applied persisted presentation");
+    (theme, density)
+}
+
+async fn load_presentation_from_storage() -> (ThemeId, Density) {
+    let db_path = default_db_path();
+    let url = format!("sqlite://{}?mode=rwc", db_path.display());
+    let backend = match SqliteBackend::open(&url).await {
+        Ok(backend) => backend,
+        Err(_) => return (ThemeId::default(), Density::default()),
+    };
+    let settings: &dyn SettingsRepo = &backend;
+    let theme = match settings.get_theme().await {
+        Ok(Some(key)) => ThemeId::from_storage_key(&key).unwrap_or_default(),
+        _ => ThemeId::default(),
+    };
+    let density = match settings.get_string(reserved_keys::DENSITY).await {
+        Ok(Some(key)) => Density::from_storage_key(&key).unwrap_or_default(),
+        _ => Density::default(),
+    };
+    (theme, density)
 }
 
 async fn load_hotkey_and_register(

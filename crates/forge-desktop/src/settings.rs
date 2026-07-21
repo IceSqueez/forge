@@ -6,12 +6,13 @@ use forge_components::{
     breadcrumb, card, ghost_button_with_icon, icon, metric_card, primary_button,
     primary_button_with_icon, radius, spacing, tr, with_alpha,
 };
-use forge_storage::{Language, SettingsRepo};
+use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Rgba, SharedString, Window, div,
     prelude::*, px,
 };
 
+use crate::async_bridge::{self, ErrorSink};
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
@@ -237,6 +238,16 @@ impl SettingsView {
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
         let density = cx.density();
         cx.set_global(Presentation::new(theme, density));
+
+        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let key = theme.storage_key().to_owned();
+        async_bridge::report_failure(
+            &self.handles.rt_handle,
+            async move { backend.set_theme(&key).await },
+            ErrorSink::Toast,
+            tr!("settings_theme_persist_failed"),
+            cx,
+        );
         cx.notify();
     }
 
@@ -262,6 +273,16 @@ impl SettingsView {
     fn select_density(&mut self, density: Density, cx: &mut Context<Self>) {
         let theme = cx.theme();
         cx.set_global(Presentation::new(theme, density));
+
+        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let key = density.storage_key().to_owned();
+        async_bridge::report_failure(
+            &self.handles.rt_handle,
+            async move { backend.set_string(reserved_keys::DENSITY, &key).await },
+            ErrorSink::Toast,
+            tr!("settings_density_persist_failed"),
+            cx,
+        );
         cx.notify();
     }
 

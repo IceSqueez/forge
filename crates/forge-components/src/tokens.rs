@@ -9,6 +9,24 @@ pub enum Density {
 }
 
 impl Density {
+    /// Persisted identifier - must stay stable across releases.
+    pub fn storage_key(self) -> &'static str {
+        match self {
+            Density::Compact => "compact",
+            Density::Cozy => "cozy",
+            Density::Spacious => "spacious",
+        }
+    }
+
+    pub fn from_storage_key(key: &str) -> Option<Density> {
+        match key {
+            "compact" => Some(Density::Compact),
+            "cozy" => Some(Density::Cozy),
+            "spacious" => Some(Density::Spacious),
+            _ => None,
+        }
+    }
+
     fn multiplier(self) -> f32 {
         match self {
             Density::Compact => 0.85,

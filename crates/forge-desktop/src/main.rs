@@ -58,7 +58,7 @@ mod twitch_panel;
 mod uptime_view;
 mod voice_aliases;
 
-use forge_components::{Density, IconAssets, ThemeId, bind_text_area_keys, bind_text_input_keys};
+use forge_components::{IconAssets, bind_text_area_keys, bind_text_input_keys};
 use forge_platform_core::paths;
 use gpui::{
     App, AppContext, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowOptions, point, px,
@@ -131,7 +131,8 @@ fn main() {
                 eprintln!("forge-desktop: failed to register embedded fonts: {err}");
             }
 
-            cx.set_global(Presentation::new(ThemeId::default(), Density::default()));
+            let (theme, density) = crate::boot::read_persisted_presentation(&rt_handle);
+            cx.set_global(Presentation::new(theme, density));
             cx.set_global(crate::presentation::ActiveLanguage(
                 forge_storage::Language::default(),
             ));

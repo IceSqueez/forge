@@ -96,9 +96,8 @@ impl SubActionRunner for CoreMathEvaluateRunner {
 
         let expression = config.str("expression").unwrap_or_default();
 
-        let into_var = super::interpolate::sanitize_var_name(
-            config.str_nonempty("into_var").unwrap_or("result"),
-        );
+        let into_var =
+            forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("result"));
 
         let result_type = config.str("result_type").unwrap_or("auto");
 

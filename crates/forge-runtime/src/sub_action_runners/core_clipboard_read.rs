@@ -87,7 +87,7 @@ impl SubActionRunner for CoreClipboardReadRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.clipboard.read");
 
-        let into_var = super::interpolate::sanitize_var_name(
+        let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or(DEFAULT_INTO_VAR),
         );
 

@@ -106,7 +106,7 @@ impl SubActionRunner for CoreFileListRunner {
         let pattern = config.str_nonempty("pattern").unwrap_or("*").to_owned();
         let recursive = config.bool("recursive").unwrap_or(false);
         let include_dirs = config.bool("include_dirs").unwrap_or(false);
-        let into_var = super::interpolate::sanitize_var_name(
+        let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("file.entries"),
         );
 

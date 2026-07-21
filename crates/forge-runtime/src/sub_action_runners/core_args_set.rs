@@ -68,7 +68,7 @@ impl SubActionRunner for CoreArgsSetRunner {
         let timer = StepTimer::start(ctx, "core.args.set");
 
         let name_template = config.str("name").unwrap_or_default();
-        let name = super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
+        let name = forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
 
         let value = match config.get("value") {
             Some(Variant::String(s)) => {

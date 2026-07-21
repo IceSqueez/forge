@@ -84,9 +84,9 @@ impl SubActionRunner for CoreGlobalsGetRunner {
         let into_template = config.str("into_arg").unwrap_or_default();
 
         let resolved_name =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
         let resolved_into =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(into_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(into_template));
 
         let (outcome, updated_stack) = match self.globals.get(&resolved_name).await {
             Ok(value) => {

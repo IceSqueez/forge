@@ -108,7 +108,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
 
         let target_var_template = config.str("target_var").unwrap_or_default();
         let target_var =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(target_var_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(target_var_template));
 
         let Some(compiled) = self.registry.get_by_name(&name).await else {
             let duration_ms = wall_start.elapsed().as_millis() as u64;

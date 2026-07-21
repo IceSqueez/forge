@@ -90,7 +90,7 @@ impl SubActionRunner for CoreTimeNowRunner {
         let format = config.str("format").unwrap_or("iso8601");
         let custom_fmt_string = config.str("custom_format_string").unwrap_or("").to_owned();
         let into_var =
-            super::interpolate::sanitize_var_name(config.str_nonempty("into_var").unwrap_or("now"));
+            forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("now"));
 
         let formatted = match format {
             "unix_seconds" => now.unix_timestamp().to_string(),

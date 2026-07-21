@@ -37,17 +37,6 @@ pub(crate) enum ConfigField {
 pub(crate) type ConfigCommitHandler<V> =
     fn(&mut V, Entity<TextInput>, &InputEvent, &mut Context<V>);
 
-fn variant_display(v: &Variant) -> String {
-    match v {
-        Variant::Int(n) => n.to_string(),
-        Variant::Float(f) => f.to_string(),
-        Variant::Bool(b) => b.to_string(),
-        Variant::String(s) => s.clone(),
-        Variant::Datetime(dt) => dt.to_string(),
-        Variant::Array(_) | Variant::Object(_) => String::new(),
-    }
-}
-
 pub(crate) fn sparse_overrides(default: &TriggerConfig, buffer: &TriggerConfig) -> TriggerConfig {
     buffer
         .iter()
@@ -142,7 +131,10 @@ fn build_config_input<V: 'static>(
     on_committed: ConfigCommitHandler<V>,
     cx: &mut Context<V>,
 ) -> ConfigField {
-    let seed = config.get(key).map(variant_display).unwrap_or_default();
+    let seed = config
+        .get(key)
+        .map(forge_types::display_scalar)
+        .unwrap_or_default();
     let palette = *palette;
     let input = cx.new(|cx| {
         let mut input = TextInput::new(placeholder, cx).with_palette(palette);

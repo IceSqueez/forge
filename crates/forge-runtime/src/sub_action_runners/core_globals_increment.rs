@@ -83,7 +83,7 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
         let amount = config.int("amount").unwrap_or(1);
 
         let resolved_name =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
 
         let outcome = match self.globals.incr(&resolved_name, amount).await {
             Ok(new_val) => {

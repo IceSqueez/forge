@@ -97,9 +97,8 @@ impl SubActionRunner for CoreRandomPickRunner {
             None => vec![],
         };
 
-        let into_var = super::interpolate::sanitize_var_name(
-            config.str_nonempty("into_var").unwrap_or("picked"),
-        );
+        let into_var =
+            forge_types::strip_var_decoration(config.str_nonempty("into_var").unwrap_or("picked"));
 
         let (outcome, produced) = if items.is_empty() {
             (

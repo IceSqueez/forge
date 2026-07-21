@@ -96,7 +96,7 @@ impl SubActionRunner for CoreTimeParseRunner {
             .str("format")
             .unwrap_or("[year]-[month]-[day] [hour]:[minute]:[second]")
             .to_owned();
-        let into_var = super::interpolate::sanitize_var_name(
+        let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("time.parsed"),
         );
 

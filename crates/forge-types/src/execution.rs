@@ -1,5 +1,5 @@
 use crate::ids::{ActionId, EventId};
-use crate::variant::{Variant, VariantKind};
+use crate::variant::Variant;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
@@ -41,19 +41,22 @@ pub struct SubActionTelemetry {
     pub produced: BTreeMap<String, String>,
 }
 
-pub fn normalize_var_name(raw: &str) -> Option<String> {
+/// Trim, peel one enclosing `%...%` pair, trim again. Charset-agnostic: dotted
+/// namespaced names (`time.formatted`, `regex.matched`) survive verbatim.
+pub fn strip_var_decoration(raw: &str) -> String {
     let trimmed = raw.trim();
-    let unwrapped = trimmed
+    trimmed
         .strip_prefix('%')
         .and_then(|inner| inner.strip_suffix('%'))
         .unwrap_or(trimmed)
-        .trim();
-    if !unwrapped.is_empty()
-        && unwrapped
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-    {
-        Some(unwrapped.to_owned())
+        .trim()
+        .to_owned()
+}
+
+pub fn normalize_var_name(raw: &str) -> Option<String> {
+    let name = strip_var_decoration(raw);
+    if !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        Some(name)
     } else {
         None
     }
@@ -62,17 +65,7 @@ pub fn normalize_var_name(raw: &str) -> Option<String> {
 pub fn variant_preview(value: &Variant) -> String {
     const MAX_CHARS: usize = 800;
     let rendered = match value {
-        Variant::Array(items) => {
-            let uniform = items.first().map(VariantKind::from_variant).filter(|kind| {
-                items
-                    .iter()
-                    .all(|item| VariantKind::from_variant(item) == *kind)
-            });
-            return match uniform {
-                Some(kind) => format!("{}[{}]", kind.contract_name(), items.len()),
-                None => format!("[{}]", items.len()),
-            };
-        }
+        Variant::Array(items) => return crate::variant::array_summary(items),
         Variant::Object(_) => serde_json::to_string_pretty(&value.to_plain_json())
             .unwrap_or_else(|_| value.to_string()),
         Variant::String(s) if !s.contains('\n') => {

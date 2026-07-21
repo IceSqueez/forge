@@ -83,7 +83,7 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
         let amount = config.int("amount").unwrap_or(1);
 
         let resolved_key =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(key_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
 
         let outcome = match self.globals.incr(&resolved_key, -amount).await {
             Ok(new_val) => {

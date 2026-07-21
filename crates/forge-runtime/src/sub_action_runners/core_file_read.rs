@@ -95,7 +95,7 @@ impl SubActionRunner for CoreFileReadRunner {
 
         let path_template = config.str("path").unwrap_or_default();
         let target_var =
-            super::interpolate::sanitize_var_name(config.str("target_var").unwrap_or_default());
+            forge_types::strip_var_decoration(config.str("target_var").unwrap_or_default());
         let read_as = config.str("read_as").unwrap_or("Lines array").to_owned();
 
         let interpolated_path = ctx.arg_stack.interpolate(path_template);
@@ -292,7 +292,7 @@ mod tests {
     #[tokio::test]
     async fn target_var_name_is_sanitized_before_binding() {
         // A `%result%` target name is stored under the bare `result` key, proving
-        // the runner routes the name through sanitize_var_name.
+        // the runner routes the name through strip_var_decoration.
         let (outcome, value) = read_with(Some("Whole file"), "  %result%  ", "result", "hi").await;
         assert_eq!(outcome, SubActionOutcome::Success);
         assert_eq!(value, Some(Variant::String("hi".to_owned())));

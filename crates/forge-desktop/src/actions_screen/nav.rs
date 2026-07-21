@@ -10,17 +10,6 @@ pub(super) struct NavFrame {
     pub case_index: Option<usize>,
 }
 
-pub(super) fn variant_to_display_str(v: &Variant) -> String {
-    match v {
-        Variant::Int(n) => n.to_string(),
-        Variant::Float(f) => f.to_string(),
-        Variant::Bool(b) => b.to_string(),
-        Variant::String(s) => s.clone(),
-        Variant::Datetime(dt) => dt.to_string(),
-        Variant::Array(_) | Variant::Object(_) => String::new(),
-    }
-}
-
 pub(super) fn decode_chain_value(value: Option<&Variant>) -> Vec<SubActionStep> {
     let Some(steps) = value.and_then(Variant::as_array) else {
         return Vec::new();
@@ -186,7 +175,7 @@ pub(super) fn case_match_display(step: &SubActionStep, case_index: usize) -> Opt
         .and_then(Variant::as_object)?;
     match case.get("match") {
         Some(Variant::Array(_)) => None,
-        Some(other) => Some(variant_to_display_str(other)),
+        Some(other) => Some(forge_types::display_scalar(other)),
         None => Some(String::new()),
     }
 }

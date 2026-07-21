@@ -90,7 +90,7 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
         let remove_all = config.bool("remove_all").unwrap_or(false);
 
         let resolved_key =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(key_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
         let raw_value = ctx.arg_stack.interpolate(value_template);
         let target = super::interpolate::parse_variant(&raw_value);
 

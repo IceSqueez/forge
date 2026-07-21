@@ -459,7 +459,7 @@ fn build_input_field(
 ) -> SubFormField {
     let seed = config
         .get(key)
-        .map(nav::variant_to_display_str)
+        .map(forge_types::display_scalar)
         .unwrap_or_default();
     let is_var = is_var_key(key);
     let invalid_seed = is_var && !seed.trim().is_empty() && normalize_var_name(&seed).is_none();
@@ -504,7 +504,7 @@ fn build_area_field(
 ) -> SubFormField {
     let seed = config
         .get(key)
-        .map(nav::variant_to_display_str)
+        .map(forge_types::display_scalar)
         .unwrap_or_default();
     let area = cx.new(|cx| {
         let mut area = TextArea::new("", cx)
@@ -587,7 +587,7 @@ fn push_form_field(
         } => {
             let selected = config
                 .get(*key)
-                .map(nav::variant_to_display_str)
+                .map(forge_types::display_scalar)
                 .unwrap_or_default();
             let options = options
                 .iter()
@@ -609,7 +609,7 @@ fn push_form_field(
         } => {
             let selected = config
                 .get(*key)
-                .map(nav::variant_to_display_str)
+                .map(forge_types::display_scalar)
                 .unwrap_or_default();
             let options = options_map.get(*options_key).cloned().unwrap_or_default();
             out.push(SubFormField::Select {

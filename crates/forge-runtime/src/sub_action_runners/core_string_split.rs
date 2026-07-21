@@ -101,7 +101,7 @@ impl SubActionRunner for CoreStringSplitRunner {
         let separator = config.str("separator").unwrap_or(",");
         let trim_each = config.bool("trim_each").unwrap_or(false);
         let max_parts = config.int("max_parts").unwrap_or(0).max(0) as usize;
-        let into_var = super::interpolate::sanitize_var_name(
+        let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.parts"),
         );
 

@@ -163,7 +163,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
         let items: Vec<Variant> = {
             let source_template = config.str("array_source").unwrap_or_default();
             let source =
-                super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(source_template));
+                forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(source_template));
             ctx.arg_stack
                 .get(&source)
                 .and_then(Variant::as_array)

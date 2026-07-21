@@ -109,7 +109,7 @@ impl SubActionRunner for CoreRandomIntRunner {
         let min = resolve_bound(config, ctx, "min", 1);
         let max = resolve_bound(config, ctx, "max", 100);
         let target_var =
-            super::interpolate::sanitize_var_name(config.str("target_var").unwrap_or_default());
+            forge_types::strip_var_decoration(config.str("target_var").unwrap_or_default());
 
         let (outcome, produced) = match (min, max) {
             (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),

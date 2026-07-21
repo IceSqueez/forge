@@ -110,7 +110,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
         let min = resolve_bound(config, ctx, "min", 0.0);
         let max = resolve_bound(config, ctx, "max", 1.0);
         let into_var =
-            super::interpolate::sanitize_var_name(config.str("into_var").unwrap_or_default());
+            forge_types::strip_var_decoration(config.str("into_var").unwrap_or_default());
 
         let (outcome, produced) = match (min, max) {
             (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),

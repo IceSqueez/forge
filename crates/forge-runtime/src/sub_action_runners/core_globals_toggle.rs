@@ -75,7 +75,7 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
         let key_template = config.str("key").unwrap_or_default();
 
         let resolved_key =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(key_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
 
         let outcome = match self.globals.get(&resolved_key).await {
             Err(e) => SubActionOutcome::Failed(e.to_string()),

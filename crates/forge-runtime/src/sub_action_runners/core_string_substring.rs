@@ -137,7 +137,7 @@ impl SubActionRunner for CoreStringSubstringRunner {
             ))
         } else {
             let slice: String = chars[start..end].iter().collect();
-            let into_var = super::interpolate::sanitize_var_name(
+            let into_var = forge_types::strip_var_decoration(
                 config.str_nonempty("into_var").unwrap_or("string.result"),
             );
             let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(slice));

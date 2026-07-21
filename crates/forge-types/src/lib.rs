@@ -19,7 +19,7 @@ pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
-    SubActionTelemetry, normalize_var_name, variant_preview,
+    SubActionTelemetry, normalize_var_name, strip_var_decoration, variant_preview,
 };
 pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use platform::PlatformId;
@@ -36,4 +36,4 @@ pub use unified_chat::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
     ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
 };
-pub use variant::{Variant, VariantError, VariantKind, VariantType};
+pub use variant::{Variant, VariantError, VariantKind, VariantType, display_scalar};

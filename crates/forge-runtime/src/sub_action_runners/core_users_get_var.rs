@@ -106,9 +106,8 @@ impl SubActionRunner for CoreUsersGetVarRunner {
 
         let user_id = resolve(config.str("user_login").unwrap_or_default());
         let var_name = resolve(config.str("var_name").unwrap_or_default());
-        let into_var = super::interpolate::sanitize_var_name(&resolve(
-            config.str("into_var").unwrap_or_default(),
-        ));
+        let into_var =
+            forge_types::strip_var_decoration(&resolve(config.str("into_var").unwrap_or_default()));
         let default_raw = resolve(config.str("default_value").unwrap_or_default());
         let broadcaster_id = resolve_broadcaster_id(ctx.arg_stack, self.globals.as_ref()).await;
 

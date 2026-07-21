@@ -86,9 +86,9 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         let name_template = config.str("name").unwrap_or_default();
         let value_template = config.str("value").unwrap_or_default();
 
-        let name = super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(name_template));
+        let name = forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(name_template));
         let raw = ctx.arg_stack.interpolate(value_template);
-        let variant = parse_variant(&raw);
+        let variant = super::interpolate::parse_variant(&raw);
         let persisted = config.bool("persisted").unwrap_or(false);
 
         let prev_value = self.globals.get(&name).await.ok().flatten();
@@ -117,28 +117,11 @@ impl SubActionRunner for CoreGlobalsSetRunner {
     }
 }
 
-fn parse_variant(s: &str) -> Variant {
-    if let Ok(i) = s.parse::<i64>() {
-        return Variant::Int(i);
-    }
-    if let Ok(f) = s.parse::<f64>()
-        && let Ok(v) = Variant::float(f)
-    {
-        return v;
-    }
-    if s.eq_ignore_ascii_case("true") {
-        return Variant::Bool(true);
-    }
-    if s.eq_ignore_ascii_case("false") {
-        return Variant::Bool(false);
-    }
-    Variant::String(s.to_string())
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::sub_action_runners::interpolate::parse_variant;
     use forge_events::EventPublisher;
     use forge_registry::RunContext;
     use forge_storage::{GlobalEntry, StorageError};

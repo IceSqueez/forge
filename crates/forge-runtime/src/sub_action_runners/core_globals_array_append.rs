@@ -92,7 +92,7 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
         let max_len = config.int("max_length").unwrap_or(0);
 
         let resolved_key =
-            super::interpolate::sanitize_var_name(&ctx.arg_stack.interpolate(key_template));
+            forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
         let raw_value = ctx.arg_stack.interpolate(value_template);
         let item = super::interpolate::parse_variant(&raw_value);
 

@@ -115,7 +115,7 @@ impl SubActionRunner for CoreStringReplaceRunner {
         let replace_with = config.str("replace_with").unwrap_or("");
         let case_sensitive = config.bool("case_sensitive").unwrap_or(true);
         let is_regex = config.bool("is_regex").unwrap_or(false);
-        let into_var = super::interpolate::sanitize_var_name(
+        let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.result"),
         );
 

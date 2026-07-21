@@ -188,6 +188,27 @@ impl fmt::Display for Variant {
     }
 }
 
+pub(crate) fn array_summary(items: &[Variant]) -> String {
+    let uniform = items.first().map(VariantKind::from_variant).filter(|kind| {
+        items
+            .iter()
+            .all(|item| VariantKind::from_variant(item) == *kind)
+    });
+    match uniform {
+        Some(kind) => format!("{}[{}]", kind.contract_name(), items.len()),
+        None => format!("[{}]", items.len()),
+    }
+}
+
+/// Scalars render verbatim; arrays/objects collapse to a compact non-empty summary (`int[3]` / `object{2}`).
+pub fn display_scalar(value: &Variant) -> String {
+    match value {
+        Variant::Array(items) => array_summary(items),
+        Variant::Object(map) => format!("object{{{}}}", map.len()),
+        scalar => scalar.to_string(),
+    }
+}
+
 impl Variant {
     /// Rejects NaN and infinite values.
     pub fn float(f: f64) -> Result<Self, VariantError> {

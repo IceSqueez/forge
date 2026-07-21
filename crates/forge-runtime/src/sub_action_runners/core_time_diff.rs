@@ -128,7 +128,7 @@ impl SubActionRunner for CoreTimeDiffRunner {
         };
 
         let unit = config.str("unit").unwrap_or("seconds");
-        let into_var = super::interpolate::sanitize_var_name(
+        let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("time.diff_value"),
         );
 

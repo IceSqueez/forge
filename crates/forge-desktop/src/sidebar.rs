@@ -1,6 +1,7 @@
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, ResizeEdge, ResizeRange, icon, install_resize, radius, status_dot, tr,
+    PlatformKind, Radius, ResizeEdge, ResizeRange, icon, install_resize, platform_color, radius,
+    status_dot, tr,
 };
 use forge_platform_core::BuiltinId;
 use gpui::{
@@ -174,19 +175,19 @@ impl SidebarNav {
             },
             NavEntry::MiniLabel(NavText::Key("nav_item_platforms")),
             NavEntry::FlatLink {
-                dot: palette.brand,
+                dot: platform_color(PlatformKind::Twitch, palette),
                 label: NavText::Brand("Twitch"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("twitch")),
                 integ: Integration::Twitch,
             },
             NavEntry::FlatLink {
-                dot: palette.random,
+                dot: platform_color(PlatformKind::YouTube, palette),
                 label: NavText::Brand("YouTube"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("youtube")),
                 integ: Integration::YouTube,
             },
             NavEntry::FlatLink {
-                dot: palette.info,
+                dot: platform_color(PlatformKind::Kick, palette),
                 label: NavText::Brand("Kick"),
                 screen: Screen::BuiltinDetail(BuiltinId::new("kick")),
                 integ: Integration::Kick,

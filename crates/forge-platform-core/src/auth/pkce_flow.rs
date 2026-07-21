@@ -247,3 +247,342 @@ struct WireTokenResponse {
     refresh_token: Option<String>,
     expires_in: Option<u64>,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn config(authorize_endpoint: String, token_endpoint: String) -> PkceClientConfig {
+        PkceClientConfig {
+            client_id: "test_client".to_owned(),
+            client_secret: None,
+            authorize_endpoint,
+            token_endpoint,
+            scopes: vec!["scope:a".to_owned(), "scope:b".to_owned()],
+            authorize_pre_redirect_params: Vec::new(),
+            authorize_trailing_params: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn authorize_url_contains_required_pkce_params_and_no_secret() {
+        let mut flow = PkceFlow::new(config(
+            "https://example.com/authorize".to_owned(),
+            "https://example.com/token".to_owned(),
+        ));
+        let url = flow.start(&[]).await.unwrap().auth_url;
+        assert!(url.starts_with("https://example.com/authorize"));
+        assert!(url.contains("response_type=code"));
+        assert!(url.contains("client_id=test_client"));
+        assert!(url.contains("code_challenge_method=S256"));
+        assert!(url.contains("code_challenge="));
+        assert!(url.contains("state="));
+        assert!(url.contains("scope=scope%3Aa+scope%3Ab"));
+        assert!(!url.to_lowercase().contains("client_secret"));
+    }
+
+    #[tokio::test]
+    async fn authorize_url_places_pre_redirect_params_before_redirect_uri() {
+        let mut cfg = config(
+            "https://example.com/authorize".to_owned(),
+            "https://example.com/token".to_owned(),
+        );
+        cfg.authorize_pre_redirect_params = vec![("redirect".to_owned(), "127.0.0.1".to_owned())];
+        let mut flow = PkceFlow::new(cfg);
+        let url = flow.start(&[]).await.unwrap().auth_url;
+        let redirect_pos = url.find("redirect=127.0.0.1").unwrap();
+        let redirect_uri_pos = url.find("redirect_uri=").unwrap();
+        assert!(redirect_pos < redirect_uri_pos);
+    }
+
+    #[tokio::test]
+    async fn authorize_url_appends_trailing_params_from_config_and_call_site() {
+        let mut cfg = config(
+            "https://example.com/authorize".to_owned(),
+            "https://example.com/token".to_owned(),
+        );
+        cfg.authorize_trailing_params = vec![("access_type".to_owned(), "offline".to_owned())];
+        let mut flow = PkceFlow::new(cfg);
+        let url = flow.start(&[("prompt", "consent")]).await.unwrap().auth_url;
+        assert!(url.contains("access_type=offline"));
+        assert!(url.contains("prompt=consent"));
+        let access_type_pos = url.find("access_type=offline").unwrap();
+        let prompt_pos = url.find("prompt=consent").unwrap();
+        assert!(access_type_pos < prompt_pos);
+    }
+
+    async fn spawn_callback(redirect_uri: &str, state: &str, code: &str) {
+        let url = format!("{redirect_uri}?code={code}&state={state}");
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let _ = reqwest::Client::new().get(&url).send().await;
+        });
+    }
+
+    #[tokio::test]
+    async fn exchange_sends_pkce_form_with_secret_when_configured_and_parses_token() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .and(body_string_contains("code_verifier="))
+            .and(body_string_contains("client_secret=shh"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "access_abc",
+                "refresh_token": "refresh_xyz",
+                "expires_in": 3600,
+            })))
+            .mount(&server)
+            .await;
+
+        let mut cfg = config(
+            format!("{}/authorize", server.uri()),
+            format!("{}/token", server.uri()),
+        );
+        cfg.client_secret = Some("shh".to_owned());
+        let mut flow = PkceFlow::new(cfg);
+        let auth_url = flow.start(&[]).await.unwrap().auth_url;
+        let redirect_uri = auth_url
+            .split("redirect_uri=")
+            .nth(1)
+            .unwrap()
+            .split('&')
+            .next()
+            .unwrap()
+            .to_owned();
+        let redirect_uri = urlencoding_decode(&redirect_uri);
+        let state = auth_url
+            .split("state=")
+            .nth(1)
+            .unwrap()
+            .split('&')
+            .next()
+            .unwrap()
+            .to_owned();
+        spawn_callback(&redirect_uri, &state, "auth_code_xyz").await;
+
+        let token = flow.exchange(Duration::from_secs(2)).await.unwrap();
+        assert_eq!(token.access_token, "access_abc");
+        assert_eq!(token.refresh_token.as_deref(), Some("refresh_xyz"));
+        assert_eq!(token.expires_in, Some(3600));
+    }
+
+    fn urlencoding_decode(s: &str) -> String {
+        s.replace("%3A", ":")
+            .replace("%2F", "/")
+            .replace("%2C", ",")
+    }
+
+    #[tokio::test]
+    async fn exchange_propagates_http_error_on_4xx() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
+            )
+            .mount(&server)
+            .await;
+
+        let mut flow = PkceFlow::new(config(
+            format!("{}/authorize", server.uri()),
+            format!("{}/token", server.uri()),
+        ));
+        let auth_url = flow.start(&[]).await.unwrap().auth_url;
+        let redirect_uri = auth_url
+            .split("redirect_uri=")
+            .nth(1)
+            .unwrap()
+            .split('&')
+            .next()
+            .unwrap()
+            .to_owned();
+        let redirect_uri = urlencoding_decode(&redirect_uri);
+        let state = auth_url
+            .split("state=")
+            .nth(1)
+            .unwrap()
+            .split('&')
+            .next()
+            .unwrap()
+            .to_owned();
+        spawn_callback(&redirect_uri, &state, "bad_code").await;
+
+        let err = flow.exchange(Duration::from_secs(2)).await.unwrap_err();
+        assert!(matches!(err, PlatformError::Http { status: 400, .. }));
+    }
+
+    #[tokio::test]
+    async fn exchange_response_missing_refresh_token_and_expires_in_deserializes_to_none() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "access_only",
+            })))
+            .mount(&server)
+            .await;
+
+        let mut flow = PkceFlow::new(config(
+            format!("{}/authorize", server.uri()),
+            format!("{}/token", server.uri()),
+        ));
+        let auth_url = flow.start(&[]).await.unwrap().auth_url;
+        let redirect_uri = auth_url
+            .split("redirect_uri=")
+            .nth(1)
+            .unwrap()
+            .split('&')
+            .next()
+            .unwrap()
+            .to_owned();
+        let redirect_uri = urlencoding_decode(&redirect_uri);
+        let state = auth_url
+            .split("state=")
+            .nth(1)
+            .unwrap()
+            .split('&')
+            .next()
+            .unwrap()
+            .to_owned();
+        spawn_callback(&redirect_uri, &state, "auth_code_abc").await;
+
+        let token = flow.exchange(Duration::from_secs(2)).await.unwrap();
+        assert_eq!(token.access_token, "access_only");
+        assert!(token.refresh_token.is_none());
+        assert!(token.expires_in.is_none());
+    }
+
+    #[tokio::test]
+    async fn refresh_any_client_error_policy_maps_400_and_401_to_reauth() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("nope"))
+            .mount(&server)
+            .await;
+
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: "kick".to_owned(),
+            client_id: "cid".to_owned(),
+            client_secret: None,
+            token_endpoint: format!("{}/token", server.uri()),
+            reauth_policy: ReauthPolicy::AnyClientError,
+        });
+        let err = refresher.refresh("expired").await.unwrap_err();
+        assert!(matches!(err, PlatformError::ReauthRequired { platform } if platform == "kick"));
+    }
+
+    #[tokio::test]
+    async fn refresh_invalid_grant_on_400_policy_ignores_401() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("nope"))
+            .mount(&server)
+            .await;
+
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: "youtube".to_owned(),
+            client_id: "cid".to_owned(),
+            client_secret: Some("secret".to_owned()),
+            token_endpoint: format!("{}/token", server.uri()),
+            reauth_policy: ReauthPolicy::InvalidGrantOn400,
+        });
+        let err = refresher.refresh("expired").await.unwrap_err();
+        assert!(matches!(err, PlatformError::Http { status: 401, .. }));
+    }
+
+    #[tokio::test]
+    async fn refresh_invalid_grant_on_400_policy_matches_400_with_invalid_grant_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
+            )
+            .mount(&server)
+            .await;
+
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: "youtube".to_owned(),
+            client_id: "cid".to_owned(),
+            client_secret: Some("secret".to_owned()),
+            token_endpoint: format!("{}/token", server.uri()),
+            reauth_policy: ReauthPolicy::InvalidGrantOn400,
+        });
+        let err = refresher.refresh("expired").await.unwrap_err();
+        assert!(matches!(err, PlatformError::ReauthRequired { platform } if platform == "youtube"));
+    }
+
+    #[tokio::test]
+    async fn refresh_sends_client_secret_only_when_configured() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("client_secret=shh"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new_access",
+                "expires_in": 3600,
+            })))
+            .mount(&server)
+            .await;
+
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: "youtube".to_owned(),
+            client_id: "cid".to_owned(),
+            client_secret: Some("shh".to_owned()),
+            token_endpoint: format!("{}/token", server.uri()),
+            reauth_policy: ReauthPolicy::InvalidGrantOn400,
+        });
+        refresher.refresh("rt").await.unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(reqs.len(), 1);
+        let body = std::str::from_utf8(&reqs[0].body).unwrap();
+        assert!(body.contains("client_secret=shh"));
+    }
+
+    #[tokio::test]
+    async fn refresh_omits_client_secret_when_none() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "new_access",
+                "expires_in": 3600,
+            })))
+            .mount(&server)
+            .await;
+
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: "twitch".to_owned(),
+            client_id: "cid".to_owned(),
+            client_secret: None,
+            token_endpoint: format!("{}/token", server.uri()),
+            reauth_policy: ReauthPolicy::AnyClientError,
+        });
+        refresher.refresh("rt").await.unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        let body = std::str::from_utf8(&reqs[0].body).unwrap();
+        assert!(!body.contains("client_secret"));
+    }
+
+    #[tokio::test]
+    async fn refresh_network_error_strips_url() {
+        let refresher = PkceRefresher::new(PkceRefreshConfig {
+            platform: "twitch".to_owned(),
+            client_id: "cid".to_owned(),
+            client_secret: None,
+            token_endpoint: "https://192.0.2.1/token".to_owned(),
+            reauth_policy: ReauthPolicy::AnyClientError,
+        });
+        let err = refresher.refresh("rt").await.unwrap_err();
+        assert!(!format!("{err}").contains("192.0.2.1"));
+    }
+}

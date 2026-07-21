@@ -2614,6 +2614,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "wiremock",
 ]
 
 [[package]]

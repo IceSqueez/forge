@@ -12,24 +12,12 @@ boot_failure_reassure = Ваші дані у безпеці. Якщо це по�
 
 common_cancel = Скасувати
 common_save = Зберегти
-common_language = Мова
 
 ## Навігація - назви екранів (хлібні крихти + бічна панель)
 
 nav_home = Головна
-nav_actions = Дії
-nav_queues = Черги
-nav_triggers = Тригери
-nav_integration = Інтеграція
-nav_live_chat = Живий чат
 nav_event_feed = Стрічка подій
-nav_globals = Глобальні змінні
-nav_settings = Налаштування
-nav_tts = TTS
-nav_soundboard = Звукова панель
 nav_script_editor = Скрипти
-nav_api_reference = Довідник API
-nav_server = Сервер
 
 ## Навігація - заголовки секцій бічної панелі
 
@@ -48,12 +36,9 @@ nav_item_event_feed = Стрічка подій
 nav_item_globals = Глобальні змінні
 nav_item_platforms = Платформи
 nav_item_stream_apps = Стрім-застосунки
-nav_group_modules = Вбудовані
 nav_item_soundboard = Звукова панель
 nav_item_tts = Синтез мовлення
 nav_item_ws_server = WebSocket-сервер
-nav_item_discord = Discord
-nav_item_midi = MIDI
 nav_item_hotkey = Гарячі клавіші
 nav_item_settings = Налаштування
 
@@ -64,8 +49,6 @@ home_hero_import = Імпортувати
 home_hero_new_action = Нова дія
 home_import_success = Імпортовано дію «{ $name }»
 home_import_failed = Не вдалося імпортувати: { $error }
-home_stats_error = Не вдалося завантажити статистику: { $error }
-home_stats_retry = Повторити
 
 ## Головна - картки швидкого переходу
 
@@ -128,9 +111,6 @@ home_connections_summary = { $active } активних · { $disconnected } в�
 settings_appearance_title = Зовнішній вигляд
 settings_appearance_theme_label = Тема
 settings_theme_active = АКТИВНА
-settings_theme_mocha_desc = Темна, тепла
-settings_theme_tokyo_desc = Темна, холодна
-settings_theme_latte_desc = Світла
 settings_appearance_density_label = Щільність інтерфейсу
 settings_appearance_density_subtitle = Скільки простору отримує інтерфейс - застосовується миттєво
 settings_appearance_density_compact = Компактна
@@ -140,15 +120,6 @@ settings_appearance_density_cozy_hint = Збалансовані відступ�
 settings_appearance_density_spacious = Простора
 settings_appearance_density_spacious_hint = Більше повітря між елементами
 settings_appearance_fonts_label = Шрифти
-settings_appearance_fonts_subtitle = Шрифти інтерфейсу та коду - застосовується миттєво
-settings_appearance_fonts_scanning = Сканування встановлених шрифтів…
-settings_appearance_font_body_label = Шрифт інтерфейсу
-settings_appearance_font_mono_label = Моноширинний шрифт
-settings_appearance_font_default_placeholder = { $family } (типовий)
-settings_appearance_font_reset = Скинути до типового
-settings_appearance_font_missing = «{ $family }» не встановлено - доки він не з'явиться, діє типовий
-settings_appearance_font_show_all = Показати всі шрифти
-settings_appearance_font_preview = Жебракують філософи при ґанку церкви в Гадячі · 0123456789
 settings_appearance_theme_hint = Який вигляд матиме Forge
 settings_appearance_font_interface = ІНТЕРФЕЙС
 settings_appearance_font_monospace = МОНОШИРИННИЙ
@@ -169,18 +140,11 @@ settings_nav_group_preferences = ПЕРЕВАГИ
 settings_nav_group_engine = РУШІЙ
 settings_nav_group_about = ПРО ПРОГРАМУ
 settings_nav_appearance = Зовнішній вигляд
-settings_nav_language = Мова
 settings_nav_language_region = Мова та регіон
 settings_nav_shortcuts = Скорочення
 settings_nav_notifications = Сповіщення
 settings_nav_audio = Аудіо
-settings_nav_scripting = Скрипти
-settings_nav_queues = Черги
-settings_nav_storage = Сховище
-settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Хоткеї
-settings_nav_version = Версія
-settings_nav_diagnostics = Діагностика
 
 ## Налаштування → панель діагностики
 
@@ -189,10 +153,8 @@ settings_about_rust_label = Rust
 settings_about_os_label = ОС
 settings_diagnostics_log_dir_hint = Журнали середовища виконання пишуться в цю теку.
 settings_diagnostics_section_title = Журнали та діагностика
-settings_diagnostics_log_dir = Тека журналів: { $path }
 settings_diagnostics_log_dir_label = Тека журналів
 settings_diagnostics_open_log_dir = Відкрити теку журналів
-settings_diagnostics_log_level_hint = Рівень журналювання: керується через змінну RUST_LOG (наприклад: info, debug, trace).
 
 ## Налаштування → панель версії
 
@@ -200,12 +162,10 @@ settings_version_title = Версія та оновлення
 settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
 settings_version_recent_releases = ОСТАННІ РЕЛІЗИ
-settings_version_changelog_empty = Історія релізів поки відсутня.
 
 ## Налаштування → панель сховища
 
 settings_storage_section_title = Сховище та резервні копії
-settings_storage_db_path = База даних: { $path }
 settings_storage_db_path_label = База даних
 settings_storage_backup_btn = Резервна копія зараз
 settings_storage_backup_hint = Створює копію бази з міткою часу в теці даних.
@@ -217,7 +177,6 @@ settings_storage_display_limit_hint = Скільки останніх повід
 ## Налаштування → панель черг
 
 settings_queues_section_title = Черги та потоки
-settings_queues_thread_hint = Пул потоків Tokio: { $workers } потік(ів) (автоматично за системою).
 settings_queues_workers_label = Робочі потоки
 settings_queues_managed_hint = Ліміти паралелізму та прапорці блокування керуються на екрані Черги.
 
@@ -232,12 +191,9 @@ settings_shortcuts_title = Клавіатурні скорочення
 settings_shortcuts_subtitle = Ці скорочення працюють лише тоді, коли вікно forge у фокусі. Системні комбінації - у розділі «Хоткеї».
 settings_shortcuts_action_nav_home = Перейти на Хаб
 settings_shortcuts_action_nav_live_chat = Відкрити живий чат
-settings_shortcuts_action_nav_event_feed = Відкрити стрічку подій
 settings_shortcuts_action_nav_actions = Відкрити дії
 settings_shortcuts_action_nav_triggers = Відкрити тригери
 settings_shortcuts_action_nav_twitch = Відкрити Twitch
-settings_shortcuts_action_nav_globals = Відкрити глобальні змінні
-settings_shortcuts_action_nav_script_editor = Відкрити скрипти
 settings_shortcuts_action_nav_settings = Відкрити налаштування
 settings_shortcuts_unbound = Не призначено
 settings_shortcuts_capture_prompt = Натисніть скорочення... Esc для скасування
@@ -249,7 +205,6 @@ settings_shortcuts_fixed_enter = Підтвердити форму чи діал
 settings_shortcuts_fixed_escape = Закрити модальне вікно чи скасувати захоплення
 settings_shortcuts_fixed_note = Ці клавіші вбудовані, їх не можна перепризначити.
 settings_shortcuts_error_needs_modifier = Поєднайте клавішу з Ctrl, Alt чи Meta або оберіть F-клавішу - звичайні клавіші заважали б набору тексту.
-settings_shortcuts_error_global_hotkey = { $chord } вже зайнято глобальним хоткеєм. Спершу звільніть його в Налаштування → Хоткеї.
 settings_shortcuts_conflict_body = { $chord } зараз призначено дії «{ $owner }». Перепризначити? Попереднє скорочення стане непризначеним.
 settings_shortcuts_conflict_steal = Перепризначити
 
@@ -309,7 +264,6 @@ settings_hotkeys_replace_btn = Замінити
 settings_hotkeys_error_no_combo = Спочатку захопіть комбінацію хоткея.
 settings_hotkeys_error_no_action = Оберіть дію для прив'язки.
 settings_hotkeys_error_unavailable = Система хоткеїв недоступна.
-settings_hotkeys_error_load_actions = Не вдалося завантажити дії: { $error }
 settings_hotkeys_error_load_bindings = Не вдалося завантажити прив'язки: { $error }
 settings_hotkeys_error_unbind = Помилка відв'язки: { $error }
 settings_hotkeys_error_replace = Помилка заміни: { $error }
@@ -325,8 +279,6 @@ actions_filter_chat = Чат
 actions_filter_timers = Таймери
 actions_filter_points = Поінти
 actions_search_placeholder = Пошук дій...
-actions_new_btn = + Нова дія
-actions_loading = Завантаження...
 actions_empty = Дій ще немає
 
 ## Дії - панель деталей
@@ -343,7 +295,6 @@ actions_menu_disable = Вимкнути
 actions_menu_delete = Видалити…
 
 ## Дії - нижній рядок
-
 
 ## Дії - підказка ESC
 
@@ -372,7 +323,6 @@ actions_modal_cancel_btn = Скасувати
 
 ## Дії - модальне вікно кроку
 
-actions_sub_select_kind = Оберіть тип кроку
 actions_sub_no_config = Цей крок не має налаштувань.
 actions_sub_select_placeholder = Оберіть...
 actions_sub_select_empty = Немає доступних варіантів
@@ -391,86 +341,16 @@ sub_cat_tts = Синтез мовлення
 sub_cat_http = HTTP
 sub_cat_server = Сервер
 sub_cat_util = Утиліти
-actions_sub_chip_send_chat = Чат-повідомлення
-actions_sub_chip_set_global = Глобальна змінна
-actions_sub_chip_delay = Затримка
-actions_sub_chip_log = Журнал
-actions_sub_chip_play_sound = Відтворити звук
-actions_sub_chip_speak = Синтез мовлення
-actions_sub_chip_read_file = Читати файл
-actions_sub_chip_random_int = Випадкове число
-actions_sub_modal_add_btn = Додати крок
-actions_sub_modal_save_btn = Зберегти зміни
-actions_sub_modal_cancel_btn = Скасувати
 
 ## Дії - секції конфігурації кроку
 
-actions_sub_section_message = ПОВІДОМЛЕННЯ
-actions_sub_section_target_platform = ПЛАТФОРМА-ЦІЛЬ
-actions_sub_section_variable_name = НАЗВА ЗМІННОЇ
-actions_sub_section_value = ЗНАЧЕННЯ
-actions_sub_section_milliseconds = МІЛІСЕКУНДИ
-actions_sub_section_level = РІВЕНЬ
-actions_sub_section_clip = КЛІП
-actions_sub_section_text = ТЕКСТ
-actions_sub_section_voice_override = ГОЛОС (необов'язково)
-actions_sub_section_path = ШЛЯХ (відносно пісочниці assets)
-actions_sub_section_target_var = ЦІЛЬОВА ЗМІННА
-actions_sub_section_min = МІН
-actions_sub_section_max = МАКС
-actions_sub_helper_variables = Змінні: %user%, %message%, %args%
-actions_sub_helper_interpolation = Підтримує інтерполяцію змінних
-actions_sub_voice_hint = Залишіть порожнім, щоб використати резолвер псевдонімів
-actions_sub_path_hint = Пісочниця data_dir/assets/ · без ../ · максимум 1 МіБ
-actions_sub_no_clips = Кліпів немає - спочатку додайте їх на екрані Звукова панель.
-
 ## Дії - вибір тригера (бічна панель)
-
-actions_picker_title = Додати тригер
-actions_picker_loading = Завантаження тригерів…
-actions_picker_cancel = Скасувати
-actions_picker_select_platform = Оберіть платформу
-actions_picker_no_triggers = Тригерів немає
-actions_picker_select_hint = Оберіть платформу, щоб переглянути тригери.
-actions_picker_no_triggers_selection = Для цього вибору тригерів немає.
-actions_picker_default_label = (типовий)
 
 ## Дії - назви категорій тригерів (заголовки секцій)
 
-actions_cat_chat_commands = ЧАТ-КОМАНДИ
-actions_cat_subs_bits = ПІДПИСКИ ТА БІТСИ
-actions_cat_bits = БІТСИ
-actions_cat_raids = РЕЙДИ
-actions_cat_obs_events = ПОДІЇ OBS
-actions_cat_server_events = ПОДІЇ СЕРВЕРА
-actions_cat_timers = ТАЙМЕРИ
-actions_cat_ungrouped = БЕЗ ГРУПИ
-actions_cat_all = ВСІ
-
 ## Дії - підписи типів тригерів
 
-actions_kind_twitch_chat_command = Twitch · команда в чаті
-actions_kind_twitch_chat_message = Twitch · будь-яке повідомлення
-actions_kind_twitch_subscriber = Twitch · новий підписник
-actions_kind_twitch_resubscriber = Twitch · повторна підписка
-actions_kind_twitch_gift_sub = Twitch · подарункові підписки
-actions_kind_twitch_cheer = Twitch · відправлено бітсів
-actions_kind_twitch_raid = Twitch · отримано рейд
-actions_kind_obs_scene_changed = OBS · зміна сцени
-actions_kind_server_custom_event = Сервер · користувацька подія
-actions_kind_unknown = Невідомий тригер
-
 ## Дії - опис типів тригерів
-
-actions_summary_twitch_chat_command = Користувач вводить !команду в чаті
-actions_summary_twitch_chat_message = Кожне повідомлення в чаті спрацьовує
-actions_summary_twitch_subscriber = Спрацьовує, коли хтось підписується
-actions_summary_twitch_resubscriber = Наявний підписник продовжує підписку
-actions_summary_twitch_gift_sub = Хтось дарує підписки каналу
-actions_summary_twitch_cheer = Глядач відправляє бітси
-actions_summary_twitch_raid = Інший стрім робить рейд на вас
-actions_summary_obs_scene_changed = Спрацьовує, коли OBS перемикає активну сцену
-actions_summary_server_custom_event = Спрацьовує при виклику triggerCodeEvent через WebSocket API
 
 ## Редактор дій - хлібні крихти / дерево / деталі
 
@@ -483,8 +363,6 @@ action_editor_export_done = Дію експортовано до { $path }
 action_editor_export_failed = Не вдалося експортувати: { $error }
 action_editor_edit = Редагувати
 action_editor_menu_delete = Видалити дію
-action_editor_edit_modal_title = Редагування дії
-action_editor_edit_save_btn = Зберегти
 action_editor_add_trigger = Додати тригер
 action_editor_add_step = Додати крок
 action_editor_health_unknown_var = Використовує %{ $name }%, якої не надає жоден тригер і не створює жоден попередній крок
@@ -511,13 +389,7 @@ action_editor_case_multi = багатозначне зіставлення (ли
 action_editor_case_match_placeholder = значення зіставлення
 action_editor_branch_cap = Досягнуто межі вкладеності · глибше вкладати не можна
 action_editor_no_triggers = Тригерів немає · натисніть «Додати тригер», щоб почати
-action_editor_delete = Видалити
-action_editor_delete_cascade_hint = Також буде видалено { $sub_actions } підпунктів і { $trigger_links } прив'язок тригерів.
-action_editor_section_triggers = ТРИГЕРИ
 action_editor_section_triggers_count = ТРИГЕРИ · { $count }
-action_editor_triggers_hint = Клацніть тригер, щоб редагувати його в реєстрі
-action_editor_section_sub_actions = ПІДПУНКТИ · { $count }
-action_editor_section_sub_actions_label = ПІДПУНКТИ
 action_editor_sub_actions_count = { $count } підпунктів
 actions_sub_file_browse = Огляд
 actions_sub_datetime_pick = Обрати
@@ -600,7 +472,6 @@ action_editor_test_run_close = Закрити
 ## Редактор дій - вибір підпункту / тригера
 
 action_editor_this_action = цю дію
-action_editor_saved_triggers = Ваші збережені тригери
 action_editor_recent_triggers = Нещодавні
 picker_favorites = Обране
 picker_favorites_empty = Позначте зірочкою, щоб закріпити тут для швидкого доступу
@@ -612,7 +483,6 @@ action_editor_picker_search = Пошук серед { $count } підпункт�
 action_editor_picker_fires = Запускає
 action_editor_picker_available_count = · { $count } доступно
 action_editor_trigger_picker_footer_hint = Створює новий тригер обраного типу та прив'язує його
-action_editor_no_unlinked_triggers = Немає доступних неприв'язаних тригерів - створіть один на екрані тригерів
 
 ## Редактор дій - назви типів кроків
 
@@ -633,19 +503,8 @@ action_editor_kind_sub_action = Підпункт
 
 triggers_breadcrumb_automation = Автоматизація
 triggers_breadcrumb_triggers = Тригери
-triggers_open_create_btn = + Створити
 triggers_search_placeholder = Пошук тригерів…
-triggers_filter_twitch = Twitch
-triggers_filter_youtube = YouTube
-triggers_filter_kick = Kick
-triggers_filter_obs = OBS
-triggers_filter_vtube = VTube Studio
-triggers_filter_midi = MIDI
 triggers_filter_hotkey = Гарячі клавіші
-triggers_filter_discord = Discord
-triggers_filter_script = Скрипт
-triggers_filter_all = Всі
-triggers_usage_all = Всі
 triggers_usage_used = Використовуються
 triggers_usage_unused = Не використовуються
 triggers_toast_error = Тригери: { $message }
@@ -662,13 +521,9 @@ triggers_new_trigger = Новий тригер
 
 triggers_empty_title = Власних тригерів ще немає
 triggers_empty_hint = Створіть іменований тригер із власними налаштуваннями для повторного використання в кількох діях.
-triggers_empty_create = + Створити тригер
 triggers_no_results_title = Нічого не знайдено
 triggers_no_results_hint = Змініть або скиньте фільтри, щоб знайти тригери.
 triggers_clear_filters = Скинути фільтри
-triggers_usage_badge = використовується в { $count }
-triggers_toggle_on = УВІМК
-triggers_toggle_off = ВИМК
 triggers_col_name = НАЗВА
 triggers_col_kind = ТИП
 triggers_col_used = ВИКОРИСТАННЯ
@@ -696,8 +551,6 @@ triggers_template_copy_name = { $name } копія
 triggers_sheet_section_configuration = КОНФІГУРАЦІЯ
 triggers_sheet_config_overridden = { $count } перевизначено
 triggers_sheet_config_all_defaults = усе за замовчуванням
-triggers_sheet_config_save = Зберегти
-triggers_sheet_config_cancel = Скасувати
 triggers_sheet_no_config = Налаштованих полів немає
 triggers_sheet_section_cooldown = ПЕРЕЗАРЯДКА
 triggers_sheet_cooldown_caption = секунди · 0 = вимк
@@ -705,14 +558,9 @@ triggers_sheet_cooldown_value = перезарядка
 triggers_sheet_cooldown_scope = Глобальна перезарядка
 triggers_cooldown_suffix_global = { " · перезарядка=" }{ $secs }{ "с глобально" }
 triggers_cooldown_suffix_per_user = { " · перезарядка=" }{ $secs }{ "с на глядача" }
-triggers_sheet_not_registered = Тип тригера не зареєстровано
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
-triggers_sheet_section_platform = ПЛАТФОРМА
 triggers_sheet_delete_btn = Видалити
 triggers_sheet_save_btn = Зберегти
-triggers_sheet_any_platform = Будь-яка платформа
-triggers_sheet_will_fire_on = Спрацює на: { $platform }
-triggers_sheet_will_fire_on_scope = Спрацює на: { $scope }
 triggers_detail_loading = Завантаження тригера…
 triggers_sheet_config_authored = Задається на кроці
 triggers_sheet_section_used_in_count = ВИКОРИСТОВУЄТЬСЯ В ({ $count })
@@ -733,18 +581,12 @@ triggers_confirm_delete_body = Це назавжди видалить екзем
 
 ## Реєстр тригерів - діалог перейменування
 
-triggers_rename_title = Перейменувати тригер
-triggers_rename_kbd_hint = ENTER щоб зберегти · ESC щоб скасувати
-
 ## Реєстр тригерів - сповіщення про скасування видалення
 
 triggers_toast_deleted = Видалено '{ $name }'
 
 ## Форма створення тригера - вибір типу
 
-triggers_create_select_kind = Оберіть тип тригера
-triggers_create_search_placeholder = Пошук типів…
-triggers_create_no_results = Відповідних типів тригерів немає
 triggers_create_cancel = Скасувати
 triggers_create_type_count = типів тригерів: { $count }
 triggers_create_search_types = Пошук серед { $count } типів тригерів…
@@ -759,10 +601,6 @@ triggers_create_new_instance = Новий екземпляр: { $kind }
 triggers_create_section_name = НАЗВА
 triggers_create_name_placeholder = Назва екземпляра (обов'язково)
 triggers_create_section_config = КОНФІГУРАЦІЯ
-triggers_create_section_platform = ПЛАТФОРМА
-triggers_create_scope_any = Будь-яка
-triggers_create_scope_custom = Власний вибір…
-triggers_create_will_fire = Спрацює на: { $scope }
 triggers_create_btn = Створити
 triggers_create_kbd_hint = ENTER щоб створити · ESC щоб скасувати
 
@@ -808,33 +646,14 @@ trigger_cat_goals = Цілі
 trigger_cat_clips = Кліпи
 trigger_cat_streams = Трансляції
 trigger_cat_users = Користувачі
-trigger_cat_obs = Сцени
-trigger_cat_hotkey = Гарячі клавіші
 trigger_cat_core = Ядро
-trigger_cat_server = Події сервера
-trigger_cat_timer = Таймери
 trigger_cat_other = Інше
-trigger_subgroup_scenes = Сцени
-trigger_subgroup_sources = Джерела
-trigger_subgroup_audio = Аудіо
-trigger_subgroup_filters = Фільтри
-trigger_subgroup_streaming = Трансляція
-trigger_subgroup_recording = Запис
-trigger_subgroup_studio_mode = Студійний режим
-trigger_subgroup_transitions = Переходи
-trigger_subgroup_virtual_camera = Віртуальна камера
-trigger_subgroup_connection = З'єднання
-trigger_subgroup_scene_collections = Колекції сцен
-trigger_subgroup_profiles = Профілі
 
 ## Actions modals - placeholder literals
 
 actions_name_placeholder = Моя автоматизація
 actions_group_placeholder = Приклади
 actions_description_placeholder = Відтворює звук, показує сповіщення…
-actions_log_message_placeholder = Дію розпочато
-actions_speak_text_placeholder = Текст для озвучення…
-actions_rename_placeholder = Назва
 
 ## Actions - list states, toasts, delete confirm
 
@@ -949,13 +768,10 @@ tts_engines_persist_disabled_failed = Не вдалося зберегти ст�
 
 ## TTS Filters - колонка пайплайну
 
-tts_filters_pipeline_header = КОНВЕЄР ОБРОБКИ
-tts_filters_pipeline_hint = Кожне повідомлення проходить ці етапи по черзі перед озвученням
 tts_filters_pipeline_intro = Конвеєр, який текст проходить перед озвученням.
 
 ## TTS Filters - нумеровані картки етапів
 
-tts_filters_stage_emote_url_title = Емоції та обробка URL
 tts_filters_stage_skip_title = Стоп-правила
 tts_filters_stage_replacements_title = Заміни тексту
 tts_filters_stage_blocklist_title = Блок-список слів
@@ -995,16 +811,8 @@ tts_filters_output_sanitize_meta = "!!!" → "!"
 
 ## TTS Filters - список правил
 
-tts_filters_no_rules = Правил фільтрування ще немає
-tts_filters_add_rule_btn = Додати правило
-tts_filters_rule_on = УВІМК
-tts_filters_rule_off = ВИМК
-tts_filters_kind_literal = Заміна тексту
-tts_filters_kind_regex = Заміна regex
-tts_filters_kind_blocklist = Блок-список
 tts_filters_badge_text = ТЕКСТ
 tts_filters_badge_regex = REGEX
-tts_filters_badge_block = БЛОК
 tts_filters_stage_add = Додати
 
 ## TTS Filters - модальне вікно додавання фільтра
@@ -1062,25 +870,11 @@ tts_filters_modal_replace_regex_tab = REGEX
 tts_filters_modal_replace_find_label = ЗНАЙТИ
 tts_filters_modal_replace_match_label = ШАБЛОН ЗБІГУ
 tts_filters_modal_replace_find_placeholder = POG
-tts_filters_modal_replace_match_placeholder = https?://\S+
 tts_filters_modal_replace_replace_label = ЗАМІНИТИ НА
 tts_filters_modal_replace_replace_text_placeholder = повага
-tts_filters_modal_replace_replace_regex_placeholder = "посилання" або $1
 tts_filters_modal_replace_note = Залиште заміну порожньою, щоб прибрати збіг.
 
 ## TTS Filters - налаштування конвеєра
-
-tts_filters_url_label = ОБРОБКА URL
-tts_filters_url_speak = Читати URL вголос
-tts_filters_url_replace = Замінити на "link"
-tts_filters_url_suppress = Пропустити повідомлення
-tts_filters_length_label = МАКС. ДОВЖИНА
-tts_filters_length_placeholder = Без обмеження
-tts_filters_blocklist_default_label = РЕЖИМ БЛОК-СПИСКУ ЗА ЗАМОВЧУВАННЯМ
-tts_filters_strip_twitch = Прибирати емоції Twitch
-tts_filters_strip_reward = Прибирати емоції нагород
-tts_filters_unsaved = Незбережені зміни
-tts_filters_saved = Усі зміни збережено
 
 ## TTS Filters - колонка попереднього перегляду
 
@@ -1101,8 +895,6 @@ tts_filters_stage_name_output = ВИВІД
 tts_filters_skip_reason_rule = спрацювало стоп-правило
 tts_filters_skip_reason_blocked = заблоковане слово
 tts_filters_skip_reason_empty = порожнє після фільтрів
-tts_filters_delete_title = Видалити правило?
-tts_filters_delete_body = Це правило буде вилучено з конвеєра попередньої обробки.
 
 ## Хмарні рушії - кнопки картки
 
@@ -1163,9 +955,6 @@ tts_aliases_never_speak = Ніколи не озвучувати
 
 ## TTS Псевдоніми голосів - бейджі ролей
 
-tts_aliases_role_mod = МОД
-tts_aliases_role_vip = VIP
-tts_aliases_role_sub = САБ
 tts_aliases_role_blocked = БЛОК
 
 ## Голосові аліаси - модалка призначення/редагування
@@ -1175,7 +964,6 @@ tts_aliases_form_title_edit = Редагувати голосовий аліас
 tts_aliases_form_viewer_label = ГЛЯДАЧ
 tts_aliases_form_viewer_placeholder = Імʼя глядача
 tts_aliases_form_engine_label = ДВИГУН
-tts_aliases_form_engine_placeholder = Оберіть двигун
 tts_aliases_form_voice_label = ГОЛОС
 tts_aliases_form_voice_placeholder = Ідентифікатор голосу
 tts_aliases_form_pitch_label = ТОН (пт)
@@ -1209,10 +997,8 @@ soundboard_breadcrumb_soundboard = Звукова панель
 
 ## Звукова панель - заголовок / модальне вікно
 
-soundboard_add_clip_btn = Додати кліп
 soundboard_loading = Завантаження кліпів…
 soundboard_empty_title = Кліпів ще немає
-soundboard_empty_hint = Натисніть «Додати кліп», щоб додати перший звук.
 soundboard_playback_error_prefix = Помилка відтворення: { $error }
 
 ## Звукова панель - модальне вікно
@@ -1222,10 +1008,7 @@ soundboard_modal_title_edit = Редагувати кліп
 soundboard_modal_no_file = Файл не обрано
 soundboard_modal_browse_btn = Огляд
 soundboard_modal_name_placeholder = Назва кліпу
-soundboard_modal_hotkey_placeholder = наприклад Ctrl+1
-soundboard_modal_devices_loading = Завантаження пристроїв…
 soundboard_modal_save_btn = Зберегти
-soundboard_modal_saving_btn = Збереження…
 soundboard_modal_cancel_btn = Скасувати
 soundboard_modal_validation_error = Назва та аудіофайл обов'язкові.
 soundboard_delete_title = Видалити кліп?
@@ -1235,25 +1018,13 @@ soundboard_delete_body = Це назавжди видалить кліп зі з
 
 soundboard_modal_section_file = ФАЙЛ
 soundboard_modal_section_name = НАЗВА
-soundboard_modal_section_hotkey = ХОТКЕЙ
-soundboard_modal_section_device = ПРИСТРІЙ ВИВОДУ
 soundboard_device_system_default = Системний за замовчуванням
-soundboard_modal_section_volume = ГУЧНІСТЬ
 
 ## Звукова панель - помилка завантаження пристроїв
 
-soundboard_modal_device_load_error = Помилка завантаження пристроїв: { $error }
-
 ## Звукова панель - помилка аудіоплеєра
 
-soundboard_player_not_init = Аудіоплеєр не ініціалізовано - перевірте Налаштування → Аудіо.
-
 ## Звукова панель - зворотний зв'язок
-
-soundboard_playing_feedback = Відтворення "{ $name }" → { $device }. Живе аудіо буде під'єднано через рантайм незабаром.
-soundboard_removed_feedback = Видалено "{ $name }".
-soundboard_saved_feedback = Збережено "{ $name }". Маршрутизацію відтворення буде під'єднано через рантайм незабаром.
-soundboard_modal_kbd_hint = Enter - зберегти · Esc - скасувати
 
 ## Soundboard - redesigned screen
 
@@ -1307,7 +1078,6 @@ queues_resume_btn = Продовжити
 ## Черги - меню картки
 
 queues_menu_configure = Налаштувати…
-queues_menu_rename = Перейменувати…
 queues_menu_pause = Пауза
 queues_menu_resume = Продовжити
 queues_menu_drain = Спустошити чергу
@@ -1371,16 +1141,12 @@ queues_overflow_more = +{ $count } ще
 
 ## Черги - описи вбудованих черг
 
-
 ## TTS дашборд - підписи карток рушіїв / бейдж пріоритету
 
-tts_dash_engine_local_ready = локальний · готовий
 tts_dash_priority_high = ВИСОК.
 tts_dash_priority_bits = БІТСИ { $amount }
 
 ## TTS рушії - запасний підпис невідомого рушія
-
-tts_engines_unknown = Невідомий рушій
 
 ## Хмарний TTS - підписи полів форми
 
@@ -1422,18 +1188,12 @@ platforms_feature_channel_events = Події каналу
 ## Загальна сторінка платформи
 
 platform_generic_features_available = ЩО МОЖНА РОБИТИ ПІСЛЯ ПІДКЛЮЧЕННЯ
-platform_generic_features_coming = ЩО БУДЕ ДОСТУПНО
 platform_generic_kind_platform = Стримінгова платформа
-platform_generic_kind_stream_app = Стрим-додаток
 platform_generic_status_available = доступно - натисніть «Підключити» для авторизації
-platform_generic_status_coming = ще не реалізовано
-platform_generic_parent_platforms = Платформи
-platform_generic_parent_stream_apps = Стрим-додатки
 platform_generic_connect_btn = Підключити
 
 ## Панель Twitch
 
-twitch_breadcrumb_platforms = Платформи
 twitch_header_subtitle = Підключіть, щоб увімкнути чат, підписки, біти, рейди, нагороди каналу та EventSub
 twitch_auth_title = Авторизувати Forge на Twitch
 twitch_auth_subtitle = Twitch використовує авторизацію за кодом пристрою. Ви побачите код тут - введіть його на сайті Twitch, і ми автоматично визначимо, коли ви закінчите. Ми ніколи не бачимо вашого пароля.
@@ -1459,37 +1219,8 @@ twitch_reauth_btn = Повторна авторизація
 
 ## Панель OBS
 
-obs_breadcrumb_stream_apps = Стрим-додатки
-obs_header_subtitle = Підключіть для керування сценами, джерелами, аудіо, фільтрами та записом
-obs_instructions_title = Перш ніж почати
-obs_instructions_lead = У OBS Studio увімкніть вбудований сервер WebSocket, потім скопіюйте налаштування сюди.
-obs_step1 = У OBS: Інструменти → Налаштування сервера WebSocket
-obs_step2 = Позначте «Увімкнути сервер WebSocket»
-obs_step3 = Запишіть порт (за замовчуванням 4455)
-obs_step4 = Натисніть «Показати інформацію підключення», щоб побачити пароль
-obs_requirements_header = ВИМОГИ
-obs_req_version = OBS Studio 28+ (WebSocket v5 вбудовано)
-obs_req_network = Та сама машина або доступна в LAN
-obs_form_title = Налаштування підключення
-obs_field_host = ХОСТ
-obs_field_port = ПОРТ
-obs_field_password = ПАРОЛЬ
-obs_field_keychain = зберігається зашифровано в локальній базі
-obs_toggle_reconnect_title = Авто-перепідключення при відключенні
-obs_toggle_reconnect_subtitle = Повторні спроби з експоненційним відступом
-obs_toggle_launch_title = Підключатися при запуску
-obs_toggle_launch_subtitle = Починати підключення при відкритті Forge
-obs_btn_test = Тест підключення
-obs_btn_connect = Підключити
-obs_test_running = Тестування підключення…
-obs_test_success = Тест успішний
-obs_test_failed = Тест не вдався
-obs_tip = Запускаєте OBS на іншому ПК? Вкажіть IP тієї машини. Переконайтеся, що OBS WebSocket прив'язаний до 0.0.0.0, а не до localhost, і порт відкритий у файрволі.
-obs_port_invalid = порт має бути числом від 1 до 65535
-
 ## Вбудована деталь
 
-builtin_breadcrumb = Вбудований
 builtin_picker_scene = Оберіть сцену
 builtin_picker_source = Оберіть джерело
 builtin_picker_audio_input = Оберіть аудіовхід
@@ -1502,7 +1233,6 @@ builtin_picker_midi_port = Оберіть порт MIDI
 oauth_header_subtitle = Підключіть для доступу до живого чату та подій
 oauth_auth_title = Авторизувати Forge на { $name }
 oauth_auth_subtitle = Ця платформа використовує авторизацію за кодом. Ви побачите посилання нижче - перейдіть на сайт платформи і підтвердьте. Ми ніколи не бачимо вашого пароля.
-oauth_btn_connect = Підключити
 oauth_btn_retry = Повторити
 oauth_btn_cancel = Скасувати
 oauth_btn_return = Повернутися до платформ
@@ -1573,7 +1303,6 @@ server_btn_disconnect = Відключити
 ## Загальні бейджі статусу (використовуються на сторінках деталей платформ)
 
 common_status_not_connected = Не підключено
-common_status_coming_soon = Незабаром
 
 ## Деталі платформи YouTube
 
@@ -1593,11 +1322,6 @@ kick_feature_deleted_replies = Події видалення повідомле�
 
 ## Деталі VTube Studio
 
-vtube_description = Керування аватаром Vtuber: гарячі клавіші, вирази, тригери предметів.
-vtube_feature_hotkeys = Запускати гарячі клавіші з подій чату
-vtube_feature_expressions = Перемикати вирази та вбрання
-vtube_feature_item_drops = Спавнити випадання предметів на бітси/підписки
-
 ## Огляд стрим-додатків
 
 stream_apps_title = Стрим-додатки
@@ -1608,37 +1332,16 @@ stream_apps_vtube_desc = Керування аватаром Vtuber: гаряч�
 
 ## Живий чат - заголовок / фільтри
 
-chat_breadcrumb_audience = Аудиторія
 chat_breadcrumb_chat = Чат
 chat_filter_all = Всі
 chat_filter_events = Лише події
 chat_filter_hide_bots = Сховати ботів
 chat_viewers_unit = глядачів
 chat_no_filter_matches = Жодне повідомлення не відповідає цим фільтрам.
-chat_send_placeholder_disconnected = Підключіть платформу для відправки...
 chat_send_placeholder_connected = Надіслати в чат...
 chat_send_placeholder_to = Надіслати в чат {$platform}...
-chat_no_messages_title = Немає повідомлень
-chat_no_messages_empty = Не підключено - перейдіть до Налаштувань → Платформи.
-chat_no_events_yet = Подій ще немає.
-chat_no_search_matches = Жодних повідомлень не відповідає пошуку.
-chat_messages_count = { $count ->
-    [one] { $count } повідомлення
-    [few] { $count } повідомлення
-    [many] { $count } повідомлень
-   *[other] { $count } повідомлень
 }
-chat_matches_count = { $count ->
-    [one] { $count } збіг
-    [few] { $count } збіги
-    [many] { $count } збігів
-   *[other] { $count } збігів
 }
-chat_header_viewers = { $count ->
-    [one] { $formatted } глядач
-    [few] { $formatted } глядачі
-    [many] { $formatted } глядачів
-   *[other] { $formatted } глядачів
 }
 chat_show_viewers = Показати глядачів
 chat_hide_viewers = Сховати глядачів
@@ -1705,26 +1408,14 @@ event_feed_filter_bits = Бітси { $n }
 event_feed_filter_timers = Таймери { $n }
 event_feed_filter_obs = OBS { $n }
 event_feed_filter_errors = Помилки { $n }
-event_feed_pause = Призупинити
-event_feed_resume = Продовжити
-event_feed_clear = Очистити
-event_feed_export = Експорт
 event_feed_export_success = Стрічку подій експортовано до { $path }
 event_feed_export_failed = Не вдалося експортувати стрічку подій: { $error }
 event_feed_no_events = Подій ще немає - системна активність з'явиться тут в реальному часі.
 event_feed_no_filter_match = Жодна подія не відповідає активному фільтру.
 event_feed_inspector_title = Інспектор подій
-event_feed_inspector_hint = Виберіть подію, щоб переглянути її payload.
 event_feed_auto_scroll_on = Авто-прокрутка увімкнена
 event_feed_auto_scroll_off = Авто-прокрутка вимкнена
-event_feed_buffer = Буфер: { $count } / 10 000
-event_feed_rate = { $rate } под/с
 event_feed_breadcrumb_automation = Автоматизація
-event_feed_breadcrumb_feed = Стрічка подій
-event_feed_status_live = НАЖИВО
-event_feed_status_paused = ПАУЗА
-event_feed_header_count = Подій: { $count }
-event_feed_streaming_status = Стрімінг · WebSocket :8081
 event_feed_events_live_stream = подій · живий стрім
 
 ## Глобальні змінні - заголовок / фільтри
@@ -1735,15 +1426,8 @@ globals_filter_all = Всі
 globals_filter_persisted = Збережені
 globals_filter_session = Сесійні
 globals_search_placeholder = Шукати змінні...
-globals_export_btn = Експорт JSON
-globals_new_btn = + Нова змінна
 globals_loading = Завантаження...
-globals_empty_title = Глобальних змінних немає
-globals_empty_desc = Змініть фільтр або пошук, або створіть нову за допомогою + Нова змінна.
-globals_edit_action = Редагувати значення
-globals_delete_action = Видалити
 globals_deleted_toast = Видалено '{ $name }'
-globals_breadcrumb = Глобальні змінні
 globals_stat_total = усього
 globals_stat_persisted = збережено
 globals_stat_in_memory = у пам'яті
@@ -1794,7 +1478,6 @@ globals_inspect_edit = Редагувати значення
 
 ## Редактор скриптів - сторінка / панель інструментів
 
-script_editor_breadcrumb = Редактор скриптів
 script_editor_breadcrumb_automation = Автоматизація
 script_editor_edited_prefix = змінено
 script_editor_run = Тестовий запуск
@@ -1802,11 +1485,8 @@ script_editor_save = Зберегти
 script_editor_format = Форматувати
 script_editor_api_docs = Документація API
 script_editor_debug = Відлагодження
-script_editor_debug_tip = Відлагоджувач планується після версії 1.0
 script_editor_output_header = Виведення
-script_editor_output_clear = Очистити
 script_editor_api_reference = Довідка API
-script_editor_scripts_label = СКРИПТИ
 script_editor_search_placeholder = Пошук скриптів…
 script_editor_new_script = Новий скрипт
 script_editor_no_scripts = Скриптів ще немає
@@ -1817,9 +1497,6 @@ script_editor_rename_action = Перейменувати
 script_editor_enable_action = Увімкнути
 script_editor_disable_action = Вимкнути
 script_editor_delete_action = Видалити
-script_editor_new_btn = + Новий
-script_editor_empty_title = Виберіть скрипт або натисніть + Новий
-script_editor_empty_desc = Скрипти дозволяють запускати код rhai з будь-якої дії.
 script_editor_running = Виконується…
 script_editor_run_modal_cancel = Скасувати
 script_editor_save_blocked = Збереження заблоковано - спершу виправте синтаксичні помилки
@@ -1828,13 +1505,11 @@ script_editor_discard_body = У цьому скрипті є незбереже�
 script_editor_discard_confirm = Відхилити
 script_editor_discard_cancel = Продовжити редагування
 script_editor_discard_esc_hint = щоб продовжити редагування
-script_editor_shared = Спільні
 script_editor_sandbox_label = Пісочниця:
 script_editor_sandbox_enabled = увімкнено
 script_editor_problems_tab = Проблеми
 script_editor_console_cleared = Консоль очищено.
 script_editor_no_problems = Проблем немає.
-script_editor_rename_placeholder = Назва скрипта
 
 ## Редактор скриптів - модальне вікно запуску
 
@@ -1847,35 +1522,14 @@ script_editor_type_check_errors = { $count ->
    *[other] { $count } помилок
 }
 script_editor_run_modal_title = Запустити { $name }
-script_editor_run_modal_title_generic = Запустити скрипт
 script_editor_run_input_placeholder = Введіть значення { $label }…
-script_editor_run_input_error = Введіть значення для { $name }
 
 ## Action telemetry - stat column headers
 
-telemetry_stat_last_fired = ОСТАННЯ ДІЯ
-telemetry_stat_runs_today = ЗАПУСКИ · СЬОГОДНІ
-telemetry_stat_avg_time = СЕР. ЧАС
-telemetry_stat_errors_7d = ПОМИЛКИ · 7Д
-
 ## Action editor - validation errors
-
-action_editor_error_message_required = Повідомлення є обов'язковим.
-action_editor_error_var_required = Назва змінної є обов'язковою.
-action_editor_error_delay_invalid = Кількість мілісекунд має бути невід'ємним цілим числом.
-action_editor_error_log_required = Текст журналу є обов'язковим.
-action_editor_error_clip_required = Оберіть кліп для відтворення.
-action_editor_error_speak_required = Текст для озвучення є обов'язковим.
-action_editor_error_file_required = Шлях та цільова змінна є обов'язковими.
-action_editor_error_random_invalid = min, max (min ≤ max) та цільова змінна є обов'язковими.
-action_editor_pill_custom = Власний
-action_editor_pill_default = Типовий
 
 ## Integration detail - OBS / quick-action
 
-builtin_quick_action_fallback = Швидка дія
-builtin_obs_not_connected = OBS не підключено
-builtin_obs_not_supported = Не підтримується для OBS
 builtin_disconnect_confirm_hint = Вас буде відключено, і потрібно буде підключитися повторно вручну. Живі події від цієї інтеграції перестануть надходити до цього моменту.
 integration_disconnect_title = Відключити інтеграцію
 integration_settings_coming_soon = Налаштування зʼявляться згодом
@@ -1892,8 +1546,6 @@ integration_state_disconnected_detail = Натисніть «Підключит�
 
 auth_error_credentials_missing_youtube = Облікові дані OAuth для YouTube не налаштовані
 auth_error_credentials_missing_kick = Облікові дані OAuth для Kick не налаштовані
-auth_error_flow_consumed = OAuth-потік уже використано
-auth_error_unknown = Невідома помилка
 
 ## Widget - key capture
 
@@ -1902,17 +1554,10 @@ widget_key_capture_placeholder = Натисніть комбінацію…
 ## Widget - event inspector
 
 widget_event_replay = Відтворити цю подію
-widget_event_replaying = Відтворення…
 widget_event_payload_header = ДАНІ
 widget_event_caused_header = ПРИЧИНА
 
 ## Widget - chat row
-
-widget_chat_subscribed = підписався (Рівень { $tier })
-widget_chat_cheered = зробив cheer
-widget_chat_raiding_with = рейдить з
-widget_chat_viewers = { $viewers } глядачів
-widget_chat_triggered = Спрацювало: { $action }
 
 ## Live chat - event descriptors
 
@@ -1930,8 +1575,6 @@ widget_header_action_reconnect = Підключитися
 widget_header_action_refresh_token = Оновити токен
 widget_header_action_disconnect = Відключитися
 widget_header_action_settings = Налаштування
-widget_header_uptime = час роботи { $duration }
-widget_header_uptime_only = час роботи { $duration }
 widget_header_capability_limited = Обмежено
 
 ## Widget - builtin content
@@ -1949,21 +1592,8 @@ widget_builtin_event_count =
 
 ## Widget - server file list
 
-widget_file_list_header = Коренева директорія оверлею
-widget_file_list_path_label = ШЛЯХ
-widget_file_list_files_label = ФАЙЛИ
-widget_file_list_url_label = URL ДЖЕРЕЛА В БРАУЗЕРІ
-widget_file_list_dir_count =
-    { $count ->
-        [one] { $count } файл
-        [few] { $count } файли
-       *[other] { $count } файлів
-    }
-
-
 ## Widget - server confirm modal
 
-widget_confirm_what_this_means = ЩО ЦЕ ОЗНАЧАЄ
 widget_confirm_type_prefix = Введіть
 widget_confirm_type_suffix = для підтвердження:
 widget_confirm_esc_to_cancel = щоб скасувати
@@ -1973,24 +1603,11 @@ widget_confirm_cancel = Скасувати
 
 widget_confirm_delete_title = Видалити { $kind }?
 widget_confirm_delete_hint = Цей елемент буде остаточно видалено. Дію не можна скасувати.
-widget_confirm_delete_kind_action = дію
-widget_confirm_delete_kind_step = крок
-widget_confirm_delete_kind_trigger_link = прив'язку тригера
-widget_confirm_delete_kind_global = глобальну змінну
 widget_confirm_delete_kind_script = скрипт
-widget_confirm_delete_kind_client = клієнта
 
 ## Widget - server bearer token
 
-widget_bearer_copy = КОПІЮВАТИ
-widget_bearer_regenerate = ПЕРЕГЕНЕРУВАТИ
-widget_bearer_regen_warning = Перегенерація відключить всіх клієнтів
-widget_bearer_regen_warning_body = Підключені WebSocket-клієнти мають перепідключитися з новим токеном.
-
 ## Widget - server bind card
-
-widget_bind_badge_recommended = Рекомендовано
-widget_bind_badge_requires_confirmation = Потребує підтвердження
 
 ## Widget - picker modal
 
@@ -2008,8 +1625,6 @@ widget_device_test = Тест
 widget_quick_actions_title = Швидкі дії
 
 ## Widget - console (script output)
-
-widget_console_no_output = Вихідних даних ще немає
 
 ## Settings - audio output
 
@@ -2047,14 +1662,7 @@ script_editor_stat_avg_value = { $n } мс
 
 ## Widget - layout chrome
 
-widget_layout_app_name = Forge
-widget_layout_footer_app = forge
-widget_layout_connected = { $connected }/{ $total } підключено
-widget_layout_uptime_suffix = час роботи
-
 ## Widget - volume slider
-
-widget_volume_label = ГУЧН
 
 ## Locale-aware formatting - feed time
 
@@ -2104,9 +1712,6 @@ fmt_relative_days = { $count ->
 }
 
 ## Storage error screen
-storage_error_title = Не вдалося відкрити базу даних
-storage_error_data_safe = Ваші дані на диску не було змінено. Застосунок працює на тимчасовому сховищі, тож зміни, зроблені зараз, буде втрачено після перезапуску.
-storage_error_report = Про цю помилку варто повідомити.
 
 ## Integration seed
 iseed_metric_chat = Чат

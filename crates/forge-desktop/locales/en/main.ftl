@@ -12,24 +12,12 @@ boot_failure_reassure = Your data is safe. If this keeps happening, please repor
 
 common_cancel = Cancel
 common_save = Save
-common_language = Language
 
 ## Navigation - screen labels (breadcrumb + sidebar)
 
 nav_home = Home
-nav_actions = Actions
-nav_queues = Queues
-nav_triggers = Triggers
-nav_integration = Integration
-nav_live_chat = Live chat
 nav_event_feed = Event feed
-nav_globals = Globals
-nav_settings = Settings
-nav_tts = TTS
-nav_soundboard = Soundboard
 nav_script_editor = Scripts
-nav_api_reference = API reference
-nav_server = Server
 
 ## Navigation - sidebar section headers
 
@@ -48,12 +36,9 @@ nav_item_event_feed = Event feed
 nav_item_globals = Globals
 nav_item_platforms = Platforms
 nav_item_stream_apps = Stream apps
-nav_group_modules = Builtin
 nav_item_soundboard = Soundboard
 nav_item_tts = Text-to-Speech
 nav_item_ws_server = WebSocket server
-nav_item_discord = Discord
-nav_item_midi = MIDI
 nav_item_hotkey = Hotkeys
 nav_item_settings = Settings
 
@@ -64,8 +49,6 @@ home_hero_import = Import
 home_hero_new_action = New action
 home_import_success = Imported action “{ $name }”
 home_import_failed = Import failed: { $error }
-home_stats_error = Couldn’t load dashboard stats: { $error }
-home_stats_retry = Retry
 
 ## Home - jump cards
 
@@ -128,9 +111,6 @@ home_connections_summary = { $active } active · { $disconnected } disconnected
 settings_appearance_title = Appearance
 settings_appearance_theme_label = Theme
 settings_theme_active = ACTIVE
-settings_theme_mocha_desc = Dark, warm
-settings_theme_tokyo_desc = Dark, cool
-settings_theme_latte_desc = Light
 settings_appearance_density_label = Interface density
 settings_appearance_density_subtitle = How much breathing room the interface gets - applies instantly
 settings_appearance_density_compact = Compact
@@ -140,15 +120,6 @@ settings_appearance_density_cozy_hint = Balanced spacing (default)
 settings_appearance_density_spacious = Spacious
 settings_appearance_density_spacious_hint = Extra breathing room between elements
 settings_appearance_fonts_label = Fonts
-settings_appearance_fonts_subtitle = Interface and code typefaces - applies instantly
-settings_appearance_fonts_scanning = Scanning installed fonts…
-settings_appearance_font_body_label = Interface font
-settings_appearance_font_mono_label = Monospace font
-settings_appearance_font_default_placeholder = { $family } (default)
-settings_appearance_font_reset = Reset to default
-settings_appearance_font_missing = "{ $family }" is not installed - the default is used until it returns
-settings_appearance_font_show_all = Show all fonts
-settings_appearance_font_preview = The quick brown fox jumps over the lazy dog · 0123456789
 settings_appearance_theme_hint = How Forge should look
 settings_appearance_font_interface = INTERFACE
 settings_appearance_font_monospace = MONOSPACE
@@ -169,18 +140,11 @@ settings_nav_group_preferences = PREFERENCES
 settings_nav_group_engine = ENGINE
 settings_nav_group_about = ABOUT
 settings_nav_appearance = Appearance
-settings_nav_language = Language
 settings_nav_language_region = Language & region
 settings_nav_shortcuts = Shortcuts
 settings_nav_notifications = Notifications
 settings_nav_audio = Audio
-settings_nav_scripting = Scripting
-settings_nav_queues = Queues
-settings_nav_storage = Storage
-settings_nav_websocket = WebSocket
 settings_nav_hotkeys = Hotkeys
-settings_nav_version = Version
-settings_nav_diagnostics = Diagnostics
 
 ## Settings → Diagnostics pane
 
@@ -189,10 +153,8 @@ settings_about_rust_label = Rust
 settings_about_os_label = OS
 settings_diagnostics_log_dir_hint = Runtime logs stream to this folder.
 settings_diagnostics_section_title = Logs & diagnostics
-settings_diagnostics_log_dir = Log directory: { $path }
 settings_diagnostics_log_dir_label = Log directory
 settings_diagnostics_open_log_dir = Open log directory
-settings_diagnostics_log_level_hint = Log level: controlled via RUST_LOG env var (e.g. info, debug, trace).
 
 ## Settings → Version pane
 
@@ -200,12 +162,10 @@ settings_version_title = Version & updates
 settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
 settings_version_recent_releases = RECENT RELEASES
-settings_version_changelog_empty = No release history yet.
 
 ## Settings → Storage pane
 
 settings_storage_section_title = Storage & backups
-settings_storage_db_path = Database: { $path }
 settings_storage_db_path_label = Database
 settings_storage_backup_btn = Backup now
 settings_storage_backup_hint = Creates a timestamped DB copy in the data directory.
@@ -217,7 +177,6 @@ settings_storage_display_limit_hint = How many recent messages load when the cha
 ## Settings → Queues pane
 
 settings_queues_section_title = Queues & threading
-settings_queues_thread_hint = Tokio threadpool: { $workers } worker(s) (auto-sized to system).
 settings_queues_workers_label = Worker threads
 settings_queues_managed_hint = Per-queue concurrency limits and blocking flags are managed on the Queues screen.
 
@@ -232,12 +191,9 @@ settings_shortcuts_title = Keyboard shortcuts
 settings_shortcuts_subtitle = These shortcuts work only while the forge window is focused. System-wide combinations live under Hotkeys.
 settings_shortcuts_action_nav_home = Go to Hub
 settings_shortcuts_action_nav_live_chat = Open Live Chat
-settings_shortcuts_action_nav_event_feed = Open Event Feed
 settings_shortcuts_action_nav_actions = Open Actions
 settings_shortcuts_action_nav_triggers = Open Triggers
 settings_shortcuts_action_nav_twitch = Open Twitch
-settings_shortcuts_action_nav_globals = Open Globals
-settings_shortcuts_action_nav_script_editor = Open Scripts
 settings_shortcuts_action_nav_settings = Open Settings
 settings_shortcuts_unbound = Not bound
 settings_shortcuts_capture_prompt = Press a shortcut... Esc to cancel
@@ -249,7 +205,6 @@ settings_shortcuts_fixed_enter = Confirm a form or dialog
 settings_shortcuts_fixed_escape = Close a modal or cancel capture
 settings_shortcuts_fixed_note = These keys are built in and cannot be rebound.
 settings_shortcuts_error_needs_modifier = Combine the key with Ctrl, Alt or Meta, or pick an F-key - plain keys would interfere with typing.
-settings_shortcuts_error_global_hotkey = { $chord } is already claimed by a global hotkey. Unbind it under Settings → Hotkeys first.
 settings_shortcuts_conflict_body = { $chord } is currently assigned to “{ $owner }”. Reassign it? The previous shortcut becomes unbound.
 settings_shortcuts_conflict_steal = Reassign
 
@@ -309,7 +264,6 @@ settings_hotkeys_replace_btn = Replace
 settings_hotkeys_error_no_combo = Capture a hotkey combo first.
 settings_hotkeys_error_no_action = Select an action to bind.
 settings_hotkeys_error_unavailable = Hotkey system is not available.
-settings_hotkeys_error_load_actions = Failed to load actions: { $error }
 settings_hotkeys_error_load_bindings = Failed to load bindings: { $error }
 settings_hotkeys_error_unbind = Unbind failed: { $error }
 settings_hotkeys_error_replace = Replace failed: { $error }
@@ -325,8 +279,6 @@ actions_filter_chat = Chat
 actions_filter_timers = Timers
 actions_filter_points = Points
 actions_search_placeholder = Search actions...
-actions_new_btn = + New action
-actions_loading = Loading...
 actions_empty = No actions yet
 
 ## Actions - detail panel
@@ -343,7 +295,6 @@ actions_menu_disable = Disable
 actions_menu_delete = Delete…
 
 ## Actions - footer
-
 
 ## Actions - ESC hint
 
@@ -372,7 +323,6 @@ actions_modal_cancel_btn = Cancel
 
 ## Actions - add-sub-action modal / step chips
 
-actions_sub_select_kind = Choose a step type
 actions_sub_no_config = This step has no settings.
 actions_sub_select_placeholder = Select...
 actions_sub_select_empty = No options available
@@ -391,86 +341,16 @@ sub_cat_tts = Text-to-speech
 sub_cat_http = HTTP
 sub_cat_server = Server
 sub_cat_util = Utilities
-actions_sub_chip_send_chat = Send chat
-actions_sub_chip_set_global = Set global
-actions_sub_chip_delay = Delay
-actions_sub_chip_log = Log
-actions_sub_chip_play_sound = Play sound
-actions_sub_chip_speak = Speak
-actions_sub_chip_read_file = Read file
-actions_sub_chip_random_int = Random int
-actions_sub_modal_add_btn = Add step
-actions_sub_modal_save_btn = Save changes
-actions_sub_modal_cancel_btn = Cancel
 
 ## Actions - sub-action config sections
 
-actions_sub_section_message = MESSAGE
-actions_sub_section_target_platform = TARGET PLATFORM
-actions_sub_section_variable_name = VARIABLE NAME
-actions_sub_section_value = VALUE
-actions_sub_section_milliseconds = MILLISECONDS
-actions_sub_section_level = LEVEL
-actions_sub_section_clip = CLIP
-actions_sub_section_text = TEXT
-actions_sub_section_voice_override = VOICE OVERRIDE (optional)
-actions_sub_section_path = PATH (relative to assets sandbox)
-actions_sub_section_target_var = TARGET VARIABLE
-actions_sub_section_min = MIN
-actions_sub_section_max = MAX
-actions_sub_helper_variables = Variables: %user%, %message%, %args%
-actions_sub_helper_interpolation = Supports variable interpolation
-actions_sub_voice_hint = Leave blank to use alias resolver
-actions_sub_path_hint = Sandboxed under data_dir/assets/ · no ../ traversal · max 1 MiB
-actions_sub_no_clips = No clips yet - add one in the Soundboard screen first.
-
 ## Actions - trigger picker (side-sheet)
-
-actions_picker_title = Add trigger
-actions_picker_loading = Loading triggers…
-actions_picker_cancel = Cancel
-actions_picker_select_platform = Select a platform
-actions_picker_no_triggers = No triggers available
-actions_picker_select_hint = Select a platform to browse triggers.
-actions_picker_no_triggers_selection = No triggers available for this selection.
-actions_picker_default_label = (default)
 
 ## Actions - trigger category display names (section headers)
 
-actions_cat_chat_commands = CHAT COMMANDS
-actions_cat_subs_bits = SUBS & BITS
-actions_cat_bits = BITS
-actions_cat_raids = RAIDS
-actions_cat_obs_events = OBS EVENTS
-actions_cat_server_events = SERVER EVENTS
-actions_cat_timers = TIMERS
-actions_cat_ungrouped = UNGROUPED
-actions_cat_all = ALL
-
 ## Actions - trigger kind labels
 
-actions_kind_twitch_chat_command = Twitch · chat command
-actions_kind_twitch_chat_message = Twitch · any chat message
-actions_kind_twitch_subscriber = Twitch · new subscriber
-actions_kind_twitch_resubscriber = Twitch · re-subscribe
-actions_kind_twitch_gift_sub = Twitch · gift subs
-actions_kind_twitch_cheer = Twitch · bits cheered
-actions_kind_twitch_raid = Twitch · raid received
-actions_kind_obs_scene_changed = OBS · scene changed
-actions_kind_server_custom_event = Server · custom event
-actions_kind_unknown = Unknown trigger
-
 ## Actions - trigger kind summaries
-
-actions_summary_twitch_chat_command = User types !command in chat
-actions_summary_twitch_chat_message = Every chat message fires this
-actions_summary_twitch_subscriber = Fires when someone subscribes
-actions_summary_twitch_resubscriber = Existing sub renews
-actions_summary_twitch_gift_sub = Someone gifts subs to channel
-actions_summary_twitch_cheer = Viewer sends bits
-actions_summary_twitch_raid = Another stream raids you
-actions_summary_obs_scene_changed = Fires when OBS switches the active scene
-actions_summary_server_custom_event = Fires when triggerCodeEvent is called via the WebSocket API
 
 ## Action editor - breadcrumb / tree pane / detail pane
 
@@ -483,8 +363,6 @@ action_editor_export_done = Action exported to { $path }
 action_editor_export_failed = Export failed: { $error }
 action_editor_edit = Edit
 action_editor_menu_delete = Delete action
-action_editor_edit_modal_title = Edit action
-action_editor_edit_save_btn = Save
 action_editor_add_trigger = Add trigger
 action_editor_add_step = Add step
 action_editor_health_unknown_var = Uses %{ $name }%, which no trigger provides and no earlier step produces
@@ -511,13 +389,7 @@ action_editor_case_multi = multi-value match (read-only)
 action_editor_case_match_placeholder = match value
 action_editor_branch_cap = Max nesting depth reached · cannot nest deeper here
 action_editor_no_triggers = No triggers · click Add trigger to start
-action_editor_delete = Delete
-action_editor_delete_cascade_hint = { $sub_actions } sub-actions and { $trigger_links } trigger links will also be removed.
-action_editor_section_triggers = TRIGGERS
 action_editor_section_triggers_count = TRIGGERS · { $count }
-action_editor_triggers_hint = Click a trigger to edit it in the registry
-action_editor_section_sub_actions = SUB-ACTIONS · { $count }
-action_editor_section_sub_actions_label = SUB-ACTIONS
 action_editor_sub_actions_count = { $count } sub-actions
 actions_sub_file_browse = Browse
 actions_sub_datetime_pick = Pick
@@ -600,7 +472,6 @@ action_editor_test_run_close = Close
 ## Action editor - sub-action / trigger pickers
 
 action_editor_this_action = this action
-action_editor_saved_triggers = Your saved triggers
 action_editor_recent_triggers = Recent
 picker_favorites = Favorites
 picker_favorites_empty = Star items to pin them here for quick access
@@ -612,7 +483,6 @@ action_editor_picker_search = Search { $count } sub-actions…
 action_editor_picker_fires = Fires
 action_editor_picker_available_count = · { $count } available
 action_editor_trigger_picker_footer_hint = Creates a new trigger of the chosen kind and links it
-action_editor_no_unlinked_triggers = No unlinked triggers available - create one on the Triggers screen
 
 ## Action editor - sub-action card titles
 
@@ -633,19 +503,8 @@ action_editor_kind_sub_action = Sub-action
 
 triggers_breadcrumb_automation = Automation
 triggers_breadcrumb_triggers = Triggers
-triggers_open_create_btn = + Create
 triggers_search_placeholder = Search triggers…
-triggers_filter_twitch = Twitch
-triggers_filter_youtube = YouTube
-triggers_filter_kick = Kick
-triggers_filter_obs = OBS
-triggers_filter_vtube = VTube Studio
-triggers_filter_midi = MIDI
 triggers_filter_hotkey = Hotkey
-triggers_filter_discord = Discord
-triggers_filter_script = Script
-triggers_filter_all = All
-triggers_usage_all = All
 triggers_usage_used = Used
 triggers_usage_unused = Unused
 triggers_toast_error = Triggers: { $message }
@@ -662,13 +521,9 @@ triggers_new_trigger = New trigger
 
 triggers_empty_title = No custom trigger instances yet
 triggers_empty_hint = Create a named trigger with custom settings to reuse across multiple actions.
-triggers_empty_create = + Create trigger instance
 triggers_no_results_title = No results
 triggers_no_results_hint = Adjust or clear the filters to find your triggers.
 triggers_clear_filters = Clear filters
-triggers_usage_badge = used in { $count }
-triggers_toggle_on = ON
-triggers_toggle_off = OFF
 triggers_col_name = NAME
 triggers_col_kind = KIND
 triggers_col_used = USED IN
@@ -694,8 +549,6 @@ triggers_template_copy_name = { $name } copy
 triggers_sheet_section_configuration = CONFIGURATION
 triggers_sheet_config_overridden = { $count } overridden
 triggers_sheet_config_all_defaults = all defaults
-triggers_sheet_config_save = Save
-triggers_sheet_config_cancel = Cancel
 triggers_sheet_no_config = No configurable fields
 triggers_sheet_section_cooldown = COOLDOWN
 triggers_sheet_cooldown_caption = seconds · 0 = off
@@ -703,14 +556,9 @@ triggers_sheet_cooldown_value = cooldown
 triggers_sheet_cooldown_scope = Global cooldown
 triggers_cooldown_suffix_global = { " · cooldown=" }{ $secs }{ "s global" }
 triggers_cooldown_suffix_per_user = { " · cooldown=" }{ $secs }{ "s per-user" }
-triggers_sheet_not_registered = Trigger kind not registered
 triggers_sheet_section_used_in = USED IN
-triggers_sheet_section_platform = PLATFORM
 triggers_sheet_delete_btn = Delete
 triggers_sheet_save_btn = Save
-triggers_sheet_any_platform = Any platform
-triggers_sheet_will_fire_on = Will fire on: { $platform }
-triggers_sheet_will_fire_on_scope = Will fire on: { $scope }
 triggers_detail_loading = Loading trigger…
 triggers_sheet_config_authored = Authored on the step
 triggers_sheet_section_used_in_count = USED IN ({ $count })
@@ -731,18 +579,12 @@ triggers_confirm_delete_body = This deletes the trigger instance permanently.
 
 ## Triggers registry - rename dialog
 
-triggers_rename_title = Rename trigger
-triggers_rename_kbd_hint = ENTER to save · ESC to cancel
-
 ## Triggers registry - delete undo toast
 
 triggers_toast_deleted = Deleted '{ $name }'
 
 ## Triggers create form - kind picker
 
-triggers_create_select_kind = Select trigger kind
-triggers_create_search_placeholder = Search kinds…
-triggers_create_no_results = No matching trigger kinds
 triggers_create_cancel = Cancel
 triggers_create_type_count = { $count } trigger types
 triggers_create_search_types = Search { $count } trigger types…
@@ -757,10 +599,6 @@ triggers_create_new_instance = New { $kind } instance
 triggers_create_section_name = NAME
 triggers_create_name_placeholder = Instance name (required)
 triggers_create_section_config = CONFIGURATION
-triggers_create_section_platform = PLATFORM
-triggers_create_scope_any = Any
-triggers_create_scope_custom = Custom…
-triggers_create_will_fire = Will fire on: { $scope }
 triggers_create_btn = Create
 triggers_create_kbd_hint = ENTER to create · ESC to cancel
 
@@ -806,33 +644,14 @@ trigger_cat_goals = Goals
 trigger_cat_clips = Clips
 trigger_cat_streams = Streams
 trigger_cat_users = Users
-trigger_cat_obs = Scenes
-trigger_cat_hotkey = Hotkeys
 trigger_cat_core = Core
-trigger_cat_server = Server Events
-trigger_cat_timer = Timers
 trigger_cat_other = Other
-trigger_subgroup_scenes = Scenes
-trigger_subgroup_sources = Sources
-trigger_subgroup_audio = Audio
-trigger_subgroup_filters = Filters
-trigger_subgroup_streaming = Streaming
-trigger_subgroup_recording = Recording
-trigger_subgroup_studio_mode = Studio Mode
-trigger_subgroup_transitions = Transitions
-trigger_subgroup_virtual_camera = Virtual Camera
-trigger_subgroup_connection = Connection
-trigger_subgroup_scene_collections = Scene Collections
-trigger_subgroup_profiles = Profiles
 
 ## Actions modals - placeholder literals
 
 actions_name_placeholder = My automation
 actions_group_placeholder = Examples
 actions_description_placeholder = Plays a sound, shows overlay alert…
-actions_log_message_placeholder = Action started
-actions_speak_text_placeholder = Text to speak…
-actions_rename_placeholder = Name
 
 ## Actions - list states, toasts, delete confirm
 
@@ -944,13 +763,10 @@ tts_engines_persist_disabled_failed = Failed to save engine state
 
 ## TTS Filters - pipeline column
 
-tts_filters_pipeline_header = PROCESSING PIPELINE
-tts_filters_pipeline_hint = Each message passes through these stages in order before being spoken
 tts_filters_pipeline_intro = Pipeline that text passes through before being spoken.
 
 ## TTS Filters - numbered stage cards
 
-tts_filters_stage_emote_url_title = Emote & URL handling
 tts_filters_stage_skip_title = Skip rules
 tts_filters_stage_replacements_title = Text replacements
 tts_filters_stage_blocklist_title = Word blocklist
@@ -990,16 +806,8 @@ tts_filters_output_sanitize_meta = "!!!" → "!"
 
 ## TTS Filters - rule list
 
-tts_filters_no_rules = No filter rules yet
-tts_filters_add_rule_btn = Add rule
-tts_filters_rule_on = ON
-tts_filters_rule_off = OFF
-tts_filters_kind_literal = Text replace
-tts_filters_kind_regex = Regex replace
-tts_filters_kind_blocklist = Blocklist
 tts_filters_badge_text = TEXT
 tts_filters_badge_regex = REGEX
-tts_filters_badge_block = BLOCK
 tts_filters_stage_add = Add
 
 ## TTS Filters - add filter modal
@@ -1057,25 +865,11 @@ tts_filters_modal_replace_regex_tab = REGEX
 tts_filters_modal_replace_find_label = FIND
 tts_filters_modal_replace_match_label = MATCH PATTERN
 tts_filters_modal_replace_find_placeholder = POG
-tts_filters_modal_replace_match_placeholder = https?://\S+
 tts_filters_modal_replace_replace_label = REPLACE WITH
 tts_filters_modal_replace_replace_text_placeholder = respect
-tts_filters_modal_replace_replace_regex_placeholder = "link" or $1
 tts_filters_modal_replace_note = Leave replacement empty to strip matched text.
 
 ## TTS Filters - pipeline settings
-
-tts_filters_url_label = URL HANDLING
-tts_filters_url_speak = Read URL aloud
-tts_filters_url_replace = Replace with "link"
-tts_filters_url_suppress = Skip message
-tts_filters_length_label = MAX LENGTH
-tts_filters_length_placeholder = No limit
-tts_filters_blocklist_default_label = DEFAULT BLOCKLIST MODE
-tts_filters_strip_twitch = Strip Twitch emotes
-tts_filters_strip_reward = Strip channel-point emotes
-tts_filters_unsaved = Unsaved changes
-tts_filters_saved = All changes saved
 
 ## TTS Filters - preview column
 
@@ -1096,8 +890,6 @@ tts_filters_stage_name_output = OUTPUT
 tts_filters_skip_reason_rule = matched a skip rule
 tts_filters_skip_reason_blocked = blocked word
 tts_filters_skip_reason_empty = empty after filters
-tts_filters_delete_title = Delete rule?
-tts_filters_delete_body = This rule will be removed from the preprocessing pipeline.
 
 ## Cloud TTS Engines - card buttons
 
@@ -1156,9 +948,6 @@ tts_aliases_never_speak = Never speak
 
 ## TTS Voice aliases - role badges
 
-tts_aliases_role_mod = MOD
-tts_aliases_role_vip = VIP
-tts_aliases_role_sub = SUB
 tts_aliases_role_blocked = BLOCKED
 
 ## Voice Aliases - assign/edit modal
@@ -1168,7 +957,6 @@ tts_aliases_form_title_edit = Edit voice alias
 tts_aliases_form_viewer_label = VIEWER
 tts_aliases_form_viewer_placeholder = Viewer name
 tts_aliases_form_engine_label = ENGINE
-tts_aliases_form_engine_placeholder = Select engine
 tts_aliases_form_voice_label = VOICE
 tts_aliases_form_voice_placeholder = Voice id
 tts_aliases_form_pitch_label = PITCH (st)
@@ -1202,10 +990,8 @@ soundboard_breadcrumb_soundboard = Soundboard
 
 ## Soundboard - header / modal
 
-soundboard_add_clip_btn = Add clip
 soundboard_loading = Loading clips…
 soundboard_empty_title = No clips yet
-soundboard_empty_hint = Click "Add clip" to add your first sound.
 soundboard_playback_error_prefix = Playback error: { $error }
 
 ## Soundboard - modal
@@ -1215,10 +1001,7 @@ soundboard_modal_title_edit = Edit clip
 soundboard_modal_no_file = No file selected
 soundboard_modal_browse_btn = Browse
 soundboard_modal_name_placeholder = Clip name
-soundboard_modal_hotkey_placeholder = e.g. Ctrl+1
-soundboard_modal_devices_loading = Loading devices…
 soundboard_modal_save_btn = Save
-soundboard_modal_saving_btn = Saving…
 soundboard_modal_cancel_btn = Cancel
 soundboard_modal_validation_error = Name and audio file are required.
 soundboard_delete_title = Delete clip?
@@ -1228,25 +1011,13 @@ soundboard_delete_body = This removes the clip from your soundboard permanently.
 
 soundboard_modal_section_file = FILE
 soundboard_modal_section_name = NAME
-soundboard_modal_section_hotkey = HOTKEY
-soundboard_modal_section_device = OUTPUT DEVICE
 soundboard_device_system_default = System default
-soundboard_modal_section_volume = VOLUME
 
 ## Soundboard - device load error
 
-soundboard_modal_device_load_error = Device load failed: { $error }
-
 ## Soundboard - audio player error
 
-soundboard_player_not_init = Audio player not initialised - check Settings → Audio.
-
 ## Soundboard - feedback
-
-soundboard_playing_feedback = Playing "{ $name }" → { $device }. Live audio is wired via the runtime soon.
-soundboard_removed_feedback = Removed "{ $name }".
-soundboard_saved_feedback = Saved "{ $name }". Playback routing is wired via the runtime soon.
-soundboard_modal_kbd_hint = Enter to save · Esc to cancel
 
 ## Soundboard - redesigned screen
 
@@ -1300,7 +1071,6 @@ queues_resume_btn = Resume
 ## Queues - card menu
 
 queues_menu_configure = Configure…
-queues_menu_rename = Rename…
 queues_menu_pause = Pause
 queues_menu_resume = Resume
 queues_menu_drain = Drain queue
@@ -1364,17 +1134,12 @@ queues_overflow_more = +{ $count } more
 
 ## Queues - built-in queue descriptions
 
-
 ## TTS dashboard - engine card sublabels / priority badge
 
-tts_dash_engine_local_ready = local · ready
 tts_dash_priority_high = HIGH
 tts_dash_priority_bits = BITS { $amount }
 
 ## TTS engines - unknown engine fallback
-
-tts_engines_unknown = Unknown engine
-
 
 ## Cloud TTS - form field labels
 
@@ -1416,18 +1181,12 @@ platforms_feature_channel_events = Channel events
 ## Platform generic detail
 
 platform_generic_features_available = WHAT YOU CAN DO ONCE CONNECTED
-platform_generic_features_coming = WHAT YOU'LL BE ABLE TO DO
 platform_generic_kind_platform = Streaming platform
-platform_generic_kind_stream_app = Stream app
 platform_generic_status_available = available - click Connect to authorize
-platform_generic_status_coming = not yet implemented
-platform_generic_parent_platforms = Platforms
-platform_generic_parent_stream_apps = Stream apps
 platform_generic_connect_btn = Connect
 
 ## Twitch panel
 
-twitch_breadcrumb_platforms = Platforms
 twitch_header_subtitle = Connect to enable chat, subs, bits, raids, channel points, and EventSub
 twitch_auth_title = Authorize Forge on Twitch
 twitch_auth_subtitle = Twitch uses device code authorization. You'll see a code here, enter it on Twitch's site, and we'll auto-detect when you're done. We never see your password.
@@ -1453,37 +1212,8 @@ twitch_reauth_btn = Re-authorize
 
 ## OBS panel
 
-obs_breadcrumb_stream_apps = Stream apps
-obs_header_subtitle = Connect to control scenes, sources, audio, filters, and recording
-obs_instructions_title = Before you start
-obs_instructions_lead = In OBS Studio, enable the built-in WebSocket server, then copy the settings here.
-obs_step1 = In OBS: Tools → WebSocket Server Settings
-obs_step2 = Check 'Enable WebSocket server'
-obs_step3 = Note the port (default 4455)
-obs_step4 = Click 'Show Connect Info' to reveal password
-obs_requirements_header = REQUIREMENTS
-obs_req_version = OBS Studio 28+ (WebSocket v5 built-in)
-obs_req_network = Running on the same machine or LAN-reachable
-obs_form_title = Connection settings
-obs_field_host = HOST
-obs_field_port = PORT
-obs_field_password = PASSWORD
-obs_field_keychain = stored encrypted in the local database
-obs_toggle_reconnect_title = Auto-reconnect on disconnect
-obs_toggle_reconnect_subtitle = Retry with exponential backoff
-obs_toggle_launch_title = Connect on app launch
-obs_toggle_launch_subtitle = Start connecting when Forge opens
-obs_btn_test = Test connection
-obs_btn_connect = Connect
-obs_test_running = Testing connection…
-obs_test_success = Test successful
-obs_test_failed = Test failed
-obs_tip = Running OBS on a different PC? Set host to that machine's IP. Make sure OBS WebSocket is configured to bind to 0.0.0.0 instead of localhost, and the port is open in firewall.
-obs_port_invalid = port must be a number 1-65535
-
 ## Builtin detail
 
-builtin_breadcrumb = Builtin
 builtin_picker_scene = Choose a Scene
 builtin_picker_source = Choose a Source
 builtin_picker_audio_input = Choose an Audio Input
@@ -1496,7 +1226,6 @@ builtin_picker_midi_port = Choose a MIDI Port
 oauth_header_subtitle = Connect to enable live chat and events
 oauth_auth_title = Authorize Forge on { $name }
 oauth_auth_subtitle = This platform uses device code authorization. You will see a code below - enter it on the platform's site and we will detect when you are done. We never see your password.
-oauth_btn_connect = Connect
 oauth_btn_retry = Retry
 oauth_btn_cancel = Cancel
 oauth_btn_return = Return to Platforms
@@ -1562,7 +1291,6 @@ server_btn_disconnect = Disconnect
 ## Common status badges (shared across platform detail pages)
 
 common_status_not_connected = Not connected
-common_status_coming_soon = Coming soon
 
 ## YouTube platform detail
 
@@ -1582,11 +1310,6 @@ kick_feature_deleted_replies = Message-deleted and reply events
 
 ## VTube Studio platform detail
 
-vtube_description = Vtuber avatar control: hotkeys, expressions, item triggers.
-vtube_feature_hotkeys = Trigger hotkeys from chat events
-vtube_feature_expressions = Switch expressions and outfits
-vtube_feature_item_drops = Spawn item drops on bits/subs
-
 ## Stream apps overview
 
 stream_apps_title = Stream apps
@@ -1597,31 +1320,16 @@ stream_apps_vtube_desc = Vtuber avatar control: hotkeys, expressions, item trigg
 
 ## Live Chat - page header / filters
 
-chat_breadcrumb_audience = Audience
 chat_breadcrumb_chat = Chat
 chat_filter_all = All
 chat_filter_events = Events only
 chat_filter_hide_bots = Hide bots
 chat_viewers_unit = viewers
 chat_no_filter_matches = No messages match these filters.
-chat_send_placeholder_disconnected = Connect a platform to send...
 chat_send_placeholder_connected = Send to chat...
 chat_send_placeholder_to = Send to {$platform} chat...
-chat_no_messages_title = No messages
-chat_no_messages_empty = Not connected - go to Settings → Platforms to connect.
-chat_no_events_yet = No events yet.
-chat_no_search_matches = No messages match your search.
-chat_messages_count = { $count ->
-    [one] { $count } message
-   *[other] { $count } messages
 }
-chat_matches_count = { $count ->
-    [one] { $count } match
-   *[other] { $count } matches
 }
-chat_header_viewers = { $count ->
-    [one] { $formatted } viewer
-   *[other] { $formatted } viewers
 }
 chat_show_viewers = Show viewers
 chat_hide_viewers = Hide viewers
@@ -1683,26 +1391,14 @@ event_feed_filter_bits = Bits { $n }
 event_feed_filter_timers = Timers { $n }
 event_feed_filter_obs = OBS { $n }
 event_feed_filter_errors = Errors { $n }
-event_feed_pause = Pause
-event_feed_resume = Resume
-event_feed_clear = Clear
-event_feed_export = Export
 event_feed_export_success = Exported event feed to { $path }
 event_feed_export_failed = Event feed export failed: { $error }
 event_feed_no_events = No events yet - system activity appears here in real time.
 event_feed_no_filter_match = No events match the active filter.
 event_feed_inspector_title = Event inspector
-event_feed_inspector_hint = Select an event to inspect its payload.
 event_feed_auto_scroll_on = Auto-scroll on
 event_feed_auto_scroll_off = Auto-scroll off
-event_feed_buffer = Buffer: { $count } / 10,000
-event_feed_rate = { $rate } ev/s
 event_feed_breadcrumb_automation = Automation
-event_feed_breadcrumb_feed = Event Feed
-event_feed_status_live = LIVE
-event_feed_status_paused = PAUSED
-event_feed_header_count = { $count } events
-event_feed_streaming_status = Streaming · WebSocket :8081
 event_feed_events_live_stream = events · live stream
 
 ## Globals - page header / filters
@@ -1713,15 +1409,8 @@ globals_filter_all = All
 globals_filter_persisted = Persisted
 globals_filter_session = Session
 globals_search_placeholder = Search variables...
-globals_export_btn = Export JSON
-globals_new_btn = + New variable
 globals_loading = Loading...
-globals_empty_title = No globals here
-globals_empty_desc = Adjust the filter or search, or create one with + New variable.
-globals_edit_action = Edit value
-globals_delete_action = Delete
 globals_deleted_toast = Deleted '{ $name }'
-globals_breadcrumb = Global variables
 globals_stat_total = total
 globals_stat_persisted = persisted
 globals_stat_in_memory = in-memory
@@ -1772,7 +1461,6 @@ globals_inspect_edit = Edit value
 
 ## Script Editor - page / toolbar
 
-script_editor_breadcrumb = Script Editor
 script_editor_breadcrumb_automation = Automation
 script_editor_edited_prefix = edited
 script_editor_run = Test run
@@ -1780,11 +1468,8 @@ script_editor_save = Save
 script_editor_format = Format
 script_editor_api_docs = API docs
 script_editor_debug = Debug
-script_editor_debug_tip = Debugger planned for post-1.0
 script_editor_output_header = Output
-script_editor_output_clear = Clear
 script_editor_api_reference = API reference
-script_editor_scripts_label = SCRIPTS
 script_editor_search_placeholder = Search scripts…
 script_editor_new_script = New script
 script_editor_no_scripts = No scripts yet
@@ -1795,9 +1480,6 @@ script_editor_rename_action = Rename
 script_editor_enable_action = Enable
 script_editor_disable_action = Disable
 script_editor_delete_action = Delete
-script_editor_new_btn = + New
-script_editor_empty_title = Select a script or click + New
-script_editor_empty_desc = Scripts let you run rhai code from any action.
 script_editor_running = Running…
 script_editor_run_modal_cancel = Cancel
 script_editor_save_blocked = Save blocked - fix syntax errors first
@@ -1806,13 +1488,11 @@ script_editor_discard_body = This script has unsaved edits. Continue and lose th
 script_editor_discard_confirm = Discard
 script_editor_discard_cancel = Keep editing
 script_editor_discard_esc_hint = to keep editing
-script_editor_shared = Shared
 script_editor_sandbox_label = Sandbox:
 script_editor_sandbox_enabled = enabled
 script_editor_problems_tab = Problems
 script_editor_console_cleared = Console cleared.
 script_editor_no_problems = No problems.
-script_editor_rename_placeholder = Script name
 
 ## Script Editor - run modal
 
@@ -1823,35 +1503,14 @@ script_editor_type_check_errors = { $count ->
    *[other] { $count } errors
 }
 script_editor_run_modal_title = Run { $name }
-script_editor_run_modal_title_generic = Run script
 script_editor_run_input_placeholder = Enter { $label } value…
-script_editor_run_input_error = Enter a value for { $name }
 
 ## Action telemetry - stat column headers
 
-telemetry_stat_last_fired = LAST FIRED
-telemetry_stat_runs_today = RUNS · TODAY
-telemetry_stat_avg_time = AVG TIME
-telemetry_stat_errors_7d = ERRORS · 7D
-
 ## Action editor - validation errors
-
-action_editor_error_message_required = Message is required.
-action_editor_error_var_required = Variable name is required.
-action_editor_error_delay_invalid = Milliseconds must be a non-negative integer.
-action_editor_error_log_required = Log message is required.
-action_editor_error_clip_required = Select a clip to play.
-action_editor_error_speak_required = Speak text is required.
-action_editor_error_file_required = Path and target variable are required.
-action_editor_error_random_invalid = min, max (min ≤ max), and target variable are required.
-action_editor_pill_custom = Custom
-action_editor_pill_default = Default
 
 ## Integration detail - OBS / quick-action
 
-builtin_quick_action_fallback = Quick Action
-builtin_obs_not_connected = OBS not connected
-builtin_obs_not_supported = Not supported for OBS
 builtin_disconnect_confirm_hint = You will be disconnected and will need to reconnect manually. Live events from this integration stop arriving until then.
 integration_disconnect_title = Disconnect integration
 integration_settings_coming_soon = Settings coming soon
@@ -1868,8 +1527,6 @@ integration_state_disconnected_detail = Use Reconnect above to link this integra
 
 auth_error_credentials_missing_youtube = YouTube OAuth client credentials are not configured
 auth_error_credentials_missing_kick = Kick OAuth client credentials are not configured
-auth_error_flow_consumed = OAuth flow already consumed
-auth_error_unknown = Unknown error
 
 ## Widget - key capture
 
@@ -1878,17 +1535,10 @@ widget_key_capture_placeholder = Press a combo…
 ## Widget - event inspector
 
 widget_event_replay = Replay this event
-widget_event_replaying = Replaying…
 widget_event_payload_header = PAYLOAD
 widget_event_caused_header = CAUSED
 
 ## Widget - chat row
-
-widget_chat_subscribed = subscribed (Tier { $tier })
-widget_chat_cheered = cheered
-widget_chat_raiding_with = is raiding with
-widget_chat_viewers = { $viewers } viewers
-widget_chat_triggered = Triggered: { $action }
 
 ## Live chat - event descriptors
 
@@ -1906,8 +1556,6 @@ widget_header_action_reconnect = Reconnect
 widget_header_action_refresh_token = Refresh Token
 widget_header_action_disconnect = Disconnect
 widget_header_action_settings = Settings
-widget_header_uptime = uptime { $duration }
-widget_header_uptime_only = uptime { $duration }
 widget_header_capability_limited = Limited
 
 ## Widget - builtin content
@@ -1924,20 +1572,8 @@ widget_builtin_event_count =
 
 ## Widget - server file list
 
-widget_file_list_header = Overlay host root
-widget_file_list_path_label = PATH
-widget_file_list_files_label = FILES
-widget_file_list_url_label = BROWSER SOURCE URL
-widget_file_list_dir_count =
-    { $count ->
-        [one] { $count } file
-       *[other] { $count } files
-    }
-
-
 ## Widget - server confirm modal
 
-widget_confirm_what_this_means = WHAT THIS MEANS
 widget_confirm_type_prefix = Type
 widget_confirm_type_suffix = to confirm:
 widget_confirm_esc_to_cancel = to cancel
@@ -1947,24 +1583,11 @@ widget_confirm_cancel = Cancel
 
 widget_confirm_delete_title = Delete { $kind }?
 widget_confirm_delete_hint = This item will be permanently removed. This action cannot be undone.
-widget_confirm_delete_kind_action = action
-widget_confirm_delete_kind_step = step
-widget_confirm_delete_kind_trigger_link = trigger link
-widget_confirm_delete_kind_global = global
 widget_confirm_delete_kind_script = script
-widget_confirm_delete_kind_client = client
 
 ## Widget - server bearer token
 
-widget_bearer_copy = COPY
-widget_bearer_regenerate = REGENERATE
-widget_bearer_regen_warning = Regenerating disconnects all clients
-widget_bearer_regen_warning_body = Connected WebSocket clients must reconnect with the new token.
-
 ## Widget - server bind card
-
-widget_bind_badge_recommended = Recommended
-widget_bind_badge_requires_confirmation = Requires confirmation
 
 ## Widget - picker modal
 
@@ -1982,8 +1605,6 @@ widget_device_test = Test
 widget_quick_actions_title = Quick actions
 
 ## Widget - console (script output)
-
-widget_console_no_output = No output yet
 
 ## Settings - audio output
 
@@ -2021,14 +1642,7 @@ script_editor_stat_avg_value = { $n } ms
 
 ## Widget - layout chrome
 
-widget_layout_app_name = Forge
-widget_layout_footer_app = forge
-widget_layout_connected = { $connected }/{ $total } connected
-widget_layout_uptime_suffix = uptime
-
 ## Widget - volume slider
-
-widget_volume_label = VOL
 
 ## Locale-aware formatting - feed time
 
@@ -2070,9 +1684,6 @@ fmt_relative_days = { $count ->
 }
 
 ## Storage error screen
-storage_error_title = Database could not be opened
-storage_error_data_safe = Your on-disk data was not modified. The app is running on temporary storage, so changes made now will be lost on restart.
-storage_error_report = This is a bug worth reporting.
 
 ## Integration seed
 iseed_metric_chat = Chat

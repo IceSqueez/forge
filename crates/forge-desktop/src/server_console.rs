@@ -2,8 +2,8 @@ use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, badge,
-    breadcrumb, card, confirm_modal, fmt_bytes, fmt_uptime, fmt_uptime_short, icon, metric_card,
-    overlay, platform_color, radius, spacing, sparkline, status_dot, tr, with_alpha,
+    breadcrumb, card, confirm_modal, empty_state, fmt_bytes, fmt_uptime, fmt_uptime_short, icon,
+    metric_card, overlay, platform_color, radius, spacing, sparkline, status_dot, tr, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -1024,14 +1024,8 @@ impl ServerConsoleView {
             );
 
         let files: AnyElement = if self.overlay_entries.is_empty() {
-            div()
-                .w_full()
-                .py(spacing(Spacing::Lg, density))
-                .px(spacing(Spacing::Sm, density))
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_faint)
-                .child(tr!("server_overlay_files_empty"))
+            empty_state(tr!("server_overlay_files_empty"), palette)
+                .density(density)
                 .into_any_element()
         } else {
             let mut col = div()
@@ -1269,14 +1263,8 @@ impl ServerConsoleView {
             .child(div().w(X_CELL_W).flex_none());
 
         let rows: AnyElement = if self.connected_clients.is_empty() {
-            div()
-                .w_full()
-                .py(spacing(Spacing::Lg, density))
-                .px(spacing(Spacing::Sm, density))
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_faint)
-                .child(tr!("server_clients_empty"))
+            empty_state(tr!("server_clients_empty"), palette)
+                .density(density)
                 .into_any_element()
         } else {
             let mut col = div().w_full().flex().flex_col();

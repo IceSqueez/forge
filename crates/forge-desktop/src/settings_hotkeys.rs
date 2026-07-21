@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, anchored_popover_below, card, ghost_button, icon, overlay,
-    primary_button, radius, spacing, tr, with_alpha,
+    ForgePalette, Icon, Radius, Spacing, anchored_popover_below, card, empty_state, ghost_button,
+    icon, overlay, primary_button, radius, spacing, tr, with_alpha,
 };
 use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_storage::DataProvider;
@@ -572,13 +572,7 @@ impl SettingsHotkeysView {
 
     fn bindings_list(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         if self.bindings.is_empty() {
-            return div()
-                .py(px(8.0))
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_faint)
-                .child(tr!("settings_hotkeys_no_bindings"))
-                .into_any_element();
+            return empty_state(tr!("settings_hotkeys_no_bindings"), palette).into_any_element();
         }
 
         let mut list = div().flex().flex_col().gap(px(2.0));

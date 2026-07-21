@@ -3,8 +3,8 @@ use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, card, icon, radius, slider, spacing, status_dot, toggle,
-    tr,
+    ForgePalette, Icon, Radius, Spacing, card, empty_state, icon, radius, slider, spacing,
+    status_dot, toggle, tr,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo};
@@ -804,11 +804,8 @@ impl TtsEnginesView {
             );
 
         let body: AnyElement = if voices.is_empty() {
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_muted)
-                .child(tr!("tts_engines_voices_empty"))
+            empty_state(tr!("tts_engines_voices_empty"), palette)
+                .density(density)
                 .into_any_element()
         } else {
             let mut grid = div()

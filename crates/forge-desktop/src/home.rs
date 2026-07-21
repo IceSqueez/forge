@@ -3,7 +3,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind,
-    breadcrumb, card, ghost_button_with_icon, icon, radius, spacing, sparkline, status_dot, tr,
+    breadcrumb, card, empty_state, ghost_button_with_icon, icon, radius, spacing, sparkline,
+    status_dot, tr,
 };
 use forge_storage::DataProvider;
 use gpui::{
@@ -792,11 +793,8 @@ impl HomeView {
             .child(live_label);
 
         let body: AnyElement = if recent.is_empty() {
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_muted)
-                .child(tr!("home_events_empty"))
+            empty_state(tr!("home_events_empty"), palette)
+                .density(density)
                 .into_any_element()
         } else {
             let count = recent.len();

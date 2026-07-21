@@ -8,9 +8,9 @@ use forge_components::{
     DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge,
     ResizeRange, Spacing, TextInput, ToastKind, badge, badge_color, badge_label, breadcrumb,
-    chat_row, chip, context_menu, icon, install_resize, menu_button, menu_divider, menu_header,
-    menu_item, platform_color, radius, search_input, search_input_on_surface, spacing, status_dot,
-    tr,
+    chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider,
+    menu_header, menu_item, platform_color, radius, search_input, search_input_on_surface, spacing,
+    status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -1295,10 +1295,7 @@ impl ChatView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_faint)
-                .child(tr!("chat_no_filter_matches"))
+                .child(empty_state(tr!("chat_no_filter_matches"), palette).density(density))
                 .into_any_element()
         } else {
             list_el.into_any_element()

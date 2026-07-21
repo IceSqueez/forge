@@ -5,9 +5,9 @@ use forge_components::confirm::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextInput, breadcrumb, confirm_modal, icon, menu_button,
-    menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon, radius,
-    secondary_button, slider, spacing, spinner, tr, with_alpha,
+    OverlayPosition, Radius, Spacing, TextInput, breadcrumb, confirm_modal, empty_state, icon,
+    menu_button, menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon,
+    radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -1200,17 +1200,11 @@ impl Render for QueuesView {
             } else {
                 SharedString::from(tr!("queues_empty"))
             };
-            div()
-                .w_full()
-                .py(spacing(Spacing::Lg, density))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_muted)
-                        .child(caption),
-                )
-                .into_any_element()
+            let mut state = empty_state(caption, &palette).density(density);
+            if self.loading {
+                state = state.loading("queues-loading");
+            }
+            state.into_any_element()
         } else {
             self.queue_grid(&palette, density, cx)
         };

@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
     FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, SheetWidth, Spacing, ToastKind, badge,
-    breadcrumb, chip, icon, platform_color, radius, spacing, status_dot, tr, with_alpha,
+    breadcrumb, chip, empty_state, icon, platform_color, radius, spacing, status_dot, tr,
+    with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -510,11 +511,7 @@ impl EventFeedView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .p(spacing(Spacing::Md, density))
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_faint)
-                .child(label)
+                .child(empty_state(label, palette).density(density))
         });
 
         div()

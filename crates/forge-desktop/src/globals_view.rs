@@ -9,8 +9,8 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
     OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge,
-    breadcrumb, chip, confirm_modal, context_menu, data_table, fmt_relative_time, hover_reveal,
-    icon, inline_edit, menu_divider, menu_item, modal, overlay, primary_button,
+    breadcrumb, chip, confirm_modal, context_menu, data_table, empty_state, fmt_relative_time,
+    hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, primary_button,
     primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
     tr, with_alpha,
 };
@@ -869,17 +869,17 @@ impl GlobalsView {
             } else {
                 tr!("globals_empty_caption").into()
             };
+            let mut state = empty_state(caption, palette).density(density);
+            if self.loading {
+                state = state.loading("globals-loading");
+            }
             div()
                 .w_full()
                 .flex_1()
                 .flex()
                 .items_center()
                 .justify_center()
-                .p(spacing(Spacing::Md, density))
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_faint)
-                .child(caption)
+                .child(state)
                 .into_any_element()
         } else {
             let headers: Vec<SharedString> = vec![

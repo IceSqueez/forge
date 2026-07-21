@@ -4,8 +4,9 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge,
-    card, confirm_modal, icon, modal, overlay, primary_button, primary_button_with_icon, radius,
-    search_input, secondary_button, spacing, toggle, tr, with_alpha,
+    card, confirm_modal, empty_state, icon, modal, overlay, primary_button,
+    primary_button_with_icon, radius, search_input, secondary_button, spacing, toggle, tr,
+    with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
@@ -667,15 +668,11 @@ impl VoiceAliasesView {
             } else {
                 tr!("tts_aliases_empty")
             };
-            div()
-                .w_full()
-                .py(spacing(Spacing::Lg, density))
-                .px(spacing(Spacing::Sm, density))
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(caption)
-                .into_any_element()
+            let mut state = empty_state(caption, palette).density(density);
+            if self.loading {
+                state = state.loading("voice-aliases-loading");
+            }
+            state.into_any_element()
         } else {
             let total = visible.len();
             let mut col = div().w_full().flex().flex_col();

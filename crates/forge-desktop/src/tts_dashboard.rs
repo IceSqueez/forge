@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange,
-    Spacing, TextInput, badge, confirm_modal, fmt_clock, icon, install_resize, overlay, radius,
-    slider, spacing, status_dot, tooltip_builder, tr,
+    Spacing, TextInput, badge, confirm_modal, empty_state, fmt_clock, icon, install_resize,
+    overlay, radius, slider, spacing, status_dot, tooltip_builder, tr,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -630,16 +630,8 @@ impl TtsDashboardView {
         }
 
         let list: AnyElement = if queue.is_empty() {
-            div()
-                .w_full()
-                .p(spacing(Spacing::Md, density))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_muted)
-                        .child(tr!("tts_dash_queue_empty")),
-                )
+            empty_state(tr!("tts_dash_queue_empty"), palette)
+                .density(density)
                 .into_any_element()
         } else {
             let mut col = div().w_full().flex().flex_col();

@@ -3,6 +3,7 @@ use gpui::{
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
+use crate::icons::{Icon, icon, spinner};
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
@@ -204,6 +205,100 @@ pub fn stat_row(
                 .text_color(palette.text_primary)
                 .child(value.into()),
         )
+}
+
+const EMPTY_STATE_GLYPH: Pixels = px(24.0);
+const EMPTY_STATE_SPINNER: Pixels = px(20.0);
+
+#[derive(IntoElement)]
+pub struct EmptyState {
+    message: SharedString,
+    glyph: Option<Icon>,
+    loading: Option<ElementId>,
+    cta: Option<AnyElement>,
+    density: Density,
+    message_color: Rgba,
+    glyph_color: Rgba,
+    spinner_color: Rgba,
+}
+
+pub fn empty_state(message: impl Into<SharedString>, palette: &ForgePalette) -> EmptyState {
+    EmptyState {
+        message: message.into(),
+        glyph: None,
+        loading: None,
+        cta: None,
+        density: Density::Cozy,
+        message_color: palette.text_muted,
+        glyph_color: palette.text_faint,
+        spinner_color: palette.text_muted,
+    }
+}
+
+impl EmptyState {
+    #[must_use]
+    pub fn glyph(mut self, glyph: Icon) -> Self {
+        self.glyph = Some(glyph);
+        self
+    }
+
+    /// Swaps the static glyph for an animated `spinner`; `id` must be unique per live instance.
+    #[must_use]
+    pub fn loading(mut self, id: impl Into<ElementId>) -> Self {
+        self.loading = Some(id.into());
+        self
+    }
+
+    #[must_use]
+    pub fn cta(mut self, cta: impl IntoElement) -> Self {
+        self.cta = Some(cta.into_any_element());
+        self
+    }
+
+    #[must_use]
+    pub fn density(mut self, density: Density) -> Self {
+        self.density = density;
+        self
+    }
+}
+
+impl RenderOnce for EmptyState {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let d = self.density;
+
+        let leading: Option<AnyElement> = match self.loading {
+            Some(id) => Some(
+                spinner(id, Icon::Loader2, EMPTY_STATE_SPINNER, self.spinner_color)
+                    .into_any_element(),
+            ),
+            None => self
+                .glyph
+                .map(|g| icon(g, EMPTY_STATE_GLYPH, self.glyph_color).into_any_element()),
+        };
+
+        let mut col = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(spacing(Spacing::Sm, d))
+            .py(spacing(Spacing::Lg, d));
+
+        if let Some(leading) = leading {
+            col = col.child(leading);
+        }
+        col = col.child(
+            div()
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(self.message_color)
+                .child(self.message),
+        );
+        if let Some(cta) = self.cta {
+            col = col.child(cta);
+        }
+        col
+    }
 }
 
 type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;

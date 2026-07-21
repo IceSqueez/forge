@@ -7,9 +7,9 @@ use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
-    TextInput, breadcrumb, chip, confirm_modal, fmt_bytes, fmt_clock, ghost_button_with_icon, icon,
-    modal, overlay, primary_button, radius, search_input, secondary_button, slider, spacing,
-    status_dot, toggle, tr, with_alpha,
+    TextInput, breadcrumb, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock,
+    ghost_button_with_icon, icon, modal, overlay, primary_button, radius, search_input,
+    secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::EventBus;
@@ -1255,25 +1255,14 @@ impl SoundboardView {
     ) -> AnyElement {
         let indices = self.filtered_indices();
         if indices.is_empty() {
-            return div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap(spacing(Spacing::Sm, density))
-                .py(spacing(Spacing::Lg, density))
-                .child(icon(Icon::Music, px(24.0), palette.text_faint))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_muted)
-                        .child(if self.clips.is_empty() {
-                            tr!("soundboard_empty_title")
-                        } else {
-                            tr!("soundboard_no_matches")
-                        }),
-                )
+            let message = if self.clips.is_empty() {
+                tr!("soundboard_empty_title")
+            } else {
+                tr!("soundboard_no_matches")
+            };
+            return empty_state(message, palette)
+                .glyph(Icon::Music)
+                .density(density)
                 .into_any_element();
         }
         let pads: Vec<AnyElement> = indices
@@ -1869,18 +1858,9 @@ impl Render for SoundboardView {
         .right(self.render_header_right(&palette));
 
         let inner = if self.loading {
-            div()
-                .w_full()
-                .flex()
-                .justify_center()
-                .py(spacing(Spacing::Lg, density))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_muted)
-                        .child(tr!("soundboard_loading")),
-                )
+            empty_state(tr!("soundboard_loading"), &palette)
+                .loading("soundboard-loading")
+                .density(density)
                 .into_any_element()
         } else {
             let error_banner = self.error.clone().map(|message| {

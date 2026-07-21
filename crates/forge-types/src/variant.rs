@@ -599,4 +599,37 @@ mod tests {
         let obj = Variant::Object(map);
         assert_eq!(obj.to_string(), "{1 keys}");
     }
+
+    #[test]
+    fn display_scalar_renders_scalars_verbatim_and_containers_as_summary() {
+        let mut obj = BTreeMap::new();
+        obj.insert("a".to_owned(), Variant::Int(1));
+        obj.insert("b".to_owned(), Variant::Int(2));
+        let cases: Vec<(Variant, &str)> = vec![
+            (Variant::Int(42), "42"),
+            (Variant::Int(-7), "-7"),
+            (Variant::float(1.5).unwrap(), "1.5"),
+            (Variant::Bool(true), "true"),
+            (Variant::Bool(false), "false"),
+            (Variant::String("hello world".into()), "hello world"),
+            (
+                Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH),
+                "1970-01-01T00:00:00Z",
+            ),
+            (
+                Variant::Array(vec![Variant::Int(1), Variant::Int(2), Variant::Int(3)]),
+                "int[3]",
+            ),
+            (
+                Variant::Array(vec![Variant::Int(1), Variant::Bool(true)]),
+                "[2]",
+            ),
+            (Variant::Array(vec![]), "[0]"),
+            (Variant::Object(obj), "object{2}"),
+            (Variant::Object(BTreeMap::new()), "object{0}"),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(display_scalar(&value), expected, "value {value:?}");
+        }
+    }
 }

@@ -368,4 +368,72 @@ mod tests {
             assert_eq!(o, back);
         }
     }
+
+    #[test]
+    fn strip_var_decoration_trims_then_peels_one_percent_pair_then_trims() {
+        for (input, expected) in [
+            ("index", "index"),
+            (" index ", "index"),
+            ("%index%", "index"),
+            ("% index %", "index"),
+            ("%%x%%", "%x%"),
+            ("", ""),
+            ("   ", ""),
+            ("%", "%"),
+            ("%%", ""),
+            ("%index", "%index"),
+            ("index%", "index%"),
+            ("regex.matched", "regex.matched"),
+            ("%regex.matched%", "regex.matched"),
+        ] {
+            assert_eq!(strip_var_decoration(input), expected, "input {input:?}");
+        }
+    }
+
+    #[test]
+    fn normalize_var_name_accepts_ascii_identifier_after_peeling() {
+        for (input, expected) in [
+            ("index", "index"),
+            ("%index%", "index"),
+            ("  raw_name123  ", "raw_name123"),
+            ("%  padded_id  %", "padded_id"),
+        ] {
+            assert_eq!(
+                normalize_var_name(input).as_deref(),
+                Some(expected),
+                "input {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_var_name_rejects_non_identifier_charset_after_peeling() {
+        for bad in [
+            "regex.matched",
+            "%regex.matched%",
+            "has space",
+            "%%x%%",
+            "",
+            "   ",
+            "%",
+        ] {
+            assert_eq!(normalize_var_name(bad), None, "input {bad:?}");
+        }
+    }
+
+    #[test]
+    fn variant_preview_summarizes_arrays_by_kind_and_length() {
+        assert_eq!(
+            variant_preview(&Variant::Array(vec![
+                Variant::Int(1),
+                Variant::Int(2),
+                Variant::Int(3),
+            ])),
+            "int[3]"
+        );
+        assert_eq!(
+            variant_preview(&Variant::Array(vec![Variant::Int(1), Variant::Bool(true)])),
+            "[2]"
+        );
+    }
 }

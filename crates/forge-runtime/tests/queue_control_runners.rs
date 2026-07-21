@@ -107,8 +107,6 @@ async fn await_queue_event(
     false
 }
 
-// ── pause ────────────────────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn pause_runner_flips_registered_queue_to_paused() {
     let q_id = QueueId::new();
@@ -162,8 +160,6 @@ async fn pause_runner_with_unregistered_queue_propagates_not_found() {
     handle.shutdown();
 }
 
-// ── resume ───────────────────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn resume_runner_clears_paused_state_on_registered_queue() {
     let q_id = QueueId::new();
@@ -204,8 +200,6 @@ async fn resume_runner_with_unregistered_queue_propagates_not_found() {
     );
     handle.shutdown();
 }
-
-// ── clear ────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn clear_runner_succeeds_and_emits_cleared_event() {

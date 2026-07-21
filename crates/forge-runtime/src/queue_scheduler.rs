@@ -921,8 +921,6 @@ mod tests {
         sched.shutdown();
     }
 
-    // ── live-membership: register ────────────────────────────────────────────
-
     #[tokio::test]
     async fn register_new_queue_returns_applied_and_enables_dispatch() {
         // Core fix verification: a queue registered post-spawn must actually
@@ -1027,8 +1025,6 @@ mod tests {
         sched.shutdown();
     }
 
-    // ── live-membership: deregister ─────────────────────────────────────────
-
     #[tokio::test]
     async fn deregister_existing_queue_returns_applied_then_skips_dispatch() {
         let dp = make_dp().await;
@@ -1089,8 +1085,6 @@ mod tests {
         assert_eq!(outcome, MembershipOutcome::NotFound);
         sched.shutdown();
     }
-
-    // ── live-membership: reconfigure ────────────────────────────────────────
 
     #[tokio::test]
     async fn reconfigure_rename_preserves_pause_state_and_runner() {
@@ -1302,8 +1296,6 @@ mod tests {
         assert_eq!(outcome, MembershipOutcome::NotFound);
         sched.shutdown();
     }
-
-    // ── clear ────────────────────────────────────────────────────────────────
 
     /// An action whose only step is a `core.logic.wait` of `ms` milliseconds.
     /// Used to hold a blocking queue's single execution slot so that later

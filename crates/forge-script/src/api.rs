@@ -738,8 +738,6 @@ mod tests {
         assert_eq!(HttpError::Timeout.to_string(), "http: timeout");
     }
 
-    // ── script.log emission + error counting (CORE-4) ────────────────────────
-
     #[tokio::test]
     async fn forge_log_warn_error_emit_script_log_events_with_matching_level_and_script_id() {
         // Each console-logging builtin publishes exactly one `script.log` bus event

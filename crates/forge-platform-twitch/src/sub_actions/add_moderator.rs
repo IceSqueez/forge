@@ -161,7 +161,6 @@ mod tests {
         )])
     }
 
-    // ── table-driven: all four resolve-then-act runners ───────────────────────
     //
     // Verifies that each runner (a) issues exactly 2 Helix calls, (b) first
     // resolves the login via GET /helix/users, and (c) issues the expected
@@ -292,8 +291,6 @@ mod tests {
         }
     }
 
-    // ── pre-check: empty target_user_login skips all Helix calls ─────────────
-
     #[tokio::test]
     async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
         // Shared pre-check code path is the same across all four runners;
@@ -315,8 +312,6 @@ mod tests {
             "empty login must not reach Helix"
         );
     }
-
-    // ── action-call 4xx ───────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn action_call_http_error_maps_to_failed_without_token_or_url() {

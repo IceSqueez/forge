@@ -522,8 +522,6 @@ pub(crate) mod tests {
         assert!(accept_count.load(AO::Acquire) >= 2);
     }
 
-    // ── auth-specific tests ───────────────────────────────────────────────────
-
     #[tokio::test]
     async fn cold_start_auth_stores_token_and_reaches_connected() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

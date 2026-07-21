@@ -95,8 +95,6 @@ impl SubActionRunner for AlwaysFailRunner {
     }
 }
 
-// ── engine + chain helpers ───────────────────────────────────────────────────
-
 fn engine() -> Arc<ChainEngine> {
     let gate = Arc::new(ConditionGate::new(&Config::default()));
     let mut reg = SubActionRegistry::new();
@@ -202,8 +200,6 @@ fn s(value: &str) -> Variant {
     Variant::String(value.to_owned())
 }
 
-// ── inline-chain decode + execution (REGRESSION for 8ea1fd9) ──────────────────
-
 #[tokio::test]
 async fn if_then_else_runs_the_taken_branchs_inline_chain() {
     // REGRESSION: a branch chain is stored as Array(Object). It must be decoded
@@ -273,8 +269,6 @@ async fn if_branch_with_non_array_body_is_a_noop_and_still_succeeds() {
     );
 }
 
-// ── condition error handling (negative) ──────────────────────────────────────
-
 #[tokio::test]
 async fn if_condition_error_falls_to_else_when_treating_undefined_as_false() {
     // "1 + 1" evaluates to an Int, not a Bool → the gate errors. With the default
@@ -310,8 +304,6 @@ async fn if_condition_error_fails_when_not_treating_undefined_as_false() {
         run.signal,
     );
 }
-
-// ── absorption matrix: loop ABSORBS break / continue ─────────────────────────
 
 #[tokio::test]
 async fn loop_absorbs_break_and_stops_iterating() {
@@ -356,8 +348,6 @@ async fn loop_absorbs_continue_and_skips_the_rest_of_the_body() {
         "the post-continue body step must be skipped every iteration",
     );
 }
-
-// ── absorption matrix: if / switch are TRANSPARENT to break ──────────────────
 
 #[tokio::test]
 async fn if_then_else_re_propagates_break_to_the_enclosing_loop() {
@@ -425,8 +415,6 @@ async fn switch_case_re_propagates_break_to_the_enclosing_loop() {
     );
 }
 
-// ── propagation to the action-root: Stop and Error are NOT absorbed ──────────
-
 #[tokio::test]
 async fn stop_propagates_through_the_loop_to_the_action_root() {
     let eng = engine();
@@ -452,8 +440,6 @@ async fn child_chain_error_propagates_through_the_loop_to_the_action_root() {
 
     assert_eq!(run.signal, ChainSignal::Error("boom".to_owned()));
 }
-
-// ── nesting isolation ────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn break_in_an_inner_loop_does_not_escape_to_the_outer_loop() {
@@ -483,8 +469,6 @@ async fn break_in_an_inner_loop_does_not_escape_to_the_outer_loop() {
     );
     assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("completed")));
 }
-
-// ── switch case selection ────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn switch_runs_the_first_matching_cases_chain() {

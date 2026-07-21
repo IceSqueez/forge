@@ -289,8 +289,6 @@ mod tests {
         req.query.contains(&(key.to_owned(), value.to_owned()))
     }
 
-    // ── Branch 1: all-unchanged short-circuit ─────────────────────────────────
-
     #[tokio::test]
     async fn all_unchanged_succeeds_without_any_helix_call() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
@@ -438,8 +436,6 @@ mod tests {
         );
     }
 
-    // ── Branch 4: individual mode where the GET fails - no PUT issued ──────────
-
     #[tokio::test]
     async fn individual_mode_get_failure_fails_without_issuing_put() {
         let transport = Arc::new(MockTransport::returning_sequence(vec![Err(
@@ -462,8 +458,6 @@ mod tests {
             "a failed GET must abort before the PUT"
         );
     }
-
-    // ── validate_config: tri-state options only ───────────────────────────────
 
     #[test]
     fn validate_config_accepts_unchanged_and_levels_zero_to_four() {
@@ -503,8 +497,6 @@ mod tests {
             );
         }
     }
-
-    // ── Security: failure outcome must not leak the bearer token ───────────────
 
     #[tokio::test]
     async fn failure_outcome_does_not_leak_token() {

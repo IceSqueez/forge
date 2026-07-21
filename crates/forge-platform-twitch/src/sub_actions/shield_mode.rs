@@ -27,8 +27,6 @@ async fn set_shield(
     SubActionOutcome::from_result(&transport.execute(request).await)
 }
 
-// ─── Shield Mode On ──────────────────────────────────────────────────────────
-
 const ON_KIND_ID: &str = "twitch.moderation.shield_mode_on";
 
 pub struct ShieldModeOnRunner {
@@ -107,8 +105,6 @@ impl SubActionRunner for ShieldModeOnRunner {
         )
     }
 }
-
-// ─── Shield Mode Off ─────────────────────────────────────────────────────────
 
 const OFF_KIND_ID: &str = "twitch.moderation.shield_mode_off";
 
@@ -199,8 +195,6 @@ mod tests {
     use super::*;
     use crate::helix::HelixMethod;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
-
-    // ── table-driven: on/off each issue exactly one POST to shield_mode ───────
 
     #[tokio::test]
     async fn shield_mode_on_and_off_each_post_with_correct_is_active_flag() {

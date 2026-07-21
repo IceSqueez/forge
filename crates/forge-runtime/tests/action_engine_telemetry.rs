@@ -37,8 +37,6 @@ use forge_types::{
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
-// ── spy ActionRepo: seeds `get`, captures `record_execution` ─────────────────
-
 struct SpyActionRepo {
     actions: Mutex<HashMap<ActionId, Action>>,
     records: Mutex<Vec<(ActionId, u64, ExecutionStatus)>>,
@@ -118,8 +116,6 @@ impl ActionRepo for SpyActionRepo {
     }
 }
 
-// ── spy HistoryRepo: captures saved outcomes ─────────────────────────────────
-
 struct SpyHistoryRepo {
     saved: Mutex<Vec<(ActionId, ExecutionOutcome)>>,
 }
@@ -162,8 +158,6 @@ impl HistoryRepo for SpyHistoryRepo {
         Ok(0)
     }
 }
-
-// ── runners ──────────────────────────────────────────────────────────────────
 
 /// Fails deterministically → drives the chain to `ChainSignal::Error` → the
 /// engine records the run as `ExecutionStatus::Error`.
@@ -279,8 +273,6 @@ impl SubActionRunner for GateRunner {
         )
     }
 }
-
-// ── fixtures / helpers ───────────────────────────────────────────────────────
 
 fn action_with(steps: Vec<&str>) -> Action {
     Action {

@@ -198,8 +198,6 @@ fn fire_runner(h: &Harness) -> CoreTestFireTriggerRunner {
     )
 }
 
-// ── happy path ───────────────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn fired_trigger_runs_the_chain_of_its_one_bound_enabled_action() {
     let q_id = QueueId::new();
@@ -280,8 +278,6 @@ async fn override_outputs_reach_the_fired_actions_execution_context() {
     h.handle.shutdown();
 }
 
-// ── unknown / not-ready / invalid (Failed, nothing dispatched) ───────────────
-
 #[tokio::test]
 async fn unknown_trigger_instance_id_fails() {
     // Instance never saved → repo `get` returns None → the runner fails before
@@ -344,8 +340,6 @@ async fn unparseable_trigger_instance_id_fails() {
     );
 }
 
-// ── empty actions_using (Success, nothing dispatched) ────────────────────────
-
 #[tokio::test]
 async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
     // A blocking queue makes dispatch order observable: a trap action exists but
@@ -407,8 +401,6 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
     );
     h.handle.shutdown();
 }
-
-// ── disabled-action no-op (documented limitation) ────────────────────────────
 
 #[tokio::test]
 async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {

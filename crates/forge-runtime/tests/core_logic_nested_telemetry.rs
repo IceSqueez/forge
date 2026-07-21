@@ -133,8 +133,6 @@ fn switch_cfg(expression: &str, cases: Vec<Variant>, default_chain: Variant) -> 
     c
 }
 
-// ── assertion helpers ────────────────────────────────────────────────────────
-
 fn nested_paths(tel: &[SubActionTelemetry]) -> Vec<String> {
     tel.iter()
         .filter(|t| t.is_nested())
@@ -145,8 +143,6 @@ fn nested_paths(tel: &[SubActionTelemetry]) -> Vec<String> {
 fn top_level(tel: &[SubActionTelemetry]) -> Vec<&SubActionTelemetry> {
     tel.iter().filter(|t| !t.is_nested()).collect()
 }
-
-// ── the taken branch's step is lifted as a path-tagged nested row ────────────
 
 #[tokio::test]
 async fn branch_body_step_is_path_tagged_and_marked_nested_for_the_taken_arm() {
@@ -169,8 +165,6 @@ async fn branch_body_step_is_path_tagged_and_marked_nested_for_the_taken_arm() {
         );
     }
 }
-
-// ── top-level rows keep their positional index; nested rows are excluded ──────
 
 #[tokio::test]
 async fn consumers_filtering_out_nested_rows_see_only_positional_top_level_steps() {
@@ -206,8 +200,6 @@ async fn consumers_filtering_out_nested_rows_see_only_positional_top_level_steps
     );
 }
 
-// ── each loop iteration tags its body with body#{iter} ───────────────────────
-
 #[tokio::test]
 async fn each_loop_iteration_tags_its_body_step_with_the_zero_based_iteration_number() {
     let eng = engine();
@@ -223,8 +215,6 @@ async fn each_loop_iteration_tags_its_body_step_with_the_zero_based_iteration_nu
         "each iteration lifts its body step under a distinct body#N arm",
     );
 }
-
-// ── switch arm tag is case{N} on a match, `default` on the fallthrough ────────
 
 #[tokio::test]
 async fn switch_tags_the_nested_step_with_the_matched_case_index_or_default() {
@@ -275,8 +265,6 @@ async fn deeply_nested_step_accumulates_the_full_parent_path_across_composites()
         "the loop body step keeps its body#0 trail with the if path prepended, got {paths:?}",
     );
 }
-
-// ── boundary: an empty branch body produces no nested rows ────────────────────
 
 #[tokio::test]
 async fn empty_branch_body_leaves_only_the_non_nested_composite_row() {

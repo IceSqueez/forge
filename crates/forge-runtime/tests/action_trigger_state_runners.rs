@@ -39,8 +39,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-// ── HashMap-backed mocks ─────────────────────────────────────────────────────
-
 /// In-memory `ActionRepo`. `writes` counts every `save` attempt (so a test can
 /// prove a runner short-circuited before persisting); `fail_writes` forces
 /// `save` to error.
@@ -233,8 +231,6 @@ impl TriggerInstanceRepo for MockTriggerInstanceRepo {
     }
 }
 
-// ── fixtures ─────────────────────────────────────────────────────────────────
-
 fn make_action(enabled: bool) -> Action {
     Action {
         id: ActionId::new(),
@@ -292,8 +288,6 @@ async fn run(runner: &dyn SubActionRunner, config: &SubActionConfig) -> SubActio
     let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
     runner.execute(config, &ctx).await.0.outcome
 }
-
-// ── happy path + state transitions ───────────────────────────────────────────
 
 #[tokio::test]
 async fn action_enable_and_disable_force_the_persisted_flag() {
@@ -386,8 +380,6 @@ async fn trigger_toggle_flips_the_persisted_flag_in_both_directions() {
         );
     }
 }
-
-// ── unknown / unparseable id ─────────────────────────────────────────────────
 
 #[tokio::test]
 async fn action_runners_fail_and_persist_nothing_for_unknown_id() {
@@ -483,8 +475,6 @@ async fn trigger_toggle_fails_and_persists_nothing_for_unparseable_id() {
     );
     assert_eq!(repo.write_count(), 0);
 }
-
-// ── persist failure (must surface Failed, not panic) ─────────────────────────
 
 #[tokio::test]
 async fn action_enable_reports_failed_when_save_errors() {

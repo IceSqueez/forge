@@ -74,8 +74,6 @@ fn ctx_with<'a>(
     }
 }
 
-// ── signal leaves write their control signal onto the cell ───────────────────
-
 #[tokio::test]
 async fn break_and_continue_runners_emit_their_control_signal() {
     let stack = ArgStack::new();
@@ -182,8 +180,6 @@ async fn stop_runner_maps_config_to_the_control_stop_signal() {
         );
     }
 }
-
-// ── wait_until termination ───────────────────────────────────────────────────
 
 fn wait_runner() -> CoreLogicWaitUntilRunner {
     CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config::default())))

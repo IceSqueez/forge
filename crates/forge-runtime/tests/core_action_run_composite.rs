@@ -40,8 +40,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-// ── mock ActionRepo ──────────────────────────────────────────────────────────
-
 /// In-memory `ActionRepo`. Only `get` is exercised by `core.action.run`;
 /// `fail_get` forces it to error so the repo-failure arm can be covered.
 struct MockActionRepo {
@@ -110,8 +108,6 @@ impl ActionRepo for MockActionRepo {
         Ok(0)
     }
 }
-
-// ── mock ChainExecutor ───────────────────────────────────────────────────────
 
 enum ExecResponse {
     Signal(ChainSignal),
@@ -204,8 +200,6 @@ impl ChainExecutor for MockChainExecutor {
     }
 }
 
-// ── fixtures ─────────────────────────────────────────────────────────────────
-
 fn target_with_steps(kinds: &[&str]) -> Action {
     Action {
         id: ActionId::new(),
@@ -273,8 +267,6 @@ async fn run(
     runner.execute(config, &ctx).await.0.outcome
 }
 
-// ── happy path: runs the TARGET's sub-actions ────────────────────────────────
-
 #[tokio::test]
 async fn runs_the_target_actions_sub_actions_as_the_child_chain() {
     let repo = std::sync::Arc::new(MockActionRepo::new());
@@ -294,8 +286,6 @@ async fn runs_the_target_actions_sub_actions_as_the_child_chain() {
         vec!["core.log.write", "twitch.chat.send_message"],
     );
 }
-
-// ── inherit_args scope contract (both directions) ────────────────────────────
 
 #[tokio::test]
 async fn inherit_args_default_passes_the_parent_arg_stack_to_the_child() {
@@ -341,8 +331,6 @@ async fn inherit_args_false_starts_the_child_with_a_fresh_stack() {
         executor.recorded_args(),
     );
 }
-
-// ── signal mapping table ─────────────────────────────────────────────────────
 
 enum Expect {
     Success,
@@ -390,8 +378,6 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
     }
 }
 
-// ── recursion-depth guard ────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn depth_exceeded_error_maps_to_failed_with_nesting_message() {
     let repo = std::sync::Arc::new(MockActionRepo::new());
@@ -408,8 +394,6 @@ async fn depth_exceeded_error_maps_to_failed_with_nesting_message() {
         "got {outcome:?}",
     );
 }
-
-// ── bad-id paths must never enter the child chain ────────────────────────────
 
 #[tokio::test]
 async fn unknown_action_id_fails_without_running_a_child_chain() {
@@ -461,8 +445,6 @@ async fn repo_lookup_error_fails_without_running_a_child_chain() {
     assert!(matches!(outcome, SubActionOutcome::Failed(_)));
     assert_eq!(executor.call_count(), 0);
 }
-
-// ── validate_config ──────────────────────────────────────────────────────────
 
 #[test]
 fn validate_config_accepts_a_non_empty_action_id() {

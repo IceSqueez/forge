@@ -315,12 +315,6 @@ impl RowCard {
     }
 
     #[must_use]
-    pub fn selected(mut self, selected: bool) -> Self {
-        self.selected = selected;
-        self
-    }
-
-    #[must_use]
     pub fn accent(mut self, color: Rgba) -> Self {
         self.colors.accent = color;
         self

@@ -35,7 +35,7 @@ pub mod type_to_confirm;
 pub use breadcrumb::{Breadcrumb, BreadcrumbCrumb, breadcrumb};
 pub use buttons::{
     Button, destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
-    primary_button_with_icon, primary_button_with_icon_right, secondary_button,
+    primary_button_with_icon, secondary_button,
 };
 pub use cards::{Card, RowCard, card, field_label, metric_card, row_card, stat_row};
 pub use chat_row::{
@@ -55,19 +55,16 @@ pub use icons::{Icon, IconAssets, icon, icon_inherit, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
 pub use locale::{
-    ArgsBuilder, fmt_bytes, fmt_clock, fmt_feed_time, fmt_number, fmt_relative_time,
-    fmt_short_date, fmt_uptime, fmt_uptime_short, install_bundle, set_locale_id, tr_lookup,
+    ArgsBuilder, fmt_bytes, fmt_clock, fmt_number, fmt_relative_time, fmt_short_date, fmt_uptime,
+    fmt_uptime_short, install_bundle, set_locale_id, tr_lookup,
 };
 pub use menu::{
-    ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, actionable_count, context_menu,
-    menu_button, menu_divider, menu_header, menu_item,
+    ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, context_menu, menu_button,
+    menu_divider, menu_header, menu_item,
 };
 pub use modal::{Modal, modal};
 pub use overlay::{AnchoredPopover, Overlay, OverlayPosition, anchored_popover, overlay};
-pub use palette::{
-    CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, bd_mauve_soft, bd_warn_soft,
-    bg_danger_soft, bg_warn_soft, with_alpha,
-};
+pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, with_alpha};
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};

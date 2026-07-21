@@ -221,11 +221,6 @@ impl TextArea {
         self
     }
 
-    pub fn with_density(mut self, density: Density) -> Self {
-        self.density = density;
-        self
-    }
-
     pub fn with_font_size(mut self, size: Pixels) -> Self {
         self.font_size = size;
         self
@@ -248,11 +243,6 @@ impl TextArea {
 
     pub fn rhai_highlight(mut self) -> Self {
         self.syntax = SyntaxMode::Rhai;
-        self
-    }
-
-    pub fn read_only(mut self, read_only: bool) -> Self {
-        self.read_only = read_only;
         self
     }
 

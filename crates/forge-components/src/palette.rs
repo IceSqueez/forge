@@ -55,22 +55,6 @@ pub fn with_alpha(c: Rgba, alpha: f32) -> Rgba {
     Rgba { a: alpha, ..c }
 }
 
-pub fn bg_danger_soft(p: &ForgePalette) -> Rgba {
-    with_alpha(p.random, 0.06)
-}
-
-pub fn bg_warn_soft(p: &ForgePalette) -> Rgba {
-    with_alpha(p.warning, 0.06)
-}
-
-pub fn bd_warn_soft(p: &ForgePalette) -> Rgba {
-    with_alpha(p.warning, 0.20)
-}
-
-pub fn bd_mauve_soft(p: &ForgePalette) -> Rgba {
-    with_alpha(p.brand, 0.06)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeId {
     CatppuccinMocha,

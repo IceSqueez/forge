@@ -114,14 +114,6 @@ impl ObsClient {
         })
     }
 
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
-    }
-
-    pub fn connected_at(&self) -> Option<OffsetDateTime> {
-        self.connected_at.read().ok().and_then(|g| *g)
-    }
-
     pub fn connection_state(&self) -> ConnectionState {
         match self.state.load(Ordering::Acquire) {
             STATE_CONNECTED => ConnectionState::Connected,
@@ -129,13 +121,6 @@ impl ObsClient {
             STATE_RECONNECTING => ConnectionState::Reconnecting,
             _ => ConnectionState::Disconnected,
         }
-    }
-
-    pub fn health_snapshot(&self) -> HealthSnapshot {
-        self.health_state
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default()
     }
 
     pub async fn shutdown(&self) {

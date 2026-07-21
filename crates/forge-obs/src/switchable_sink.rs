@@ -25,11 +25,6 @@ impl SwitchableObsSink {
         *guard = Some(client);
     }
 
-    pub fn clear(&self) {
-        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
-        *guard = None;
-    }
-
     // Clone the Arc out before any await so the sync RwLock guard is never held
     // across an async call.
     fn get(&self) -> Result<Arc<ObsClient>, ObsError> {
@@ -227,16 +222,5 @@ mod tests {
             matches!(raw, Err(ObsError::Disconnected)),
             "raw_request: expected Disconnected, got {raw:?}",
         );
-    }
-
-    #[tokio::test]
-    async fn clear_on_an_empty_sink_is_idempotent() {
-        let sink = SwitchableObsSink::new();
-        sink.clear();
-        sink.clear();
-        assert!(matches!(
-            sink.set_scene("scene").await,
-            Err(ObsError::Disconnected)
-        ));
     }
 }

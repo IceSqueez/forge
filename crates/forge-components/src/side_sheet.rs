@@ -25,7 +25,6 @@ const RESIZE_GROUP: &str = "forge-side-sheet-resize";
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SheetPosition {
     Right,
-    Left,
 }
 
 /// The caller owns the live width as its own state; this carries only the seed and clamp bounds.
@@ -125,12 +124,6 @@ pub fn side_sheet(width: Pixels, content: impl IntoElement, palette: &ForgePalet
 }
 
 impl SideSheet {
-    #[must_use]
-    pub fn position(mut self, position: SheetPosition) -> Self {
-        self.position = position;
-        self
-    }
-
     #[must_use]
     pub fn header(mut self, title: impl Into<SharedString>) -> Self {
         self.title = Some(title.into());
@@ -256,7 +249,6 @@ impl SideSheet {
         let mut strip = div().absolute().top_0().h_full().w(RESIZE_HIT_W).flex();
         strip = match position {
             SheetPosition::Right => strip.left_0().justify_start(),
-            SheetPosition::Left => strip.right_0().justify_end(),
         };
 
         strip
@@ -310,7 +302,6 @@ impl RenderOnce for SideSheet {
                     let cursor_x = e.event.position.x;
                     let raw = match position {
                         SheetPosition::Right => e.bounds.right() - cursor_x,
-                        SheetPosition::Left => cursor_x - e.bounds.left(),
                     };
                     handler(&raw.clamp(min, max), window, cx);
                 })

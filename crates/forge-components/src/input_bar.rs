@@ -168,11 +168,6 @@ impl InputBar {
         self
     }
 
-    pub fn with_density(mut self, density: Density) -> Self {
-        self.density = density;
-        self
-    }
-
     pub fn selected_targets(&self) -> Vec<Platform> {
         self.targets
             .iter()

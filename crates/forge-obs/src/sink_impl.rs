@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use forge_types::{EventId, Variant};
+use forge_types::Variant;
 use obws::requests::inputs::{InputId, SetSettings, Volume};
 use obws::requests::scene_items::{Id, SetEnabled};
 use obws::requests::scenes::SceneId;
@@ -9,23 +9,6 @@ use obws::requests::scenes::SceneId;
 use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::sink::ObsSink;
-
-impl ObsClient {
-    pub async fn set_scene_with_cause(&self, scene: &str, cause: EventId) -> Result<(), ObsError> {
-        if let Ok(mut g) = self.last_set_scene_event_id.write() {
-            *g = Some(cause);
-        }
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
-        client
-            .scenes()
-            .set_current_program_scene(SceneId::Name(scene))
-            .await
-            .map_err(|e| map_request_error("SetCurrentProgramScene", e))
-    }
-}
 
 #[async_trait]
 impl ObsSink for ObsClient {

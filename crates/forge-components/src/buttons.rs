@@ -293,21 +293,6 @@ pub fn primary_button_with_icon(
     )
 }
 
-pub fn primary_button_with_icon_right(
-    label: impl Into<SharedString>,
-    icon: Icon,
-    palette: &ForgePalette,
-) -> Button {
-    Button::new(
-        ButtonVariant::Primary,
-        Some(label.into()),
-        None,
-        Some(icon),
-        FontWeight::SEMIBOLD,
-        palette,
-    )
-}
-
 pub fn destructive_button(label: impl Into<SharedString>, palette: &ForgePalette) -> Button {
     Button::new(
         ButtonVariant::Destructive,

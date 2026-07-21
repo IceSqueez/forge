@@ -32,25 +32,6 @@ fn active_locale() -> &'static str {
     LOCALE_ID.with(|cell| *cell.borrow())
 }
 
-pub fn fmt_feed_time(ts: &OffsetDateTime) -> String {
-    let pattern = tr_lookup("fmt_feed_time_pattern", None);
-    if pattern == "fmt_feed_time_pattern" {
-        return format!(
-            "{:02}:{:02}:{:02}.{:03}",
-            ts.hour(),
-            ts.minute(),
-            ts.second(),
-            ts.millisecond()
-        );
-    }
-    // Pattern carries %HH%/%MM%/%SS%/%mmm% literal tokens, not Fluent placeables.
-    pattern
-        .replace("%HH%", &format!("{:02}", ts.hour()))
-        .replace("%MM%", &format!("{:02}", ts.minute()))
-        .replace("%SS%", &format!("{:02}", ts.second()))
-        .replace("%mmm%", &format!("{:03}", ts.millisecond()))
-}
-
 pub fn fmt_short_date(ts: &OffsetDateTime) -> String {
     let locale = active_locale();
     let month_key = format!("fmt_month_abbr_{:02}", ts.month() as u8);
@@ -319,14 +300,6 @@ mod tests {
 
         set_locale_id("uk");
         assert_eq!(fmt_short_date(&date), "15 fmt_month_abbr_03 2026");
-    }
-
-    #[test]
-    fn fmt_feed_time_falls_back_to_zero_padded_pattern_without_bundle() {
-        // No bundle -> pattern key is unresolved -> hardcoded HH:MM:SS.mmm
-        // fallback. Single-digit components must be zero-padded.
-        let ts = utc(2026, Month::March, 15, 4, 5, 9, 7);
-        assert_eq!(fmt_feed_time(&ts), "04:05:09.007");
     }
 
     #[test]

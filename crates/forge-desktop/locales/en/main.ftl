@@ -1644,10 +1644,6 @@ script_editor_stat_avg_value = { $n } ms
 
 ## Widget - volume slider
 
-## Locale-aware formatting - feed time
-
-fmt_feed_time_pattern = %HH%:%MM%:%SS%.%mmm%
-
 ## Locale-aware formatting - month abbreviations (en)
 
 fmt_month_abbr_01 = Jan

@@ -166,12 +166,6 @@ impl TypeToConfirm {
     }
 
     #[must_use]
-    pub fn section_caption(mut self, caption: impl Into<SharedString>) -> Self {
-        self.section_caption = caption.into();
-        self
-    }
-
-    #[must_use]
     pub fn instruction(
         mut self,
         prefix: impl Into<SharedString>,
@@ -179,12 +173,6 @@ impl TypeToConfirm {
     ) -> Self {
         self.instruction_prefix = prefix.into();
         self.instruction_suffix = suffix.into();
-        self
-    }
-
-    #[must_use]
-    pub fn bullet(mut self, kind: BulletKind, text: impl Into<SharedString>) -> Self {
-        self.bullets.push(BulletItem::new(kind, text));
         self
     }
 

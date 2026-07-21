@@ -27,23 +27,6 @@ pub fn sparkline(samples: &[f32], color: Rgba) -> Sparkline {
     }
 }
 
-impl Sparkline {
-    pub fn stroke_width(mut self, width: f32) -> Self {
-        self.stroke_width = width;
-        self
-    }
-
-    pub fn fill_color(mut self, color: Rgba) -> Self {
-        self.fill = Some(color);
-        self
-    }
-
-    pub fn no_fill(mut self) -> Self {
-        self.fill = None;
-        self
-    }
-}
-
 fn vertical_fractions(samples: &[f32]) -> Vec<f32> {
     let mut min = f32::INFINITY;
     let mut max = f32::NEG_INFINITY;

@@ -64,20 +64,3 @@ pub async fn load_and_connect(
     let client = ObsClient::connect(&cred.url, pw, bus).await?;
     Ok(Arc::new(client))
 }
-
-pub async fn store_and_connect(
-    creds: &dyn CredentialsRepo,
-    bus: Arc<dyn EventPublisher>,
-    host: &str,
-    port: u16,
-    password: &str,
-) -> Result<Arc<ObsClient>, ObsConnectError> {
-    store(creds, host, port, password).await?;
-    let pw: Option<&str> = if password.is_empty() {
-        None
-    } else {
-        Some(password)
-    };
-    let client = ObsClient::connect(&format!("ws://{host}:{port}"), pw, bus).await?;
-    Ok(Arc::new(client))
-}

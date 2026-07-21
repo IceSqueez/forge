@@ -173,18 +173,8 @@ impl TextInput {
         self
     }
 
-    pub fn with_density(mut self, density: Density) -> Self {
-        self.density = density;
-        self
-    }
-
     pub fn with_font_size(mut self, size: Pixels) -> Self {
         self.font_size = size;
-        self
-    }
-
-    pub fn read_only(mut self, read_only: bool) -> Self {
-        self.read_only = read_only;
         self
     }
 
@@ -1105,24 +1095,6 @@ mod tests {
             input.content().to_string()
         });
         assert_eq!(content, "hi");
-    }
-
-    #[gpui::test]
-    fn read_only_input_rejects_every_edit_path(cx: &mut gpui::TestAppContext) {
-        // Why: read_only is a hard invariant - no edit action nor the IME replace
-        // path may mutate the buffer.
-        let window = cx.add_window(|_window, cx| TextInput::new("", cx).read_only(true));
-        let content = window
-            .update(cx, |input, window, cx| {
-                input.set_content("locked".to_string(), cx);
-                input.backspace(&Backspace, window, cx);
-                input.home(&Home, window, cx);
-                input.delete(&Delete, window, cx);
-                input.replace_text_in_range(None, "x", window, cx);
-                input.content().to_string()
-            })
-            .unwrap();
-        assert_eq!(content, "locked");
     }
 
     #[gpui::test]

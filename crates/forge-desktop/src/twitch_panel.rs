@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    Icon, Radius, Spacing, fmt_clock, icon, radius, spacing, tr, with_alpha,
+    Icon, Radius, Spacing, badge, fmt_clock, icon, radius, spacing, tr, with_alpha,
 };
 use forge_platform_twitch::{
     TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, TwitchIntegrationBundle, UserInfo,
@@ -882,17 +882,18 @@ impl IntegrationDetail {
 }
 
 fn twitch_scope_pill(scope: &str, palette: &ForgePalette, density: Density) -> impl IntoElement {
-    div()
-        .flex_none()
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Xs, density))
-        .rounded(px(8.0))
-        .bg(palette.surface_overlay)
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.success)
-                .child(scope.to_owned()),
-        )
+    badge(
+        palette.surface_overlay,
+        palette.success,
+        scope.to_owned(),
+        true,
+        FONT_XS,
+    )
+    .weight(FontWeight::NORMAL)
+    .padding_xy(
+        spacing(Spacing::Xxs, density),
+        spacing(Spacing::Xs, density),
+    )
+    .radius(px(8.0))
+    .flex_none()
 }

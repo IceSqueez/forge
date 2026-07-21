@@ -12,8 +12,8 @@ use forge_events::EventSource;
 use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSnapshot};
 use forge_storage::{CredentialId, CredentialsRepo};
 use gpui::{
-    AnyElement, ClickEvent, ClipboardItem, Context, Div, Pixels, Rgba, SharedString, Window, div,
-    prelude::*, px, relative,
+    AnyElement, ClickEvent, ClipboardItem, Context, Div, FontWeight, Pixels, Rgba, SharedString,
+    Window, div, prelude::*, px, relative,
 };
 
 use crate::presentation::ActivePresentation;
@@ -1628,19 +1628,14 @@ fn chips_row(
 }
 
 fn chip_pill(label: String, fg: Rgba, bg: Rgba) -> impl IntoElement {
-    div()
-        .flex_none()
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xxs, Density::Cozy))
-        .rounded(radius(Radius::Md))
-        .bg(bg)
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(fg)
-                .child(label),
+    badge(bg, fg, label, true, FONT_XS)
+        .weight(FontWeight::NORMAL)
+        .padding_xy(
+            spacing(Spacing::Xxs, Density::Cozy),
+            spacing(Spacing::Xxs, Density::Cozy),
         )
+        .radius(radius(Radius::Md))
+        .flex_none()
 }
 
 fn status_color(status: &ServerStatus, palette: &ForgePalette) -> Rgba {

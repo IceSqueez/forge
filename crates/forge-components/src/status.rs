@@ -1,4 +1,7 @@
-use gpui::{FontWeight, IntoElement, ParentElement, Pixels, Rgba, SharedString, Styled, div, px};
+use gpui::{
+    App, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Styled,
+    Window, div, px,
+};
 
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XXS, Radius, radius};
@@ -46,25 +49,91 @@ fn badge_frame(background: Rgba, content: impl IntoElement) -> impl IntoElement 
         .child(content)
 }
 
+#[derive(IntoElement)]
+pub struct Badge {
+    background: Rgba,
+    text_color: Rgba,
+    content: SharedString,
+    mono: bool,
+    size: Pixels,
+    weight: FontWeight,
+    pad_v: Pixels,
+    pad_h: Pixels,
+    radius: Pixels,
+    flex_none: bool,
+}
+
 pub fn badge(
     background: Rgba,
     text_color: Rgba,
     content: impl Into<SharedString>,
     mono: bool,
     size: Pixels,
-) -> impl IntoElement {
-    let family = if mono {
-        DEFAULT_MONO_FAMILY
-    } else {
-        DEFAULT_BODY_FAMILY
-    };
-    let label = div()
-        .font_family(family)
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(size)
-        .text_color(text_color)
-        .child(content.into());
-    badge_frame(background, label)
+) -> Badge {
+    Badge {
+        background,
+        text_color,
+        content: content.into(),
+        mono,
+        size,
+        weight: FontWeight::MEDIUM,
+        pad_v: BADGE_PAD_V,
+        pad_h: BADGE_PAD_H,
+        radius: BADGE_RADIUS,
+        flex_none: false,
+    }
+}
+
+impl Badge {
+    #[must_use]
+    pub fn weight(mut self, weight: FontWeight) -> Self {
+        self.weight = weight;
+        self
+    }
+
+    #[must_use]
+    pub fn padding_xy(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+        self.pad_v = vertical;
+        self.pad_h = horizontal;
+        self
+    }
+
+    #[must_use]
+    pub fn radius(mut self, radius: Pixels) -> Self {
+        self.radius = radius;
+        self
+    }
+
+    #[must_use]
+    pub fn flex_none(mut self) -> Self {
+        self.flex_none = true;
+        self
+    }
+}
+
+impl RenderOnce for Badge {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let family = if self.mono {
+            DEFAULT_MONO_FAMILY
+        } else {
+            DEFAULT_BODY_FAMILY
+        };
+        let label = div()
+            .font_family(family)
+            .font_weight(self.weight)
+            .text_size(self.size)
+            .text_color(self.text_color)
+            .child(self.content);
+        let mut root = div()
+            .py(self.pad_v)
+            .px(self.pad_h)
+            .rounded(self.radius)
+            .bg(self.background);
+        if self.flex_none {
+            root = root.flex_none();
+        }
+        root.child(label)
+    }
 }
 
 pub fn connection_status_badge(

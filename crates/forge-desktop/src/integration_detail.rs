@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
-    PickerItem, PickerLabels, Radius, Spacing, ToastKind, breadcrumb, confirm_modal, fmt_uptime,
-    icon, overlay, radius, spacing, tr, with_alpha,
+    PickerItem, PickerLabels, Radius, Spacing, ToastKind, badge, breadcrumb, confirm_modal,
+    fmt_uptime, icon, overlay, radius, spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -1027,18 +1027,11 @@ fn quick_action_accent(index: usize, palette: &ForgePalette) -> Rgba {
 }
 
 fn pill(label: String, text_color: Rgba, palette: &ForgePalette) -> impl IntoElement {
-    div()
+    badge(palette.surface_overlay, text_color, label, true, FONT_XS)
+        .weight(FontWeight::NORMAL)
+        .padding_xy(px(0.0), px(6.0))
+        .radius(radius(Radius::Md))
         .flex_none()
-        .px(px(6.0))
-        .rounded(radius(Radius::Md))
-        .bg(palette.surface_overlay)
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(text_color)
-                .child(label),
-        )
 }
 
 fn sub_line(endpoint: Option<&str>, uptime: Option<Duration>) -> String {

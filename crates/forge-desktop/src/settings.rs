@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
     FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ThemeId, badge,
-    breadcrumb, card, field_hint, field_title, ghost_button_with_icon, icon, metric_card,
-    primary_button, primary_button_with_icon, radius, spacing, tr, with_alpha,
+    breadcrumb, card, field_hint, field_label, field_title, ghost_button_with_icon, icon,
+    metric_card, primary_button, primary_button_with_icon, radius, spacing, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -1082,38 +1082,25 @@ fn font_field(
     palette: &ForgePalette,
 ) -> impl IntoElement {
     let label: SharedString = label.into();
-    div()
-        .flex_1()
+    let value = div()
         .flex()
-        .flex_col()
-        .gap(px(4.0))
+        .items_center()
+        .justify_between()
+        .px(spacing(Spacing::Sm, Density::Cozy))
+        .py(px(7.0))
+        .rounded(radius(Radius::Sm))
+        .bg(palette.base)
+        .border(BORDER_THIN)
+        .border_color(palette.border_input)
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(label),
+                .font_family(DEFAULT_BODY_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(palette.text_primary)
+                .child(family),
         )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .px(spacing(Spacing::Sm, Density::Cozy))
-                .py(px(7.0))
-                .rounded(radius(Radius::Sm))
-                .bg(palette.base)
-                .border(BORDER_THIN)
-                .border_color(palette.border_input)
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_primary)
-                        .child(family),
-                )
-                .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint)),
-        )
+        .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint));
+    div().flex_1().child(field_label(palette, label, value))
 }
 
 fn release_row(

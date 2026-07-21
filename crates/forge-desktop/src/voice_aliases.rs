@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput, badge,
-    card, confirm_modal, empty_state, icon, modal, overlay, primary_button,
+    card, confirm_modal, empty_state, field_label, icon, modal, overlay, primary_button,
     primary_button_with_icon, radius, search_input, secondary_button, spacing, toggle, tr,
     with_alpha,
 };
@@ -1238,18 +1238,10 @@ fn labelled(
     palette: &ForgePalette,
     density: Density,
 ) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, density))
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_muted)
-                .child(label.into()),
-        )
-        .child(control)
+    field_label(palette, label, control)
+        .tone(palette.text_muted)
+        .size(FONT_XS)
+        .density(density)
 }
 
 fn form_field(

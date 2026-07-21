@@ -160,6 +160,13 @@ impl Button {
         self
     }
 
+    /// Overrides resting and hover ink so an outline variant can carry a semantic tint.
+    pub fn ink(mut self, color: Rgba) -> Self {
+        self.colors.text = color;
+        self.colors.hover_text = color;
+        self
+    }
+
     pub fn on_click(
         mut self,
         id: impl Into<ElementId>,

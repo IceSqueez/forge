@@ -9,7 +9,7 @@ use forge_components::{
     DateTimePickerLabels, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
     GridPickerSubtitle, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition,
-    PlatformKind, Radius, Spacing, TextInput, anchored_popover, context_menu,
+    PlatformKind, Radius, Spacing, TextInput, anchored_popover, context_menu, field_label,
     ghost_button_with_icon, icon, json_highlighted, menu_button, menu_divider, menu_item, modal,
     overlay, platform_color, primary_button, radius, row_card, secondary_button, spacing,
     status_dot, toggle, tooltip_lines_builder, tr, with_alpha,
@@ -132,18 +132,8 @@ fn sub_field_is_half(field: &SubFormField) -> bool {
 }
 
 fn field_wrap(label: &str, control: AnyElement, palette: &ForgePalette) -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_muted)
-                .child(label.to_owned()),
-        )
-        .child(control)
+    field_label(palette, label.to_owned(), control)
+        .tone(palette.text_muted)
         .into_any_element()
 }
 

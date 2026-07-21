@@ -5,9 +5,10 @@ use forge_components::confirm::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextInput, breadcrumb, confirm_modal, empty_state, icon,
-    menu_button, menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon,
-    radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
+    OverlayPosition, Radius, Spacing, TextInput, badge, breadcrumb, card, confirm_modal,
+    empty_state, ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal,
+    overlay, primary_button, primary_button_with_icon, radius, secondary_button, slider, spacing,
+    spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -510,20 +511,20 @@ impl QueuesView {
             palette.border_input
         };
 
-        div()
-            .w_full()
+        let body = div()
             .h_full()
             .flex()
             .flex_col()
-            .p(CARD_PAD)
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(border_color)
-            .bg(palette.elevated)
             .child(self.card_header(index, q, paused, not_live, palette, cx))
             .child(self.card_metrics(q, paused, palette))
             .child(self.running_panel(q, paused, palette, density))
-            .child(self.card_buttons(index, q, paused, palette, density, cx))
+            .child(self.card_buttons(index, q, paused, palette, density, cx));
+
+        card(body, palette)
+            .full_width()
+            .full_height()
+            .padding(CARD_PAD)
+            .border_color(border_color)
             .into_any_element()
     }
 
@@ -1088,13 +1089,13 @@ impl Render for QueuesView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let pause_all = warning_ghost_button(
-            "q-pause-all",
-            Icon::PlayerPause,
-            SharedString::from(tr!("queues_pause_all_btn")),
-            &palette,
-            cx.listener(|this, _: &ClickEvent, _, cx| this.pause_all(cx)),
-        );
+        let pause_all =
+            ghost_button_with_icon(Icon::PlayerPause, tr!("queues_pause_all_btn"), &palette)
+                .ink(palette.warning)
+                .on_click(
+                    "q-pause-all",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.pause_all(cx)),
+                );
         let new_queue = primary_button_with_icon(Icon::Plus, tr!("queues_new_queue_btn"), &palette)
             .density(density)
             .on_click(
@@ -1402,18 +1403,19 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
 }
 
 fn running_pill(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .px(spacing(Spacing::Xs, Density::Cozy))
-        .rounded(PILL_RADIUS)
-        .bg(palette.border_regular)
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_primary)
-                .child(label.into()),
-        )
+    badge(
+        palette.border_regular,
+        palette.text_primary,
+        label,
+        true,
+        FONT_XS,
+    )
+    .weight(FontWeight::NORMAL)
+    .padding_xy(
+        spacing(Spacing::Xxs, Density::Cozy),
+        spacing(Spacing::Xs, Density::Cozy),
+    )
+    .radius(PILL_RADIUS)
 }
 
 fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -1490,37 +1492,6 @@ fn card_button(
         }
     }
     btn.into_any_element()
-}
-
-fn warning_ghost_button(
-    id: &'static str,
-    glyph: Icon,
-    label: SharedString,
-    palette: &ForgePalette,
-    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> impl IntoElement {
-    let hover_border = palette.border_input;
-    div()
-        .id(id)
-        .flex()
-        .items_center()
-        .gap(px(5.0))
-        .py(px(4.0))
-        .px(px(12.0))
-        .rounded(radius(Radius::Sm))
-        .border(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .cursor_pointer()
-        .hover(move |s| s.border_color(hover_border))
-        .on_click(handler)
-        .child(icon(glyph, FONT_XS, palette.warning))
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.warning)
-                .child(label),
-        )
 }
 
 async fn load_queues(

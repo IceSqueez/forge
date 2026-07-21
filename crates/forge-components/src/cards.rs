@@ -11,23 +11,64 @@ use crate::tokens::{
     Radius, Spacing, radius, spacing,
 };
 
+#[derive(IntoElement)]
+pub struct FieldLabel {
+    label: SharedString,
+    control: AnyElement,
+    tone: Rgba,
+    size: Pixels,
+    gap: Pixels,
+}
+
 pub fn field_label(
     palette: &ForgePalette,
     label: impl Into<SharedString>,
     control: impl IntoElement,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, Density::Cozy))
-        .child(
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(label.into()),
-        )
-        .child(control)
+) -> FieldLabel {
+    FieldLabel {
+        label: label.into(),
+        control: control.into_any_element(),
+        tone: palette.text_faint,
+        size: FONT_XXS,
+        gap: spacing(Spacing::Xxs, Density::Cozy),
+    }
+}
+
+impl FieldLabel {
+    #[must_use]
+    pub fn tone(mut self, color: Rgba) -> Self {
+        self.tone = color;
+        self
+    }
+
+    #[must_use]
+    pub fn size(mut self, size: Pixels) -> Self {
+        self.size = size;
+        self
+    }
+
+    #[must_use]
+    pub fn density(mut self, density: Density) -> Self {
+        self.gap = spacing(Spacing::Xxs, density);
+        self
+    }
+}
+
+impl RenderOnce for FieldLabel {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(self.gap)
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(self.size)
+                    .text_color(self.tone)
+                    .child(self.label),
+            )
+            .child(self.control)
+    }
 }
 
 pub fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
@@ -137,6 +178,12 @@ impl Card {
     #[must_use]
     pub fn background(mut self, color: Rgba) -> Self {
         self.background = color;
+        self
+    }
+
+    #[must_use]
+    pub fn border_color(mut self, color: Rgba) -> Self {
+        self.border = color;
         self
     }
 

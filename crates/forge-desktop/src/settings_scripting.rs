@@ -5,7 +5,9 @@ use forge_components::{
     InputEvent, Radius, Spacing, TextInput, icon, primary_button, radius, spacing, toggle, tr,
     with_alpha,
 };
-use forge_script::{ScriptHttpConfig, load_script_http_config};
+use forge_script::{
+    EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
+};
 use forge_storage::{DataProvider, SettingsRepo, reserved_keys, set_bool_setting};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div,
@@ -14,17 +16,14 @@ use gpui::{
 
 use crate::presentation::ActivePresentation;
 
-const DEFAULT_OP_LIMIT: u32 = 100_000;
-const DEFAULT_ENGINE_TIMEOUT_MS: u32 = 500;
-
 struct ScriptingSnapshot {
     allowed_domains: Vec<String>,
     max_calls_per_script: u32,
     http_timeout_ms: u32,
     allow_local: bool,
     max_response_bytes: u32,
-    op_limit: u32,
-    engine_timeout_ms: u32,
+    op_limit: u64,
+    engine_timeout_ms: u64,
 }
 
 struct SavePayload {
@@ -33,8 +32,8 @@ struct SavePayload {
     http_timeout_ms: u32,
     allow_local: bool,
     max_response_bytes: u32,
-    op_limit: u32,
-    engine_timeout_ms: u32,
+    op_limit: u64,
+    engine_timeout_ms: u64,
 }
 
 pub struct SettingsScriptingView {
@@ -63,10 +62,10 @@ impl SettingsScriptingView {
     ) -> Self {
         let palette = cx.palette();
         let http = ScriptHttpConfig::default();
+        let engine = EngineConfig::default();
 
-        let op_limit = numeric_input("100000", &DEFAULT_OP_LIMIT.to_string(), palette, cx);
-        let engine_timeout =
-            numeric_input("500", &DEFAULT_ENGINE_TIMEOUT_MS.to_string(), palette, cx);
+        let op_limit = numeric_input("100000", &engine.op_limit.to_string(), palette, cx);
+        let engine_timeout = numeric_input("500", &engine.wall_time_ms.to_string(), palette, cx);
         let max_calls = numeric_input("10", &http.max_calls_per_script.to_string(), palette, cx);
         let http_timeout = numeric_input("5000", &http.timeout_ms.to_string(), palette, cx);
         let max_response_kib = numeric_input(
@@ -227,22 +226,23 @@ impl SettingsScriptingView {
             .map(|kib| kib.saturating_mul(1024))
             .filter(|v| (1024..=10_485_760).contains(v))
             .unwrap_or(1_048_576);
+        let engine_defaults = EngineConfig::default();
         let op_limit = self
             .op_limit
             .read(cx)
             .content()
-            .parse::<u32>()
+            .parse::<u64>()
             .ok()
             .filter(|v| (1_000..=10_000_000).contains(v))
-            .unwrap_or(100_000);
+            .unwrap_or(engine_defaults.op_limit);
         let engine_timeout_ms = self
             .engine_timeout
             .read(cx)
             .content()
-            .parse::<u32>()
+            .parse::<u64>()
             .ok()
             .filter(|v| (50..=10_000).contains(v))
-            .unwrap_or(500);
+            .unwrap_or(engine_defaults.wall_time_ms);
 
         let payload = SavePayload {
             domains_csv: self.allowed_domains.join(","),
@@ -657,28 +657,15 @@ fn labeled_row(
 
 async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> Result<ScriptingSnapshot, String> {
     let http = load_script_http_config(repo.as_ref()).await;
-    let op_limit = repo
-        .get_string(reserved_keys::SCRIPT_OP_LIMIT_KEY)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_OP_LIMIT);
-    let engine_timeout_ms = repo
-        .get_string(reserved_keys::SCRIPT_TIMEOUT_MS_KEY)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_ENGINE_TIMEOUT_MS);
+    let engine = load_script_engine_config(repo.as_ref()).await;
     Ok(ScriptingSnapshot {
         allowed_domains: http.allowed_domains,
         max_calls_per_script: http.max_calls_per_script,
         http_timeout_ms: http.timeout_ms,
         allow_local: http.allow_local,
         max_response_bytes: http.max_response_bytes,
-        op_limit,
-        engine_timeout_ms,
+        op_limit: engine.op_limit,
+        engine_timeout_ms: engine.wall_time_ms,
     })
 }
 

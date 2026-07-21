@@ -81,7 +81,6 @@ impl SubActionRunner for CoreTimeParseRunner {
                 kind: VariantKind::Datetime,
                 label: "Parsed datetime".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

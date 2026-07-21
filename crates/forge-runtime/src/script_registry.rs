@@ -100,24 +100,9 @@ impl ScriptRegistry {
         Ok(())
     }
 
-    pub async fn get(&self, id: ScriptId) -> Option<Arc<CompiledScript>> {
-        let guard = self.inner.read().await;
-        guard.get(&id).cloned()
-    }
-
     pub async fn get_by_name(&self, name: &str) -> Option<Arc<CompiledScript>> {
         let guard = self.inner.read().await;
         guard.values().find(|c| c.record.name == name).cloned()
-    }
-
-    pub async fn remove(&self, id: ScriptId) -> bool {
-        let mut guard = self.inner.write().await;
-        guard.remove(&id).is_some()
-    }
-
-    pub async fn count(&self) -> usize {
-        let guard = self.inner.read().await;
-        guard.len()
     }
 }
 
@@ -174,7 +159,9 @@ mod tests {
         let registry = ScriptRegistry::new();
         registry.load_all(dp.as_ref()).await.unwrap();
 
-        assert_eq!(registry.count().await, 2);
+        assert!(registry.get_by_name("greet").await.is_some());
+        assert!(registry.get_by_name("farewell").await.is_some());
+        assert!(registry.get_by_name("disabled_script").await.is_none());
     }
 
     #[tokio::test]
@@ -189,7 +176,8 @@ mod tests {
         let registry = ScriptRegistry::new();
         registry.load_all(dp.as_ref()).await.unwrap();
 
-        assert_eq!(registry.count().await, 1);
+        assert!(registry.get_by_name("valid_script").await.is_some());
+        assert!(registry.get_by_name("broken_script").await.is_none());
     }
 
     #[tokio::test]
@@ -227,7 +215,7 @@ mod tests {
 
         registry.reload(record, &bus).await.unwrap();
 
-        assert_eq!(registry.count().await, 1);
+        assert!(registry.get_by_name(&expected_name).await.is_some());
 
         let event = tokio::time::timeout(std::time::Duration::from_millis(200), sub.recv())
             .await
@@ -256,7 +244,6 @@ mod tests {
             last_modified: ts,
         };
         registry.reload(original, &bus).await.unwrap();
-        assert_eq!(registry.count().await, 1);
 
         let updated = ScriptRecord {
             id,
@@ -270,28 +257,8 @@ mod tests {
         };
         registry.reload(updated, &bus).await.unwrap();
 
-        assert_eq!(registry.count().await, 1);
         let found = registry.get_by_name("editable").await.unwrap();
         assert_eq!(found.record.body, "let x = 2;");
-    }
-
-    #[tokio::test]
-    async fn remove_returns_true_for_existing() {
-        let registry = ScriptRegistry::new();
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let record = make_record("removable", "1 + 1;", true);
-        let id = record.id;
-
-        registry.reload(record, &bus).await.unwrap();
-        assert!(registry.remove(id).await);
-        assert_eq!(registry.count().await, 0);
-    }
-
-    #[tokio::test]
-    async fn remove_returns_false_for_missing() {
-        let registry = ScriptRegistry::new();
-        let ghost = ScriptId::new();
-        assert!(!registry.remove(ghost).await);
     }
 
     #[tokio::test]
@@ -348,7 +315,7 @@ mod tests {
             matches!(result, Err(ScriptRegistryError::Compile(_))),
             "invalid syntax must return Compile error"
         );
-        assert_eq!(registry.count().await, 0);
+        assert!(registry.get_by_name("broken").await.is_none());
 
         let event_result =
             tokio::time::timeout(std::time::Duration::from_millis(50), sub.recv()).await;
@@ -356,26 +323,5 @@ mod tests {
             event_result.is_err(),
             "no event should be published on compile failure"
         );
-    }
-
-    #[tokio::test]
-    async fn get_returns_some_for_known_id() {
-        let registry = ScriptRegistry::new();
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let record = make_record("by_id_script", "let a = 5;", true);
-        let id = record.id;
-
-        registry.reload(record, &bus).await.unwrap();
-
-        let found = registry.get(id).await;
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().record.id, id);
-    }
-
-    #[tokio::test]
-    async fn get_returns_none_for_unknown_id() {
-        let registry = ScriptRegistry::new();
-        let ghost = ScriptId::new();
-        assert!(registry.get(ghost).await.is_none());
     }
 }

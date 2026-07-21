@@ -104,7 +104,6 @@ impl SubActionRunner for CoreFileListRunner {
                 kind: VariantKind::Array,
                 label: "Directory entries".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

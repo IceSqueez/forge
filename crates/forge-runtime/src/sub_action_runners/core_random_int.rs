@@ -102,7 +102,6 @@ impl SubActionRunner for CoreRandomIntRunner {
                 kind: VariantKind::Int,
                 label: "Random integer".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

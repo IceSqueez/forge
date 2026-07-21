@@ -71,7 +71,6 @@ impl SubActionRunner for CoreStringFormatRunner {
                 kind: VariantKind::String,
                 label: "Formatted string".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

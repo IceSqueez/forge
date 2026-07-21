@@ -72,7 +72,6 @@ impl SubActionRunner for CoreStringUppercaseRunner {
                 kind: VariantKind::String,
                 label: "Uppercased string".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

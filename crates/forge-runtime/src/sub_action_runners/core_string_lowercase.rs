@@ -72,7 +72,6 @@ impl SubActionRunner for CoreStringLowercaseRunner {
                 kind: VariantKind::String,
                 label: "Lowercased string".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

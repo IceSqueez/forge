@@ -20,7 +20,7 @@ pub use descriptor::TriggerKindDescriptor;
 pub use error::RegistryError;
 pub use evaluator::EventFilter;
 pub use form::{CodeLanguage, FormField};
-pub use io::{ConsumedVariable, ProducedVariable, SubActionIo};
+pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;
 pub use registry::{SubActionRegistry, TriggerRegistry};

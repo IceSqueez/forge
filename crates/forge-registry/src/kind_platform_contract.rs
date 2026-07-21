@@ -4,5 +4,4 @@ use forge_types::PlatformId;
 pub enum KindPlatformContract {
     Universal,
     PlatformSpecific(PlatformId),
-    MultiPlatform,
 }

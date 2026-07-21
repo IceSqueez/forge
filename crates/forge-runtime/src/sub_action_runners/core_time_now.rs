@@ -78,7 +78,6 @@ impl SubActionRunner for CoreTimeNowRunner {
                 kind: VariantKind::Datetime,
                 label: "Current time".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

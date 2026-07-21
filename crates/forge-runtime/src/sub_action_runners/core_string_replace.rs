@@ -104,7 +104,6 @@ impl SubActionRunner for CoreStringReplaceRunner {
                 kind: VariantKind::String,
                 label: "Replaced string".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

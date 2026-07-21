@@ -90,7 +90,6 @@ impl SubActionRunner for CoreStringSplitRunner {
                 kind: VariantKind::Array,
                 label: "Split parts".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

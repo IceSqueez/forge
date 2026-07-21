@@ -99,7 +99,6 @@ impl SubActionRunner for CoreTimeDiffRunner {
                 kind: VariantKind::Float,
                 label: "Time difference".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

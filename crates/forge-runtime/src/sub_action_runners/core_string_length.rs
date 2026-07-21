@@ -78,7 +78,6 @@ impl SubActionRunner for CoreStringLengthRunner {
                 kind: VariantKind::Int,
                 label: "String length".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

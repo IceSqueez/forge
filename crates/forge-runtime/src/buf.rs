@@ -23,10 +23,6 @@ impl<T> RingBuffer<T> {
     pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> {
         self.inner.iter()
     }
-
-    pub(crate) fn len(&self) -> usize {
-        self.inner.len()
-    }
 }
 
 #[cfg(test)]
@@ -52,7 +48,6 @@ mod tests {
         }
         let items: Vec<u32> = rb.iter().copied().collect();
         assert_eq!(items, [2, 3, 4]);
-        assert_eq!(rb.len(), 3);
     }
 
     #[test]

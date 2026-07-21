@@ -58,12 +58,6 @@ pub struct EventBus {
     flush_shutdown: Arc<Notify>,
 }
 
-pub struct BusStats {
-    pub total_published: u64,
-    pub ring_len: usize,
-    pub subscriber_count: usize,
-}
-
 pub struct EventSubscription(broadcast::Receiver<Event>);
 
 impl EventSubscription {
@@ -182,15 +176,6 @@ impl EventBus {
             .recent_since(limit, Some(since_id))
             .await
             .unwrap_or_default()
-    }
-
-    pub fn stats(&self) -> BusStats {
-        let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
-        BusStats {
-            total_published: self.total_published.load(Ordering::Relaxed),
-            ring_len: ring.len(),
-            subscriber_count: self.sender.receiver_count(),
-        }
     }
 
     /// Loads the original event from the ring (fast path) or the persistent event log (fallback),
@@ -384,9 +369,7 @@ mod tests {
         for i in 0..RING_CAP + 5 {
             bus.publish(core_event(&format!("tick.{i}")));
         }
-        let stats = bus.stats();
-        assert_eq!(stats.ring_len, RING_CAP);
-        assert_eq!(stats.total_published, (RING_CAP + 5) as u64);
+        assert_eq!(bus.recent(RING_CAP + 5).len(), RING_CAP);
     }
 
     #[test]
@@ -495,16 +478,6 @@ mod tests {
         assert_eq!(recent[0].id, ids[4]);
         assert_eq!(recent[1].id, ids[3]);
         assert_eq!(recent[2].id, ids[2]);
-    }
-
-    #[test]
-    fn stats_tracks_total_published_and_ring_len() {
-        let bus = null_bus();
-        bus.publish(core_event("x"));
-        bus.publish(core_event("y"));
-        let s = bus.stats();
-        assert_eq!(s.total_published, 2);
-        assert_eq!(s.ring_len, 2);
     }
 
     #[tokio::test]

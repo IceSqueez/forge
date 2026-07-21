@@ -77,7 +77,6 @@ impl SubActionRunner for CoreStringConcatRunner {
                 kind: VariantKind::String,
                 label: "Concatenated string".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

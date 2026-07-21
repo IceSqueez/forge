@@ -117,7 +117,6 @@ impl SubActionRunner for CoreTimeAddRunner {
                 kind: VariantKind::Datetime,
                 label: "Shifted datetime".to_owned(),
             }],
-            consumes: Vec::new(),
         }
     }
 

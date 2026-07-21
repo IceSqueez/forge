@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ForgePalette, Icon, Radius, Spacing, icon, radius, spacing, tr, with_alpha,
+    ForgePalette, Icon, PlatformKind, Radius, Spacing, icon, platform_color, radius, spacing, tr,
+    with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_platform_core::ChatPlatform;
@@ -895,9 +896,9 @@ impl IntegrationDetail {
 
 fn platform_accent(platform: PlatformId, palette: &ForgePalette) -> Rgba {
     match platform {
-        PlatformId::Twitch => palette.brand,
-        PlatformId::YouTube => palette.random,
-        PlatformId::Kick => palette.info,
+        PlatformId::Twitch => platform_color(PlatformKind::Twitch, palette),
+        PlatformId::YouTube => platform_color(PlatformKind::YouTube, palette),
+        PlatformId::Kick => platform_color(PlatformKind::Kick, palette),
     }
 }
 

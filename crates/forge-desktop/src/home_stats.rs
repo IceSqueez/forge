@@ -1,4 +1,4 @@
-use forge_components::{ForgePalette, fmt_number};
+use forge_components::{ForgePalette, PlatformKind, fmt_number, platform_color};
 use forge_events::{Event, EventSource};
 use forge_platform_core::BuiltinId;
 use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
@@ -62,9 +62,9 @@ impl Integration {
 
     pub fn dot_color(self, palette: &ForgePalette) -> Rgba {
         match self {
-            Integration::Twitch => palette.brand,
-            Integration::YouTube => palette.random,
-            Integration::Kick => palette.info,
+            Integration::Twitch => platform_color(PlatformKind::Twitch, palette),
+            Integration::YouTube => platform_color(PlatformKind::YouTube, palette),
+            Integration::Kick => platform_color(PlatformKind::Kick, palette),
             Integration::Obs => palette.success,
             Integration::VTube => palette.warning,
         }
@@ -91,9 +91,9 @@ impl SourceHue {
 
     pub fn color(self, palette: &ForgePalette) -> Rgba {
         match self {
-            SourceHue::Twitch => palette.brand,
-            SourceHue::YouTube => palette.random,
-            SourceHue::Kick => palette.info,
+            SourceHue::Twitch => platform_color(PlatformKind::Twitch, palette),
+            SourceHue::YouTube => platform_color(PlatformKind::YouTube, palette),
+            SourceHue::Kick => platform_color(PlatformKind::Kick, palette),
             SourceHue::Core => palette.success,
         }
     }

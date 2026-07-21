@@ -9,9 +9,10 @@ use forge_components::{
     DateTimePickerLabels, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
     GridPickerSubtitle, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition,
-    Radius, Spacing, TextInput, anchored_popover, context_menu, ghost_button_with_icon, icon,
-    json_highlighted, menu_button, menu_divider, menu_item, modal, overlay, primary_button, radius,
-    row_card, secondary_button, spacing, status_dot, toggle, tooltip_lines_builder, tr, with_alpha,
+    PlatformKind, Radius, Spacing, TextInput, anchored_popover, context_menu,
+    ghost_button_with_icon, icon, json_highlighted, menu_button, menu_divider, menu_item, modal,
+    overlay, platform_color, primary_button, radius, row_card, secondary_button, spacing,
+    status_dot, toggle, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
     CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
@@ -317,8 +318,8 @@ pub(super) fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette)
         SubActionCategory::Tts | SubActionCategory::Audio => palette.success,
         SubActionCategory::Globals => palette.warning,
         SubActionCategory::Files => palette.random,
-        SubActionCategory::YouTube => palette.platform_youtube,
-        SubActionCategory::Kick => palette.platform_kick,
+        SubActionCategory::YouTube => platform_color(PlatformKind::YouTube, palette),
+        SubActionCategory::Kick => platform_color(PlatformKind::Kick, palette),
         SubActionCategory::Obs => palette.text_secondary,
         SubActionCategory::VTube => palette.accent_teal,
         SubActionCategory::Discord | SubActionCategory::Http | SubActionCategory::Server => {

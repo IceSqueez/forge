@@ -63,8 +63,13 @@ pub use menu::{
     menu_divider, menu_header, menu_item,
 };
 pub use modal::{Modal, modal};
-pub use overlay::{AnchoredPopover, Overlay, OverlayPosition, anchored_popover, overlay};
-pub use palette::{CATPPUCCIN_MOCHA, ForgePalette, LATTE, TOKYO_NIGHT, ThemeId, with_alpha};
+pub use overlay::{
+    AnchoredPopover, Overlay, OverlayPosition, anchored_popover, anchored_popover_below, overlay,
+};
+pub use palette::{
+    CATPPUCCIN_MOCHA, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, platform_color,
+    with_alpha,
+};
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, Radius, SheetWidth, Spacing, ToastKind, badge, breadcrumb, chip,
-    icon, radius, spacing, status_dot, tr, with_alpha,
+    FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, SheetWidth, Spacing, ToastKind, badge,
+    breadcrumb, chip, icon, platform_color, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -924,9 +924,9 @@ fn source_label(source: EventSource) -> &'static str {
 
 fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {
     match source {
-        EventSource::Twitch => palette.brand,
-        EventSource::YouTube => palette.random,
-        EventSource::Kick => palette.info,
+        EventSource::Twitch => platform_color(PlatformKind::Twitch, palette),
+        EventSource::YouTube => platform_color(PlatformKind::YouTube, palette),
+        EventSource::Kick => platform_color(PlatformKind::Kick, palette),
         EventSource::Obs => palette.success,
         EventSource::VTube => palette.warning,
         EventSource::Timer => palette.warning,

@@ -3,15 +3,14 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, card, ghost_button, icon, overlay, primary_button, radius,
-    spacing, tr, with_alpha,
+    ForgePalette, Icon, Radius, Spacing, anchored_popover_below, card, ghost_button, icon, overlay,
+    primary_button, radius, spacing, tr, with_alpha,
 };
 use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_storage::DataProvider;
 use forge_types::{Action, ActionId, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 use gpui::{
-    Anchor, AnchoredPositionMode, AnyElement, ClickEvent, Context, Keystroke, MouseButton,
-    MouseDownEvent, Pixels, SharedString, Subscription, Window, anchored, deferred, div, point,
+    AnyElement, ClickEvent, Context, Keystroke, Pixels, SharedString, Subscription, Window, div,
     prelude::*, px,
 };
 
@@ -422,12 +421,7 @@ impl SettingsHotkeysView {
             .into_any_element()
     }
 
-    fn action_picker(
-        &self,
-        palette: &ForgePalette,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn action_picker(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let (label, label_color) = match self.selected_action_name() {
             Some(name) => (name.to_owned(), palette.text_primary),
             None => (tr!("settings_hotkeys_select_action"), palette.text_faint),
@@ -458,17 +452,12 @@ impl SettingsHotkeysView {
 
         let mut field = div().relative().child(trigger);
         if self.picker_open {
-            field = field.child(self.picker_overlay(palette, window, cx));
+            field = field.child(self.picker_overlay(palette, cx));
         }
         field.into_any_element()
     }
 
-    fn picker_overlay(
-        &self,
-        palette: &ForgePalette,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn picker_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let mut panel = div()
             .flex()
             .flex_col()
@@ -523,28 +512,11 @@ impl SettingsHotkeysView {
             panel = panel.child(item);
         }
 
-        let viewport = window.viewport_size();
-        let backdrop = div()
-            .w(viewport.width)
-            .h(viewport.height)
-            .occlude()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _, cx| this.close_picker(cx)),
-            );
-        let backdrop_layer = anchored()
-            .position_mode(AnchoredPositionMode::Window)
-            .position(point(px(0.0), px(0.0)))
-            .anchor(Anchor::TopLeft)
-            .child(backdrop);
-        let panel_layer = anchored()
-            .anchor(Anchor::TopLeft)
-            .offset(point(px(0.0), TRIGGER_HEIGHT))
-            .snap_to_window()
-            .child(panel);
-
-        deferred(div().child(backdrop_layer).child(panel_layer))
-            .with_priority(1)
+        let view = cx.entity();
+        anchored_popover_below(TRIGGER_HEIGHT, panel)
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_picker(cx));
+            })
             .into_any_element()
     }
 
@@ -760,7 +732,7 @@ impl SettingsHotkeysView {
 }
 
 impl Render for SettingsHotkeysView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
 
@@ -808,7 +780,7 @@ impl Render for SettingsHotkeysView {
                     .items_center()
                     .gap(spacing(Spacing::Sm, density))
                     .child(self.capture_field(&palette, cx))
-                    .child(self.action_picker(&palette, window, cx))
+                    .child(self.action_picker(&palette, cx))
                     .child(self.bind_button(&palette, cx)),
             );
         if let Some(banner) = self.bind_error_banner(&palette, cx) {

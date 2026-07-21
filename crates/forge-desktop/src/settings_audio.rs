@@ -3,13 +3,10 @@ use std::sync::Arc;
 use forge_audio::{DeviceId, DeviceInfo, list_output_devices, refresh_output_devices};
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, Spacing, icon, radius, spacing, tr, with_alpha,
+    Radius, Spacing, anchored_popover_below, icon, radius, spacing, tr, with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo};
-use gpui::{
-    Anchor, AnchoredPositionMode, AnyElement, ClickEvent, Context, MouseButton, MouseDownEvent,
-    Pixels, SharedString, Window, anchored, deferred, div, point, prelude::*, px,
-};
+use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, Window, div, prelude::*, px};
 
 use crate::presentation::ActivePresentation;
 
@@ -231,7 +228,6 @@ impl SettingsAudioView {
         &self,
         palette: &ForgePalette,
         density: Density,
-        window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if self.loading {
@@ -250,14 +246,13 @@ impl SettingsAudioView {
                 .child(message.clone())
                 .into_any_element();
         }
-        self.picker_row(palette, density, window, cx)
+        self.picker_row(palette, density, cx)
     }
 
     fn picker_row(
         &self,
         palette: &ForgePalette,
         density: Density,
-        window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let selected_name = self
@@ -291,7 +286,7 @@ impl SettingsAudioView {
 
         let mut field = div().relative().flex_1().child(trigger);
         if self.picker_open {
-            field = field.child(self.picker_overlay(palette, window, cx));
+            field = field.child(self.picker_overlay(palette, cx));
         }
 
         let refresh_btn = div()
@@ -342,12 +337,7 @@ impl SettingsAudioView {
             .into_any_element()
     }
 
-    fn picker_overlay(
-        &self,
-        palette: &ForgePalette,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn picker_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let mut panel = div()
             .flex()
             .flex_col()
@@ -389,28 +379,11 @@ impl SettingsAudioView {
             panel = panel.child(item);
         }
 
-        let viewport = window.viewport_size();
-        let backdrop = div()
-            .w(viewport.width)
-            .h(viewport.height)
-            .occlude()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _, cx| this.close_picker(cx)),
-            );
-        let backdrop_layer = anchored()
-            .position_mode(AnchoredPositionMode::Window)
-            .position(point(px(0.0), px(0.0)))
-            .anchor(Anchor::TopLeft)
-            .child(backdrop);
-        let panel_layer = anchored()
-            .anchor(Anchor::TopLeft)
-            .offset(point(px(0.0), TRIGGER_HEIGHT))
-            .snap_to_window()
-            .child(panel);
-
-        deferred(div().child(backdrop_layer).child(panel_layer))
-            .with_priority(1)
+        let view = cx.entity();
+        anchored_popover_below(TRIGGER_HEIGHT, panel)
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_picker(cx));
+            })
             .into_any_element()
     }
 
@@ -468,7 +441,7 @@ impl SettingsAudioView {
 }
 
 impl Render for SettingsAudioView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
 
@@ -477,7 +450,7 @@ impl Render for SettingsAudioView {
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .child(self.section_label("settings_audio_output_devices", &palette))
-            .child(self.device_section(&palette, density, window, cx))
+            .child(self.device_section(&palette, density, cx))
             .child(self.section_label("settings_audio_test_section", &palette))
             .child(self.standalone_test(&palette, density, cx));
 

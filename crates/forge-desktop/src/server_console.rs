@@ -1,9 +1,9 @@
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, badge, breadcrumb, card,
-    confirm_modal, fmt_bytes, fmt_uptime, fmt_uptime_short, icon, metric_card, overlay, radius,
-    spacing, sparkline, status_dot, tr, with_alpha,
+    FONT_XXS, ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, badge,
+    breadcrumb, card, confirm_modal, fmt_bytes, fmt_uptime, fmt_uptime_short, icon, metric_card,
+    overlay, platform_color, radius, spacing, sparkline, status_dot, tr, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -1705,9 +1705,9 @@ fn overlay_kind_tag(kind: OwnedOverlayKind) -> &'static str {
 
 fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
     match source {
-        EventSource::Twitch => palette.brand,
-        EventSource::YouTube => palette.random,
-        EventSource::Kick => palette.info,
+        EventSource::Twitch => platform_color(PlatformKind::Twitch, palette),
+        EventSource::YouTube => platform_color(PlatformKind::YouTube, palette),
+        EventSource::Kick => platform_color(PlatformKind::Kick, palette),
         EventSource::Core => palette.warning,
         EventSource::Rhai => palette.warning,
         EventSource::Http => palette.random,

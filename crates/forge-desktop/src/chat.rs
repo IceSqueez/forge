@@ -6,10 +6,11 @@ use std::time::Duration;
 use forge_components::{
     BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY,
     DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, Radius, ResizeEdge, ResizeRange,
-    Spacing, TextInput, ToastKind, badge, badge_color, badge_label, breadcrumb, chat_row, chip,
-    context_menu, icon, install_resize, menu_button, menu_divider, menu_header, menu_item, radius,
-    search_input, search_input_on_surface, spacing, status_dot, tr,
+    InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge,
+    ResizeRange, Spacing, TextInput, ToastKind, badge, badge_color, badge_label, breadcrumb,
+    chat_row, chip, context_menu, icon, install_resize, menu_button, menu_divider, menu_header,
+    menu_item, platform_color, radius, search_input, search_input_on_surface, spacing, status_dot,
+    tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -989,9 +990,9 @@ impl ChatView {
             hashed_username_color(&msg.username, palette)
         } else {
             match msg.platform {
-                Platform::Twitch => palette.brand,
-                Platform::YouTube => palette.random,
-                Platform::Kick => palette.info,
+                Platform::Twitch => platform_color(PlatformKind::Twitch, palette),
+                Platform::YouTube => platform_color(PlatformKind::YouTube, palette),
+                Platform::Kick => platform_color(PlatformKind::Kick, palette),
             }
         }
     }

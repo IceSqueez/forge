@@ -223,9 +223,15 @@ impl RenderOnce for Overlay {
     }
 }
 
+#[derive(Clone, Copy)]
+enum PopoverPlacement {
+    Window(Point<Pixels>),
+    BelowAnchor(Pixels),
+}
+
 #[derive(IntoElement)]
 pub struct AnchoredPopover {
-    position: Point<Pixels>,
+    placement: PopoverPlacement,
     content: AnyElement,
     on_dismiss: Option<DismissHandler>,
 }
@@ -235,7 +241,17 @@ pub struct AnchoredPopover {
 /// and carries no scrim tint.
 pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> AnchoredPopover {
     AnchoredPopover {
-        position,
+        placement: PopoverPlacement::Window(position),
+        content: content.into_any_element(),
+        on_dismiss: None,
+    }
+}
+
+/// Anchors to the trigger's natural layout position dropped down by `offset` (the
+/// trigger height), instead of an absolute window point.
+pub fn anchored_popover_below(offset: Pixels, content: impl IntoElement) -> AnchoredPopover {
+    AnchoredPopover {
+        placement: PopoverPlacement::BelowAnchor(offset),
         content: content.into_any_element(),
         on_dismiss: None,
     }
@@ -265,12 +281,19 @@ impl RenderOnce for AnchoredPopover {
             .anchor(Anchor::TopLeft)
             .child(div().w(viewport.width).h(viewport.height).child(backdrop));
 
-        let panel_layer = anchored()
-            .position_mode(AnchoredPositionMode::Window)
-            .position(self.position)
-            .anchor(Anchor::TopLeft)
-            .snap_to_window()
-            .child(self.content);
+        let panel_layer = match self.placement {
+            PopoverPlacement::Window(position) => anchored()
+                .position_mode(AnchoredPositionMode::Window)
+                .position(position)
+                .anchor(Anchor::TopLeft)
+                .snap_to_window()
+                .child(self.content),
+            PopoverPlacement::BelowAnchor(offset) => anchored()
+                .anchor(Anchor::TopLeft)
+                .offset(point(px(0.0), offset))
+                .snap_to_window()
+                .child(self.content),
+        };
 
         deferred(div().child(backdrop_layer).child(panel_layer)).with_priority(OVERLAY_PRIORITY)
     }

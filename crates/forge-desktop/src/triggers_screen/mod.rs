@@ -1,4 +1,6 @@
-use forge_components::{ForgePalette, InlineEdit, TextInput, ToastKind, search_input, tr};
+use forge_components::{
+    ForgePalette, InlineEdit, PlatformKind, TextInput, ToastKind, platform_color, search_input, tr,
+};
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
@@ -120,9 +122,9 @@ impl Platform {
 
     fn dot(self, palette: &ForgePalette) -> Rgba {
         match self {
-            Platform::Twitch => palette.brand,
-            Platform::Youtube => palette.random,
-            Platform::Kick => palette.info,
+            Platform::Twitch => platform_color(PlatformKind::Twitch, palette),
+            Platform::Youtube => platform_color(PlatformKind::YouTube, palette),
+            Platform::Kick => platform_color(PlatformKind::Kick, palette),
             Platform::Obs => palette.accent_teal,
             Platform::Timer => palette.warning,
             Platform::Script => palette.bits,

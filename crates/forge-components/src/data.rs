@@ -311,80 +311,172 @@ impl RenderOnce for DataTable {
     }
 }
 
-/// Rows MUST be single-line: `uniform_list` measures one row and assumes the rest match.
-#[allow(clippy::too_many_arguments)]
-pub fn virtual_table<V, F>(
+/// Rows MUST be single-line (nowrap + truncate): `uniform_list` measures one
+/// row and assumes the rest match; a wrapped row breaks scroll and clips text.
+pub struct VirtualTable<'a> {
+    id: ElementId,
+    columns: Vec<Column>,
+    row_count: usize,
+    scroll: &'a UniformListScrollHandle,
+    density: Density,
+    header_bg: Rgba,
+    header_ink: Rgba,
+    separator: Rgba,
+    hover: Rgba,
+    header_pad: Option<(Pixels, Pixels)>,
+    row_pad: Option<(Pixels, Pixels)>,
+    cell_gap: Pixels,
+    trailing_rule: bool,
+}
+
+pub fn virtual_table<'a>(
     id: impl Into<ElementId>,
     palette: &ForgePalette,
     columns: Vec<Column>,
     row_count: usize,
-    scroll: &UniformListScrollHandle,
+    scroll: &'a UniformListScrollHandle,
     density: Density,
-    row_builder: F,
-    cx: &mut Context<V>,
-) -> AnyElement
-where
-    V: 'static,
-    F: Fn(&mut V, usize, &mut Window, &mut Context<V>) -> DataRow + 'static,
-{
-    let gap = px(0.0);
-    let h_py = spacing(Spacing::Xs, density);
-    let h_px = spacing(Spacing::Md, density);
-    let r_py = spacing(Spacing::Xs, density);
-    let r_px = spacing(Spacing::Md, density);
-    let separator = palette.border_regular;
-    let hover = palette.base;
-
-    let widths: Vec<ColumnWidth> = columns.iter().map(|c| c.width).collect();
-    let header = table_header(columns, palette.shell, palette.text_faint, gap, h_py, h_px);
-
-    let list = uniform_list(
-        id,
+) -> VirtualTable<'a> {
+    VirtualTable {
+        id: id.into(),
+        columns,
         row_count,
-        cx.processor(move |view, range: std::ops::Range<usize>, window, cx| {
-            let mut out = Vec::with_capacity(range.len());
-            for ix in range {
-                let row = row_builder(view, ix, window, cx);
-                let cells = row
-                    .cells
-                    .into_iter()
-                    .zip(widths.iter().copied())
-                    .map(|(cell, width)| column_cell(width, cell));
-                let mut row_el = div()
-                    .flex()
-                    .items_center()
-                    .w_full()
-                    .gap(gap)
-                    .py(r_py)
-                    .px(r_px)
-                    .border_b(px(1.0))
-                    .border_color(separator)
-                    .hover(move |s| s.bg(hover))
-                    .children(cells);
-                if let Some(group) = row.reveal_group {
-                    row_el = row_el.group(group);
+        scroll,
+        density,
+        header_bg: palette.shell,
+        header_ink: palette.text_faint,
+        separator: palette.border_regular,
+        hover: palette.base,
+        header_pad: None,
+        row_pad: None,
+        cell_gap: px(0.0),
+        trailing_rule: true,
+    }
+}
+
+impl<'a> VirtualTable<'a> {
+    #[must_use]
+    pub fn header_bg(mut self, color: Rgba) -> Self {
+        self.header_bg = color;
+        self
+    }
+
+    #[must_use]
+    pub fn separator(mut self, color: Rgba) -> Self {
+        self.separator = color;
+        self
+    }
+
+    #[must_use]
+    pub fn row_hover(mut self, color: Rgba) -> Self {
+        self.hover = color;
+        self
+    }
+
+    #[must_use]
+    pub fn header_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+        self.header_pad = Some((vertical, horizontal));
+        self
+    }
+
+    #[must_use]
+    pub fn row_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+        self.row_pad = Some((vertical, horizontal));
+        self
+    }
+
+    #[must_use]
+    pub fn cell_gap(mut self, gap: Pixels) -> Self {
+        self.cell_gap = gap;
+        self
+    }
+
+    /// Drops the rule below the final row so an enclosing frame border owns the
+    /// bottom edge instead of doubling it.
+    #[must_use]
+    pub fn trailing_rule(mut self, on: bool) -> Self {
+        self.trailing_rule = on;
+        self
+    }
+
+    pub fn build<V, F>(self, row_builder: F, cx: &mut Context<V>) -> AnyElement
+    where
+        V: 'static,
+        F: Fn(&mut V, usize, &mut Window, &mut Context<V>) -> DataRow + 'static,
+    {
+        let d = self.density;
+        let gap = self.cell_gap;
+        let (h_py, h_px) = self
+            .header_pad
+            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
+        let (r_py, r_px) = self
+            .row_pad
+            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
+        let separator = self.separator;
+        let hover = self.hover;
+        let row_count = self.row_count;
+        let trailing_rule = self.trailing_rule;
+
+        let widths: Vec<ColumnWidth> = self.columns.iter().map(|c| c.width).collect();
+        let header = table_header(
+            self.columns,
+            self.header_bg,
+            self.header_ink,
+            gap,
+            h_py,
+            h_px,
+        );
+
+        let list = uniform_list(
+            self.id,
+            row_count,
+            cx.processor(move |view, range: std::ops::Range<usize>, window, cx| {
+                let mut out = Vec::with_capacity(range.len());
+                for ix in range {
+                    let last = ix + 1 == row_count;
+                    let row = row_builder(view, ix, window, cx);
+                    let cells = row
+                        .cells
+                        .into_iter()
+                        .zip(widths.iter().copied())
+                        .map(|(cell, width)| column_cell(width, cell));
+                    let mut row_el = div()
+                        .flex()
+                        .items_center()
+                        .w_full()
+                        .gap(gap)
+                        .py(r_py)
+                        .px(r_px)
+                        .hover(move |s| s.bg(hover))
+                        .children(cells);
+                    if trailing_rule || !last {
+                        row_el = row_el.border_b(px(1.0)).border_color(separator);
+                    }
+                    if let Some(group) = row.reveal_group {
+                        row_el = row_el.group(group);
+                    }
+                    out.push(row_el);
                 }
-                out.push(row_el);
-            }
-            out
-        }),
-    )
-    .track_scroll(scroll)
-    .flex_1()
-    .min_h(px(0.0));
-
-    let rule = div().flex_none().h(px(1.0)).w_full().bg(separator);
-
-    div()
-        .flex()
-        .flex_col()
+                out
+            }),
+        )
+        .track_scroll(self.scroll)
         .flex_1()
-        .min_h(px(0.0))
-        .w_full()
-        .child(header)
-        .child(rule)
-        .child(list)
-        .into_any_element()
+        .min_h(px(0.0));
+
+        let rule = div().flex_none().h(px(1.0)).w_full().bg(separator);
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h(px(0.0))
+            .w_full()
+            .child(header)
+            .child(rule)
+            .child(list)
+            .into_any_element()
+    }
 }
 
 #[cfg(test)]

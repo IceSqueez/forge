@@ -6,14 +6,14 @@ use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Spacing,
     TextInput, avatar_tile, badge, card, column, confirm_modal, data_table, empty_state,
     field_label, hash_accent, icon, modal, overlay, primary_button, primary_button_with_icon,
-    search_input, secondary_button, spacing, toggle, tr, with_alpha,
+    search_input, secondary_button, spacing, toggle, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
 use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
 use crate::presentation::ActivePresentation;
@@ -131,9 +131,12 @@ pub struct VoiceAliasesView {
     loading: bool,
     strategy: StrategyChoice,
     aliases: Vec<AliasRow>,
+    visible: Vec<usize>,
+    search_query: String,
     total_count: usize,
     viewer_count: usize,
     search: Entity<TextInput>,
+    table_scroll: UniformListScrollHandle,
     form: Option<AliasForm>,
     pending_delete: Option<usize>,
     _search_sub: Subscription,
@@ -149,8 +152,10 @@ impl VoiceAliasesView {
     ) -> Self {
         let palette = cx.palette();
         let search = cx.new(|cx| search_input(tr!("tts_aliases_search_placeholder"), palette, cx));
-        let search_sub = cx.subscribe(&search, |_this, _input, event: &InputEvent, cx| {
-            if let InputEvent::Changed(_) = event {
+        let search_sub = cx.subscribe(&search, |this, _input, event: &InputEvent, cx| {
+            if let InputEvent::Changed(text) = event {
+                this.search_query = text.to_string();
+                this.rebuild_visible();
                 cx.notify();
             }
         });
@@ -163,9 +168,12 @@ impl VoiceAliasesView {
             loading: true,
             strategy: StrategyChoice::DeterministicByName,
             aliases: Vec::new(),
+            visible: Vec::new(),
+            search_query: String::new(),
             total_count: 0,
             viewer_count: 0,
             search,
+            table_scroll: UniformListScrollHandle::new(),
             form: None,
             pending_delete: None,
             _search_sub: search_sub,
@@ -246,7 +254,21 @@ impl VoiceAliasesView {
     fn set_roster(&mut self, aliases: Vec<VoiceAlias>) {
         self.total_count = aliases.len();
         self.aliases = aliases.into_iter().map(row_from_alias).collect();
+        self.rebuild_visible();
         self.loading = false;
+    }
+
+    fn rebuild_visible(&mut self) {
+        let needle = self.search_query.to_ascii_lowercase();
+        self.visible = self
+            .aliases
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| {
+                needle.is_empty() || a.viewer_name.to_ascii_lowercase().contains(&needle)
+            })
+            .map(|(index, _)| index)
+            .collect();
     }
 
     fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
@@ -660,16 +682,6 @@ impl VoiceAliasesView {
             .align_end(),
         ];
 
-        let needle = self.search.read(cx).content().to_ascii_lowercase();
-        let visible: Vec<(usize, &AliasRow)> = self
-            .aliases
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| {
-                needle.is_empty() || a.viewer_name.to_ascii_lowercase().contains(&needle)
-            })
-            .collect();
-
         let hover_bg = with_alpha(palette.border_regular, 0.08);
         let mut frame = div()
             .w_full()
@@ -682,7 +694,8 @@ impl VoiceAliasesView {
             .rounded(TABLE_RADIUS)
             .overflow_hidden();
 
-        if visible.is_empty() {
+        let shown = self.visible.len();
+        if self.visible.is_empty() {
             let caption = if self.loading {
                 tr!("tts_aliases_loading")
             } else {
@@ -700,19 +713,30 @@ impl VoiceAliasesView {
                 .child(header_only)
                 .child(div().flex_1().min_h(px(0.0)).child(state));
         } else {
-            let rows: Vec<DataRow> = visible
-                .iter()
-                .map(|(index, row)| self.alias_row(*index, row, palette, density, cx))
-                .collect();
-            frame = frame.child(
-                data_table(palette, columns, rows)
-                    .density(density)
-                    .header_padding(px(7.0), px(12.0))
-                    .row_padding(ROW_PAD_V, ROW_PAD_H)
-                    .row_hover(hover_bg)
-                    .trailing_rule(false)
-                    .scroll_body("va-table-scroll"),
+            let pal = *palette;
+            let body = virtual_table(
+                "va-table-scroll",
+                palette,
+                columns,
+                shown,
+                &self.table_scroll,
+                density,
+            )
+            .header_padding(px(7.0), px(12.0))
+            .row_padding(ROW_PAD_V, ROW_PAD_H)
+            .row_hover(hover_bg)
+            .trailing_rule(false)
+            .build(
+                move |this, ix, _window, cx| {
+                    let index = this.visible[ix];
+                    match this.aliases.get(index) {
+                        Some(row) => this.alias_row(index, row, &pal, density, cx),
+                        None => DataRow::new(Vec::new()),
+                    }
+                },
+                cx,
             );
+            frame = frame.child(body);
         }
 
         let auto = self.viewer_count.saturating_sub(self.total_count);
@@ -724,7 +748,7 @@ impl VoiceAliasesView {
             .text_color(palette.text_faint)
             .child(tr!(
                 "tts_aliases_footer_caption",
-                shown = visible.len() as i64,
+                shown = shown as i64,
                 total = self.total_count as i64,
                 auto = auto as i64
             ));
@@ -782,6 +806,8 @@ impl VoiceAliasesView {
             .child(avatar)
             .child(
                 div()
+                    .min_w(px(0.0))
+                    .truncate()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
@@ -819,6 +845,8 @@ impl VoiceAliasesView {
                 .child(icon(glyph, ENGINE_GLYPH, glyph_color))
                 .child(
                     div()
+                        .min_w(px(0.0))
+                        .truncate()
                         .font_family(DEFAULT_MONO_FAMILY)
                         .text_size(VOICE_FS)
                         .text_color(palette.text_primary)

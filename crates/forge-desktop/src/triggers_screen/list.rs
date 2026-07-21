@@ -10,7 +10,7 @@ use forge_components::{
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
-    Pixels, Point, Rgba, SharedString, Window, div, px,
+    Pixels, Point, Rgba, SharedString, Window, div, px, uniform_list,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -58,6 +58,17 @@ impl TriggersRegistryView {
             .unwrap_or_else(|| kind_id.to_owned())
     }
 
+    pub(super) fn rebuild_visible(&mut self) {
+        let visible: Vec<usize> = self
+            .instances
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| self.passes(i))
+            .map(|(index, _)| index)
+            .collect();
+        self.visible = visible;
+    }
+
     fn passes(&self, instance: &TriggerInstanceRow) -> bool {
         if !self.platforms.is_empty()
             && !Platform::from_kind_id(&instance.kind_id)
@@ -90,6 +101,7 @@ impl TriggersRegistryView {
     ) {
         if let InputEvent::Changed(text) = event {
             self.search = text.to_string();
+            self.rebuild_visible();
             cx.notify();
         }
     }
@@ -100,11 +112,13 @@ impl TriggersRegistryView {
         } else {
             self.platforms.push(platform);
         }
+        self.rebuild_visible();
         cx.notify();
     }
 
     fn clear_platforms(&mut self, cx: &mut Context<Self>) {
         self.platforms.clear();
+        self.rebuild_visible();
         cx.notify();
     }
 
@@ -114,6 +128,7 @@ impl TriggersRegistryView {
         } else {
             filter
         };
+        self.rebuild_visible();
         cx.notify();
     }
 
@@ -123,6 +138,7 @@ impl TriggersRegistryView {
         field.update(cx, |input, cx| input.set_content("", cx));
         self.platforms.clear();
         self.usage_filter = UsageFilter::All;
+        self.rebuild_visible();
         cx.notify();
     }
 
@@ -606,26 +622,47 @@ impl TriggersRegistryView {
     }
 
     pub(super) fn render_list(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let visible: Vec<&TriggerInstanceRow> =
-            self.instances.iter().filter(|i| self.passes(i)).collect();
+        if self.visible.is_empty() {
+            let empty = self.render_empty(palette, cx);
+            return div()
+                .id("triggers-list")
+                .flex_1()
+                .h_full()
+                .overflow_y_scroll()
+                .bg(palette.base)
+                .child(empty)
+                .into_any_element();
+        }
 
-        let inner = if visible.is_empty() {
-            self.render_empty(palette, cx)
-        } else {
-            let mut col = div().flex().flex_col().child(self.render_caption(palette));
-            for instance in visible {
-                col = col.child(self.render_row(instance, palette, cx));
-            }
-            col.into_any_element()
-        };
+        let count = self.visible.len();
+        let pal = *palette;
+        let rows = uniform_list(
+            "triggers-rows",
+            count,
+            cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                let mut out = Vec::with_capacity(range.len());
+                for ix in range {
+                    let idx = this.visible[ix];
+                    if let Some(instance) = this.instances.get(idx) {
+                        out.push(this.render_row(instance, &pal, cx));
+                    }
+                }
+                out
+            }),
+        )
+        .track_scroll(&self.list_scroll)
+        .flex_1()
+        .min_h(px(0.0));
 
         div()
             .id("triggers-list")
             .flex_1()
             .h_full()
-            .overflow_y_scroll()
+            .flex()
+            .flex_col()
             .bg(palette.base)
-            .child(inner)
+            .child(self.render_caption(palette))
+            .child(rows)
             .into_any_element()
     }
 
@@ -672,7 +709,8 @@ impl TriggersRegistryView {
             .child(
                 div()
                     .flex_shrink(1.0)
-                    .overflow_hidden()
+                    .min_w(px(0.0))
+                    .truncate()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(KIND_FS)
                     .text_color(palette.text_muted)
@@ -738,7 +776,7 @@ impl TriggersRegistryView {
             None => div()
                 .w(COL_NAME)
                 .flex_none()
-                .overflow_hidden()
+                .truncate()
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(NAME_FS)
                 .text_color(name_color)

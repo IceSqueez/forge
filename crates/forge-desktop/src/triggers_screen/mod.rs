@@ -5,8 +5,8 @@ use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
 use gpui::{
-    App, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString, Subscription, Window,
-    div, prelude::*, px,
+    App, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString, Subscription,
+    UniformListScrollHandle, Window, div, prelude::*, px,
 };
 use std::collections::HashSet;
 use std::future::Future;
@@ -195,6 +195,8 @@ pub struct TriggersRegistryView {
     detail_width: Pixels,
     loading: bool,
     instances: Vec<TriggerInstanceRow>,
+    visible: Vec<usize>,
+    list_scroll: UniformListScrollHandle,
     selected: Option<TriggerInstanceId>,
     detail: Option<TriggerDetail>,
     hovered: Option<TriggerInstanceId>,
@@ -236,6 +238,8 @@ impl TriggersRegistryView {
             detail_width: detail::DETAIL_SHEET_W,
             loading: true,
             instances: Vec::new(),
+            visible: Vec::new(),
+            list_scroll: UniformListScrollHandle::new(),
             selected: preselect,
             detail: None,
             hovered: None,
@@ -349,6 +353,7 @@ impl TriggersRegistryView {
 
     fn apply_rows(&mut self, rows: Vec<TriggerInstanceRow>, cx: &mut Context<Self>) {
         self.instances = rows;
+        self.rebuild_visible();
         if let Some(selected) = self.selected
             && !self.instances.iter().any(|r| r.id == selected)
         {

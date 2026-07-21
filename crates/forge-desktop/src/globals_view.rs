@@ -920,6 +920,8 @@ impl GlobalsView {
                 count,
                 &self.table_scroll,
                 Density::Compact,
+            )
+            .build(
                 move |this, ix, _window, cx| {
                     let g = this.visible[ix].clone();
                     this.build_row(&g, &pal, cx)

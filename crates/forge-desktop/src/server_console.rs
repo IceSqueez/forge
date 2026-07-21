@@ -4,7 +4,7 @@ use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition, PlatformKind, Radius,
     Spacing, badge, breadcrumb, card, column, confirm_modal, data_table, empty_state, fmt_bytes,
     fmt_uptime, fmt_uptime_short, icon, metric_card, overlay, platform_color, radius, spacing,
-    sparkline, status_dot, tr, with_alpha,
+    sparkline, status_dot, tr, virtual_table, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +14,7 @@ use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, S
 use forge_storage::{CredentialId, CredentialsRepo};
 use gpui::{
     AnyElement, ClickEvent, ClipboardItem, Context, Div, FontWeight, Pixels, Rgba, SharedString,
-    Window, div, prelude::*, px, relative,
+    UniformListScrollHandle, Window, div, prelude::*, px, relative,
 };
 
 use crate::presentation::ActivePresentation;
@@ -144,6 +144,7 @@ pub struct ServerConsoleView {
     control_in_flight: Option<ServerControl>,
     uptime_seconds: i64,
     connected_clients: Vec<OwnedClientRow>,
+    clients_scroll: UniformListScrollHandle,
     bandwidth_samples: Vec<f32>,
     stats: ServerStats,
     overlay_root: String,
@@ -176,6 +177,7 @@ impl ServerConsoleView {
             control_in_flight: None,
             uptime_seconds: 0,
             connected_clients: Vec::new(),
+            clients_scroll: UniformListScrollHandle::new(),
             bandwidth_samples: Vec::new(),
             stats: ServerStats::default(),
             overlay_root: String::new(),
@@ -1275,24 +1277,30 @@ impl ServerConsoleView {
                 )
                 .into_any_element()
         } else {
-            let rows: Vec<DataRow> = self
-                .connected_clients
-                .iter()
-                .enumerate()
-                .map(|(index, row)| self.client_row(index, row, palette, density, cx))
-                .collect();
-            data_table(palette, columns, rows)
-                .density(density)
-                .header_bg(palette.elevated)
-                .separator(palette.elevated)
-                .header_padding(
-                    spacing(Spacing::Xxs, density),
-                    spacing(Spacing::Sm, density),
-                )
-                .row_padding(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
-                .cell_gap(spacing(Spacing::Xxs, density))
-                .scroll_body("srv-clients-scroll")
-                .into_any_element()
+            let pal = *palette;
+            virtual_table(
+                "srv-clients-scroll",
+                palette,
+                columns,
+                self.connected_clients.len(),
+                &self.clients_scroll,
+                density,
+            )
+            .header_bg(palette.elevated)
+            .separator(palette.elevated)
+            .header_padding(
+                spacing(Spacing::Xxs, density),
+                spacing(Spacing::Sm, density),
+            )
+            .row_padding(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
+            .cell_gap(spacing(Spacing::Xxs, density))
+            .build(
+                move |this, ix, _window, cx| match this.connected_clients.get(ix) {
+                    Some(row) => this.client_row(ix, row, &pal, density, cx),
+                    None => DataRow::new(Vec::new()),
+                },
+                cx,
+            )
         };
 
         let inner = div()
@@ -1326,9 +1334,11 @@ impl ServerConsoleView {
         let id_col = div()
             .flex()
             .flex_col()
+            .min_w(px(0.0))
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
+                    .truncate()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -1336,6 +1346,7 @@ impl ServerConsoleView {
             )
             .child(
                 div()
+                    .truncate()
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)

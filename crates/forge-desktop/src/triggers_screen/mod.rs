@@ -5,13 +5,14 @@ use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
 use gpui::{
-    App, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString, Subscription,
-    UniformListScrollHandle, Window, div, prelude::*, px,
+    App, Context, Entity, EventEmitter, FocusHandle, Pixels, Point, Rgba, SharedString,
+    Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
 };
 use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 
+use crate::actions::LIST_CONTEXT;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -197,6 +198,11 @@ pub struct TriggersRegistryView {
     instances: Vec<TriggerInstanceRow>,
     visible: Vec<usize>,
     list_scroll: UniformListScrollHandle,
+    list_focus: FocusHandle,
+    focused_once: bool,
+    /// Keyboard highlight cursor; distinct from `selected` so arrow keys move a
+    /// highlight without triggering the async detail load (that is Enter's job).
+    list_cursor: Option<TriggerInstanceId>,
     selected: Option<TriggerInstanceId>,
     detail: Option<TriggerDetail>,
     hovered: Option<TriggerInstanceId>,
@@ -240,6 +246,9 @@ impl TriggersRegistryView {
             instances: Vec::new(),
             visible: Vec::new(),
             list_scroll: UniformListScrollHandle::new(),
+            list_focus: cx.focus_handle(),
+            focused_once: false,
+            list_cursor: preselect,
             selected: preselect,
             detail: None,
             hovered: None,
@@ -381,12 +390,27 @@ impl TriggersRegistryView {
 impl EventEmitter<NavRequested> for TriggersRegistryView {}
 
 impl Render for TriggersRegistryView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
+
+        if !self.focused_once {
+            self.focused_once = true;
+            window.focus(&self.list_focus, cx);
+        }
 
         let header = self.render_header(&palette);
         let filter_bar = self.render_filter_bar(&palette, cx);
-        let list = self.render_list(&palette, cx);
+        let list = div()
+            .track_focus(&self.list_focus)
+            .key_context(LIST_CONTEXT)
+            .on_action(cx.listener(Self::on_list_prev))
+            .on_action(cx.listener(Self::on_list_next))
+            .on_action(cx.listener(Self::on_list_activate))
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h(px(0.0))
+            .child(self.render_list(&palette, cx));
         let detail_pane = self
             .selected
             .map(|id| self.render_detail_sheet(id, &palette, cx));

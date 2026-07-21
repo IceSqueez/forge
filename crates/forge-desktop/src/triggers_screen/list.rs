@@ -1,4 +1,5 @@
 use super::*;
+use crate::actions::{ListActivate, ListSelectNext, ListSelectPrev};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
@@ -10,7 +11,7 @@ use forge_components::{
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
-    Pixels, Point, Rgba, SharedString, Window, div, px, uniform_list,
+    Pixels, Point, Rgba, ScrollStrategy, SharedString, Window, div, px, uniform_list,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -147,8 +148,64 @@ impl TriggersRegistryView {
             self.detail = None;
         }
         self.selected = Some(id);
+        self.list_cursor = Some(id);
         self.load_detail(id, cx);
         cx.notify();
+    }
+
+    pub(super) fn on_list_prev(
+        &mut self,
+        _: &ListSelectPrev,
+        _w: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.move_cursor(-1, cx);
+    }
+
+    pub(super) fn on_list_next(
+        &mut self,
+        _: &ListSelectNext,
+        _w: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.move_cursor(1, cx);
+    }
+
+    pub(super) fn on_list_activate(
+        &mut self,
+        _: &ListActivate,
+        _w: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(id) = self.list_cursor {
+            self.select(id, cx);
+        }
+    }
+
+    fn move_cursor(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.visible.is_empty() {
+            return;
+        }
+        let cur = self
+            .list_cursor
+            .and_then(|id| {
+                self.visible
+                    .iter()
+                    .position(|&idx| self.instances.get(idx).map(|r| r.id) == Some(id))
+            })
+            .unwrap_or(0);
+        let last = self.visible.len() as isize - 1;
+        let next = (cur as isize + delta).clamp(0, last) as usize;
+        if let Some(row) = self
+            .visible
+            .get(next)
+            .and_then(|&idx| self.instances.get(idx))
+        {
+            self.list_cursor = Some(row.id);
+            self.list_scroll
+                .scroll_to_item(next, ScrollStrategy::Nearest);
+            cx.notify();
+        }
     }
 
     fn set_hover(&mut self, id: TriggerInstanceId, hovered: bool, cx: &mut Context<Self>) {
@@ -666,6 +723,7 @@ impl TriggersRegistryView {
     ) -> AnyElement {
         let id = instance.id;
         let selected = self.selected == Some(id);
+        let cursor = self.list_cursor == Some(id);
         let hovered = self.hovered == Some(id);
         let dot_color = platform_dot_color(&instance.kind_id, palette);
         let descriptor = self.registry.get(&instance.kind_id);
@@ -676,12 +734,12 @@ impl TriggersRegistryView {
             .map(|d| d.label().to_owned())
             .unwrap_or_else(|| instance.kind_id.clone());
 
-        let stripe_color = if selected {
+        let stripe_color = if selected || cursor {
             dot_color
         } else {
             gpui::transparent_black().into()
         };
-        let row_bg: Rgba = if selected || hovered {
+        let row_bg: Rgba = if selected || cursor || hovered {
             palette.elevated
         } else {
             gpui::transparent_black().into()
@@ -812,9 +870,12 @@ impl TriggersRegistryView {
                     .child(used),
             );
         if !renaming {
-            select_region = select_region
-                .cursor_pointer()
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
+            select_region = select_region.cursor_pointer().on_click(cx.listener(
+                move |this, _: &ClickEvent, window, cx| {
+                    window.focus(&this.list_focus, cx);
+                    this.select(id, cx);
+                },
+            ));
         }
 
         let on_cell = div().w(COL_ON).flex_none().flex().justify_center().child(

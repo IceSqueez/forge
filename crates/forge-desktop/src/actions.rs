@@ -3,11 +3,22 @@ use std::collections::HashMap;
 use gpui::{App, KeyBinding, Keystroke, actions};
 
 pub const SHELL_CONTEXT: &str = "ForgeShell";
+pub const LIST_CONTEXT: &str = "ForgeList";
 
 actions!(
     forge_shell,
     [GoHome, GoChat, GoActions, GoTriggers, GoTwitch, GoSettings]
 );
+
+actions!(forge_list, [ListSelectPrev, ListSelectNext, ListActivate]);
+
+pub fn bind_list_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("up", ListSelectPrev, Some(LIST_CONTEXT)),
+        KeyBinding::new("down", ListSelectNext, Some(LIST_CONTEXT)),
+        KeyBinding::new("enter", ListActivate, Some(LIST_CONTEXT)),
+    ]);
+}
 
 pub struct ShortcutEntry {
     pub id: &'static str,
@@ -185,5 +196,7 @@ pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
     cx.clear_key_bindings();
     forge_components::bind_text_input_keys(cx);
     forge_components::bind_text_area_keys(cx);
+    forge_components::bind_picker_keys(cx);
+    bind_list_keys(cx);
     bind_shell(cx, overrides);
 }

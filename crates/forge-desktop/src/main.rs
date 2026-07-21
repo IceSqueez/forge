@@ -58,14 +58,14 @@ mod twitch_panel;
 mod uptime_view;
 mod voice_aliases;
 
-use forge_components::{IconAssets, bind_text_area_keys, bind_text_input_keys};
+use forge_components::{IconAssets, bind_picker_keys, bind_text_area_keys, bind_text_input_keys};
 use forge_platform_core::paths;
 use gpui::{
     App, AppContext, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowOptions, point, px,
     size,
 };
 
-use crate::actions::register_shell_key_bindings;
+use crate::actions::{bind_list_keys, register_shell_key_bindings};
 use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 
@@ -143,6 +143,8 @@ fn main() {
 
             bind_text_input_keys(cx);
             bind_text_area_keys(cx);
+            bind_picker_keys(cx);
+            bind_list_keys(cx);
             register_shell_key_bindings(cx);
 
             let options = WindowOptions {

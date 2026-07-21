@@ -9,10 +9,12 @@ use forge_components::{
 };
 use forge_events::EventSource;
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, Entity, Pixels, Rgba, ScrollWheelEvent, Stateful,
-    Subscription, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
+    AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollStrategy,
+    ScrollWheelEvent, Stateful, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
+    uniform_list,
 };
 
+use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
 use crate::event_log::{EventFilter, EventItem, EventLog};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
@@ -65,6 +67,8 @@ pub struct EventFeedView {
     auto_scroll: bool,
     inspector_width: f32,
     list_scroll: UniformListScrollHandle,
+    list_focus: FocusHandle,
+    focused_once: bool,
     rt_handle: tokio::runtime::Handle,
     _log_obs: Subscription,
 }
@@ -124,9 +128,41 @@ impl EventFeedView {
             auto_scroll: true,
             inspector_width: INSPECTOR_INITIAL,
             list_scroll,
+            list_focus: cx.focus_handle(),
+            focused_once: false,
             rt_handle,
             _log_obs: log_obs,
         }
+    }
+
+    fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.visible.is_empty() {
+            return;
+        }
+        let cur = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.visible.iter().position(|i| &i.id == id))
+            .unwrap_or(self.visible.len() - 1);
+        let last = self.visible.len() as isize - 1;
+        let next = (cur as isize + delta).clamp(0, last) as usize;
+        self.selected = Some(self.visible[next].id.clone());
+        self.auto_scroll = false;
+        self.list_scroll
+            .scroll_to_item(next, ScrollStrategy::Nearest);
+        cx.notify();
+    }
+
+    fn on_list_prev(&mut self, _: &ListSelectPrev, _w: &mut Window, cx: &mut Context<Self>) {
+        self.move_selection(-1, cx);
+    }
+
+    fn on_list_next(&mut self, _: &ListSelectNext, _w: &mut Window, cx: &mut Context<Self>) {
+        self.move_selection(1, cx);
+    }
+
+    fn on_list_activate(&mut self, _: &ListActivate, _w: &mut Window, cx: &mut Context<Self>) {
+        self.move_selection(0, cx);
     }
 
     fn on_log_changed(&mut self, _log: Entity<EventLog>, cx: &mut Context<Self>) {
@@ -552,6 +588,11 @@ impl EventFeedView {
 
         div()
             .id("event-feed-scroll")
+            .track_focus(&self.list_focus)
+            .key_context(LIST_CONTEXT)
+            .on_action(cx.listener(Self::on_list_prev))
+            .on_action(cx.listener(Self::on_list_next))
+            .on_action(cx.listener(Self::on_list_activate))
             .flex_1()
             .h_full()
             .flex()
@@ -876,9 +917,14 @@ impl EventFeedView {
 }
 
 impl Render for EventFeedView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
+
+        if !self.focused_once {
+            self.focused_once = true;
+            window.focus(&self.list_focus, cx);
+        }
 
         let selection = self.resolved_selection(cx);
         let selected_id = selection.as_ref().map(|i| i.id.clone());

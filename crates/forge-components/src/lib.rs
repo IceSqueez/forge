@@ -80,7 +80,7 @@ pub use palette::{
     FORGE_DEFAULT, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, platform_color,
     with_alpha,
 };
-pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};
+pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use section_label::section_label;
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};

@@ -1,7 +1,8 @@
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Entity, EventEmitter, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Render, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    IntoElement, KeyBinding, ParentElement, Pixels, Render, ScrollStrategy, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, UniformListScrollHandle, Window, actions,
+    div, px, uniform_list,
 };
 
 use crate::buttons::secondary_button;
@@ -21,6 +22,18 @@ const ICON_TILE_GLYPH: Pixels = px(14.0);
 const LABEL_LINE_GAP: Pixels = px(2.0);
 const ROW_GAP: Pixels = px(10.0);
 const ROW_HOVER_ALPHA: f32 = 0.08;
+const ROW_SELECTED_ALPHA: f32 = 0.14;
+
+pub const PICKER_CONTEXT: &str = "ForgePicker";
+
+actions!(forge_picker, [SelectNext, SelectPrev]);
+
+pub fn bind_picker_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("down", SelectNext, Some(PICKER_CONTEXT)),
+        KeyBinding::new("up", SelectPrev, Some(PICKER_CONTEXT)),
+    ]);
+}
 
 fn pad(s: Spacing) -> Pixels {
     spacing(s, Density::Cozy)
@@ -55,10 +68,12 @@ pub struct Picker {
     /// Indices into `items` that match the current query, in original order.
     filtered: Vec<usize>,
     query: String,
+    /// Highlighted position within `filtered` (not an index into `items`).
+    selected: usize,
     loading: bool,
     labels: PickerLabels,
     palette: ForgePalette,
-    list_scroll: ScrollHandle,
+    list_scroll: UniformListScrollHandle,
     _search_sub: Subscription,
 }
 
@@ -80,10 +95,11 @@ impl Picker {
             items,
             filtered: Vec::new(),
             query: String::new(),
+            selected: 0,
             loading: false,
             labels,
             palette,
-            list_scroll: ScrollHandle::new(),
+            list_scroll: UniformListScrollHandle::new(),
             _search_sub: search_sub,
         };
         this.recompute();
@@ -129,7 +145,7 @@ impl Picker {
                 cx.notify();
             }
             InputEvent::Cancelled => cx.emit(PickerEvent::Cancelled),
-            InputEvent::Submitted(_) => {}
+            InputEvent::Submitted(_) => self.confirm_selected(cx),
         }
     }
 
@@ -142,6 +158,42 @@ impl Picker {
             .filter(|(_, item)| item_matches(&item.label, item.sublabel.as_deref(), &query))
             .map(|(idx, _)| idx)
             .collect();
+        self.selected = 0;
+    }
+
+    fn confirm_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(&idx) = self.filtered.get(self.selected) {
+            let id = self.items[idx].id.clone();
+            self.emit_selected(id, cx);
+        }
+    }
+
+    fn select_next(&mut self, _: &SelectNext, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.filtered.is_empty() {
+            return;
+        }
+        self.selected = if self.selected + 1 >= self.filtered.len() {
+            0
+        } else {
+            self.selected + 1
+        };
+        self.list_scroll
+            .scroll_to_item(self.selected, ScrollStrategy::Nearest);
+        cx.notify();
+    }
+
+    fn select_prev(&mut self, _: &SelectPrev, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.filtered.is_empty() {
+            return;
+        }
+        self.selected = if self.selected == 0 {
+            self.filtered.len() - 1
+        } else {
+            self.selected - 1
+        };
+        self.list_scroll
+            .scroll_to_item(self.selected, ScrollStrategy::Nearest);
+        cx.notify();
     }
 
     fn emit_selected(&mut self, id: SharedString, cx: &mut Context<Self>) {
@@ -152,7 +204,13 @@ impl Picker {
         cx.emit(PickerEvent::Cancelled);
     }
 
-    fn render_item(&self, idx: usize, item: &PickerItem, cx: &mut Context<Self>) -> AnyElement {
+    fn render_item(
+        &self,
+        idx: usize,
+        item: &PickerItem,
+        is_selected: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let p = self.palette;
         let id = item.id.clone();
 
@@ -166,8 +224,9 @@ impl Picker {
             .bg(p.surface_overlay)
             .child(icon(item.icon, ICON_TILE_GLYPH, p.text_secondary));
 
-        let mut labels = div().flex().flex_col().gap(LABEL_LINE_GAP).child(
+        let mut labels = div().flex().flex_col().min_w_0().gap(LABEL_LINE_GAP).child(
             div()
+                .truncate()
                 .font_family(DEFAULT_BODY_FAMILY)
                 .text_size(FONT_SM)
                 .text_color(p.text_primary)
@@ -176,6 +235,7 @@ impl Picker {
         if let Some(sub) = item.sublabel.clone() {
             labels = labels.child(
                 div()
+                    .truncate()
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_SM)
                     .text_color(p.text_muted)
@@ -185,7 +245,7 @@ impl Picker {
 
         let hover_bg = with_alpha(p.brand, ROW_HOVER_ALPHA);
 
-        div()
+        let mut row = div()
             .id(("forge-picker-row", idx))
             .w_full()
             .flex()
@@ -202,8 +262,11 @@ impl Picker {
                 this.emit_selected(id.clone(), cx);
             }))
             .child(tile)
-            .child(div().flex_1().child(labels))
-            .into_any_element()
+            .child(div().flex_1().min_w_0().overflow_hidden().child(labels));
+        if is_selected {
+            row = row.bg(with_alpha(p.brand, ROW_SELECTED_ALPHA));
+        }
+        row.into_any_element()
     }
 }
 
@@ -264,17 +327,25 @@ impl Render for Picker {
         } else if self.filtered.is_empty() {
             centered_message(self.labels.empty.clone(), EMPTY_HEIGHT, p)
         } else {
-            let mut list = div().flex().flex_col();
-            for &idx in &self.filtered {
-                list = list.child(self.render_item(idx, &self.items[idx], cx));
-            }
-            div()
-                .id("forge-picker-list")
-                .track_scroll(&self.list_scroll)
-                .overflow_y_scroll()
-                .h(LIST_HEIGHT)
-                .child(list)
-                .into_any_element()
+            let count = self.filtered.len();
+            uniform_list(
+                "forge-picker-list",
+                count,
+                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                    let mut rows = Vec::with_capacity(range.len());
+                    for pos in range {
+                        let Some(&idx) = this.filtered.get(pos) else {
+                            continue;
+                        };
+                        let item = this.items[idx].clone();
+                        rows.push(this.render_item(idx, &item, pos == this.selected, cx));
+                    }
+                    rows
+                }),
+            )
+            .track_scroll(&self.list_scroll)
+            .h(LIST_HEIGHT)
+            .into_any_element()
         };
 
         let footer = div()
@@ -292,6 +363,9 @@ impl Render for Picker {
             );
 
         div()
+            .key_context(PICKER_CONTEXT)
+            .on_action(cx.listener(Self::select_next))
+            .on_action(cx.listener(Self::select_prev))
             .flex()
             .flex_col()
             .w(CARD_WIDTH)

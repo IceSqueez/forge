@@ -7,9 +7,9 @@ use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
-    TextInput, breadcrumb, chip, confirm_modal, ghost_button_with_icon, icon, modal, overlay,
-    primary_button, radius, search_input, secondary_button, slider, spacing, status_dot, toggle,
-    tr, with_alpha,
+    TextInput, breadcrumb, chip, confirm_modal, fmt_bytes, fmt_clock, ghost_button_with_icon, icon,
+    modal, overlay, primary_button, radius, search_input, secondary_button, slider, spacing,
+    status_dot, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::EventBus;
@@ -1603,7 +1603,7 @@ impl SoundboardView {
         let category_count = self.categories_present().len();
         let size_label = self
             .total_size
-            .map(humanize_bytes)
+            .map(fmt_bytes)
             .unwrap_or_else(|| "\u{2014}".to_owned());
         let ready = self.output_ready();
         let (dot, status_text) = if ready {
@@ -2047,19 +2047,7 @@ fn stored_to_clip(c: StoredClip) -> SoundClip {
 
 fn duration_label(secs: Option<f32>) -> String {
     match secs {
-        Some(s) => {
-            let total = s.max(0.0).round() as u64;
-            format!("{}:{:02}", total / 60, total % 60)
-        }
+        Some(s) => fmt_clock(s.max(0.0).round() as u64),
         None => "\u{2014}".to_owned(),
-    }
-}
-
-fn humanize_bytes(bytes: u64) -> String {
-    let mb = bytes as f64 / (1024.0 * 1024.0);
-    if mb >= 0.1 {
-        format!("{mb:.1} MB")
-    } else {
-        format!("{:.0} KB", bytes as f64 / 1024.0)
     }
 }

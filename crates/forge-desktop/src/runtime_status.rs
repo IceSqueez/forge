@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use forge_components::fmt_uptime;
+
 pub struct RuntimeStatus {
     started_at: Instant,
     uptime_secs: u64,
@@ -19,16 +21,6 @@ impl RuntimeStatus {
     }
 
     pub fn uptime_human(&self) -> String {
-        let secs = self.uptime_secs;
-        let hours = secs / 3600;
-        let minutes = (secs % 3600) / 60;
-        let seconds = secs % 60;
-        if hours > 0 {
-            format!("{hours}h {minutes}m")
-        } else if minutes > 0 {
-            format!("{minutes}m {seconds}s")
-        } else {
-            format!("{seconds}s")
-        }
+        fmt_uptime(self.uptime_secs)
     }
 }

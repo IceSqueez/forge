@@ -110,6 +110,55 @@ pub fn fmt_relative_time(opt: Option<OffsetDateTime>) -> String {
     }
 }
 
+pub fn fmt_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1_024;
+    const MIB: u64 = 1_048_576;
+    const GIB: u64 = 1_073_741_824;
+    if bytes < KIB {
+        format!("{} B", fmt_number(bytes as f64, 0))
+    } else if bytes < MIB {
+        format!("{} KB", fmt_number(bytes as f64 / KIB as f64, 1))
+    } else if bytes < GIB {
+        format!("{} MB", fmt_number(bytes as f64 / MIB as f64, 1))
+    } else {
+        format!("{} GB", fmt_number(bytes as f64 / GIB as f64, 2))
+    }
+}
+
+pub fn fmt_clock(secs: u64) -> String {
+    let hours = secs / 3_600;
+    let minutes = (secs % 3_600) / 60;
+    let seconds = secs % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
+}
+
+pub fn fmt_uptime(secs: u64) -> String {
+    let hours = secs / 3_600;
+    let minutes = (secs % 3_600) / 60;
+    let seconds = secs % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+pub fn fmt_uptime_short(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3_600 {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{}h", secs / 3_600)
+    }
+}
+
 fn group_integer(n: u64, sep: &str) -> String {
     let s = n.to_string();
     let mut out = String::with_capacity(s.len() + s.len() / 3);

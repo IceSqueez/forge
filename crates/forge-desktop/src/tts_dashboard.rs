@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange,
-    Spacing, TextInput, badge, confirm_modal, icon, install_resize, overlay, radius, slider,
-    spacing, status_dot, tooltip_builder, tr,
+    Spacing, TextInput, badge, confirm_modal, fmt_clock, icon, install_resize, overlay, radius,
+    slider, spacing, status_dot, tooltip_builder, tr,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -736,7 +736,7 @@ impl TtsDashboardView {
             .font_family(DEFAULT_MONO_FAMILY)
             .text_size(QUEUE_DUR_FONT)
             .text_color(palette.text_faint)
-            .child(format!("~{}", fmt_clock(item.duration_secs)));
+            .child(format!("~{}", fmt_clock(u64::from(item.duration_secs))));
 
         let play_id = item.request_id.clone();
         let play_btn = div()
@@ -870,10 +870,6 @@ fn eq_bars(animate: bool, color: Rgba) -> impl IntoElement {
     bars
 }
 
-fn fmt_clock(secs: u32) -> String {
-    format!("{}:{:02}", secs / 60, secs % 60)
-}
-
 fn resolve_now_voice(engine_id: &str, voice_id: &str, voices: &[TtsVoice]) -> Option<SharedString> {
     if engine_id.is_empty() && voice_id.is_empty() {
         return None;
@@ -972,7 +968,7 @@ fn now_speaking_panel(
                         .font_family(DEFAULT_MONO_FAMILY)
                         .text_size(PROGRESS_FONT)
                         .text_color(palette.text_muted)
-                        .child(fmt_clock(ns.elapsed_secs)),
+                        .child(fmt_clock(u64::from(ns.elapsed_secs))),
                 )
                 .child(
                     div()
@@ -993,7 +989,7 @@ fn now_speaking_panel(
                         .font_family(DEFAULT_MONO_FAMILY)
                         .text_size(PROGRESS_FONT)
                         .text_color(palette.text_muted)
-                        .child(fmt_clock(ns.total_secs)),
+                        .child(fmt_clock(u64::from(ns.total_secs))),
                 );
 
             let info = div()

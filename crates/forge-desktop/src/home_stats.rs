@@ -1,4 +1,4 @@
-use forge_components::ForgePalette;
+use forge_components::{ForgePalette, fmt_number};
 use forge_events::{Event, EventSource};
 use forge_platform_core::BuiltinId;
 use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
@@ -218,7 +218,7 @@ impl HomeStats {
 
     pub fn viewers_display(&self) -> String {
         self.live_viewers
-            .map_or_else(|| NO_DATA.to_owned(), fmt_thousands)
+            .map_or_else(|| NO_DATA.to_owned(), |n| fmt_number(n as f64, 0))
     }
 
     pub fn actions_display(&self) -> String {
@@ -233,7 +233,7 @@ impl HomeStats {
 
     pub fn triggers_fired_display(&self) -> String {
         self.triggers_fired
-            .map_or_else(|| NO_DATA.to_owned(), fmt_thousands)
+            .map_or_else(|| NO_DATA.to_owned(), |n| fmt_number(n as f64, 0))
     }
 
     pub fn globals_display(&self) -> String {
@@ -295,17 +295,4 @@ fn source_label(source: EventSource) -> &'static str {
         EventSource::Server => "server",
         EventSource::Audio => "audio",
     }
-}
-
-fn fmt_thousands(n: u64) -> String {
-    let digits = n.to_string();
-    let len = digits.len();
-    let mut out = String::with_capacity(len + len / 3);
-    for (i, ch) in digits.chars().enumerate() {
-        if i > 0 && (len - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(ch);
-    }
-    out
 }

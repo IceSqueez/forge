@@ -988,17 +988,3 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
         }
     }
 }
-
-pub fn format_uptime(d: std::time::Duration) -> String {
-    let total = d.as_secs();
-    let hours = total / 3600;
-    let minutes = (total % 3600) / 60;
-    let secs = total % 60;
-    if hours > 0 {
-        format!("{hours}h {minutes}m")
-    } else if minutes > 0 {
-        format!("{minutes}m {secs}s")
-    } else {
-        format!("{secs}s")
-    }
-}

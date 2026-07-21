@@ -2,8 +2,8 @@ use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, badge, breadcrumb, card,
-    confirm_modal, icon, metric_card, overlay, radius, spacing, sparkline, status_dot, tr,
-    with_alpha,
+    confirm_modal, fmt_bytes, fmt_uptime, fmt_uptime_short, icon, metric_card, overlay, radius,
+    spacing, sparkline, status_dot, tr, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -550,7 +550,7 @@ impl ServerConsoleView {
         let uptime_str = if self.uptime_seconds > 0 {
             tr!(
                 "server_up_prefix",
-                uptime = format_server_uptime(self.uptime_seconds)
+                uptime = fmt_uptime(self.uptime_seconds.max(0) as u64)
             )
         } else {
             tr!("server_not_running")
@@ -1088,7 +1088,7 @@ impl ServerConsoleView {
             OwnedOverlayKind::Dir => {
                 tr!("server_overlay_dir_items", count = entry.child_count as i64)
             }
-            OwnedOverlayKind::File { .. } => format_bytes(entry.size_bytes),
+            OwnedOverlayKind::File { .. } => fmt_bytes(entry.size_bytes),
         };
         let kind_color = match entry.kind {
             OwnedOverlayKind::File {
@@ -1424,7 +1424,7 @@ impl ServerConsoleView {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "server_footer_totals",
-                        sent = format_bytes(self.stats.total_bytes_sent),
+                        sent = fmt_bytes(self.stats.total_bytes_sent),
                         events = self.stats.total_events_out as i64
                     )),
             )
@@ -1671,28 +1671,6 @@ fn status_label(status: &ServerStatus) -> String {
     }
 }
 
-fn format_server_uptime(seconds: i64) -> String {
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else if seconds < 3_600 {
-        format!("{}m {}s", seconds / 60, seconds % 60)
-    } else {
-        format!("{}h {}m", seconds / 3_600, (seconds % 3_600) / 60)
-    }
-}
-
-fn format_bytes(bytes: u64) -> String {
-    if bytes < 1_024 {
-        format!("{bytes} B")
-    } else if bytes < 1_048_576 {
-        format!("{:.1} KB", bytes as f64 / 1_024.0)
-    } else if bytes < 1_073_741_824 {
-        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
-    } else {
-        format!("{:.2} GB", bytes as f64 / 1_073_741_824.0)
-    }
-}
-
 fn extract_port(bind_address: &str) -> &str {
     bind_address.split(':').next_back().unwrap_or("8081")
 }
@@ -1841,7 +1819,7 @@ fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow 
         liveness,
         subscriptions: client.subscriptions.iter().map(subscription_chip).collect(),
         events_per_second: client.events_per_second,
-        uptime_short: format_short_duration_secs(client.uptime_seconds),
+        uptime_short: fmt_uptime_short(client.uptime_seconds.max(0) as u64),
     }
 }
 
@@ -1879,17 +1857,6 @@ fn event_source_label(source: EventSource) -> &'static str {
         EventSource::Timer => "timer",
         EventSource::Server => "server",
         EventSource::Audio => "audio",
-    }
-}
-
-fn format_short_duration_secs(seconds: i64) -> String {
-    let seconds = seconds.max(0);
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else if seconds < 3_600 {
-        format!("{}m", seconds / 60)
-    } else {
-        format!("{}h", seconds / 3_600)
     }
 }
 

@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    Icon, Radius, Spacing, icon, radius, spacing, tr, with_alpha,
+    Icon, Radius, Spacing, fmt_clock, icon, radius, spacing, tr, with_alpha,
 };
 use forge_platform_twitch::{
     TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, TwitchIntegrationBundle, UserInfo,
@@ -607,7 +607,7 @@ impl IntegrationDetail {
                     .font_family(DEFAULT_MONO_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
-                    .child(format_mm_ss(remaining)),
+                    .child(fmt_clock(remaining.as_secs())),
             )
             .child(
                 div()
@@ -895,9 +895,4 @@ fn twitch_scope_pill(scope: &str, palette: &ForgePalette, density: Density) -> i
                 .text_color(palette.success)
                 .child(scope.to_owned()),
         )
-}
-
-fn format_mm_ss(d: Duration) -> String {
-    let secs = d.as_secs();
-    format!("{}:{:02}", secs / 60, secs % 60)
 }

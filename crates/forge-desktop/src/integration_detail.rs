@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
-    PickerItem, PickerLabels, Radius, Spacing, ToastKind, breadcrumb, confirm_modal, icon, overlay,
-    radius, spacing, tr, with_alpha,
+    PickerItem, PickerLabels, Radius, Spacing, ToastKind, breadcrumb, confirm_modal, fmt_uptime,
+    icon, overlay, radius, spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::builtin_sections::{content_sections, format_uptime, health_grid};
+use crate::builtin_sections::{content_sections, health_grid};
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
@@ -1043,9 +1043,9 @@ fn pill(label: String, text_color: Rgba, palette: &ForgePalette) -> impl IntoEle
 
 fn sub_line(endpoint: Option<&str>, uptime: Option<Duration>) -> String {
     match (endpoint, uptime) {
-        (Some(ep), Some(d)) => format!("{ep} \u{00b7} up {}", format_uptime(d)),
+        (Some(ep), Some(d)) => format!("{ep} \u{00b7} up {}", fmt_uptime(d.as_secs())),
         (Some(ep), None) => ep.to_owned(),
-        (None, Some(d)) => format!("up {}", format_uptime(d)),
+        (None, Some(d)) => format!("up {}", fmt_uptime(d.as_secs())),
         (None, None) => String::new(),
     }
 }

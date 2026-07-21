@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use forge_components::{BadgeKind, ForgePalette};
+use forge_components::{BadgeKind, ForgePalette, fmt_relative_time};
 use forge_storage::Viewer;
 use gpui::Rgba;
 use time::OffsetDateTime;
@@ -83,7 +83,7 @@ pub(crate) fn synthesize_from_chat(
         username: username.to_owned(),
         role,
         message_count: count as u64,
-        last_seen_label: relative_since(last.received_at),
+        last_seen_label: fmt_relative_time(Some(last.received_at)),
         avatar_letter,
         avatar_color: viewer_hash_color(username, palette),
         watch_time: DASH.to_owned(),
@@ -95,7 +95,7 @@ pub(crate) fn synthesize_from_chat(
 pub(crate) fn enrich_with_storage(mut summary: ViewerSummary, viewers: &[Viewer]) -> ViewerSummary {
     if let Some(v) = viewers.iter().find(|v| v.username == summary.username) {
         summary.message_count = v.message_count;
-        summary.last_seen_label = relative_since(v.last_seen_at);
+        summary.last_seen_label = fmt_relative_time(Some(v.last_seen_at));
         summary.watch_time = watch_time_since(v.first_seen_at);
     }
     summary
@@ -134,21 +134,6 @@ pub(crate) fn viewer_hash_color(username: &str, palette: &ForgePalette) -> Rgba 
     ][idx]
 }
 
-pub(crate) fn relative_since(dt: OffsetDateTime) -> String {
-    let secs = (OffsetDateTime::now_utc() - dt).whole_seconds().max(0);
-    if secs < 5 {
-        "now".to_owned()
-    } else if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{} min", secs / 60)
-    } else if secs < 86_400 {
-        format!("{}h", secs / 3600)
-    } else {
-        format!("{}d", secs / 86_400)
-    }
-}
-
 fn watch_time_since(first_seen: OffsetDateTime) -> String {
     let mins = (OffsetDateTime::now_utc() - first_seen)
         .whole_minutes()
@@ -168,8 +153,8 @@ mod tests {
     use time::{Duration, OffsetDateTime};
 
     use super::{
-        DASH, SubStatus, drawer_matches, enrich_with_storage, relative_since, selected_summary,
-        sub_status, synthesize_from_chat, unique_authors, watch_time_since,
+        DASH, SubStatus, drawer_matches, enrich_with_storage, selected_summary, sub_status,
+        synthesize_from_chat, unique_authors, watch_time_since,
     };
     use crate::chat_feed::ChatMessage;
 
@@ -287,7 +272,7 @@ mod tests {
 
         assert_eq!(enriched.message_count, 99);
         assert_eq!(enriched.watch_time, "2h 0m");
-        assert_eq!(enriched.last_seen_label, "2d");
+        assert_eq!(enriched.last_seen_label, "fmt_relative_days");
         assert_eq!(enriched.role, Some(BadgeKind::Subscriber));
         assert!(enriched.sub == SubStatus::Subscribed);
     }
@@ -302,7 +287,7 @@ mod tests {
 
         assert_eq!(enriched.message_count, 1);
         assert_eq!(enriched.watch_time, DASH);
-        assert_eq!(enriched.last_seen_label, "now");
+        assert_eq!(enriched.last_seen_label, "fmt_relative_seconds");
     }
 
     #[test]
@@ -351,31 +336,6 @@ mod tests {
     #[test]
     fn selected_summary_is_none_without_any_authored_message() {
         assert!(selected_summary(None, &[], &[], &CATPPUCCIN_MOCHA).is_none());
-    }
-
-    #[test]
-    fn relative_since_labels_each_bucket() {
-        let now = OffsetDateTime::now_utc();
-        let cases = [
-            (3, "now"),
-            (30, "30s"),
-            (120, "2 min"),
-            (7200, "2h"),
-            (2 * 86_400, "2d"),
-        ];
-        for (secs_ago, expected) in cases {
-            assert_eq!(
-                relative_since(now - Duration::seconds(secs_ago)),
-                expected,
-                "secs_ago={secs_ago}"
-            );
-        }
-    }
-
-    #[test]
-    fn relative_since_clamps_future_timestamps_to_now() {
-        let future = OffsetDateTime::now_utc() + Duration::seconds(120);
-        assert_eq!(relative_since(future), "now");
     }
 
     #[test]

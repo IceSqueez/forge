@@ -55,8 +55,8 @@ pub use icons::{Icon, IconAssets, icon, icon_inherit, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
 pub use locale::{
-    ArgsBuilder, fmt_feed_time, fmt_number, fmt_relative_time, fmt_short_date, install_bundle,
-    set_locale_id, tr_lookup,
+    ArgsBuilder, fmt_bytes, fmt_clock, fmt_feed_time, fmt_number, fmt_relative_time,
+    fmt_short_date, fmt_uptime, fmt_uptime_short, install_bundle, set_locale_id, tr_lookup,
 };
 pub use menu::{
     ContextMenu, MenuButton, MenuEntry, MenuItem, MenuPlacement, actionable_count, context_menu,

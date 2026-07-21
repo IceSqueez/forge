@@ -66,19 +66,6 @@ pub struct SoundboardPlayer {
 }
 
 impl SoundboardPlayer {
-    pub fn new(
-        sink_factory: Arc<dyn AudioSinkFactory>,
-        event_sink: Arc<dyn AudioEventSink>,
-        clips_repo: Arc<dyn SoundboardClipsRepo>,
-    ) -> Self {
-        Self::with_settings(
-            sink_factory,
-            event_sink,
-            clips_repo,
-            SoundboardSettingsHandle::default(),
-        )
-    }
-
     pub fn with_settings(
         sink_factory: Arc<dyn AudioSinkFactory>,
         event_sink: Arc<dyn AudioEventSink>,
@@ -645,10 +632,11 @@ mod tests {
         let (factory, _count, last_buf) = CountingFactory::new();
         let (event_sink, _events) = RecordingEventSink::new();
         let clips_repo = MockClipsRepo { clip: Some(clip) };
-        let player = SoundboardPlayer::new(
+        let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
             Arc::new(clips_repo),
+            SoundboardSettingsHandle::default(),
         );
 
         if let Some(gain) = master_gain {
@@ -689,10 +677,11 @@ mod tests {
         let (event_sink, events) = RecordingEventSink::new();
         let clips_repo = MockClipsRepo { clip: Some(clip) };
 
-        let player = SoundboardPlayer::new(
+        let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
             Arc::new(clips_repo),
+            SoundboardSettingsHandle::default(),
         );
 
         player.play(clip_id, None).await.unwrap();
@@ -792,10 +781,11 @@ mod tests {
     async fn stop_on_idle_player_succeeds_without_effect() {
         let (factory, _count, _buf) = CountingFactory::new();
         let (event_sink, _events) = RecordingEventSink::new();
-        let player = SoundboardPlayer::new(
+        let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
             Arc::new(MockClipsRepo { clip: None }),
+            SoundboardSettingsHandle::default(),
         );
 
         assert!(SoundPlayer::stop(&player, ClipId::new()).await.is_ok());
@@ -809,10 +799,11 @@ mod tests {
         let (event_sink, events) = RecordingEventSink::new();
         let clips_repo = MockClipsRepo { clip: None };
 
-        let player = SoundboardPlayer::new(
+        let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
             Arc::new(clips_repo),
+            SoundboardSettingsHandle::default(),
         );
 
         let err = player.play(clip_id, None).await.unwrap_err();
@@ -851,12 +842,13 @@ mod tests {
 
         let (event_sink, _events) = RecordingEventSink::new();
         let clips_repo = MockClipsRepo { clip: Some(clip) };
-        let player = SoundboardPlayer::new(
+        let player = SoundboardPlayer::with_settings(
             Arc::new(DeviceCapturingFactory {
                 captured: received_device_clone,
             }),
             Arc::new(event_sink),
             Arc::new(clips_repo),
+            SoundboardSettingsHandle::default(),
         );
 
         let override_dev = OutputDevice::ByName {

@@ -275,14 +275,6 @@ pub struct CapabilityFlags {
     pub label: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BadgeTone {
-    Neutral,
-    Positive,
-    Warning,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HeaderAction {

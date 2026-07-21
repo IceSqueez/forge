@@ -20,8 +20,6 @@ pub(crate) type HealthTx = broadcast::Sender<forge_platform_core::HealthDelta>;
 
 pub struct DiscordClient {
     pub(crate) id: BuiltinId,
-    #[allow(dead_code)]
-    pub(crate) config: DiscordConfig,
     pub(crate) publisher: Arc<dyn EventPublisher>,
     pub(crate) creds: Arc<dyn CredentialsRepo>,
     pub(crate) http: reqwest::Client,
@@ -48,7 +46,6 @@ impl DiscordClient {
 
         let client = Arc::new(Self {
             id: BuiltinId::new("discord"),
-            config,
             publisher,
             creds,
             http,
@@ -655,7 +652,6 @@ impl DiscordClient {
         let http = reqwest::Client::new();
         Arc::new(Self {
             id: BuiltinId::new("discord"),
-            config: DiscordConfig::default(),
             publisher: Arc::new(NoopPublisher),
             creds: Arc::new(EmptyCreds),
             http,
@@ -1201,7 +1197,6 @@ pub(crate) mod tests {
         let publisher = MockPublisher::new();
         let config = DiscordConfig {
             request_timeout: Duration::from_millis(500),
-            ..DiscordConfig::default()
         };
         let client = DiscordClient::new(config, publisher.publisher(), creds.creds());
         let result = client.post_text("test-webhook", "hi").await;

@@ -95,17 +95,6 @@ pub struct UnifiedChatRow {
 }
 
 impl UnifiedChatRow {
-    /// Concatenates only `Text` segments; used for case-insensitive search filtering.
-    pub fn body_text(&self) -> String {
-        self.body_segments
-            .iter()
-            .filter_map(|s| match s {
-                ChatSegment::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect()
-    }
-
     /// Concatenates `Text` and `Mention` segments (as `@username`) for message rendering.
     pub fn display_text(&self) -> String {
         let mut out = String::new();
@@ -284,30 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn body_text_concats_text_segments_only() {
-        let row = make_row(vec![
-            ChatSegment::Text {
-                text: "hello ".to_string(),
-            },
-            ChatSegment::Emote {
-                id: "1".to_string(),
-                name: "KEKW".to_string(),
-            },
-            ChatSegment::Text {
-                text: "world".to_string(),
-            },
-            ChatSegment::Mention {
-                username: "foo".to_string(),
-            },
-        ]);
-        assert_eq!(row.body_text(), "hello world");
-    }
-
-    #[test]
-    fn display_text_renders_mentions_and_diverges_from_body_text() {
-        // Contract: display_text keeps Text verbatim, renders Mention as
-        // "@username", and drops Emote/Link. This is where mentions surface -
-        // body_text deliberately omits them. The mixed case pins that divergence.
+    fn display_text_renders_mentions() {
         let cases = [
             (
                 vec![
@@ -343,32 +309,6 @@ mod tests {
             let row = make_row(segments);
             assert_eq!(row.display_text(), expected);
         }
-
-        // Same input, the two accessors diverge on the mention.
-        let mixed = make_row(vec![
-            ChatSegment::Text {
-                text: "ping ".to_string(),
-            },
-            ChatSegment::Mention {
-                username: "bar".to_string(),
-            },
-        ]);
-        assert_eq!(mixed.display_text(), "ping @bar");
-        assert_eq!(mixed.body_text(), "ping ");
-    }
-
-    #[test]
-    fn body_text_empty_when_no_text_segments() {
-        let row = make_row(vec![
-            ChatSegment::Emote {
-                id: "1".to_string(),
-                name: "PogChamp".to_string(),
-            },
-            ChatSegment::Mention {
-                username: "bar".to_string(),
-            },
-        ]);
-        assert_eq!(row.body_text(), "");
     }
 
     #[test]

@@ -23,16 +23,8 @@ fn app_segment() -> &'static str {
     APP_DIR_NAME
 }
 
-pub fn config_dir() -> PathBuf {
-    base_dirs().config_dir().join(app_segment())
-}
-
 pub fn data_dir() -> PathBuf {
     base_dirs().data_dir().join(app_segment())
-}
-
-pub fn cache_dir() -> PathBuf {
-    base_dirs().cache_dir().join(app_segment())
 }
 
 #[cfg(test)]
@@ -41,11 +33,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_three_dirs_end_with_app_segment() {
-        for path in [data_dir(), config_dir(), cache_dir()] {
-            let last = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            assert_eq!(last, app_segment());
-        }
+    fn data_dir_ends_with_app_segment() {
+        let path = data_dir();
+        let last = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        assert_eq!(last, app_segment());
     }
 
     #[cfg(target_os = "linux")]

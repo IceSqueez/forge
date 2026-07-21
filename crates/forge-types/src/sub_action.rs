@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub type VariantTemplate = String;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogLevel {
     Trace,

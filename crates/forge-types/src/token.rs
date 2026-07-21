@@ -28,7 +28,6 @@ macro_rules! define_redacted_token {
 
 define_redacted_token!(OAuthToken);
 define_redacted_token!(RefreshToken);
-define_redacted_token!(ApiKey);
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -48,14 +47,6 @@ mod tests {
         let tok = RefreshToken::new("another_secret");
         let dbg = format!("{tok:?}");
         assert!(!dbg.contains("another_secret"));
-        assert!(dbg.contains("<redacted>"));
-    }
-
-    #[test]
-    fn api_key_debug_is_redacted() {
-        let key = ApiKey::new("sk-live-abc123");
-        let dbg = format!("{key:?}");
-        assert!(!dbg.contains("sk-live-abc123"));
         assert!(dbg.contains("<redacted>"));
     }
 

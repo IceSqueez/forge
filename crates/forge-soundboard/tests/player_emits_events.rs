@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink, PcmBuffer};
-use forge_soundboard::{AudioSinkFactory, SoundboardPlayer};
+use forge_soundboard::{AudioSinkFactory, SoundboardPlayer, SoundboardSettingsHandle};
 use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
@@ -141,10 +141,11 @@ async fn play_emits_playback_started_then_finished_in_order() {
     let clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
 
     let (event_sink, events) = RecordingEventSink::new();
-    let player = SoundboardPlayer::new(
+    let player = SoundboardPlayer::with_settings(
         Arc::new(NullFactory),
         Arc::new(event_sink),
         Arc::new(MockClipsRepo { clip: Some(clip) }),
+        SoundboardSettingsHandle::default(),
     );
 
     player.play(clip_id, None).await.unwrap();
@@ -192,12 +193,13 @@ async fn play_with_device_override_routes_to_specified_device() {
     }
 
     let (event_sink, _events) = RecordingEventSink::new();
-    let player = SoundboardPlayer::new(
+    let player = SoundboardPlayer::with_settings(
         Arc::new(CapturingFactory {
             captured: captured_clone,
         }),
         Arc::new(event_sink),
         Arc::new(MockClipsRepo { clip: Some(clip) }),
+        SoundboardSettingsHandle::default(),
     );
 
     let override_dev = OutputDevice::ByName {
@@ -216,10 +218,11 @@ async fn play_with_device_override_routes_to_specified_device() {
 async fn play_unknown_clip_emits_no_events_and_returns_err() {
     let clip_id = ClipId::new();
     let (event_sink, events) = RecordingEventSink::new();
-    let player = SoundboardPlayer::new(
+    let player = SoundboardPlayer::with_settings(
         Arc::new(NullFactory),
         Arc::new(event_sink),
         Arc::new(MockClipsRepo { clip: None }),
+        SoundboardSettingsHandle::default(),
     );
 
     let result = player.play(clip_id, None).await;

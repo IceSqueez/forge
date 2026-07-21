@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc;
 
@@ -10,7 +10,7 @@ use crate::config::MidiConfig;
 use crate::content::{MidiContentSnapshot, make_content_state};
 use crate::decode::message_to_bytes;
 use crate::error::MidiError;
-use crate::events::{MidiOutMessage, MidiPortInfo};
+use crate::events::MidiOutMessage;
 use crate::health::{HealthTx, MidiHealthSnapshot, make_health_state};
 use crate::supervisor::run_supervisor;
 
@@ -19,8 +19,6 @@ pub struct MidiClient {
     pub(crate) config: MidiConfig,
     pub(crate) backend: Arc<dyn MidiBackend>,
     pub(crate) publisher: Arc<dyn EventPublisher>,
-    pub(crate) input_ports: RwLock<Vec<MidiPortInfo>>,
-    pub(crate) output_ports: RwLock<Vec<MidiPortInfo>>,
     pub(crate) health_state: Arc<Mutex<MidiHealthSnapshot>>,
     pub(crate) health_tx: HealthTx,
     pub(crate) content_state: Arc<Mutex<MidiContentSnapshot>>,
@@ -40,8 +38,6 @@ impl MidiClient {
             config,
             backend,
             publisher,
-            input_ports: RwLock::new(Vec::new()),
-            output_ports: RwLock::new(Vec::new()),
             health_state,
             health_tx,
             content_state,
@@ -73,20 +69,6 @@ impl MidiClient {
         self.backend.send_output(port_name, &bytes)
     }
 
-    pub fn input_ports(&self) -> Vec<MidiPortInfo> {
-        self.input_ports
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
-    }
-
-    pub fn output_ports(&self) -> Vec<MidiPortInfo> {
-        self.output_ports
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
-    }
-
     #[cfg(test)]
     pub(crate) fn new_for_test() -> Arc<Self> {
         use crate::backend::tests::MockMidiBackend;
@@ -103,8 +85,6 @@ impl MidiClient {
             config: MidiConfig::default(),
             backend,
             publisher: Arc::new(NoopPublisher),
-            input_ports: RwLock::new(Vec::new()),
-            output_ports: RwLock::new(Vec::new()),
             health_state,
             health_tx,
             content_state: make_content_state(),

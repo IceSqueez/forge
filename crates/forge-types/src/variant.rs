@@ -132,9 +132,6 @@ pub enum VariantError {
     #[error("invalid float: {reason}")]
     InvalidFloat { reason: &'static str },
 
-    #[error("datetime parse failed: {0}")]
-    DatetimeParse(#[from] time::error::Parse),
-
     #[error("JSON conversion failed: {0}")]
     JsonConversion(std::string::String),
 
@@ -215,24 +212,8 @@ impl Variant {
         }
     }
 
-    pub fn is_int(&self) -> bool {
-        matches!(self, Self::Int(_))
-    }
-
-    pub fn is_float(&self) -> bool {
-        matches!(self, Self::Float(_))
-    }
-
-    pub fn is_bool(&self) -> bool {
-        matches!(self, Self::Bool(_))
-    }
-
     pub fn is_string(&self) -> bool {
         matches!(self, Self::String(_))
-    }
-
-    pub fn is_datetime(&self) -> bool {
-        matches!(self, Self::Datetime(_))
     }
 
     pub fn is_array(&self) -> bool {
@@ -296,76 +277,6 @@ impl Variant {
             Some(v)
         } else {
             None
-        }
-    }
-
-    pub fn into_int(self) -> Result<i64, VariantError> {
-        match self {
-            Self::Int(v) => Ok(v),
-            other => Err(VariantError::TypeMismatch {
-                expected: VariantType::Int,
-                actual: other.type_tag(),
-            }),
-        }
-    }
-
-    pub fn into_float(self) -> Result<f64, VariantError> {
-        match self {
-            Self::Float(v) => Ok(v),
-            other => Err(VariantError::TypeMismatch {
-                expected: VariantType::Float,
-                actual: other.type_tag(),
-            }),
-        }
-    }
-
-    pub fn into_bool(self) -> Result<bool, VariantError> {
-        match self {
-            Self::Bool(v) => Ok(v),
-            other => Err(VariantError::TypeMismatch {
-                expected: VariantType::Bool,
-                actual: other.type_tag(),
-            }),
-        }
-    }
-
-    pub fn into_string(self) -> Result<std::string::String, VariantError> {
-        match self {
-            Self::String(v) => Ok(v),
-            other => Err(VariantError::TypeMismatch {
-                expected: VariantType::String,
-                actual: other.type_tag(),
-            }),
-        }
-    }
-
-    pub fn into_datetime(self) -> Result<time::OffsetDateTime, VariantError> {
-        match self {
-            Self::Datetime(v) => Ok(v),
-            other => Err(VariantError::TypeMismatch {
-                expected: VariantType::Datetime,
-                actual: other.type_tag(),
-            }),
-        }
-    }
-
-    pub fn into_array(self) -> Result<Vec<Variant>, VariantError> {
-        match self {
-            Self::Array(v) => Ok(v),
-            other => Err(VariantError::TypeMismatch {
-                expected: VariantType::Array,
-                actual: other.type_tag(),
-            }),
-        }
-    }
-
-    pub fn into_object(self) -> Result<BTreeMap<std::string::String, Variant>, VariantError> {
-        match self {
-            Self::Object(v) => Ok(v),
-            other => Err(VariantError::TypeMismatch {
-                expected: VariantType::Object,
-                actual: other.type_tag(),
-            }),
         }
     }
 
@@ -593,18 +504,6 @@ mod tests {
             matches!(result, Err(VariantError::JsonConversion(_))),
             "depth exceeding limit must fail"
         );
-    }
-
-    #[test]
-    fn into_wrong_type_returns_type_mismatch() {
-        let result = Variant::Bool(true).into_int();
-        assert!(matches!(
-            result,
-            Err(VariantError::TypeMismatch {
-                expected: VariantType::Int,
-                actual: VariantType::Bool,
-            })
-        ));
     }
 
     #[test]

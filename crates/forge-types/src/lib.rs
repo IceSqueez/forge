@@ -20,14 +20,14 @@ pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
     SubActionTelemetry, normalize_var_name, variant_preview,
 };
-pub use ids::{ActionId, ClipId, EventId, GlobalId, QueueId, ScriptId, TriggerInstanceId, UserId};
+pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use platform::PlatformId;
 pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;
 pub use script::{AnnotationDiagnostic, ScriptContract, ScriptInput};
-pub use sub_action::{LogLevel, OutputDevice, VariantTemplate};
+pub use sub_action::{LogLevel, OutputDevice};
 pub use sub_action_step::{SubActionConfig, SubActionStep};
-pub use token::{ApiKey, OAuthToken, RefreshToken};
+pub use token::{OAuthToken, RefreshToken};
 pub use trigger_config::TriggerConfig;
 pub use trigger_instance::TriggerInstance;
 pub use unified_chat::{

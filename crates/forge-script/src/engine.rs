@@ -109,23 +109,11 @@ impl Engine {
         this
     }
 
-    pub fn config(&self) -> &EngineConfig {
-        &self.config
-    }
-
     pub fn eval_script(&self, script: &str) -> Result<rhai::Dynamic, ScriptError> {
         self.reset_timer();
         self.inner
             .eval::<rhai::Dynamic>(script)
             .map_err(|e| map_eval_error(script, &self.config, *e))
-    }
-
-    pub fn placeholder_eval(&self, expr: &str) -> Result<String, ScriptError> {
-        self.reset_timer();
-        self.inner
-            .eval::<i64>(expr)
-            .map(|n| n.to_string())
-            .map_err(|e| map_eval_error(expr, &self.config, *e))
     }
 
     pub fn eval_script_with_scope(
@@ -237,22 +225,6 @@ mod tests {
             EventId::new(),
             Instant::now() + std::time::Duration::from_millis(wall_ms),
         )
-    }
-
-    #[test]
-    fn placeholder_eval_addition() {
-        let engine = Engine::with_config(EngineConfig::default());
-        assert_eq!(engine.placeholder_eval("1 + 2").unwrap(), "3");
-    }
-
-    #[test]
-    fn placeholder_eval_invalid_syntax_returns_compile_error() {
-        let engine = Engine::with_config(EngineConfig::default());
-        let result = engine.placeholder_eval("not a valid expression");
-        assert!(
-            matches!(result, Err(ScriptError::Compile { .. })),
-            "expected Compile error, got: {result:?}",
-        );
     }
 
     #[test]

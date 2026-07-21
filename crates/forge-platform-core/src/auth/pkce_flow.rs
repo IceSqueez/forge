@@ -77,10 +77,6 @@ impl PkceFlow {
         }
     }
 
-    pub fn redirect_path(&self) -> &'static str {
-        super::local_callback::CALLBACK_PATH
-    }
-
     /// Binds a loopback listener, generates PKCE + state, stores the driver, and
     /// returns the URL the caller should open in the user's browser. `extra_trailing_params`
     /// lets a caller add call-time-only query params (e.g. Google's optional `prompt=consent`)

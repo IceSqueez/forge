@@ -13,7 +13,7 @@ pub mod rate_limit;
 pub use auth::AuthFlow;
 pub use backoff::Backoff;
 pub use builtin::{
-    ActiveRow, BadgeTone, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId,
+    ActiveRow, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId,
     BuiltinStatus, CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome,
     DetailSection, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream,
     HealthValue, InfoField, KeyValueRow, ListFooter, PickerKind, QuickAction, QuickActions,

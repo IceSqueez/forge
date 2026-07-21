@@ -94,13 +94,6 @@ fn do_port_discovery(
     for d in deltas {
         let _ = client.health_tx.send(d);
     }
-
-    if let Ok(mut guard) = client.input_ports.write() {
-        *guard = input_snap.clone();
-    }
-    if let Ok(mut guard) = client.output_ports.write() {
-        *guard = output_snap.clone();
-    }
 }
 
 fn diff_input_ports(

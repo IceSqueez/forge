@@ -2,7 +2,6 @@
 
 pub mod builtin_library;
 pub mod bus_event_sink;
-pub mod clip;
 pub mod cpal_factory;
 pub mod duration;
 pub mod error;
@@ -15,7 +14,6 @@ pub use builtin_library::{
     resolve_builtin_path,
 };
 pub use bus_event_sink::BusAudioEventSink;
-pub use clip::{ClipVolume, SoundboardClip};
 pub use cpal_factory::CpalSinkFactory;
 pub use duration::probe_clip_duration_secs;
 pub use error::SoundboardError;

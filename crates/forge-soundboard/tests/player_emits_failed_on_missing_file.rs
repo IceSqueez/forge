@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink};
-use forge_soundboard::{AudioSinkFactory, SoundboardPlayer};
+use forge_soundboard::{AudioSinkFactory, SoundboardPlayer, SoundboardSettingsHandle};
 use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
@@ -108,10 +108,11 @@ async fn play_missing_file_emits_playback_failed_and_returns_err() {
     );
 
     let (event_sink, events) = RecordingEventSink::new();
-    let player = SoundboardPlayer::new(
+    let player = SoundboardPlayer::with_settings(
         Arc::new(NullFactory),
         Arc::new(event_sink),
         Arc::new(MockClipsRepo { clip }),
+        SoundboardSettingsHandle::default(),
     );
 
     let result = player.play(clip_id, None).await;
@@ -142,10 +143,11 @@ async fn play_device_not_found_emits_playback_failed_and_returns_err() {
     let clip = stored_clip_with_path(clip_id, tmp.path().to_path_buf());
 
     let (event_sink, events) = RecordingEventSink::new();
-    let player = SoundboardPlayer::new(
+    let player = SoundboardPlayer::with_settings(
         Arc::new(DeviceNotFoundFactory),
         Arc::new(event_sink),
         Arc::new(MockClipsRepo { clip }),
+        SoundboardSettingsHandle::default(),
     );
 
     let result = player.play(clip_id, None).await;

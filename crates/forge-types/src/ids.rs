@@ -41,8 +41,6 @@ define_id!(ActionId);
 define_id!(TriggerInstanceId);
 define_id!(QueueId);
 define_id!(ScriptId);
-define_id!(GlobalId);
-define_id!(UserId);
 define_id!(ClipId);
 
 impl FromStr for ActionId {

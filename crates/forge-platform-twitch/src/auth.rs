@@ -229,34 +229,6 @@ async fn fetch_user_info_from_token(
     })
 }
 
-pub async fn fetch_user_info(
-    token: &OAuthToken,
-    client_id: &str,
-) -> Result<UserInfo, PlatformError> {
-    let access = AccessToken::new(token.expose().to_owned());
-    let client_id_owned = ClientId::new(client_id.to_owned());
-    let http = reqwest::Client::new();
-    let helix = HelixClient::with_client(http);
-
-    let user_token =
-        UserToken::from_token(&helix, access)
-            .await
-            .map_err(|e| PlatformError::Auth {
-                reason: format!(
-                    "validate token failed: {}",
-                    sanitize_validation_error(&e.error)
-                ),
-            })?;
-
-    if user_token.client_id() != &client_id_owned {
-        return Err(PlatformError::Auth {
-            reason: "stored token client_id does not match configured client_id".into(),
-        });
-    }
-
-    fetch_user_info_from_token(&user_token, &helix).await
-}
-
 /// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` → compile-time `option_env!` → `None`.
 pub fn client_id() -> Option<String> {
     let runtime = std::env::var("FORGE_TWITCH_CLIENT_ID").ok();

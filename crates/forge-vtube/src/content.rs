@@ -26,14 +26,12 @@ pub(crate) struct ModelItem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HotkeyItem {
-    pub id: String,
     pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExpressionItem {
     pub file: String,
-    pub name: String,
     pub active: bool,
 }
 
@@ -145,7 +143,6 @@ async fn refresh_models_and_hotkeys(
             .map(|arr| {
                 arr.iter()
                     .map(|h| HotkeyItem {
-                        id: h["hotkeyID"].as_str().unwrap_or("").to_owned(),
                         name: h["name"].as_str().unwrap_or("").to_owned(),
                     })
                     .collect()
@@ -171,7 +168,6 @@ async fn refresh_expressions(
             arr.iter()
                 .map(|e| ExpressionItem {
                     file: e["file"].as_str().unwrap_or("").to_owned(),
-                    name: e["name"].as_str().unwrap_or("").to_owned(),
                     active: e["active"].as_bool().unwrap_or(false),
                 })
                 .collect()

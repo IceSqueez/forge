@@ -140,14 +140,6 @@ impl VTubeClient {
         }
     }
 
-    pub fn connected_at(&self) -> Option<OffsetDateTime> {
-        self.connected_at.read().ok().and_then(|g| *g)
-    }
-
-    pub fn auth_state_value(&self) -> AuthState {
-        self.auth_state.read().ok().map_or(AuthState::Cold, |g| *g)
-    }
-
     pub(crate) async fn send_json_request(
         &self,
         msg_type: &str,

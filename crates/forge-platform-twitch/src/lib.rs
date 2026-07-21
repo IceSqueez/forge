@@ -15,20 +15,18 @@ pub mod triggers;
 
 pub use auth::{
     LoopbackCode, TWITCH_AUTHORIZE_ENDPOINT, TWITCH_BROADCASTER_SCOPES, TWITCH_TOKEN_ENDPOINT,
-    TwitchAuthBundle, TwitchAuthFlow, UserInfo, client_id, fetch_user_info, twitch_auth_flow,
+    TwitchAuthBundle, TwitchAuthFlow, UserInfo, client_id, twitch_auth_flow,
 };
 pub use builtin::{ChatSessionConfig, TwitchIntegrationBundle};
-pub use chat::parsers::parse as parse_chat_event;
 pub use chat::{
-    ChatConnectionState, ChatSendError, SentMessageId, TwitchBadge, TwitchChat, TwitchChatEvent,
-    TwitchChatHandle, send_chat,
+    ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
 };
 pub use chat_platform::TwitchPlatform;
 pub use credentials::CredentialsTokenSource;
 pub use credentials_manager::TwitchCredentialsManager;
 pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,
-    HelixTokenSource, HelixTransport, NoopRateLimiter,
+    HelixTokenSource, HelixTransport,
 };
 pub use sub_actions::register_twitch_sub_actions;
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};

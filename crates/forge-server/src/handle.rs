@@ -153,26 +153,13 @@ impl ServerHandle {
         self.inner.lock().await.bind_addr
     }
 
-    pub async fn server_info(&self) -> Arc<crate::server_info::ServerInfo> {
-        Arc::clone(&self.inner.lock().await.state.server_info)
-    }
-
-    pub async fn bus_adapter(&self) -> Arc<crate::bus_adapter::BusAdapter> {
-        Arc::clone(&self.inner.lock().await.state.bus_adapter)
-    }
-
     pub async fn overlay_root(&self) -> Arc<std::path::PathBuf> {
         Arc::clone(&self.inner.lock().await.state.overlay_root)
     }
 
     pub async fn snapshot(&self) -> crate::snapshot::ServerSnapshot {
         let state = self.inner.lock().await.state.clone();
-        crate::snapshot::build_server_snapshot(
-            &state.server_info,
-            &state.bus_adapter,
-            state.credentials.as_ref(),
-        )
-        .await
+        crate::snapshot::build_server_snapshot(&state.server_info, &state.bus_adapter).await
     }
 
     pub fn abort(&self) {

@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use forge_events::EventSource;
-use forge_types::EventId;
-
 /// Wildcard-capable event filter sent by clients in subscribe/unsubscribe payloads.
 /// `"*"` or absent field means wildcard for that axis.
 #[derive(Debug, Deserialize, Serialize)]
@@ -140,29 +137,4 @@ pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json
         }
     }
     serde_json::Value::Object(map)
-}
-
-/// Push event frame sent to subscribed clients (§2.3 of RFC-032).
-///
-/// `time_stamp` serializes as `"timeStamp"` (RFC 3339 UTC with ms precision).
-/// `caused_by` is omitted from JSON when absent.
-/// `replay` is `false` by default.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EventPushFrame {
-    pub time_stamp: String,
-    pub event: EventMetadata,
-    pub data: serde_json::Value,
-}
-
-#[derive(Debug, Serialize)]
-pub struct EventMetadata {
-    pub source: EventSource,
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub id: EventId,
-    #[serde(rename = "causedBy", skip_serializing_if = "Option::is_none")]
-    pub caused_by: Option<EventId>,
-    #[serde(default)]
-    pub replay: bool,
 }

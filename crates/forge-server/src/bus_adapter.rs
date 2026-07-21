@@ -41,13 +41,6 @@ impl EventFilter {
         Self { source, kind }
     }
 
-    pub fn wildcard() -> Self {
-        Self {
-            source: None,
-            kind: None,
-        }
-    }
-
     fn matches(&self, event: &Event) -> bool {
         let source_ok = self.source.is_none_or(|s| s == event.source);
         let kind_ok = self
@@ -81,7 +74,6 @@ pub enum WsFrame {
 
 pub struct ClientHandle {
     pub id: ClientId,
-    pub sender: broadcast::Sender<WsFrame>,
     pub drop_counter: Arc<AtomicU64>,
 }
 
@@ -89,7 +81,6 @@ struct ConnectedClient {
     id: ClientId,
     sender: broadcast::Sender<WsFrame>,
     filters: ClientFilterSet,
-    drop_counter: Arc<AtomicU64>,
 }
 
 pub struct BusAdapter {
@@ -190,15 +181,10 @@ impl BusAdapter {
         let (sender, receiver) = broadcast::channel(CLIENT_CHANNEL_CAP);
         self.registry.write().await.push(ConnectedClient {
             id,
-            sender: sender.clone(),
-            filters,
-            drop_counter: Arc::clone(&drop_counter),
-        });
-        let handle = ClientHandle {
-            id,
             sender,
-            drop_counter,
-        };
+            filters,
+        });
+        let handle = ClientHandle { id, drop_counter };
         (handle, receiver)
     }
 
@@ -221,15 +207,6 @@ impl BusAdapter {
             .find(|c| c.id == id)
             .map(|c| c.filters.subscriptions.clone())
             .unwrap_or_default()
-    }
-
-    pub async fn drop_count_for(&self, id: ClientId) -> Option<u64> {
-        self.registry
-            .read()
-            .await
-            .iter()
-            .find(|c| c.id == id)
-            .map(|c| c.drop_counter.load(Ordering::Relaxed))
     }
 
     pub async fn broadcast_close(&self) {
@@ -258,7 +235,7 @@ mod tests {
     }
 
     fn wildcard_filter() -> ClientFilterSet {
-        ClientFilterSet::new(HashSet::from([EventFilter::wildcard()]))
+        ClientFilterSet::new(HashSet::from([EventFilter::new(None, None)]))
     }
 
     #[tokio::test]

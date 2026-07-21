@@ -9,10 +9,7 @@ use std::collections::HashSet;
 use crate::bus_adapter::{ClientFilterSet, EventFilter};
 
 pub use context::DispatchContext;
-pub use envelope::{
-    EventMetadata, EventPushFrame, WireEventFilter, WsEnvelope, WsRequest, WsResponse,
-    serialize_response_frame,
-};
+pub use envelope::{WireEventFilter, WsEnvelope, WsRequest, WsResponse, serialize_response_frame};
 pub(crate) use handlers::{
     handle_do_action, handle_get_actions, handle_get_active_viewers, handle_get_events,
     handle_get_global, handle_get_globals, handle_get_info, handle_get_overlay_files,

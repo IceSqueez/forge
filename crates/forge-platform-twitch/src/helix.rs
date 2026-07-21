@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter, acquire_or_wait};
+use forge_platform_core::{RateLimiter, acquire_or_wait};
 use forge_types::OAuthToken;
 use thiserror::Error;
 
@@ -248,22 +248,6 @@ impl HelixTransport for HelixHttpTransport {
     }
 }
 
-/// Enforces no Helix request budget; every acquire is granted immediately.
-pub struct NoopRateLimiter;
-
-#[async_trait]
-impl RateLimiter for NoopRateLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
-        Ok(RateLimitOutcome::Granted)
-    }
-
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-}
-
 fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
     resp.headers()
         .get(reqwest::header::RETRY_AFTER)
@@ -277,7 +261,7 @@ mod tests {
     use super::*;
     use crate::event_channel::PlatformEventChannel;
     use forge_events::EventStream;
-    use forge_platform_core::PlatformError;
+    use forge_platform_core::{PlatformError, RateLimitOutcome};
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

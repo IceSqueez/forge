@@ -27,7 +27,6 @@ pub use handle::ServerHandle;
 pub use server::{AppState, Server, start_server};
 pub use server_info::ServerInfo;
 pub use snapshot::{
-    BandwidthSnapshot, ConnectedAccountSnapshot, ConnectedClientSnapshot, EventFilterSnapshot,
-    ServerSnapshot,
+    BandwidthSnapshot, ConnectedClientSnapshot, EventFilterSnapshot, ServerSnapshot,
 };
 pub use ws_client::{ClientType, WsClient, detect_from_user_agent};

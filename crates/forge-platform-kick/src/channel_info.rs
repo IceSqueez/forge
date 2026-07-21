@@ -15,7 +15,6 @@ const USER_AGENT: &str = concat!(
 pub struct KickChannelInfo {
     pub chatroom_id: u64,
     pub viewer_count: u64,
-    pub stream_title: String,
     pub is_live: bool,
 }
 
@@ -86,11 +85,6 @@ impl ChannelInfoFetcher {
         })?;
 
         let viewer_count = body.livestream.as_ref().map_or(0, |l| l.viewer_count);
-        let stream_title = body
-            .livestream
-            .as_ref()
-            .and_then(|l| l.session_title.clone())
-            .unwrap_or_default();
         let is_live = body.livestream.is_some();
 
         debug!(
@@ -104,7 +98,6 @@ impl ChannelInfoFetcher {
         Ok(KickChannelInfo {
             chatroom_id,
             viewer_count,
-            stream_title,
             is_live,
         })
     }
@@ -124,7 +117,6 @@ struct ChatroomField {
 #[derive(Deserialize)]
 struct LivestreamField {
     viewer_count: u64,
-    session_title: Option<String>,
 }
 
 #[cfg(test)]
@@ -155,7 +147,6 @@ mod tests {
         let info = fetcher.fetch().await.unwrap();
         assert_eq!(info.chatroom_id, 12345);
         assert_eq!(info.viewer_count, 500);
-        assert_eq!(info.stream_title, "Playing games");
         assert!(info.is_live);
     }
 

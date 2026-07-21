@@ -14,19 +14,6 @@ pub struct VTubeRequest<T> {
     pub data: T,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VTubeResponse<T> {
-    #[serde(rename = "apiName")]
-    pub api_name: String,
-    #[serde(rename = "apiVersion")]
-    pub api_version: String,
-    #[serde(rename = "requestID")]
-    pub request_id: String,
-    #[serde(rename = "messageType")]
-    pub message_type: String,
-    pub data: T,
-}
-
 pub fn new_request<T>(msg_type: &str, data: T) -> VTubeRequest<T> {
     VTubeRequest {
         api_name: "VTubeStudioPublicAPI".to_owned(),
@@ -72,20 +59,5 @@ mod tests {
         let a = new_request::<serde_json::Value>("A", serde_json::json!(null));
         let b = new_request::<serde_json::Value>("B", serde_json::json!(null));
         assert_ne!(a.request_id, b.request_id);
-    }
-
-    #[test]
-    fn response_roundtrip_extracts_authentication_token() {
-        let raw = r#"{
-            "apiName":"VTubeStudioPublicAPI",
-            "apiVersion":"1.0",
-            "requestID":"test-req-001",
-            "messageType":"AuthenticationTokenResponse",
-            "data":{"authenticationToken":"tok-xyz","granted":true}
-        }"#;
-        let resp: VTubeResponse<serde_json::Value> = serde_json::from_str(raw).unwrap();
-        assert_eq!(resp.message_type, "AuthenticationTokenResponse");
-        assert_eq!(resp.data["authenticationToken"], "tok-xyz");
-        assert_eq!(resp.data["granted"], true);
     }
 }

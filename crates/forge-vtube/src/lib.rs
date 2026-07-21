@@ -17,7 +17,7 @@ pub(crate) mod supervisor;
 pub mod switchable_sink;
 pub mod triggers;
 
-pub use auth::{AuthEvent, AuthState, AuthStateMachine};
+pub use auth::AuthState;
 pub use client::{VTubeClient, VTubeConfig};
 pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeConnectError, VTubeCredentials};
 pub use error::VTubeError;

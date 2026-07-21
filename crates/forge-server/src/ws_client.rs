@@ -24,7 +24,6 @@ pub enum ClientType {
     Ios,
     Android,
     StreamDeck,
-    ThirdParty(String),
 }
 
 impl ClientType {
@@ -35,7 +34,6 @@ impl ClientType {
             ClientType::Ios => "ios",
             ClientType::Android => "android",
             ClientType::StreamDeck => "stream_deck",
-            ClientType::ThirdParty(_) => "third_party",
         }
     }
 }

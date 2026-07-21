@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::speak_dispatcher::SpeakDispatcher;
 
@@ -70,17 +72,14 @@ impl SubActionRunner for SpeakWithEngineRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("text").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::UnknownKindId(
-                    "tts.speak.text_with_engine: text is required".to_owned(),
-                ));
-            }
+        if config.str_nonempty("text").is_none() {
+            return Err(RegistryError::InvalidConfig(
+                "tts.speak.text_with_engine: text is required".to_owned(),
+            ));
         }
-        match config.get("engine_id").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+        match config.str_nonempty("engine_id") {
+            Some(_) => Ok(()),
+            None => Err(RegistryError::InvalidConfig(
                 "tts.speak.text_with_engine: engine_id is required".to_owned(),
             )),
         }
@@ -91,25 +90,16 @@ impl SubActionRunner for SpeakWithEngineRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "tts.speak.text_with_engine");
 
-        let text = ctx.arg_stack.interpolate(
-            config
-                .get("text")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
-        let engine_id = ctx.arg_stack.interpolate(
-            config
-                .get("engine_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
+        let text = ctx
+            .arg_stack
+            .interpolate(config.str("text").unwrap_or_default());
+        let engine_id = ctx
+            .arg_stack
+            .interpolate(config.str("engine_id").unwrap_or_default());
 
-        let wait_for_completion = config
-            .get("wait_for_completion")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+        let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak
                 .speak_with_engine_and_wait(text, engine_id, ctx.cancel.clone())
@@ -117,25 +107,9 @@ impl SubActionRunner for SpeakWithEngineRunner {
         } else {
             self.speak.speak_with_engine(text, engine_id).await
         };
-        let outcome = match dispatch_result {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
-
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
 
         (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "tts.speak.text_with_engine".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
+            timer.finish(SubActionOutcome::from_result(&dispatch_result)),
             None,
         )
     }

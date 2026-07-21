@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::speak_dispatcher::SpeakDispatcher;
 
@@ -73,9 +75,9 @@ impl SubActionRunner for SpeakRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("text").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+        match config.str_nonempty("text") {
+            Some(_) => Ok(()),
+            None => Err(RegistryError::InvalidConfig(
                 "tts.speak.text: text is required".to_owned(),
             )),
         }
@@ -86,24 +88,15 @@ impl SubActionRunner for SpeakRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "tts.speak.text");
 
-        let raw_text = config
-            .get("text")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let raw_text = config.str("text").unwrap_or_default();
         let text = ctx.arg_stack.interpolate(raw_text);
 
-        let voice_alias = config
-            .get("voice_alias")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_owned());
+        let voice_alias = config.str("voice_alias").map(|s| s.to_owned());
 
         let is_reward = ctx.arg_stack.get("reward.id").is_some();
-        let wait_for_completion = config
-            .get("wait_for_completion")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+        let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak
                 .speak_and_wait(text, voice_alias, is_reward, ctx.cancel.clone())
@@ -113,25 +106,9 @@ impl SubActionRunner for SpeakRunner {
         } else {
             self.speak.speak(text, voice_alias).await
         };
-        let outcome = match dispatch_result {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
-
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
 
         (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "tts.speak.text".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
+            timer.finish(SubActionOutcome::from_result(&dispatch_result)),
             None,
         )
     }

@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{
     ArgStack, ClipId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
 };
-use time::OffsetDateTime;
 
 use crate::sound_player::SoundPlayer;
 
@@ -60,9 +62,9 @@ impl SubActionRunner for PlaySoundRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("clip_id").and_then(|v| v.as_str()) {
-            Some(s) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::UnknownKindId(
+        match config.str_nonempty("clip_id") {
+            Some(_) => Ok(()),
+            None => Err(RegistryError::InvalidConfig(
                 "soundboard.sound.play: clip_id is required".to_owned(),
             )),
         }
@@ -73,40 +75,21 @@ impl SubActionRunner for PlaySoundRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "soundboard.sound.play");
 
-        let clip_id_str = config
-            .get("clip_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let clip_id_str = config.str("clip_id").unwrap_or_default();
         let interpolated = ctx.arg_stack.interpolate(clip_id_str);
 
         let parse_result: Result<ClipId, _> = serde_json::from_str(&format!("\"{interpolated}\""));
 
         let outcome = match parse_result {
             Err(_) => SubActionOutcome::Failed(format!("invalid clip_id: {interpolated}")),
-            Ok(clip_id) => match self.sound_player.play(clip_id, None).await {
-                Ok(()) => SubActionOutcome::Success,
-                Err(e) => SubActionOutcome::Failed(e.to_string()),
-            },
+            Ok(clip_id) => {
+                SubActionOutcome::from_result(&self.sound_player.play(clip_id, None).await)
+            }
         };
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "soundboard.sound.play".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

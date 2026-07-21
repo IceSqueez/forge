@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
+    SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::speak_dispatcher::SpeakDispatcher;
 
@@ -73,13 +75,10 @@ impl SubActionRunner for AliasSetRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         for key in ["alias_name", "engine_id", "voice_id"] {
-            match config.get(key).and_then(|v| v.as_str()) {
-                Some(s) if !s.is_empty() => {}
-                _ => {
-                    return Err(RegistryError::UnknownKindId(format!(
-                        "tts.alias.set: {key} is required"
-                    )));
-                }
+            if config.str_nonempty(key).is_none() {
+                return Err(RegistryError::InvalidConfig(format!(
+                    "tts.alias.set: {key} is required"
+                )));
             }
         }
         Ok(())
@@ -90,53 +89,25 @@ impl SubActionRunner for AliasSetRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
+        let timer = StepTimer::start(ctx, "tts.alias.set");
 
-        let alias_name = ctx.arg_stack.interpolate(
-            config
-                .get("alias_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
-        let engine_id = ctx.arg_stack.interpolate(
-            config
-                .get("engine_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
-        let voice_id = ctx.arg_stack.interpolate(
-            config
-                .get("voice_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default(),
-        );
+        let alias_name = ctx
+            .arg_stack
+            .interpolate(config.str("alias_name").unwrap_or_default());
+        let engine_id = ctx
+            .arg_stack
+            .interpolate(config.str("engine_id").unwrap_or_default());
+        let voice_id = ctx
+            .arg_stack
+            .interpolate(config.str("voice_id").unwrap_or_default());
 
         // alias_name serves as both viewer_id (the identity key) and viewer_name
         // (the display name) since the config exposes a single field for both.
-        let outcome = match self
+        let result = self
             .speak
             .alias_set(alias_name.clone(), alias_name, engine_id, voice_id)
-            .await
-        {
-            Ok(()) => SubActionOutcome::Success,
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-        };
+            .await;
 
-        let duration_ms = (OffsetDateTime::now_utc() - started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "tts.alias.set".to_owned(),
-                started_at,
-                duration_ms,
-                outcome,
-            },
-            None,
-        )
+        (timer.finish(SubActionOutcome::from_result(&result)), None)
     }
 }

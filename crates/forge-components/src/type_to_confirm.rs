@@ -428,7 +428,7 @@ impl Render for TypeToConfirm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::palette::FORGE_DEFAULT;
 
     /// Whether two colours are identical channel-wise. `Rgba` carries no `Debug`, so
     /// this stands in for the `assert_eq!` the tests below would otherwise reach for.
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn match_border_is_brand_when_matched_and_border_input_otherwise() {
-        let p = CATPPUCCIN_MOCHA;
+        let p = FORGE_DEFAULT;
         // Guard: the two hues are distinct, so a swapped `if`/`else` returns a
         // detectably wrong colour rather than the same value on both arms.
         assert!(!same_rgba(p.brand, p.border_input));
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn bullet_glyph_pairs_each_kind_with_its_tone_glyph_and_hue() {
-        let p = CATPPUCCIN_MOCHA;
+        let p = FORGE_DEFAULT;
         // Guard: the three tone hues are distinct, so asserting the per-kind hue below
         // has teeth - a swapped arm resolves to a different, detectable colour.
         assert!(!same_rgba(p.success, p.warning));

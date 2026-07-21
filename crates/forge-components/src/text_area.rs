@@ -9,7 +9,7 @@ use gpui::{
     point, prelude::*, px, relative, size,
 };
 
-use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, with_alpha};
+use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::text_edit::{
     next_grapheme_boundary, offset_to_utf16, previous_grapheme_boundary, range_from_utf16,
     range_to_utf16,
@@ -199,7 +199,7 @@ impl TextArea {
             scroll_offset: px(0.0),
             is_selecting: false,
             preferred_x: None,
-            palette: CATPPUCCIN_MOCHA,
+            palette: FORGE_DEFAULT,
             density: Density::Cozy,
             font_size: FONT_XS,
             font_family: DEFAULT_BODY_FAMILY,

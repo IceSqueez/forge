@@ -168,14 +168,14 @@ pub fn connection_status_badge(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::palette::FORGE_DEFAULT;
 
     /// Variant→field is a hand-written match with plausible wrong wirings (Negative→`warning`,
     /// Neutral→`text_muted`), so a field swap fails here. `fill.a` is pinned as a literal float,
     /// not recomputed via `with_alpha` (which would only restate the impl).
     #[test]
     fn colors_map_each_variant_to_its_hue_with_a_translucent_tint_fill() {
-        let p = &CATPPUCCIN_MOCHA;
+        let p = &FORGE_DEFAULT;
         for (variant, expected_ink) in [
             (StatusVariant::Positive, p.success),
             (StatusVariant::Negative, p.random),

@@ -371,7 +371,7 @@ pub fn icon_button(icon: Icon, palette: &ForgePalette) -> Button {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA as P;
+    use crate::palette::FORGE_DEFAULT as P;
 
     const EPS: f32 = 1e-6;
 

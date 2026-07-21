@@ -75,7 +75,7 @@ pub use overlay::{
     AnchoredPopover, Overlay, OverlayPosition, anchored_popover, anchored_popover_below, overlay,
 };
 pub use palette::{
-    CATPPUCCIN_MOCHA, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, platform_color,
+    FORGE_DEFAULT, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, platform_color,
     with_alpha,
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels};

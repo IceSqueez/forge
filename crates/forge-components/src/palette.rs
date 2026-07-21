@@ -72,23 +72,19 @@ pub fn platform_color(kind: PlatformKind, palette: &ForgePalette) -> Rgba {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeId {
-    CatppuccinMocha,
     #[default]
+    ForgeDefault,
     TokyoNight,
     Latte,
 }
 
 impl ThemeId {
-    pub const ALL: [ThemeId; 3] = [
-        ThemeId::CatppuccinMocha,
-        ThemeId::TokyoNight,
-        ThemeId::Latte,
-    ];
+    pub const ALL: [ThemeId; 3] = [ThemeId::ForgeDefault, ThemeId::TokyoNight, ThemeId::Latte];
 
     /// Persisted identifier - must stay stable across releases.
     pub fn storage_key(self) -> &'static str {
         match self {
-            ThemeId::CatppuccinMocha => "catppuccin_mocha",
+            ThemeId::ForgeDefault => "forge_default",
             ThemeId::TokyoNight => "tokyo_night",
             ThemeId::Latte => "latte",
         }
@@ -96,7 +92,7 @@ impl ThemeId {
 
     pub fn from_storage_key(key: &str) -> Option<ThemeId> {
         match key {
-            "catppuccin_mocha" => Some(ThemeId::CatppuccinMocha),
+            "forge_default" | "catppuccin_mocha" => Some(ThemeId::ForgeDefault),
             "tokyo_night" => Some(ThemeId::TokyoNight),
             "latte" => Some(ThemeId::Latte),
             _ => None,
@@ -105,50 +101,50 @@ impl ThemeId {
 
     pub fn palette(self) -> ForgePalette {
         match self {
-            ThemeId::CatppuccinMocha => CATPPUCCIN_MOCHA,
+            ThemeId::ForgeDefault => FORGE_DEFAULT,
             ThemeId::TokyoNight => TOKYO_NIGHT,
             ThemeId::Latte => LATTE,
         }
     }
 }
 
-pub const CATPPUCCIN_MOCHA: ForgePalette = ForgePalette {
-    base: hex(0x18, 0x18, 0x25),
-    shell: hex(0x11, 0x11, 0x1b),
-    elevated: hex(0x1e, 0x1e, 0x2e),
+pub const FORGE_DEFAULT: ForgePalette = ForgePalette {
+    base: hex(0x1a, 0x18, 0x25),
+    shell: hex(0x13, 0x10, 0x20),
+    elevated: hex(0x22, 0x1f, 0x30),
 
-    text_primary: hex(0xcd, 0xd6, 0xf4),
-    text_secondary: hex(0xba, 0xc2, 0xde),
-    text_muted: hex(0x93, 0x99, 0xb2),
-    text_faint: hex(0x6c, 0x70, 0x86),
-    text_extreme_faint: hex(0x45, 0x47, 0x5a),
+    text_primary: hex(0xf0, 0xee, 0xf8),
+    text_secondary: hex(0xc9, 0xc4, 0xdd),
+    text_muted: hex(0x8a, 0x86, 0xa3),
+    text_faint: hex(0x6b, 0x68, 0x84),
+    text_extreme_faint: hex(0x54, 0x4f, 0x6e),
 
-    border_regular: hex(0x31, 0x32, 0x44),
-    border_input: hex(0x45, 0x47, 0x5a),
-    border_active: hex(0xcb, 0xa6, 0xf7),
+    border_regular: hex(0x2d, 0x29, 0x40),
+    border_input: hex(0x3a, 0x35, 0x52),
+    border_active: hex(0xc9, 0xa6, 0xf0),
 
-    surface_overlay: hex(0x31, 0x32, 0x44),
+    surface_overlay: hex(0x2e, 0x29, 0x42),
 
-    brand: hex(0xcb, 0xa6, 0xf7),
-    success: hex(0xa6, 0xe3, 0xa1),
-    warning: hex(0xf9, 0xe2, 0xaf),
-    info: hex(0x89, 0xdc, 0xeb),
-    random: hex(0xf3, 0x8b, 0xa8),
-    bits: hex(0xfa, 0xb3, 0x87),
-    accent_pink_light: hex(0xf5, 0xc2, 0xe7),
-    accent_teal: hex(0x94, 0xe2, 0xd5),
-    disabled: hex(0x6c, 0x70, 0x86),
+    brand: hex(0xc9, 0xa6, 0xf0),
+    success: hex(0x50, 0xfa, 0x7b),
+    warning: hex(0xe0, 0xb8, 0x60),
+    info: hex(0x8b, 0xe9, 0xfd),
+    random: hex(0xdc, 0x64, 0x64),
+    bits: hex(0xff, 0xb8, 0x6c),
+    accent_pink_light: hex(0xff, 0x66, 0xd9),
+    accent_teal: hex(0x76, 0xe0, 0xcc),
+    disabled: hex(0x6b, 0x68, 0x84),
 
-    platform_twitch: hex(0xcb, 0xa6, 0xf7),
-    platform_youtube: hex(0xf3, 0x8b, 0xa8),
-    platform_kick: hex(0x89, 0xdc, 0xeb),
+    platform_twitch: hex(0xc9, 0xa6, 0xf0),
+    platform_youtube: hex(0xdc, 0x64, 0x64),
+    platform_kick: hex(0x8b, 0xe9, 0xfd),
 
-    code_keyword: hex(0xcb, 0xa6, 0xf7),
-    code_fn: hex(0x89, 0xdc, 0xeb),
-    code_str: hex(0xa6, 0xe3, 0xa1),
-    code_var: hex(0xfa, 0xb3, 0x87),
-    code_comment: hex(0x6c, 0x70, 0x86),
-    code_num: hex(0xfa, 0xb3, 0x87),
+    code_keyword: hex(0xc9, 0xa6, 0xf0),
+    code_fn: hex(0x8b, 0xe9, 0xfd),
+    code_str: hex(0x50, 0xfa, 0x7b),
+    code_var: hex(0xff, 0xb8, 0x6c),
+    code_comment: hex(0x6b, 0x68, 0x84),
+    code_num: hex(0xff, 0x66, 0xd9),
 
     scrim: Rgba {
         r: 0.0,

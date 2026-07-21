@@ -9,7 +9,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon};
-use crate::palette::{CATPPUCCIN_MOCHA, ForgePalette, with_alpha};
+use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, Radius,
     Spacing, radius, spacing,
@@ -138,7 +138,7 @@ impl TextInput {
             last_bounds: None,
             scroll_offset: px(0.0),
             is_selecting: false,
-            palette: CATPPUCCIN_MOCHA,
+            palette: FORGE_DEFAULT,
             density: Density::Cozy,
             font_size: FONT_XS,
             read_only: false,

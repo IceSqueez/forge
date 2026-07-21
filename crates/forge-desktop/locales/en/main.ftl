@@ -125,7 +125,6 @@ settings_appearance_fonts_label = Fonts
 settings_appearance_theme_hint = How Forge should look
 settings_appearance_font_interface = INTERFACE
 settings_appearance_font_monospace = MONOSPACE
-settings_theme_default = Default
 settings_theme_desc_dark = dark
 settings_theme_desc_storm = Storm
 settings_theme_desc_light_mode = Light mode

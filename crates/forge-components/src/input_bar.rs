@@ -470,7 +470,7 @@ impl Render for InputBar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::palette::FORGE_DEFAULT;
 
     #[allow(clippy::unwrap_used)]
     fn with_bar<R>(
@@ -479,7 +479,7 @@ mod tests {
         f: impl FnOnce(&mut InputBar, &mut Window, &mut Context<InputBar>) -> R,
     ) -> R {
         let window = cx.add_window(|_window, cx| {
-            InputBar::new("placeholder", CATPPUCCIN_MOCHA, cx).with_targets(targets)
+            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(targets)
         });
         window
             .update(cx, |bar, window, cx| f(bar, window, cx))

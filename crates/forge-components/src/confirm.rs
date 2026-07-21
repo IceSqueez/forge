@@ -241,7 +241,7 @@ impl RenderOnce for ConfirmModal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::palette::FORGE_DEFAULT;
 
     fn assert_same_hue(got: Rgba, want: Rgba) {
         assert_eq!(got.r, want.r, "red channel");
@@ -255,7 +255,7 @@ mod tests {
     // catches a swap to any other field that happened to share a component.
     #[test]
     fn tone_resolves_to_its_severity_palette_field() {
-        let p = &CATPPUCCIN_MOCHA;
+        let p = &FORGE_DEFAULT;
         for (tone, want) in [
             (ConfirmTone::Destructive, p.random),
             (ConfirmTone::Warning, p.warning),
@@ -269,7 +269,7 @@ mod tests {
     // rather than two names for one colour.
     #[test]
     fn destructive_and_warning_are_distinct_hues() {
-        let p = &CATPPUCCIN_MOCHA;
+        let p = &FORGE_DEFAULT;
         assert_ne!(
             ConfirmTone::Destructive.accent(p),
             ConfirmTone::Warning.accent(p),

@@ -111,7 +111,7 @@ impl RenderOnce for Toggle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::palette::FORGE_DEFAULT;
 
     /// Pins the on/off → (track, thumb) field mapping AND that the `on_track` accent
     /// is honored only while on. The accent sentinel is `brand`, deliberately distinct
@@ -120,7 +120,7 @@ mod tests {
     /// would paint `brand` instead of `surface_overlay` and fail here.
     #[test]
     fn resolves_track_and_thumb_per_state_applying_accent_only_when_on() {
-        let p = &CATPPUCCIN_MOCHA;
+        let p = &FORGE_DEFAULT;
         let accent = p.brand;
 
         // Guard: the four keyed hues must be pairwise distinct, else a swapped field

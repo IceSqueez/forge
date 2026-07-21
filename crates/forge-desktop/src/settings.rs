@@ -130,9 +130,9 @@ impl SettingsSection {
 
 fn theme_meta(theme: ThemeId) -> (String, String) {
     match theme {
-        ThemeId::CatppuccinMocha => (
-            tr!("settings_theme_default"),
-            format!("Mocha · {}", tr!("settings_theme_desc_dark")),
+        ThemeId::ForgeDefault => (
+            "Forge Default".to_owned(),
+            format!("Violet · {}", tr!("settings_theme_desc_dark")),
         ),
         ThemeId::TokyoNight => ("Tokyo Night".to_owned(), tr!("settings_theme_desc_storm")),
         ThemeId::Latte => (
@@ -169,7 +169,7 @@ fn density_key(density: Density) -> &'static str {
 
 fn theme_key(theme: ThemeId) -> &'static str {
     match theme {
-        ThemeId::CatppuccinMocha => "mocha",
+        ThemeId::ForgeDefault => "forge",
         ThemeId::TokyoNight => "tokyo",
         ThemeId::Latte => "latte",
     }

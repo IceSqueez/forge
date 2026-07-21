@@ -138,7 +138,7 @@ pub fn filter_chip_row(chips: Vec<Chip>, density: Density) -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::CATPPUCCIN_MOCHA;
+    use crate::palette::FORGE_DEFAULT;
 
     // Pins the selected-vs-unselected contract of `chip`: active fills with
     // `surface_overlay` and inks `text_primary`; inactive carries no fill and inks
@@ -149,7 +149,7 @@ mod tests {
     // restatement: the child module reaches the private resolved fields directly.
     #[test]
     fn chip_resolves_fill_and_ink_from_active_state() {
-        let p = &CATPPUCCIN_MOCHA;
+        let p = &FORGE_DEFAULT;
         for (active, expected_bg, expected_ink) in [
             (true, Some(p.surface_overlay), p.text_primary),
             (false, None, p.text_secondary),

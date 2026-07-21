@@ -125,7 +125,6 @@ settings_appearance_fonts_label = Шрифти
 settings_appearance_theme_hint = Який вигляд матиме Forge
 settings_appearance_font_interface = ІНТЕРФЕЙС
 settings_appearance_font_monospace = МОНОШИРИННИЙ
-settings_theme_default = Стандартна
 settings_theme_desc_dark = темна
 settings_theme_desc_storm = Шторм
 settings_theme_desc_light_mode = Світлий режим

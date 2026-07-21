@@ -131,7 +131,7 @@ fn watch_time_since(first_seen: OffsetDateTime) -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_components::{BadgeKind, CATPPUCCIN_MOCHA, ChatBody, Platform};
+    use forge_components::{BadgeKind, ChatBody, FORGE_DEFAULT, Platform};
     use forge_storage::{Viewer, ViewerPlatform};
     use time::{Duration, OffsetDateTime};
 
@@ -218,7 +218,7 @@ mod tests {
             msg("bob", vec![BadgeKind::Moderator]),
             msg("alice", vec![BadgeKind::Vip, BadgeKind::Subscriber]),
         ];
-        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
         assert_eq!(summary.message_count, 2);
         assert_eq!(summary.role, Some(BadgeKind::Vip));
         assert_eq!(summary.avatar_letter, 'A');
@@ -227,20 +227,20 @@ mod tests {
     #[test]
     fn synthesize_role_is_none_when_latest_row_has_no_badges() {
         let messages = [msg("alice", vec![])];
-        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
         assert_eq!(summary.role, None);
     }
 
     #[test]
     fn synthesize_returns_none_when_author_absent() {
         let messages = [msg("alice", vec![])];
-        assert!(synthesize_from_chat("ghost", &messages, &CATPPUCCIN_MOCHA).is_none());
+        assert!(synthesize_from_chat("ghost", &messages, &FORGE_DEFAULT).is_none());
     }
 
     #[test]
     fn enrich_overlays_storage_fields_and_leaves_role_untouched() {
         let messages = [msg("alice", vec![BadgeKind::Subscriber])];
-        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
         assert_eq!(summary.message_count, 1);
         assert_eq!(summary.watch_time, DASH);
 
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn enrich_leaves_synthesized_values_when_no_viewer_matches() {
         let messages = [msg("alice", vec![])];
-        let summary = synthesize_from_chat("alice", &messages, &CATPPUCCIN_MOCHA).unwrap();
+        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
         let now = OffsetDateTime::now_utc();
         let other = viewer("someone-else", 99, now, now);
         let enriched = enrich_with_storage(summary, &[other]);
@@ -291,34 +291,34 @@ mod tests {
     #[test]
     fn selected_summary_falls_back_to_latest_author_when_none_selected() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
-        let summary = selected_summary(None, &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        let summary = selected_summary(None, &messages, &[], &FORGE_DEFAULT).unwrap();
         assert_eq!(summary.username, "bob");
     }
 
     #[test]
     fn selected_summary_fallback_skips_a_trailing_empty_author() {
         let messages = [msg("alice", vec![]), msg("", vec![])];
-        let summary = selected_summary(None, &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        let summary = selected_summary(None, &messages, &[], &FORGE_DEFAULT).unwrap();
         assert_eq!(summary.username, "alice");
     }
 
     #[test]
     fn selected_summary_uses_the_selected_author() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
-        let summary = selected_summary(Some("alice"), &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        let summary = selected_summary(Some("alice"), &messages, &[], &FORGE_DEFAULT).unwrap();
         assert_eq!(summary.username, "alice");
     }
 
     #[test]
     fn selected_summary_absent_selection_falls_back_to_latest_author() {
         let messages = [msg("alice", vec![])];
-        let summary = selected_summary(Some("ghost"), &messages, &[], &CATPPUCCIN_MOCHA).unwrap();
+        let summary = selected_summary(Some("ghost"), &messages, &[], &FORGE_DEFAULT).unwrap();
         assert_eq!(summary.username, "alice");
     }
 
     #[test]
     fn selected_summary_is_none_without_any_authored_message() {
-        assert!(selected_summary(None, &[], &[], &CATPPUCCIN_MOCHA).is_none());
+        assert!(selected_summary(None, &[], &[], &FORGE_DEFAULT).is_none());
     }
 
     #[test]

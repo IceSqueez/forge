@@ -5,7 +5,6 @@ use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, ForgePalette, Icon,
     Radius, Spacing, card, icon, primary_button, radius, spacing, tr,
 };
-use forge_events::EventsError;
 use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
 use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
 use forge_types::{ChatModerationAction, ChatModerationPayload};
@@ -14,6 +13,7 @@ use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
 };
 
+use crate::async_bridge::{EventBatch, recv_event_batch};
 use crate::boot::{BootFailure, build_runtime};
 use crate::chat_feed::{ChatFeed, ChatMessage, chat_source, platform_of};
 use crate::event_log::EventLog;
@@ -233,8 +233,14 @@ fn start_bridge(
     cx.spawn(async move |cx| {
         let mut subscription = bus.subscribe();
         loop {
-            match subscription.recv().await {
-                Ok(event) => {
+            let batch = match recv_event_batch(&mut subscription).await {
+                EventBatch::Ready(batch) => batch,
+                EventBatch::Closed => break,
+            };
+
+            platforms.update(cx, |connectivity, cx| {
+                let mut changed = false;
+                for event in &batch {
                     if event.kind == CONNECTION_STATE_CHANGED_KIND
                         && let Some(integ) = event
                             .payload
@@ -244,81 +250,94 @@ fn start_bridge(
                     {
                         let connected = event.payload.get("state").and_then(|v| v.as_str())
                             == Some("connected");
-                        platforms.update(cx, |connectivity, cx| {
-                            if connectivity.set_connected(integ, connected) {
-                                cx.notify();
-                            }
-                        });
+                        changed |= connectivity.set_connected(integ, connected);
                     }
-                    if let Some(item) = EventLog::item_from_event(&event) {
-                        event_log.update(cx, |log, cx| {
-                            log.push(item);
-                            cx.notify();
-                        });
+                }
+                if changed {
+                    cx.notify();
+                }
+            });
+
+            event_log.update(cx, |log, cx| {
+                let mut pushed = false;
+                for event in &batch {
+                    if let Some(item) = EventLog::item_from_event(event) {
+                        log.push(item);
+                        pushed = true;
                     }
-                    let is_action_done = event.kind == "action.done";
-                    home_stats.update(cx, |stats, cx| {
-                        let mut changed = stats.record_event(&event);
-                        if is_action_done {
-                            stats.record_action_done();
-                            changed = true;
-                        }
-                        if changed {
-                            cx.notify();
-                        }
-                    });
-                    if let Some(message) = ChatFeed::message_from_event(&event) {
-                        chat_feed.update(cx, |feed, cx| {
-                            feed.push(message);
-                            cx.notify();
-                        });
+                }
+                if pushed {
+                    cx.notify();
+                }
+            });
+
+            home_stats.update(cx, |stats, cx| {
+                let mut changed = false;
+                for event in &batch {
+                    changed |= stats.record_event(event);
+                    if event.kind == "action.done" {
+                        stats.record_action_done();
+                        changed = true;
+                    }
+                }
+                if changed {
+                    cx.notify();
+                }
+            });
+
+            chat_feed.update(cx, |feed, cx| {
+                let mut changed = false;
+                for event in &batch {
+                    if let Some(message) = ChatFeed::message_from_event(event) {
+                        feed.push(message);
+                        changed = true;
                     }
                     if let Some(value) = event.payload.get(ChatModerationPayload::KEY)
                         && let Ok(payload) =
                             serde_json::from_value::<ChatModerationPayload>(value.clone())
                         && let Some(platform) = chat_source(event.source).map(platform_of)
                     {
-                        chat_feed.update(cx, |feed, cx| {
-                            match payload.action {
-                                ChatModerationAction::DeleteMessage { message_id } => {
-                                    feed.mark_deleted(&message_id)
-                                }
-                                ChatModerationAction::RemoveUser { user_name, .. } => {
-                                    feed.mark_user(platform, &user_name)
-                                }
-                                ChatModerationAction::ClearChat => feed.clear_platform(platform),
+                        match payload.action {
+                            ChatModerationAction::DeleteMessage { message_id } => {
+                                feed.mark_deleted(&message_id)
                             }
-                            cx.notify();
-                        });
+                            ChatModerationAction::RemoveUser { user_name, .. } => {
+                                feed.mark_user(platform, &user_name)
+                            }
+                            ChatModerationAction::ClearChat => feed.clear_platform(platform),
+                        }
+                        changed = true;
                     }
                     if event.kind == "command.matched"
                         && let Some(caused_by) = event.caused_by
                         && let Some(command) = event.payload.get("command").and_then(|v| v.as_str())
                     {
-                        chat_feed.update(cx, |feed, cx| {
-                            feed.mark_command(caused_by, command);
-                            cx.notify();
-                        });
+                        feed.mark_command(caused_by, command);
+                        changed = true;
                     }
                     if event.kind == "action.start"
                         && let Some(caused_by) = event.caused_by
                         && let Some(action_name) =
                             event.payload.get("action_name").and_then(|v| v.as_str())
                     {
-                        chat_feed.update(cx, |feed, cx| {
-                            feed.set_triggered(caused_by, action_name);
-                            cx.notify();
-                        });
+                        feed.set_triggered(caused_by, action_name);
+                        changed = true;
                     }
-                    queue_health.update(cx, |health, cx| {
-                        if health.apply_event(&event) {
-                            cx.notify();
-                        }
-                    });
                 }
-                Err(EventsError::LaggingReceiver) => {}
-                Err(_) => break,
-            }
+                if changed {
+                    cx.notify();
+                }
+            });
+
+            queue_health.update(cx, |health, cx| {
+                let mut changed = false;
+                for event in &batch {
+                    changed |= health.apply_event(event);
+                }
+                if changed {
+                    cx.notify();
+                }
+            });
         }
     })
     .detach();

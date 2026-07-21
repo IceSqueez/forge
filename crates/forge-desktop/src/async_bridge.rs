@@ -2,10 +2,38 @@ use std::fmt::Display;
 use std::future::Future;
 
 use forge_components::ToastKind;
+use forge_events::{Event, EventsError};
+use forge_runtime::EventSubscription;
 use gpui::{App, Context, SharedString};
 use tokio::runtime::Handle;
 
 use crate::toasts::PushToast;
+
+const BRIDGE_DRAIN_CAP: usize = 128;
+
+pub enum EventBatch {
+    Ready(Vec<Event>),
+    Closed,
+}
+
+pub async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch {
+    let first = loop {
+        match sub.recv().await {
+            Ok(event) => break event,
+            Err(EventsError::LaggingReceiver) => continue,
+            Err(_) => return EventBatch::Closed,
+        }
+    };
+    let mut batch = Vec::with_capacity(1);
+    batch.push(first);
+    while batch.len() < BRIDGE_DRAIN_CAP {
+        match sub.try_recv() {
+            Ok(Some(event)) => batch.push(event),
+            _ => break,
+        }
+    }
+    EventBatch::Ready(batch)
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ErrorSink {

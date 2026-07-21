@@ -11,7 +11,7 @@ use forge_components::{
     ghost_button_with_icon, icon, modal, overlay, primary_button, radius, search_input,
     secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
-use forge_events::{Event, EventSource, EventsError};
+use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
 use forge_soundboard::builtin_library::{
     BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
@@ -28,6 +28,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
+use crate::async_bridge::{EventBatch, recv_event_batch};
 use crate::presentation::ActivePresentation;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
@@ -151,17 +152,19 @@ impl SoundboardView {
         let event_bridge = cx.spawn(async move |this, cx| {
             let mut sub = subscription;
             loop {
-                match sub.recv().await {
-                    Ok(event) => {
-                        if this
-                            .update(cx, |this, cx| this.on_bus_event(&event, cx))
-                            .is_err()
-                        {
-                            break;
+                let batch = match recv_event_batch(&mut sub).await {
+                    EventBatch::Ready(batch) => batch,
+                    EventBatch::Closed => break,
+                };
+                if this
+                    .update(cx, |this, cx| {
+                        for event in &batch {
+                            this.on_bus_event(event, cx);
                         }
-                    }
-                    Err(EventsError::LaggingReceiver) => continue,
-                    Err(_) => break,
+                    })
+                    .is_err()
+                {
+                    break;
                 }
             }
         });

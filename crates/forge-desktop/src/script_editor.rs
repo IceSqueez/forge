@@ -8,7 +8,7 @@ use forge_components::{
     inline_edit, install_resize, menu_divider, menu_item, modal, overlay, primary_button, radius,
     spacing, status_dot, tr, with_alpha,
 };
-use forge_events::{Event, EventPublisher, EventsError};
+use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, ScriptRegistry};
 use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
@@ -26,6 +26,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
+use crate::async_bridge::{EventBatch, recv_event_batch};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -347,18 +348,21 @@ impl ScriptEditorView {
         cx.spawn(async move |this, cx| {
             let mut subscription = bus.subscribe();
             loop {
-                match subscription.recv().await {
-                    Ok(event) => {
-                        if event.kind == "script.log"
-                            && this
-                                .update(cx, |this, cx| this.on_script_log(&event, cx))
-                                .is_err()
-                        {
-                            break;
+                let batch = match recv_event_batch(&mut subscription).await {
+                    EventBatch::Ready(batch) => batch,
+                    EventBatch::Closed => break,
+                };
+                if this
+                    .update(cx, |this, cx| {
+                        for event in &batch {
+                            if event.kind == "script.log" {
+                                this.on_script_log(event, cx);
+                            }
                         }
-                    }
-                    Err(EventsError::LaggingReceiver) => {}
-                    Err(_) => break,
+                    })
+                    .is_err()
+                {
+                    break;
                 }
             }
         })

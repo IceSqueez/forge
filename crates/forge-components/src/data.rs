@@ -1,6 +1,7 @@
 use gpui::{
-    AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px, relative,
+    AnyElement, App, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
+    Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
+    UniformListScrollHandle, Window, div, px, relative, uniform_list,
 };
 
 use crate::palette::ForgePalette;
@@ -181,6 +182,39 @@ impl DataTable {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn table_header(
+    columns: Vec<Column>,
+    header_bg: Rgba,
+    header_ink: Rgba,
+    gap: Pixels,
+    h_py: Pixels,
+    h_px: Pixels,
+) -> Div {
+    let header_cells = columns.into_iter().map(move |c| {
+        let label_el = div()
+            .font_family(DEFAULT_MONO_FAMILY)
+            .text_size(FONT_XXS)
+            .whitespace_nowrap()
+            .text_color(header_ink)
+            .child(c.label);
+        let cell = column_cell(c.width, label_el);
+        match c.align {
+            HeaderAlign::Start => cell,
+            HeaderAlign::End => cell.flex().justify_end(),
+        }
+    });
+    div()
+        .flex()
+        .items_center()
+        .w_full()
+        .gap(gap)
+        .py(h_py)
+        .px(h_px)
+        .bg(header_bg)
+        .children(header_cells)
+}
+
 fn column_cell(width: ColumnWidth, child: impl IntoElement) -> Div {
     let spec = column_flex(width);
     let mut cell = div().child(child);
@@ -214,30 +248,14 @@ impl RenderOnce for DataTable {
 
         let widths: Vec<ColumnWidth> = self.columns.iter().map(|c| c.width).collect();
 
-        let header_ink = colors.header_ink;
-        let header_cells = self.columns.into_iter().map(move |c| {
-            let label_el = div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_XXS)
-                .whitespace_nowrap()
-                .text_color(header_ink)
-                .child(c.label);
-            let cell = column_cell(c.width, label_el);
-            match c.align {
-                HeaderAlign::Start => cell,
-                HeaderAlign::End => cell.flex().justify_end(),
-            }
-        });
-
-        let header = div()
-            .flex()
-            .items_center()
-            .w_full()
-            .gap(gap)
-            .py(h_py)
-            .px(h_px)
-            .bg(colors.header_bg)
-            .children(header_cells);
+        let header = table_header(
+            self.columns,
+            colors.header_bg,
+            colors.header_ink,
+            gap,
+            h_py,
+            h_px,
+        );
 
         let hover = colors.hover;
         let total = self.rows.len();
@@ -291,6 +309,82 @@ impl RenderOnce for DataTable {
         }
         root.child(header).child(rule()).child(body)
     }
+}
+
+/// Rows MUST be single-line: `uniform_list` measures one row and assumes the rest match.
+#[allow(clippy::too_many_arguments)]
+pub fn virtual_table<V, F>(
+    id: impl Into<ElementId>,
+    palette: &ForgePalette,
+    columns: Vec<Column>,
+    row_count: usize,
+    scroll: &UniformListScrollHandle,
+    density: Density,
+    row_builder: F,
+    cx: &mut Context<V>,
+) -> AnyElement
+where
+    V: 'static,
+    F: Fn(&mut V, usize, &mut Window, &mut Context<V>) -> DataRow + 'static,
+{
+    let gap = px(0.0);
+    let h_py = spacing(Spacing::Xs, density);
+    let h_px = spacing(Spacing::Md, density);
+    let r_py = spacing(Spacing::Xs, density);
+    let r_px = spacing(Spacing::Md, density);
+    let separator = palette.border_regular;
+    let hover = palette.base;
+
+    let widths: Vec<ColumnWidth> = columns.iter().map(|c| c.width).collect();
+    let header = table_header(columns, palette.shell, palette.text_faint, gap, h_py, h_px);
+
+    let list = uniform_list(
+        id,
+        row_count,
+        cx.processor(move |view, range: std::ops::Range<usize>, window, cx| {
+            let mut out = Vec::with_capacity(range.len());
+            for ix in range {
+                let row = row_builder(view, ix, window, cx);
+                let cells = row
+                    .cells
+                    .into_iter()
+                    .zip(widths.iter().copied())
+                    .map(|(cell, width)| column_cell(width, cell));
+                let mut row_el = div()
+                    .flex()
+                    .items_center()
+                    .w_full()
+                    .gap(gap)
+                    .py(r_py)
+                    .px(r_px)
+                    .border_b(px(1.0))
+                    .border_color(separator)
+                    .hover(move |s| s.bg(hover))
+                    .children(cells);
+                if let Some(group) = row.reveal_group {
+                    row_el = row_el.group(group);
+                }
+                out.push(row_el);
+            }
+            out
+        }),
+    )
+    .track_scroll(scroll)
+    .flex_1()
+    .min_h(px(0.0));
+
+    let rule = div().flex_none().h(px(1.0)).w_full().bg(separator);
+
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_h(px(0.0))
+        .w_full()
+        .child(header)
+        .child(rule)
+        .child(list)
+        .into_any_element()
 }
 
 #[cfg(test)]

@@ -9,10 +9,10 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
     OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge,
-    breadcrumb, chip, column, confirm_modal, context_menu, data_table, empty_state,
-    fmt_relative_time, hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay,
-    primary_button, primary_button_with_icon, radius, search_input, secondary_button, spacing,
-    status_dot, toggle, tr, with_alpha,
+    breadcrumb, chip, column, confirm_modal, context_menu, empty_state, fmt_relative_time,
+    hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, primary_button,
+    primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
+    tr, virtual_table, with_alpha,
 };
 use std::path::PathBuf;
 
@@ -20,7 +20,7 @@ use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
     App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px, svg,
+    Subscription, UniformListScrollHandle, Window, div, prelude::*, px, svg,
 };
 
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
@@ -139,6 +139,7 @@ pub struct GlobalsView {
     inspecting: Option<Global>,
     renaming: Option<RenameState>,
     row_menu: Option<RowMenu>,
+    table_scroll: UniformListScrollHandle,
     _globals_obs: Subscription,
     _search_sub: Subscription,
 }
@@ -175,6 +176,7 @@ impl GlobalsView {
             inspecting: None,
             renaming: None,
             row_menu: None,
+            table_scroll: UniformListScrollHandle::new(),
             _globals_obs: globals_obs,
             _search_sub: search_sub,
         };
@@ -874,7 +876,8 @@ impl GlobalsView {
     ) -> impl IntoElement + use<> {
         let rows = &self.visible;
 
-        let body = if rows.is_empty() {
+        let count = rows.len();
+        let body = if count == 0 {
             let caption: SharedString = if self.loading {
                 tr!("globals_loading").into()
             } else {
@@ -909,33 +912,34 @@ impl GlobalsView {
                 column(tr!("globals_col_persist"), ColumnWidth::Fixed(px(64.0))),
                 column(tr!("globals_col_actions"), ColumnWidth::Fixed(px(84.0))),
             ];
-            let data_rows: Vec<DataRow> = rows
-                .iter()
-                .enumerate()
-                .map(|(idx, g)| self.build_row(idx, g, palette, cx))
-                .collect();
-            data_table(palette, columns, data_rows)
-                .density(Density::Compact)
-                .into_any_element()
+            let pal = *palette;
+            virtual_table(
+                "globals-scroll",
+                palette,
+                columns,
+                count,
+                &self.table_scroll,
+                Density::Compact,
+                move |this, ix, _window, cx| {
+                    let g = this.visible[ix].clone();
+                    this.build_row(&g, &pal, cx)
+                },
+                cx,
+            )
         };
 
         div()
-            .id("globals-scroll")
+            .id("globals-table")
             .flex_1()
             .h_full()
-            .overflow_y_scroll()
+            .flex()
+            .flex_col()
             .bg(palette.base)
             .child(body)
     }
 
-    fn build_row(
-        &self,
-        idx: usize,
-        g: &Global,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> DataRow {
-        let group: SharedString = format!("globals-row-{idx}").into();
+    fn build_row(&self, g: &Global, palette: &ForgePalette, cx: &mut Context<Self>) -> DataRow {
+        let group: SharedString = format!("globals-row-{}", g.name).into();
         let kind = g.kind();
         let name = g.name.clone();
 
@@ -979,7 +983,7 @@ impl GlobalsView {
                 .flex()
                 .justify_center()
                 .child(toggle(g.persisted, palette).on_click(
-                    ("globals-persist", idx),
+                    (gpui::ElementId::from("globals-persist"), name.clone()),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.toggle_persist(toggle_name.clone(), cx)
                     }),
@@ -993,7 +997,7 @@ impl GlobalsView {
             .justify_end()
             .gap(px(2.0))
             .child(self.row_action(
-                ("globals-edit", idx),
+                (gpui::ElementId::from("globals-edit"), name.clone()),
                 Icon::Edit,
                 palette.text_secondary,
                 with_alpha(palette.brand, ACTION_HOVER_ALPHA),
@@ -1002,7 +1006,7 @@ impl GlobalsView {
                 }),
             ))
             .child(self.row_action(
-                ("globals-delete", idx),
+                (gpui::ElementId::from("globals-delete"), name.clone()),
                 Icon::X,
                 palette.text_secondary,
                 palette.random,

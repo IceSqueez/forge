@@ -9,15 +9,14 @@ use forge_components::{
 };
 use forge_events::EventSource;
 use gpui::{
-    ClickEvent, Context, Div, Entity, Pixels, Rgba, ScrollHandle, ScrollWheelEvent, Stateful,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Div, Entity, Pixels, Rgba, ScrollWheelEvent, Stateful,
+    Subscription, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 
 use crate::event_log::{EventFilter, EventItem, EventLog};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
-const AT_BOTTOM_SLACK: f32 = 40.0;
 const INSPECTOR_INITIAL: f32 = 300.0;
 const INSPECTOR_MIN: f32 = 220.0;
 const INSPECTOR_MAX: f32 = 540.0;
@@ -65,7 +64,7 @@ pub struct EventFeedView {
     matched: HashSet<gpui::SharedString>,
     auto_scroll: bool,
     inspector_width: f32,
-    list_scroll: ScrollHandle,
+    list_scroll: UniformListScrollHandle,
     rt_handle: tokio::runtime::Handle,
     _log_obs: Subscription,
 }
@@ -111,7 +110,7 @@ impl EventFeedView {
         cx: &mut Context<Self>,
     ) -> Self {
         let log_obs = cx.observe(&log, Self::on_log_changed);
-        let list_scroll = ScrollHandle::new();
+        let list_scroll = UniformListScrollHandle::new();
         list_scroll.scroll_to_bottom();
         let (visible, downstream, matched) =
             compute_projection(log.read(cx), EventFilter::default());
@@ -251,8 +250,7 @@ impl EventFeedView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let remaining = self.list_scroll.max_offset().y + self.list_scroll.offset().y;
-        self.auto_scroll = remaining <= px(AT_BOTTOM_SLACK);
+        self.auto_scroll = self.list_scroll.is_scrolled_to_end().unwrap_or(true);
         cx.notify();
     }
 
@@ -516,15 +514,9 @@ impl EventFeedView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let filter = self.active_filter;
-        let empty = self.visible.is_empty();
-        let mut list = div().w_full().flex().flex_col();
-        for item in self.visible.iter() {
-            let is_sel = selected_id == Some(&item.id);
-            let tag = Self::outcome_tag(item, &self.downstream, &self.matched);
-            list = list.child(self.render_row(item, is_sel, tag, palette, cx));
-        }
+        let count = self.visible.len();
 
-        let empty_note = empty.then(|| {
+        let body: AnyElement = if count == 0 {
             let label = if matches!(filter, EventFilter::All) {
                 tr!("event_feed_no_events")
             } else {
@@ -537,19 +529,45 @@ impl EventFeedView {
                 .items_center()
                 .justify_center()
                 .child(empty_state(label, palette).density(density))
-        });
+                .into_any_element()
+        } else {
+            let selected = selected_id.cloned();
+            let pal = *palette;
+            uniform_list(
+                "event-feed-list",
+                count,
+                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                    let mut rows = Vec::with_capacity(range.len());
+                    for ix in range {
+                        let Some(item) = this.visible.get(ix).cloned() else {
+                            continue;
+                        };
+                        let is_sel = selected.as_ref() == Some(&item.id);
+                        let tag = Self::outcome_tag(&item, &this.downstream, &this.matched);
+                        rows.push(
+                            this.render_row(&item, is_sel, tag, &pal, cx)
+                                .into_any_element(),
+                        );
+                    }
+                    rows
+                }),
+            )
+            .track_scroll(&self.list_scroll)
+            .flex_1()
+            .min_h(px(0.0))
+            .on_scroll_wheel(cx.listener(Self::on_wheel))
+            .into_any_element()
+        };
 
         div()
             .id("event-feed-scroll")
             .flex_1()
             .h_full()
-            .overflow_y_scroll()
-            .track_scroll(&self.list_scroll)
-            .on_scroll_wheel(cx.listener(Self::on_wheel))
+            .flex()
+            .flex_col()
             .bg(palette.base)
             .pt(spacing(Spacing::Sm, density))
-            .child(list)
-            .children(empty_note)
+            .child(body)
     }
 
     fn render_inspector(

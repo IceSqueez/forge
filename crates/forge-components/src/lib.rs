@@ -51,6 +51,7 @@ pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use data::{
     Column, ColumnWidth, DataRow, DataTable, HeaderAlign, column, data_table, hover_reveal,
+    virtual_table,
 };
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
 pub use fonts::embedded_fonts;

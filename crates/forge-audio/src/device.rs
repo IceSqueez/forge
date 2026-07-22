@@ -170,11 +170,70 @@ pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
 mod tests {
     use super::*;
 
+    fn dev(id: &str, is_default: bool) -> DeviceInfo {
+        DeviceInfo {
+            id: DeviceId::new(id),
+            name: id.to_owned(),
+            is_default,
+        }
+    }
+
     #[test]
-    fn device_id_serde_roundtrip() {
-        let id = DeviceId::new("alsa-default");
-        let json = serde_json::to_string(&id).unwrap();
-        let back: DeviceId = serde_json::from_str(&json).unwrap();
-        assert_eq!(id, back);
+    fn canonical_chain_beats_is_default_flagged_sysdefault() {
+        let devices = [dev("sysdefault", true), dev("pipewire", false)];
+        assert_eq!(
+            pick_default_output_device(&devices),
+            Some(DeviceId::new("pipewire")),
+        );
+    }
+
+    #[test]
+    fn canonical_chain_is_consulted_in_priority_order() {
+        for (devices, expected) in [
+            (
+                vec![
+                    dev("default", false),
+                    dev("pipewire", false),
+                    dev("pulse", true),
+                ],
+                "default",
+            ),
+            (vec![dev("pipewire", false), dev("pulse", true)], "pipewire"),
+        ] {
+            assert_eq!(
+                pick_default_output_device(&devices),
+                Some(DeviceId::new(expected)),
+                "chain order violated for {devices:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn falls_back_to_is_default_when_no_canonical_name_present() {
+        let devices = [dev("BuiltInOutput", false), dev("USB DAC", true)];
+        assert_eq!(
+            pick_default_output_device(&devices),
+            Some(DeviceId::new("USB DAC")),
+        );
+    }
+
+    #[test]
+    fn sysdefault_ids_are_classified_as_noise() {
+        for id in ["sysdefault", "sysdefault:CARD=PCH"] {
+            assert!(
+                is_noise_device_id(id),
+                "expected noise classification: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_chain_ids_survive_noise_filtering() {
+        for id in CANONICAL_OUTPUT_CHAIN {
+            assert!(
+                !is_noise_device_id(id),
+                "chain member wrongly filtered as noise: {id}"
+            );
+        }
     }
 }

@@ -386,10 +386,6 @@ mod tests {
         assert!(matches!(received, SpeakEvent::Cleared));
     }
 
-    // Regression: a broadcast overflow (`Lagged`) must surface as
-    // `LaggingReceiver`, NOT `ActorGone` - the desktop speak-state bridge
-    // treats `ActorGone` as terminal and would exit forever on a mere lag.
-    // The same stream must keep delivering events after the lag.
     #[tokio::test]
     async fn lagging_receiver_surfaces_lagging_error_and_stream_stays_usable() {
         let (tx, rx) = tokio::sync::broadcast::channel::<SpeakEvent>(2);

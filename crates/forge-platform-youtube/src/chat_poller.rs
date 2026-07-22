@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::PlatformError;
+use forge_platform_core::{DedupSet, PlatformError};
 use forge_types::{ChatEventDetail, ChatPayload, ChatSegment, ModerationMarks, UserBadge};
 use futures::future::BoxFuture;
 use tokio::sync::Mutex;
@@ -10,7 +10,6 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::dedup_window::{DEDUP_WINDOW_SIZE, DedupWindow};
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, QuotaState, today_pacific};
 
@@ -18,6 +17,7 @@ const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
 const BROADCAST_CADENCE_SECS: u64 = 60;
+const DEDUP_WINDOW_SIZE: usize = 500;
 
 struct ChatMessagesResponse {
     items: Vec<serde_json::Value>,
@@ -67,7 +67,7 @@ impl YoutubeChatPoller {
     }
 
     pub async fn run(self, cancel: CancellationToken) -> Result<(), PlatformError> {
-        let mut dedup = DedupWindow::new(DEDUP_WINDOW_SIZE);
+        let mut dedup = DedupSet::bounded(DEDUP_WINDOW_SIZE);
         let mut last_seen_title: Option<String> = None;
 
         'outer: loop {
@@ -365,7 +365,7 @@ impl YoutubeChatPoller {
         })
     }
 
-    fn build_event(&self, item: &serde_json::Value, dedup: &mut DedupWindow) -> Option<Event> {
+    fn build_event(&self, item: &serde_json::Value, dedup: &mut DedupSet) -> Option<Event> {
         let id = item
             .get("id")
             .and_then(|v| v.as_str())

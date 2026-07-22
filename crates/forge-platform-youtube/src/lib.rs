@@ -6,7 +6,6 @@ pub mod chat_poller;
 pub(crate) mod control;
 pub mod credentials;
 pub mod credentials_manager;
-pub mod dedup_window;
 mod event_channel;
 pub mod live_chat_id;
 pub mod moderation;

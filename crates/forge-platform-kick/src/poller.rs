@@ -1,9 +1,8 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::PlatformError;
+use forge_platform_core::{DedupSet, PlatformError};
 use futures::future::BoxFuture;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -122,7 +121,7 @@ async fn poll_redemptions(
     rewards: &KickRewards,
     token_source: &TokenSource,
     event_tx: &mpsc::Sender<Event>,
-    seen: &mut HashSet<String>,
+    seen: &mut DedupSet,
     seeded: &mut bool,
 ) -> Result<(), ()> {
     let Some(token) = resolve_token(token_source).await else {
@@ -139,12 +138,11 @@ async fn poll_redemptions(
 
     let emit_allowed = *seeded;
     for record in &records {
-        if seen.insert(record.id.clone()) && emit_allowed {
+        if seen.try_insert(record.id.clone()) && emit_allowed {
             emit(event_tx, REWARD_REDEEMED_KIND, redemption_payload(record)).await?;
         }
     }
-    let current: HashSet<&str> = records.iter().map(|r| r.id.as_str()).collect();
-    seen.retain(|id| current.contains(id.as_str()));
+    seen.retain_present(records.iter().map(|r| r.id.as_str()));
     *seeded = true;
     Ok(())
 }
@@ -158,7 +156,7 @@ async fn run_loop(
     let mut channel_interval = tokio::time::interval(CHANNEL_POLL_INTERVAL);
     let mut redemption_interval = tokio::time::interval(REDEMPTION_POLL_INTERVAL);
     let mut last_snapshot: Option<ChannelSnapshot> = None;
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen = DedupSet::unbounded();
     let mut redemptions_seeded = false;
 
     loop {
@@ -487,7 +485,7 @@ mod tests {
 
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(4);
-        let mut seen: HashSet<String> = HashSet::new();
+        let mut seen = DedupSet::unbounded();
         let mut seeded = false;
 
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
@@ -518,8 +516,8 @@ mod tests {
 
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(4);
-        let mut seen: HashSet<String> = HashSet::new();
-        seen.insert("rd_1".to_owned());
+        let mut seen = DedupSet::unbounded();
+        seen.try_insert("rd_1".to_owned());
         let mut seeded = true;
 
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
@@ -549,7 +547,7 @@ mod tests {
 
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(4);
-        let mut seen: HashSet<String> = HashSet::new();
+        let mut seen = DedupSet::unbounded();
         let mut seeded = true;
 
         let result = poll_redemptions(&rewards, &err_token(), &tx, &mut seen, &mut seeded).await;
@@ -593,7 +591,7 @@ mod tests {
 
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(8);
-        let mut seen: HashSet<String> = HashSet::new();
+        let mut seen = DedupSet::unbounded();
         let mut seeded = false;
 
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
@@ -619,10 +617,9 @@ mod tests {
             rx.try_recv().is_err(),
             "a is still pending and already seen, so nothing emits"
         );
-        let remaining: HashSet<String> = seen;
-        assert_eq!(
-            remaining,
-            HashSet::from(["a".to_owned()]),
+        assert!(seen.contains("a"));
+        assert!(
+            !seen.contains("b") && !seen.contains("c"),
             "resolved ids b and c must be pruned, leaving only the live pending id"
         );
     }

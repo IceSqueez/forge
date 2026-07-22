@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use time::OffsetDateTime;
@@ -6,7 +5,7 @@ use tokio::sync::{Notify, broadcast, mpsc};
 use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
-use forge_platform_core::{BuiltinId, ConnectionState, HealthDelta};
+use forge_platform_core::{AtomicConnectionState, BuiltinId, ConnectionState, HealthDelta};
 use forge_storage::CredentialsRepo;
 
 use crate::auth::AuthState;
@@ -16,11 +15,6 @@ use crate::protocol::new_request;
 use crate::request::PendingRequest;
 
 pub(crate) type ReqTxSlot = Arc<tokio::sync::Mutex<mpsc::UnboundedSender<PendingRequest>>>;
-
-pub(crate) const STATE_DISCONNECTED: u8 = 0;
-pub(crate) const STATE_CONNECTING: u8 = 1;
-pub(crate) const STATE_CONNECTED: u8 = 2;
-pub(crate) const STATE_RECONNECTING: u8 = 3;
 
 pub(crate) type VtsWs =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -41,7 +35,7 @@ impl Default for VTubeConfig {
 pub struct VTubeClient {
     pub(crate) config: VTubeConfig,
     pub(crate) vtube_id: BuiltinId,
-    pub(crate) state: Arc<AtomicU8>,
+    pub(crate) state: Arc<AtomicConnectionState>,
     pub(crate) auth_state: Arc<RwLock<AuthState>>,
     // Wrapped so reconnect can swap the Notify without a race against the
     // supervisor's own clone of the Arc.
@@ -69,7 +63,7 @@ impl VTubeClient {
         publisher: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
     ) -> Self {
-        let state = Arc::new(AtomicU8::new(STATE_CONNECTING));
+        let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let auth_state = Arc::new(RwLock::new(AuthState::Cold));
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
@@ -132,12 +126,7 @@ impl VTubeClient {
     }
 
     pub fn connection_state(&self) -> ConnectionState {
-        match self.state.load(Ordering::Acquire) {
-            STATE_CONNECTED => ConnectionState::Connected,
-            STATE_CONNECTING => ConnectionState::Connecting,
-            STATE_RECONNECTING => ConnectionState::Reconnecting,
-            _ => ConnectionState::Disconnected,
-        }
+        self.state.load()
     }
 
     pub(crate) async fn send_json_request(
@@ -145,7 +134,7 @@ impl VTubeClient {
         msg_type: &str,
         data: serde_json::Value,
     ) -> Result<serde_json::Value, VTubeError> {
-        if self.state.load(Ordering::Acquire) != STATE_CONNECTED {
+        if !self.state.load().is_connected() {
             return Err(VTubeError::NotConnected);
         }
         let req = new_request(msg_type, data);
@@ -192,7 +181,7 @@ impl VTubeClient {
                 endpoint: endpoint.into(),
             },
             vtube_id: BuiltinId::new("vtube"),
-            state: Arc::new(AtomicU8::new(STATE_DISCONNECTED)),
+            state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
             auth_state: Arc::new(RwLock::new(AuthState::Cold)),
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),

@@ -165,15 +165,9 @@ impl YoutubeIntegrationBundle {
 }
 
 fn chat_poller_health_value(state: ConnectionState) -> HealthValue {
-    let (label, active) = match state {
-        ConnectionState::Connected => ("Connected".to_owned(), true),
-        ConnectionState::Connecting => ("Connecting".to_owned(), false),
-        ConnectionState::Reconnecting => ("Reconnecting".to_owned(), false),
-        ConnectionState::Disconnected => ("Disconnected".to_owned(), false),
-    };
     HealthValue::Status {
-        label,
-        active,
+        label: state.label().to_owned(),
+        active: state.is_connected(),
         detail: Some("liveChatMessages.list".to_owned()),
     }
 }
@@ -259,7 +253,7 @@ impl BuiltinContent for YoutubeIntegrationBundle {
 
 impl QuickActions for YoutubeIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
-        let connected = matches!(self.current_state(), ConnectionState::Connected);
+        let connected = self.current_state().is_connected();
         vec![
             QuickAction {
                 label: "Refresh channel info".to_owned(),

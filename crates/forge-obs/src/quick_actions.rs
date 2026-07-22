@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
-use forge_platform_core::{ConnectionState, PickerKind, QuickAction, QuickActions, SectionIcon};
+use forge_platform_core::{PickerKind, QuickAction, QuickActions, SectionIcon};
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::ObsClient;
 
 impl QuickActions for ObsClient {
     fn actions(&self) -> Vec<QuickAction> {
-        let connected = self.connection_state() == ConnectionState::Connected;
+        let connected = self.connection_state().is_connected();
         let recording = self
             .health_state
             .read()

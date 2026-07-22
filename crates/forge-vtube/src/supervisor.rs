@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -9,13 +8,11 @@ use tokio::sync::{Notify, broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{Backoff, HealthDelta};
+use forge_platform_core::{AtomicConnectionState, Backoff, ConnectionState, HealthDelta};
 use forge_storage::CredentialsRepo;
 
 use crate::auth::AuthState;
-use crate::client::{
-    STATE_CONNECTED, STATE_CONNECTING, STATE_DISCONNECTED, STATE_RECONNECTING, VtsWs,
-};
+use crate::client::VtsWs;
 use crate::error::VTubeError;
 use crate::health::{HealthSnapshot, update_from_event};
 use crate::protocol::new_request;
@@ -159,7 +156,7 @@ async fn run_auth(
 
 pub(crate) struct SupervisorContext {
     pub(crate) endpoint: String,
-    pub(crate) state: Arc<AtomicU8>,
+    pub(crate) state: Arc<AtomicConnectionState>,
     pub(crate) auth_state: Arc<RwLock<AuthState>>,
     pub(crate) shutdown: Arc<Notify>,
     pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -200,19 +197,18 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}
                 () = shutdown.notified() => {
-                    state.store(STATE_DISCONNECTED, Ordering::Release);
+                    state.store(ConnectionState::Disconnected);
                     emit_connection_changed(&*publisher, &endpoint, false, None);
                     return;
                 }
             }
         }
 
-        let conn_state = if reconnecting {
-            STATE_RECONNECTING
+        state.store(if reconnecting {
+            ConnectionState::Reconnecting
         } else {
-            STATE_CONNECTING
-        };
-        state.store(conn_state, Ordering::Release);
+            ConnectionState::Connecting
+        });
         tracing::debug!(endpoint = %endpoint, "attempting VTube Studio connection");
 
         let mut ws = match tokio_tungstenite::connect_async(&endpoint).await {
@@ -241,7 +237,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     false,
                     Some("auth_required".to_owned()),
                 );
-                state.store(STATE_DISCONNECTED, Ordering::Release);
+                state.store(ConnectionState::Disconnected);
                 return;
             }
             Err(VTubeError::TokenDenied | VTubeError::TokenTimeout) => {
@@ -254,7 +250,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     false,
                     Some("auth_denied".to_owned()),
                 );
-                state.store(STATE_DISCONNECTED, Ordering::Release);
+                state.store(ConnectionState::Disconnected);
                 return;
             }
             Err(e) => {
@@ -282,7 +278,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::Connected;
         }
-        state.store(STATE_CONNECTED, Ordering::Release);
+        state.store(ConnectionState::Connected);
         emit_connection_changed(&*publisher, &endpoint, true, None);
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
 
@@ -292,7 +288,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         loop {
             tokio::select! {
                 () = shutdown.notified() => {
-                    state.store(STATE_DISCONNECTED, Ordering::Release);
+                    state.store(ConnectionState::Disconnected);
                     if let Ok(mut g) = auth_state.write() {
                         *g = AuthState::Cold;
                     }

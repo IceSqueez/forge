@@ -22,7 +22,8 @@ pub use builtin::{
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{
-    CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState, connection_state_changed_event,
+    AtomicConnectionState, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState,
+    connection_state_changed_event,
 };
 pub use error::PlatformError;
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};

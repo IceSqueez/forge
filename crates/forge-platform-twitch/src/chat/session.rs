@@ -27,6 +27,17 @@ pub enum ChatConnectionState {
     Disconnected,
 }
 
+impl ChatConnectionState {
+    pub(crate) fn to_connection_state(self) -> ConnectionState {
+        match self {
+            Self::Connecting => ConnectionState::Connecting,
+            Self::Connected => ConnectionState::Connected,
+            Self::Reconnecting { .. } => ConnectionState::Reconnecting,
+            Self::Disconnected => ConnectionState::Disconnected,
+        }
+    }
+}
+
 struct SessionConfig {
     token: OAuthToken,
     client_id: String,
@@ -3438,12 +3449,7 @@ impl ChatSession {
     }
 
     fn publish_connection_event(&self) {
-        let state = match *self.state_tx.borrow() {
-            ChatConnectionState::Connecting => ConnectionState::Connecting,
-            ChatConnectionState::Connected => ConnectionState::Connected,
-            ChatConnectionState::Reconnecting { .. } => ConnectionState::Reconnecting,
-            ChatConnectionState::Disconnected => ConnectionState::Disconnected,
-        };
+        let state = self.state_tx.borrow().to_connection_state();
         self.config
             .bus
             .publish(connection_state_changed_event("twitch", state));

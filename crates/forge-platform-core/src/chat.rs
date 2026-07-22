@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use async_trait::async_trait;
 use forge_events::{Event, EventSource, EventStream};
 use serde::{Deserialize, Serialize};
@@ -11,6 +13,55 @@ pub enum ConnectionState {
     Connecting,
     Connected,
     Reconnecting,
+}
+
+impl ConnectionState {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Disconnected => "Disconnected",
+            Self::Connecting => "Connecting",
+            Self::Connected => "Connected",
+            Self::Reconnecting => "Reconnecting",
+        }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        matches!(self, Self::Connected)
+    }
+
+    fn encode(self) -> u8 {
+        match self {
+            Self::Disconnected => 0,
+            Self::Connecting => 1,
+            Self::Connected => 2,
+            Self::Reconnecting => 3,
+        }
+    }
+
+    fn decode(value: u8) -> Self {
+        match value {
+            1 => Self::Connecting,
+            2 => Self::Connected,
+            3 => Self::Reconnecting,
+            _ => Self::Disconnected,
+        }
+    }
+}
+
+pub struct AtomicConnectionState(AtomicU8);
+
+impl AtomicConnectionState {
+    pub fn new(initial: ConnectionState) -> Self {
+        Self(AtomicU8::new(initial.encode()))
+    }
+
+    pub fn load(&self) -> ConnectionState {
+        ConnectionState::decode(self.0.load(Ordering::Relaxed))
+    }
+
+    pub fn store(&self, state: ConnectionState) {
+        self.0.store(state.encode(), Ordering::Relaxed);
+    }
 }
 
 #[async_trait]

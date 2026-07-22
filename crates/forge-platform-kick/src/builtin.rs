@@ -75,15 +75,10 @@ impl KickIntegrationBundle {
     }
 
     fn ws_health_value(&self) -> HealthValue {
-        let (label, active) = match self.current_state() {
-            ConnectionState::Connected => ("Connected".to_owned(), true),
-            ConnectionState::Connecting => ("Connecting".to_owned(), false),
-            ConnectionState::Reconnecting => ("Reconnecting".to_owned(), false),
-            ConnectionState::Disconnected => ("Disconnected".to_owned(), false),
-        };
+        let state = self.current_state();
         HealthValue::Status {
-            label,
-            active,
+            label: state.label().to_owned(),
+            active: state.is_connected(),
             detail: Some(format!("chatrooms.{}.v2", self.slug)),
         }
     }
@@ -206,7 +201,7 @@ impl BuiltinContent for KickIntegrationBundle {
 
 impl QuickActions for KickIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
-        let connected = matches!(self.current_state(), ConnectionState::Connected);
+        let connected = self.current_state().is_connected();
         vec![
             QuickAction {
                 label: "Resync chatroom".to_owned(),

@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use tokio::sync::Notify;
 
-use forge_platform_core::{BuiltinControl, ControlFailure, ControlOutcome};
+use forge_platform_core::{BuiltinControl, ConnectionState, ControlFailure, ControlOutcome};
 
-use crate::client::{STATE_CONNECTING, VTubeClient};
+use crate::client::VTubeClient;
 use crate::supervisor::SupervisorContext;
 
 #[async_trait]
@@ -30,7 +29,7 @@ impl BuiltinControl for VTubeClient {
             let _ = h.await;
         }
 
-        self.state.store(STATE_CONNECTING, Ordering::Release);
+        self.state.store(ConnectionState::Connecting);
         if let Ok(mut g) = self.connected_at.write() {
             *g = None;
         }

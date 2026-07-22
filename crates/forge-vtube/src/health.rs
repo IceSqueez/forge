@@ -1,14 +1,15 @@
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
+use forge_platform_core::{
+    AtomicConnectionState, BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue,
+};
 
-use crate::client::{STATE_CONNECTED, VTubeClient};
+use crate::client::VTubeClient;
 use crate::events::RawEnvelope;
 use crate::protocol::new_request;
 use crate::request::PendingRequest;
@@ -98,7 +99,7 @@ pub(crate) fn spawn_health_task(
     tx: broadcast::Sender<HealthDelta>,
     req_tx: mpsc::UnboundedSender<PendingRequest>,
     api_call_rx: mpsc::UnboundedReceiver<()>,
-    connection_state: Arc<AtomicU8>,
+    connection_state: Arc<AtomicConnectionState>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(run_health_task(
         snap,
@@ -114,7 +115,7 @@ async fn run_health_task(
     tx: broadcast::Sender<HealthDelta>,
     req_tx: mpsc::UnboundedSender<PendingRequest>,
     mut api_call_rx: mpsc::UnboundedReceiver<()>,
-    connection_state: Arc<AtomicU8>,
+    connection_state: Arc<AtomicConnectionState>,
 ) {
     use tokio::time::{Duration, interval};
 
@@ -159,7 +160,7 @@ async fn run_health_task(
                 }
             }
             _ = stats_tick.tick() => {
-                if connection_state.load(Ordering::Acquire) == STATE_CONNECTED {
+                if connection_state.load().is_connected() {
                     poll_stats(&snap, &tx, &req_tx).await;
                 }
             }
@@ -269,15 +270,14 @@ impl BuiltinHealth for VTubeClient {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::AtomicU8;
 
     use tokio::sync::mpsc;
     use tokio_stream::StreamExt as _;
 
-    use forge_platform_core::{BuiltinHealth, HealthValue};
+    use forge_platform_core::{BuiltinHealth, ConnectionState, HealthValue};
 
     use super::*;
-    use crate::client::{STATE_CONNECTED, STATE_DISCONNECTED, VTubeClient};
+    use crate::client::VTubeClient;
     use crate::events::RawEnvelope;
 
     fn make_envelope(message_type: &str, data: serde_json::Value) -> RawEnvelope {
@@ -381,7 +381,7 @@ mod tests {
         let (health_tx, health_snap) = make_health_channel();
         let (req_tx, _req_rx) = mpsc::unbounded_channel();
         let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
-        let connection_state = Arc::new(AtomicU8::new(STATE_DISCONNECTED));
+        let connection_state = Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected));
 
         let handle = spawn_health_task(
             health_snap,
@@ -405,7 +405,7 @@ mod tests {
         let mut delta_rx = health_tx.subscribe();
         let (req_tx, _req_rx) = mpsc::unbounded_channel();
         let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
-        let connection_state = Arc::new(AtomicU8::new(STATE_CONNECTED));
+        let connection_state = Arc::new(AtomicConnectionState::new(ConnectionState::Connected));
 
         let handle = spawn_health_task(
             Arc::clone(&health_snap),

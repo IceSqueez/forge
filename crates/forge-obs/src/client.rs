@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
@@ -11,8 +10,8 @@ use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
-    Backoff, BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
-    ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HealthValue,
+    AtomicConnectionState, Backoff, BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags,
+    ConnectionState, ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HealthValue,
 };
 use forge_types::EventId;
 
@@ -21,17 +20,12 @@ use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
 use crate::source::SourceInfo;
 
-const STATE_DISCONNECTED: u8 = 0;
-const STATE_CONNECTING: u8 = 1;
-const STATE_CONNECTED: u8 = 2;
-const STATE_RECONNECTING: u8 = 3;
-
 pub struct ObsClient {
     pub(crate) inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
     pub(crate) scene_item_id_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     pub(crate) last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     endpoint: String,
-    state: Arc<AtomicU8>,
+    state: Arc<AtomicConnectionState>,
     // Wrapped in an async Mutex so reconnect can swap out the Notify for the
     // new supervisor cycle without a data race against the running supervisor's
     // own clone of the Arc.
@@ -60,7 +54,7 @@ impl ObsClient {
         let (host, port) = parse_endpoint(endpoint)?;
 
         let inner = Arc::new(tokio::sync::RwLock::new(None::<obws::Client>));
-        let state = Arc::new(AtomicU8::new(STATE_CONNECTING));
+        let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
@@ -115,12 +109,7 @@ impl ObsClient {
     }
 
     pub fn connection_state(&self) -> ConnectionState {
-        match self.state.load(Ordering::Acquire) {
-            STATE_CONNECTED => ConnectionState::Connected,
-            STATE_CONNECTING => ConnectionState::Connecting,
-            STATE_RECONNECTING => ConnectionState::Reconnecting,
-            _ => ConnectionState::Disconnected,
-        }
+        self.state.load()
     }
 
     pub async fn shutdown(&self) {
@@ -139,7 +128,7 @@ impl ObsClient {
         Self {
             inner: Arc::new(tokio::sync::RwLock::new(None)),
             endpoint,
-            state: Arc::new(AtomicU8::new(STATE_DISCONNECTED)),
+            state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
@@ -226,7 +215,7 @@ impl BuiltinControl for ObsClient {
         *slot = Arc::clone(&new_notify);
         drop(slot);
 
-        self.state.store(STATE_CONNECTING, Ordering::Release);
+        self.state.store(ConnectionState::Connecting);
         if let Ok(mut g) = self.connected_at.write() {
             *g = None;
         }
@@ -277,7 +266,7 @@ impl BuiltinControl for ObsClient {
 
 struct SupervisorContext {
     inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
-    state: Arc<AtomicU8>,
+    state: Arc<AtomicConnectionState>,
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_version: Arc<OnceLock<String>>,
@@ -318,18 +307,17 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}
                 () = shutdown.notified() => {
-                    state.store(STATE_DISCONNECTED, Ordering::Release);
+                    state.store(ConnectionState::Disconnected);
                     return;
                 }
             }
         }
 
-        let conn_state = if reconnecting {
-            STATE_RECONNECTING
+        state.store(if reconnecting {
+            ConnectionState::Reconnecting
         } else {
-            STATE_CONNECTING
-        };
-        state.store(conn_state, Ordering::Release);
+            ConnectionState::Connecting
+        });
         tracing::debug!(host = %host, port, "attempting OBS connection");
 
         let connect_config = obws::client::ConnectConfig {
@@ -365,7 +353,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     *g = Some(OffsetDateTime::now_utc());
                 }
 
-                state.store(STATE_CONNECTED, Ordering::Release);
+                state.store(ConnectionState::Connected);
                 tracing::info!(host = %host, port, "connected to OBS");
                 publisher.publish(crate::events::make_connection_connected());
 
@@ -387,7 +375,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                             () = shutdown.notified() => {
                                 stats_handle.abort();
                                 inner.write().await.take();
-                                state.store(STATE_DISCONNECTED, Ordering::Release);
+                                state.store(ConnectionState::Disconnected);
                                 tracing::info!("OBS supervisor shutting down");
                                 return;
                             }
@@ -421,7 +409,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                         shutdown.notified().await;
                         stats_handle.abort();
                         inner.write().await.take();
-                        state.store(STATE_DISCONNECTED, Ordering::Release);
+                        state.store(ConnectionState::Disconnected);
                         return;
                     }
                 }
@@ -437,7 +425,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 publisher.publish(crate::events::make_connection_auth_failed(
                     "authentication rejected",
                 ));
-                state.store(STATE_DISCONNECTED, Ordering::Release);
+                state.store(ConnectionState::Disconnected);
                 return;
             }
 

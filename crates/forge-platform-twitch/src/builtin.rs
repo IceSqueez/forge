@@ -288,18 +288,13 @@ impl TwitchIntegrationBundle {
     }
 
     fn chat_label(&self) -> String {
-        match self.chat_connection_state() {
-            ChatConnectionState::Connected => {
-                if let Some(login) = &self.login {
-                    format!("Joined #{login}")
-                } else {
-                    "Connected".to_owned()
-                }
-            }
-            ChatConnectionState::Connecting => "Connecting".to_owned(),
-            ChatConnectionState::Reconnecting { .. } => "Reconnecting".to_owned(),
-            ChatConnectionState::Disconnected => "Disconnected".to_owned(),
+        let state = self.chat_connection_state();
+        if state == ChatConnectionState::Connected
+            && let Some(login) = &self.login
+        {
+            return format!("Joined #{login}");
         }
+        state.to_connection_state().label().to_owned()
     }
 
     fn active_sub_count(&self) -> usize {
@@ -368,12 +363,7 @@ impl BuiltinStatus for TwitchIntegrationBundle {
     }
 
     fn connection(&self) -> ConnectionState {
-        match self.chat_connection_state() {
-            ChatConnectionState::Connected => ConnectionState::Connected,
-            ChatConnectionState::Connecting => ConnectionState::Connecting,
-            ChatConnectionState::Reconnecting { .. } => ConnectionState::Reconnecting,
-            ChatConnectionState::Disconnected => ConnectionState::Disconnected,
-        }
+        self.chat_connection_state().to_connection_state()
     }
 
     fn uptime(&self) -> Option<Duration> {

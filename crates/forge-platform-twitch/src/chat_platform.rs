@@ -10,7 +10,7 @@ use tokio::sync::OnceCell;
 
 use crate::auth::twitch_auth_flow;
 use crate::builtin::ChatSessionConfig;
-use crate::chat::{ChatConnectionState, ChatSendError, TwitchChat, TwitchChatHandle, send_chat};
+use crate::chat::{ChatSendError, TwitchChat, TwitchChatHandle, send_chat};
 use crate::credentials::{CredentialsTokenSource, load};
 use crate::event_channel::PlatformEventChannel;
 use crate::helix::{HelixHttpTransport, HelixTransport};
@@ -103,7 +103,7 @@ impl ChatPlatform for TwitchPlatform {
             .as_ref()
             .map(TwitchChatHandle::connection_state);
         match snapshot {
-            Some(state) => map_chat_state(state),
+            Some(state) => state.to_connection_state(),
             None => ConnectionState::Disconnected,
         }
     }
@@ -165,15 +165,6 @@ impl ChatPlatform for TwitchPlatform {
 
     fn events(&self) -> EventStream {
         self.events.subscribe()
-    }
-}
-
-fn map_chat_state(state: ChatConnectionState) -> ConnectionState {
-    match state {
-        ChatConnectionState::Connecting => ConnectionState::Connecting,
-        ChatConnectionState::Connected => ConnectionState::Connected,
-        ChatConnectionState::Reconnecting { .. } => ConnectionState::Reconnecting,
-        ChatConnectionState::Disconnected => ConnectionState::Disconnected,
     }
 }
 

@@ -216,6 +216,7 @@ impl ScreenActionsView {
         }
 
         let last = segments.len().saturating_sub(1);
+        let text_primary = palette.text_primary;
         let mut row = div()
             .flex()
             .flex_wrap()
@@ -240,6 +241,7 @@ impl ScreenActionsView {
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .cursor_pointer()
+                            .hover(move |s| s.text_color(text_primary).underline())
                             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                 this.breadcrumb_pop(depth, cx)
                             }))
@@ -262,7 +264,23 @@ impl ScreenActionsView {
                 }
             }
         }
-        row.into_any_element()
+
+        let back_depth = self.nav_path.len() - 1;
+        let back_button = step_icon_btn(
+            SharedString::from("actions-breadcrumb-back"),
+            Icon::ChevronLeft,
+            false,
+            palette,
+            cx.listener(move |this, _: &ClickEvent, _, cx| this.breadcrumb_pop(back_depth, cx)),
+        );
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(back_button)
+            .child(row)
+            .into_any_element()
     }
 
     pub(super) fn render_branch_affordances(

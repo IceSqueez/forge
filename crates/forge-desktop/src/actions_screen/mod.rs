@@ -3,9 +3,9 @@ use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
-    DateTimePicker, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, Picker, TextArea,
-    TextInput, ToastKind, drive_overlay_focus, fmt_number, fmt_relative_time, icon, overlay,
-    search_input, tr,
+    BreadcrumbCrumb, DateTimePicker, Density, ForgePalette, GridPicker, Icon, InlineEdit,
+    OverlayPosition, Picker, TextArea, TextInput, ToastKind, drive_overlay_focus, fmt_number,
+    fmt_relative_time, icon, overlay, page_frame, search_input, tr,
 };
 use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
@@ -44,7 +44,7 @@ const ROW_GUTTER: Pixels = px(14.0);
 const STRIPE_W: Pixels = px(2.0);
 const TREE_GUTTER: Pixels = px(14.0);
 const TREE_GLYPH: Pixels = px(11.0);
-const SEARCH_W: Pixels = px(180.0);
+const SEARCH_W: Pixels = px(240.0);
 const HEADER_DIV_W: Pixels = px(0.5);
 const HEADER_DIV_H: Pixels = px(16.0);
 const GROUP_DOT: Pixels = px(8.0);
@@ -577,7 +577,9 @@ impl Render for ScreenActionsView {
             cx,
         );
 
-        let header = self.render_header(&palette, cx);
+        let stats = self.render_stats(&palette);
+        let filter_left = self.render_filter_left(&palette, cx);
+        let filter_right = self.render_filter_right(&palette, cx);
         let tree = self.render_tree(&palette, cx);
         let editor = self.render_editor_pane(&palette, cx);
 
@@ -625,13 +627,25 @@ impl Render for ScreenActionsView {
             .datetime_picker
             .as_ref()
             .map(|form| self.render_datetime_popover(form, cx));
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_actions")),
+            ],
+            &palette,
+        )
+        .header_right(stats)
+        .subheader_left(filter_left)
+        .subheader_right(filter_right)
+        .density(Density::Cozy)
+        .body(body);
+
         div()
             .size_full()
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(header)
-            .child(body)
+            .child(frame)
             .children(action_modal)
             .children(history_modal)
             .children(test_run_modal)

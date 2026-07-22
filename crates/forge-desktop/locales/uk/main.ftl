@@ -281,6 +281,9 @@ actions_filter_chat = Чат
 actions_filter_timers = Таймери
 actions_filter_points = Поінти
 actions_search_placeholder = Пошук дій...
+actions_stat_actions = дій
+actions_stat_enabled = увімкнено
+actions_stat_disabled = вимкнено
 actions_empty = Дій ще немає
 
 ## Дії - панель деталей

@@ -2,12 +2,12 @@ use super::*;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, ModalSize,
-    OverlayPosition, ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, ToastAction, ToastKind,
-    breadcrumb, chip, confirm_modal, context_menu, icon, inline_edit, install_resize, menu_divider,
-    menu_item, modal, overlay, primary_button, primary_button_with_icon, secondary_button, spacing,
-    status_dot, toggle, tr,
+    BORDER_THIN, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, ModalSize, OverlayPosition,
+    ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, ToastAction, ToastKind, chip,
+    confirm_modal, context_menu, header_stat, header_stats, icon, inline_edit, install_resize,
+    menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon,
+    secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, ExecutionMode, Queue};
 use gpui::{
@@ -57,6 +57,14 @@ impl ScreenActionsView {
 
     fn total_actions(&self) -> usize {
         self.groups.iter().map(|g| g.actions.len()).sum()
+    }
+
+    fn enabled_count(&self) -> usize {
+        self.groups
+            .iter()
+            .flat_map(|g| g.actions.iter())
+            .filter(|a| a.enabled)
+            .count()
     }
 
     fn category_visible(filter: ActionsFilter, category: ActionCategory) -> bool {
@@ -541,7 +549,33 @@ impl ScreenActionsView {
         .detach();
     }
 
-    pub(super) fn render_header(
+    pub(super) fn render_stats(&self, palette: &ForgePalette) -> AnyElement {
+        let total = self.total_actions();
+        let enabled = self.enabled_count();
+        header_stats(
+            vec![
+                header_stat(
+                    total.to_string(),
+                    palette.text_primary,
+                    tr!("actions_stat_actions"),
+                ),
+                header_stat(
+                    enabled.to_string(),
+                    palette.success,
+                    tr!("actions_stat_enabled"),
+                ),
+                header_stat(
+                    total.saturating_sub(enabled).to_string(),
+                    palette.warning,
+                    tr!("actions_stat_disabled"),
+                ),
+            ],
+            palette,
+        )
+        .into_any_element()
+    }
+
+    pub(super) fn render_filter_left(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -604,35 +638,29 @@ impl ScreenActionsView {
             .h(HEADER_DIV_H)
             .bg(palette.border_regular);
 
-        let search = div().w(SEARCH_W).child(self.search_field.clone());
-
-        let new_btn =
-            primary_button_with_icon(Icon::Plus, tr!("actions_modal_new_action_title"), palette)
-                .on_click(
-                    "actions-new",
-                    cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.open_action_modal(None, window, cx)
-                    }),
-                );
-
-        let cluster = div()
+        div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, Density::Cozy))
-            .child(chips)
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(div().w(SEARCH_W).child(self.search_field.clone()))
             .child(divider)
-            .child(search)
-            .child(new_btn);
+            .child(chips)
+            .into_any_element()
+    }
 
-        breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_automation")),
-                BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_actions")),
-            ],
-            palette,
-        )
-        .right(cluster)
-        .into_any_element()
+    pub(super) fn render_filter_right(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        primary_button_with_icon(Icon::Plus, tr!("actions_modal_new_action_title"), palette)
+            .on_click(
+                "actions-new",
+                cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.open_action_modal(None, window, cx)
+                }),
+            )
+            .into_any_element()
     }
 
     pub(super) fn render_tree(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {

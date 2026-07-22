@@ -281,6 +281,9 @@ actions_filter_chat = Chat
 actions_filter_timers = Timers
 actions_filter_points = Points
 actions_search_placeholder = Search actions...
+actions_stat_actions = actions
+actions_stat_enabled = enabled
+actions_stat_disabled = disabled
 actions_empty = No actions yet
 
 ## Actions - detail panel

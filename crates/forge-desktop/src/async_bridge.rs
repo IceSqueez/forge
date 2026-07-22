@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use forge_components::ToastKind;
 use forge_events::{Event, EventsError};
-use forge_runtime::EventSubscription;
-use gpui::{App, Context, SharedString};
+use forge_runtime::{EventBus, EventSubscription};
+use gpui::{App, AsyncApp, Context, SharedString};
 use tokio::runtime::Handle;
 
 use crate::toasts::PushToast;
@@ -21,7 +21,10 @@ pub async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch {
     let first = loop {
         match sub.recv().await {
             Ok(event) => break event,
-            Err(EventsError::LaggingReceiver) => continue,
+            Err(EventsError::LaggingReceiver) => {
+                tracing::warn!("event bridge lagged; dropped events");
+                continue;
+            }
             Err(_) => return EventBatch::Closed,
         }
     };
@@ -34,6 +37,25 @@ pub async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch {
         }
     }
     EventBatch::Ready(batch)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BridgeFlow {
+    Continue,
+    Stop,
+}
+
+/// Drains `bus` batches into `apply` until the bus closes or `apply` returns `Stop`; a lagging receiver warns and keeps receiving (broadcast semantics).
+pub async fn drain_events<F>(bus: &EventBus, cx: &mut AsyncApp, mut apply: F)
+where
+    F: FnMut(&[Event], &mut AsyncApp) -> BridgeFlow,
+{
+    let mut sub = bus.subscribe();
+    while let EventBatch::Ready(batch) = recv_event_batch(&mut sub).await {
+        if apply(&batch, cx) == BridgeFlow::Stop {
+            break;
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

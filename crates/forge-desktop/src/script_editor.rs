@@ -26,7 +26,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{EventBatch, recv_event_batch};
+use crate::async_bridge::{BridgeFlow, drain_events};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -346,25 +346,19 @@ impl ScriptEditorView {
     fn start_log_bridge(&self, cx: &mut Context<Self>) {
         let bus = Arc::clone(&self.bus);
         cx.spawn(async move |this, cx| {
-            let mut subscription = bus.subscribe();
-            loop {
-                let batch = match recv_event_batch(&mut subscription).await {
-                    EventBatch::Ready(batch) => batch,
-                    EventBatch::Closed => break,
-                };
-                if this
-                    .update(cx, |this, cx| {
-                        for event in &batch {
-                            if event.kind == "script.log" {
-                                this.on_script_log(event, cx);
-                            }
+            drain_events(&bus, cx, move |batch, cx| {
+                match this.update(cx, |this, cx| {
+                    for event in batch {
+                        if event.kind == "script.log" {
+                            this.on_script_log(event, cx);
                         }
-                    })
-                    .is_err()
-                {
-                    break;
+                    }
+                }) {
+                    Ok(()) => BridgeFlow::Continue,
+                    Err(_) => BridgeFlow::Stop,
                 }
-            }
+            })
+            .await;
         })
         .detach();
     }

@@ -13,7 +13,7 @@ use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
 };
 
-use crate::async_bridge::{EventBatch, recv_event_batch};
+use crate::async_bridge::{BridgeFlow, drain_events};
 use crate::boot::{BootFailure, build_runtime};
 use crate::chat_feed::{ChatFeed, ChatMessage, chat_source, platform_of};
 use crate::event_log::EventLog;
@@ -230,16 +230,10 @@ fn start_bridge(
     bus: Arc<EventBus>,
 ) {
     cx.spawn(async move |cx| {
-        let mut subscription = bus.subscribe();
-        loop {
-            let batch = match recv_event_batch(&mut subscription).await {
-                EventBatch::Ready(batch) => batch,
-                EventBatch::Closed => break,
-            };
-
+        drain_events(&bus, cx, move |batch, cx| {
             platforms.update(cx, |connectivity, cx| {
                 let mut changed = false;
-                for event in &batch {
+                for event in batch {
                     if event.kind == CONNECTION_STATE_CHANGED_KIND
                         && let Some(integ) = event
                             .payload
@@ -259,7 +253,7 @@ fn start_bridge(
 
             event_log.update(cx, |log, cx| {
                 let mut pushed = false;
-                for event in &batch {
+                for event in batch {
                     if let Some(item) = EventLog::item_from_event(event) {
                         log.push(item);
                         pushed = true;
@@ -272,7 +266,7 @@ fn start_bridge(
 
             home_stats.update(cx, |stats, cx| {
                 let mut changed = false;
-                for event in &batch {
+                for event in batch {
                     changed |= stats.record_event(event);
                     if event.kind == "action.done" {
                         stats.record_action_done();
@@ -286,7 +280,7 @@ fn start_bridge(
 
             chat_feed.update(cx, |feed, cx| {
                 let mut changed = false;
-                for event in &batch {
+                for event in batch {
                     if let Some(message) = ChatFeed::message_from_event(event) {
                         feed.push(message);
                         changed = true;
@@ -330,14 +324,17 @@ fn start_bridge(
 
             queue_health.update(cx, |health, cx| {
                 let mut changed = false;
-                for event in &batch {
+                for event in batch {
                     changed |= health.apply_event(event);
                 }
                 if changed {
                     cx.notify();
                 }
             });
-        }
+
+            BridgeFlow::Continue
+        })
+        .await;
     })
     .detach();
 }

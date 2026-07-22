@@ -28,7 +28,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{self, EventBatch, recv_event_batch};
+use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::presentation::ActivePresentation;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
@@ -137,25 +137,18 @@ impl SoundboardView {
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let settings = (*player.settings_handle().load()).clone();
 
-        let subscription = bus.subscribe();
         let event_bridge = cx.spawn(async move |this, cx| {
-            let mut sub = subscription;
-            loop {
-                let batch = match recv_event_batch(&mut sub).await {
-                    EventBatch::Ready(batch) => batch,
-                    EventBatch::Closed => break,
-                };
-                if this
-                    .update(cx, |this, cx| {
-                        for event in &batch {
-                            this.on_bus_event(event, cx);
-                        }
-                    })
-                    .is_err()
-                {
-                    break;
+            drain_events(&bus, cx, move |batch, cx| {
+                match this.update(cx, |this, cx| {
+                    for event in batch {
+                        this.on_bus_event(event, cx);
+                    }
+                }) {
+                    Ok(()) => BridgeFlow::Continue,
+                    Err(_) => BridgeFlow::Stop,
                 }
-            }
+            })
+            .await;
         });
 
         let view = Self {

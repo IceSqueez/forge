@@ -1,10 +1,11 @@
 use super::*;
+use crate::async_bridge::{BridgeFlow, drain_events};
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
     MenuItem, Radius, Spacing, context_menu, ghost_button_with_icon, menu_header, menu_item, modal,
     primary_button, radius, spacing,
 };
-use forge_events::{Event, EventsError};
+use forge_events::Event;
 use forge_types::{ArgStack, EventId};
 use gpui::{Rgba, Task, relative};
 use std::time::Duration;
@@ -226,19 +227,18 @@ impl ScreenActionsView {
         let (action_name, queue_id, bypass_pause, rows, triggers, trigger_kind, initial_args, note) =
             prepared;
 
-        let subscription = self.bus.subscribe();
+        let bus = Arc::clone(&self.bus);
         let bridge = cx.spawn(async move |this, cx| {
-            let mut sub = subscription;
-            loop {
-                match sub.recv().await {
-                    Ok(event) => match this.update(cx, |this, cx| this.on_test_event(&event, cx)) {
-                        Ok(true) | Err(_) => break,
+            drain_events(&bus, cx, move |batch, cx| {
+                for event in batch {
+                    match this.update(cx, |this, cx| this.on_test_event(event, cx)) {
+                        Ok(true) | Err(_) => return BridgeFlow::Stop,
                         Ok(false) => {}
-                    },
-                    Err(EventsError::LaggingReceiver) => continue,
-                    Err(_) => break,
+                    }
                 }
-            }
+                BridgeFlow::Continue
+            })
+            .await;
         });
 
         let scheduler = self.scheduler.clone();

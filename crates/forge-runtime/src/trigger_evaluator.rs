@@ -1,12 +1,9 @@
 use std::collections::HashMap;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
-use forge_registry::{TriggerRegistry, effective_config};
+use forge_registry::{CancelSignal, TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{ArgStack, EventId, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
 use serde_json::json;
@@ -16,12 +13,12 @@ use crate::{EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest}
 
 #[derive(Clone)]
 pub struct TriggerEvaluatorHandle {
-    cancel: Arc<AtomicBool>,
+    cancel: CancelSignal,
 }
 
 impl TriggerEvaluatorHandle {
     pub fn shutdown(self) {
-        self.cancel.store(true, Ordering::Relaxed);
+        self.cancel.cancel();
     }
 }
 
@@ -53,14 +50,14 @@ impl TriggerEvaluator {
             subscription,
             cooldowns: HashMap::new(),
         };
-        let cancel = Arc::new(AtomicBool::new(false));
-        let cancel_clone = Arc::clone(&cancel);
+        let cancel = CancelSignal::new();
+        let cancel_clone = cancel.clone();
         tokio::spawn(async move { evaluator.run(cancel_clone).await });
         TriggerEvaluatorHandle { cancel }
     }
 
-    async fn run(mut self, cancel: Arc<AtomicBool>) {
-        while !cancel.load(Ordering::Relaxed) {
+    async fn run(mut self, cancel: CancelSignal) {
+        while !cancel.is_cancelled() {
             match self.subscription.recv().await {
                 Ok(event) => self.handle(event).await,
                 Err(_) => break,

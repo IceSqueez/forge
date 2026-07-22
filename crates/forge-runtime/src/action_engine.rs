@@ -1,7 +1,4 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{CancelSignal, ChainSignal, RunContext, SubActionRegistry, effective_config};
@@ -29,7 +26,7 @@ struct QuickActionRequest {
 pub struct ActionEngineHandle {
     sender: mpsc::Sender<EngineJob>,
     quick_sender: mpsc::Sender<QuickActionRequest>,
-    cancel: Arc<AtomicBool>,
+    cancel: CancelSignal,
 }
 
 pub struct ExecutionRequest {
@@ -97,7 +94,7 @@ impl ActionEngineHandle {
     }
 
     pub fn shutdown(self) {
-        self.cancel.store(true, Ordering::Relaxed);
+        self.cancel.cancel();
     }
 }
 
@@ -120,8 +117,8 @@ impl ActionEngine {
     ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(256);
         let (quick_tx, quick_rx) = mpsc::channel(64);
-        let cancel = Arc::new(AtomicBool::new(false));
-        let cancel_clone = Arc::clone(&cancel);
+        let cancel = CancelSignal::new();
+        let cancel_clone = cancel.clone();
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
         let config = Config::default();
         let gate = Arc::new(crate::condition::ConditionGate::new(&config));
@@ -148,8 +145,8 @@ impl ActionEngine {
         }
     }
 
-    async fn run(mut self, cancel: Arc<AtomicBool>) {
-        while !cancel.load(Ordering::Relaxed) {
+    async fn run(mut self, cancel: CancelSignal) {
+        while !cancel.is_cancelled() {
             match self.input.recv().await {
                 Some(job) => self.handle(job).await,
                 None => break,

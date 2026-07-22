@@ -4,11 +4,11 @@ use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
-    BreadcrumbCrumb, Confirm, DateTimePicker, Density, ForgePalette, GridPicker, Icon, InlineEdit,
-    OverlayPosition, Picker, SearchState, TextArea, TextInput, ToastKind, drive_overlay_focus,
-    fmt_number, fmt_relative_time, icon, overlay, page_frame, tr,
+    BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,
+    SearchState, TextArea, TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay,
+    page_frame, tr,
 };
-use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
+use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_runtime::{EventBus, QueueSchedulerHandle};
 use forge_storage::{
@@ -20,8 +20,8 @@ use forge_types::{
     Action, ActionId, ExecutionContext, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FocusHandle, Pixels,
-    Point, SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
@@ -205,18 +205,16 @@ pub struct ScreenActionsView {
     detail: Option<ActionDetail>,
     telemetry: Option<ActionTelemetry>,
     last_outcome: Option<ExecutionOutcome>,
-    sub_form: Option<EditSubActionForm>,
+    sub_form: Option<Entity<sub_action_modal::EditSubActionForm>>,
+    _sub_form_sub: Option<Subscription>,
     step_menu_open: Option<usize>,
     menu_click_pos: Option<Point<Pixels>>,
     grid_picker: Option<GridPickerForm>,
     add_trigger: Option<AddTriggerStage>,
-    datetime_picker: Option<DateTimePickerForm>,
     nav_path: Vec<nav::NavFrame>,
     /// Keyed by `(step_index, case_index)` within the current chain.
     case_fields: BTreeMap<(usize, usize), CaseField>,
     step_health: Vec<analyzer::StepHealth>,
-    datetime_focus: FocusHandle,
-    datetime_focus_restore: Option<FocusHandle>,
     _search_sub: Subscription,
 }
 
@@ -281,16 +279,14 @@ impl ScreenActionsView {
             telemetry: None,
             last_outcome: None,
             sub_form: None,
+            _sub_form_sub: None,
             step_menu_open: None,
             menu_click_pos: None,
             grid_picker: None,
             add_trigger: None,
-            datetime_picker: None,
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
             step_health: Vec::new(),
-            datetime_focus: cx.focus_handle(),
-            datetime_focus_restore: None,
             _search_sub: search_sub,
         };
         view.reload(cx);
@@ -557,16 +553,8 @@ impl ScreenActionsView {
 impl EventEmitter<NavRequested> for ScreenActionsView {}
 
 impl Render for ScreenActionsView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
-
-        drive_overlay_focus(
-            self.datetime_picker.is_some(),
-            &self.datetime_focus,
-            &mut self.datetime_focus_restore,
-            window,
-            cx,
-        );
 
         let stats = self.render_stats(&palette);
         let filter_left = self.render_filter_left(&palette, cx);
@@ -596,10 +584,7 @@ impl Render for ScreenActionsView {
             .get()
             .copied()
             .map(|id| self.render_delete_confirm(id, &palette, cx));
-        let sub_modal = self
-            .sub_form
-            .as_ref()
-            .map(|form| self.render_sub_action_modal(form, &palette, cx));
+        let sub_modal = self.sub_form.clone();
         let grid_picker = self.grid_picker.as_ref().map(|form| {
             let view = cx.entity();
             overlay(form.picker.clone(), &palette)
@@ -613,10 +598,6 @@ impl Render for ScreenActionsView {
             .add_trigger
             .as_ref()
             .map(|stage| self.render_add_trigger(stage, &palette, cx));
-        let datetime_popover = self
-            .datetime_picker
-            .as_ref()
-            .map(|form| self.render_datetime_popover(form, cx));
         let frame = page_frame(
             vec![
                 BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_automation")),
@@ -643,7 +624,6 @@ impl Render for ScreenActionsView {
             .children(sub_modal)
             .children(grid_picker)
             .children(trigger_grid)
-            .children(datetime_popover)
     }
 }
 
@@ -696,20 +676,6 @@ struct GridPickerForm {
     _sub: Subscription,
 }
 
-struct SelectPickerForm {
-    key: String,
-    picker: Entity<Picker>,
-    pos: Point<Pixels>,
-    _sub: Subscription,
-}
-
-struct DateTimePickerForm {
-    picker: Entity<DateTimePicker>,
-    target_input: Entity<TextInput>,
-    pos: Point<Pixels>,
-    _sub: Subscription,
-}
-
 enum AddTriggerStage {
     Pick(AddTriggerPicker),
     Fill(AddTriggerFill),
@@ -731,59 +697,6 @@ struct AddTriggerFill {
     fields: Vec<crate::triggers_screen::ConfigField>,
     saving: bool,
     _name_sub: Subscription,
-}
-
-#[derive(Clone, Copy)]
-enum SubFormTarget {
-    Edit(usize),
-    Add,
-}
-
-struct EditSubActionForm {
-    kind_id: String,
-    target: SubFormTarget,
-    fields: Vec<SubFormField>,
-    name_input: Entity<TextInput>,
-    condition_input: Entity<TextInput>,
-    continue_on_error: bool,
-    select_picker: Option<SelectPickerForm>,
-}
-
-enum SubFormField {
-    Input {
-        key: String,
-        label: String,
-        integer: bool,
-        browse: bool,
-        datetime: bool,
-        gate: Option<String>,
-        input: Entity<TextInput>,
-        _sub: Option<Subscription>,
-    },
-    Area {
-        key: String,
-        label: String,
-        gate: Option<String>,
-        syntax: Option<CodeLanguage>,
-        area: Entity<TextArea>,
-    },
-    Bool {
-        key: String,
-        label: String,
-        gate: Option<String>,
-        value: bool,
-    },
-    Select {
-        key: String,
-        label: String,
-        options_key: Option<String>,
-        options: Vec<(String, String)>,
-        gate: Option<String>,
-        selected: String,
-    },
-    Hint {
-        label: String,
-    },
 }
 
 struct CaseField {

@@ -1,3 +1,6 @@
+use super::sub_action_modal::{
+    EditSubActionForm, SubFormCommit, SubFormEvent, SubFormLaunch, SubFormTarget,
+};
 use super::*;
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
@@ -6,22 +9,18 @@ use crate::triggers_screen::{
     render_config_row, sparse_overrides,
 };
 use forge_components::{
-    BORDER_THIN, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, Density, FONT_LG,
-    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent,
-    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent,
-    MenuPlacement, ModalSize, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels,
-    PlatformKind, Radius, Spacing, TextInput, anchored_popover, body_family, field_label,
-    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, mono_family,
-    overlay, platform_color, primary_button, radius, row_card, secondary_button, spacing,
-    status_dot, tooltip_lines_builder, tr, with_alpha,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
+    GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
+    GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition, PlatformKind,
+    Radius, Spacing, TextInput, body_family, ghost_button_with_icon, icon, menu_button,
+    menu_divider, menu_item, modal, mono_family, overlay, platform_color, primary_button, radius,
+    row_card, secondary_button, spacing, status_dot, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
-    CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
-    TriggerKindDescriptor, TriggerRegistry,
+    SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_types::{
-    ExecutionOutcome, PlatformScope, SubActionConfig, SubActionStep, TriggerInstance,
-    TriggerInstanceId, Variant, normalize_var_name,
+    ExecutionOutcome, PlatformScope, SubActionStep, TriggerInstance, TriggerInstanceId, Variant,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -85,57 +84,6 @@ async fn export_action_to_chosen_file(action: Action) -> Result<std::path::PathB
         .await
         .map_err(|e| e.to_string())?;
     Ok(path)
-}
-
-fn is_var_key(key: &str) -> bool {
-    matches!(key, "target_var" | "into_var" | "into_arg")
-}
-
-fn normalize_condition(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    let trimmed = trimmed.strip_prefix("if ").unwrap_or(trimmed).trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_owned())
-}
-
-fn resolve_step_label(raw: &str, kind_label: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() || trimmed == kind_label {
-        None
-    } else {
-        Some(trimmed.to_owned())
-    }
-}
-
-pub(super) fn sub_field_is_half(field: &SubFormField) -> bool {
-    match field {
-        SubFormField::Select { .. } => true,
-        SubFormField::Input {
-            key,
-            integer,
-            browse,
-            datetime,
-            ..
-        } => !*browse && !*datetime && (*integer || is_var_key(key)),
-        _ => false,
-    }
-}
-
-pub(super) fn field_wrap(label: &str, control: AnyElement, palette: &ForgePalette) -> AnyElement {
-    field_label(palette, label.to_owned(), control)
-        .tone(palette.text_muted)
-        .into_any_element()
-}
-
-fn select_picker_items(options: &[(String, String)]) -> Vec<PickerItem> {
-    options
-        .iter()
-        .map(|(value, label)| PickerItem {
-            id: SharedString::from(value.clone()),
-            label: SharedString::from(label.clone()),
-            sublabel: None,
-            icon: Icon::Circle,
-        })
-        .collect()
 }
 
 pub(super) fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
@@ -445,218 +393,6 @@ fn build_recent_group(
     (Some(group), picks)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_input_field(
-    key: &str,
-    label: &str,
-    placeholder: &'static str,
-    integer: bool,
-    browse: bool,
-    datetime: bool,
-    gate: Option<String>,
-    config: &SubActionConfig,
-    palette: ForgePalette,
-    cx: &mut Context<ScreenActionsView>,
-) -> SubFormField {
-    let seed = config
-        .get(key)
-        .map(forge_types::display_scalar)
-        .unwrap_or_default();
-    let is_var = is_var_key(key);
-    let invalid_seed = is_var && !seed.trim().is_empty() && normalize_var_name(&seed).is_none();
-    let input = cx.new(|cx| {
-        let ph = if is_var { "%result%" } else { placeholder };
-        let mut input = TextInput::new(ph, cx).with_palette(palette);
-        if is_var {
-            input = input
-                .mono()
-                .leading_icon(Icon::Variable, palette.warning)
-                .accent(palette.warning);
-        }
-        if !seed.is_empty() {
-            input.set_content(seed, cx);
-        }
-        input
-    });
-    if invalid_seed {
-        input.update(cx, |input, cx| input.set_invalid(true, cx));
-    }
-    let sub = is_var.then(|| cx.subscribe(&input, ScreenActionsView::on_var_input_event));
-    SubFormField::Input {
-        key: key.to_owned(),
-        label: label.to_owned(),
-        integer,
-        browse,
-        datetime,
-        gate,
-        input,
-        _sub: sub,
-    }
-}
-
-fn build_area_field(
-    key: &str,
-    label: &str,
-    gate: Option<String>,
-    syntax: Option<CodeLanguage>,
-    config: &SubActionConfig,
-    palette: ForgePalette,
-    cx: &mut Context<ScreenActionsView>,
-) -> SubFormField {
-    let seed = config
-        .get(key)
-        .map(forge_types::display_scalar)
-        .unwrap_or_default();
-    let area = cx.new(|cx| {
-        let mut area = TextArea::new("", cx)
-            .with_palette(palette)
-            .with_height(SUB_AREA_FIELD_H);
-        area = match syntax {
-            Some(CodeLanguage::Rhai) => area.rhai_highlight().with_gutter().mono(),
-            Some(CodeLanguage::Json) => area.json_highlight().with_gutter().mono(),
-            None => area,
-        };
-        if !seed.is_empty() {
-            area.set_content(seed, cx);
-        }
-        area
-    });
-    SubFormField::Area {
-        key: key.to_owned(),
-        label: label.to_owned(),
-        gate,
-        syntax,
-        area,
-    }
-}
-
-fn push_form_field(
-    spec: &FormField,
-    gate: Option<String>,
-    config: &SubActionConfig,
-    palette: ForgePalette,
-    options_map: &HashMap<String, Vec<(String, String)>>,
-    out: &mut Vec<SubFormField>,
-    cx: &mut Context<ScreenActionsView>,
-) {
-    match spec {
-        FormField::Text {
-            key,
-            label,
-            placeholder,
-        } => out.push(build_input_field(
-            key,
-            label,
-            placeholder,
-            false,
-            false,
-            false,
-            gate,
-            config,
-            palette,
-            cx,
-        )),
-        FormField::TextArea { key, label } => out.push(build_area_field(
-            key, label, gate, None, config, palette, cx,
-        )),
-        FormField::Code {
-            key,
-            label,
-            language,
-        } => out.push(build_area_field(
-            key,
-            label,
-            gate,
-            Some(*language),
-            config,
-            palette,
-            cx,
-        )),
-        FormField::Integer { key, label, .. } => out.push(build_input_field(
-            key, label, "0", true, false, false, gate, config, palette, cx,
-        )),
-        FormField::FilePicker { key, label } => out.push(build_input_field(
-            key, label, "", false, true, false, gate, config, palette, cx,
-        )),
-        FormField::DateTime { key, label } => out.push(build_input_field(
-            key, label, "", false, false, true, gate, config, palette, cx,
-        )),
-        FormField::Select {
-            key,
-            label,
-            options,
-        } => {
-            let selected = config
-                .get(*key)
-                .map(forge_types::display_scalar)
-                .unwrap_or_default();
-            let options = options
-                .iter()
-                .map(|opt| ((*opt).to_owned(), (*opt).to_owned()))
-                .collect();
-            out.push(SubFormField::Select {
-                key: (*key).to_owned(),
-                label: (*label).to_owned(),
-                options_key: None,
-                options,
-                gate,
-                selected,
-            });
-        }
-        FormField::DynamicSelect {
-            key,
-            label,
-            options_key,
-        } => {
-            let selected = config
-                .get(*key)
-                .map(forge_types::display_scalar)
-                .unwrap_or_default();
-            let options = options_map.get(*options_key).cloned().unwrap_or_default();
-            out.push(SubFormField::Select {
-                key: (*key).to_owned(),
-                label: (*label).to_owned(),
-                options_key: Some((*options_key).to_owned()),
-                options,
-                gate,
-                selected,
-            });
-        }
-        FormField::Toggle { key, label } => {
-            let value = matches!(config.get(*key), Some(Variant::Bool(true)));
-            out.push(SubFormField::Bool {
-                key: (*key).to_owned(),
-                label: (*label).to_owned(),
-                gate,
-                value,
-            });
-        }
-        FormField::SubChain { label, .. } | FormField::CaseList { label, .. } => {
-            out.push(SubFormField::Hint {
-                label: (*label).to_owned(),
-            });
-        }
-        FormField::Optional { key, label, inner } => {
-            let value = matches!(config.get(*key), Some(Variant::Bool(true)));
-            out.push(SubFormField::Bool {
-                key: (*key).to_owned(),
-                label: (*label).to_owned(),
-                gate: gate.clone(),
-                value,
-            });
-            push_form_field(
-                inner,
-                Some((*key).to_owned()),
-                config,
-                palette,
-                options_map,
-                out,
-                cx,
-            );
-        }
-    }
-}
-
 pub(super) fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
     let bytes = s.as_bytes();
     let mut segs: Vec<(&str, bool)> = Vec::new();
@@ -910,25 +646,6 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn build_sub_form_fields(
-        &self,
-        kind_id: &str,
-        config: &SubActionConfig,
-        cx: &mut Context<Self>,
-    ) -> Option<Vec<SubFormField>> {
-        let specs = self
-            .sub_action_registry
-            .get(kind_id)
-            .map(|r| r.config_fields())?;
-        let palette = cx.palette();
-        let options_map = self.select_options.clone();
-        let mut fields: Vec<SubFormField> = Vec::new();
-        for spec in &specs {
-            push_form_field(spec, None, config, palette, &options_map, &mut fields, cx);
-        }
-        Some(fields)
-    }
-
     fn kind_label(&self, kind_id: &str) -> String {
         self.sub_action_registry
             .get(kind_id)
@@ -936,38 +653,86 @@ impl ScreenActionsView {
             .unwrap_or_else(|| kind_id.to_owned())
     }
 
-    fn build_step_meta_inputs(
-        &self,
-        kind_label: &str,
-        name_value: &str,
-        condition_value: &str,
+    fn open_sub_form(&mut self, launch: SubFormLaunch, cx: &mut Context<Self>) {
+        let form = cx.new(|cx| EditSubActionForm::new(launch, self.rt_handle.clone(), cx));
+        self._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
+        self.sub_form = Some(form);
+        self.fetch_select_options(cx);
+        cx.notify();
+    }
+
+    fn on_sub_form_event(
+        &mut self,
+        _form: Entity<EditSubActionForm>,
+        event: &SubFormEvent,
         cx: &mut Context<Self>,
-    ) -> (Entity<TextInput>, Entity<TextInput>) {
-        let palette = cx.palette();
-        let placeholder = kind_label.to_owned();
-        let name_value = name_value.to_owned();
-        let condition_value = condition_value.to_owned();
-        let name_input = cx.new(|cx| {
-            let mut input = TextInput::new(placeholder, cx)
-                .with_palette(palette)
-                .plain()
-                .with_font_size(FONT_SM);
-            if !name_value.is_empty() {
-                input.set_content(name_value, cx);
+    ) {
+        match event {
+            SubFormEvent::Commit(commit) => {
+                let commit = commit.clone();
+                self.sub_form = None;
+                self._sub_form_sub = None;
+                self.step_menu_open = None;
+                self.apply_sub_form_commit(commit, cx);
+                cx.notify();
             }
-            input
-        });
-        let condition_input = cx.new(|cx| {
-            let mut input = TextInput::new("%user.isMod% == true", cx)
-                .with_palette(palette)
-                .mono()
-                .prefix("if");
-            if !condition_value.is_empty() {
-                input.set_content(condition_value, cx);
+            SubFormEvent::Cancel => {
+                self.sub_form = None;
+                self._sub_form_sub = None;
+                cx.notify();
             }
-            input
-        });
-        (name_input, condition_input)
+        }
+    }
+
+    fn apply_sub_form_commit(&mut self, commit: SubFormCommit, cx: &mut Context<Self>) {
+        let SubFormCommit {
+            target,
+            kind_id,
+            overrides,
+            continue_on_error,
+            condition,
+            label,
+        } = commit;
+        match target {
+            SubFormTarget::Edit(index) => {
+                self.persist_chain_mutation(
+                    move |chain| {
+                        if let Some(step) = chain.get_mut(index) {
+                            for (key, value) in overrides {
+                                step.config.insert(key, value);
+                            }
+                            step.continue_on_error = continue_on_error;
+                            step.condition = condition;
+                            step.label = label;
+                        }
+                    },
+                    cx,
+                );
+            }
+            SubFormTarget::Add => {
+                let mut config = self
+                    .sub_action_registry
+                    .get(&kind_id)
+                    .map(|r| r.default_config())
+                    .unwrap_or_default();
+                for (key, value) in overrides {
+                    config.insert(key, value);
+                }
+                self.persist_chain_mutation(
+                    move |chain| {
+                        chain.push(SubActionStep {
+                            kind_id,
+                            config,
+                            enabled: true,
+                            continue_on_error,
+                            condition,
+                            label,
+                        });
+                    },
+                    cx,
+                );
+            }
+        }
     }
 
     fn open_edit_sub_action(&mut self, i: usize, cx: &mut Context<Self>) {
@@ -978,33 +743,33 @@ impl ScreenActionsView {
         let kind_id = step.kind_id.clone();
         let config = step.config.clone();
         let continue_on_error = step.continue_on_error;
+        let Some((specs, icon_name, category)) = self
+            .sub_action_registry
+            .get(&kind_id)
+            .map(|r| (r.config_fields(), r.icon_name().to_owned(), r.category()))
+        else {
+            return;
+        };
         let kind_label = self.kind_label(&kind_id);
         let name_value = step.label.clone().unwrap_or_else(|| kind_label.clone());
         let condition_value = step.condition.clone().unwrap_or_default();
-        let Some(fields) = self.build_sub_form_fields(&kind_id, &config, cx) else {
-            return;
-        };
-        let (name_input, condition_input) =
-            self.build_step_meta_inputs(&kind_label, &name_value, &condition_value, cx);
-        self.step_menu_open = None;
-        self.sub_form = Some(EditSubActionForm {
+        let chain_len = chain.len();
+        let launch = SubFormLaunch {
             kind_id,
             target: SubFormTarget::Edit(i),
-            fields,
-            name_input,
-            condition_input,
+            specs,
+            config,
+            name_value,
+            condition_value,
             continue_on_error,
-            select_picker: None,
-        });
-        self.fetch_select_options(cx);
-        cx.notify();
-    }
-
-    pub(super) fn toggle_sub_continue_on_error(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.sub_form.as_mut() {
-            form.continue_on_error = !form.continue_on_error;
-        }
-        cx.notify();
+            kind_label,
+            icon_name,
+            category: Some(category),
+            chain_len,
+            options_seed: self.select_options.clone(),
+        };
+        self.step_menu_open = None;
+        self.open_sub_form(launch, cx);
     }
 
     fn set_step_enabled(&mut self, i: usize, enabled: bool, cx: &mut Context<Self>) {
@@ -1017,19 +782,6 @@ impl ScreenActionsView {
             },
             cx,
         );
-        cx.notify();
-    }
-
-    pub(super) fn toggle_sub_field(&mut self, key: String, cx: &mut Context<Self>) {
-        if let Some(form) = self.sub_form.as_mut() {
-            for field in &mut form.fields {
-                if let SubFormField::Bool { key: k, value, .. } = field
-                    && *k == key
-                {
-                    *value = !*value;
-                }
-            }
-        }
         cx.notify();
     }
 
@@ -1111,284 +863,20 @@ impl ScreenActionsView {
                 }
                 map
             },
-            |this, map, cx| this.apply_select_options(map, cx),
+            |this, map, cx| this.on_select_options_fetched(map, cx),
             cx,
         );
     }
 
-    fn apply_select_options(
+    fn on_select_options_fetched(
         &mut self,
         map: HashMap<String, Vec<(String, String)>>,
         cx: &mut Context<Self>,
     ) {
-        if let Some(form) = self.sub_form.as_mut() {
-            for field in &mut form.fields {
-                if let SubFormField::Select {
-                    options_key: Some(ok),
-                    options,
-                    ..
-                } = field
-                    && let Some(opts) = map.get(ok)
-                {
-                    *options = opts.clone();
-                }
-            }
-            if let Some(picker_form) = form.select_picker.as_ref() {
-                let key = picker_form.key.clone();
-                if let Some(SubFormField::Select { options, .. }) = form
-                    .fields
-                    .iter()
-                    .find(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
-                {
-                    let items = select_picker_items(options);
-                    picker_form
-                        .picker
-                        .update(cx, |picker, cx| picker.set_items(items, cx));
-                }
-            }
+        if let Some(form) = self.sub_form.clone() {
+            form.update(cx, |form, cx| form.apply_options(&map, cx));
         }
         self.select_options = map;
-        cx.notify();
-    }
-
-    pub(super) fn open_select_picker(
-        &mut self,
-        key: String,
-        pos: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let already_open = self
-            .sub_form
-            .as_ref()
-            .and_then(|form| form.select_picker.as_ref())
-            .is_some_and(|picker_form| picker_form.key == key);
-        if already_open {
-            self.close_select_picker(cx);
-            return;
-        }
-        let Some(form) = self.sub_form.as_ref() else {
-            return;
-        };
-        let Some(SubFormField::Select { label, options, .. }) = form
-            .fields
-            .iter()
-            .find(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
-        else {
-            return;
-        };
-        let palette = cx.palette();
-        let picker_labels = PickerLabels {
-            title: label.clone().into(),
-            placeholder: tr!("widget_picker_search_placeholder").into(),
-            empty: tr!("actions_sub_select_empty").into(),
-            loading: tr!("widget_picker_loading").into(),
-            cancel: tr!("common_cancel").into(),
-        };
-        let items = select_picker_items(options);
-        let picker = cx.new(|cx| Picker::new(picker_labels, items, palette, cx));
-        let sub = cx.subscribe(&picker, Self::on_select_picker_event);
-        picker.update(cx, |f, cx| f.focus(window, cx));
-        if let Some(form) = self.sub_form.as_mut() {
-            form.select_picker = Some(SelectPickerForm {
-                key,
-                picker,
-                pos,
-                _sub: sub,
-            });
-        }
-        cx.notify();
-    }
-
-    fn on_select_picker_event(
-        &mut self,
-        _picker: Entity<Picker>,
-        event: &PickerEvent,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            PickerEvent::Selected(id) => self.pick_select_option(id.to_string(), cx),
-            PickerEvent::Cancelled => self.close_select_picker(cx),
-        }
-    }
-
-    pub(super) fn close_select_picker(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.sub_form.as_mut() {
-            form.select_picker = None;
-        }
-        cx.notify();
-    }
-
-    fn pick_select_option(&mut self, value: String, cx: &mut Context<Self>) {
-        if let Some(form) = self.sub_form.as_mut() {
-            if let Some(key) = form.select_picker.as_ref().map(|p| p.key.clone()) {
-                for field in &mut form.fields {
-                    if let SubFormField::Select {
-                        key: k, selected, ..
-                    } = field
-                        && *k == key
-                    {
-                        *selected = value.clone();
-                    }
-                }
-            }
-            form.select_picker = None;
-        }
-        cx.notify();
-    }
-
-    pub(super) fn cancel_sub_action(&mut self, cx: &mut Context<Self>) {
-        self.sub_form = None;
-        cx.notify();
-    }
-
-    fn on_var_input_event(
-        &mut self,
-        field: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
-        if let InputEvent::Changed(text) = event {
-            let invalid = !text.trim().is_empty() && normalize_var_name(text).is_none();
-            field.update(cx, |input, cx| input.set_invalid(invalid, cx));
-        }
-    }
-
-    pub(super) fn submit_sub_action(&mut self, cx: &mut Context<Self>) {
-        let Some(form) = self.sub_form.as_ref() else {
-            return;
-        };
-        let mut has_invalid = false;
-        for field in &form.fields {
-            if let SubFormField::Input { key, input, .. } = field
-                && is_var_key(key)
-            {
-                let text = input.read(cx).content().to_owned();
-                let invalid = !text.trim().is_empty() && normalize_var_name(&text).is_none();
-                input.update(cx, |input, cx| input.set_invalid(invalid, cx));
-                has_invalid |= invalid;
-            }
-        }
-        if has_invalid {
-            return;
-        }
-        let target = form.target;
-        let kind_id = form.kind_id.clone();
-        let continue_on_error = form.continue_on_error;
-        let kind_label = self.kind_label(&kind_id);
-        let label = resolve_step_label(form.name_input.read(cx).content(), &kind_label);
-        let condition = normalize_condition(form.condition_input.read(cx).content());
-        let bool_vals: HashMap<String, bool> = form
-            .fields
-            .iter()
-            .filter_map(|f| match f {
-                SubFormField::Bool { key, value, .. } => Some((key.clone(), *value)),
-                _ => None,
-            })
-            .collect();
-        let gate_on = |gate: &Option<String>| {
-            gate.as_ref()
-                .map(|g| bool_vals.get(g).copied().unwrap_or(false))
-                .unwrap_or(true)
-        };
-        let mut overrides: Vec<(String, Variant)> = Vec::new();
-        for field in &form.fields {
-            match field {
-                SubFormField::Bool {
-                    key, value, gate, ..
-                } => {
-                    if gate_on(gate) {
-                        overrides.push((key.clone(), Variant::Bool(*value)));
-                    }
-                }
-                SubFormField::Input {
-                    key,
-                    integer,
-                    gate,
-                    input,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let text = input.read(cx).content().to_owned();
-                    if *integer {
-                        if let Ok(n) = text.trim().parse::<i64>() {
-                            overrides.push((key.clone(), Variant::Int(n)));
-                        }
-                    } else if is_var_key(key) {
-                        let name = normalize_var_name(&text).unwrap_or_default();
-                        overrides.push((key.clone(), Variant::String(name)));
-                    } else {
-                        overrides.push((key.clone(), Variant::String(text)));
-                    }
-                }
-                SubFormField::Area {
-                    key, gate, area, ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let text = area.read(cx).content().to_owned();
-                    overrides.push((key.clone(), Variant::String(text)));
-                }
-                SubFormField::Select {
-                    key,
-                    gate,
-                    selected,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    overrides.push((key.clone(), Variant::String(selected.clone())));
-                }
-                SubFormField::Hint { .. } => {}
-            }
-        }
-
-        self.sub_form = None;
-        self.step_menu_open = None;
-        match target {
-            SubFormTarget::Edit(index) => {
-                self.persist_chain_mutation(
-                    move |chain| {
-                        if let Some(step) = chain.get_mut(index) {
-                            for (key, value) in overrides {
-                                step.config.insert(key, value);
-                            }
-                            step.continue_on_error = continue_on_error;
-                            step.condition = condition;
-                            step.label = label;
-                        }
-                    },
-                    cx,
-                );
-            }
-            SubFormTarget::Add => {
-                let mut config = self
-                    .sub_action_registry
-                    .get(&kind_id)
-                    .map(|r| r.default_config())
-                    .unwrap_or_default();
-                for (key, value) in overrides {
-                    config.insert(key, value);
-                }
-                self.persist_chain_mutation(
-                    move |chain| {
-                        chain.push(SubActionStep {
-                            kind_id,
-                            config,
-                            enabled: true,
-                            continue_on_error,
-                            condition,
-                            label,
-                        });
-                    },
-                    cx,
-                );
-            }
-        }
         cx.notify();
     }
 
@@ -1475,34 +963,41 @@ impl ScreenActionsView {
             .as_ref()
             .zip(self.detail.as_ref())
             .is_some_and(|(f, d)| f.action_id == d.action.id);
-        let config = self
+        let prepared = self
             .sub_action_registry
             .get(&kind_id)
-            .map(|r| r.default_config());
+            .filter(|_| same)
+            .map(|runner| {
+                (
+                    runner.default_config(),
+                    runner.config_fields(),
+                    runner.icon_name().to_owned(),
+                    runner.category(),
+                )
+            });
         self.grid_picker = None;
-        let Some(config) = config.filter(|_| same) else {
-            cx.notify();
-            return;
-        };
-        let Some(fields) = self.build_sub_form_fields(&kind_id, &config, cx) else {
+        let Some((config, specs, icon_name, category)) = prepared else {
             cx.notify();
             return;
         };
         let kind_label = self.kind_label(&kind_id);
-        let (name_input, condition_input) =
-            self.build_step_meta_inputs(&kind_label, &kind_label, "", cx);
-        self.step_menu_open = None;
-        self.sub_form = Some(EditSubActionForm {
+        let chain_len = self.current_chain().len();
+        let launch = SubFormLaunch {
             kind_id,
             target: SubFormTarget::Add,
-            fields,
-            name_input,
-            condition_input,
+            specs,
+            config,
+            name_value: kind_label.clone(),
+            condition_value: String::new(),
             continue_on_error: false,
-            select_picker: None,
-        });
-        self.fetch_select_options(cx);
-        cx.notify();
+            kind_label,
+            icon_name,
+            category: Some(category),
+            chain_len,
+            options_seed: self.select_options.clone(),
+        };
+        self.step_menu_open = None;
+        self.open_sub_form(launch, cx);
     }
 
     fn open_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2274,86 +1769,6 @@ impl ScreenActionsView {
             cx,
         );
         cx.notify();
-    }
-
-    pub(super) fn browse_sub_field(&mut self, input: Entity<TextInput>, cx: &mut Context<Self>) {
-        async_bridge::spawn_dialog(
-            &self.rt_handle,
-            async_bridge::pick_file(None),
-            move |_this, result, cx| {
-                if let Ok(path) = result {
-                    input.update(cx, |input, cx| {
-                        input.set_content(path.to_string_lossy().into_owned(), cx);
-                        cx.notify();
-                    });
-                }
-            },
-            cx,
-        );
-    }
-
-    pub(super) fn open_datetime_picker(
-        &mut self,
-        target_input: Entity<TextInput>,
-        pos: Point<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        let palette = cx.palette();
-        let initial = target_input.read(cx).content().to_owned();
-        let labels = DateTimePickerLabels {
-            now: tr!("actions_sub_datetime_now").into(),
-            set: tr!("actions_sub_datetime_set").into(),
-            cancel: tr!("common_cancel").into(),
-        };
-        let picker = cx.new(|cx| DateTimePicker::new(Some(initial.as_str()), labels, palette, cx));
-        let sub = cx.subscribe(&picker, Self::on_datetime_event);
-        self.datetime_picker = Some(DateTimePickerForm {
-            picker,
-            target_input,
-            pos,
-            _sub: sub,
-        });
-        cx.notify();
-    }
-
-    fn on_datetime_event(
-        &mut self,
-        _picker: Entity<DateTimePicker>,
-        event: &DateTimePickerEvent,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            DateTimePickerEvent::Picked(value) => {
-                if let Some(form) = self.datetime_picker.take() {
-                    let value = value.to_string();
-                    form.target_input.update(cx, |input, cx| {
-                        input.set_content(value, cx);
-                        cx.notify();
-                    });
-                }
-                cx.notify();
-            }
-            DateTimePickerEvent::Dismissed => self.close_datetime_picker(cx),
-        }
-    }
-
-    fn close_datetime_picker(&mut self, cx: &mut Context<Self>) {
-        self.datetime_picker = None;
-        cx.notify();
-    }
-
-    pub(super) fn render_datetime_popover(
-        &self,
-        form: &DateTimePickerForm,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let view = cx.entity();
-        anchored_popover(form.pos, form.picker.clone())
-            .dismiss_on_escape(&self.datetime_focus)
-            .on_dismiss(move |_window, cx| {
-                view.update(cx, |this, cx| this.close_datetime_picker(cx));
-            })
-            .into_any_element()
     }
 
     fn open_edit_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {

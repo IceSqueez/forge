@@ -2,8 +2,8 @@ use std::future::Future;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ColumnWidth, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
+    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
+    DataRow, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
     SearchState, Spacing, TextInput, avatar_tile, badge, card, column, confirm_modal, data_table,
     empty_state, field_label, hash_accent, icon, modal, overlay, primary_button,
     primary_button_with_icon, secondary_button, segment, segmented, spacing, toggle, toolbar_row,
@@ -133,7 +133,7 @@ pub struct VoiceAliasesView {
     search: SearchState,
     table_scroll: UniformListScrollHandle,
     form: Option<AliasForm>,
-    pending_delete: Option<usize>,
+    pending_delete: Confirm<usize>,
     _search_sub: Subscription,
 }
 
@@ -168,7 +168,7 @@ impl VoiceAliasesView {
             search,
             table_scroll: UniformListScrollHandle::new(),
             form: None,
-            pending_delete: None,
+            pending_delete: Confirm::default(),
             _search_sub: search_sub,
         };
         view.reload(cx);
@@ -440,12 +440,12 @@ impl VoiceAliasesView {
     }
 
     fn request_delete(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.pending_delete = Some(index);
+        self.pending_delete.request(index);
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete = None;
+        self.pending_delete.cancel();
         cx.notify();
     }
 
@@ -902,6 +902,8 @@ impl VoiceAliasesView {
             Some(self.form_modal(form, palette, density, cx))
         } else {
             self.pending_delete
+                .get()
+                .copied()
                 .map(|index| self.delete_confirm(index, palette, cx))
         }
     }

@@ -214,9 +214,6 @@ settings_shortcuts_conflict_steal = Перепризначити
 
 settings_ws_title = WebSocket-сервер
 settings_ws_subtitle = Налаштуйте підключення оверлеїв та сторонніх інструментів до Forge.
-settings_ws_all_saved = Усі зміни збережено
-settings_ws_saving = Збереження…
-settings_ws_save_failed = Помилка збереження: { $error }
 settings_ws_enable_label = Увімкнути сервер
 settings_ws_enable_description = Запускається під час старту застосунку, хостить оверлеї, приймає WS-клієнти
 settings_ws_bind_section_title = Адреса прив'язки
@@ -612,10 +609,6 @@ triggers_create_kbd_hint = ENTER щоб створити · ESC щоб скас�
 ## Налаштування → панель скриптів
 
 settings_scripting_title = Скрипти (Rhai)
-settings_scripting_all_saved = Усі зміни збережено
-settings_scripting_saving = Збереження…
-settings_scripting_unsaved = Незбережені зміни
-settings_scripting_save_failed = Помилка збереження: { $error }
 settings_scripting_engine_section = Ліміти рушія
 settings_scripting_op_limit_label = Ліміт операцій
 settings_scripting_op_limit_hint = Діапазон 1 000 - 10 000 000 (за замовчуванням 100 000)
@@ -1617,6 +1610,13 @@ widget_confirm_cancel = Скасувати
 widget_confirm_delete_title = Видалити { $kind }?
 widget_confirm_delete_hint = Цей елемент буде остаточно видалено. Дію не можна скасувати.
 widget_confirm_delete_kind_script = скрипт
+
+## Widget - save indicator
+
+widget_save_all_saved = Усі зміни збережено
+widget_save_saving = Збереження…
+widget_save_unsaved = Незбережені зміни
+widget_save_failed = Помилка збереження: { $error }
 
 ## Widget - server bearer token
 

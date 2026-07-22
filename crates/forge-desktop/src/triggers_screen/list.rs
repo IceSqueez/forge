@@ -251,7 +251,7 @@ impl TriggersRegistryView {
         if !instance.enabled {
             self.persist_enabled(id, true, cx);
         } else if instance.used_in_count > 0 {
-            self.confirm_disable = Some(id);
+            self.confirm_disable.request(id);
             cx.notify();
         } else {
             self.persist_enabled(id, false, cx);
@@ -267,18 +267,18 @@ impl TriggersRegistryView {
     }
 
     fn cancel_disable(&mut self, cx: &mut Context<Self>) {
-        self.confirm_disable = None;
+        self.confirm_disable.cancel();
         cx.notify();
     }
 
     pub(super) fn request_delete(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
-        self.pending_delete = Some(id);
+        self.pending_delete.request(id);
         self.menu_open = None;
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete = None;
+        self.pending_delete.cancel();
         cx.notify();
     }
 

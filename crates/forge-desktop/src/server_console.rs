@@ -1,10 +1,10 @@
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
-    BORDER_THIN, ColumnWidth, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition, PlatformKind, Radius,
-    Spacing, badge, card, column, confirm_modal, data_table, empty_state, fmt_bytes, fmt_uptime,
-    fmt_uptime_short, icon, metric_card, overlay, page_frame, platform_color, radius, spacing,
-    sparkline, status_dot, tr, virtual_table, with_alpha,
+    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
+    DataRow, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition,
+    PlatformKind, Radius, Spacing, badge, card, column, confirm_modal, data_table, empty_state,
+    fmt_bytes, fmt_uptime, fmt_uptime_short, icon, metric_card, overlay, page_frame,
+    platform_color, radius, spacing, sparkline, status_dot, tr, virtual_table, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -151,7 +151,7 @@ pub struct ServerConsoleView {
     overlay_entries: Vec<OwnedOverlayEntry>,
     selected_overlay_file: Option<usize>,
     /// Target client's stable `identification`, not its row index (which shifts under a live snapshot refresh).
-    pending_disconnect: Option<String>,
+    pending_disconnect: Confirm<String>,
 }
 
 impl ServerConsoleView {
@@ -183,7 +183,7 @@ impl ServerConsoleView {
             overlay_root: String::new(),
             overlay_entries: Vec::new(),
             selected_overlay_file: None,
-            pending_disconnect: None,
+            pending_disconnect: Confirm::default(),
         };
         view.fetch_token(cx);
         if view.server.is_some() {
@@ -423,13 +423,13 @@ impl ServerConsoleView {
 
     fn request_disconnect(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(row) = self.connected_clients.get(index) {
-            self.pending_disconnect = Some(row.identification.clone());
+            self.pending_disconnect.request(row.identification.clone());
             cx.notify();
         }
     }
 
     fn cancel_disconnect(&mut self, cx: &mut Context<Self>) {
-        self.pending_disconnect = None;
+        self.pending_disconnect.cancel();
         cx.notify();
     }
 
@@ -1449,7 +1449,7 @@ impl ServerConsoleView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let id = self.pending_disconnect.as_ref()?;
+        let id = self.pending_disconnect.get()?;
         let row = self
             .connected_clients
             .iter()

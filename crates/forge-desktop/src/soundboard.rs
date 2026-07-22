@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 
 use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius,
-    SearchState, Spacing, TextInput, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock,
-    ghost_button_with_icon, icon, modal, overlay, pad_tile, page_frame, primary_button, radius,
-    secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY,
+    DEFAULT_MONO_FAMILY, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
+    OverlayPosition, Radius, SearchState, Spacing, TextInput, chip, confirm_modal, empty_state,
+    fmt_bytes, fmt_clock, ghost_button_with_icon, icon, modal, overlay, pad_tile, page_frame,
+    primary_button, radius, secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
@@ -114,7 +114,7 @@ pub struct SoundboardView {
     search: SearchState,
     category_filter: Option<String>,
     modal: Option<AddModal>,
-    pending_delete: Option<ClipId>,
+    pending_delete: Confirm<ClipId>,
     _search_sub: Subscription,
     player: Arc<SoundboardPlayer>,
     clips_repo: Arc<dyn SoundboardClipsRepo>,
@@ -172,7 +172,7 @@ impl SoundboardView {
             search,
             category_filter: None,
             modal: None,
-            pending_delete: None,
+            pending_delete: Confirm::default(),
             _search_sub: search_sub,
             player,
             clips_repo,
@@ -629,12 +629,12 @@ impl SoundboardView {
     }
 
     fn request_delete(&mut self, id: ClipId, cx: &mut Context<Self>) {
-        self.pending_delete = Some(id);
+        self.pending_delete.request(id);
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete = None;
+        self.pending_delete.cancel();
         cx.notify();
     }
 
@@ -1817,6 +1817,8 @@ impl Render for SoundboardView {
             Some(self.render_modal(modal_state, &palette, density, cx))
         } else {
             self.pending_delete
+                .get()
+                .copied()
                 .map(|id| self.render_delete_confirm(id, &palette, cx))
         };
 

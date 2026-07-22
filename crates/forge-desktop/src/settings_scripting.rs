@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon,
-    InputEvent, Radius, Spacing, TextInput, icon, primary_button, radius, setting_row, spacing,
-    toggle, tr, with_alpha,
+    InputEvent, Radius, SaveState, Spacing, TextInput, icon, primary_button, radius,
+    save_indicator, setting_row, spacing, toggle, tr, with_alpha,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
@@ -47,9 +47,7 @@ pub struct SettingsScriptingView {
     allow_local: bool,
     core_allow_local: bool,
     loading: bool,
-    saving: bool,
-    save_error: Option<String>,
-    all_changes_saved: bool,
+    save_state: SaveState,
     op_limit: Entity<TextInput>,
     engine_timeout: Entity<TextInput>,
     max_calls: Entity<TextInput>,
@@ -114,9 +112,7 @@ impl SettingsScriptingView {
             allow_local: http.allow_local,
             core_allow_local: false,
             loading: false,
-            saving: false,
-            save_error: None,
-            all_changes_saved: true,
+            save_state: SaveState::default(),
             op_limit,
             engine_timeout,
             max_calls,
@@ -130,13 +126,13 @@ impl SettingsScriptingView {
     }
 
     fn mark_unsaved(&mut self, cx: &mut Context<Self>) {
-        self.all_changes_saved = false;
+        self.save_state.mark_dirty();
         cx.notify();
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
         self.loading = true;
-        self.save_error = None;
+        self.save_state = SaveState::Saved;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
@@ -172,12 +168,11 @@ impl SettingsScriptingView {
                 self.max_response_kib.update(cx, |i, cx| {
                     i.set_content((snap.max_response_bytes / 1024).to_string(), cx)
                 });
-                self.all_changes_saved = true;
-                self.save_error = None;
+                self.save_state = SaveState::Saved;
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load scripting settings");
-                self.save_error = Some(message);
+                self.save_state = SaveState::Error(message.into());
             }
         }
         cx.notify();
@@ -188,7 +183,7 @@ impl SettingsScriptingView {
         if !draft.is_empty() && !self.allowed_domains.contains(&draft) {
             self.allowed_domains.push(draft);
             self.domain_draft.update(cx, |i, cx| i.clear(cx));
-            self.all_changes_saved = false;
+            self.save_state.mark_dirty();
         }
         cx.notify();
     }
@@ -196,20 +191,20 @@ impl SettingsScriptingView {
     fn remove_domain(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.allowed_domains.len() {
             self.allowed_domains.remove(index);
-            self.all_changes_saved = false;
+            self.save_state.mark_dirty();
         }
         cx.notify();
     }
 
     fn toggle_allow_local(&mut self, cx: &mut Context<Self>) {
         self.allow_local = !self.allow_local;
-        self.all_changes_saved = false;
+        self.save_state.mark_dirty();
         cx.notify();
     }
 
     fn toggle_core_allow_local(&mut self, cx: &mut Context<Self>) {
         self.core_allow_local = !self.core_allow_local;
-        self.all_changes_saved = false;
+        self.save_state.mark_dirty();
         cx.notify();
     }
 
@@ -268,9 +263,7 @@ impl SettingsScriptingView {
             engine_timeout_ms,
         };
 
-        self.saving = true;
-        self.all_changes_saved = false;
-        self.save_error = None;
+        self.save_state = SaveState::Saving;
 
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -287,58 +280,14 @@ impl SettingsScriptingView {
     }
 
     fn apply_save_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
-        self.saving = false;
         match result {
-            Ok(()) => {
-                self.all_changes_saved = true;
-                self.save_error = None;
-            }
+            Ok(()) => self.save_state = SaveState::Saved,
             Err(message) => {
                 tracing::warn!(error = %message, "failed to save scripting settings");
-                self.save_error = Some(message);
+                self.save_state = SaveState::Error(message.into());
             }
         }
         cx.notify();
-    }
-
-    fn save_indicator(&self, palette: &ForgePalette) -> AnyElement {
-        if let Some(err) = &self.save_error {
-            return div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.random)
-                .child(tr!("settings_scripting_save_failed", error = err.as_str()))
-                .into_any_element();
-        }
-        if self.saving {
-            return div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_faint)
-                .child(tr!("settings_scripting_saving"))
-                .into_any_element();
-        }
-        if self.all_changes_saved {
-            return div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
-                .child(icon(Icon::CircleCheck, px(13.0), palette.success))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.success)
-                        .child(tr!("settings_scripting_all_saved")),
-                )
-                .into_any_element();
-        }
-        div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_SM)
-            .text_color(palette.warning)
-            .child(tr!("settings_scripting_unsaved"))
-            .into_any_element()
     }
 
     fn header_row(&self, palette: &ForgePalette) -> impl IntoElement {
@@ -356,7 +305,7 @@ impl SettingsScriptingView {
                     .child(tr!("settings_scripting_title")),
             )
             .child(div().flex_1())
-            .child(self.save_indicator(palette))
+            .child(save_indicator(&self.save_state, palette))
     }
 
     fn domains_block(

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
-    ModalSize, OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextArea,
-    TextInput, badge, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
+    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent,
+    InputEvent, ModalSize, OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing,
+    TextArea, TextInput, badge, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
     inline_edit, install_resize, menu_divider, menu_item, modal, overlay, page_frame,
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
@@ -231,7 +231,7 @@ pub struct ScriptEditorView {
 
     rename: Option<RenameState>,
     row_menu: Option<RowMenu>,
-    pending_delete: Option<ScriptId>,
+    pending_delete: Confirm<ScriptId>,
     pending_nav: Option<PendingNav>,
 
     code_input: Entity<TextArea>,
@@ -323,7 +323,7 @@ impl ScriptEditorView {
             _search_sub: search_sub,
             rename: None,
             row_menu: None,
-            pending_delete: None,
+            pending_delete: Confirm::default(),
             pending_nav: None,
             code_input,
             _code_sub: code_sub,
@@ -949,13 +949,13 @@ impl ScriptEditorView {
     }
 
     fn request_delete(&mut self, id: ScriptId, cx: &mut Context<Self>) {
-        self.pending_delete = Some(id);
+        self.pending_delete.request(id);
         self.row_menu = None;
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete = None;
+        self.pending_delete.cancel();
         cx.notify();
     }
 
@@ -2163,7 +2163,7 @@ impl ScriptEditorView {
     }
 
     fn delete_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let id = self.pending_delete?;
+        let id = *self.pending_delete.get()?;
         let name = self
             .find_entry(id)
             .map(|e| e.name.clone())
@@ -2592,7 +2592,7 @@ impl Render for ScriptEditorView {
 
         let overlay = if self.run_modal.is_some() {
             self.run_modal_overlay(&palette, cx)
-        } else if self.pending_delete.is_some() {
+        } else if self.pending_delete.is_pending() {
             self.delete_overlay(&palette, cx)
         } else if self.pending_nav.is_some() {
             self.discard_overlay(&palette, cx)

@@ -214,9 +214,6 @@ settings_shortcuts_conflict_steal = Reassign
 
 settings_ws_title = WebSocket server
 settings_ws_subtitle = Configure how overlays and third-party tools connect to Forge.
-settings_ws_all_saved = All changes saved
-settings_ws_saving = Saving…
-settings_ws_save_failed = Save failed: { $error }
 settings_ws_enable_label = Enable server
 settings_ws_enable_description = Starts on app launch, hosts overlays, accepts WS clients
 settings_ws_bind_section_title = Bind address
@@ -610,10 +607,6 @@ triggers_create_kbd_hint = ENTER to create · ESC to cancel
 ## Settings → Scripting pane
 
 settings_scripting_title = Scripting (Rhai)
-settings_scripting_all_saved = All changes saved
-settings_scripting_saving = Saving…
-settings_scripting_unsaved = Unsaved changes
-settings_scripting_save_failed = Save failed: { $error }
 settings_scripting_engine_section = Engine Limits
 settings_scripting_op_limit_label = Op-count limit
 settings_scripting_op_limit_hint = Range 1 000 - 10 000 000 (default 100 000)
@@ -1597,6 +1590,13 @@ widget_confirm_cancel = Cancel
 widget_confirm_delete_title = Delete { $kind }?
 widget_confirm_delete_hint = This item will be permanently removed. This action cannot be undone.
 widget_confirm_delete_kind_script = script
+
+## Widget - save indicator
+
+widget_save_all_saved = All changes saved
+widget_save_saving = Saving…
+widget_save_unsaved = Unsaved changes
+widget_save_failed = Save failed: { $error }
 
 ## Widget - server bearer token
 

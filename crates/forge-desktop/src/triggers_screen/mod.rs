@@ -1,6 +1,6 @@
 use forge_components::{
-    BreadcrumbCrumb, Density, ForgePalette, InlineEdit, PlatformKind, SearchState, TextInput,
-    ToastKind, page_frame, platform_color, tr,
+    BreadcrumbCrumb, Confirm, Density, ForgePalette, InlineEdit, PlatformKind, SearchState,
+    TextInput, ToastKind, page_frame, platform_color, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
@@ -211,8 +211,8 @@ pub struct TriggersRegistryView {
     platforms: Vec<Platform>,
     usage_filter: UsageFilter,
     rename: Option<RenameForm>,
-    pending_delete: Option<TriggerInstanceId>,
-    confirm_disable: Option<TriggerInstanceId>,
+    pending_delete: Confirm<TriggerInstanceId>,
+    confirm_disable: Confirm<TriggerInstanceId>,
     create: Option<CreateStage>,
     _search_sub: Subscription,
 }
@@ -255,8 +255,8 @@ impl TriggersRegistryView {
             platforms: Vec::new(),
             usage_filter: UsageFilter::All,
             rename: None,
-            pending_delete: None,
-            confirm_disable: None,
+            pending_delete: Confirm::default(),
+            confirm_disable: Confirm::default(),
             create: None,
             _search_sub: search_sub,
         };
@@ -422,9 +422,13 @@ impl Render for TriggersRegistryView {
 
         let disable_modal = self
             .confirm_disable
+            .get()
+            .copied()
             .map(|id| self.render_disable_confirm(id, &palette, cx));
         let delete_modal = self
             .pending_delete
+            .get()
+            .copied()
             .map(|id| self.render_delete_confirm(id, &palette, cx));
         let row_menu = self.render_row_context_menu(&palette, cx);
         let create_overlay = self

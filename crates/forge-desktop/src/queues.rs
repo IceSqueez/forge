@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use forge_components::confirm::ConfirmTone;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, SearchState, Spacing, TextInput, badge, card, chip, confirm_modal,
-    empty_state, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
-    menu_divider, menu_item, modal, overlay, page_frame, primary_button, primary_button_with_icon,
-    radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
+    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement,
+    ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, badge, card, chip,
+    confirm_modal, empty_state, ghost_button_with_icon, header_stat, header_stats, icon,
+    menu_button, menu_divider, menu_item, modal, overlay, page_frame, primary_button,
+    primary_button_with_icon, radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -139,7 +139,7 @@ pub struct QueuesView {
     loading: bool,
     feedback: Option<SharedString>,
     modal: Option<EditQueueModal>,
-    pending_delete: Option<QueueId>,
+    pending_delete: Confirm<QueueId>,
     menu_open: Option<QueueId>,
     menu_click_pos: Option<Point<Pixels>>,
     diverged: HashSet<QueueId>,
@@ -175,7 +175,7 @@ impl QueuesView {
             loading: true,
             feedback: None,
             modal: None,
-            pending_delete: None,
+            pending_delete: Confirm::default(),
             menu_open: None,
             menu_click_pos: None,
             diverged: HashSet::new(),
@@ -391,12 +391,12 @@ impl QueuesView {
 
     fn request_delete(&mut self, id: QueueId, cx: &mut Context<Self>) {
         self.menu_open = None;
-        self.pending_delete = Some(id);
+        self.pending_delete.request(id);
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete = None;
+        self.pending_delete.cancel();
         cx.notify();
     }
 
@@ -1367,7 +1367,7 @@ impl Render for QueuesView {
             .as_ref()
             .map(|modal_state| self.render_modal(modal_state, &palette, density, cx));
 
-        let delete_overlay = self.pending_delete.and_then(|id| {
+        let delete_overlay = self.pending_delete.get().copied().and_then(|id| {
             let name = self.queues.iter().find(|q| q.id == id)?.name.clone();
             Some(self.render_delete_confirm(SharedString::from(name), &palette, cx))
         });

@@ -306,7 +306,7 @@ impl SettingsView {
                     .font_family(DEFAULT_BODY_FAMILY)
                     .text_size(FONT_XS)
                     .text_color(palette.success)
-                    .child(tr!("settings_ws_all_saved")),
+                    .child(tr!("widget_save_all_saved")),
             )
     }
 

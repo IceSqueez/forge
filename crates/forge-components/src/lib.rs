@@ -5,6 +5,7 @@ pub mod cards;
 pub mod chat_row;
 pub mod chip;
 pub mod confirm;
+pub mod confirm_state;
 pub mod data;
 pub mod date_time_picker;
 pub mod fonts;
@@ -22,6 +23,7 @@ pub mod palette;
 pub mod picker;
 pub mod radio_row;
 pub mod resize_handle;
+pub mod save_state;
 pub mod search_state;
 pub mod section_label;
 pub mod segmented;
@@ -53,6 +55,7 @@ pub use chat_row::{
 };
 pub use chip::{Chip, ChipGlyph, chip, filter_chip_row};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
+pub use confirm_state::Confirm;
 pub use data::{
     Column, ColumnWidth, DataRow, DataTable, HeaderAlign, VirtualTable, column, data_table,
     hover_reveal, virtual_table,
@@ -88,6 +91,7 @@ pub use palette::{
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use radio_row::{RadioRow, radio_row, radio_row_label};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
+pub use save_state::{SaveState, save_indicator};
 pub use search_state::SearchState;
 pub use section_label::section_label;
 pub use segmented::{Segment, SegmentedControl, segment, segmented};

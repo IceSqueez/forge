@@ -3,7 +3,7 @@ use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
-    BreadcrumbCrumb, DateTimePicker, Density, ForgePalette, GridPicker, Icon, InlineEdit,
+    BreadcrumbCrumb, Confirm, DateTimePicker, Density, ForgePalette, GridPicker, Icon, InlineEdit,
     OverlayPosition, Picker, SearchState, TextArea, TextInput, ToastKind, drive_overlay_focus,
     fmt_number, fmt_relative_time, icon, overlay, page_frame, tr,
 };
@@ -199,7 +199,7 @@ pub struct ScreenActionsView {
     history_modal: Option<HistoryModal>,
     test_run: Option<test_run::TestRunModal>,
     header_menu_open: Option<Point<Pixels>>,
-    pending_delete: Option<ActionId>,
+    pending_delete: Confirm<ActionId>,
     detail: Option<ActionDetail>,
     telemetry: Option<ActionTelemetry>,
     last_outcome: Option<ExecutionOutcome>,
@@ -273,7 +273,7 @@ impl ScreenActionsView {
             history_modal: None,
             test_run: None,
             header_menu_open: None,
-            pending_delete: None,
+            pending_delete: Confirm::default(),
             detail: None,
             telemetry: None,
             last_outcome: None,
@@ -604,6 +604,8 @@ impl Render for ScreenActionsView {
             .map(|state| self.render_test_run_modal(state, &palette, cx));
         let delete_modal = self
             .pending_delete
+            .get()
+            .copied()
             .map(|id| self.render_delete_confirm(id, &palette, cx));
         let sub_modal = self
             .sub_form

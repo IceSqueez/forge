@@ -5,9 +5,9 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
-    Radius, Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, field_hint, field_title,
-    ghost_button_with_icon, icon, overlay, radio_row, radius, setting_row, spacing, toggle, tr,
-    type_to_confirm,
+    Radius, SaveState, Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, field_hint,
+    field_title, ghost_button_with_icon, icon, overlay, radio_row, radius, save_indicator,
+    setting_row, spacing, toggle, tr, type_to_confirm,
 };
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
@@ -60,8 +60,7 @@ pub struct SettingsWebSocketView {
     token_revealed: bool,
 
     loading: bool,
-    all_changes_saved: bool,
-    save_error: Option<String>,
+    save_state: SaveState,
 
     port_input: Entity<TextInput>,
     lan_modal: Option<Entity<TypeToConfirm>>,
@@ -106,8 +105,7 @@ impl SettingsWebSocketView {
             bearer_token: String::new(),
             token_revealed: false,
             loading: false,
-            all_changes_saved: true,
-            save_error: None,
+            save_state: SaveState::default(),
             port_input,
             lan_modal: None,
             lan_sub: None,
@@ -120,7 +118,7 @@ impl SettingsWebSocketView {
 
     fn load(&mut self, cx: &mut Context<Self>) {
         self.loading = true;
-        self.save_error = None;
+        self.save_state = SaveState::Saved;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
@@ -152,12 +150,11 @@ impl SettingsWebSocketView {
                 self.require_http_overlay_token = snap.require_http_overlay_token;
                 self.cors_any_origin = snap.cors_any_origin;
                 self.overlay_root = snap.overlay_root.filter(|s| !s.is_empty());
-                self.all_changes_saved = true;
-                self.save_error = None;
+                self.save_state = SaveState::Saved;
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load websocket settings");
-                self.save_error = Some(message);
+                self.save_state = SaveState::Error(message.into());
             }
         }
         cx.notify();
@@ -190,8 +187,7 @@ impl SettingsWebSocketView {
         fut: impl Future<Output = Result<(), String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.all_changes_saved = false;
-        self.save_error = None;
+        self.save_state = SaveState::Saving;
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let _ = tx.send(fut.await);
@@ -207,14 +203,10 @@ impl SettingsWebSocketView {
 
     fn apply_save_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
         match result {
-            Ok(()) => {
-                self.all_changes_saved = true;
-                self.save_error = None;
-            }
+            Ok(()) => self.save_state = SaveState::Saved,
             Err(message) => {
                 tracing::warn!(error = %message, "failed to save websocket settings");
-                self.all_changes_saved = false;
-                self.save_error = Some(message);
+                self.save_state = SaveState::Error(message.into());
             }
         }
         cx.notify();
@@ -227,16 +219,16 @@ impl SettingsWebSocketView {
         fut: impl Future<Output = Result<(), String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.save_error = None;
-        self.all_changes_saved = true;
+        self.save_state = SaveState::Saved;
         async_bridge::optimistic(
             &self.rt_handle,
             prev,
             fut,
             move |this, prev, message, cx| {
                 set(this, prev);
-                this.all_changes_saved = false;
-                this.save_error = ErrorSink::Banner.report(message, cx);
+                if let Some(message) = ErrorSink::Banner.report(message, cx) {
+                    this.save_state = SaveState::Error(message.into());
+                }
             },
             cx,
         );
@@ -487,38 +479,6 @@ impl SettingsWebSocketView {
         .detach();
     }
 
-    fn save_indicator(&self, palette: &ForgePalette) -> AnyElement {
-        if let Some(err) = &self.save_error {
-            return div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.random)
-                .child(tr!("settings_ws_save_failed", error = err.as_str()))
-                .into_any_element();
-        }
-        if self.all_changes_saved {
-            return div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
-                .child(icon(Icon::CircleCheck, px(13.0), palette.success))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_SM)
-                        .text_color(palette.success)
-                        .child(tr!("settings_ws_all_saved")),
-                )
-                .into_any_element();
-        }
-        div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_SM)
-            .text_color(palette.text_faint)
-            .child(tr!("settings_ws_saving"))
-            .into_any_element()
-    }
-
     fn header_row(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
         div()
             .w_full()
@@ -535,7 +495,7 @@ impl SettingsWebSocketView {
                     .child(tr!("settings_ws_title")),
             )
             .child(div().flex_1())
-            .child(self.save_indicator(palette))
+            .child(save_indicator(&self.save_state, palette))
     }
 
     fn bind_section(

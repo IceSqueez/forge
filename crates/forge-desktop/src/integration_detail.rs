@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
+    Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
     PickerItem, PickerLabels, Radius, Spacing, ToastKind, avatar_tile, badge, confirm_modal,
     fmt_uptime, icon, overlay, page_frame, radius, spacing, tr, with_alpha,
 };
@@ -67,7 +67,7 @@ pub struct IntegrationDetail {
     health_metrics: [HealthMetric; 4],
     sections: Vec<DetailSection>,
     quick_actions: Vec<QuickAction>,
-    pending_disconnect: bool,
+    pending_disconnect: Confirm<()>,
     pending_picker: Option<PendingPicker>,
     _conn_obs: Subscription,
 }
@@ -155,7 +155,7 @@ impl IntegrationDetail {
             health_metrics,
             sections,
             quick_actions,
-            pending_disconnect: false,
+            pending_disconnect: Confirm::default(),
             pending_picker: None,
             _conn_obs: conn_obs,
         }
@@ -190,7 +190,7 @@ impl IntegrationDetail {
     fn on_header_action(&mut self, action: HeaderAction, cx: &mut Context<Self>) {
         match action {
             HeaderAction::Disconnect => {
-                self.pending_disconnect = true;
+                self.pending_disconnect.request(());
                 cx.notify();
             }
             HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect, cx),
@@ -221,13 +221,14 @@ impl IntegrationDetail {
     }
 
     fn cancel_disconnect(&mut self, cx: &mut Context<Self>) {
-        self.pending_disconnect = false;
+        self.pending_disconnect.cancel();
         cx.notify();
     }
 
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
-        self.pending_disconnect = false;
-        self.dispatch_control(ControlVerb::Disconnect, cx);
+        if self.pending_disconnect.take().is_some() {
+            self.dispatch_control(ControlVerb::Disconnect, cx);
+        }
         cx.notify();
     }
 
@@ -853,6 +854,7 @@ impl Render for IntegrationDetail {
 
         let disconnect_overlay = self
             .pending_disconnect
+            .is_pending()
             .then(|| self.disconnect_overlay(&palette, cx));
         let picker_overlay = self.pending_picker.as_ref().map(|pending| {
             let view = cx.entity();

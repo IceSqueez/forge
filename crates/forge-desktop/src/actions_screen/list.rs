@@ -247,13 +247,13 @@ impl ScreenActionsView {
     }
 
     pub(super) fn request_delete(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        self.pending_delete = Some(id);
+        self.pending_delete.request(id);
         self.menu_open = None;
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete = None;
+        self.pending_delete.cancel();
         cx.notify();
     }
 

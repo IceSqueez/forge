@@ -2,7 +2,6 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_components::SearchState;
 use forge_components::chip::ChipGlyph;
 use forge_components::confirm::ConfirmTone;
 use forge_components::tokens::ModalSize;
@@ -15,6 +14,7 @@ use forge_components::{
     primary_button, primary_button_with_icon, radius, secondary_button, spacing, status_dot,
     toggle, tr, virtual_table, with_alpha,
 };
+use forge_components::{Confirm, SearchState};
 use std::path::PathBuf;
 
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
@@ -135,7 +135,7 @@ pub struct GlobalsView {
     search: SearchState,
     visible: Vec<Global>,
     editor: Option<EditorState>,
-    pending_delete: Option<SharedString>,
+    pending_delete: Confirm<SharedString>,
     inspecting: Option<Global>,
     renaming: Option<RenameState>,
     row_menu: Option<RowMenu>,
@@ -171,7 +171,7 @@ impl GlobalsView {
             search,
             visible: Vec::new(),
             editor: None,
-            pending_delete: None,
+            pending_delete: Confirm::default(),
             inspecting: None,
             renaming: None,
             row_menu: None,
@@ -299,12 +299,12 @@ impl GlobalsView {
     }
 
     fn request_delete(&mut self, name: SharedString, cx: &mut Context<Self>) {
-        self.pending_delete = Some(name);
+        self.pending_delete.request(name);
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete = None;
+        self.pending_delete.cancel();
         cx.notify();
     }
 
@@ -1597,7 +1597,8 @@ impl Render for GlobalsView {
 
         let delete_overlay = self
             .pending_delete
-            .clone()
+            .get()
+            .cloned()
             .map(|name| self.render_delete_confirm(name, &palette, cx));
         let editor_overlay = self
             .editor

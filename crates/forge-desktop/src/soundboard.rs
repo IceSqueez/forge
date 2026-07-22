@@ -8,7 +8,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
     TextInput, breadcrumb, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock,
-    ghost_button_with_icon, icon, modal, overlay, primary_button, radius, search_input,
+    ghost_button_with_icon, icon, modal, overlay, pad_tile, primary_button, radius, search_input,
     secondary_button, slider, spacing, status_dot, toggle, toolbar_row, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
@@ -24,7 +24,7 @@ use forge_storage::{
 use forge_types::{ClipId, OutputDevice};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Task,
-    Window, div, prelude::*, px, relative, svg,
+    Window, div, prelude::*, px, svg,
 };
 use time::OffsetDateTime;
 
@@ -45,17 +45,10 @@ const HEADER_ICON: Pixels = px(13.0);
 const SEARCH_WIDTH: Pixels = px(220.0);
 const GRID_GAP: Pixels = px(10.0);
 const PADS_PER_ROW: usize = 4;
-const PAD_RADIUS: Pixels = px(10.0);
-const PAD_PAD_Y: Pixels = px(12.0);
-const PAD_PAD_X: Pixels = px(13.0);
-const PAD_ICON_TILE: Pixels = px(30.0);
-const PAD_ICON_TILE_RADIUS: Pixels = px(8.0);
 const PAD_GLYPH: Pixels = px(15.0);
-const PAD_NAME_FS: Pixels = px(12.5);
 const HOTKEY_FS: Pixels = px(10.0);
 const HOTKEY_RADIUS: Pixels = px(4.0);
 const LOOP_ICON: Pixels = px(10.0);
-const PROGRESS_H: Pixels = px(2.0);
 const PROGRESS_WIDTH: f32 = 0.46;
 const PAD_ACTION_TILE: Pixels = px(20.0);
 const PAD_ACTION_GLYPH: Pixels = px(13.0);
@@ -64,9 +57,6 @@ const PAD_ACTION_HOVER_ALPHA: f32 = 0.16;
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
 const STOP_ICON: Pixels = px(12.0);
 const ADD_ICON: Pixels = px(13.0);
-const ADDBAR_RADIUS: Pixels = px(9.0);
-const ADDBAR_PAD_Y: Pixels = px(9.0);
-const ADDBAR_PAD_X: Pixels = px(12.0);
 const ROUTING_PAD: Pixels = px(14.0);
 const ROUTING_GAP: Pixels = px(16.0);
 const SELECT_RADIUS: Pixels = px(7.0);
@@ -1057,16 +1047,6 @@ impl SoundboardView {
         let progress = self.playing.get(&id);
         let playing = progress.is_some();
         let color = category_color(&clip.category, palette);
-        let border_color = if playing {
-            color
-        } else {
-            palette.surface_overlay
-        };
-        let bg = if playing {
-            palette.surface_overlay
-        } else {
-            palette.elevated
-        };
         let glyph = if playing {
             Icon::PlayerPause
         } else {
@@ -1111,40 +1091,12 @@ impl SoundboardView {
             .child(delete_btn)
             .children(hotkey_badge);
 
-        let top = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .mb(PAD_PAD_Y)
-            .child(
-                div()
-                    .size(PAD_ICON_TILE)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(PAD_ICON_TILE_RADIUS)
-                    .bg(palette.surface_overlay)
-                    .child(icon(glyph, PAD_GLYPH, color)),
-            )
-            .child(top_right);
-
-        let name = div()
-            .w_full()
-            .min_w_0()
-            .overflow_hidden()
-            .text_ellipsis()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(PAD_NAME_FS)
-            .font_weight(gpui::FontWeight::MEDIUM)
-            .text_color(palette.text_primary)
-            .child(clip.name.clone());
-
         let dur_color = if playing { color } else { palette.text_faint };
-        let mut bottom = div().flex().items_center().gap(px(5.0)).mt(px(3.0));
+        let mut sublabel = div().flex().items_center().gap(px(5.0)).mt(px(3.0));
         if clip.loop_playback {
-            bottom = bottom.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
+            sublabel = sublabel.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
         }
-        bottom = bottom.child(
+        sublabel = sublabel.child(
             div()
                 .font_family(DEFAULT_MONO_FAMILY)
                 .text_size(FONT_XXS)
@@ -1156,22 +1108,17 @@ impl SoundboardView {
                 }),
         );
 
-        let mut pad = div()
-            .id((gpui::ElementId::from("sb-pad"), id.to_string()))
-            .relative()
-            .flex()
-            .flex_col()
-            .cursor_pointer()
-            .py(PAD_PAD_Y)
-            .px(PAD_PAD_X)
-            .rounded(PAD_RADIUS)
-            .border(BORDER_THIN)
-            .border_color(border_color)
-            .bg(bg)
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_play(id, cx)))
-            .child(top)
-            .child(name)
-            .child(bottom);
+        let mut pad = pad_tile(
+            (gpui::ElementId::from("sb-pad"), id.to_string()),
+            icon(glyph, PAD_GLYPH, color),
+            clip.name.clone(),
+            palette,
+        )
+        .top_right(top_right)
+        .sublabel(sublabel)
+        .selected(playing)
+        .accent(color)
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_play(id, cx)));
 
         if let Some(prog) = progress {
             let indeterminate = prog.looped || !prog.duration_secs.is_some_and(|d| d > 0.0);
@@ -1183,16 +1130,7 @@ impl SoundboardView {
                     .as_secs_f64();
                 (elapsed / prog.duration_secs.unwrap_or(0.0)).clamp(0.0, 1.0) as f32
             };
-            pad = pad.child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .bottom_0()
-                    .h(PROGRESS_H)
-                    .w(relative(fraction))
-                    .rounded(px(2.0))
-                    .bg(color),
-            );
+            pad = pad.progress(fraction, color);
         }
         pad.into_any_element()
     }
@@ -1308,92 +1246,41 @@ impl SoundboardView {
         let color = category_color(entry.category, palette);
         let glyph =
             glyph_for_name(entry.icon_name).unwrap_or_else(|| category_glyph(entry.category));
-        div()
-            .id((
+        pad_tile(
+            (
                 gpui::ElementId::from("sb-lib"),
                 SharedString::new_static(entry.builtin_id),
-            ))
-            .flex()
-            .flex_col()
-            .cursor_pointer()
-            .py(PAD_PAD_Y)
-            .px(PAD_PAD_X)
-            .rounded(PAD_RADIUS)
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.base)
-            .hover(|s| s.border_color(color))
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.import_builtin(entry, cx)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .mb(PAD_PAD_Y)
-                    .child(
-                        div()
-                            .size(PAD_ICON_TILE)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(PAD_ICON_TILE_RADIUS)
-                            .bg(palette.surface_overlay)
-                            .child(icon(glyph, PAD_GLYPH, color)),
-                    )
-                    .child(icon(Icon::Plus, HOTKEY_FS, palette.text_faint)),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(PAD_NAME_FS)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(palette.text_primary)
-                    .child(entry.display_name.to_owned()),
-            )
-            .child(
-                div()
-                    .mt(px(3.0))
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("soundboard_library_import")),
-            )
-            .into_any_element()
+            ),
+            icon(glyph, PAD_GLYPH, color),
+            entry.display_name.to_owned(),
+            palette,
+        )
+        .top_right(icon(Icon::Plus, HOTKEY_FS, palette.text_faint))
+        .sublabel(
+            div()
+                .mt(px(3.0))
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(tr!("soundboard_library_import")),
+        )
+        .hover_border(color)
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.import_builtin(entry, cx)))
+        .into_any_element()
     }
 
     fn render_add_bar(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        div()
-            .id("sb-add-bar")
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .gap(px(6.0))
-            .py(ADDBAR_PAD_Y)
-            .px(ADDBAR_PAD_X)
-            .rounded(ADDBAR_RADIUS)
-            .border(BORDER_THIN)
-            .border_color(palette.surface_overlay)
-            .bg(palette.shell)
-            .cursor_pointer()
-            .hover(|s| s.border_color(palette.bits).bg(palette.surface_overlay))
-            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)))
-            .child(icon(Icon::Plus, ADD_ICON, palette.bits))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(palette.bits)
-                    .child(tr!("soundboard_add_sound")),
-            )
-            .into_any_element()
+        pad_tile(
+            "sb-add-bar",
+            icon(Icon::Plus, ADD_ICON, palette.bits),
+            tr!("soundboard_add_sound"),
+            palette,
+        )
+        .bar(palette)
+        .title_color(palette.bits)
+        .hover_border(palette.bits)
+        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)))
+        .into_any_element()
     }
 
     fn render_routing(

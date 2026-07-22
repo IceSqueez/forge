@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
-    PickerItem, PickerLabels, Radius, Spacing, ToastKind, avatar_tile, badge, breadcrumb,
-    confirm_modal, fmt_uptime, icon, overlay, radius, spacing, tr, with_alpha,
+    PickerItem, PickerLabels, Radius, Spacing, ToastKind, avatar_tile, badge, confirm_modal,
+    fmt_uptime, icon, overlay, page_frame, radius, spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -183,8 +183,8 @@ impl IntegrationDetail {
         }
     }
 
-    fn go_back(&mut self, cx: &mut Context<Self>) {
-        cx.emit(NavRequested(Screen::Platforms));
+    fn navigate_to(&mut self, screen: Screen, cx: &mut Context<Self>) {
+        cx.emit(NavRequested(screen));
     }
 
     fn on_header_action(&mut self, action: HeaderAction, cx: &mut Context<Self>) {
@@ -838,18 +838,6 @@ impl Render for IntegrationDetail {
             }
         };
 
-        let crumbs = breadcrumb(
-            vec![
-                BreadcrumbCrumb::link(
-                    tr!("platforms_breadcrumb"),
-                    "integration-crumb-platforms",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.go_back(cx)),
-                ),
-                BreadcrumbCrumb::leaf(self.display_name.clone()),
-            ],
-            &palette,
-        );
-
         let scroll = div()
             .id("integration-detail-scroll")
             .flex_1()
@@ -875,14 +863,36 @@ impl Render for IntegrationDetail {
                 })
                 .into_any_element()
         });
+
+        let ancestor_crumb = match self.status.id().as_str() {
+            "twitch" | "youtube" | "kick" => BreadcrumbCrumb::link(
+                tr!("platforms_breadcrumb"),
+                "integration-crumb-ancestor",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.navigate_to(Screen::Platforms, cx)),
+            ),
+            "obs" | "vtube" => BreadcrumbCrumb::link(
+                tr!("stream_apps_breadcrumb"),
+                "integration-crumb-ancestor",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.navigate_to(Screen::StreamApps, cx)),
+            ),
+            _ => BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
+        };
+
+        let frame = page_frame(
+            vec![
+                ancestor_crumb,
+                BreadcrumbCrumb::leaf(self.display_name.clone()),
+            ],
+            &palette,
+        )
+        .body(scroll);
+
         div()
-            .relative()
             .size_full()
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(crumbs)
-            .child(scroll)
+            .child(frame)
             .children(disconnect_overlay)
             .children(picker_overlay)
     }

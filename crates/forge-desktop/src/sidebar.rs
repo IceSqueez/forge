@@ -173,7 +173,10 @@ impl SidebarNav {
                 label: NavText::Key("nav_script_editor"),
                 screen: Screen::Scripts,
             },
-            NavEntry::MiniLabel(NavText::Key("nav_item_platforms")),
+            NavEntry::MiniLabelLink {
+                label: NavText::Key("nav_item_platforms"),
+                screen: Screen::Platforms,
+            },
             NavEntry::FlatLink {
                 dot: platform_color(PlatformKind::Twitch, palette),
                 label: NavText::Brand("Twitch"),

@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::automod as automod_fields;
+
 pub(crate) struct AutomodSettingsUpdatedDescriptor;
 
 impl TriggerKindDescriptor for AutomodSettingsUpdatedDescriptor {
@@ -62,21 +64,21 @@ impl TriggerKindDescriptor for AutomodSettingsUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let moderator = event.payload.get("moderator");
+        let moderator = event.payload.get(automod_fields::MODERATOR);
 
         let moderator_login = moderator
-            .and_then(|m| m.get("login"))
+            .and_then(|m| m.get(automod_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let moderator_id = moderator
-            .and_then(|m| m.get("id"))
+            .and_then(|m| m.get(automod_fields::MODERATOR_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let overall_level = event
             .payload
-            .get("overall_level")
+            .get(automod_fields::OVERALL_LEVEL)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 

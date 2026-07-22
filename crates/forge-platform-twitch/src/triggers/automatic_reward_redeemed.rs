@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::automatic_reward as automatic_reward_fields;
+
 pub(crate) struct AutomaticRewardRedeemedDescriptor;
 
 impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
@@ -62,32 +64,32 @@ impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let redemption = event.payload.get("redemption");
-        let user = event.payload.get("user");
-        let reward = event.payload.get("reward");
+        let redemption = event.payload.get(automatic_reward_fields::REDEMPTION);
+        let user = event.payload.get(automatic_reward_fields::USER);
+        let reward = event.payload.get(automatic_reward_fields::REWARD);
 
         let redemption_id = redemption
-            .and_then(|r| r.get("id"))
+            .and_then(|r| r.get(automatic_reward_fields::REDEMPTION_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(automatic_reward_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(automatic_reward_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_type = reward
-            .and_then(|r| r.get("type"))
+            .and_then(|r| r.get(automatic_reward_fields::REWARD_TYPE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_cost = reward
-            .and_then(|r| r.get("cost"))
+            .and_then(|r| r.get(automatic_reward_fields::REWARD_COST))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 

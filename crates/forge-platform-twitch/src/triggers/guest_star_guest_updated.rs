@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::guest_star as guest_star_fields;
+
 pub(crate) struct GuestStarGuestUpdatedDescriptor;
 
 impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
@@ -94,8 +96,8 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
 
         let event_state = event
             .payload
-            .get("guest_star")
-            .and_then(|gs| gs.get("state"))
+            .get(guest_star_fields::GUEST_STAR)
+            .and_then(|gs| gs.get(guest_star_fields::STATE))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -103,31 +105,31 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let guest_star = event.payload.get("guest_star");
-        let guest = event.payload.get("guest");
+        let guest_star = event.payload.get(guest_star_fields::GUEST_STAR);
+        let guest = event.payload.get(guest_star_fields::GUEST);
 
         let session_id = guest_star
-            .and_then(|gs| gs.get("session_id"))
+            .and_then(|gs| gs.get(guest_star_fields::SESSION_ID_FIELD))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let slot_id = guest_star
-            .and_then(|gs| gs.get("slot_id"))
+            .and_then(|gs| gs.get(guest_star_fields::SLOT_ID_FIELD))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let state = guest_star
-            .and_then(|gs| gs.get("state"))
+            .and_then(|gs| gs.get(guest_star_fields::STATE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let guest_login = guest
-            .and_then(|g| g.get("login"))
+            .and_then(|g| g.get(guest_star_fields::GUEST_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let guest_id = guest
-            .and_then(|g| g.get("id"))
+            .and_then(|g| g.get(guest_star_fields::GUEST_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

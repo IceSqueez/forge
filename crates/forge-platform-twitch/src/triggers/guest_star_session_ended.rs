@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::guest_star as guest_star_fields;
+
 pub(crate) struct GuestStarSessionEndedDescriptor;
 
 impl TriggerKindDescriptor for GuestStarSessionEndedDescriptor {
@@ -61,16 +63,16 @@ impl TriggerKindDescriptor for GuestStarSessionEndedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let session = event.payload.get("session");
+        let session = event.payload.get(guest_star_fields::SESSION);
 
         // guest_star.session_id is the chaining var for guest-star sub-actions (%guest_star.session_id%).
         let session_id = session
-            .and_then(|s| s.get("id"))
+            .and_then(|s| s.get(guest_star_fields::SESSION_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let ended_at = session
-            .and_then(|s| s.get("ended_at"))
+            .and_then(|s| s.get(guest_star_fields::SESSION_ENDED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

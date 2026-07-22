@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::warning as warning_fields;
+
 pub(crate) struct WarningAcknowledgedDescriptor;
 
 impl TriggerKindDescriptor for WarningAcknowledgedDescriptor {
@@ -62,20 +64,20 @@ impl TriggerKindDescriptor for WarningAcknowledgedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get("user");
+        let user = event.payload.get(warning_fields::USER);
 
         let user_login = user
-            .and_then(|v| v.get("login"))
+            .and_then(|v| v.get(warning_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(warning_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_name = user
-            .and_then(|v| v.get("display_name"))
+            .and_then(|v| v.get(warning_fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

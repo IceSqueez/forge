@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::automod as automod_fields;
+
 pub(crate) struct AutomodTermsUpdatedDescriptor;
 
 impl TriggerKindDescriptor for AutomodTermsUpdatedDescriptor {
@@ -62,16 +64,16 @@ impl TriggerKindDescriptor for AutomodTermsUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let moderator = event.payload.get("moderator");
+        let moderator = event.payload.get(automod_fields::MODERATOR);
 
         let moderator_login = moderator
-            .and_then(|m| m.get("login"))
+            .and_then(|m| m.get(automod_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let action = event
             .payload
-            .get("action")
+            .get(automod_fields::ACTION)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

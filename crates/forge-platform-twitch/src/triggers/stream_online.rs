@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::stream as stream_fields;
+
 pub(crate) struct StreamOnlineDescriptor;
 
 impl TriggerKindDescriptor for StreamOnlineDescriptor {
@@ -64,36 +66,36 @@ impl TriggerKindDescriptor for StreamOnlineDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let stream_id = event
             .payload
-            .get("stream")
-            .and_then(|s| s.get("id"))
+            .get(stream_fields::STREAM)
+            .and_then(|s| s.get(stream_fields::STREAM_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let stream_type = event
             .payload
-            .get("stream")
-            .and_then(|s| s.get("type"))
+            .get(stream_fields::STREAM)
+            .and_then(|s| s.get(stream_fields::STREAM_TYPE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let started_at = event
             .payload
-            .get("stream")
-            .and_then(|s| s.get("started_at"))
+            .get(stream_fields::STREAM)
+            .and_then(|s| s.get(stream_fields::STARTED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let broadcaster_login = event
             .payload
-            .get("broadcaster")
-            .and_then(|b| b.get("login"))
+            .get(stream_fields::BROADCASTER)
+            .and_then(|b| b.get(stream_fields::BROADCASTER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let broadcaster_id = event
             .payload
-            .get("broadcaster")
-            .and_then(|b| b.get("id"))
+            .get(stream_fields::BROADCASTER)
+            .and_then(|b| b.get(stream_fields::BROADCASTER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

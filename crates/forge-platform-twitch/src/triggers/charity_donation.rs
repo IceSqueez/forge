@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::charity as charity_fields;
+
 pub(crate) struct CharityDonationDescriptor;
 
 impl TriggerKindDescriptor for CharityDonationDescriptor {
@@ -92,8 +94,8 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
 
         let amount_cents = event
             .payload
-            .get("charity")
-            .and_then(|c| c.get("amount_cents"))
+            .get(charity_fields::CHARITY)
+            .and_then(|c| c.get(charity_fields::AMOUNT_CENTS))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
@@ -101,35 +103,35 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let charity = event.payload.get("charity");
-        let user = event.payload.get("user");
+        let charity = event.payload.get(charity_fields::CHARITY);
+        let user = event.payload.get(charity_fields::USER);
 
         let charity_id = charity
-            .and_then(|c| c.get("id"))
+            .and_then(|c| c.get(charity_fields::CHARITY_ID))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
         let charity_name = charity
-            .and_then(|c| c.get("name"))
+            .and_then(|c| c.get(charity_fields::CHARITY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
         let amount_cents = charity
-            .and_then(|c| c.get("amount_cents"))
+            .and_then(|c| c.get(charity_fields::AMOUNT_CENTS))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let currency_code = charity
-            .and_then(|c| c.get("currency_code"))
+            .and_then(|c| c.get(charity_fields::CURRENCY_CODE))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(charity_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
         let user_display_name = user
-            .and_then(|u| u.get("display_name"))
+            .and_then(|u| u.get(charity_fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();

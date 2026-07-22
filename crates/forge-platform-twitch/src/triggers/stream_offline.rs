@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::stream as stream_fields;
+
 pub(crate) struct StreamOfflineDescriptor;
 
 impl TriggerKindDescriptor for StreamOfflineDescriptor {
@@ -64,15 +66,15 @@ impl TriggerKindDescriptor for StreamOfflineDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let broadcaster_login = event
             .payload
-            .get("broadcaster")
-            .and_then(|b| b.get("login"))
+            .get(stream_fields::BROADCASTER)
+            .and_then(|b| b.get(stream_fields::BROADCASTER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let broadcaster_id = event
             .payload
-            .get("broadcaster")
-            .and_then(|b| b.get("id"))
+            .get(stream_fields::BROADCASTER)
+            .and_then(|b| b.get(stream_fields::BROADCASTER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

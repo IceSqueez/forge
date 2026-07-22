@@ -8,6 +8,8 @@ use forge_types::{
 };
 use regex::Regex;
 
+use crate::payload_fields::whisper as whisper_fields;
+
 pub(crate) struct WhisperReceivedDescriptor;
 
 impl TriggerKindDescriptor for WhisperReceivedDescriptor {
@@ -100,8 +102,8 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
         if !from_user.is_empty() {
             let sender_login = event
                 .payload
-                .get("user")
-                .and_then(|u| u.get("login"))
+                .get(whisper_fields::USER)
+                .and_then(|u| u.get(whisper_fields::USER_LOGIN))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_lowercase();
@@ -122,8 +124,8 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
 
         let whisper_text = event
             .payload
-            .get("whisper")
-            .and_then(|w| w.get("text"))
+            .get(whisper_fields::WHISPER)
+            .and_then(|w| w.get(whisper_fields::WHISPER_TEXT))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -142,38 +144,38 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get("user");
+        let user = event.payload.get(whisper_fields::USER);
 
         let user_id = user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(whisper_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(whisper_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_display_name = user
-            .and_then(|u| u.get("display_name"))
+            .and_then(|u| u.get(whisper_fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_color = user
-            .and_then(|u| u.get("color"))
+            .and_then(|u| u.get(whisper_fields::USER_COLOR))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let whisper = event.payload.get("whisper");
+        let whisper = event.payload.get(whisper_fields::WHISPER);
         let whisper_text = whisper
-            .and_then(|w| w.get("text"))
+            .and_then(|w| w.get(whisper_fields::WHISPER_TEXT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let whisper_thread_id = event
             .payload
-            .get("whisper_thread_id")
+            .get(whisper_fields::WHISPER_THREAD_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

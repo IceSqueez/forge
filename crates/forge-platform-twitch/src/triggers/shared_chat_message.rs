@@ -8,6 +8,7 @@ use forge_types::{
 };
 
 use super::chat_arg_stack::{base_chat_args, base_chat_schema};
+use crate::payload_fields::chat as chat_fields;
 
 pub(crate) struct SharedChatMessageDescriptor;
 
@@ -62,8 +63,8 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
         event
             .payload
-            .get("from_channel")
-            .and_then(|fc| fc.get("login"))
+            .get(chat_fields::FROM_CHANNEL)
+            .and_then(|fc| fc.get(chat_fields::FROM_CHANNEL_LOGIN))
             .and_then(|v| v.as_str())
             .map(|s| !s.is_empty())
             .unwrap_or(false)
@@ -72,15 +73,15 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let from_login = event
             .payload
-            .get("from_channel")
-            .and_then(|fc| fc.get("login"))
+            .get(chat_fields::FROM_CHANNEL)
+            .and_then(|fc| fc.get(chat_fields::FROM_CHANNEL_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let from_display_name = event
             .payload
-            .get("from_channel")
-            .and_then(|fc| fc.get("display_name"))
+            .get(chat_fields::FROM_CHANNEL)
+            .and_then(|fc| fc.get(chat_fields::FROM_CHANNEL_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

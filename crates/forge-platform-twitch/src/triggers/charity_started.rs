@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::charity as charity_fields;
+
 pub(crate) struct CharityStartedDescriptor;
 
 impl TriggerKindDescriptor for CharityStartedDescriptor {
@@ -70,28 +72,28 @@ impl TriggerKindDescriptor for CharityStartedDescriptor {
 }
 
 pub(super) fn build_charity_lifecycle_arg_stack(event: &Event) -> ArgStack {
-    let charity = event.payload.get("charity");
+    let charity = event.payload.get(charity_fields::CHARITY);
 
     let charity_id = charity
-        .and_then(|c| c.get("id"))
+        .and_then(|c| c.get(charity_fields::CHARITY_ID))
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_owned();
     let charity_name = charity
-        .and_then(|c| c.get("name"))
+        .and_then(|c| c.get(charity_fields::CHARITY_NAME))
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_owned();
     let current_amount_cents = charity
-        .and_then(|c| c.get("current_amount_cents"))
+        .and_then(|c| c.get(charity_fields::CURRENT_AMOUNT_CENTS))
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     let target_amount_cents = charity
-        .and_then(|c| c.get("target_amount_cents"))
+        .and_then(|c| c.get(charity_fields::TARGET_AMOUNT_CENTS))
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     let currency_code = charity
-        .and_then(|c| c.get("currency_code"))
+        .and_then(|c| c.get(charity_fields::CURRENCY_CODE))
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_owned();

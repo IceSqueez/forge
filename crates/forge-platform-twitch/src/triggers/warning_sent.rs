@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::warning as warning_fields;
+
 pub(crate) struct WarningSentDescriptor;
 
 impl TriggerKindDescriptor for WarningSentDescriptor {
@@ -62,41 +64,41 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get("user");
-        let moderator = event.payload.get("moderator");
+        let user = event.payload.get(warning_fields::USER);
+        let moderator = event.payload.get(warning_fields::MODERATOR);
 
         let user_login = user
-            .and_then(|v| v.get("login"))
+            .and_then(|v| v.get(warning_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(warning_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_name = user
-            .and_then(|v| v.get("display_name"))
+            .and_then(|v| v.get(warning_fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let moderator_login = moderator
-            .and_then(|v| v.get("login"))
+            .and_then(|v| v.get(warning_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let reason = event
             .payload
-            .get("reason")
+            .get(warning_fields::REASON)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let chat_rules_cited = event
             .payload
-            .get("chat_rules_cited")
+            .get(warning_fields::CHAT_RULES_CITED)
             .and_then(|v| v.as_array())
             .map(|arr| {
                 Variant::Array(

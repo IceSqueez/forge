@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::chat_mod as chat_mod_fields;
+
 pub(crate) struct ChatMessageDeletedDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
@@ -64,21 +66,21 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let message_id = event
             .payload
-            .get("message_id")
+            .get(chat_mod_fields::MESSAGE_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let target_user_login = event
             .payload
-            .get("target_user")
-            .and_then(|u| u.get("login"))
+            .get(chat_mod_fields::TARGET_USER)
+            .and_then(|u| u.get(chat_mod_fields::TARGET_USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let target_user_id = event
             .payload
-            .get("target_user")
-            .and_then(|u| u.get("id"))
+            .get(chat_mod_fields::TARGET_USER)
+            .and_then(|u| u.get(chat_mod_fields::TARGET_USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

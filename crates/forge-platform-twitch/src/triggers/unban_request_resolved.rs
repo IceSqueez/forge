@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::unban_request as unban_request_fields;
+
 pub(crate) struct UnbanRequestResolvedDescriptor;
 
 impl TriggerKindDescriptor for UnbanRequestResolvedDescriptor {
@@ -64,35 +66,35 @@ impl TriggerKindDescriptor for UnbanRequestResolvedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let request_id = event
             .payload
-            .get("id")
+            .get(unban_request_fields::REQUEST_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let user = event.payload.get("user");
+        let user = event.payload.get(unban_request_fields::USER);
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(unban_request_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let resolution = event
             .payload
-            .get("status")
+            .get(unban_request_fields::STATUS)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let moderator = event.payload.get("moderator");
+        let moderator = event.payload.get(unban_request_fields::MODERATOR);
         let moderator_login = moderator
-            .and_then(|m| m.get("login"))
+            .and_then(|m| m.get(unban_request_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let resolution_text = event
             .payload
-            .get("resolution_text")
+            .get(unban_request_fields::RESOLUTION_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

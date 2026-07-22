@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::unban_request as unban_request_fields;
+
 pub(crate) struct UnbanRequestCreatedDescriptor;
 
 impl TriggerKindDescriptor for UnbanRequestCreatedDescriptor {
@@ -64,21 +66,21 @@ impl TriggerKindDescriptor for UnbanRequestCreatedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let request_id = event
             .payload
-            .get("id")
+            .get(unban_request_fields::REQUEST_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let user = event.payload.get("user");
+        let user = event.payload.get(unban_request_fields::USER);
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(unban_request_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let reason_text = event
             .payload
-            .get("reason_text")
+            .get(unban_request_fields::REASON_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

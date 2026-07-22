@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::chat_mod as chat_mod_fields;
+
 pub(crate) struct ChatClearedDescriptor;
 
 impl TriggerKindDescriptor for ChatClearedDescriptor {
@@ -64,15 +66,15 @@ impl TriggerKindDescriptor for ChatClearedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let broadcaster_login = event
             .payload
-            .get("broadcaster")
-            .and_then(|b| b.get("login"))
+            .get(chat_mod_fields::BROADCASTER)
+            .and_then(|b| b.get(chat_mod_fields::BROADCASTER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let broadcaster_id = event
             .payload
-            .get("broadcaster")
-            .and_then(|b| b.get("id"))
+            .get(chat_mod_fields::BROADCASTER)
+            .and_then(|b| b.get(chat_mod_fields::BROADCASTER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

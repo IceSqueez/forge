@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::shoutout as shoutout_fields;
+
 pub(crate) struct ShoutoutSentDescriptor;
 
 impl TriggerKindDescriptor for ShoutoutSentDescriptor {
@@ -62,26 +64,26 @@ impl TriggerKindDescriptor for ShoutoutSentDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let to = event.payload.get("to_broadcaster");
+        let to = event.payload.get(shoutout_fields::TO_BROADCASTER);
 
         let to_broadcaster_login = to
-            .and_then(|v| v.get("login"))
+            .and_then(|v| v.get(shoutout_fields::BROADCASTER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let to_broadcaster_id = to
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(shoutout_fields::BROADCASTER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let viewer_count = event
             .payload
-            .get("viewer_count")
+            .get(shoutout_fields::VIEWER_COUNT)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let started_at = event
             .payload
-            .get("started_at")
+            .get(shoutout_fields::STARTED_AT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

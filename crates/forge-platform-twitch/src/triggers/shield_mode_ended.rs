@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::shield as shield_fields;
+
 pub(crate) struct ShieldModeEndedDescriptor;
 
 impl TriggerKindDescriptor for ShieldModeEndedDescriptor {
@@ -62,21 +64,21 @@ impl TriggerKindDescriptor for ShieldModeEndedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let moderator = event.payload.get("moderator");
+        let moderator = event.payload.get(shield_fields::MODERATOR);
 
         let moderator_login = moderator
-            .and_then(|m| m.get("login"))
+            .and_then(|m| m.get(shield_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let moderator_id = moderator
-            .and_then(|m| m.get("id"))
+            .and_then(|m| m.get(shield_fields::MODERATOR_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let ended_at = event
             .payload
-            .get("ended_at")
+            .get(shield_fields::ENDED_AT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

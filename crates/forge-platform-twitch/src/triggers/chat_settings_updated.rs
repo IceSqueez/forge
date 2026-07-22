@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::chat_mod as chat_mod_fields;
+
 pub(crate) struct ChatSettingsUpdatedDescriptor;
 
 impl TriggerKindDescriptor for ChatSettingsUpdatedDescriptor {
@@ -62,34 +64,34 @@ impl TriggerKindDescriptor for ChatSettingsUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let settings = event.payload.get("settings");
+        let settings = event.payload.get(chat_mod_fields::SETTINGS);
 
         let emote_mode = settings
-            .and_then(|s| s.get("emote_mode"))
+            .and_then(|s| s.get(chat_mod_fields::EMOTE_MODE))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let follower_mode = settings
-            .and_then(|s| s.get("follower_mode"))
+            .and_then(|s| s.get(chat_mod_fields::FOLLOWER_MODE))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let slow_mode = settings
-            .and_then(|s| s.get("slow_mode"))
+            .and_then(|s| s.get(chat_mod_fields::SLOW_MODE))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let subscriber_mode = settings
-            .and_then(|s| s.get("subscriber_mode"))
+            .and_then(|s| s.get(chat_mod_fields::SUBSCRIBER_MODE))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let unique_chat_mode = settings
-            .and_then(|s| s.get("unique_chat_mode"))
+            .and_then(|s| s.get(chat_mod_fields::UNIQUE_CHAT_MODE))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let slow_mode_wait_time_seconds = settings
-            .and_then(|s| s.get("slow_mode_wait_time_seconds"))
+            .and_then(|s| s.get(chat_mod_fields::SLOW_MODE_WAIT_TIME_SECONDS))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let follower_mode_duration_minutes = settings
-            .and_then(|s| s.get("follower_mode_duration_minutes"))
+            .and_then(|s| s.get(chat_mod_fields::FOLLOWER_MODE_DURATION_MINUTES))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 

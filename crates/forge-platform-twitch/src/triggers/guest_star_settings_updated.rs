@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::guest_star as guest_star_fields;
+
 pub(crate) struct GuestStarSettingsUpdatedDescriptor;
 
 impl TriggerKindDescriptor for GuestStarSettingsUpdatedDescriptor {
@@ -62,19 +64,19 @@ impl TriggerKindDescriptor for GuestStarSettingsUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let settings = event.payload.get("settings");
+        let settings = event.payload.get(guest_star_fields::SETTINGS);
 
         let slot_count = settings
-            .and_then(|s| s.get("slot_count"))
+            .and_then(|s| s.get(guest_star_fields::SLOT_COUNT))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let group_layout = settings
-            .and_then(|s| s.get("group_layout"))
+            .and_then(|s| s.get(guest_star_fields::GROUP_LAYOUT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let is_moderator_send_live_enabled = settings
-            .and_then(|s| s.get("is_moderator_send_live_enabled"))
+            .and_then(|s| s.get(guest_star_fields::IS_MODERATOR_SEND_LIVE_ENABLED))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 

@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::suspicious as suspicious_fields;
+
 pub(crate) struct SuspiciousUserMessageDescriptor;
 
 impl TriggerKindDescriptor for SuspiciousUserMessageDescriptor {
@@ -62,27 +64,27 @@ impl TriggerKindDescriptor for SuspiciousUserMessageDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get("user");
+        let user = event.payload.get(suspicious_fields::USER);
 
         let user_login = user
-            .and_then(|v| v.get("login"))
+            .and_then(|v| v.get(suspicious_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(suspicious_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let low_trust_status = event
             .payload
-            .get("low_trust_status")
+            .get(suspicious_fields::LOW_TRUST_STATUS)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let message_text = event
             .payload
-            .get("message_text")
+            .get(suspicious_fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::automod as automod_fields;
+
 pub(crate) struct AutomodMessageHeldDescriptor;
 
 impl TriggerKindDescriptor for AutomodMessageHeldDescriptor {
@@ -62,42 +64,42 @@ impl TriggerKindDescriptor for AutomodMessageHeldDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let automod = event.payload.get("automod");
-        let user = event.payload.get("user");
+        let automod = event.payload.get(automod_fields::AUTOMOD);
+        let user = event.payload.get(automod_fields::USER);
 
         // automod.message_id is the key input for approve_message/deny_message sub-actions.
         let message_id = automod
-            .and_then(|a| a.get("message_id"))
+            .and_then(|a| a.get(automod_fields::MESSAGE_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let category = automod
-            .and_then(|a| a.get("category"))
+            .and_then(|a| a.get(automod_fields::CATEGORY))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let level = automod
-            .and_then(|a| a.get("level"))
+            .and_then(|a| a.get(automod_fields::LEVEL))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let held_at = automod
-            .and_then(|a| a.get("held_at"))
+            .and_then(|a| a.get(automod_fields::HELD_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(automod_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(automod_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let message_text = event
             .payload
-            .get("message_text")
+            .get(automod_fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

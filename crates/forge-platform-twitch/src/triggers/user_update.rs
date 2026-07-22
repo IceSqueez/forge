@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::user as user_fields;
+
 pub(crate) struct UserUpdateDescriptor;
 
 impl TriggerKindDescriptor for UserUpdateDescriptor {
@@ -62,25 +64,25 @@ impl TriggerKindDescriptor for UserUpdateDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get("user");
+        let user = event.payload.get(user_fields::USER);
 
         let user_id = user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(user_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(user_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_display_name = user
-            .and_then(|u| u.get("display_name"))
+            .and_then(|u| u.get(user_fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_description = user
-            .and_then(|u| u.get("description"))
+            .and_then(|u| u.get(user_fields::USER_DESCRIPTION))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

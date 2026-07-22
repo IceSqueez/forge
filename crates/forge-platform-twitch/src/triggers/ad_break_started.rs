@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::ad_break as ad_break_fields;
+
 pub(crate) struct AdBreakStartedDescriptor;
 
 impl TriggerKindDescriptor for AdBreakStartedDescriptor {
@@ -62,24 +64,24 @@ impl TriggerKindDescriptor for AdBreakStartedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let ad_break = event.payload.get("ad_break");
-        let requester = event.payload.get("requester");
+        let ad_break = event.payload.get(ad_break_fields::AD_BREAK);
+        let requester = event.payload.get(ad_break_fields::REQUESTER);
 
         let duration_seconds = ad_break
-            .and_then(|a| a.get("duration_seconds"))
+            .and_then(|a| a.get(ad_break_fields::DURATION_SECONDS))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let is_automatic = ad_break
-            .and_then(|a| a.get("is_automatic"))
+            .and_then(|a| a.get(ad_break_fields::IS_AUTOMATIC))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let started_at = ad_break
-            .and_then(|a| a.get("started_at"))
+            .and_then(|a| a.get(ad_break_fields::STARTED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let requester_login = requester
-            .and_then(|r| r.get("login"))
+            .and_then(|r| r.get(ad_break_fields::REQUESTER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

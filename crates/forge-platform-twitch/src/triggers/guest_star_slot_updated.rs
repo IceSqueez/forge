@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::guest_star as guest_star_fields;
+
 pub(crate) struct GuestStarSlotUpdatedDescriptor;
 
 impl TriggerKindDescriptor for GuestStarSlotUpdatedDescriptor {
@@ -62,29 +64,29 @@ impl TriggerKindDescriptor for GuestStarSlotUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let slot = event.payload.get("slot");
+        let slot = event.payload.get(guest_star_fields::SLOT);
 
         let session_id = event
             .payload
-            .get("session_id")
+            .get(guest_star_fields::SESSION_ID_FIELD)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let slot_id = slot
-            .and_then(|s| s.get("slot_id"))
+            .and_then(|s| s.get(guest_star_fields::SLOT_ID_FIELD))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let host_video_enabled = slot
-            .and_then(|s| s.get("host_video_enabled"))
+            .and_then(|s| s.get(guest_star_fields::SLOT_HOST_VIDEO_ENABLED))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let host_audio_enabled = slot
-            .and_then(|s| s.get("host_audio_enabled"))
+            .and_then(|s| s.get(guest_star_fields::SLOT_HOST_AUDIO_ENABLED))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let volume = slot
-            .and_then(|s| s.get("volume"))
+            .and_then(|s| s.get(guest_star_fields::SLOT_VOLUME))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 

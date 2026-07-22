@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::shared_chat as shared_chat_fields;
+
 pub(crate) struct SharedChatSessionBeganDescriptor;
 
 impl TriggerKindDescriptor for SharedChatSessionBeganDescriptor {
@@ -62,21 +64,21 @@ impl TriggerKindDescriptor for SharedChatSessionBeganDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let shared_chat = event.payload.get("shared_chat");
-        let host = event.payload.get("host");
+        let shared_chat = event.payload.get(shared_chat_fields::SHARED_CHAT);
+        let host = event.payload.get(shared_chat_fields::HOST);
 
         let session_id = shared_chat
-            .and_then(|s| s.get("session_id"))
+            .and_then(|s| s.get(shared_chat_fields::SESSION_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let host_login = host
-            .and_then(|h| h.get("login"))
+            .and_then(|h| h.get(shared_chat_fields::HOST_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let host_id = host
-            .and_then(|h| h.get("id"))
+            .and_then(|h| h.get(shared_chat_fields::HOST_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

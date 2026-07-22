@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::vip as vip_fields;
+
 pub(crate) struct VipRemovedDescriptor;
 
 impl TriggerKindDescriptor for VipRemovedDescriptor {
@@ -62,20 +64,20 @@ impl TriggerKindDescriptor for VipRemovedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get("user");
+        let user = event.payload.get(vip_fields::USER);
 
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(vip_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(vip_fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_name = user
-            .and_then(|u| u.get("display_name"))
+            .and_then(|u| u.get(vip_fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

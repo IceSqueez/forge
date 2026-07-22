@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::automod as automod_fields;
+
 pub(crate) struct AutomodMessageUpdatedDescriptor;
 
 impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
@@ -98,8 +100,8 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
 
         let event_status = event
             .payload
-            .get("automod")
-            .and_then(|a| a.get("status"))
+            .get(automod_fields::AUTOMOD)
+            .and_then(|a| a.get(automod_fields::STATUS))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -108,33 +110,33 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let automod = event.payload.get("automod");
-        let user = event.payload.get("user");
-        let moderator = event.payload.get("moderator");
+        let automod = event.payload.get(automod_fields::AUTOMOD);
+        let user = event.payload.get(automod_fields::USER);
+        let moderator = event.payload.get(automod_fields::MODERATOR);
 
         let message_id = automod
-            .and_then(|a| a.get("message_id"))
+            .and_then(|a| a.get(automod_fields::MESSAGE_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let status = automod
-            .and_then(|a| a.get("status"))
+            .and_then(|a| a.get(automod_fields::STATUS))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(automod_fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let message_text = event
             .payload
-            .get("message_text")
+            .get(automod_fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let moderator_login = moderator
-            .and_then(|m| m.get("login"))
+            .and_then(|m| m.get(automod_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

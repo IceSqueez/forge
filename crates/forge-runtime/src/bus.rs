@@ -770,4 +770,120 @@ mod tests {
         assert_eq!(result[0].id, ev3_id);
         assert_eq!(result[1].id, ev2_id);
     }
+
+    struct RecordingRepo {
+        stored: Mutex<Vec<EventId>>,
+    }
+
+    impl RecordingRepo {
+        fn new() -> Self {
+            Self {
+                stored: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn stored_ids(&self) -> Vec<EventId> {
+            self.stored.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl EventLogRepo for RecordingRepo {
+        async fn insert(&self, event: &Event) -> Result<(), StorageError> {
+            tokio::task::yield_now().await;
+            self.stored.lock().unwrap().push(event.id);
+            Ok(())
+        }
+
+        async fn get(&self, _id: EventId) -> Result<Option<Event>, StorageError> {
+            Ok(None)
+        }
+
+        async fn recent(&self, _limit: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn recent_since(
+            &self,
+            _limit: usize,
+            _since: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    fn recording_bus() -> (Arc<EventBus>, Arc<RecordingRepo>) {
+        let repo = Arc::new(RecordingRepo::new());
+        let bus = EventBus::with_caps(
+            Arc::clone(&repo) as Arc<dyn EventLogRepo>,
+            CHANNEL_CAP,
+            RING_CAP,
+        );
+        (bus, repo)
+    }
+
+    #[tokio::test]
+    async fn await_flush_resolves_only_after_shutdown_drain_persists_pending_events() {
+        let (bus, repo) = recording_bus();
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        let ev1 = core_event("drain.a");
+        let ev2 = core_event("drain.b");
+        let ev3 = core_event("drain.c");
+        let ids = [ev1.id, ev2.id, ev3.id];
+
+        bus.publish(ev1);
+        bus.publish(ev2);
+        bus.publish(ev3);
+        bus.shutdown();
+
+        let completed = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        assert!(
+            completed.is_ok(),
+            "await_flush must resolve after the shutdown drain"
+        );
+
+        let stored = repo.stored_ids();
+        for id in ids {
+            assert!(
+                stored.contains(&id),
+                "event {id} must reach the repo before await_flush resolves"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn await_flush_returns_immediately_when_flush_task_never_spawned() {
+        let bus = null_bus();
+        let completed = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        assert!(
+            completed.is_ok(),
+            "await_flush must not hang when no flush task was ever spawned"
+        );
+    }
+
+    #[tokio::test]
+    async fn second_await_flush_returns_immediately_after_receiver_consumed() {
+        let (bus, _repo) = recording_bus();
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        bus.publish(core_event("second.a"));
+        bus.shutdown();
+
+        let first = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        assert!(
+            first.is_ok(),
+            "first await_flush must resolve after the shutdown drain"
+        );
+
+        let second = tokio::time::timeout(Duration::from_secs(5), bus.await_flush()).await;
+        assert!(
+            second.is_ok(),
+            "second await_flush must return immediately once the receiver is consumed"
+        );
+    }
 }

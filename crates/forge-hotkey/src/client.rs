@@ -171,26 +171,30 @@ async fn select_and_start(
         use crate::backend_evdev::EvdevBackend;
         use crate::backend_portal::PortalBackend;
 
-        match PortalBackend::try_new(&config.app_name).await {
+        let portal_reason = match PortalBackend::try_new(&config.app_name).await {
             Ok(portal) => {
                 return HotkeyClient::start(config, publisher, Arc::new(portal), Some(true));
             }
-            Err(e) => {
-                tracing::info!(reason = %e, "portal unavailable, trying evdev");
-            }
-        }
+            Err(e) => e.to_string(),
+        };
 
         match EvdevBackend::try_new().await {
             Ok(evdev) => {
+                tracing::info!(portal = %portal_reason, "global shortcuts: using evdev backend");
                 return HotkeyClient::start(config, publisher, Arc::new(evdev), Some(false));
             }
             Err(e) => {
-                tracing::warn!(error = %e, "evdev unavailable");
+                tracing::warn!(
+                    portal = %portal_reason,
+                    evdev = %e,
+                    "global shortcuts unavailable: hotkeys will not fire; install forge so the desktop portal grants an app id, or add your user to the 'input' group for evdev access"
+                );
+                let reason = format!("portal: {portal_reason}; evdev: {e}");
                 let client = {
                     let backend = Arc::new(NullBackend::new());
                     HotkeyClient::start(config, Arc::clone(&publisher), backend, None)
                 };
-                supervisor::emit_portal_unavailable(&client, &e.to_string());
+                supervisor::emit_portal_unavailable(&client, &reason);
                 return client;
             }
         }

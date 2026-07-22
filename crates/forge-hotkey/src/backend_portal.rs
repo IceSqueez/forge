@@ -35,6 +35,8 @@ impl PortalBackend {
                 reason: format!("D-Bus session unavailable: {e}"),
             })?;
 
+        register_host_app_id(&conn, app_name).await;
+
         let session_path = create_portal_session(&conn, app_name).await.map_err(|e| {
             HotkeyError::PortalUnavailable {
                 reason: format!("GlobalShortcuts portal not available: {e}"),
@@ -80,8 +82,50 @@ impl HotkeyBackend for PortalBackend {
     }
 }
 
+async fn register_host_app_id(conn: &Connection, app_id: &str) {
+    let proxy = match zbus::Proxy::new(
+        conn,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.host.portal.Registry",
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::debug!(error = %e, "host registry portal absent; continuing without app id");
+            return;
+        }
+    };
+
+    let options: HashMap<&str, Value<'_>> = HashMap::new();
+    if let Err(e) = proxy.call::<_, _, ()>("Register", &(app_id, options)).await {
+        tracing::debug!(error = %e, "host app id registration skipped");
+    }
+}
+
 async fn create_portal_session(conn: &Connection, app_name: &str) -> zbus::Result<OwnedObjectPath> {
-    let token = make_token(app_name, "session");
+    use tokio_stream::StreamExt as TokioStreamExt;
+
+    let handle_token = make_token(app_name, "session");
+    let session_token = make_token(app_name, "sess");
+
+    let unique = conn
+        .unique_name()
+        .map(|n| n.as_str().to_owned())
+        .unwrap_or_default();
+    let sender = unique.trim_start_matches(':').replace('.', "_");
+    let request_path = format!("/org/freedesktop/portal/desktop/request/{sender}/{handle_token}");
+
+    let request_proxy = zbus::Proxy::new(
+        conn,
+        "org.freedesktop.portal.Desktop",
+        request_path.as_str(),
+        "org.freedesktop.portal.Request",
+    )
+    .await?;
+    let response_stream = request_proxy.receive_signal("Response").await?;
+    let mut response_stream = std::pin::pin!(response_stream);
 
     let proxy = zbus::Proxy::new(
         conn,
@@ -92,18 +136,30 @@ async fn create_portal_session(conn: &Connection, app_name: &str) -> zbus::Resul
     .await?;
 
     let options: HashMap<&str, Value<'_>> = [
-        ("handle_token", Value::Str(token.as_str().into())),
-        ("session_handle_token", Value::Str(token.as_str().into())),
+        ("handle_token", Value::Str(handle_token.as_str().into())),
+        (
+            "session_handle_token",
+            Value::Str(session_token.as_str().into()),
+        ),
     ]
     .into_iter()
     .collect();
 
-    let (response, results): (u32, HashMap<String, OwnedValue>) =
-        proxy.call("CreateSession", &(options,)).await?;
+    let _request: OwnedObjectPath = proxy.call("CreateSession", &(options,)).await?;
+
+    let msg = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        TokioStreamExt::next(&mut response_stream),
+    )
+    .await
+    .map_err(|_| zbus::Error::Failure("CreateSession response timed out".to_owned()))?
+    .ok_or_else(|| zbus::Error::Failure("Response signal stream closed".to_owned()))?;
+
+    let (response, results): (u32, HashMap<String, OwnedValue>) = msg.body().deserialize()?;
 
     if response != 0 {
         return Err(zbus::Error::Failure(format!(
-            "CreateSession returned non-zero response: {response}"
+            "CreateSession request returned non-zero response: {response}"
         )));
     }
 
@@ -322,7 +378,7 @@ async fn bind_all_shortcuts(
     };
 
     let options: HashMap<&str, Value<'_>> = HashMap::new();
-    let result: Result<(u32, HashMap<String, OwnedValue>), zbus::Error> = proxy
+    let result: Result<OwnedObjectPath, zbus::Error> = proxy
         .call("BindShortcuts", &(path, shortcut_refs, "", &options))
         .await;
 

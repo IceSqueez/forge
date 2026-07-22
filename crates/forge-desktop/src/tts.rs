@@ -1,8 +1,8 @@
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, FONT_XS, ForgePalette, breadcrumb,
-    status_dot, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, FONT_XS, ForgePalette, header_status,
+    page_frame, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
@@ -24,7 +24,6 @@ const TAB_INDICATOR_H: Pixels = px(2.0);
 const TAB_GAP: Pixels = px(2.0);
 const TAB_BAR_PAD_T: Pixels = px(8.0);
 const TAB_BAR_PAD_H: Pixels = px(14.0);
-const ENGINES_READY_DOT: Pixels = px(7.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TtsSection {
@@ -139,7 +138,7 @@ impl TtsView {
         cx.notify();
     }
 
-    fn render_header(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
+    fn render_header_right(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
         let registered = self
             .tts_registry
             .as_ref()
@@ -154,23 +153,10 @@ impl TtsView {
             .iter()
             .filter(|id| voices.iter().any(|v| v.engine_id == **id))
             .count();
-        let chip = div()
-            .flex()
-            .items_center()
-            .gap(px(5.0))
-            .text_size(FONT_XS)
-            .text_color(palette.success)
-            .child(status_dot(palette.success, ENGINES_READY_DOT))
-            .child(tr!("tts_header_engines_ready", count = engine_count as i64));
-        breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_builtin")),
-                BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_tts")),
-                BreadcrumbCrumb::leaf(self.section.label()),
-            ],
-            palette,
+        header_status(
+            palette.success,
+            tr!("tts_header_engines_ready", count = engine_count as i64),
         )
-        .right(chip)
     }
 
     fn render_tab_bar(
@@ -253,17 +239,21 @@ impl Render for TtsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
 
-        let header = self.render_header(&palette);
+        let header_right = self.render_header_right(&palette);
         let tab_bar = self.render_tab_bar(&palette, cx);
         let content = self.render_content();
+        let body = div().w_full().flex_1().min_h(px(0.0)).child(content);
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(header)
-            .child(tab_bar)
-            .child(div().w_full().flex_1().min_h(px(0.0)).child(content))
+        page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_builtin")),
+                BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_tts")),
+                BreadcrumbCrumb::leaf(self.section.label()),
+            ],
+            &palette,
+        )
+        .header_right(header_right)
+        .section_switcher(tab_bar)
+        .body(body)
     }
 }

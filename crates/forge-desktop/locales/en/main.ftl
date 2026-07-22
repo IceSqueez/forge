@@ -175,6 +175,8 @@ settings_storage_keep_limit_label = Chat history keep limit
 settings_storage_keep_limit_hint = How many chat messages to retain in the database.
 settings_storage_display_limit_label = Chat history shown on open
 settings_storage_display_limit_hint = How many recent messages load when the chat opens.
+settings_storage_retention_label = Event log retention
+settings_storage_retention_hint = How many days of event log history to keep in the database.
 
 ## Settings → Queues pane
 

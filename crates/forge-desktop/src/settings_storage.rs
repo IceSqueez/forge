@@ -7,7 +7,8 @@ use forge_components::{
 };
 use forge_storage::{
     DataProvider, SettingsRepo, chat_history_display_limit, chat_history_store_limit,
-    set_chat_history_display_limit, set_chat_history_store_limit,
+    event_log_retention_days, set_chat_history_display_limit, set_chat_history_store_limit,
+    set_event_log_retention_days,
 };
 use gpui::{
     ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div, prelude::*,
@@ -19,6 +20,9 @@ use crate::presentation::ActivePresentation;
 
 const DEFAULT_STORE_LIMIT: u32 = 5000;
 const DEFAULT_DISPLAY_LIMIT: u32 = 500;
+const DEFAULT_RETENTION_DAYS: u32 = 7;
+const MIN_RETENTION_DAYS: u32 = 1;
+const MAX_RETENTION_DAYS: u32 = 365;
 
 pub struct SettingsStorageView {
     backend: Arc<dyn DataProvider>,
@@ -26,9 +30,11 @@ pub struct SettingsStorageView {
 
     store_limit: u32,
     display_limit: u32,
+    retention_days: u32,
 
     store_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
+    retention_input: Entity<TextInput>,
     _subs: Vec<Subscription>,
 }
 
@@ -49,6 +55,11 @@ impl SettingsStorageView {
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
         });
+        let retention_input = cx.new(|cx| {
+            TextInput::new(DEFAULT_RETENTION_DAYS.to_string(), cx)
+                .with_palette(palette)
+                .with_font_size(FONT_SM)
+        });
 
         let subs = vec![
             cx.subscribe(&store_input, |this, _input, event: &InputEvent, cx| {
@@ -61,6 +72,11 @@ impl SettingsStorageView {
                     this.commit_display(cx);
                 }
             }),
+            cx.subscribe(&retention_input, |this, _input, event: &InputEvent, cx| {
+                if let InputEvent::Submitted(_) = event {
+                    this.commit_retention(cx);
+                }
+            }),
         ];
 
         let mut view = Self {
@@ -68,8 +84,10 @@ impl SettingsStorageView {
             rt_handle,
             store_limit: DEFAULT_STORE_LIMIT,
             display_limit: DEFAULT_DISPLAY_LIMIT,
+            retention_days: DEFAULT_RETENTION_DAYS,
             store_input,
             display_input,
+            retention_input,
             _subs: subs,
         };
         view.load(cx);
@@ -86,18 +104,21 @@ impl SettingsStorageView {
         );
     }
 
-    fn apply_loaded(&mut self, result: Result<(u32, u32), String>, cx: &mut Context<Self>) {
+    fn apply_loaded(&mut self, result: Result<(u32, u32, u32), String>, cx: &mut Context<Self>) {
         match result {
-            Ok((store, display)) => {
+            Ok((store, display, retention)) => {
                 self.store_limit = store;
                 self.display_limit = display;
+                self.retention_days = retention;
                 self.store_input
                     .update(cx, |i, cx| i.set_content(store.to_string(), cx));
                 self.display_input
                     .update(cx, |i, cx| i.set_content(display.to_string(), cx));
+                self.retention_input
+                    .update(cx, |i, cx| i.set_content(retention.to_string(), cx));
             }
             Err(message) => {
-                tracing::warn!(error = %message, "failed to load chat history limits");
+                tracing::warn!(error = %message, "failed to load storage settings");
             }
         }
         cx.notify();
@@ -141,6 +162,28 @@ impl SettingsStorageView {
             None => {
                 let restore = self.display_limit.to_string();
                 self.display_input
+                    .update(cx, |i, cx| i.set_content(restore, cx));
+            }
+        }
+        cx.notify();
+    }
+
+    fn commit_retention(&mut self, cx: &mut Context<Self>) {
+        match parse_retention_days(self.retention_input.read(cx).content()) {
+            Some(value) => {
+                self.retention_days = value;
+                self.retention_input
+                    .update(cx, |i, cx| i.set_content(value.to_string(), cx));
+                let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+                self.rt_handle.spawn(async move {
+                    if let Err(e) = set_event_log_retention_days(repo.as_ref(), value).await {
+                        tracing::warn!(error = %e, "failed to persist event log retention days");
+                    }
+                });
+            }
+            None => {
+                let restore = self.retention_days.to_string();
+                self.retention_input
                     .update(cx, |i, cx| i.set_content(restore, cx));
             }
         }
@@ -213,6 +256,13 @@ impl Render for SettingsStorageView {
                 self.display_input.clone(),
                 &palette,
                 density,
+            ))
+            .child(self.limit_field(
+                tr!("settings_storage_retention_label"),
+                tr!("settings_storage_retention_hint"),
+                self.retention_input.clone(),
+                &palette,
+                density,
             ));
 
         div()
@@ -228,18 +278,28 @@ impl Render for SettingsStorageView {
     }
 }
 
-async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<(u32, u32), String> {
+async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<(u32, u32, u32), String> {
     let store = chat_history_store_limit(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
     let display = chat_history_display_limit(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
-    Ok((store, display))
+    let retention = event_log_retention_days(repo.as_ref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((store, display, retention))
 }
 
 fn parse_limit(raw: &str) -> Option<u32> {
     raw.trim().parse::<u32>().ok().filter(|v| *v >= 1)
+}
+
+fn parse_retention_days(raw: &str) -> Option<u32> {
+    raw.trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|v| (MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(v))
 }
 
 fn pane_header(

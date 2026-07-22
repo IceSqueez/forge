@@ -89,6 +89,12 @@ impl AudioSink for CpalSink {
     }
 }
 
+struct StartedStream {
+    stream: cpal::Stream,
+    duration_ms: u64,
+    device_name: String,
+}
+
 fn run_playback(
     device_id_str: String,
     buffer: PcmBuffer,
@@ -99,28 +105,69 @@ fn run_playback(
     paused: Arc<AtomicBool>,
 ) {
     let host = cpal::default_host();
+    let candidates = candidate_device_ids(&device_id_str);
 
-    let device = match find_device(&host, &device_id_str) {
-        Some(d) => d,
-        None => {
-            event_sink.emit(AudioEvent::PlaybackFailed {
-                clip_id: None,
-                error: format!("device '{}' not found", device_id_str),
-            });
-            return;
+    let mut last_error = format!("device '{}' not found", device_id_str);
+    for (idx, candidate) in candidates.iter().enumerate() {
+        match try_start_stream(
+            &host, candidate, &buffer, target_sr, target_ch, &stop, &paused,
+        ) {
+            Ok(started) => {
+                if idx > 0 {
+                    tracing::warn!(
+                        requested = %device_id_str,
+                        using = %candidate,
+                        "output device open failed; fell back through canonical chain"
+                    );
+                }
+                event_sink.emit(AudioEvent::PlaybackStarted {
+                    clip_id: None,
+                    device: started.device_name,
+                    duration_secs: Some(started.duration_ms as f64 / 1000.0),
+                    looped: false,
+                });
+                wait_for_completion(started.duration_ms, &stop, &paused);
+                drop(started.stream);
+                event_sink.emit(AudioEvent::PlaybackFinished { clip_id: None });
+                return;
+            }
+            Err(e) => {
+                last_error = e.to_string();
+            }
         }
-    };
+    }
 
-    let config = match device.default_output_config() {
-        Ok(c) => c,
-        Err(e) => {
-            event_sink.emit(AudioEvent::PlaybackFailed {
-                clip_id: None,
-                error: e.to_string(),
-            });
-            return;
+    event_sink.emit(AudioEvent::PlaybackFailed {
+        clip_id: None,
+        error: last_error,
+    });
+}
+
+fn candidate_device_ids(requested: &str) -> Vec<String> {
+    let mut ids = vec![requested.to_string()];
+    for name in crate::device::CANONICAL_OUTPUT_CHAIN {
+        if *name != requested {
+            ids.push((*name).to_string());
         }
-    };
+    }
+    ids
+}
+
+fn try_start_stream(
+    host: &cpal::Host,
+    device_id_str: &str,
+    buffer: &PcmBuffer,
+    target_sr: Option<u32>,
+    target_ch: Option<u16>,
+    stop: &Arc<AtomicBool>,
+    paused: &Arc<AtomicBool>,
+) -> Result<StartedStream, AudioError> {
+    let device = find_device(host, device_id_str)
+        .ok_or_else(|| AudioError::Host(format!("device '{}' not found", device_id_str)))?;
+
+    let config = device
+        .default_output_config()
+        .map_err(|e| AudioError::Host(e.to_string()))?;
 
     let device_sr = config.sample_rate();
     let device_ch = config.channels();
@@ -129,16 +176,7 @@ fn run_playback(
     let dst_sr = target_sr.unwrap_or(device_sr);
     let dst_ch = target_ch.unwrap_or(device_ch);
 
-    let converted = match prepare_samples(&buffer, dst_sr, dst_ch) {
-        Ok(s) => s,
-        Err(e) => {
-            event_sink.emit(AudioEvent::PlaybackFailed {
-                clip_id: None,
-                error: e.to_string(),
-            });
-            return;
-        }
-    };
+    let converted = prepare_samples(buffer, dst_sr, dst_ch)?;
 
     let duration_ms = if dst_sr > 0 {
         (converted.len() as u64 / u64::from(dst_ch)) * 1000 / u64::from(dst_sr)
@@ -163,26 +201,42 @@ fn run_playback(
         .map(|d| d.name().to_owned())
         .unwrap_or_default();
 
-    let rx_f32 = rx.clone();
-    let rx_i16 = rx.clone();
-    let rx_i32 = rx.clone();
-    let stop_f32 = Arc::clone(&stop);
-    let stop_i16 = Arc::clone(&stop);
-    let stop_i32 = Arc::clone(&stop);
-    let paused_f32 = Arc::clone(&paused);
-    let paused_i16 = Arc::clone(&paused);
-    let paused_i32 = Arc::clone(&paused);
+    let stream = build_output_stream(
+        &device,
+        stream_config,
+        sample_format,
+        rx,
+        Arc::clone(stop),
+        Arc::clone(paused),
+    )?;
 
+    stream.play().map_err(|e| AudioError::Host(e.to_string()))?;
+
+    Ok(StartedStream {
+        stream,
+        duration_ms,
+        device_name,
+    })
+}
+
+fn build_output_stream(
+    device: &cpal::Device,
+    stream_config: cpal::StreamConfig,
+    sample_format: SampleFormat,
+    rx: crossbeam_channel::Receiver<i16>,
+    stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+) -> Result<cpal::Stream, AudioError> {
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
             stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                if stop_f32.load(Ordering::Relaxed) || paused_f32.load(Ordering::Relaxed) {
+                if stop.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) {
                     data.fill(0.0);
                     return;
                 }
                 for s in data.iter_mut() {
-                    *s = rx_f32.try_recv().map(|v| v as f32 / 32767.0).unwrap_or(0.0);
+                    *s = rx.try_recv().map(|v| v as f32 / 32767.0).unwrap_or(0.0);
                 }
             },
             stream_error_fn,
@@ -191,12 +245,12 @@ fn run_playback(
         SampleFormat::I16 => device.build_output_stream(
             stream_config,
             move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                if stop_i16.load(Ordering::Relaxed) || paused_i16.load(Ordering::Relaxed) {
+                if stop.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) {
                     data.fill(0);
                     return;
                 }
                 for s in data.iter_mut() {
-                    *s = rx_i16.try_recv().unwrap_or(0);
+                    *s = rx.try_recv().unwrap_or(0);
                 }
             },
             stream_error_fn,
@@ -205,52 +259,29 @@ fn run_playback(
         SampleFormat::I32 => device.build_output_stream(
             stream_config,
             move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
-                if stop_i32.load(Ordering::Relaxed) || paused_i32.load(Ordering::Relaxed) {
+                if stop.load(Ordering::Relaxed) || paused.load(Ordering::Relaxed) {
                     data.fill(0);
                     return;
                 }
                 for s in data.iter_mut() {
-                    *s = rx_i32.try_recv().map(|v| v as i32).unwrap_or(0);
+                    *s = rx.try_recv().map(|v| v as i32).unwrap_or(0);
                 }
             },
             stream_error_fn,
             None,
         ),
         other => {
-            event_sink.emit(AudioEvent::PlaybackFailed {
-                clip_id: None,
-                error: format!("unsupported sample format {:?}", other),
-            });
-            return;
+            return Err(AudioError::Host(format!(
+                "unsupported sample format {:?}",
+                other
+            )));
         }
     };
 
-    let stream = match stream {
-        Ok(s) => s,
-        Err(e) => {
-            event_sink.emit(AudioEvent::PlaybackFailed {
-                clip_id: None,
-                error: e.to_string(),
-            });
-            return;
-        }
-    };
+    stream.map_err(|e| AudioError::Host(e.to_string()))
+}
 
-    if let Err(e) = stream.play() {
-        event_sink.emit(AudioEvent::PlaybackFailed {
-            clip_id: None,
-            error: e.to_string(),
-        });
-        return;
-    }
-
-    event_sink.emit(AudioEvent::PlaybackStarted {
-        clip_id: None,
-        device: device_name,
-        duration_secs: Some(duration_ms as f64 / 1000.0),
-        looped: false,
-    });
-
+fn wait_for_completion(duration_ms: u64, stop: &Arc<AtomicBool>, paused: &Arc<AtomicBool>) {
     let total_ms = duration_ms + 50;
     let mut elapsed_ms = 0u64;
     while elapsed_ms < total_ms || paused.load(Ordering::Relaxed) {
@@ -267,9 +298,6 @@ fn run_playback(
             elapsed_ms += step;
         }
     }
-    drop(stream);
-
-    event_sink.emit(AudioEvent::PlaybackFinished { clip_id: None });
 }
 
 fn find_device(host: &cpal::Host, id_str: &str) -> Option<cpal::Device> {

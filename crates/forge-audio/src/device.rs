@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AudioError;
 
+pub const CANONICAL_OUTPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
+
 const NOISE_ID_PREFIXES: &[&str] = &[
+    "sysdefault",
     "dmix",
     "dsnoop",
     "dcmix",
@@ -140,6 +143,7 @@ fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
 
     if !out.iter().any(|d| d.is_default)
         && let Some(default_entry) = default_entry
+        && !is_noise_device_id(default_entry.id.as_str())
     {
         out.push(default_entry);
     }
@@ -148,13 +152,13 @@ fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
 }
 
 pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
-    devices
+    CANONICAL_OUTPUT_CHAIN
         .iter()
-        .find(|d| d.is_default && d.id.as_str() != "null")
+        .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
         .or_else(|| {
-            ["default", "pipewire", "pulse"]
+            devices
                 .iter()
-                .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
+                .find(|d| d.is_default && d.id.as_str() != "null")
         })
         .or_else(|| devices.iter().find(|d| d.id.as_str() != "null"))
         .or_else(|| devices.first())

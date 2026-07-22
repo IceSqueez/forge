@@ -198,7 +198,8 @@ pub struct ScreenActionsView {
     renaming: Option<Renaming>,
     action_modal: Option<ActionForm>,
     history_modal: Option<HistoryModal>,
-    test_run: Option<test_run::TestRunModal>,
+    test_run: Option<Entity<test_run::TestRunModal>>,
+    _test_run_sub: Option<Subscription>,
     header_menu_open: Option<Point<Pixels>>,
     pending_delete: Confirm<ActionId>,
     detail: Option<ActionDetail>,
@@ -273,6 +274,7 @@ impl ScreenActionsView {
             action_modal: None,
             history_modal: None,
             test_run: None,
+            _test_run_sub: None,
             header_menu_open: None,
             pending_delete: Confirm::default(),
             detail: None,
@@ -588,10 +590,7 @@ impl Render for ScreenActionsView {
             .history_modal
             .as_ref()
             .map(|state| self.render_history_modal(state, &palette, cx));
-        let test_run_modal = self
-            .test_run
-            .as_ref()
-            .map(|state| self.render_test_run_modal(state, &palette, cx));
+        let test_run_modal = self.test_run.clone();
         let delete_modal = self
             .pending_delete
             .get()

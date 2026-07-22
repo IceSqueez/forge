@@ -1,8 +1,8 @@
 use super::*;
 use crate::presentation::ActivePresentation;
 use forge_components::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS, ForgePalette, Icon, InputEvent,
-    Spacing, TextInput, icon, spacing, tr,
+    Density, FONT_XS, ForgePalette, Icon, InputEvent, Spacing, TextInput, body_family, icon,
+    mono_family, spacing, tr,
 };
 use forge_registry::FormField;
 use forge_types::SubActionStep;
@@ -43,7 +43,7 @@ fn drill_in_chip(
         .border_color(palette.border_regular)
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .child(format!("{label} \u{00b7} {count}")),
@@ -226,7 +226,7 @@ impl ScreenActionsView {
             if idx > 0 {
                 row = row.child(
                     div()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_faint)
                         .child("\u{25B8}"),
@@ -237,7 +237,7 @@ impl ScreenActionsView {
                     row = row.child(
                         div()
                             .id(SharedString::from(format!("actions-breadcrumb-{depth}")))
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .cursor_pointer()
@@ -256,7 +256,7 @@ impl ScreenActionsView {
                     };
                     row = row.child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(color)
                             .child(label),
@@ -318,7 +318,7 @@ impl ScreenActionsView {
                     let case_total = nav::case_count(step);
                     rows.push(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(format!("{label}:"))
@@ -346,7 +346,7 @@ impl ScreenActionsView {
         if capped_empty {
             rows.push(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
                     .child(tr!("action_editor_branch_cap"))
@@ -382,7 +382,7 @@ impl ScreenActionsView {
 
         let match_el: AnyElement = if nav::case_match_is_multi(step, ci) {
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(tr!("action_editor_case_multi"))
@@ -470,7 +470,7 @@ impl ScreenActionsView {
             .child(icon(Icon::Plus, BRANCH_GLYPH, palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
                     .child(tr!("action_editor_add_case")),

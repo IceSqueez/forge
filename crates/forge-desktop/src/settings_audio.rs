@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_audio::{DeviceId, DeviceInfo, list_output_devices, refresh_output_devices};
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, Spacing, anchored_popover_below, drive_overlay_focus, icon, radius, spacing, tr,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
+    anchored_popover_below, body_family, drive_overlay_focus, icon, radius, spacing, tr,
     with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo};
@@ -209,7 +209,7 @@ impl SettingsAudioView {
             .child(tile)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("settings_audio_title")),
@@ -220,7 +220,7 @@ impl SettingsAudioView {
         div()
             .py(spacing(Spacing::Xs, Density::Cozy))
             .px(spacing(Spacing::Md, Density::Cozy))
-            .font_family(forge_components::DEFAULT_MONO_FAMILY)
+            .font_family(forge_components::mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(tr!(key))
@@ -234,7 +234,7 @@ impl SettingsAudioView {
     ) -> AnyElement {
         if self.loading {
             return div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("settings_audio_scanning"))
@@ -242,7 +242,7 @@ impl SettingsAudioView {
         }
         if let Some(message) = &self.devices_error {
             return div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.random)
                 .child(message.clone())
@@ -279,7 +279,7 @@ impl SettingsAudioView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(selected_name),
@@ -322,7 +322,7 @@ impl SettingsAudioView {
             .child(icon(Icon::PlayerPlay, px(11.0), palette.text_secondary))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
                     .child(tr!("widget_device_test")),
@@ -370,7 +370,7 @@ impl SettingsAudioView {
                 .child(
                     div()
                         .flex_1()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .child(self.display_name(device)),
@@ -414,7 +414,7 @@ impl SettingsAudioView {
             .child(icon(Icon::Volume, px(12.0), palette.info))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.info)
                     .child(label),
@@ -436,7 +436,7 @@ impl SettingsAudioView {
         palette: &ForgePalette,
     ) -> impl IntoElement {
         div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.random)
             .child(tr!(key, error = message))

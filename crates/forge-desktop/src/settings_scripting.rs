@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon,
-    InputEvent, Radius, SaveState, Spacing, TextInput, icon, primary_button, radius,
-    save_indicator, setting_row, spacing, toggle, tr, with_alpha,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius,
+    SaveState, Spacing, TextInput, body_family, icon, primary_button, radius, save_indicator,
+    setting_row, spacing, toggle, tr, with_alpha,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
@@ -291,7 +291,7 @@ impl SettingsScriptingView {
             .child(icon(Icon::FileCode, px(20.0), palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
@@ -313,7 +313,7 @@ impl SettingsScriptingView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -321,7 +321,7 @@ impl SettingsScriptingView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_scripting_allowed_domains_hint")),
@@ -393,7 +393,7 @@ impl SettingsScriptingView {
             .bg(palette.surface_overlay)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(domain.to_owned()),
@@ -500,7 +500,7 @@ impl Render for SettingsScriptingView {
             http_section = http_section.child(
                 div()
                     .py(px(4.0))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(tr!("settings_scripting_ssrf_warning")),
@@ -542,7 +542,7 @@ fn numeric_input(
 
 fn section_header(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(FONT_SM)
         .text_color(palette.text_primary)
@@ -575,14 +575,14 @@ fn labeled_row(
                 .gap(spacing(Spacing::Xxs, density))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .child(label.into()),
                 )
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(hint.into()),

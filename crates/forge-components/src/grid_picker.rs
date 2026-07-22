@@ -11,8 +11,8 @@ use crate::palette::ForgePalette;
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_ACCENT, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    Radius, Spacing, radius, spacing,
+    BORDER_ACCENT, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
+    radius, spacing,
 };
 
 const GRID_W: Pixels = px(880.0);
@@ -346,7 +346,7 @@ impl GridPicker {
         let subtitle: AnyElement = match &self.config.subtitle {
             GridPickerSubtitle::Plain(text) => div()
                 .overflow_hidden()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(GRID_META_FS)
                 .text_color(p.text_faint)
                 .child(text.clone())
@@ -356,7 +356,7 @@ impl GridPicker {
                 .items_center()
                 .gap(px(4.0))
                 .overflow_hidden()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(GRID_META_FS)
                 .child(div().text_color(p.text_faint).child(lead.clone()))
                 .child(div().text_color(accent).child(name.clone()))
@@ -371,7 +371,7 @@ impl GridPicker {
             .flex_col()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
@@ -538,7 +538,7 @@ impl GridPicker {
                 div()
                     .flex_none()
                     .pb(spacing(Spacing::Sm, Density::Cozy))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(GRID_META_FS)
                     .text_color(p.text_faint)
                     .child(format!(
@@ -570,7 +570,7 @@ impl GridPicker {
                         .child(icon(glyph, GRID_EMPTY_GLYPH, p.text_faint))
                         .child(
                             div()
-                                .font_family(DEFAULT_BODY_FAMILY)
+                                .font_family(body_family())
                                 .text_size(FONT_XS)
                                 .text_color(p.text_muted)
                                 .child(message),
@@ -624,7 +624,7 @@ impl GridPicker {
             .border_color(p.surface_overlay)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(p.text_faint)
                     .child(self.config.footer_hint.clone()),
@@ -684,14 +684,14 @@ fn render_header_row(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(GRID_GROUP_FS)
                 .text_color(p.text_muted)
                 .child(label.to_uppercase()),
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(GRID_GROUP_FS)
                 .text_color(p.text_faint)
                 .child(count.to_string()),
@@ -756,7 +756,7 @@ fn render_card_el(
         .flex_1()
         .min_w(px(0.0))
         .truncate()
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(GRID_CARD_NAME_FS)
         .text_color(p.text_primary)
@@ -816,7 +816,7 @@ fn render_card_el(
         .truncate()
         .w_full()
         .min_w(px(0.0))
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(GRID_META_FS)
         .text_color(p.text_muted)
         .child(card.desc.clone());
@@ -901,7 +901,7 @@ fn grid_rail_entry(
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(GRID_META_FS)
                 .text_color(text_color)
                 .child(label.into()),

@@ -6,11 +6,10 @@ use super::{TriggersRegistryView, load_rows, platform_dot_color};
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, ForgePalette,
-    GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
-    GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, ModalSize, OverlayPosition, Radius,
-    Spacing, TextInput, ghost_button_with_icon, modal, overlay, primary_button, radius,
-    secondary_button, spacing, tr,
+    BORDER_THIN, Density, FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent,
+    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent,
+    ModalSize, OverlayPosition, Radius, Spacing, TextInput, body_family, ghost_button_with_icon,
+    modal, mono_family, overlay, primary_button, radius, secondary_button, spacing, tr,
 };
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{PlatformScope, TriggerInstance, TriggerInstanceId};
@@ -297,7 +296,7 @@ impl TriggersRegistryView {
                 .py(spacing(Spacing::Sm, Density::Cozy))
                 .px(spacing(Spacing::Sm, Density::Cozy))
                 .italic()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FILL_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_no_config"))
@@ -401,7 +400,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
     ) -> AnyElement {
         div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(label.into())

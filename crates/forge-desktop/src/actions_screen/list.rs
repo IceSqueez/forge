@@ -3,12 +3,12 @@ use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
-    BORDER_THIN, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, ModalSize, OverlayPosition,
-    ResizeEdge, ResizeRange, Spacing, TextArea, TextInput, ToastAction, ToastKind, chip,
-    confirm_modal, context_menu, header_stat, header_stats, icon, inline_edit, install_resize,
-    menu_divider, menu_item, modal, overlay, primary_button, primary_button_with_icon,
-    secondary_button, spacing, status_dot, toggle, tr,
+    BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    InlineEditEvent, InputEvent, ModalSize, OverlayPosition, ResizeEdge, ResizeRange, Spacing,
+    TextArea, TextInput, ToastAction, ToastKind, body_family, chip, confirm_modal, context_menu,
+    header_stat, header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, modal,
+    mono_family, overlay, primary_button, primary_button_with_icon, secondary_button, spacing,
+    status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, ExecutionMode, Queue};
 use gpui::{
@@ -23,7 +23,7 @@ fn tree_notice(label: SharedString, color: Rgba, _palette: &ForgePalette) -> imp
         .w_full()
         .px(TREE_GUTTER)
         .py(spacing(Spacing::Sm, Density::Cozy))
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(FONT_XS)
         .text_color(color)
         .child(label)
@@ -40,7 +40,7 @@ fn modal_section(
         .gap(spacing(Spacing::Xxs, Density::Cozy))
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(label.into()),
@@ -729,7 +729,7 @@ impl ScreenActionsView {
             .child(icon(chevron, TREE_GLYPH, palette.text_muted))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(group.name.clone()),
@@ -737,7 +737,7 @@ impl ScreenActionsView {
             .child(div().flex_1())
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(group.actions.len().to_string()),
@@ -789,7 +789,7 @@ impl ScreenActionsView {
                 .flex_1()
                 .min_w(px(0.0))
                 .overflow_hidden()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(name_color)
                 .cursor_pointer()
@@ -823,7 +823,7 @@ impl ScreenActionsView {
         }
 
         let slot_inner: AnyElement = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!(
@@ -945,7 +945,7 @@ impl ScreenActionsView {
             .child(div().flex_1().child(form.name.clone()))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_LIMIT}")),
@@ -962,7 +962,7 @@ impl ScreenActionsView {
 
         let queue_control: AnyElement = if form.queues.is_empty() {
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("actions_loading_queues")))
@@ -1004,7 +1004,7 @@ impl ScreenActionsView {
         );
 
         let behavior_header = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(SharedString::from(tr!("actions_modal_section_behavior")));
@@ -1130,14 +1130,14 @@ impl ScreenActionsView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(label.into()),
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
                             .child(description.into()),

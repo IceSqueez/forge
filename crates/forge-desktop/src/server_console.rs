@@ -1,10 +1,10 @@
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
-    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    DataRow, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition,
-    PlatformKind, Radius, Spacing, badge, card, column, confirm_modal, data_table, empty_state,
-    fmt_bytes, fmt_uptime, fmt_uptime_short, icon, metric_card, overlay, page_frame,
-    platform_color, radius, spacing, sparkline, status_dot, tr, virtual_table, with_alpha,
+    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, badge, body_family, card,
+    column, confirm_modal, data_table, empty_state, fmt_bytes, fmt_uptime, fmt_uptime_short, icon,
+    metric_card, mono_family, overlay, page_frame, platform_color, radius, spacing, sparkline,
+    status_dot, tr, virtual_table, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -462,7 +462,7 @@ impl ServerConsoleView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("server_header_title")),
@@ -472,14 +472,14 @@ impl ServerConsoleView {
             .child(status_dot(s_color, STATUS_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(s_color)
                     .child(status_label(&self.server_status)),
             );
 
         let description = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("server_header_desc"));
@@ -556,14 +556,14 @@ impl ServerConsoleView {
             .child(caption(tr!("server_bind_address"), palette))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(self.bind_address.clone()),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(uptime_str),
@@ -620,7 +620,7 @@ impl ServerConsoleView {
             .bg(palette.shell)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(shown),
@@ -663,7 +663,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Refresh, CONTROL_GLYPH, palette.warning))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
                     .child(tr!("server_btn_regenerate")),
@@ -693,7 +693,7 @@ impl ServerConsoleView {
                     .child(icon(Icon::AlertTriangle, LINK_GLYPH, palette.warning))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.warning)
                             .child(tr!("server_regen_warning_title")),
@@ -701,7 +701,7 @@ impl ServerConsoleView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("server_regen_warning_body")),
@@ -739,7 +739,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Refresh, CONTROL_GLYPH, border))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .child(label),
             );
@@ -780,7 +780,7 @@ impl ServerConsoleView {
             .text_color(border)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .child(label),
             );
@@ -819,7 +819,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Copy, CONTROL_GLYPH, normal))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .child(tr!("server_btn_copy")),
             )
@@ -915,7 +915,7 @@ impl ServerConsoleView {
                     .child(icon(Icon::ChartLine, HEADER_GLYPH, palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("server_throughput_title")),
@@ -923,7 +923,7 @@ impl ServerConsoleView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -974,7 +974,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Folder, HEADER_GLYPH, palette.warning))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("server_overlay_files_title")),
@@ -996,7 +996,7 @@ impl ServerConsoleView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(root_label),
@@ -1020,7 +1020,7 @@ impl ServerConsoleView {
                     .child(icon(Icon::FolderOpen, CONTROL_GLYPH, palette.text_muted))
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .child(tr!("server_btn_open")),
                     ),
@@ -1108,7 +1108,7 @@ impl ServerConsoleView {
             .bg(with_alpha(kind_color, 0.12))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(kind_color)
                     .child(overlay_kind_tag(entry.kind)),
@@ -1122,7 +1122,7 @@ impl ServerConsoleView {
             .child(kind_badge)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(entry.name.clone()),
@@ -1130,7 +1130,7 @@ impl ServerConsoleView {
             .child(div().flex_1())
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(size_label),
@@ -1154,7 +1154,7 @@ impl ServerConsoleView {
                         div()
                             .flex_1()
                             .min_w(px(0.0))
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(url),
@@ -1210,7 +1210,7 @@ impl ServerConsoleView {
             .bg(palette.surface_overlay)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(format!("{}", self.connected_clients.len())),
@@ -1226,7 +1226,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Users, HEADER_GLYPH, palette.text_faint))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("server_clients_header")),
@@ -1234,7 +1234,7 @@ impl ServerConsoleView {
             .child(div().flex_1())
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("server_clients_live")),
@@ -1340,7 +1340,7 @@ impl ServerConsoleView {
             .child(
                 div()
                     .truncate()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(row.identification.clone()),
@@ -1348,7 +1348,7 @@ impl ServerConsoleView {
             .child(
                 div()
                     .truncate()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(row.client_type_label.clone()),
@@ -1368,12 +1368,12 @@ impl ServerConsoleView {
             .child(icon(Icon::X, X_GLYPH, palette.text_faint));
 
         let evs = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(format!("{:.1}", row.events_per_second));
         let uptime = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(row.uptime_short.clone());
@@ -1393,7 +1393,7 @@ impl ServerConsoleView {
         let s_color = status_color(&self.server_status, palette);
 
         let left = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .child(format!("WebSocket :{port}/ws · HTTP :{port}/"));
@@ -1404,7 +1404,7 @@ impl ServerConsoleView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -1415,7 +1415,7 @@ impl ServerConsoleView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child("·"),
@@ -1423,7 +1423,7 @@ impl ServerConsoleView {
             .child(status_dot(s_color, STATUS_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(s_color)
                     .child(status_label(&self.server_status)),
@@ -1579,7 +1579,7 @@ fn hline(color: Rgba) -> Div {
 
 fn caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
         .child(label.into())
@@ -1592,7 +1592,7 @@ fn chips_row(
 ) -> AnyElement {
     if chips.is_empty() {
         return div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .child("-")

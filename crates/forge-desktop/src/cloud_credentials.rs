@@ -1,9 +1,8 @@
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, Radius, Spacing, TextInput, ToastKind, card, icon, radius,
-    section_label, spacing, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, Radius, Spacing,
+    TextInput, ToastKind, body_family, card, icon, mono_family, radius, section_label, spacing, tr,
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::{CredentialId, CredentialsRepo};
@@ -718,7 +717,7 @@ impl CloudCredentialsView {
             .gap(px(6.0))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(label),
@@ -754,7 +753,7 @@ impl CloudCredentialsView {
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(test_border)
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(test_fg)
             .child(test_label);
@@ -777,7 +776,7 @@ impl CloudCredentialsView {
                 .bg(palette.brand)
                 .cursor_pointer()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.save(kind, cx)))
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(tr!("tts_cloud_save_credentials_btn"))
@@ -790,7 +789,7 @@ impl CloudCredentialsView {
                 .bg(palette.surface_overlay)
                 .border(BORDER_THIN)
                 .border_color(palette.disabled)
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.disabled)
                 .child(tr!("tts_cloud_save_credentials_btn"))
@@ -859,7 +858,7 @@ fn encryption_note(palette: &ForgePalette) -> impl IntoElement {
         .child(icon(Icon::Lock, LOCK_GLYPH, palette.success))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(NOTE_FS)
                 .text_color(palette.text_muted)
                 .child(tr!("tts_engines_creds_encrypted_note")),
@@ -890,7 +889,7 @@ fn config_status_badge(
         .bg(palette.surface_overlay)
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .child(label),
@@ -922,7 +921,7 @@ fn test_result_row(
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(color)
                     .child(message),

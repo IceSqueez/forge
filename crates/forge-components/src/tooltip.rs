@@ -4,9 +4,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_XS, Radius, Spacing, radius, spacing,
-};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, body_family, radius, spacing};
 
 pub fn tooltip_surface(
     label: impl Into<SharedString>,
@@ -20,7 +18,7 @@ pub fn tooltip_surface(
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .rounded(radius(Radius::Sm))
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_primary)
         .child(label.into())
@@ -108,7 +106,7 @@ impl Render for TooltipLines {
             .border(BORDER_THIN)
             .border_color(self.palette.border_regular)
             .rounded(radius(Radius::Sm))
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(self.palette.text_primary);
         for line in &self.lines {

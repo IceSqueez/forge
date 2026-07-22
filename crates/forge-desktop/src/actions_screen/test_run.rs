@@ -1,8 +1,8 @@
 use super::*;
 use crate::async_bridge::{BridgeFlow, drain_events};
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    MenuItem, Radius, Spacing, context_menu, ghost_button_with_icon, menu_header, menu_item, modal,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, MenuItem, Radius, Spacing, body_family,
+    context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
     primary_button, radius, spacing,
 };
 use forge_events::Event;
@@ -599,7 +599,7 @@ impl ScreenActionsView {
                     .flex_1()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(label),
@@ -675,7 +675,7 @@ impl ScreenActionsView {
                 .items_center()
                 .justify_center()
                 .p(EMPTY_PAD)
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("action_editor_test_run_empty"))
@@ -707,7 +707,7 @@ impl ScreenActionsView {
             body = body.child(
                 div()
                     .w_full()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(text),
@@ -788,7 +788,7 @@ impl ScreenActionsView {
             .bg(mark_bg)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(mark_fg)
                     .child(mark_glyph),
@@ -813,7 +813,7 @@ impl ScreenActionsView {
                     .flex_1()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(row.name.clone()),
@@ -821,7 +821,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(label_color)
                     .child(label),
@@ -906,7 +906,7 @@ impl ScreenActionsView {
             .child(icon(glyph, BANNER_ICON, tint))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(tint)
                     .child(title),
@@ -930,7 +930,7 @@ impl ScreenActionsView {
         if let Some(message) = message {
             banner = banner.child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
                     .child(message),
@@ -982,7 +982,7 @@ impl ScreenActionsView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(status),

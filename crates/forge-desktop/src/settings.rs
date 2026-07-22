@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
-    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ThemeId, badge, card,
-    field_hint, field_label, field_title, ghost_button_with_icon, icon, metric_card, page_frame,
-    primary_button, primary_button_with_icon, radius, spacing, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
+    Spacing, ThemeId, badge, body_family, card, field_hint, field_label, field_title,
+    ghost_button_with_icon, icon, metric_card, mono_family, overlay, page_frame, primary_button,
+    primary_button_with_icon, radius, set_body_family, set_mono_family, spacing, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Rgba, SharedString, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Rgba, SharedString, Subscription, Window,
+    div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -185,7 +186,22 @@ pub struct SettingsView {
     shortcuts: Entity<SettingsShortcutsView>,
     hotkeys: Entity<SettingsHotkeysView>,
     storage: Entity<SettingsStorageView>,
+    font_picker: Option<FontPicker>,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FontTarget {
+    Body,
+    Mono,
+}
+
+struct FontPicker {
+    picker: Entity<Picker>,
+    target: FontTarget,
+    _sub: Subscription,
+}
+
+const FONT_DEFAULT_ID: &str = "__forge_default_font__";
 
 impl SettingsView {
     pub fn new(handles: Arc<RuntimeHandles>, cx: &mut Context<Self>) -> Self {
@@ -227,12 +243,156 @@ impl SettingsView {
             shortcuts,
             hotkeys,
             storage,
+            font_picker: None,
         }
     }
 
     fn select_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
         self.section = section;
         cx.notify();
+    }
+
+    fn open_font_picker(
+        &mut self,
+        target: FontTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let palette = cx.palette();
+        let default_label = match target {
+            FontTarget::Body => tr!("settings_appearance_font_default_body"),
+            FontTarget::Mono => tr!("settings_appearance_font_default_mono"),
+        };
+        let mut items = vec![PickerItem {
+            id: FONT_DEFAULT_ID.into(),
+            label: default_label.into(),
+            sublabel: None,
+            icon: Icon::Refresh,
+        }];
+        items.extend(
+            cx.text_system()
+                .all_font_names()
+                .into_iter()
+                .map(|name| PickerItem {
+                    id: name.clone().into(),
+                    label: name.into(),
+                    sublabel: None,
+                    icon: Icon::FileText,
+                }),
+        );
+
+        let labels = PickerLabels {
+            title: match target {
+                FontTarget::Body => tr!("settings_appearance_font_picker_body"),
+                FontTarget::Mono => tr!("settings_appearance_font_picker_mono"),
+            }
+            .into(),
+            placeholder: tr!("settings_appearance_font_search").into(),
+            empty: tr!("widget_picker_no_results").into(),
+            loading: tr!("widget_picker_loading").into(),
+            cancel: tr!("common_cancel").into(),
+        };
+
+        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx));
+        let sub = cx.subscribe(&picker, Self::on_font_picker_event);
+        picker.update(cx, |f, cx| f.focus(window, cx));
+        self.font_picker = Some(FontPicker {
+            picker,
+            target,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    fn on_font_picker_event(
+        &mut self,
+        _picker: Entity<Picker>,
+        event: &PickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            PickerEvent::Selected(id) => self.pick_font(id.clone(), cx),
+            PickerEvent::Cancelled => self.close_font_picker(cx),
+        }
+    }
+
+    fn pick_font(&mut self, id: SharedString, cx: &mut Context<Self>) {
+        let Some(pending) = self.font_picker.take() else {
+            return;
+        };
+        let family: Option<SharedString> = if id.as_ref() == FONT_DEFAULT_ID {
+            None
+        } else {
+            Some(id)
+        };
+        match pending.target {
+            FontTarget::Body => set_body_family(family.clone()),
+            FontTarget::Mono => set_mono_family(family.clone()),
+        }
+
+        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let persisted = family.map(|f| f.to_string());
+        let target = pending.target;
+        async_bridge::report_failure(
+            &self.handles.rt_handle,
+            async move {
+                match target {
+                    FontTarget::Body => backend.set_font_body(persisted).await,
+                    FontTarget::Mono => backend.set_font_mono(persisted).await,
+                }
+            },
+            ErrorSink::Toast,
+            tr!("settings_appearance_font_persist_failed"),
+            cx,
+        );
+
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    fn close_font_picker(&mut self, cx: &mut Context<Self>) {
+        self.font_picker = None;
+        cx.notify();
+    }
+
+    fn font_field(
+        &self,
+        label: SharedString,
+        target: FontTarget,
+        current: SharedString,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let element_id = match target {
+            FontTarget::Body => "font-field-body",
+            FontTarget::Mono => "font-field-mono",
+        };
+        let preview_family = current.clone();
+        let value = div()
+            .id(element_id)
+            .cursor_pointer()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px(spacing(Spacing::Sm, Density::Cozy))
+            .py(px(7.0))
+            .rounded(radius(Radius::Sm))
+            .bg(palette.base)
+            .border(BORDER_THIN)
+            .border_color(palette.border_input)
+            .hover(|s| s.border_color(palette.border_active))
+            .child(
+                div()
+                    .font_family(preview_family)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(current),
+            )
+            .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint))
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.open_font_picker(target, window, cx)
+            }));
+        div().flex_1().child(field_label(palette, label, value))
     }
 
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
@@ -309,7 +469,7 @@ impl SettingsView {
             .child(icon(Icon::CircleCheck, FONT_XS, palette.success))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.success)
                     .child(tr!("widget_save_all_saved")),
@@ -329,7 +489,7 @@ impl SettingsView {
                     .px(spacing(Spacing::Xs, density))
                     .pt(spacing(Spacing::Xs, density))
                     .pb(px(4.0))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!(group)),
@@ -461,15 +621,19 @@ impl SettingsView {
                         .flex()
                         .flex_row()
                         .gap(spacing(Spacing::Sm, density))
-                        .child(font_field(
-                            tr!("settings_appearance_font_interface"),
-                            DEFAULT_BODY_FAMILY,
+                        .child(self.font_field(
+                            tr!("settings_appearance_font_interface").into(),
+                            FontTarget::Body,
+                            body_family(),
                             palette,
+                            cx,
                         ))
-                        .child(font_field(
-                            tr!("settings_appearance_font_monospace"),
-                            DEFAULT_MONO_FAMILY,
+                        .child(self.font_field(
+                            tr!("settings_appearance_font_monospace").into(),
+                            FontTarget::Mono,
+                            mono_family(),
                             palette,
+                            cx,
                         )),
                 ),
         );
@@ -580,7 +744,7 @@ impl SettingsView {
 
         let mut footer = div().flex().items_center().justify_between().child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
@@ -616,7 +780,7 @@ impl SettingsView {
             .child(footer)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(subtitle),
@@ -637,14 +801,14 @@ impl SettingsView {
             .gap(px(2.0))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(label),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(hint),
@@ -683,7 +847,7 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let subtitle = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("settings_language_subtitle"));
@@ -724,7 +888,7 @@ impl SettingsView {
             .py(px(3.0))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(bcp47);
@@ -743,7 +907,7 @@ impl SettingsView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(native_label),
@@ -776,7 +940,7 @@ impl SettingsView {
             .bg(palette.brand)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(px(24.0))
                     .text_color(palette.base)
@@ -788,14 +952,14 @@ impl SettingsView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
                     .child("Forge"),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(format!("v{version}")),
@@ -808,7 +972,7 @@ impl SettingsView {
             .child(
                 div().flex().flex_col().gap(px(4.0)).child(name_line).child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(tr!("settings_version_license")),
@@ -833,7 +997,7 @@ impl SettingsView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_version_recent_releases")),
@@ -896,7 +1060,7 @@ impl SettingsView {
             .bg(palette.base)
             .border(BORDER_THIN)
             .border_color(palette.border_input)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(log_display);
@@ -948,7 +1112,7 @@ impl SettingsView {
             ))
             .child(card(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_notifications_hint")),
@@ -1005,7 +1169,17 @@ impl Render for SettingsView {
             .child(nav)
             .child(pane);
 
-        page_frame(
+        let font_overlay = self.font_picker.as_ref().map(|pending| {
+            let view = cx.entity();
+            overlay(pending.picker.clone(), &palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("settings-font-picker-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_font_picker(cx));
+                })
+                .into_any_element()
+        });
+
+        let frame = page_frame(
             vec![
                 BreadcrumbCrumb::leaf(tr!("settings_page_title")),
                 BreadcrumbCrumb::leaf(self.section.label()),
@@ -1013,7 +1187,14 @@ impl Render for SettingsView {
             &palette,
         )
         .header_right(status)
-        .body(body)
+        .body(body);
+
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(frame)
+            .children(font_overlay)
     }
 }
 
@@ -1030,7 +1211,7 @@ fn pane_header(
         .child(icon(glyph, px(18.0), palette.brand))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
@@ -1052,14 +1233,14 @@ fn info_row(
         .py(spacing(Spacing::Xs, Density::Cozy))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
                 .child(label),
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(value),
@@ -1074,33 +1255,6 @@ fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {
         .pt(spacing(Spacing::Md, density))
         .border_t(BORDER_THIN)
         .border_color(palette.border_regular)
-}
-
-fn font_field(
-    label: impl Into<SharedString>,
-    family: &'static str,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    let label: SharedString = label.into();
-    let value = div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .px(spacing(Spacing::Sm, Density::Cozy))
-        .py(px(7.0))
-        .rounded(radius(Radius::Sm))
-        .bg(palette.base)
-        .border(BORDER_THIN)
-        .border_color(palette.border_input)
-        .child(
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_primary)
-                .child(family),
-        )
-        .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint));
-    div().flex_1().child(field_label(palette, label, value))
 }
 
 fn release_row(
@@ -1118,7 +1272,7 @@ fn release_row(
             div()
                 .w(px(60.0))
                 .flex_shrink_0()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(tag),
@@ -1126,14 +1280,14 @@ fn release_row(
         .child(
             div()
                 .flex_1()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(summary),
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(when),

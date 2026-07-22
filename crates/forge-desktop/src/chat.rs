@@ -4,13 +4,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY,
-    DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge,
-    ResizeRange, SearchState, Spacing, TextInput, ToastKind, avatar_tile, badge, badge_color,
-    badge_label, chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button,
-    menu_divider, menu_header, menu_item, page_frame, platform_color, radius, spacing, status_dot,
-    tr,
+    BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, Density, FONT_MD,
+    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputBar, InputBarEvent, InputEvent,
+    MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge, ResizeRange, SearchState, Spacing,
+    TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label, body_family, chat_row,
+    chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider, menu_header,
+    menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -202,7 +201,7 @@ impl Render for ChatViewerCount {
             .child(status_dot(palette.success, VIEWER_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(format!("{} {}", viewer_count, tr!("chat_viewers_unit"))),
@@ -1227,7 +1226,7 @@ impl ChatView {
                 .child(icon(Icon::ArrowDown, FONT_XS, palette.shell))
                 .child(
                     div()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.shell)
                         .child(label),
@@ -1324,7 +1323,7 @@ impl ChatView {
             .child(icon(Icon::Users, px(13.0), palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -1332,7 +1331,7 @@ impl ChatView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(count),
@@ -1369,7 +1368,7 @@ impl ChatView {
             return frame
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_faint)
                         .child(tr!("chat_drawer_click_hint")),
@@ -1392,7 +1391,7 @@ impl ChatView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -1415,7 +1414,7 @@ impl ChatView {
             .child(name_row)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(last_seen),
@@ -1518,7 +1517,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let title = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
@@ -1544,7 +1543,7 @@ impl ChatView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_whisper(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(text)
                     .child(tr!("chat_drawer_whisper_cancel")),
@@ -1565,7 +1564,7 @@ impl ChatView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_whisper(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(shell)
@@ -1602,7 +1601,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let title = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
@@ -1628,7 +1627,7 @@ impl ChatView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_reply(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(text)
                     .child(tr!("chat_drawer_whisper_cancel")),
@@ -1649,7 +1648,7 @@ impl ChatView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_reply(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(shell)
@@ -1761,7 +1760,7 @@ impl ChatView {
         let header = div()
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("chat_drawer_section_active", count = shown as i64));
@@ -1772,7 +1771,7 @@ impl ChatView {
                 div()
                     .py(spacing(Spacing::Xs, density))
                     .px(spacing(Spacing::Sm, density))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("chat_drawer_no_matches")),
@@ -1828,7 +1827,7 @@ impl ChatView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -1851,7 +1850,7 @@ impl ChatView {
             .child(name_row)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(meta),
@@ -1859,7 +1858,7 @@ impl ChatView {
 
         let last_seen = div()
             .flex_none()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(SharedString::from(summary.last_seen_label.clone()));
@@ -1944,14 +1943,14 @@ fn stat_cell(
         .bg(palette.elevated)
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .child(value.into()),
@@ -2001,7 +2000,7 @@ fn drawer_ghost_button(
         .child(icon(glyph, DRAWER_ICON, text))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(text)
                 .child(label.into()),

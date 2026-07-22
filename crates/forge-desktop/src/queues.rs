@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use forge_components::confirm::ConfirmTone;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement,
-    ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, badge, card, chip,
-    confirm_modal, empty_state, ghost_button_with_icon, header_stat, header_stats, icon,
-    menu_button, menu_divider, menu_item, modal, overlay, page_frame, primary_button,
-    primary_button_with_icon, radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition, Radius,
+    SearchState, Spacing, TextInput, badge, body_family, card, chip, confirm_modal, empty_state,
+    ghost_button_with_icon, header_stat, header_stats, icon, menu_button, menu_divider, menu_item,
+    modal, mono_family, overlay, page_frame, primary_button, primary_button_with_icon, radius,
+    secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -245,7 +245,7 @@ impl Render for EditQueueModal {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(SharedString::from(
@@ -265,7 +265,7 @@ impl Render for EditQueueModal {
                     .gap(px(4.0))
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(SharedString::from(
@@ -274,7 +274,7 @@ impl Render for EditQueueModal {
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
                             .child(SharedString::from(tr!("queues_create_desc_optional"))),
@@ -320,7 +320,7 @@ impl Render for EditQueueModal {
                             .w(px(28.0))
                             .flex()
                             .justify_end()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_SM)
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(palette.text_primary)
@@ -329,7 +329,7 @@ impl Render for EditQueueModal {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(DESC_FS)
                     .text_color(palette.text_muted)
                     .child(concurrency_hint),
@@ -341,7 +341,7 @@ impl Render for EditQueueModal {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(SharedString::from(
@@ -375,7 +375,7 @@ impl Render for EditQueueModal {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
             );
         let hint = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .child(SharedString::from(tr!("queues_create_kbd_hint")));
@@ -856,7 +856,7 @@ impl QueuesView {
     ) -> AnyElement {
         let spin_id = SharedString::from(format!("q-badge-spin-{}", q.id));
         let name = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_SM)
             .text_color(palette.text_primary)
             .child(q.name.clone());
@@ -877,7 +877,7 @@ impl QueuesView {
             SharedString::from(q.description.clone())
         };
         let desc = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(DESC_FS)
             .text_color(palette.text_muted)
             .child(desc_text);
@@ -1200,7 +1200,7 @@ impl QueuesView {
             .child(icon(Icon::Notebook, FONT_XS, palette.success))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(message),
@@ -1319,7 +1319,7 @@ impl Render for QueuesView {
         let subheader_right = self.render_subheader_right(&palette, density, cx);
 
         let subtitle = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(STATS_FS)
             .text_color(palette.text_muted)
             .child(tr!("queues_subtitle"));
@@ -1430,7 +1430,7 @@ fn status_badge(spin_id: SharedString, paused: bool, palette: &ForgePalette) -> 
         .child(mark)
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(ink)
                 .child(label),
@@ -1452,7 +1452,7 @@ fn metric_col(
         .flex_col()
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .mb(px(3.0))
@@ -1460,7 +1460,7 @@ fn metric_col(
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(STAT_VALUE_FS)
                 .text_color(value_color)
@@ -1468,7 +1468,7 @@ fn metric_col(
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(hint_color)
                 .child(hint),
@@ -1489,7 +1489,7 @@ fn idle_panel(palette: &ForgePalette, density: Density) -> AnyElement {
         .child(icon(Icon::CircleDashed, PANEL_GLYPH, palette.text_faint))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("queues_no_actions_running"))),
@@ -1514,14 +1514,14 @@ fn serial_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
         .child(
             div()
                 .flex_1()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(name),
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("queues_running_label"))),
@@ -1556,7 +1556,7 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
         .bg(palette.shell)
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("queues_running_now_header"))),
@@ -1607,7 +1607,7 @@ fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyEl
         .child(
             div()
                 .flex_1()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(caption),
@@ -1639,7 +1639,7 @@ fn card_button(
         .child(icon(glyph, PANEL_GLYPH, ink))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(ink)
                 .child(label),
@@ -1738,7 +1738,7 @@ fn not_live_badge(palette: &ForgePalette) -> AnyElement {
         .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.warning))
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.warning)
                 .child(SharedString::from(tr!("queues_not_live_badge"))),

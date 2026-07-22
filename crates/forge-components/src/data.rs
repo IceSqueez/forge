@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{DEFAULT_MONO_FAMILY, Density, FONT_XXS, Spacing, spacing};
+use crate::tokens::{Density, FONT_XXS, Spacing, mono_family, spacing};
 
 /// `Flex(n)` claims a share of leftover row width proportional to `n` (`Flex(8)` beside `Flex(7)` splits 8:7), ignoring cell content's intrinsic width.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -190,7 +190,7 @@ fn table_header(
 ) -> Div {
     let header_cells = columns.into_iter().map(move |c| {
         let label_el = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .whitespace_nowrap()
             .text_color(header_ink)

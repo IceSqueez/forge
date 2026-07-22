@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use forge_components::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, ForgePalette, Icon,
-    InputEvent, Spacing, TextInput, card, field_hint, field_title, icon, primary_button, spacing,
-    tr,
+    Density, FONT_LG, FONT_SM, ForgePalette, Icon, InputEvent, Spacing, TextInput, body_family,
+    card, field_hint, field_title, icon, mono_family, primary_button, spacing, tr,
 };
 use forge_storage::{
     DataProvider, SettingsRepo, chat_history_display_limit, chat_history_store_limit,
@@ -314,7 +313,7 @@ fn pane_header(
         .child(icon(glyph, px(18.0), palette.brand))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
@@ -334,14 +333,14 @@ fn info_row(
         .py(spacing(Spacing::Xs, Density::Cozy))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(value.into()),

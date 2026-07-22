@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, anchored_popover_below,
-    confirm_modal, drive_overlay_focus, empty_state, icon, overlay, primary_button, radius,
-    spacing, tr, with_alpha,
+    BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    OverlayPosition, Radius, Spacing, anchored_popover_below, body_family, confirm_modal,
+    drive_overlay_focus, empty_state, icon, mono_family, overlay, primary_button, radius, spacing,
+    tr, with_alpha,
 };
 use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_storage::DataProvider;
@@ -350,7 +350,7 @@ impl SettingsHotkeysView {
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!(key)),
@@ -358,7 +358,7 @@ impl SettingsHotkeysView {
         if let Some(count) = count {
             row = row.child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(format!("({count})")),
@@ -403,7 +403,7 @@ impl SettingsHotkeysView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_capture(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(text_color)
                     .child(label),
@@ -433,7 +433,7 @@ impl SettingsHotkeysView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(label_color)
                     .child(label),
@@ -464,7 +464,7 @@ impl SettingsHotkeysView {
                 div()
                     .px(spacing(Spacing::Sm, Density::Cozy))
                     .py(spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_faint)
                     .child("-"),
@@ -491,7 +491,7 @@ impl SettingsHotkeysView {
                 .child(
                     div()
                         .flex_1()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .child(name.clone()),
@@ -545,7 +545,7 @@ impl SettingsHotkeysView {
                 .child(
                     div()
                         .flex_1()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.warning)
                         .child(message.clone()),
@@ -582,12 +582,12 @@ impl SettingsHotkeysView {
         let hotkey_id = binding.hotkey_id;
         let action_child = match &binding.action_name {
             Some(name) => div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_secondary)
                 .child(name.clone()),
             None => div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
                 .child(SharedString::from("-")),
@@ -606,7 +606,7 @@ impl SettingsHotkeysView {
             .border_color(palette.border_regular)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(binding.combo.clone()),
@@ -676,7 +676,7 @@ impl SettingsHotkeysView {
             .child(icon(Icon::AlertTriangle, px(13.0), palette.warning))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.warning)
                     .child(tr!("settings_hotkeys_error_unavailable")),
@@ -699,7 +699,7 @@ impl Render for SettingsHotkeysView {
         );
 
         let subtitle = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("settings_hotkeys_scope_subtitle"));
@@ -721,7 +721,7 @@ impl Render for SettingsHotkeysView {
                     .child(self.section_header("settings_hotkeys_backend_section", None, &palette))
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_secondary)
                             .child(portal_status_label(None)),
@@ -771,7 +771,7 @@ impl Render for SettingsHotkeysView {
             .child(self.section_header("settings_hotkeys_backend_section", None, &palette))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
                     .child(portal_status_label(portal_status)),

@@ -132,6 +132,10 @@ fn main() {
 
             let (theme, density) = crate::boot::read_persisted_presentation(&rt_handle);
             cx.set_global(Presentation::new(theme, density));
+
+            let (body_font, mono_font) = crate::boot::read_persisted_fonts(&rt_handle);
+            forge_components::set_body_family(body_font.map(Into::into));
+            forge_components::set_mono_family(mono_font.map(Into::into));
             cx.set_global(crate::presentation::ActiveLanguage(
                 forge_storage::Language::default(),
             ));

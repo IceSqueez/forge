@@ -1,6 +1,6 @@
 use forge_components::{
-    BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, ForgePalette, Radius,
-    Spacing, avatar_tile, connection_status_badge, nav_card, page_frame, radius, spacing, tr,
+    BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, ForgePalette, Radius, Spacing,
+    avatar_tile, body_family, connection_status_badge, nav_card, page_frame, radius, spacing, tr,
 };
 use std::collections::HashMap;
 
@@ -146,7 +146,7 @@ impl PlatformsView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(name),
@@ -154,7 +154,7 @@ impl PlatformsView {
             .child(connection_status_badge(connected, badge_label, palette));
 
         let desc_el = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(desc);
@@ -256,14 +256,14 @@ impl Render for PlatformsView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
                     .child(tr!("platforms_title")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("platforms_subtitle")),
@@ -308,7 +308,7 @@ fn feature_chip(label: impl Into<SharedString>, palette: &ForgePalette) -> impl 
         .bg(palette.shell)
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(label),

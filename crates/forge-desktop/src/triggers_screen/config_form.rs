@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, ForgePalette, InputEvent,
-    Spacing, TextInput, spacing, toggle, tr,
+    BORDER_THIN, Density, ForgePalette, InputEvent, Spacing, TextInput, body_family, mono_family,
+    spacing, toggle, tr,
 };
 use forge_registry::FormField;
 use forge_types::{TriggerConfig, Variant};
@@ -218,7 +218,7 @@ pub(crate) fn render_config_row<V: 'static>(
         .w(FILL_KEY_W)
         .flex_none()
         .overflow_hidden()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FILL_KEY_FS)
         .text_color(palette.text_muted)
         .child(key.clone());
@@ -239,7 +239,7 @@ pub(crate) fn render_config_row<V: 'static>(
         }
         ConfigField::Hint { .. } => div()
             .italic()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FILL_VAL_FS)
             .text_color(palette.text_faint)
             .child(tr!("triggers_sheet_config_authored"))

@@ -6,9 +6,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, Radius, Spacing, radius, spacing,
-};
+use crate::tokens::{BORDER_THIN, Density, FONT_SM, Radius, Spacing, body_family, radius, spacing};
 
 const STRIPE_WIDTH: Pixels = px(2.0);
 const KIND_ICON: Pixels = px(14.0);
@@ -186,7 +184,7 @@ impl RenderOnce for ToastCard {
                     .flex_1()
                     .min_w_0()
                     .overflow_hidden()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(self.message_color)
                     .child(self.message.clone()),
@@ -205,7 +203,7 @@ impl RenderOnce for ToastCard {
                     .px(pad(Spacing::Xs))
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(self.action_color)
                     .on_click(handler)

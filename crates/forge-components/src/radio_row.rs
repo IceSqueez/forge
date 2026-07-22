@@ -4,9 +4,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_SM, FONT_XXS, Radius, radius,
-};
+use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XXS, Radius, body_family, mono_family, radius};
 
 type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -91,7 +89,7 @@ pub fn radio_row_label(
         div()
             .flex_1()
             .min_w(px(0.0))
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(label_color)
             .child(label.into()),
@@ -100,7 +98,7 @@ pub fn radio_row_label(
     if let Some(hint) = hint {
         row = row.child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(hint),

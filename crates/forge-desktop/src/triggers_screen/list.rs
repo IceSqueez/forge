@@ -4,11 +4,11 @@ use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
-    BORDER_THIN, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, OverlayPosition, Spacing, TextInput,
-    ToastAction, ToastKind, badge, chip, confirm_modal, context_menu, ghost_button_with_icon,
-    header_stat, header_stats, icon, inline_edit, menu_divider, menu_item, overlay,
-    primary_button_with_icon, spacing, status_dot, toggle, tr,
+    BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent,
+    InputEvent, OverlayPosition, Spacing, TextInput, ToastAction, ToastKind, badge, body_family,
+    chip, confirm_modal, context_menu, ghost_button_with_icon, header_stat, header_stats, icon,
+    inline_edit, menu_divider, menu_item, mono_family, overlay, primary_button_with_icon, spacing,
+    status_dot, toggle, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
@@ -473,7 +473,7 @@ impl TriggersRegistryView {
                     .id("triggers-platform-clear")
                     .cursor_pointer()
                     .px(spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("triggers_platform_clear"))
@@ -589,7 +589,7 @@ impl TriggersRegistryView {
 
     fn caption_cell(&self, palette: &ForgePalette, label: impl Into<SharedString>) -> AnyElement {
         div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(label.into())
@@ -708,7 +708,7 @@ impl TriggersRegistryView {
                     .flex_shrink(1.0)
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(KIND_FS)
                     .text_color(palette.text_muted)
                     .child(kind_label),
@@ -730,7 +730,7 @@ impl TriggersRegistryView {
         kind = kind.child(
             div()
                 .flex_none()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(KIND_FS)
                 .text_color(palette.bits)
                 .child(cooldown),
@@ -741,13 +741,13 @@ impl TriggersRegistryView {
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xxs, Density::Cozy))
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(USED_FS)
                 .text_color(palette.text_primary)
                 .child(tr!("triggers_used_in_prefix"))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(palette.success)
                         .child(instance.used_in_count.to_string()),
@@ -756,7 +756,7 @@ impl TriggersRegistryView {
         } else {
             div()
                 .italic()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(USED_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_row_unused"))
@@ -774,7 +774,7 @@ impl TriggersRegistryView {
                 .w(COL_NAME)
                 .flex_none()
                 .truncate()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(NAME_FS)
                 .text_color(name_color)
                 .cursor_pointer()
@@ -963,7 +963,7 @@ impl TriggersRegistryView {
             .child(tile)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(EMPTY_TITLE_FS)
                     .text_color(palette.text_primary)
@@ -973,7 +973,7 @@ impl TriggersRegistryView {
                 div()
                     .max_w(px(360.0))
                     .text_center()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(EMPTY_BODY_FS)
                     .text_color(palette.text_muted)
                     .child(body),

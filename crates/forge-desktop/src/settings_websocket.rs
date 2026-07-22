@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
-    Radius, SaveState, Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, field_hint,
-    field_title, ghost_button_with_icon, icon, overlay, radio_row, radius, save_indicator,
+    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_LG, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
+    TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
+    ghost_button_with_icon, icon, mono_family, overlay, radio_row, radius, save_indicator,
     setting_row, spacing, toggle, tr, type_to_confirm,
 };
 use forge_server::{ServerHandle, ServerSettings};
@@ -473,7 +473,7 @@ impl SettingsWebSocketView {
             .child(icon(Icon::Server, px(20.0), palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
@@ -504,7 +504,7 @@ impl SettingsWebSocketView {
         if self.bind_choice == BindChoice::Lan {
             section = section.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.warning)
                     .child(tr!("settings_ws_bind_lan_restart_warning")),
@@ -554,7 +554,7 @@ impl SettingsWebSocketView {
             .child(icon(badge_glyph, px(10.0), badge_color))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(badge_color)
                     .child(badge_label),
@@ -566,7 +566,7 @@ impl SettingsWebSocketView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -575,7 +575,7 @@ impl SettingsWebSocketView {
             .child(badge)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tech),
@@ -589,7 +589,7 @@ impl SettingsWebSocketView {
             .child(title_row)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(body),
@@ -640,14 +640,14 @@ impl SettingsWebSocketView {
             .items_center()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_token_clients_send")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(" Authorization: Bearer …"),
@@ -694,7 +694,7 @@ impl SettingsWebSocketView {
             .bg(palette.shell)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(shown),
@@ -740,7 +740,7 @@ impl SettingsWebSocketView {
             .child(icon(Icon::Refresh, px(12.0), palette.warning))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
                     .child(tr!("server_btn_regenerate")),
@@ -828,14 +828,14 @@ impl SettingsWebSocketView {
             .gap(px(2.0))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(label.into()),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(sublabel.into()),
@@ -862,14 +862,14 @@ impl SettingsWebSocketView {
             .items_center()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_overlay_folder_prefix")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(" http://<bind>/"),
@@ -888,7 +888,7 @@ impl SettingsWebSocketView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(path_label);
@@ -956,7 +956,7 @@ impl Render for SettingsWebSocketView {
             .child(self.header_row(&palette, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_subtitle")),

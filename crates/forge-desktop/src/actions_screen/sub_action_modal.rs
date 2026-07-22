@@ -1,9 +1,9 @@
 use super::editor::{field_wrap, step_glyph, sub_category_color, sub_field_is_half};
 use super::*;
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_SM, FONT_XS, FONT_XXS, Radius,
-    Spacing, anchored_popover, ghost_button_with_icon, modal, primary_button, radius,
-    secondary_button, spacing, toggle,
+    BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, anchored_popover, body_family,
+    ghost_button_with_icon, modal, mono_family, primary_button, radius, secondary_button, spacing,
+    toggle,
 };
 use gpui::{FontWeight, Rgba};
 
@@ -57,7 +57,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(display_color)
                     .child(display),
@@ -79,7 +79,7 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(label.to_owned()),
@@ -210,7 +210,7 @@ impl ScreenActionsView {
                         .gap(spacing(Spacing::Xs, Density::Cozy))
                         .child(
                             div()
-                                .font_family(DEFAULT_MONO_FAMILY)
+                                .font_family(mono_family())
                                 .text_size(FONT_XXS)
                                 .text_color(palette.text_muted)
                                 .child(label.clone()),
@@ -218,7 +218,7 @@ impl ScreenActionsView {
                     if let Some(tag) = lang_tag {
                         header = header.child(
                             div()
-                                .font_family(DEFAULT_MONO_FAMILY)
+                                .font_family(mono_family())
                                 .text_size(FONT_XXS)
                                 .text_color(palette.text_muted)
                                 .child(tag),
@@ -255,7 +255,7 @@ impl ScreenActionsView {
                             .gap(spacing(Spacing::Sm, Density::Cozy))
                             .child(
                                 div()
-                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .font_family(body_family())
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_primary)
                                     .child(label.clone()),
@@ -306,14 +306,14 @@ impl ScreenActionsView {
                             .gap(spacing(Spacing::Xxs, Density::Cozy))
                             .child(
                                 div()
-                                    .font_family(DEFAULT_MONO_FAMILY)
+                                    .font_family(mono_family())
                                     .text_size(FONT_XXS)
                                     .text_color(palette.text_muted)
                                     .child(label.clone()),
                             )
                             .child(
                                 div()
-                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .font_family(body_family())
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_faint)
                                     .child(tr!("action_editor_branch_modal_hint")),
@@ -331,7 +331,7 @@ impl ScreenActionsView {
         if grid_items.is_empty() {
             grid = grid.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_sub_no_config")),
@@ -381,14 +381,14 @@ impl ScreenActionsView {
                             .gap(spacing(Spacing::Xxs, Density::Cozy))
                             .child(
                                 div()
-                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .font_family(body_family())
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_primary)
                                     .child(tr!("actions_step_continue_on_error")),
                             )
                             .child(
                                 div()
-                                    .font_family(DEFAULT_BODY_FAMILY)
+                                    .font_family(body_family())
                                     .text_size(FONT_XXS)
                                     .text_color(palette.text_faint)
                                     .child(tr!("actions_step_continue_on_error_hint")),
@@ -406,7 +406,7 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_step_condition_label")),
@@ -414,7 +414,7 @@ impl ScreenActionsView {
             .child(form.condition_input.clone())
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("actions_step_condition_hint")),
@@ -431,7 +431,7 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Sm, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_step_advanced")),
@@ -464,7 +464,7 @@ impl ScreenActionsView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!(

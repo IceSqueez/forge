@@ -6,13 +6,13 @@ use forge_components::chip::ChipGlyph;
 use forge_components::confirm::ConfirmTone;
 use forge_components::tokens::ModalSize;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
-    OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge, chip,
-    column, confirm_modal, context_menu, empty_state, fmt_relative_time, header_stat, header_stats,
-    hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, page_frame,
-    primary_button, primary_button_with_icon, radius, secondary_button, spacing, status_dot,
-    toggle, tr, virtual_table, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS, ForgePalette,
+    Icon, InlineEdit, InlineEditEvent, InputEvent, OverlayPosition, Radius, Spacing, TextArea,
+    TextInput, ToastAction, ToastKind, badge, body_family, chip, column, confirm_modal,
+    context_menu, empty_state, fmt_relative_time, header_stat, header_stats, hover_reveal, icon,
+    inline_edit, menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
+    primary_button_with_icon, radius, secondary_button, spacing, status_dot, toggle, tr,
+    virtual_table, with_alpha,
 };
 use forge_components::{Confirm, SearchState};
 use std::path::PathBuf;
@@ -903,13 +903,13 @@ impl GlobalsView {
         let value_cell = self.value_cell(g, palette, cx);
 
         let modified_cell = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(g.modified.clone());
 
         let rw_cell = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(format!("{} · {}", g.reads, g.writes));
@@ -984,7 +984,7 @@ impl GlobalsView {
         let rename_target = name.clone();
         let menu_target = name.clone();
         div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .cursor_pointer()
@@ -1117,7 +1117,7 @@ impl GlobalsView {
         };
         let mut cell = div().flex().items_center().gap(px(4.0)).child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(text),
@@ -1213,7 +1213,7 @@ impl GlobalsView {
             .child(div().flex_1().child(ed.name_input.clone()))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_LIMIT}")),
@@ -1248,7 +1248,7 @@ impl GlobalsView {
         if locked {
             type_children = type_children.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("globals_editor_type_locked_hint")),
@@ -1266,14 +1266,14 @@ impl GlobalsView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(tr!("globals_editor_persist_label")),
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
                             .child(tr!("globals_editor_persist_desc")),
@@ -1315,7 +1315,7 @@ impl GlobalsView {
                     .child(icon(Icon::AlertTriangle, FONT_XS, palette.random))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(err),
@@ -1388,7 +1388,7 @@ impl GlobalsView {
                     ))
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(hue)
                             .child(label),
@@ -1452,7 +1452,7 @@ impl GlobalsView {
             if line.is_empty() {
                 code_line = code_line.child(
                     div()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(FONT_XS)
                         .child("\u{00A0}"),
                 );
@@ -1461,7 +1461,7 @@ impl GlobalsView {
                     code_line = code_line.child(
                         div()
                             .flex_none()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(hue)
                             .whitespace_nowrap()
@@ -1479,7 +1479,7 @@ impl GlobalsView {
                             .pr(px(12.0))
                             .flex()
                             .justify_end()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_faint)
                             .child(format!("{}", i + 1)),
@@ -1504,7 +1504,7 @@ impl GlobalsView {
             .child(code);
 
         let hint = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .child(tr!("globals_inspect_snapshot"));
@@ -1628,7 +1628,7 @@ fn section(
         .gap(spacing(Spacing::Xxs, Density::Cozy))
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(label.into()),

@@ -11,8 +11,8 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, Radius,
-    Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius,
+    spacing,
 };
 
 const KEY_CONTEXT: &str = "ForgeTextInput";
@@ -921,9 +921,9 @@ impl Render for TextInput {
                 .rounded(radius(corner));
         }
         let font_family = if self.mono {
-            DEFAULT_MONO_FAMILY
+            mono_family()
         } else {
-            DEFAULT_BODY_FAMILY
+            body_family()
         };
         let mut field = field
             .font_family(font_family)
@@ -946,7 +946,7 @@ impl Render for TextInput {
             field = field.child(
                 div()
                     .flex_none()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(self.font_size)
                     .text_color(self.palette.text_faint)
                     .child(prefix),

@@ -6,7 +6,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS};
+use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family};
 
 const ROW_GAP: Pixels = px(8.0);
 const LINE1_GAP: Pixels = px(6.0);
@@ -208,7 +208,7 @@ fn time_el(ts: SharedString, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex_none()
         .whitespace_nowrap()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XXS)
         .line_height(LINE_TIME)
         .text_color(palette.text_faint)
@@ -226,7 +226,7 @@ fn platform_tile(platform: Platform, palette: &ForgePalette) -> impl IntoElement
         .justify_center()
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(PLATFORM_GLYPH)
                 .text_color(palette.shell)
@@ -242,7 +242,7 @@ fn username_el(
     let base = div()
         .flex_none()
         .whitespace_nowrap()
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(FONT_XS)
         .line_height(LINE_BODY)
@@ -266,7 +266,7 @@ fn message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement
     let el = div()
         .flex_1()
         .min_w(px(0.0))
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(FONT_XS)
         .line_height(LINE_BODY)
         .text_color(color);
@@ -281,7 +281,7 @@ fn descriptor_el(text: SharedString, palette: &ForgePalette) -> impl IntoElement
     div()
         .flex_none()
         .whitespace_nowrap()
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(FONT_XS)
         .line_height(LINE_BODY)
         .text_color(palette.text_secondary)
@@ -296,7 +296,7 @@ fn command_pill(command: SharedString, palette: &ForgePalette) -> impl IntoEleme
         .px(CMD_PILL_PAD_H)
         .rounded(CMD_PILL_RADIUS)
         .bg(palette.surface_overlay)
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(CMD_PILL_FONT)
         .text_color(palette.brand)
         .child(command)
@@ -312,7 +312,7 @@ fn role_badge(kind: BadgeKind, palette: &ForgePalette) -> impl IntoElement {
         .border(BORDER_THIN)
         .border_color(with_alpha(c, ROLE_BORDER_ALPHA))
         .bg(with_alpha(c, ROLE_TINT_ALPHA))
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .font_weight(FontWeight::SEMIBOLD)
         .text_size(ROLE_BADGE_FONT)
         .text_color(c)
@@ -341,11 +341,7 @@ fn pill_badge(
     leading: Option<(Icon, Rgba)>,
     label: SharedString,
 ) -> impl IntoElement {
-    let family = if mono {
-        DEFAULT_MONO_FAMILY
-    } else {
-        DEFAULT_BODY_FAMILY
-    };
+    let family = if mono { mono_family() } else { body_family() };
     div()
         .flex_none()
         .flex()
@@ -376,7 +372,7 @@ fn event_glyph(glyph: Icon, color: Rgba) -> impl IntoElement {
 fn event_message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
     let el = div()
         .mt(EVENT_MSG_TOP)
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(EVENT_MSG_FONT)
         .line_height(LINE_BODY)
         .text_color(color);
@@ -419,7 +415,7 @@ fn reply_line(
         .child(
             div()
                 .flex_none()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XXS)
                 .line_height(LINE_TIME)
                 .text_color(palette.text_muted)
@@ -431,7 +427,7 @@ fn reply_line(
                 .min_w(px(0.0))
                 .whitespace_nowrap()
                 .overflow_hidden()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XXS)
                 .line_height(LINE_TIME)
                 .text_color(palette.text_faint)

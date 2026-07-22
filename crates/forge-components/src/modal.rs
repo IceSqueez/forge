@@ -6,8 +6,8 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing,
-    modal_width, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing, body_family, modal_width,
+    radius, spacing,
 };
 
 const HEADER_TILE: Pixels = px(28.0);
@@ -179,7 +179,7 @@ impl Modal {
                 .overflow_hidden()
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_MD)
                         .text_color(self.title_color)
                         .child(self.title.clone()),
@@ -187,7 +187,7 @@ impl Modal {
             if let Some(subtitle) = self.subtitle.clone() {
                 titles = titles.child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(self.subtitle_color)
                         .child(subtitle),

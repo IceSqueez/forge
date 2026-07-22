@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
-    Icon, Radius, Spacing, badge, fmt_clock, icon, radius, spacing, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge,
+    body_family, fmt_clock, icon, mono_family, radius, spacing, tr, with_alpha,
 };
 use forge_platform_twitch::{TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
 use forge_storage::CredentialsRepo;
@@ -274,7 +274,7 @@ impl IntegrationDetail {
             .bg(palette.brand)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(px(24.0))
                     .text_color(palette.shell)
@@ -288,14 +288,14 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child("Twitch"),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("twitch_header_subtitle")),
@@ -333,7 +333,7 @@ impl IntegrationDetail {
                     .child(icon(Icon::Lock, px(14.0), palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("twitch_auth_title")),
@@ -341,7 +341,7 @@ impl IntegrationDetail {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("twitch_auth_subtitle")),
@@ -387,7 +387,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.twitch_start_connect(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.shell)
                     .child(tr!("twitch_btn_start")),
@@ -410,7 +410,7 @@ impl IntegrationDetail {
             .p(spacing(Spacing::Md, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("twitch_requesting")),
@@ -427,7 +427,7 @@ impl IntegrationDetail {
             .p(spacing(Spacing::Md, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("twitch_authorizing")),
@@ -446,7 +446,7 @@ impl IntegrationDetail {
             .p(spacing(Spacing::Md, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("twitch_missing_client_id")),
@@ -474,7 +474,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.twitch_start_connect(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.shell)
                     .child(tr!("twitch_btn_try_again")),
@@ -487,7 +487,7 @@ impl IntegrationDetail {
             .p(spacing(Spacing::Md, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(msg.to_owned()),
@@ -514,7 +514,7 @@ impl IntegrationDetail {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_SM)
             .text_color(palette.info)
             .child(auth_url.to_owned());
@@ -534,7 +534,7 @@ impl IntegrationDetail {
             .child(icon(Icon::ExternalLink, px(13.0), palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.brand)
                     .child(tr!("twitch_btn_open")),
@@ -545,7 +545,7 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("twitch_step1_title")),
@@ -574,7 +574,7 @@ impl IntegrationDetail {
             .child(icon(Icon::Refresh, px(12.0), palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
                     .child(tr!("twitch_btn_restart")),
@@ -586,21 +586,21 @@ impl IntegrationDetail {
             .child(icon(Icon::Clock, px(13.0), palette.text_muted))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(format!("{} ", tr!("twitch_timer_prefix"))),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(fmt_clock(remaining.as_secs())),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child("\u{00b7}"),
@@ -612,14 +612,14 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("twitch_step2_title")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("twitch_step2_detail")),
@@ -665,7 +665,7 @@ impl IntegrationDetail {
             .bg(bg)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_XS)
                     .text_color(fg)
@@ -698,7 +698,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.twitch_cancel(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(tr!("twitch_btn_cancel")),
@@ -730,14 +730,14 @@ impl IntegrationDetail {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("twitch_polling_primary")),
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_faint)
                             .child(tr!("twitch_polling_secondary")),
@@ -763,7 +763,7 @@ impl IntegrationDetail {
                     .child(icon(Icon::CircleCheck, px(13.0), palette.success))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("twitch_scopes_header")),
@@ -772,7 +772,7 @@ impl IntegrationDetail {
             .child(div().flex_1())
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -826,7 +826,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_twitch_to_connect(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(tr!("twitch_reauth_btn")),
@@ -852,14 +852,14 @@ impl IntegrationDetail {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("twitch_reauth_title")),
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("twitch_reauth_detail")),

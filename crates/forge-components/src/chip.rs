@@ -6,7 +6,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{DEFAULT_BODY_FAMILY, Density};
+use crate::tokens::{Density, body_family};
 
 type ChipClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -110,7 +110,7 @@ impl RenderOnce for Chip {
 
         root = root.child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(CHIP_FS)
                 .text_color(text_color)
                 .child(self.label),

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
-    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind, card,
-    empty_state, ghost_button_with_icon, icon, page_frame, radius, spacing, sparkline, status_dot,
+    BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card, empty_state,
+    ghost_button_with_icon, icon, mono_family, page_frame, radius, spacing, sparkline, status_dot,
     tr,
 };
 use forge_storage::DataProvider;
@@ -155,7 +155,7 @@ impl HomeView {
             .bg(palette.brand)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(HERO_BRAND_FONT)
                     .text_color(palette.shell)
@@ -169,14 +169,14 @@ impl HomeView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(HERO_TITLE_FONT)
                     .text_color(palette.text_primary)
                     .child("Forge"),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("home_hero_tagline")),
@@ -241,14 +241,14 @@ impl HomeView {
             .flex_col()
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(spec.section),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(spec.title),
@@ -270,7 +270,7 @@ impl HomeView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(JUMP_STAT_FONT)
                     .text_color(spec.glyph_color)
@@ -278,7 +278,7 @@ impl HomeView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(spec.stat_label),
@@ -291,7 +291,7 @@ impl HomeView {
             .justify_between()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(spec.hint),
@@ -345,7 +345,7 @@ impl HomeView {
     ) -> AnyElement {
         let mut value_row = div().flex().items_end().gap(px(4.0)).child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_MD)
                 .text_color(value_color)
                 .child(value),
@@ -353,7 +353,7 @@ impl HomeView {
         if let Some(unit) = unit {
             value_row = value_row.child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(unit),
@@ -367,7 +367,7 @@ impl HomeView {
             .gap(px(3.0))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label),
@@ -406,7 +406,7 @@ impl HomeView {
             .child(status_dot(accent, HEALTH_LIVE_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(accent)
                     .child(badge_label),
@@ -419,7 +419,7 @@ impl HomeView {
             .child(icon(Icon::ChartLine, HEALTH_ICON, health_icon_color))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("home_health_title")),
@@ -434,7 +434,7 @@ impl HomeView {
             .child(header_left)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("home_health_refresh_hint")),
@@ -451,7 +451,7 @@ impl HomeView {
             .gap(px(4.0))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("home_health_throughput_label")),
@@ -568,14 +568,14 @@ impl HomeView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(integ.label()),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
                     .child(status_text),
@@ -625,14 +625,14 @@ impl HomeView {
             .child(icon(Icon::PlugConnected, CONN_HEADER_ICON, palette.success))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("home_connections_title")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(summary),
@@ -678,28 +678,28 @@ impl HomeView {
             .overflow_hidden()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(hue)
                     .child(ev.source.clone()),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(": "),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
                     .child(ev.name.clone()),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(" - "),
@@ -707,7 +707,7 @@ impl HomeView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(ev.desc.clone()),
@@ -725,7 +725,7 @@ impl HomeView {
                 div()
                     .flex_none()
                     .w(EVENT_TIME_W)
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(ev.time.clone()),
@@ -763,7 +763,7 @@ impl HomeView {
             .child(status_dot(palette.success, EVENT_LIVE_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("home_health_live")),
@@ -782,7 +782,7 @@ impl HomeView {
                     .child(icon(Icon::Activity, EVENT_HEADER_ICON, palette.info))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("home_events_title")),
@@ -831,14 +831,14 @@ impl HomeView {
             .py(GLANCE_ROW_PAD_V)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(label),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(value_color)
                     .child(value),
@@ -909,7 +909,7 @@ impl HomeView {
                     .child(icon(Icon::LayoutGrid, GLANCE_HEADER_ICON, palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("home_glance_title")),

@@ -6,7 +6,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_XS, Radius, Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
 };
 
 type ButtonClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -214,7 +214,7 @@ impl RenderOnce for Button {
             .py(pad_v)
             .px(pad_h)
             .rounded(radius(Radius::Sm))
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .font_weight(self.weight)
             .text_size(FONT_XS)
             .text_color(text);

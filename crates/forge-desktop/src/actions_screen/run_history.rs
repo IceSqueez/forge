@@ -2,8 +2,8 @@ use super::editor::parse_variable_segments;
 use super::*;
 use crate::async_bridge;
 use forge_components::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_SM, FONT_XS, FONT_XXS, ModalSize, Radius,
-    Spacing, json_highlighted, modal, radius, spacing, status_dot,
+    FONT_SM, FONT_XS, FONT_XXS, ModalSize, Radius, Spacing, body_family, json_highlighted, modal,
+    mono_family, radius, spacing, status_dot,
 };
 use forge_registry::TriggerKindDescriptor;
 use forge_types::{ExecutionMetadata, SubActionOutcome, SubActionTelemetry};
@@ -108,7 +108,7 @@ impl ScreenActionsView {
             .items_center()
             .justify_center()
             .py(spacing(Spacing::Lg, Density::Cozy))
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("action_editor_run_history_loading"))
@@ -126,14 +126,14 @@ impl ScreenActionsView {
             .child(icon(Icon::History, HISTORY_EMPTY_GLYPH, palette.text_faint))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
                     .child(tr!("action_editor_run_history_empty_title")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("action_editor_run_history_empty_hint")),
@@ -239,7 +239,7 @@ impl ScreenActionsView {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(time_color)
                     .child(when),
@@ -247,7 +247,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(duration),
@@ -288,7 +288,7 @@ impl ScreenActionsView {
             .px(px(6.0))
             .rounded(CHIP_RADIUS)
             .bg(palette.surface_overlay)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(badge_color)
             .child(badge_label);
@@ -301,7 +301,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(when),
@@ -309,7 +309,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(duration),
@@ -334,7 +334,7 @@ impl ScreenActionsView {
             col = col.child(
                 div()
                     .pl(HISTORY_ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.random)
                     .child(message),
@@ -387,7 +387,7 @@ impl ScreenActionsView {
             .child(icon(glyph, FONT_XS, palette.text_muted))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(label),
@@ -412,7 +412,7 @@ impl ScreenActionsView {
                     .min_w(px(0.))
                     .overflow_hidden()
                     .pl(spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(json_highlighted(json, palette)),
@@ -460,7 +460,7 @@ impl ScreenActionsView {
                 div()
                     .flex_shrink_0()
                     .w(spacing(Spacing::Lg, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(marker),
@@ -469,7 +469,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
                     .child(step.kind.clone()),
@@ -477,7 +477,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!(
@@ -488,7 +488,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
                     .child(status_label),
@@ -527,7 +527,7 @@ impl ScreenActionsView {
             row = row.child(
                 div()
                     .pl(spacing(Spacing::Lg, Density::Cozy) + spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
                     .child(text),
@@ -559,7 +559,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tag.into()),
@@ -567,7 +567,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(name_color)
                     .child(name.to_owned()),
@@ -580,7 +580,7 @@ impl ScreenActionsView {
                 .min_w(px(0.))
                 .flex()
                 .flex_wrap()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS);
             if is_string {
                 for (chunk, is_var) in parse_variable_segments(value) {
@@ -618,7 +618,7 @@ impl ScreenActionsView {
                     .min_w(px(0.))
                     .overflow_hidden()
                     .pl(spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
                     .child(json_highlighted(value.to_owned(), palette)),

@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, PlatformKind, Radius, SearchState, SheetWidth,
-    Spacing, TextInput, ToastKind, badge, chip, empty_state, header_status, icon, page_frame,
-    platform_color, radius, spacing, status_dot, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
+    PlatformKind, Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind, badge,
+    body_family, chip, empty_state, header_status, icon, mono_family, page_frame, platform_color,
+    radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -322,14 +322,14 @@ impl EventFeedView {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(format!("{count}")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("event_feed_events_live_stream")),
@@ -496,7 +496,7 @@ impl EventFeedView {
             .w(TYPE_COL_W)
             .whitespace_nowrap()
             .overflow_hidden()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(ROW_FS)
             .text_color(type_color(&item.kind, item.is_error, palette))
             .child(item.kind.clone());
@@ -504,7 +504,7 @@ impl EventFeedView {
         let summary = div().flex_1().overflow_hidden().child(
             div()
                 .truncate()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(ROW_FS)
                 .text_color(palette.text_primary)
                 .child(item.summary.clone()),
@@ -526,7 +526,7 @@ impl EventFeedView {
                     .flex_none()
                     .w(TS_COL_W)
                     .whitespace_nowrap()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(ROW_FS)
                     .text_color(palette.text_faint)
                     .child(item.timestamp.clone()),
@@ -538,7 +538,7 @@ impl EventFeedView {
                 div()
                     .flex_none()
                     .whitespace_nowrap()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(SUFFIX_FS)
                     .text_color(result_color(&item.kind, item.is_error, palette))
                     .child(tag)
@@ -694,7 +694,7 @@ impl EventFeedView {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(item.kind.clone()),
@@ -702,7 +702,7 @@ impl EventFeedView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(format!("{} · #{last6}", item.timestamp)),
@@ -742,7 +742,7 @@ impl EventFeedView {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(caused_text),
@@ -764,7 +764,7 @@ impl EventFeedView {
             .child(icon(Icon::Repeat, FONT_XS, palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
                     .child(tr!("widget_event_replay")),
@@ -786,7 +786,7 @@ impl EventFeedView {
 
     fn section_label(&self, text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
         div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(text)
@@ -819,7 +819,7 @@ impl EventFeedView {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .p(spacing(Spacing::Sm, Density::Cozy))
             .rounded(radius(Radius::Md))
@@ -939,7 +939,7 @@ impl EventFeedView {
 
     fn action_label(text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
         div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_secondary)
             .child(text)

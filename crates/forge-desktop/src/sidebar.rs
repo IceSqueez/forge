@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    PlatformKind, Radius, ResizeEdge, ResizeRange, icon, install_resize, platform_color, radius,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, ResizeEdge,
+    ResizeRange, body_family, icon, install_resize, mono_family, platform_color, radius,
     status_dot, tr,
 };
 use forge_platform_core::BuiltinId;
@@ -248,7 +248,7 @@ impl SidebarNav {
     fn text_label(label: SharedString) -> AnyElement {
         div()
             .flex_1()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .child(label)
             .into_any_element()
@@ -256,7 +256,7 @@ impl SidebarNav {
 
     fn section_label(text: NavText, palette: &ForgePalette) -> AnyElement {
         div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .pt(SECTION_LABEL_PAD_TOP)
@@ -268,7 +268,7 @@ impl SidebarNav {
 
     fn mini_label(text: NavText, palette: &ForgePalette) -> AnyElement {
         div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
@@ -289,7 +289,7 @@ impl SidebarNav {
         let hover_ink = palette.text_muted;
         div()
             .id(text.id())
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)

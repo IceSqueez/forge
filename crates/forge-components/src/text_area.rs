@@ -16,8 +16,7 @@ use crate::text_edit::{
 };
 use crate::text_input::InputEvent;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS, Radius, Spacing,
-    radius, spacing,
+    BORDER_THIN, Density, FONT_XS, Radius, Spacing, body_family, mono_family, radius, spacing,
 };
 
 const KEY_CONTEXT: &str = "ForgeTextArea";
@@ -167,7 +166,7 @@ pub struct TextArea {
     palette: ForgePalette,
     density: Density,
     font_size: Pixels,
-    font_family: &'static str,
+    font_family: SharedString,
     read_only: bool,
     height: Pixels,
     on_surface: bool,
@@ -201,7 +200,7 @@ impl TextArea {
             palette: FORGE_DEFAULT,
             density: Density::Cozy,
             font_size: FONT_XS,
-            font_family: DEFAULT_BODY_FAMILY,
+            font_family: body_family(),
             read_only: false,
             height: DEFAULT_AREA_HEIGHT,
             on_surface: false,
@@ -231,7 +230,7 @@ impl TextArea {
     }
 
     pub fn mono(mut self) -> Self {
-        self.font_family = DEFAULT_MONO_FAMILY;
+        self.font_family = mono_family();
         self
     }
 
@@ -1321,7 +1320,7 @@ impl Render for TextArea {
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .w_full()
             .overflow_hidden()
-            .font_family(self.font_family)
+            .font_family(self.font_family.clone())
             .text_size(self.font_size)
             .text_color(text_color)
             .line_height(self.font_size * 1.5);

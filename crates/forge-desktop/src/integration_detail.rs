@@ -1,8 +1,8 @@
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Picker, PickerEvent,
-    PickerItem, PickerLabels, Radius, Spacing, ToastKind, avatar_tile, badge, confirm_modal,
-    fmt_uptime, icon, overlay, page_frame, radius, spacing, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS,
+    ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
+    Spacing, ToastKind, avatar_tile, badge, body_family, confirm_modal, fmt_uptime, icon,
+    mono_family, overlay, page_frame, radius, spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -459,7 +459,7 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
                     .child(self.display_name.clone()),
@@ -486,7 +486,7 @@ impl IntegrationDetail {
             .child(name_row)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(sub),
@@ -548,7 +548,7 @@ impl IntegrationDetail {
             }))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(text_color)
                     .child(label),
@@ -572,7 +572,7 @@ impl IntegrationDetail {
             .child(icon(Icon::Bolt, FONT_SM, palette.warning))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("widget_quick_actions_title")),
@@ -656,7 +656,7 @@ impl IntegrationDetail {
             ))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(label_color)
                     .child(action.label.clone()),
@@ -664,7 +664,7 @@ impl IntegrationDetail {
         if !enabled {
             content = content.child(div().flex_1()).child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(with_alpha(palette.text_faint, 0.5))
                     .child(tr!("integration_quick_action_na")),
@@ -759,14 +759,14 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(title),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(detail),

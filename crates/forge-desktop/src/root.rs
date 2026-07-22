@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_components::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, ForgePalette, Icon,
-    Radius, Spacing, card, icon, primary_button, radius, spacing, tr,
+    Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, body_family, card, icon,
+    mono_family, primary_button, radius, spacing, tr,
 };
 use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
 use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
@@ -464,14 +464,14 @@ fn splash(palette: &ForgePalette, density: Density) -> AnyElement {
         .gap(spacing(Spacing::Sm, density))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_LG)
                 .text_color(palette.brand)
                 .child("forge"),
         )
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("boot_starting")),
@@ -493,14 +493,14 @@ fn upgrade_screen(
         .child(icon(Icon::AlertTriangle, FONT_LG, palette.warning))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
                 .child(tr!("boot_upgrade_title")),
         )
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_secondary)
                 .child(tr!(
@@ -511,7 +511,7 @@ fn upgrade_screen(
         )
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("boot_upgrade_reassure")),
@@ -530,7 +530,7 @@ fn retry_screen(
         .p(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.surface_overlay)
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_SM)
         .text_color(palette.text_secondary)
         .child(reason.to_owned());
@@ -550,7 +550,7 @@ fn retry_screen(
         .child(icon(Icon::AlertTriangle, FONT_LG, palette.warning))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
                 .child(tr!("boot_failure_title")),
@@ -558,7 +558,7 @@ fn retry_screen(
         .child(detail)
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("boot_failure_reassure")),

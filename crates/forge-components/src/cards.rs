@@ -7,8 +7,8 @@ use gpui::{
 use crate::icons::{Icon, icon, spinner};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    Radius, Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
+    radius, spacing,
 };
 
 #[derive(IntoElement)]
@@ -62,7 +62,7 @@ impl RenderOnce for FieldLabel {
             .gap(self.gap)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(self.size)
                     .text_color(self.tone)
                     .child(self.label),
@@ -73,7 +73,7 @@ impl RenderOnce for FieldLabel {
 
 pub fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(FONT_SM)
         .text_color(palette.text_primary)
@@ -82,7 +82,7 @@ pub fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> imp
 
 pub fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
         .child(text.into())
@@ -242,14 +242,14 @@ pub fn metric_card(
         .gap(METRIC_LINE_GAP)
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(label_upper),
         )
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
                 .child(value.into()),
@@ -258,7 +258,7 @@ pub fn metric_card(
     if let Some(sub) = sublabel {
         col = col.child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(sublabel_color.unwrap_or(palette.text_faint))
                 .child(sub.into()),
@@ -285,14 +285,14 @@ pub fn stat_row(
         .justify_between()
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
                 .child(value.into()),
@@ -381,7 +381,7 @@ impl RenderOnce for EmptyState {
         }
         col = col.child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(self.message_color)
                 .child(self.message),
@@ -849,7 +849,7 @@ impl RenderOnce for PadTile {
                     .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(PAD_TILE_TITLE_FS)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(self.title_color)
@@ -882,7 +882,7 @@ impl RenderOnce for PadTile {
                 .child(self.glyph)
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(self.title_color)

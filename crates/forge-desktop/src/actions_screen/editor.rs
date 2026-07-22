@@ -6,14 +6,14 @@ use crate::triggers_screen::{
     render_config_row, sparse_overrides,
 };
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DateTimePicker, DateTimePickerEvent,
-    DateTimePickerLabels, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
-    GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
-    GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition, Picker,
-    PickerEvent, PickerItem, PickerLabels, PlatformKind, Radius, Spacing, TextInput,
-    anchored_popover, field_label, ghost_button_with_icon, icon, menu_button, menu_divider,
-    menu_item, modal, overlay, platform_color, primary_button, radius, row_card, secondary_button,
-    spacing, status_dot, tooltip_lines_builder, tr, with_alpha,
+    BORDER_THIN, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, Density, FONT_LG,
+    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent,
+    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent,
+    MenuPlacement, ModalSize, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels,
+    PlatformKind, Radius, Spacing, TextInput, anchored_popover, body_family, field_label,
+    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, mono_family,
+    overlay, platform_color, primary_button, radius, row_card, secondary_button, spacing,
+    status_dot, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
     CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
@@ -695,7 +695,7 @@ pub(super) fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
 fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     if s.is_empty() {
         return div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(String::new())
@@ -704,7 +704,7 @@ fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     let mut row = div()
         .flex()
         .flex_wrap()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XS);
     for (chunk, is_var) in parse_variable_segments(s) {
         let color = if is_var {
@@ -746,7 +746,7 @@ fn add_row_button(
         .child(icon(glyph, CARD_GLYPH, accent))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(accent)
                 .child(label),
@@ -775,7 +775,7 @@ fn empty_placeholder_card(
         .child(icon(glyph, EMPTY_CARD_GLYPH, glyph_color))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(label),
@@ -1854,7 +1854,7 @@ impl ScreenActionsView {
                 .py(spacing(Spacing::Sm, Density::Cozy))
                 .px(spacing(Spacing::Sm, Density::Cozy))
                 .italic()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FILL_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_no_config"))
@@ -1959,7 +1959,7 @@ impl ScreenActionsView {
         palette: &ForgePalette,
     ) -> AnyElement {
         div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(label.into())
@@ -2011,14 +2011,14 @@ impl ScreenActionsView {
             .child(icon(Icon::Bolt, EMPTY_GLYPH, palette.text_faint))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
                     .child(tr!("actions_detail_empty_title")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_detail_empty_hint")),
@@ -2041,7 +2041,7 @@ impl ScreenActionsView {
             .h_full()
             .py(spacing(Spacing::Md, Density::Cozy))
             .px(spacing(Spacing::Lg, Density::Cozy))
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("action_editor_loading"))
@@ -2105,7 +2105,7 @@ impl ScreenActionsView {
             .child(status_dot(pill_color, PILL_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(pill_color)
                     .child(pill_label),
@@ -2117,7 +2117,7 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
@@ -2130,7 +2130,7 @@ impl ScreenActionsView {
             .clone()
             .unwrap_or_else(|| tr!("action_editor_no_description"));
         let desc_line = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(desc);
@@ -2455,14 +2455,14 @@ impl ScreenActionsView {
             .gap(STAT_VALUE_GAP)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label.into()),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(value_color)
                     .child(value.into()),
@@ -2487,7 +2487,7 @@ impl ScreenActionsView {
             .gap(STAT_VALUE_GAP)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label.into()),
@@ -2496,7 +2496,7 @@ impl ScreenActionsView {
                 div()
                     .id(id)
                     .cursor_pointer()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(value_color)
                     .underline()
@@ -2517,7 +2517,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let label = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(tr!(
@@ -2605,7 +2605,7 @@ impl ScreenActionsView {
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_XS)
                     .text_color(name_color)
@@ -2613,14 +2613,14 @@ impl ScreenActionsView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(kind_label),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.bits)
                     .child(condition),
@@ -2667,7 +2667,7 @@ impl ScreenActionsView {
         let header = if at_root {
             div().flex().items_center().child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("action_editor_sub_actions_count", count = total as i64)),
@@ -2680,7 +2680,7 @@ impl ScreenActionsView {
                 .child(div().flex_1())
                 .child(
                     div()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(total.to_string()),
@@ -2798,7 +2798,7 @@ impl ScreenActionsView {
             .bg(palette.brand)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child((i + 1).to_string()),
@@ -2817,7 +2817,7 @@ impl ScreenActionsView {
 
         let title_text = div()
             .flex_1()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(FONT_XS)
             .text_color(palette.text_primary)

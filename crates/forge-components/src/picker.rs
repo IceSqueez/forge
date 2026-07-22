@@ -11,7 +11,7 @@ use crate::palette::{ForgePalette, with_alpha};
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, Radius, Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_SM, Radius, Spacing, body_family, radius, spacing,
 };
 
 const CARD_WIDTH: Pixels = px(480.0);
@@ -225,7 +225,7 @@ impl Picker {
         let mut labels = div().flex().flex_col().min_w_0().gap(LABEL_LINE_GAP).child(
             div()
                 .truncate()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(p.text_primary)
                 .child(item.label.clone()),
@@ -234,7 +234,7 @@ impl Picker {
             labels = labels.child(
                 div()
                     .truncate()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_muted)
                     .child(sub),
@@ -286,7 +286,7 @@ fn centered_message(text: SharedString, height: Pixels, palette: ForgePalette) -
         .justify_center()
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(text),
@@ -306,7 +306,7 @@ impl Render for Picker {
             .border_color(p.border_regular)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_MD)
                     .text_color(p.text_primary)
                     .child(self.labels.title.clone()),

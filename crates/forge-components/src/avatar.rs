@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XXS, Radius, radius};
+use crate::tokens::{FONT_XXS, Radius, body_family, mono_family, radius};
 
 pub fn hash_accent(name: &str, palette: &ForgePalette) -> Rgba {
     let idx = name
@@ -80,9 +80,9 @@ impl AvatarTile {
 impl RenderOnce for AvatarTile {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let family = if self.mono {
-            DEFAULT_MONO_FAMILY
+            mono_family()
         } else {
-            DEFAULT_BODY_FAMILY
+            body_family()
         };
         div()
             .flex_none()

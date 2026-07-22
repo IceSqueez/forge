@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, DEFAULT_BODY_FAMILY};
+use crate::tokens::{BORDER_THIN, body_family};
 
 type SegClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -118,7 +118,7 @@ impl RenderOnce for SegmentedControl {
                 .px(self.seg_pad_x)
                 .rounded(self.seg_radius)
                 .cursor_pointer()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .font_weight(weight)
                 .text_size(self.seg_fs)
                 .text_color(fg)

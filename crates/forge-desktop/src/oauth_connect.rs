@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use crate::async_bridge;
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ForgePalette, Icon, PlatformKind, Radius, Spacing, avatar_tile, icon, platform_color, radius,
-    spacing, tr, with_alpha,
+    BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, ForgePalette, Icon, PlatformKind, Radius,
+    Spacing, avatar_tile, body_family, icon, mono_family, platform_color, radius, spacing, tr,
+    with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_platform_core::ChatPlatform;
@@ -215,7 +215,7 @@ impl IntegrationDetail {
             .bg(palette.surface_overlay)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.info)
                     .child(tr!("common_status_not_connected")),
@@ -227,7 +227,7 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
                     .child(self.display_name.clone()),
@@ -243,7 +243,7 @@ impl IntegrationDetail {
             .child(name_row)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(desc),
@@ -270,7 +270,7 @@ impl IntegrationDetail {
             .py(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("platform_generic_features_available")),
@@ -284,7 +284,7 @@ impl IntegrationDetail {
                     .child(icon(Icon::CircleCheck, px(14.0), palette.text_faint))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_secondary)
                             .child(feature),
@@ -307,7 +307,7 @@ impl IntegrationDetail {
             .child(icon(Icon::Lock, px(14.0), palette.shell))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.shell)
                     .child(tr!("platform_generic_connect_btn")),
@@ -324,7 +324,7 @@ impl IntegrationDetail {
             .bg(palette.shell)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(format!(
@@ -358,14 +358,14 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("iseed_kick_banner_title")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(forge_platform_kick::capabilities::KICK_COMMUNITY_NOTE),
@@ -429,14 +429,14 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(self.display_name.clone()),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_header_subtitle")),
@@ -474,7 +474,7 @@ impl IntegrationDetail {
                     .child(icon(Icon::Lock, px(14.0), palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("oauth_auth_title", name = self.display_name.as_str())),
@@ -482,7 +482,7 @@ impl IntegrationDetail {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_auth_subtitle")),
@@ -508,7 +508,7 @@ impl IntegrationDetail {
                     .p(spacing(Spacing::Md, density))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_muted)
                             .child(tr!("oauth_requesting")),
@@ -534,7 +534,7 @@ impl IntegrationDetail {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_SM)
             .text_color(palette.info)
             .child(url);
@@ -554,7 +554,7 @@ impl IntegrationDetail {
             .child(icon(Icon::ExternalLink, px(13.0), palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.brand)
                     .child(tr!("oauth_step1_open")),
@@ -568,7 +568,7 @@ impl IntegrationDetail {
                 .gap(spacing(Spacing::Xs, density))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .child(tr!("oauth_step1_title")),
@@ -594,14 +594,14 @@ impl IntegrationDetail {
                 .gap(spacing(Spacing::Xxs, density))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .child(tr!("oauth_step2_title")),
                 )
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(tr!("oauth_step2_detail")),
@@ -624,7 +624,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(tr!("oauth_btn_cancel")),
@@ -656,14 +656,14 @@ impl IntegrationDetail {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("oauth_polling_primary")),
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_faint)
                             .child(tr!("oauth_polling_secondary")),
@@ -717,7 +717,7 @@ impl IntegrationDetail {
             .bg(bg)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_XS)
                     .text_color(fg)
@@ -749,7 +749,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.shell)
                     .child(tr!("oauth_btn_return")),
@@ -768,7 +768,7 @@ impl IntegrationDetail {
             .child(icon(Icon::CircleCheck, px(28.0), palette.success))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!(
@@ -778,7 +778,7 @@ impl IntegrationDetail {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_authorized_subtitle")),
@@ -809,7 +809,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.retry_flow(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.shell)
                     .child(tr!("oauth_btn_retry")),
@@ -827,7 +827,7 @@ impl IntegrationDetail {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(tr!("oauth_btn_cancel")),
@@ -850,7 +850,7 @@ impl IntegrationDetail {
                     .child(icon(Icon::AlertTriangle, px(20.0), palette.random))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("oauth_failed_title")),
@@ -858,7 +858,7 @@ impl IntegrationDetail {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(error),

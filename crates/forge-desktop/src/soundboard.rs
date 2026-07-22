@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 
 use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY,
-    DEFAULT_MONO_FAMILY, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    OverlayPosition, Radius, SearchState, Spacing, TextInput, chip, confirm_modal, empty_state,
-    fmt_bytes, fmt_clock, ghost_button_with_icon, icon, modal, overlay, pad_tile, page_frame,
-    primary_button, radius, secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, ConfirmTone, Density, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput,
+    body_family, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, ghost_button_with_icon,
+    icon, modal, mono_family, overlay, pad_tile, page_frame, primary_button, radius,
+    secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
@@ -250,7 +250,7 @@ impl Render for AddModal {
                     .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(if file_set {
                         palette.text_secondary
@@ -313,7 +313,7 @@ impl Render for AddModal {
                     .child(icon(Icon::InfoCircle, FONT_XS, palette.random))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(error),
@@ -324,7 +324,7 @@ impl Render for AddModal {
         let saveable = self.is_saveable(cx);
         let hint = div()
             .flex_1()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(LABEL_FS)
             .text_color(palette.text_faint)
             .child(if saveable {
@@ -1057,7 +1057,7 @@ impl SoundboardView {
             .child(icon(Icon::Volume, HEADER_ICON, palette.success))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(LABEL_FS)
                     .text_color(palette.text_muted)
                     .child(summary),
@@ -1107,7 +1107,7 @@ impl SoundboardView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(HERO_TITLE_FS)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(palette.text_primary)
@@ -1115,7 +1115,7 @@ impl SoundboardView {
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("soundboard_hero_blurb")),
@@ -1128,7 +1128,7 @@ impl SoundboardView {
                     .gap(spacing(Spacing::Sm, density))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(LABEL_FS)
                             .text_color(label_color)
                             .child(if enabled {
@@ -1209,7 +1209,7 @@ impl SoundboardView {
             .child(icon(Icon::PlayerStop, STOP_ICON, palette.random))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(tr!("soundboard_stop_all")),
@@ -1236,7 +1236,7 @@ impl SoundboardView {
 
         let hotkey_badge = clip.hotkey.clone().map(|hk| {
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(HOTKEY_FS)
                 .text_color(palette.text_secondary)
                 .bg(palette.shell)
@@ -1279,7 +1279,7 @@ impl SoundboardView {
         }
         sublabel = sublabel.child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(dur_color)
                 .child(if playing {
@@ -1440,7 +1440,7 @@ impl SoundboardView {
         .sublabel(
             div()
                 .mt(px(3.0))
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tr!("soundboard_library_import")),
@@ -1480,7 +1480,7 @@ impl SoundboardView {
         device_col = device_col.child(
             div()
                 .mt(px(5.0))
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(HINT_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("soundboard_routing_hint")),
@@ -1521,7 +1521,7 @@ impl SoundboardView {
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(LABEL_FS)
                             .text_color(palette.text_secondary)
                             .child(tr!("soundboard_routing_headphones")),
@@ -1575,7 +1575,7 @@ impl SoundboardView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_device_menu(cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(current_label.to_owned()),
@@ -1650,7 +1650,7 @@ impl SoundboardView {
             }))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(ink)
                     .child(label.into()),
@@ -1682,7 +1682,7 @@ impl SoundboardView {
             .bg(palette.shell)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FOOTER_FS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -1700,7 +1700,7 @@ impl SoundboardView {
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FOOTER_FS)
                             .text_color(palette.text_faint)
                             .child(status_text),
@@ -1777,7 +1777,7 @@ impl Render for SoundboardView {
                     .child(icon(Icon::AlertCircle, FONT_XS, palette.random))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(message),
@@ -1847,7 +1847,7 @@ impl Render for SoundboardView {
 
 fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(SECTION_LABEL_FS)
         .text_color(palette.text_muted)
         .child(label.into())
@@ -1856,7 +1856,7 @@ fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl
 fn field_lite_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .mb(px(5.0))
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(HOTKEY_FS)
         .text_color(palette.text_muted)
         .child(label.into())

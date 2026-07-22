@@ -3,9 +3,9 @@ use super::*;
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use forge_components::{
-    DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, Icon, InputEvent, Radius,
-    ResizeEdge, ResizeRange, Spacing, TextInput, ghost_button_with_icon, icon, install_resize,
-    primary_button, radius, row_card, spacing, status_dot, toggle, tr,
+    Density, FONT_XXS, Icon, InputEvent, Radius, ResizeEdge, ResizeRange, Spacing, TextInput,
+    body_family, ghost_button_with_icon, icon, install_resize, mono_family, primary_button, radius,
+    row_card, spacing, status_dot, toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -295,7 +295,7 @@ impl TriggersRegistryView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(CFG_VAL_FS)
                     .text_color(palette.text_muted)
                     .child(tr!("triggers_detail_loading")),
@@ -344,7 +344,7 @@ impl TriggersRegistryView {
         let name = div()
             .id("triggers-detail-rename")
             .cursor_pointer()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(NAME_FS)
             .text_color(palette.text_primary)
@@ -359,7 +359,7 @@ impl TriggersRegistryView {
             .child(status_dot(dot_color, KIND_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(KIND_FS)
                     .text_color(palette.text_faint)
                     .child(instance.kind_id.clone()),
@@ -438,7 +438,7 @@ impl TriggersRegistryView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(label),
@@ -456,7 +456,7 @@ impl TriggersRegistryView {
         let override_count = detail.instance.overrides.len();
         let right = if override_count > 0 {
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.bits)
                 .child(tr!(
@@ -466,7 +466,7 @@ impl TriggersRegistryView {
                 .into_any_element()
         } else {
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_config_all_defaults"))
@@ -478,7 +478,7 @@ impl TriggersRegistryView {
                 .py(PLACEHOLDER_PAD_V)
                 .px(PLACEHOLDER_PAD_H)
                 .italic()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_no_config"))
@@ -543,7 +543,7 @@ impl TriggersRegistryView {
             .w(CFG_KEY_W)
             .flex_none()
             .overflow_hidden()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(CFG_KEY_FS)
             .text_color(key_color)
             .child(key.clone());
@@ -563,7 +563,7 @@ impl TriggersRegistryView {
             }
             ConfigField::Hint { .. } => div()
                 .italic()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_config_authored"))
@@ -616,7 +616,7 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let caption = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("triggers_sheet_cooldown_caption"))
@@ -627,7 +627,7 @@ impl TriggersRegistryView {
                 .w(CFG_KEY_W)
                 .flex_none()
                 .overflow_hidden()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(CFG_KEY_FS)
                 .text_color(palette.text_muted)
                 .child(label)
@@ -713,7 +713,7 @@ impl TriggersRegistryView {
                 .border(HALF_BORDER)
                 .border_color(palette.border_input)
                 .text_center()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_used_in_empty_title"))
@@ -726,7 +726,7 @@ impl TriggersRegistryView {
                 let title = div()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(USED_FS)
                     .text_color(palette.text_primary)
                     .child(name.clone());
@@ -789,7 +789,7 @@ impl TriggersRegistryView {
             .child(icon(Icon::Eraser, px(11.0), delete_color))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(CFG_VAL_FS)
                     .text_color(delete_color)
                     .child(tr!("triggers_sheet_delete_btn")),

@@ -9,8 +9,8 @@ use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XXS, Radius,
-    Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XXS, Radius, Spacing, body_family, mono_family, radius,
+    spacing,
 };
 
 /// Bit order is a persistence contract: a stored bitset must decode to the same platforms across restarts.
@@ -287,7 +287,7 @@ impl InputBar {
             .on_click(cx.listener(move |this, _event, _window, cx| this.toggle_target(idx, cx)))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(TARGET_LETTER_SIZE)
                     .text_color(letter_color)
@@ -307,14 +307,14 @@ impl InputBar {
             .gap(HINT_GAP)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(color)
                     .child(glyph),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(color)
                     .child(label),
@@ -337,7 +337,7 @@ impl InputBar {
                     .px(spacing(Spacing::Xs, d))
                     .cursor_pointer()
                     .text_color(p.text_primary)
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .hover(move |style| style.bg(p.surface_overlay))
                     .on_click(

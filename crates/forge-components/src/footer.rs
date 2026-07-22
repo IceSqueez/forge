@@ -3,7 +3,7 @@ use gpui::{IntoElement, ParentElement, Pixels, Rgba, SharedString, Styled, div, 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{BORDER_THIN, DEFAULT_MONO_FAMILY, Density, FONT_XS, Spacing, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, mono_family, spacing};
 
 /// Overlays reserve this bottom clearance so they never paint under the bar.
 pub const FOOTER_HEIGHT: Pixels = px(24.0);
@@ -28,7 +28,7 @@ pub fn split_version_stage(version: &str) -> (&str, Option<&str>) {
 
 fn mono_cell(text: impl Into<SharedString>, color: Rgba, size: Pixels) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(size)
         .text_color(color)
         .child(text.into())

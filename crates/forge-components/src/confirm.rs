@@ -7,8 +7,8 @@ use crate::buttons::secondary_button;
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    ModalSize, Radius, Spacing, modal_width, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, ModalSize, Radius, Spacing, body_family,
+    modal_width, mono_family, radius, spacing,
 };
 
 const HEADER_GAP: Pixels = px(12.0);
@@ -116,7 +116,7 @@ fn accent_confirm_button(
         .px(spacing(Spacing::Sm, Density::Cozy))
         .rounded(radius(Radius::Sm))
         .bg(accent)
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(FONT_SM)
         .text_color(ink)
         .cursor_pointer()
@@ -155,7 +155,7 @@ impl RenderOnce for ConfirmModal {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
@@ -164,7 +164,7 @@ impl RenderOnce for ConfirmModal {
         if let Some(name) = item_name {
             titles = titles.child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(name),
@@ -179,7 +179,7 @@ impl RenderOnce for ConfirmModal {
             .child(titles);
 
         let hint = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(message);

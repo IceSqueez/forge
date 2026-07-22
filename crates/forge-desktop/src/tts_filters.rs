@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius, Spacing, TextArea,
-    TextInput, card, field_label, ghost_button, icon, modal, overlay, primary_button_with_icon,
-    radio_row, radio_row_label, radius, spacing, toggle, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize,
+    OverlayPosition, Radius, Spacing, TextArea, TextInput, body_family, card, field_label,
+    ghost_button, icon, modal, mono_family, overlay, primary_button_with_icon, radio_row,
+    radio_row_label, radius, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
     PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -776,7 +776,7 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let intro = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(tr!("tts_filters_pipeline_intro"));
@@ -798,7 +798,7 @@ impl TtsFiltersView {
                     .border(BORDER_THIN)
                     .border_color(palette.random)
                     .bg(with_alpha(palette.random, 0.1))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(err.clone()),
@@ -843,7 +843,7 @@ impl TtsFiltersView {
             .bg(color)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.shell)
                     .child(n.to_string()),
@@ -863,7 +863,7 @@ impl TtsFiltersView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(title.into()),
@@ -904,7 +904,7 @@ impl TtsFiltersView {
             .child(icon(Icon::Plus, FONT_XS, palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
                     .child(tr!("tts_filters_stage_add")),
@@ -949,7 +949,7 @@ impl TtsFiltersView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(label_color)
                     .child(label),
@@ -957,7 +957,7 @@ impl TtsFiltersView {
         if let Some(meta) = meta {
             row = row.child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(meta),
@@ -1183,7 +1183,7 @@ impl TtsFiltersView {
         if words.is_empty() {
             return div()
                 .py(spacing(Spacing::Xs, density))
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("tts_filters_blocklist_empty"))
@@ -1217,7 +1217,7 @@ impl TtsFiltersView {
                     .bg(palette.surface_overlay)
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_primary)
                             .child(word),
@@ -1247,7 +1247,7 @@ impl TtsFiltersView {
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.expand_blocklist(cx)))
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(tr!(
@@ -1277,7 +1277,7 @@ impl TtsFiltersView {
         let body: AnyElement = if reps.is_empty() {
             div()
                 .py(spacing(Spacing::Xs, density))
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("tts_filters_replacements_empty"))
@@ -1513,7 +1513,7 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let note = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("tts_filters_modal_blocklist_note"));
@@ -1613,7 +1613,7 @@ impl TtsFiltersView {
                 .px(px(14.0))
                 .rounded(radius(Radius::Sm))
                 .cursor_pointer()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(fg)
                 .on_click(
@@ -1630,7 +1630,7 @@ impl TtsFiltersView {
             tr!("tts_filters_modal_replace_find_label")
         };
         let note = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("tts_filters_modal_replace_note"));
@@ -1686,7 +1686,7 @@ impl TtsFiltersView {
             .justify_between()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(status_text),
@@ -1750,7 +1750,7 @@ impl TtsFiltersView {
             .child(icon(Icon::Eye, FONT_SM, palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("tts_filters_preview_header")),
@@ -1794,7 +1794,7 @@ impl TtsFiltersView {
         } else {
             stages_section = stages_section.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_filters_preview_empty")),
@@ -1816,7 +1816,7 @@ impl TtsFiltersView {
             .child(icon(Icon::PlayerPlayFilled, FONT_XS, palette.shell))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(tr!("tts_filters_speak_preview_btn")),
@@ -1875,7 +1875,7 @@ impl Render for TtsFiltersView {
 
 fn mono_caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into())
@@ -1902,14 +1902,14 @@ fn preview_stage_card(
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.success)
                     .child("\u{2713}"),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(tr!("tts_filters_stage_pass")),
@@ -1924,14 +1924,14 @@ fn preview_stage_card(
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child("\u{d7}"),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(format!(
@@ -1967,7 +1967,7 @@ fn final_output_card(
     stage_card_frame(
         format!("{} \u{b7} {}", n, tr!("tts_filters_preview_final_label")),
         div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(color)
             .child(text)
@@ -1990,7 +1990,7 @@ fn stage_card_frame(
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label),
@@ -2021,7 +2021,7 @@ fn highlighted_output(
         if input_tokens.contains(token) {
             row = row.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(token.to_owned()),
@@ -2037,7 +2037,7 @@ fn highlighted_output(
                     .px(px(3.0))
                     .rounded(px(2.0))
                     .bg(palette.surface_overlay)
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(color)
                     .child(token.to_owned()),

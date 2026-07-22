@@ -1,5 +1,5 @@
 use forge_components::{
-    BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, ForgePalette, Icon, Spacing,
+    BreadcrumbCrumb, Density, FONT_MD, FONT_SM, ForgePalette, Icon, Spacing, body_family,
     connection_status_badge, icon, nav_card, page_frame, spacing, tr,
 };
 use gpui::{
@@ -81,7 +81,7 @@ impl StreamAppsView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(name),
@@ -89,7 +89,7 @@ impl StreamAppsView {
             .child(connection_status_badge(connected, badge_label, palette));
 
         let desc_el = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(desc);
@@ -160,14 +160,14 @@ impl Render for StreamAppsView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
                     .child(tr!("stream_apps_title")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("stream_apps_subtitle")),

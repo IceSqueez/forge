@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition, Radius, Spacing, confirm_modal,
-    drive_overlay_focus, ghost_button, icon, overlay, radius, spacing, tr, with_alpha,
+    BORDER_THIN, ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    OverlayPosition, Radius, Spacing, body_family, confirm_modal, drive_overlay_focus,
+    ghost_button, icon, mono_family, overlay, radius, spacing, tr, with_alpha,
 };
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, set_json_setting};
@@ -233,7 +233,7 @@ impl SettingsShortcutsView {
                     .child(icon(Icon::Keyboard, px(18.0), palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_LG)
                             .text_color(palette.text_primary)
@@ -242,7 +242,7 @@ impl SettingsShortcutsView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_shortcuts_subtitle")),
@@ -265,7 +265,7 @@ impl SettingsShortcutsView {
                 .child(icon(Icon::AlertTriangle, px(13.0), palette.random))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.random)
                         .child(message.clone()),
@@ -280,7 +280,7 @@ impl SettingsShortcutsView {
             .py(px(3.0))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(label.into())
@@ -295,7 +295,7 @@ impl SettingsShortcutsView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let label = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_primary)
             .child(tr!(entry.label_key));
@@ -315,7 +315,7 @@ impl SettingsShortcutsView {
                         .bg(with_alpha(palette.brand, 0.12))
                         .border(BORDER_THIN)
                         .border_color(with_alpha(palette.brand, 0.5))
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.brand)
                         .child(tr!("settings_shortcuts_capture_prompt")),
@@ -332,7 +332,7 @@ impl SettingsShortcutsView {
                 None => {
                     controls = controls.child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_faint)
                             .child(tr!("settings_shortcuts_unbound")),
@@ -370,7 +370,7 @@ impl SettingsShortcutsView {
 
     fn fixed_section(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
         let heading = div()
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("settings_shortcuts_fixed_section"));
@@ -383,7 +383,7 @@ impl SettingsShortcutsView {
                 .w_full()
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_secondary)
                         .child(label),
@@ -408,7 +408,7 @@ impl SettingsShortcutsView {
             ))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("settings_shortcuts_fixed_note")),

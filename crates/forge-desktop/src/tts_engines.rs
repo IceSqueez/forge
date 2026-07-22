@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, avatar_tile, card, empty_state, hash_accent, icon, radius,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
+    avatar_tile, body_family, card, empty_state, hash_accent, icon, mono_family, radius,
     section_label, slider, spacing, status_dot, toggle, tr,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
@@ -351,7 +351,7 @@ impl TtsEnginesView {
             .pb(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_engines_header_prefix")),
@@ -431,7 +431,7 @@ impl TtsEnginesView {
             .flex_col()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(name_color)
@@ -439,7 +439,7 @@ impl TtsEnginesView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FS_10)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -491,7 +491,7 @@ impl TtsEnginesView {
             .child(icon(Icon::Plus, PLUS_GLYPH, palette.brand))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FS_11_5)
                     .text_color(palette.brand)
                     .child(tr!("tts_engines_add_engine")),
@@ -539,7 +539,7 @@ impl TtsEnginesView {
                     .child(icon(Icon::Cloud, PLUS_GLYPH, palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_secondary)
                             .child(kind.display_name()),
@@ -551,7 +551,7 @@ impl TtsEnginesView {
                 div()
                     .px(spacing(Spacing::Sm, density))
                     .py(spacing(Spacing::Xs, density))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FS_11)
                     .text_color(palette.text_faint)
                     .child(tr!("tts_engines_add_none_left")),
@@ -597,7 +597,7 @@ impl TtsEnginesView {
             .justify_center()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_engines_select_hint")),
@@ -708,7 +708,7 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
@@ -716,7 +716,7 @@ impl TtsEnginesView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FS_11_5)
                     .text_color(palette.text_muted)
                     .child(subtitle),
@@ -839,7 +839,7 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -847,7 +847,7 @@ impl TtsEnginesView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FS_10)
                     .text_color(palette.text_faint)
                     .child(format!("{} · {}", voice.locale, voice_descriptor(voice))),
@@ -984,7 +984,7 @@ fn param_row(
             div()
                 .w(PARAM_LABEL_W)
                 .flex_shrink_0()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(label),
@@ -1000,7 +1000,7 @@ fn param_row(
                 .w(PARAM_VALUE_W)
                 .flex_shrink_0()
                 .text_right()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FS_11_5)
                 .text_color(palette.text_primary)
                 .child(value_text.into()),

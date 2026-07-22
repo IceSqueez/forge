@@ -2,12 +2,12 @@ use std::future::Future;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    DataRow, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
-    SearchState, Spacing, TextInput, avatar_tile, badge, card, column, confirm_modal, data_table,
-    empty_state, field_label, hash_accent, icon, modal, overlay, primary_button,
-    primary_button_with_icon, secondary_button, segment, segmented, spacing, toggle, toolbar_row,
-    tr, virtual_table, with_alpha,
+    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InputEvent, OverlayPosition, SearchState, Spacing, TextInput, avatar_tile,
+    badge, body_family, card, column, confirm_modal, data_table, empty_state, field_label,
+    hash_accent, icon, modal, mono_family, overlay, primary_button, primary_button_with_icon,
+    secondary_button, segment, segmented, spacing, toggle, toolbar_row, tr, virtual_table,
+    with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
@@ -252,14 +252,14 @@ impl Render for AliasForm {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("tts_aliases_form_block_label")),
                     )
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("tts_aliases_form_block_desc")),
@@ -272,7 +272,7 @@ impl Render for AliasForm {
 
         let config: AnyElement = if self.blocked {
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
                 .child(tr!("tts_aliases_form_blocked_note"))
@@ -743,7 +743,7 @@ impl VoiceAliasesView {
             .flex_col()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(px(12.5))
                     .text_color(palette.text_primary)
@@ -751,7 +751,7 @@ impl VoiceAliasesView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(META_FS)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_aliases_strategy_sublabel")),
@@ -786,7 +786,7 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let count = div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(META_FS)
             .text_color(palette.text_muted)
             .child(tr!("tts_aliases_count", count = self.total_count as i64));
@@ -893,7 +893,7 @@ impl VoiceAliasesView {
         let footer = div()
             .w_full()
             .pt(px(8.0))
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!(
@@ -958,7 +958,7 @@ impl VoiceAliasesView {
                 div()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(name_color)
@@ -980,7 +980,7 @@ impl VoiceAliasesView {
                 .child(icon(Icon::VolumeOff, ENGINE_GLYPH, palette.random))
                 .child(
                     div()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(VOICE_FS)
                         .text_color(palette.text_faint)
                         .child(tr!("tts_aliases_never_speak")),
@@ -997,7 +997,7 @@ impl VoiceAliasesView {
                     div()
                         .min_w(px(0.0))
                         .truncate()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(VOICE_FS)
                         .text_color(palette.text_primary)
                         .child(format!("{} · {}", row.engine_label, row.voice_label)),
@@ -1138,7 +1138,7 @@ impl Render for VoiceAliasesView {
 
 fn mono_cell(value: String, color: Rgba) -> impl IntoElement {
     div()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(META_FS)
         .text_color(color)
         .child(value)

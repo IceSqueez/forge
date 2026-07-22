@@ -1,8 +1,8 @@
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, FONT_XS, ForgePalette, header_status,
-    page_frame, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, body_family, header_status, page_frame,
+    tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
@@ -217,7 +217,7 @@ impl TtsView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(weight)
                     .text_size(FONT_XS)
                     .text_color(fg)

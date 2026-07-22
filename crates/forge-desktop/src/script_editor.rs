@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent,
-    InputEvent, ModalSize, OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing,
-    TextArea, TextInput, badge, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
-    inline_edit, install_resize, menu_divider, menu_item, modal, overlay, page_frame,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, ModalSize, OverlayPosition,
+    Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextArea, TextInput, badge, body_family,
+    confirm_modal, context_menu, fmt_relative_time, ghost_button, icon, inline_edit,
+    install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
@@ -1187,7 +1187,7 @@ impl ScriptEditorView {
                 .child(icon(Icon::CircleCheck, GLYPH_STATUS, palette.success))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_muted)
                         .child(tr!(
@@ -1198,7 +1198,7 @@ impl ScriptEditorView {
                 );
             right = right.child(health).child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child("·"),
@@ -1207,7 +1207,7 @@ impl ScriptEditorView {
 
         let right = right.child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child("Rhai 1.25"),
@@ -1244,7 +1244,7 @@ impl ScriptEditorView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -1263,7 +1263,7 @@ impl ScriptEditorView {
                     .child(icon(Icon::ExternalLink, px(10.0), palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_MONO_FAMILY)
+                            .font_family(mono_family())
                             .text_size(px(9.5))
                             .text_color(palette.brand)
                             .child(linked.name.clone()),
@@ -1281,7 +1281,7 @@ impl ScriptEditorView {
             .child(status_dot(status_color, FILE_BAR_STATUS_DOT))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
                     .child(status_text),
@@ -1304,7 +1304,7 @@ impl ScriptEditorView {
                 .child(div().flex_1())
                 .child(
                     div()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(edited),
@@ -1334,7 +1334,7 @@ impl ScriptEditorView {
             .child(icon(Icon::PlayerPlay, GLYPH_RUN, palette.shell))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
@@ -1392,7 +1392,7 @@ impl ScriptEditorView {
                     .child(icon(Icon::ExternalLink, GLYPH_TOOLBAR, palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.brand)
                             .child(tr!("script_editor_open_action")),
@@ -1422,14 +1422,14 @@ impl ScriptEditorView {
             .gap(px(4.0))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("script_editor_sandbox_label")),
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.success)
                     .child(tr!("script_editor_sandbox_enabled")),
@@ -1441,7 +1441,7 @@ impl ScriptEditorView {
             .child(sandbox)
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child("Timeout: 500 ms"),
@@ -1486,7 +1486,7 @@ impl ScriptEditorView {
             .child(icon(glyph, GLYPH_TOOLBAR, palette.text_secondary))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(label.into()),
@@ -1511,7 +1511,7 @@ impl ScriptEditorView {
             .child(icon(glyph, GLYPH_TOOLBAR, palette.text_faint))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(label.into()),
@@ -1532,7 +1532,7 @@ impl ScriptEditorView {
             .justify_between()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(px(13.0))
                     .text_color(palette.text_primary)
@@ -1540,7 +1540,7 @@ impl ScriptEditorView {
             )
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(self.scripts.len().to_string()),
@@ -1565,7 +1565,7 @@ impl ScriptEditorView {
                 div()
                     .py(spacing(Spacing::Xxs, Density::Cozy))
                     .px(spacing(Spacing::Xs, Density::Cozy))
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("script_editor_no_scripts")),
@@ -1696,7 +1696,7 @@ impl ScriptEditorView {
                     .child(icon(Icon::Plus, GLYPH_ACTION, palette.brand))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.brand)
@@ -1721,7 +1721,7 @@ impl ScriptEditorView {
             .pt(px(2.0))
             .px(px(6.0))
             .pb(px(6.0))
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(icon(group_icon, px(11.0), color))
@@ -1778,7 +1778,7 @@ impl ScriptEditorView {
                 .unwrap_or_else(|| div().into_any_element())
         } else {
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(text_color)
                 .truncate()
@@ -1803,7 +1803,7 @@ impl ScriptEditorView {
             .child(name_line)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XXS)
                     .text_color(subtitle_color)
                     .truncate()
@@ -1928,7 +1928,7 @@ impl ScriptEditorView {
             ))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(if output_active {
                         FontWeight::MEDIUM
                     } else {
@@ -1956,7 +1956,7 @@ impl ScriptEditorView {
                 }))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .text_size(FONT_XS)
                         .text_color(if problems_active {
                             palette.text_primary
@@ -2030,7 +2030,7 @@ impl ScriptEditorView {
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XXS);
 
         match self.console_tab {
@@ -2170,7 +2170,7 @@ impl ScriptEditorView {
             .pb(spacing(Spacing::Xs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -2213,7 +2213,7 @@ impl ScriptEditorView {
                     div()
                         .pt(spacing(Spacing::Sm, Density::Cozy))
                         .pb(spacing(Spacing::Xxs, Density::Cozy))
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_muted)
                         .child(entry.namespace.unwrap_or("core").to_uppercase()),
@@ -2226,7 +2226,7 @@ impl ScriptEditorView {
             pane = pane.child(
                 div()
                     .pt(spacing(Spacing::Sm, Density::Cozy))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("script_editor_api_no_matches")),
@@ -2271,7 +2271,7 @@ impl ScriptEditorView {
             inner = inner.child(detail_row(
                 tr!("script_editor_details_linked"),
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_color(palette.text_primary)
                     .child(SharedString::from(linked.name.clone())),
                 palette,
@@ -2282,7 +2282,7 @@ impl ScriptEditorView {
             .child(detail_row(
                 tr!("script_editor_details_lines"),
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .child(line_count.to_string()),
                 palette,
             ))
@@ -2386,7 +2386,7 @@ impl ScriptEditorView {
                     .gap(spacing(Spacing::Xxs, Density::Cozy))
                     .child(
                         div()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(format!("{}: {}", field.name, field.label)),
@@ -2397,7 +2397,7 @@ impl ScriptEditorView {
         if let Some(err) = &modal_state.error {
             body = body.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(err.clone()),
@@ -2414,7 +2414,7 @@ impl ScriptEditorView {
                 .bg(with_alpha(palette.success, 0.5))
                 .child(
                     div()
-                        .font_family(DEFAULT_BODY_FAMILY)
+                        .font_family(body_family())
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(FONT_XS)
                         .text_color(palette.shell)
@@ -2592,7 +2592,7 @@ fn details_heading(
     palette: &ForgePalette,
 ) -> impl IntoElement {
     let heading = div()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into());
@@ -2623,7 +2623,7 @@ fn mini_stat(
         .px(px(9.0))
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(px(9.0))
                 .text_color(palette.text_faint)
                 .pb(px(3.0))
@@ -2631,7 +2631,7 @@ fn mini_stat(
         )
         .child(
             div()
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(FONT_XS)
                 .text_color(value_color)
@@ -2651,14 +2651,14 @@ fn detail_row(
         .py(spacing(Spacing::Xxs, Density::Cozy))
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(value),
@@ -2670,7 +2670,7 @@ fn signature_input_row(input: &ScriptInput, palette: &ForgePalette) -> impl Into
         .flex()
         .items_center()
         .py(spacing(Spacing::Xxs, Density::Cozy))
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XS)
         .child(
             div()
@@ -2696,7 +2696,7 @@ fn signature_returns_row(kind: VariantKind, palette: &ForgePalette) -> impl Into
         .pt(spacing(Spacing::Xs, Density::Cozy))
         .border_t(BORDER_THIN)
         .border_color(palette.surface_overlay)
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XS)
         .child(icon(Icon::ArrowBackUp, GLYPH_RETURNS, palette.text_faint))
         .child(
@@ -2759,7 +2759,7 @@ fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElem
                 .child(badge(palette.brand, palette.shell, "fn", true, FONT_XXS))
                 .child(
                     div()
-                        .font_family(DEFAULT_MONO_FAMILY)
+                        .font_family(mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_primary)
                         .child(sig),
@@ -2770,7 +2770,7 @@ fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElem
         row = row.child(
             div()
                 .pl(spacing(Spacing::Lg, Density::Cozy))
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(doc),

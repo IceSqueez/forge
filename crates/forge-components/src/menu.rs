@@ -10,8 +10,8 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, Radius,
-    Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius,
+    spacing,
 };
 
 const PANEL_WIDTH: Pixels = px(200.0);
@@ -161,7 +161,7 @@ impl MenuInk {
             .py(pad(Spacing::Xs))
             .px(pad(Spacing::Sm))
             .rounded(radius(Radius::Sm))
-            .font_family(DEFAULT_BODY_FAMILY);
+            .font_family(body_family());
 
         if let Some(glyph) = entry.icon {
             row = row.child(icon(glyph, FONT_SM, glyph_ink));
@@ -178,7 +178,7 @@ impl MenuInk {
         if let Some(shortcut) = entry.shortcut {
             row = row.child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(self.faint_ink)
                     .child(shortcut),
@@ -216,7 +216,7 @@ impl MenuInk {
             .pt(pad(Spacing::Xs))
             .pb(pad(Spacing::Xs) * 0.5)
             .px(pad(Spacing::Sm))
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(self.header_ink)
             .child(label)

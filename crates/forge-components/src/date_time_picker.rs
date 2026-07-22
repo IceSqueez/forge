@@ -8,8 +8,8 @@ use crate::buttons::{ghost_button_with_icon, primary_button, secondary_button};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
-    Radius, Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
+    radius, spacing,
 };
 
 const PANEL_W: Pixels = px(284.0);
@@ -151,7 +151,7 @@ impl DateTimePicker {
                     .flex_1()
                     .flex()
                     .justify_center()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
                     .child(format!("{} {}", month_name(self.month), self.year)),
@@ -174,7 +174,7 @@ impl DateTimePicker {
                     .w(CELL)
                     .flex()
                     .justify_center()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(p.text_faint)
                     .child(label),
@@ -207,7 +207,7 @@ impl DateTimePicker {
                     .items_center()
                     .justify_center()
                     .rounded(radius(Radius::Sm))
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_XS)
                     .cursor_pointer()
                     .when(selected, |c| c.bg(p.brand).text_color(p.base))
@@ -239,7 +239,7 @@ impl DateTimePicker {
             ))
             .child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_faint)
                     .child(":"),
@@ -277,7 +277,7 @@ impl DateTimePicker {
                     .w(px(40.0))
                     .flex()
                     .justify_center()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
                     .child(format!("{value:02}")),

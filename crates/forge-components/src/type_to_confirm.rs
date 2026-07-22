@@ -9,8 +9,8 @@ use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
-    Radius, Spacing, radius, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family,
+    radius, spacing,
 };
 
 const HEADER_GAP: Pixels = px(12.0);
@@ -223,7 +223,7 @@ fn confirm_button(
         .py(sp(Spacing::Xxs))
         .px(sp(Spacing::Sm))
         .rounded(radius(Radius::Md))
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(FONT_SM);
 
     if enabled {
@@ -266,7 +266,7 @@ impl Render for TypeToConfirm {
             .child(tile)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_MD)
                     .text_color(p.text_primary)
@@ -283,7 +283,7 @@ impl Render for TypeToConfirm {
             .child(title_row)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_muted)
                     .child(self.explanation.clone()),
@@ -302,7 +302,7 @@ impl Render for TypeToConfirm {
         if !self.section_caption.is_empty() {
             risk = risk.child(
                 div()
-                    .font_family(DEFAULT_MONO_FAMILY)
+                    .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(p.text_muted)
                     .child(self.section_caption.clone()),
@@ -320,7 +320,7 @@ impl Render for TypeToConfirm {
                     .child(
                         div()
                             .flex_1()
-                            .font_family(DEFAULT_BODY_FAMILY)
+                            .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(p.text_primary)
                             .child(item.text.clone()),
@@ -334,7 +334,7 @@ impl Render for TypeToConfirm {
             .px(sp(Spacing::Xs))
             .rounded(radius(Radius::Sm))
             .bg(p.surface_overlay)
-            .font_family(DEFAULT_MONO_FAMILY)
+            .font_family(mono_family())
             .text_size(FONT_SM)
             .text_color(p.warning)
             .child(self.target.clone());
@@ -344,7 +344,7 @@ impl Render for TypeToConfirm {
             .items_center()
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
                     .child(format!("{} ", self.instruction_prefix)),
@@ -352,7 +352,7 @@ impl Render for TypeToConfirm {
             .child(phrase_chip)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
                     .child(format!(" {}", self.instruction_suffix)),

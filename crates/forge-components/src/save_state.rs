@@ -2,7 +2,7 @@ use gpui::{AnyElement, IntoElement, SharedString, div, prelude::*, px};
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{DEFAULT_BODY_FAMILY, Density, FONT_SM, Spacing, spacing};
+use crate::tokens::{Density, FONT_SM, Spacing, body_family, spacing};
 use crate::tr;
 
 #[derive(Default)]
@@ -26,13 +26,13 @@ impl SaveState {
 pub fn save_indicator(state: &SaveState, palette: &ForgePalette) -> AnyElement {
     match state {
         SaveState::Error(message) => div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.random)
             .child(tr!("widget_save_failed", error = message.as_ref()))
             .into_any_element(),
         SaveState::Saving => div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_faint)
             .child(tr!("widget_save_saving"))
@@ -44,14 +44,14 @@ pub fn save_indicator(state: &SaveState, palette: &ForgePalette) -> AnyElement {
             .child(icon(Icon::CircleCheck, px(13.0), palette.success))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.success)
                     .child(tr!("widget_save_all_saved")),
             )
             .into_any_element(),
         SaveState::Unsaved => div()
-            .font_family(DEFAULT_BODY_FAMILY)
+            .font_family(body_family())
             .text_size(FONT_SM)
             .text_color(palette.warning)
             .child(tr!("widget_save_unsaved"))

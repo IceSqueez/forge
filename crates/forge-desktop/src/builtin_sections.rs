@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG, FONT_SM, FONT_XS,
-    ForgePalette, Icon, Radius, Spacing, icon, radius, spacing, status_dot, tr, with_alpha,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing,
+    body_family, icon, mono_family, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_platform_core::{
     ActiveRow, BannerLevel, ContentList, ContentListItem, DetailSection, HealthBar, HealthLevel,
@@ -11,7 +11,7 @@ use gpui::{AnyElement, Div, Rgba, SharedString, div, prelude::*, px, relative};
 
 fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
     div()
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(size)
         .text_color(color)
         .child(s.into())
@@ -19,7 +19,7 @@ fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
 
 fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
     div()
-        .font_family(DEFAULT_BODY_FAMILY)
+        .font_family(body_family())
         .text_size(size)
         .text_color(color)
         .child(s.into())
@@ -388,9 +388,9 @@ fn content_list_item_row(
     );
 
     let name_family = if item.monospace_name {
-        DEFAULT_MONO_FAMILY
+        mono_family()
     } else {
-        DEFAULT_BODY_FAMILY
+        body_family()
     };
     let name_el = div()
         .flex_1()
@@ -439,7 +439,7 @@ fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Densi
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_SM)
         .text_color(palette.text_primary)
         .child(item.name.clone());
@@ -476,7 +476,7 @@ fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Densi
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_SM)
         .text_color(text_color)
         .child(item.name.clone());
@@ -512,7 +512,7 @@ fn subscription_row_elem(
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
-        .font_family(DEFAULT_MONO_FAMILY)
+        .font_family(mono_family())
         .text_size(FONT_XS)
         .text_color(palette.text_primary)
         .child(item.name.clone());
@@ -557,7 +557,7 @@ fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyE
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(DEFAULT_MONO_FAMILY)
+                .font_family(mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(scope.to_owned()),
@@ -567,9 +567,9 @@ fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyE
 
 fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) -> AnyElement {
     let value_family = if field.monospace_value {
-        DEFAULT_MONO_FAMILY
+        mono_family()
     } else {
-        DEFAULT_BODY_FAMILY
+        body_family()
     };
     div()
         .flex_1()

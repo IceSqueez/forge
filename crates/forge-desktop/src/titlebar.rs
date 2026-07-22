@@ -1,6 +1,4 @@
-use forge_components::{
-    BORDER_THIN, DEFAULT_BODY_FAMILY, FONT_SM, FONT_XS, ForgePalette, Radius, radius,
-};
+use forge_components::{BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, body_family, radius};
 use gpui::{Context, FontWeight, MouseButton, MouseDownEvent, Pixels, Window, div, prelude::*, px};
 
 use crate::presentation::{ActivePresentation, Presentation};
@@ -30,7 +28,7 @@ impl TitleBar {
             .bg(palette.brand)
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::BOLD)
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
@@ -50,7 +48,7 @@ impl Render for TitleBar {
             .child(Self::logo(&palette))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)

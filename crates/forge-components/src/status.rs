@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XXS, Radius, radius};
+use crate::tokens::{FONT_XXS, Radius, body_family, mono_family, radius};
 
 // Deliberately off the `Spacing`/`Radius` scale: a status chip is fixed, density-neutral pill geometry.
 const BADGE_PAD_V: Pixels = px(1.0);
@@ -95,9 +95,9 @@ impl Badge {
 impl RenderOnce for Badge {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let family = if self.mono {
-            DEFAULT_MONO_FAMILY
+            mono_family()
         } else {
-            DEFAULT_BODY_FAMILY
+            body_family()
         };
         let label = div()
             .font_family(family)

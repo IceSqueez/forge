@@ -72,6 +72,29 @@ async fn load_presentation_from_storage() -> (ThemeId, Density) {
     (theme, density)
 }
 
+pub fn read_persisted_fonts(
+    rt_handle: &tokio::runtime::Handle,
+) -> (Option<String>, Option<String>) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    rt_handle.spawn(async move {
+        let _ = tx.send(load_fonts_from_storage().await);
+    });
+    rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default()
+}
+
+async fn load_fonts_from_storage() -> (Option<String>, Option<String>) {
+    let db_path = default_db_path();
+    let url = format!("sqlite://{}?mode=rwc", db_path.display());
+    let backend = match SqliteBackend::open(&url).await {
+        Ok(backend) => backend,
+        Err(_) => return (None, None),
+    };
+    let settings: &dyn SettingsRepo = &backend;
+    let body = settings.font_body().await.ok().flatten();
+    let mono = settings.font_mono().await.ok().flatten();
+    (body, mono)
+}
+
 async fn load_hotkey_and_register(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,

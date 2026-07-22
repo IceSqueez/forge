@@ -5,7 +5,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_SM, Spacing, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_SM, Spacing, body_family, spacing};
 
 type CrumbClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -108,7 +108,7 @@ impl RenderOnce for Breadcrumb {
             trail = trail.child(icon(Icon::ChevronRight, SEPARATOR_ICON_SIZE, faint));
 
             let label = div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(ink);
 

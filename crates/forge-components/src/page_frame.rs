@@ -7,7 +7,7 @@ use crate::breadcrumb::{BreadcrumbCrumb, breadcrumb};
 use crate::cards::toolbar_row;
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{DEFAULT_BODY_FAMILY, Density, FONT_XS, Spacing, spacing};
+use crate::tokens::{Density, FONT_XS, Spacing, body_family, spacing};
 
 const HEADER_STAT_FS: Pixels = px(11.5);
 
@@ -50,7 +50,7 @@ pub fn header_stats(stats: Vec<HeaderStat>, palette: &ForgePalette) -> impl Into
             .gap(spacing(Spacing::Xxs, Density::Cozy))
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(HEADER_STAT_FS)
                     .text_color(stat.value_color)
@@ -58,7 +58,7 @@ pub fn header_stats(stats: Vec<HeaderStat>, palette: &ForgePalette) -> impl Into
             )
             .child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(HEADER_STAT_FS)
                     .text_color(muted)
                     .child(stat.label),
@@ -69,7 +69,7 @@ pub fn header_stats(stats: Vec<HeaderStat>, palette: &ForgePalette) -> impl Into
         if i != last {
             row = row.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(HEADER_STAT_FS)
                     .text_color(faint)
                     .child("\u{b7}"),

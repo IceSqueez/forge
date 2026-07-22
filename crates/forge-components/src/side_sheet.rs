@@ -6,7 +6,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, DEFAULT_BODY_FAMILY, FONT_MD, FONT_SM, Radius, radius};
+use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, Radius, body_family, radius};
 
 const HEADER_H: Pixels = px(56.0);
 const PAD_H: Pixels = px(16.0);
@@ -198,7 +198,7 @@ impl SideSheet {
 
         let mut titles = div().flex().flex_col().flex_1().overflow_hidden().child(
             div()
-                .font_family(DEFAULT_BODY_FAMILY)
+                .font_family(body_family())
                 .text_size(FONT_MD)
                 .text_color(self.title_color)
                 .child(self.title.clone().unwrap_or_default()),
@@ -206,7 +206,7 @@ impl SideSheet {
         if let Some(subtitle) = self.subtitle.clone() {
             titles = titles.child(
                 div()
-                    .font_family(DEFAULT_BODY_FAMILY)
+                    .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(self.subtitle_color)
                     .child(subtitle),

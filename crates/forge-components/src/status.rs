@@ -3,7 +3,7 @@ use gpui::{
     Window, div, px,
 };
 
-use crate::palette::{ForgePalette, with_alpha};
+use crate::palette::ForgePalette;
 use crate::tokens::{DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_XXS, Radius, radius};
 
 // Deliberately off the `Spacing`/`Radius` scale: a status chip is fixed, density-neutral pill geometry.
@@ -19,25 +19,6 @@ pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
         .size(size)
         .rounded(radius(Radius::Pill))
         .bg(color)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StatusVariant {
-    Positive,
-    Negative,
-    Neutral,
-}
-
-impl StatusVariant {
-    /// Returns `(fill, ink)`: a translucent tint of the hue for the fill, the full-strength hue for text/dot.
-    pub fn colors(self, palette: &ForgePalette) -> (Rgba, Rgba) {
-        let ink = match self {
-            StatusVariant::Positive => palette.success,
-            StatusVariant::Negative => palette.random,
-            StatusVariant::Neutral => palette.disabled,
-        };
-        (with_alpha(ink, 0.18), ink)
-    }
 }
 
 fn badge_frame(background: Rgba, content: impl IntoElement) -> impl IntoElement {
@@ -163,35 +144,4 @@ pub fn connection_status_badge(
                 .child(label.into()),
         );
     badge_frame(palette.surface_overlay, row)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::palette::FORGE_DEFAULT;
-
-    #[test]
-    fn colors_map_each_variant_to_its_hue_with_a_translucent_tint_fill() {
-        let p = &FORGE_DEFAULT;
-        for (variant, expected_ink) in [
-            (StatusVariant::Positive, p.success),
-            (StatusVariant::Negative, p.random),
-            (StatusVariant::Neutral, p.disabled),
-        ] {
-            let (fill, ink) = variant.colors(p);
-
-            assert_eq!(ink, expected_ink, "{variant:?} ink hue");
-
-            assert_eq!(
-                (fill.r, fill.g, fill.b),
-                (ink.r, ink.g, ink.b),
-                "{variant:?} fill hue"
-            );
-            assert!(
-                (fill.a - 0.18).abs() < 1e-6,
-                "{variant:?} fill alpha: got {}, want 0.18",
-                fill.a
-            );
-        }
-    }
 }

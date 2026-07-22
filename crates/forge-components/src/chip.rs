@@ -6,7 +6,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{DEFAULT_BODY_FAMILY, Density, Spacing, spacing};
+use crate::tokens::{DEFAULT_BODY_FAMILY, Density};
 
 type ChipClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -125,14 +125,6 @@ impl RenderOnce for Chip {
             _ => root.into_any_element(),
         }
     }
-}
-
-pub fn filter_chip_row(chips: Vec<Chip>, density: Density) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xxs, density))
-        .children(chips)
 }
 
 #[cfg(test)]

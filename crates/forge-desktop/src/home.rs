@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
-    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind,
-    breadcrumb, card, empty_state, ghost_button_with_icon, icon, radius, spacing, sparkline,
-    status_dot, tr,
+    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind, card,
+    empty_state, ghost_button_with_icon, icon, page_frame, radius, spacing, sparkline, status_dot,
+    tr,
 };
 use forge_storage::DataProvider;
 use gpui::{
@@ -992,8 +992,6 @@ impl Render for HomeView {
         let recent = stats.recent(5);
         let obs_health = stats.obs_health_snapshot();
 
-        let header = breadcrumb(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette);
-
         let hero = self.render_hero(&palette, density, cx);
         let cards = [
             JumpCard {
@@ -1071,12 +1069,6 @@ impl Render for HomeView {
                     .child(content),
             );
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(header)
-            .child(body)
+        page_frame(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette).body(body)
     }
 }

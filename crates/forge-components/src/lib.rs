@@ -17,6 +17,7 @@ pub mod locale;
 pub mod menu;
 pub mod modal;
 pub mod overlay;
+pub mod page_frame;
 pub mod palette;
 pub mod picker;
 pub mod resize_handle;
@@ -76,6 +77,7 @@ pub use overlay::{
     AnchoredPopover, Overlay, OverlayPosition, anchored_popover, anchored_popover_below,
     drive_overlay_focus, overlay,
 };
+pub use page_frame::{HeaderStat, PageFrame, header_stat, header_stats, header_status, page_frame};
 pub use palette::{
     FORGE_DEFAULT, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, platform_color,
     with_alpha,

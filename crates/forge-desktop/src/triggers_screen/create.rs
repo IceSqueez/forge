@@ -2,7 +2,8 @@ use super::config_form::{
     ConfigField, FILL_VAL_FS, fold_config_field, overlay_field_values, render_config_row,
     sparse_overrides,
 };
-use super::{TriggerInstanceRow, TriggersRegistryView, load_rows, platform_dot_color};
+use super::{TriggersRegistryView, load_rows, platform_dot_color};
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, ForgePalette,
@@ -225,37 +226,30 @@ impl TriggersRegistryView {
         cx.notify();
 
         let repo = Arc::clone(&self.repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<TriggerInstanceRow>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 repo.save(&instance).await.map_err(|e| e.to_string())?;
                 load_rows(&*repo).await
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(rows)) => {
-                let _ = this.update(cx, |this, cx| {
+            },
+            move |this, result, cx| match result {
+                Ok(rows) => {
                     this.create = None;
                     this.apply_rows(rows, cx);
                     this.selected = Some(new_id);
                     this.detail = None;
                     this.load_detail(new_id, cx);
                     cx.notify();
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| {
+                }
+                Err(message) => {
                     if let Some(CreateStage::Fill(form)) = this.create.as_mut() {
                         form.saving = false;
                     }
                     this.on_repo_error(&message, cx);
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     pub(super) fn render_create(

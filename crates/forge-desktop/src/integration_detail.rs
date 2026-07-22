@@ -294,20 +294,12 @@ impl IntegrationDetail {
         kind: PickerKind,
         cx: &mut Context<Self>,
     ) {
-        let (tx, rx) =
-            tokio::sync::oneshot::channel::<Result<(Vec<PickerItem>, Option<String>), String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(fetch_picker_items(client, kind).await);
-        });
-        cx.spawn(async move |this, cx| {
-            let Ok(result) = rx.await else {
-                return;
-            };
-            let _ = this.update(cx, |detail, cx| {
-                detail.apply_picker_items(&picker, result, cx)
-            });
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            fetch_picker_items(client, kind),
+            move |detail, result, cx| detail.apply_picker_items(&picker, result, cx),
+            cx,
+        );
     }
 
     fn apply_picker_items(

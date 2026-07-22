@@ -17,6 +17,7 @@ use crate::actions::{
     SHORTCUTS, ShortcutEntry, canonical_chord, chord_is_bindable, effective_chord,
     parse_stored_overrides, reapply_key_bindings,
 };
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 struct ShortcutConflict {
@@ -62,17 +63,12 @@ impl SettingsShortcutsView {
 
     fn load(&mut self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let raw = repo.get_string(KEYBOARD_SHORTCUTS).await;
-            let _ = tx.send(raw);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_loaded(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            |this, result, cx| this.apply_loaded(result, cx),
+            cx,
+        );
     }
 
     fn apply_loaded(
@@ -204,16 +200,12 @@ impl SettingsShortcutsView {
 
         let map = self.overrides.clone();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(save_overrides(repo, map).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_save_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            save_overrides(repo, map),
+            |this, result, cx| this.apply_save_result(result, cx),
+            cx,
+        );
         cx.notify();
     }
 

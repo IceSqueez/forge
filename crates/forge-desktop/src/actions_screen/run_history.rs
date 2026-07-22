@@ -1,5 +1,6 @@
 use super::editor::parse_variable_segments;
 use super::*;
+use crate::async_bridge;
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, FONT_SM, FONT_XS, FONT_XXS, ModalSize, Radius,
     Spacing, json_highlighted, modal, radius, spacing, status_dot,
@@ -26,20 +27,15 @@ impl ScreenActionsView {
             selected: 0,
         });
         let service = Arc::clone(&self.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(service.recent_runs(id, 50).await.map_err(|e| e.to_string()));
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(runs)) => {
-                let _ = this.update(cx, |this, cx| this.apply_history_runs(id, runs, cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { service.recent_runs(id, 50).await.map_err(|e| e.to_string()) },
+            move |this, result, cx| match result {
+                Ok(runs) => this.apply_history_runs(id, runs, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
         cx.notify();
     }
 

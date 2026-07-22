@@ -19,6 +19,7 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::queue_health::QueueHealth;
 
@@ -230,20 +231,15 @@ impl QueuesView {
         let queue_repo = Arc::clone(&self.queue_repo);
         let action_repo = Arc::clone(&self.action_repo);
         let scheduler = self.scheduler.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(load_queues(queue_repo, action_repo, scheduler).await);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(rows)) => {
-                let _ = this.update(cx, |this, cx| this.apply_rows(rows, cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_queues(queue_repo, action_repo, scheduler),
+            |this, result, cx| match result {
+                Ok(rows) => this.apply_rows(rows, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn apply_rows(&mut self, rows: Vec<QueueRow>, cx: &mut Context<Self>) {
@@ -409,22 +405,15 @@ impl QueuesView {
         let queue_repo = Arc::clone(&self.queue_repo);
         let action_repo = Arc::clone(&self.action_repo);
         let scheduler = self.scheduler.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = delete_queue(queue_repo, action_repo, scheduler, deleted_id).await;
-            let _ = tx.send(outcome);
-        });
-
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.reload(cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            delete_queue(queue_repo, action_repo, scheduler, deleted_id),
+            |this, result, cx| match result {
+                Ok(()) => this.reload(cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn open_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -553,10 +542,9 @@ impl QueuesView {
 
         let queue_repo = Arc::clone(&self.queue_repo);
         let scheduler = self.scheduler.clone();
-        let (tx, rx) =
-            tokio::sync::oneshot::channel::<Result<Result<MembershipOutcome, String>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 queue_repo.save(&queue).await.map_err(|e| e.to_string())?;
                 let membership = if is_edit {
                     scheduler.reconfigure(queue).await
@@ -564,26 +552,18 @@ impl QueuesView {
                     scheduler.register(queue).await
                 };
                 Ok::<_, String>(membership.map_err(|e| e.to_string()))
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(membership)) => {
-                let _ = this.update(cx, |this, cx| {
+            },
+            move |this, result, cx| match result {
+                Ok(membership) => {
                     this.apply_membership_outcome(id, membership);
                     this.modal = None;
                     this.reload(cx);
                     cx.notify();
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_save_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_save_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn on_save_error(&mut self, message: &str, cx: &mut Context<Self>) {

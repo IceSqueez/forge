@@ -9,7 +9,7 @@ use std::time::Duration;
 use forge_components::ToastKind;
 use forge_events::{Event, EventsError};
 use forge_runtime::{EventBus, EventSubscription};
-use gpui::{App, AsyncApp, Context, SharedString};
+use gpui::{App, AsyncApp, Context, Entity, SharedString};
 use tokio::runtime::Handle;
 
 use crate::toasts::PushToast;
@@ -188,13 +188,74 @@ pub fn spawn_dialog<V, Fut, T>(
     T: Send + 'static,
     Fut: Future<Output = Result<T, String>> + Send + 'static,
 {
+    run_async(handle, dialog, on_result, cx);
+}
+
+/// Runs `fut` on `handle`, then applies its output to the calling view; a dropped view or a dropped task silently no-ops (the view is held weakly).
+pub fn run_async<V, Fut, T>(
+    handle: &Handle,
+    fut: Fut,
+    apply: impl FnOnce(&mut V, T, &mut Context<V>) + Send + 'static,
+    cx: &mut Context<V>,
+) where
+    V: 'static,
+    T: Send + 'static,
+    Fut: Future<Output = T> + Send + 'static,
+{
     let (tx, rx) = tokio::sync::oneshot::channel();
     handle.spawn(async move {
-        let _ = tx.send(dialog.await);
+        let _ = tx.send(fut.await);
     });
     cx.spawn(async move |this, cx| {
         if let Ok(result) = rx.await {
-            let _ = this.update(cx, |this, cx| on_result(this, result, cx));
+            let _ = this.update(cx, |this, cx| apply(this, result, cx));
+        }
+    })
+    .detach();
+}
+
+/// Like `run_async` but from an `&mut App` with an explicit `view`; the strong `Entity` keeps the view alive until the future resolves.
+pub fn run_async_entity<V, Fut, T>(
+    handle: &Handle,
+    view: Entity<V>,
+    fut: Fut,
+    apply: impl FnOnce(&mut V, T, &mut Context<V>) + Send + 'static,
+    app: &mut App,
+) where
+    V: 'static,
+    T: Send + 'static,
+    Fut: Future<Output = T> + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    handle.spawn(async move {
+        let _ = tx.send(fut.await);
+    });
+    app.spawn(async move |cx| {
+        if let Ok(result) = rx.await {
+            view.update(cx, |this, cx| apply(this, result, cx));
+        }
+    })
+    .detach();
+}
+
+/// Runs blocking `work` on `handle`'s blocking pool, then applies its output to the calling view (held weakly).
+pub fn run_blocking<V, Work, T>(
+    handle: &Handle,
+    work: Work,
+    apply: impl FnOnce(&mut V, T, &mut Context<V>) + Send + 'static,
+    cx: &mut Context<V>,
+) where
+    V: 'static,
+    T: Send + 'static,
+    Work: FnOnce() -> T + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    handle.spawn_blocking(move || {
+        let _ = tx.send(work());
+    });
+    cx.spawn(async move |this, cx| {
+        if let Ok(result) = rx.await {
+            let _ = this.update(cx, |this, cx| apply(this, result, cx));
         }
     })
     .detach();

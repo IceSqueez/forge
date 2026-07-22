@@ -1,5 +1,6 @@
 use super::*;
 use crate::actions::{ListActivate, ListSelectNext, ListSelectPrev};
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
@@ -294,31 +295,23 @@ impl TriggersRegistryView {
         cx.notify();
 
         let repo = Arc::clone(&self.repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<TriggerInstanceRow>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
-                repo.archive(id).await.map_err(|e| e.to_string())?;
-                load_rows(&*repo).await
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-
         let restore_repo = Arc::clone(&self.repo);
         let restore_rt = self.rt_handle.clone();
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(rows)) => {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                repo.archive(id).await.map_err(|e| e.to_string())?;
+                load_rows(&*repo).await
+            },
+            move |this, result, cx| match result {
+                Ok(rows) => {
                     this.apply_rows(rows, cx);
                     this.raise_undo_toast(id, name, restore_repo, restore_rt, cx);
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn raise_undo_toast(

@@ -81,20 +81,16 @@ impl SettingsAudioView {
         self.devices_error = None;
         let ticket = self.devices_gen.next();
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(enumerate_devices_and_preference(settings, uncached).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| {
-                    if this.devices_gen.is_current(ticket) {
-                        this.apply_devices_loaded(result, cx);
-                    }
-                });
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            enumerate_devices_and_preference(settings, uncached),
+            move |this, result, cx| {
+                if this.devices_gen.is_current(ticket) {
+                    this.apply_devices_loaded(result, cx);
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 
@@ -130,20 +126,17 @@ impl SettingsAudioView {
         self.picker_open = false;
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let device_id = self.selected_id.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let outcome = settings
-                .set_audio_output_device_id(device_id)
-                .await
-                .map_err(|e| e.to_string());
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_persist_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                settings
+                    .set_audio_output_device_id(device_id)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
+            |this, result, cx| this.apply_persist_result(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -162,16 +155,12 @@ impl SettingsAudioView {
         self.test_playing = true;
         self.test_error = None;
         let device_id = self.devices.get(self.selected_idx).map(|d| d.id.clone());
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(play_test_tone(device_id).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_test_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            play_test_tone(device_id),
+            |this, result, cx| this.apply_test_result(result, cx),
+            cx,
+        );
         cx.notify();
     }
 

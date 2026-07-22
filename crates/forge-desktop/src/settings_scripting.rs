@@ -16,6 +16,7 @@ use gpui::{
     prelude::*, px, relative,
 };
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 struct ScriptingSnapshot {
@@ -134,16 +135,12 @@ impl SettingsScriptingView {
         self.loading = true;
         self.save_state = SaveState::Saved;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(load_scripting_settings(repo).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_loaded(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_scripting_settings(repo),
+            |this, result, cx| this.apply_loaded(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -266,16 +263,12 @@ impl SettingsScriptingView {
         self.save_state = SaveState::Saving;
 
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(do_save(repo, payload).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_save_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            do_save(repo, payload),
+            |this, result, cx| this.apply_save_result(result, cx),
+            cx,
+        );
         cx.notify();
     }
 

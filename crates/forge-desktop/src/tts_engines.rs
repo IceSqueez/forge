@@ -278,29 +278,28 @@ impl TtsEnginesView {
         let cred_id = kind.credential_id();
         let repo = Arc::clone(&self.credentials);
         let id = engine_id.to_owned();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
-        self.rt_handle.spawn(async move {
-            let region = match repo.load(&CredentialId::new(cred_id)).await {
-                Ok(Some(json)) => serde_json::from_str::<serde_json::Value>(&json)
-                    .ok()
-                    .and_then(|v| {
-                        v.get("region")
-                            .and_then(|r| r.as_str())
-                            .map(|s| s.to_owned())
-                    }),
-                _ => None,
-            };
-            let _ = tx.send(region);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Some(region)) = rx.await {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                match repo.load(&CredentialId::new(cred_id)).await {
+                    Ok(Some(json)) => serde_json::from_str::<serde_json::Value>(&json)
+                        .ok()
+                        .and_then(|v| {
+                            v.get("region")
+                                .and_then(|r| r.as_str())
+                                .map(|s| s.to_owned())
+                        }),
+                    _ => None,
+                }
+            },
+            move |this, region: Option<String>, cx| {
+                if let Some(region) = region {
                     this.regions.insert(id, region);
                     cx.notify();
-                });
-            }
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn preview_voice(&self, engine_id: String, voice_id: String, cx: &mut Context<Self>) {

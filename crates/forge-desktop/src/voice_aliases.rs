@@ -17,6 +17,7 @@ use gpui::{
     Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 const SEARCH_W: Pixels = px(240.0);
@@ -178,31 +179,22 @@ impl VoiceAliasesView {
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let viewer_repo = Arc::clone(&self.viewer_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<
-            Result<(Vec<VoiceAlias>, AssignmentStrategy, u64), String>,
-        >();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 let aliases = repo.list().await.map_err(|e| e.to_string())?;
                 let strategy = repo.get_strategy().await.map_err(|e| e.to_string())?;
                 let viewers = viewer_repo.count().await.map_err(|e| e.to_string())?;
-                Ok((aliases, strategy, viewers))
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok((aliases, strategy, viewers))) => {
-                let _ = this.update(cx, |this, cx| {
+                Ok::<_, String>((aliases, strategy, viewers))
+            },
+            |this, result, cx| match result {
+                Ok((aliases, strategy, viewers)) => {
                     this.apply_loaded(aliases, strategy, viewers, cx)
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn spawn_write(
@@ -210,20 +202,15 @@ impl VoiceAliasesView {
         work: impl Future<Output = Result<Vec<VoiceAlias>, String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(work.await);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(aliases)) => {
-                let _ = this.update(cx, |this, cx| this.apply_aliases(aliases, cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            work,
+            |this, result, cx| match result {
+                Ok(aliases) => this.apply_aliases(aliases, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn apply_loaded(
@@ -372,9 +359,9 @@ impl VoiceAliasesView {
 
         let repo = Arc::clone(&self.repo);
         let speak = self.speak.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<VoiceAlias>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 repo.upsert(&alias).await.map_err(|e| e.to_string())?;
                 if let Some(handle) = speak
                     && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
@@ -382,29 +369,22 @@ impl VoiceAliasesView {
                     eprintln!("forge-desktop: voice alias hot-reload failed: {e}");
                 }
                 repo.list().await.map_err(|e| e.to_string())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(aliases)) => {
-                let _ = this.update(cx, |this, cx| {
+            },
+            |this, result, cx| match result {
+                Ok(aliases) => {
                     this.apply_aliases(aliases, cx);
                     this.form = None;
                     cx.notify();
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| {
+                }
+                Err(message) => {
                     if let Some(form) = this.form.as_mut() {
                         form.saving = false;
                     }
                     this.on_repo_error(&message, cx);
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn preview(&self, index: usize) {

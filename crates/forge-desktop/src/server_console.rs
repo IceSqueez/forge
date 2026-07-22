@@ -195,24 +195,23 @@ impl ServerConsoleView {
 
     fn fetch_token(&self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
-        self.rt_handle.spawn(async move {
-            let token = credentials
-                .load(&CredentialId::new(BEARER_CREDENTIAL_ID))
-                .await
-                .ok()
-                .flatten();
-            let _ = tx.send(token);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Some(token)) = rx.await {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                credentials
+                    .load(&CredentialId::new(BEARER_CREDENTIAL_ID))
+                    .await
+                    .ok()
+                    .flatten()
+            },
+            |this, result: Option<String>, cx| {
+                if let Some(token) = result {
                     this.bearer_token = token;
                     cx.notify();
-                });
-            }
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn start_poll(&self, cx: &mut Context<Self>) {
@@ -323,26 +322,23 @@ impl ServerConsoleView {
             return;
         };
         let credentials = Arc::clone(&self.credentials);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
-        self.rt_handle.spawn(async move {
-            let auth = handle.auth_state().await;
-            let _ = tx.send(
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let auth = handle.auth_state().await;
                 auth.regenerate(credentials.as_ref())
                     .await
-                    .map_err(err_text),
-            );
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(token)) => {
-                let _ = this.update(cx, |this, cx| {
+                    .map_err(err_text)
+            },
+            |this, result, cx| match result {
+                Ok(token) => {
                     this.bearer_token = token;
                     cx.notify();
-                });
-            }
-            Ok(Err(reason)) => eprintln!("forge-desktop: token regenerate failed: {reason}"),
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(reason) => eprintln!("forge-desktop: token regenerate failed: {reason}"),
+            },
+            cx,
+        );
     }
 
     fn restart_server(&mut self, cx: &mut Context<Self>) {
@@ -354,23 +350,19 @@ impl ServerConsoleView {
         }
         self.control_in_flight = Some(ServerControl::Restarting);
         cx.notify();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(handle.restart().await.map_err(err_text));
-        });
-        cx.spawn(async move |this, cx| {
-            let outcome = rx.await;
-            let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { handle.restart().await.map_err(err_text) },
+            |this, result, cx| {
                 this.control_in_flight = None;
-                match outcome {
-                    Ok(Ok(())) => this.server_status = ServerStatus::Running,
-                    Ok(Err(reason)) => this.server_status = ServerStatus::Error(reason),
-                    Err(_) => {}
+                match result {
+                    Ok(()) => this.server_status = ServerStatus::Running,
+                    Err(reason) => this.server_status = ServerStatus::Error(reason),
                 }
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+            cx,
+        );
     }
 
     fn stop_server(&mut self, cx: &mut Context<Self>) {
@@ -382,23 +374,19 @@ impl ServerConsoleView {
         }
         self.control_in_flight = Some(ServerControl::Stopping);
         cx.notify();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(handle.stop().await.map_err(err_text));
-        });
-        cx.spawn(async move |this, cx| {
-            let outcome = rx.await;
-            let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { handle.stop().await.map_err(err_text) },
+            |this, result, cx| {
                 this.control_in_flight = None;
-                match outcome {
-                    Ok(Ok(())) => this.server_status = ServerStatus::Stopped,
-                    Ok(Err(reason)) => this.server_status = ServerStatus::Error(reason),
-                    Err(_) => {}
+                match result {
+                    Ok(()) => this.server_status = ServerStatus::Stopped,
+                    Err(reason) => this.server_status = ServerStatus::Error(reason),
                 }
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+            cx,
+        );
     }
 
     fn open_overlay_folder(&mut self, cx: &mut Context<Self>) {

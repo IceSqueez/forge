@@ -204,20 +204,16 @@ impl GlobalsView {
         work: impl Future<Output = Result<Vec<GlobalEntry>, String>> + Send + 'static,
         app: &mut App,
     ) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        rt_handle.spawn(async move {
-            let _ = tx.send(work.await);
-        });
-        app.spawn(async move |cx| match rx.await {
-            Ok(Ok(entries)) => {
-                view.update(cx, |this, cx| this.apply_entries(entries, cx));
-            }
-            Ok(Err(message)) => {
-                view.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async_entity(
+            &rt_handle,
+            view,
+            work,
+            |this, result, cx| match result {
+                Ok(entries) => this.apply_entries(entries, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            app,
+        );
     }
 
     fn apply_entries(&mut self, entries: Vec<GlobalEntry>, cx: &mut Context<Self>) {
@@ -315,31 +311,23 @@ impl GlobalsView {
 
         let backend = Arc::clone(&self.backend);
         let key = name.to_string();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<GlobalEntry>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
-                backend.archive(&key).await.map_err(|e| e.to_string())?;
-                backend.list().await.map_err(|e| e.to_string())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-
         let restore_backend = Arc::clone(&self.backend);
         let restore_rt = self.rt_handle.clone();
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(entries)) => {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                backend.archive(&key).await.map_err(|e| e.to_string())?;
+                backend.list().await.map_err(|e| e.to_string())
+            },
+            move |this, result, cx| match result {
+                Ok(entries) => {
                     this.apply_entries(entries, cx);
                     this.raise_undo_toast(name, restore_backend, restore_rt, cx);
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn raise_undo_toast(
@@ -649,9 +637,9 @@ impl GlobalsView {
 
         let backend = Arc::clone(&self.backend);
         let target = name.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<GlobalEntry>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 if let Some(old) = rename_from {
                     backend
                         .rename(&old, &target)
@@ -663,30 +651,23 @@ impl GlobalsView {
                     .await
                     .map_err(|e| e.to_string())?;
                 backend.list().await.map_err(|e| e.to_string())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(entries)) => {
-                let _ = this.update(cx, |this, cx| {
+            },
+            |this, result, cx| match result {
+                Ok(entries) => {
                     this.apply_entries(entries, cx);
                     this.editor = None;
                     cx.notify();
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| {
+                }
+                Err(message) => {
                     if let Some(ed) = this.editor.as_mut() {
                         ed.saving = false;
                         ed.error = Some(message.into());
                     }
                     cx.notify();
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn set_editor_error_owned(&mut self, message: SharedString, cx: &mut Context<Self>) {

@@ -26,7 +26,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{BridgeFlow, drain_events};
+use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -431,33 +431,30 @@ impl ScriptEditorView {
         self.loading = true;
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         let action_repo = self.backend.action_repo();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let result = match repo.list().await {
-                Ok(records) => {
-                    let actions = action_repo.list().await.unwrap_or_default();
-                    let entries = records
-                        .into_iter()
-                        .map(|r| ScriptEntry {
-                            status_ok: collect_annotation_diagnostics(&r.body).is_empty(),
-                            enabled: r.enabled,
-                            linked: find_linked_action(&actions, &r.name),
-                            id: r.id,
-                            name: r.name,
-                        })
-                        .collect::<Vec<_>>();
-                    Ok(entries)
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                match repo.list().await {
+                    Ok(records) => {
+                        let actions = action_repo.list().await.unwrap_or_default();
+                        let entries = records
+                            .into_iter()
+                            .map(|r| ScriptEntry {
+                                status_ok: collect_annotation_diagnostics(&r.body).is_empty(),
+                                enabled: r.enabled,
+                                linked: find_linked_action(&actions, &r.name),
+                                id: r.id,
+                                name: r.name,
+                            })
+                            .collect::<Vec<_>>();
+                        Ok(entries)
+                    }
+                    Err(e) => Err(e.to_string()),
                 }
-                Err(e) => Err(e.to_string()),
-            };
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_scripts_loaded(result, cx));
-            }
-        })
-        .detach();
+            },
+            |this, result, cx| this.apply_scripts_loaded(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -488,20 +485,17 @@ impl ScriptEditorView {
     fn open_script(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         self.selected = Some(id);
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let result = ScriptRepo::get(&*repo, id)
-                .await
-                .map_err(|e| e.to_string())
-                .and_then(|opt| opt.ok_or_else(|| format!("script {id} not found")));
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_script_opened(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                ScriptRepo::get(&*repo, id)
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|opt| opt.ok_or_else(|| format!("script {id} not found")))
+            },
+            |this, result, cx| this.apply_script_opened(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -537,21 +531,17 @@ impl ScriptEditorView {
     fn load_telemetry(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         self.telemetry = None;
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(repo.telemetry(id).await.ok());
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| {
-                    if this.open.as_ref().is_some_and(|o| o.id == id) {
-                        this.telemetry = result;
-                        cx.notify();
-                    }
-                });
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.telemetry(id).await.ok() },
+            move |this, result, cx| {
+                if this.open.as_ref().is_some_and(|o| o.id == id) {
+                    this.telemetry = result;
+                    cx.notify();
+                }
+            },
+            cx,
+        );
     }
 
     fn revert_current(&mut self, cx: &mut Context<Self>) {
@@ -634,29 +624,26 @@ impl ScriptEditorView {
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         let registry = Arc::clone(&self.script_registry);
         let bus = Arc::clone(&self.bus);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let saved = ScriptRepo::save(&*repo, record.clone())
-                .await
-                .map_err(|e| e.to_string());
-            let outcome = match saved {
-                Ok(()) => {
-                    let reload = registry
-                        .reload(record.clone(), bus.as_ref())
-                        .await
-                        .map_err(|e| e.to_string());
-                    Ok((record, reload))
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let saved = ScriptRepo::save(&*repo, record.clone())
+                    .await
+                    .map_err(|e| e.to_string());
+                match saved {
+                    Ok(()) => {
+                        let reload = registry
+                            .reload(record.clone(), bus.as_ref())
+                            .await
+                            .map_err(|e| e.to_string());
+                        Ok((record, reload))
+                    }
+                    Err(e) => Err(e),
                 }
-                Err(e) => Err(e),
-            };
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_saved(result, cx));
-            }
-        })
-        .detach();
+            },
+            |this, result, cx| this.apply_saved(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -769,30 +756,28 @@ impl ScriptEditorView {
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let publisher = Arc::clone(&self.bus) as Arc<dyn EventPublisher>;
         let scripts = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let started_at = OffsetDateTime::now_utc();
-            let result = run_inline(body, args, globals, settings, publisher, script_id)
-                .await
-                .map_err(|e| e.to_string());
-            if let Ok(r) = &result {
-                let status = if r.error_count == 0 {
-                    ExecutionStatus::Success
-                } else {
-                    ExecutionStatus::Error
-                };
-                let _ = scripts
-                    .record_execution(script_id, started_at, r.duration_ms as u64, status)
-                    .await;
-            }
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_run_finished(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let started_at = OffsetDateTime::now_utc();
+                let result = run_inline(body, args, globals, settings, publisher, script_id)
+                    .await
+                    .map_err(|e| e.to_string());
+                if let Ok(r) = &result {
+                    let status = if r.error_count == 0 {
+                        ExecutionStatus::Success
+                    } else {
+                        ExecutionStatus::Error
+                    };
+                    let _ = scripts
+                        .record_execution(script_id, started_at, r.duration_ms as u64, status)
+                        .await;
+                }
+                result
+            },
+            |this, result, cx| this.apply_run_finished(result, cx),
+            cx,
+        );
     }
 
     fn apply_run_finished(&mut self, result: Result<RunResult, String>, cx: &mut Context<Self>) {
@@ -878,34 +863,31 @@ impl ScriptEditorView {
             return;
         }
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let now = OffsetDateTime::now_utc();
-            let name = format!("script_{}", now.unix_timestamp());
-            let body = "// @return string\n\n\"hello from forge\"".to_owned();
-            let contract = parse_contract(&body).unwrap_or_default();
-            let record = ScriptRecord {
-                id: ScriptId::new(),
-                name,
-                body_hash: content_hash(&body),
-                body,
-                contract,
-                enabled: true,
-                created_at: now,
-                last_modified: now,
-            };
-            let result = ScriptRepo::save(&*repo, record.clone())
-                .await
-                .map(|_| record)
-                .map_err(|e| e.to_string());
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_new_script(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let now = OffsetDateTime::now_utc();
+                let name = format!("script_{}", now.unix_timestamp());
+                let body = "// @return string\n\n\"hello from forge\"".to_owned();
+                let contract = parse_contract(&body).unwrap_or_default();
+                let record = ScriptRecord {
+                    id: ScriptId::new(),
+                    name,
+                    body_hash: content_hash(&body),
+                    body,
+                    contract,
+                    enabled: true,
+                    created_at: now,
+                    last_modified: now,
+                };
+                ScriptRepo::save(&*repo, record.clone())
+                    .await
+                    .map(|_| record)
+                    .map_err(|e| e.to_string())
+            },
+            |this, result, cx| this.apply_new_script(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -958,20 +940,17 @@ impl ScriptEditorView {
             return;
         };
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let result = ScriptRepo::delete(&*repo, id)
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string());
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_deleted(id, result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                ScriptRepo::delete(&*repo, id)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            },
+            move |this, result, cx| this.apply_deleted(id, result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -1039,10 +1018,10 @@ impl ScriptEditorView {
         }
 
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
         let name_for_task = name.clone();
-        self.rt_handle.spawn(async move {
-            let result = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 let mut record = ScriptRepo::get(&*repo, id)
                     .await
                     .map_err(|e| e.to_string())?
@@ -1052,16 +1031,10 @@ impl ScriptEditorView {
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok::<(ScriptId, String), String>((id, name_for_task))
-            }
-            .await;
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_renamed(result, cx));
-            }
-        })
-        .detach();
+            },
+            |this, result, cx| this.apply_renamed(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -1109,9 +1082,9 @@ impl ScriptEditorView {
         self.row_menu = None;
         cx.notify();
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let result = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 let mut record = ScriptRepo::get(&*repo, id)
                     .await
                     .map_err(|e| e.to_string())?
@@ -1120,16 +1093,10 @@ impl ScriptEditorView {
                 ScriptRepo::save(&*repo, record)
                     .await
                     .map_err(|e| e.to_string())
-            }
-            .await;
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_enabled_set(result, cx));
-            }
-        })
-        .detach();
+            },
+            |this, result, cx| this.apply_enabled_set(result, cx),
+            cx,
+        );
     }
 
     fn apply_enabled_set(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {

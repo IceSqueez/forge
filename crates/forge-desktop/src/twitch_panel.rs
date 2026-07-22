@@ -5,13 +5,12 @@ use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, ForgePalette,
     Icon, Radius, Spacing, badge, fmt_clock, icon, radius, spacing, tr, with_alpha,
 };
-use forge_platform_twitch::{
-    TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, TwitchIntegrationBundle, UserInfo,
-};
+use forge_platform_twitch::{TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
 use forge_storage::CredentialsRepo;
 use forge_types::OAuthToken;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, div, prelude::*, px};
 
+use crate::async_bridge;
 use crate::integration_detail::IntegrationDetail;
 
 pub type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;
@@ -91,16 +90,12 @@ impl IntegrationDetail {
             Arc::new(tokio::sync::Mutex::new(Some(TwitchAuthFlow::new(cid))));
         self.twitch_flow = Some(Arc::clone(&flow));
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(request_code(flow).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_twitch_device_code(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            request_code(flow),
+            |this, result, cx| this.apply_twitch_device_code(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -142,16 +137,12 @@ impl IntegrationDetail {
             return;
         };
         let credentials = Arc::clone(&self.credentials);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(wait_for_auth(flow, credentials).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_twitch_auth(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            wait_for_auth(flow, credentials),
+            |this, result, cx| this.apply_twitch_auth(result, cx),
+            cx,
+        );
         self.start_awaiting_tick(cx);
         cx.notify();
     }
@@ -180,41 +171,39 @@ impl IntegrationDetail {
         let bus = Arc::clone(&self.bus);
         let credentials = Arc::clone(&self.credentials);
         let live_viewers = self.live_viewers.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Arc<TwitchIntegrationBundle>>();
-        self.rt_handle.spawn(async move {
-            let login = Some(outcome.user_info.login.clone());
-            let tracker = forge_platform_twitch::SubscriptionTracker::default();
-            let config = forge_platform_twitch::ChatSessionConfig {
-                client_id: outcome.client_id,
-                broadcaster_id: outcome.user_info.id.clone(),
-                user_id: outcome.user_info.id,
-            };
-            let chat = forge_platform_twitch::TwitchChat::new(
-                outcome.token,
-                config.client_id.clone(),
-                config.broadcaster_id.clone(),
-                config.user_id.clone(),
-                Arc::clone(&bus),
-                Arc::clone(&tracker),
-            );
-            let handle = chat.start();
-            let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
-                login,
-                config,
-                bus,
-                credentials,
-                tracker,
-                handle,
-            );
-            live_viewers.register(bundle.viewer_source());
-            let _ = tx.send(bundle);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(bundle) = rx.await {
-                let _ = this.update(cx, |this, cx| this.install_twitch_bundle(bundle, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let login = Some(outcome.user_info.login.clone());
+                let tracker = forge_platform_twitch::SubscriptionTracker::default();
+                let config = forge_platform_twitch::ChatSessionConfig {
+                    client_id: outcome.client_id,
+                    broadcaster_id: outcome.user_info.id.clone(),
+                    user_id: outcome.user_info.id,
+                };
+                let chat = forge_platform_twitch::TwitchChat::new(
+                    outcome.token,
+                    config.client_id.clone(),
+                    config.broadcaster_id.clone(),
+                    config.user_id.clone(),
+                    Arc::clone(&bus),
+                    Arc::clone(&tracker),
+                );
+                let handle = chat.start();
+                let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
+                    login,
+                    config,
+                    bus,
+                    credentials,
+                    tracker,
+                    handle,
+                );
+                live_viewers.register(bundle.viewer_source());
+                bundle
+            },
+            |this, bundle, cx| this.install_twitch_bundle(bundle, cx),
+            cx,
+        );
         cx.notify();
     }
 

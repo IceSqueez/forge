@@ -1,4 +1,5 @@
 use super::*;
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
@@ -265,31 +266,23 @@ impl ScreenActionsView {
         cx.notify();
 
         let repo = Arc::clone(&self.action_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<Action>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
-                repo.archive(id).await.map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-
         let restore_repo = Arc::clone(&self.action_repo);
         let restore_rt = self.rt_handle.clone();
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(actions)) => {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                repo.archive(id).await.map_err(|e| e.to_string())?;
+                repo.list().await.map_err(|e| e.to_string())
+            },
+            move |this, result, cx| match result {
+                Ok(actions) => {
                     this.apply_actions(actions, cx);
                     this.raise_undo_toast(id, name, restore_repo, restore_rt, cx);
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn raise_undo_toast(
@@ -393,20 +386,15 @@ impl ScreenActionsView {
         cx.notify();
 
         let repo = Arc::clone(&self.queue_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<Queue>, String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(repo.list().await.map_err(|e| e.to_string()));
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(queues)) => {
-                let _ = this.update(cx, |this, cx| this.apply_queue_options(queues, cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.list().await.map_err(|e| e.to_string()) },
+            |this, result, cx| match result {
+                Ok(queues) => this.apply_queue_options(queues, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn apply_queue_options(&mut self, queues: Vec<Queue>, cx: &mut Context<Self>) {
@@ -515,28 +503,21 @@ impl ScreenActionsView {
         cx.notify();
 
         let repo = Arc::clone(&self.action_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<Action>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 repo.save(&action).await.map_err(|e| e.to_string())?;
                 repo.list().await.map_err(|e| e.to_string())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(actions)) => {
-                let _ = this.update(cx, |this, cx| {
+            },
+            move |this, result, cx| match result {
+                Ok(actions) => {
                     this.apply_actions(actions, cx);
                     this.select(new_id, cx);
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     pub(super) fn render_stats(&self, palette: &ForgePalette) -> AnyElement {

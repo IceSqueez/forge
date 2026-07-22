@@ -1,3 +1,4 @@
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -297,31 +298,29 @@ impl ScreenActionsView {
 
     fn load_favorites(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.settings_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<(Vec<String>, Vec<String>)>();
-        self.rt_handle.spawn(async move {
-            let subs = forge_storage::get_json_setting::<Vec<String>>(
-                repo.as_ref(),
-                reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
-            )
-            .await
-            .unwrap_or_default();
-            let trigs = forge_storage::get_json_setting::<Vec<String>>(
-                repo.as_ref(),
-                reserved_keys::PICKER_FAVORITES_TRIGGERS,
-            )
-            .await
-            .unwrap_or_default();
-            let _ = tx.send((subs, trigs));
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok((subs, trigs)) = rx.await {
-                let _ = this.update(cx, |this, _cx| {
-                    this.sub_action_favorites = crate::picker_favorites::to_set(subs);
-                    this.trigger_favorites = crate::picker_favorites::to_set(trigs);
-                });
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let subs = forge_storage::get_json_setting::<Vec<String>>(
+                    repo.as_ref(),
+                    reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
+                )
+                .await
+                .unwrap_or_default();
+                let trigs = forge_storage::get_json_setting::<Vec<String>>(
+                    repo.as_ref(),
+                    reserved_keys::PICKER_FAVORITES_TRIGGERS,
+                )
+                .await
+                .unwrap_or_default();
+                (subs, trigs)
+            },
+            |this, (subs, trigs): (Vec<String>, Vec<String>), _cx| {
+                this.sub_action_favorites = crate::picker_favorites::to_set(subs);
+                this.trigger_favorites = crate::picker_favorites::to_set(trigs);
+            },
+            cx,
+        );
     }
 
     fn persist_favorites(
@@ -332,20 +331,20 @@ impl ScreenActionsView {
     ) {
         let repo = Arc::clone(&self.settings_repo);
         let ids = crate::picker_favorites::to_ids(&favorites);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 forge_storage::set_json_setting(repo.as_ref(), key, &ids)
                     .await
-                    .map_err(|e| e.to_string()),
-            );
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Err(message)) = rx.await {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-        })
-        .detach();
+                    .map_err(|e| e.to_string())
+            },
+            |this, result: Result<(), String>, cx| {
+                if let Err(message) = result {
+                    this.on_repo_error(&message, cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn set_tree_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
@@ -377,20 +376,16 @@ impl ScreenActionsView {
         work: impl Future<Output = Result<Vec<Action>, String>> + Send + 'static,
         app: &mut App,
     ) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        rt_handle.spawn(async move {
-            let _ = tx.send(work.await);
-        });
-        app.spawn(async move |cx| match rx.await {
-            Ok(Ok(actions)) => {
-                view.update(cx, |this, cx| this.apply_actions(actions, cx));
-            }
-            Ok(Err(message)) => {
-                view.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async_entity(
+            &rt_handle,
+            view,
+            work,
+            |this, result, cx| match result {
+                Ok(actions) => this.apply_actions(actions, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            app,
+        );
     }
 
     fn apply_actions(&mut self, actions: Vec<Action>, cx: &mut Context<Self>) {
@@ -442,45 +437,40 @@ impl ScreenActionsView {
 
     pub(super) fn load_detail_for(&self, id: ActionId, cx: &mut Context<Self>) {
         let service = Arc::clone(&self.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(service.load_detail(id).await.map_err(|e| e.to_string()));
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(detail)) => {
-                let _ = this.update(cx, |this, cx| this.apply_detail(id, detail, cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { service.load_detail(id).await.map_err(|e| e.to_string()) },
+            move |this, result, cx| match result {
+                Ok(detail) => this.apply_detail(id, detail, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
 
         let service = Arc::clone(&self.actions_service);
-        let (ttx, trx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = ttx.send(service.load_telemetry(id).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Ok(telemetry)) = trx.await {
-                let _ = this.update(cx, |this, cx| this.apply_telemetry(id, telemetry, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { service.load_telemetry(id).await },
+            move |this, result, cx| {
+                if let Ok(telemetry) = result {
+                    this.apply_telemetry(id, telemetry, cx);
+                }
+            },
+            cx,
+        );
 
         let service = Arc::clone(&self.actions_service);
-        let (otx, orx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = otx.send(service.recent_runs(id, 1).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Ok(runs)) = orx.await {
-                let outcome = runs.into_iter().next().map(|ctx| ctx.outcome);
-                let _ = this.update(cx, |this, cx| this.apply_last_outcome(id, outcome, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { service.recent_runs(id, 1).await },
+            move |this, result, cx| {
+                if let Ok(runs) = result {
+                    let outcome = runs.into_iter().next().map(|ctx| ctx.outcome);
+                    this.apply_last_outcome(id, outcome, cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn apply_detail(&mut self, id: ActionId, detail: ActionDetail, cx: &mut Context<Self>) {

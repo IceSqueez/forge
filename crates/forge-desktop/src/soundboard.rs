@@ -270,28 +270,20 @@ impl SoundboardView {
     fn reload(&self, cx: &mut Context<Self>) {
         let ticket = self.reload_gen.next();
         let repo = Arc::clone(&self.clips_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(repo.list().await.map_err(|e| e.to_string()));
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(clips)) => {
-                let _ = this.update(cx, |this, cx| {
-                    if this.reload_gen.is_current(ticket) {
-                        this.apply_clips(clips, cx);
-                    }
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| {
-                    if this.reload_gen.is_current(ticket) {
-                        this.on_load_error(message, cx);
-                    }
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.list().await.map_err(|e| e.to_string()) },
+            move |this, result, cx| {
+                if !this.reload_gen.is_current(ticket) {
+                    return;
+                }
+                match result {
+                    Ok(clips) => this.apply_clips(clips, cx),
+                    Err(message) => this.on_load_error(message, cx),
+                }
+            },
+            cx,
+        );
     }
 
     fn apply_clips(&mut self, clips: Vec<StoredClip>, cx: &mut Context<Self>) {
@@ -318,47 +310,41 @@ impl SoundboardView {
 
     fn recompute_size(&self, cx: &mut Context<Self>) {
         let paths: Vec<PathBuf> = self.clips.iter().map(|c| c.file_path.clone()).collect();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn_blocking(move || {
-            let total: u64 = paths
-                .iter()
-                .filter_map(|p| std::fs::metadata(p).ok().map(|m| m.len()))
-                .sum();
-            let _ = tx.send(total);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(total) = rx.await {
-                let _ = this.update(cx, |this, cx| {
-                    this.total_size = Some(total);
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+        async_bridge::run_blocking(
+            &self.rt_handle,
+            move || {
+                paths
+                    .iter()
+                    .filter_map(|p| std::fs::metadata(p).ok().map(|m| m.len()))
+                    .sum::<u64>()
+            },
+            |this, total, cx| {
+                this.total_size = Some(total);
+                cx.notify();
+            },
+            cx,
+        );
     }
 
     fn refresh_builtins(&self, cx: &mut Context<Self>) {
         let imported_ids: HashSet<String> = self.imported_builtin_ids();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn_blocking(move || {
-            let data_dir = forge_platform_core::paths::data_dir();
-            let available = builtin_availability(&data_dir);
-            let entries: Vec<BuiltinSoundEntry> = available
-                .into_iter()
-                .filter(|(entry, present)| *present && !imported_ids.contains(entry.builtin_id))
-                .map(|(entry, _)| entry)
-                .collect();
-            let _ = tx.send(entries);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(entries) = rx.await {
-                let _ = this.update(cx, |this, cx| {
-                    this.importable = entries;
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+        async_bridge::run_blocking(
+            &self.rt_handle,
+            move || {
+                let data_dir = forge_platform_core::paths::data_dir();
+                let available = builtin_availability(&data_dir);
+                available
+                    .into_iter()
+                    .filter(|(entry, present)| *present && !imported_ids.contains(entry.builtin_id))
+                    .map(|(entry, _)| entry)
+                    .collect::<Vec<BuiltinSoundEntry>>()
+            },
+            |this, entries, cx| {
+                this.importable = entries;
+                cx.notify();
+            },
+            cx,
+        );
     }
 
     fn imported_builtin_ids(&self) -> HashSet<String> {
@@ -369,19 +355,17 @@ impl SoundboardView {
     }
 
     fn reload_devices(&self, cx: &mut Context<Self>) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn_blocking(move || {
-            let _ = tx.send(list_output_devices().map_err(|e| e.to_string()));
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Ok(devices)) = rx.await {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_blocking(
+            &self.rt_handle,
+            || list_output_devices().map_err(|e| e.to_string()),
+            |this, result: Result<Vec<_>, String>, cx| {
+                if let Ok(devices) = result {
                     this.devices = devices;
                     cx.notify();
-                });
-            }
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn toggle_play(&mut self, id: ClipId, cx: &mut Context<Self>) {
@@ -524,43 +508,39 @@ impl SoundboardView {
         let loop_playback = entry.loop_playback;
         let repo = Arc::clone(&self.clips_repo);
         let player = Arc::clone(&self.player);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let data_dir = forge_platform_core::paths::data_dir();
-            let Some(path) = resolve_builtin_path(&data_dir, &builtin_id) else {
-                let _ = tx.send(Err("builtin audio file missing".to_owned()));
-                return;
-            };
-            let clip_id = ClipId::new();
-            let clip = StoredClip {
-                id: clip_id,
-                name,
-                file_path: path,
-                volume: 1.0,
-                output_device: OutputDevice::Default,
-                hotkey,
-                created_at: OffsetDateTime::now_utc(),
-                category,
-                loop_playback,
-                duration_secs: None,
-                builtin_id: Some(builtin_id),
-            };
-            let result = repo.save(&clip).await.map_err(|e| e.to_string());
-            if result.is_ok() {
-                let _ = player.ensure_clip_duration(clip_id).await;
-            }
-            let _ = tx.send(result);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.reload(cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_load_error(message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let data_dir = forge_platform_core::paths::data_dir();
+                let Some(path) = resolve_builtin_path(&data_dir, &builtin_id) else {
+                    return Err("builtin audio file missing".to_owned());
+                };
+                let clip_id = ClipId::new();
+                let clip = StoredClip {
+                    id: clip_id,
+                    name,
+                    file_path: path,
+                    volume: 1.0,
+                    output_device: OutputDevice::Default,
+                    hotkey,
+                    created_at: OffsetDateTime::now_utc(),
+                    category,
+                    loop_playback,
+                    duration_secs: None,
+                    builtin_id: Some(builtin_id),
+                };
+                let result = repo.save(&clip).await.map_err(|e| e.to_string());
+                if result.is_ok() {
+                    let _ = player.ensure_clip_duration(clip_id).await;
+                }
+                result
+            },
+            |this, result, cx| match result {
+                Ok(()) => this.reload(cx),
+                Err(message) => this.on_load_error(message, cx),
+            },
+            cx,
+        );
     }
 
     fn hotkey_is_free(&self, hotkey: &str) -> bool {
@@ -654,20 +634,15 @@ impl SoundboardView {
         self.playing.remove(&id);
         cx.notify();
         let repo = Arc::clone(&self.clips_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(repo.delete(id).await.map_err(|e| e.to_string()));
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(_)) => {
-                let _ = this.update(cx, |this, cx| this.reload(cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_load_error(message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.delete(id).await.map_err(|e| e.to_string()) },
+            |this, result, cx| match result {
+                Ok(_) => this.reload(cx),
+                Err(message) => this.on_load_error(message, cx),
+            },
+            cx,
+        );
     }
 
     fn close_modal(&mut self, cx: &mut Context<Self>) {
@@ -748,12 +723,13 @@ impl SoundboardView {
         }
         let repo = Arc::clone(&self.clips_repo);
         let player = Arc::clone(&self.player);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        match edit_id {
-            Some(id) => {
-                let missing_msg = tr!("soundboard_modal_validation_error").to_string();
-                self.rt_handle.spawn(async move {
-                    let result = async {
+        let missing_msg = tr!("soundboard_modal_validation_error").to_string();
+        let new_hotkey = self.next_free_hotkey();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let (clip, target_id) = match edit_id {
+                    Some(id) => {
                         let Some(mut clip) = repo.get(id).await.map_err(|e| e.to_string())? else {
                             return Err(missing_msg);
                         };
@@ -763,50 +739,38 @@ impl SoundboardView {
                             clip.duration_secs = None;
                         }
                         clip.category = category;
-                        repo.save(&clip).await.map_err(|e| e.to_string())
+                        (clip, id)
                     }
-                    .await;
-                    if result.is_ok() {
-                        let _ = player.ensure_clip_duration(id).await;
+                    None => {
+                        let clip_id = ClipId::new();
+                        let clip = StoredClip {
+                            id: clip_id,
+                            name,
+                            file_path,
+                            volume: 1.0,
+                            output_device: OutputDevice::Default,
+                            hotkey: new_hotkey,
+                            created_at: OffsetDateTime::now_utc(),
+                            category,
+                            loop_playback: false,
+                            duration_secs: None,
+                            builtin_id: None,
+                        };
+                        (clip, clip_id)
                     }
-                    let _ = tx.send(result);
-                });
-            }
-            None => {
-                let hotkey = self.next_free_hotkey();
-                self.rt_handle.spawn(async move {
-                    let clip_id = ClipId::new();
-                    let clip = StoredClip {
-                        id: clip_id,
-                        name,
-                        file_path,
-                        volume: 1.0,
-                        output_device: OutputDevice::Default,
-                        hotkey,
-                        created_at: OffsetDateTime::now_utc(),
-                        category,
-                        loop_playback: false,
-                        duration_secs: None,
-                        builtin_id: None,
-                    };
-                    let result = repo.save(&clip).await.map_err(|e| e.to_string());
-                    if result.is_ok() {
-                        let _ = player.ensure_clip_duration(clip_id).await;
-                    }
-                    let _ = tx.send(result);
-                });
-            }
-        }
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.on_saved(cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_save_error(message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                };
+                let result = repo.save(&clip).await.map_err(|e| e.to_string());
+                if result.is_ok() {
+                    let _ = player.ensure_clip_duration(target_id).await;
+                }
+                result
+            },
+            |this, result, cx| match result {
+                Ok(()) => this.on_saved(cx),
+                Err(message) => this.on_save_error(message, cx),
+            },
+            cx,
+        );
         cx.notify();
     }
 

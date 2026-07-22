@@ -21,6 +21,7 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
+use crate::async_bridge;
 use crate::cloud_tts_boot;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
@@ -409,24 +410,19 @@ impl CloudCredentialsView {
         };
         let repo = Arc::clone(&self.credentials);
         let credential_id = kind.credential_id();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = repo
-                .store(&CredentialId::new(credential_id), &json)
-                .await
-                .map_err(|e| e.to_string());
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.on_saved(kind, creds, cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_save_failed(kind, &message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                repo.store(&CredentialId::new(credential_id), &json)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
+            move |this, result, cx| match result {
+                Ok(()) => this.on_saved(kind, creds, cx),
+                Err(message) => this.on_save_failed(kind, &message, cx),
+            },
+            cx,
+        );
     }
 
     fn on_saved(&mut self, kind: CloudEngineKind, creds: CloudCreds, cx: &mut Context<Self>) {
@@ -488,22 +484,19 @@ impl CloudCredentialsView {
         };
         self.set_test_status(kind, TestStatus::Testing);
         cx.notify();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(creds.test().await);
-        });
-        cx.spawn(async move |this, cx| {
-            let status = match rx.await {
-                Ok(Ok(())) => TestStatus::Ok,
-                Ok(Err(e)) => TestStatus::Err(e),
-                Err(_) => return,
-            };
-            let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { creds.test().await },
+            move |this, result: Result<(), String>, cx| {
+                let status = match result {
+                    Ok(()) => TestStatus::Ok,
+                    Err(e) => TestStatus::Err(e),
+                };
                 this.set_test_status(kind, status);
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+            cx,
+        );
     }
 
     fn set_test_status(&mut self, kind: CloudEngineKind, status: TestStatus) {

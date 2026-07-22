@@ -19,6 +19,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 const STAGE_CIRCLE: Pixels = px(22.0);
@@ -282,31 +283,22 @@ impl TtsFiltersView {
 
     fn reload(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<
-            Result<(Vec<FilterRule>, TtsPipelineSettings), String>,
-        >();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 let rules = repo.list_rules().await.map_err(|e| e.to_string())?;
                 let settings = repo
                     .get_pipeline_settings()
                     .await
                     .map_err(|e| e.to_string())?;
-                Ok((rules, settings))
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok((rules, settings))) => {
-                let _ = this.update(cx, |this, cx| this.apply_loaded(rules, settings, cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                Ok::<_, String>((rules, settings))
+            },
+            |this, result, cx| match result {
+                Ok((rules, settings)) => this.apply_loaded(rules, settings, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn apply_loaded(
@@ -365,9 +357,9 @@ impl TtsFiltersView {
         let pipeline_config = self.pipeline_config.clone();
         let rules = self.rules.clone();
         let settings = self.settings.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 repo.replace_rules(&rules)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -377,20 +369,16 @@ impl TtsFiltersView {
                 if let Some(handle) = pipeline_config {
                     handle.swap(config);
                 }
-                Ok(())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Err(message)) = rx.await {
-                let _ = this.update(cx, |this, cx| {
+                Ok::<(), String>(())
+            },
+            |this, result, cx| {
+                if let Err(message) = result {
                     this.save_error = Some(message);
                     cx.notify();
-                });
-            }
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn try_apply(&mut self, cx: &mut Context<Self>, mutate: impl FnOnce(&mut Self)) -> bool {

@@ -120,16 +120,12 @@ impl SettingsWebSocketView {
         self.loading = true;
         self.save_state = SaveState::Saved;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(load_websocket_settings(repo).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_loaded(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_websocket_settings(repo),
+            |this, result, cx| this.apply_loaded(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -162,24 +158,23 @@ impl SettingsWebSocketView {
 
     fn fetch_token(&self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
-        self.rt_handle.spawn(async move {
-            let token = credentials
-                .load(&CredentialId::new(BEARER_CREDENTIAL_ID))
-                .await
-                .ok()
-                .flatten();
-            let _ = tx.send(token);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Some(token)) = rx.await {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                credentials
+                    .load(&CredentialId::new(BEARER_CREDENTIAL_ID))
+                    .await
+                    .ok()
+                    .flatten()
+            },
+            |this, result: Option<String>, cx| {
+                if let Some(token) = result {
                     this.bearer_token = token;
                     cx.notify();
-                });
-            }
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn apply_persist(
@@ -188,16 +183,12 @@ impl SettingsWebSocketView {
         cx: &mut Context<Self>,
     ) {
         self.save_state = SaveState::Saving;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(fut.await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_save_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            fut,
+            |this, result, cx| this.apply_save_result(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -455,24 +446,22 @@ impl SettingsWebSocketView {
             return;
         };
         let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
-        self.rt_handle.spawn(async move {
-            let auth = handle.auth_state().await;
-            let _ = tx.send(
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let auth = handle.auth_state().await;
                 auth.regenerate(credentials.as_ref())
                     .await
-                    .map_err(|e| e.to_string()),
-            );
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Ok(token)) = rx.await {
-                let _ = this.update(cx, |this, cx| {
+                    .map_err(|e| e.to_string())
+            },
+            |this, result: Result<String, String>, cx| {
+                if let Ok(token) = result {
                     this.bearer_token = token;
                     cx.notify();
-                });
-            }
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn header_row(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {

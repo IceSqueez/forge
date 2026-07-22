@@ -14,6 +14,7 @@ use gpui::{
     px,
 };
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 const DEFAULT_STORE_LIMIT: u32 = 5000;
@@ -77,16 +78,12 @@ impl SettingsStorageView {
 
     fn load(&mut self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(load_limits(repo).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_loaded(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_limits(repo),
+            |this, result, cx| this.apply_loaded(result, cx),
+            cx,
+        );
     }
 
     fn apply_loaded(&mut self, result: Result<(u32, u32), String>, cx: &mut Context<Self>) {

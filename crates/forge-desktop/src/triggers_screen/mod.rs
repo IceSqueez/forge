@@ -14,6 +14,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::actions::LIST_CONTEXT;
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -266,24 +267,21 @@ impl TriggersRegistryView {
 
     fn load_favorites(&self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.settings_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
-        self.rt_handle.spawn(async move {
-            let ids = forge_storage::get_json_setting::<Vec<String>>(
-                repo.as_ref(),
-                reserved_keys::PICKER_FAVORITES_TRIGGERS,
-            )
-            .await
-            .unwrap_or_default();
-            let _ = tx.send(ids);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(ids) = rx.await {
-                let _ = this.update(cx, |this, _cx| {
-                    this.favorites = crate::picker_favorites::to_set(ids);
-                });
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                forge_storage::get_json_setting::<Vec<String>>(
+                    repo.as_ref(),
+                    reserved_keys::PICKER_FAVORITES_TRIGGERS,
+                )
+                .await
+                .unwrap_or_default()
+            },
+            |this, ids: Vec<String>, _cx| {
+                this.favorites = crate::picker_favorites::to_set(ids);
+            },
+            cx,
+        );
     }
 
     pub(super) fn persist_favorites(
@@ -293,24 +291,24 @@ impl TriggersRegistryView {
     ) {
         let repo = Arc::clone(&self.settings_repo);
         let ids = crate::picker_favorites::to_ids(&favorites);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 forge_storage::set_json_setting(
                     repo.as_ref(),
                     reserved_keys::PICKER_FAVORITES_TRIGGERS,
                     &ids,
                 )
                 .await
-                .map_err(|e| e.to_string()),
-            );
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Err(message)) = rx.await {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-        })
-        .detach();
+                .map_err(|e| e.to_string())
+            },
+            |this, result: Result<(), String>, cx| {
+                if let Err(message) = result {
+                    this.on_repo_error(&message, cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn set_detail_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
@@ -339,20 +337,16 @@ impl TriggersRegistryView {
         work: impl Future<Output = Result<Vec<TriggerInstanceRow>, String>> + Send + 'static,
         app: &mut App,
     ) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        rt_handle.spawn(async move {
-            let _ = tx.send(work.await);
-        });
-        app.spawn(async move |cx| match rx.await {
-            Ok(Ok(rows)) => {
-                view.update(cx, |this, cx| this.apply_rows(rows, cx));
-            }
-            Ok(Err(message)) => {
-                view.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+        async_bridge::run_async_entity(
+            &rt_handle,
+            view,
+            work,
+            |this, result, cx| match result {
+                Ok(rows) => this.apply_rows(rows, cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            app,
+        );
     }
 
     fn apply_rows(&mut self, rows: Vec<TriggerInstanceRow>, cx: &mut Context<Self>) {

@@ -1,5 +1,6 @@
 use super::config_form::{fold_config_field, overlay_field_values, sparse_overrides};
 use super::*;
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XXS, Icon, InputEvent, Radius,
@@ -45,28 +46,21 @@ impl TriggersRegistryView {
     pub(super) fn load_detail(&self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let action_repo = Arc::clone(&self.action_repo);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(load_detail_data(&*repo, &*action_repo, id).await);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(Some(data))) => {
-                let _ = this.update(cx, |this, cx| this.apply_detail(id, data, cx));
-            }
-            Ok(Ok(None)) => {
-                let _ = this.update(cx, |this, cx| {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { load_detail_data(&*repo, &*action_repo, id).await },
+            move |this, result, cx| match result {
+                Ok(Some(data)) => this.apply_detail(id, data, cx),
+                Ok(None) => {
                     if this.selected == Some(id) {
                         this.detail = None;
                         cx.notify();
                     }
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn apply_detail(
@@ -234,31 +228,24 @@ impl TriggersRegistryView {
             ..src
         };
         let repo = Arc::clone(&self.repo);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<TriggerInstanceRow>, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 repo.save(&instance).await.map_err(|e| e.to_string())?;
                 load_rows(&*repo).await
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(rows)) => {
-                let _ = this.update(cx, |this, cx| {
+            },
+            move |this, result, cx| match result {
+                Ok(rows) => {
                     this.apply_rows(rows, cx);
                     this.selected = Some(new_id);
                     this.detail = None;
                     this.load_detail(new_id, cx);
                     cx.notify();
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
         cx.notify();
     }
 

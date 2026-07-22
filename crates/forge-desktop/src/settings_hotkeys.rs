@@ -15,6 +15,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 const PICKER_WIDTH: Pixels = px(240.0);
@@ -94,16 +95,12 @@ impl SettingsHotkeysView {
                     .collect()
             })
             .unwrap_or_default();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(load_data(backend, registered).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_loaded(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_data(backend, registered),
+            |this, result, cx| this.apply_loaded(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -219,16 +216,12 @@ impl SettingsHotkeysView {
         self.bind_in_progress = true;
         self.bind_error = None;
         let backend = Arc::clone(&self.backend);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(do_bind(client, backend, combo_str, action_id).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_bind_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            do_bind(client, backend, combo_str, action_id),
+            |this, result, cx| this.apply_bind_result(result, cx),
+            cx,
+        );
         cx.notify();
     }
 
@@ -266,16 +259,12 @@ impl SettingsHotkeysView {
             return;
         };
         let backend = Arc::clone(&self.backend);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(do_unbind(client, backend, hotkey_id).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_unbind_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            do_unbind(client, backend, hotkey_id),
+            |this, result, cx| this.apply_unbind_result(result, cx),
+            cx,
+        );
     }
 
     fn apply_unbind_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
@@ -314,16 +303,12 @@ impl SettingsHotkeysView {
         self.bind_in_progress = true;
         self.bind_error = None;
         let backend = Arc::clone(&self.backend);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(do_replace(client, backend, existing_id, combo_str, action_id).await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_replace_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            do_replace(client, backend, existing_id, combo_str, action_id),
+            |this, result, cx| this.apply_replace_result(result, cx),
+            cx,
+        );
         cx.notify();
     }
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::async_bridge;
 use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS,
     ForgePalette, Icon, PlatformKind, Radius, Spacing, avatar_tile, icon, platform_color, radius,
@@ -78,16 +79,12 @@ impl IntegrationDetail {
         fut: impl std::future::Future<Output = Result<LocalCallbackData, String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(fut.await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_start_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            fut,
+            |this, result, cx| this.apply_start_result(result, cx),
+            cx,
+        );
     }
 
     fn apply_start_result(
@@ -145,16 +142,12 @@ impl IntegrationDetail {
         fut: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(fut.await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_wait_result(result, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            fut,
+            |this, result, cx| this.apply_wait_result(result, cx),
+            cx,
+        );
     }
 
     fn apply_wait_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {

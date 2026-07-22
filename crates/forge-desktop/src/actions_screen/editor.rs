@@ -1041,81 +1041,79 @@ impl ScreenActionsView {
         let soundboard_repo = Arc::clone(&self.soundboard_repo);
         let globals_repo = Arc::clone(&self.globals_repo);
         let tts_registry = self.tts_registry.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
-            if let Ok(actions) = action_repo.list().await {
-                map.insert(
-                    "action.ids".to_owned(),
-                    actions
-                        .into_iter()
-                        .map(|a| (a.id.to_string(), a.name))
-                        .collect(),
-                );
-            }
-            if let Ok(queues) = queue_repo.list().await {
-                map.insert(
-                    "queue.ids".to_owned(),
-                    queues
-                        .into_iter()
-                        .map(|q| (q.id.to_string(), q.name))
-                        .collect(),
-                );
-            }
-            if let Ok(instances) = ti_repo.list_all().await {
-                map.insert(
-                    "trigger_instance.ids".to_owned(),
-                    instances
-                        .into_iter()
-                        .map(|ti| (ti.id.to_string(), ti.name))
-                        .collect(),
-                );
-            }
-            if let Ok(scripts) = script_repo.list().await {
-                map.insert(
-                    "script.names".to_owned(),
-                    scripts
-                        .into_iter()
-                        .map(|s| (s.name.clone(), s.name))
-                        .collect(),
-                );
-            }
-            if let Ok(clips) = soundboard_repo.list().await {
-                map.insert(
-                    "soundboard.clip_ids".to_owned(),
-                    clips
-                        .into_iter()
-                        .map(|c| (c.id.to_string(), c.name))
-                        .collect(),
-                );
-            }
-            if let Ok(globals) = globals_repo.list().await {
-                map.insert(
-                    "global.names".to_owned(),
-                    globals
-                        .into_iter()
-                        .map(|g| (g.name.clone(), g.name))
-                        .collect(),
-                );
-            }
-            if let Some(registry) = tts_registry {
-                let ids = registry
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .engine_ids();
-                map.insert(
-                    "tts.engine_ids".to_owned(),
-                    ids.into_iter().map(|id| (id.0.clone(), id.0)).collect(),
-                );
-            }
-            let _ = tx.send(map);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(map) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_select_options(map, cx));
-            }
-        })
-        .detach();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
+                if let Ok(actions) = action_repo.list().await {
+                    map.insert(
+                        "action.ids".to_owned(),
+                        actions
+                            .into_iter()
+                            .map(|a| (a.id.to_string(), a.name))
+                            .collect(),
+                    );
+                }
+                if let Ok(queues) = queue_repo.list().await {
+                    map.insert(
+                        "queue.ids".to_owned(),
+                        queues
+                            .into_iter()
+                            .map(|q| (q.id.to_string(), q.name))
+                            .collect(),
+                    );
+                }
+                if let Ok(instances) = ti_repo.list_all().await {
+                    map.insert(
+                        "trigger_instance.ids".to_owned(),
+                        instances
+                            .into_iter()
+                            .map(|ti| (ti.id.to_string(), ti.name))
+                            .collect(),
+                    );
+                }
+                if let Ok(scripts) = script_repo.list().await {
+                    map.insert(
+                        "script.names".to_owned(),
+                        scripts
+                            .into_iter()
+                            .map(|s| (s.name.clone(), s.name))
+                            .collect(),
+                    );
+                }
+                if let Ok(clips) = soundboard_repo.list().await {
+                    map.insert(
+                        "soundboard.clip_ids".to_owned(),
+                        clips
+                            .into_iter()
+                            .map(|c| (c.id.to_string(), c.name))
+                            .collect(),
+                    );
+                }
+                if let Ok(globals) = globals_repo.list().await {
+                    map.insert(
+                        "global.names".to_owned(),
+                        globals
+                            .into_iter()
+                            .map(|g| (g.name.clone(), g.name))
+                            .collect(),
+                    );
+                }
+                if let Some(registry) = tts_registry {
+                    let ids = registry
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .engine_ids();
+                    map.insert(
+                        "tts.engine_ids".to_owned(),
+                        ids.into_iter().map(|id| (id.0.clone(), id.0)).collect(),
+                    );
+                }
+                map
+            },
+            |this, map, cx| this.apply_select_options(map, cx),
+            cx,
+        );
     }
 
     fn apply_select_options(
@@ -1639,25 +1637,20 @@ impl ScreenActionsView {
             return;
         }
         let service = Arc::clone(&self.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 service
                     .link_trigger_instance(action_id, instance_id)
                     .await
-                    .map_err(|e| e.to_string()),
-            );
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.reload_detail(cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                    .map_err(|e| e.to_string())
+            },
+            |this, result, cx| match result {
+                Ok(()) => this.reload_detail(cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
         cx.notify();
     }
 
@@ -1790,37 +1783,30 @@ impl ScreenActionsView {
 
         let repo = Arc::clone(&self.trigger_instance_repo);
         let service = Arc::clone(&self.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async {
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 repo.save(&instance).await.map_err(|e| e.to_string())?;
                 service
                     .link_trigger_instance(action_id, new_id)
                     .await
                     .map_err(|e| e.to_string())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| {
+            },
+            |this, result: Result<(), String>, cx| match result {
+                Ok(()) => {
                     this.add_trigger = None;
                     this.reload_detail(cx);
                     cx.notify();
-                });
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| {
+                }
+                Err(message) => {
                     if let Some(AddTriggerStage::Fill(form)) = this.add_trigger.as_mut() {
                         form.saving = false;
                     }
                     this.on_repo_error(&message, cx);
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     pub(super) fn render_add_trigger(
@@ -1985,25 +1971,20 @@ impl ScreenActionsView {
             return;
         };
         let service = Arc::clone(&self.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
                 service
                     .unlink_trigger_instance(action_id, instance_id)
                     .await
-                    .map_err(|e| e.to_string()),
-            );
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(())) => {
-                let _ = this.update(cx, |this, cx| this.reload_detail(cx));
-            }
-            Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
-            }
-            Err(_) => {}
-        })
-        .detach();
+                    .map_err(|e| e.to_string())
+            },
+            |this, result, cx| match result {
+                Ok(()) => this.reload_detail(cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
         cx.notify();
     }
 

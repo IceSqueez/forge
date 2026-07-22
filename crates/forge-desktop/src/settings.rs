@@ -287,7 +287,13 @@ impl SettingsView {
     }
 
     fn check_for_updates(&mut self, cx: &mut Context<Self>) {
-        cx.open_url(RELEASES_URL);
+        async_bridge::open_external(
+            &self.handles.rt_handle,
+            RELEASES_URL,
+            ErrorSink::Toast,
+            tr!("settings_check_updates_failed"),
+            cx,
+        );
     }
 
     fn open_log_dir(&mut self, cx: &mut Context<Self>) {

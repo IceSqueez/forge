@@ -121,6 +121,7 @@ settings_appearance_density_spacious = Простора
 settings_appearance_density_spacious_hint = Більше повітря між елементами
 settings_theme_persist_failed = Не вдалося зберегти тему
 settings_density_persist_failed = Не вдалося зберегти щільність інтерфейсу
+settings_check_updates_failed = Не вдалося відкрити сторінку релізів
 settings_appearance_fonts_label = Шрифти
 settings_appearance_theme_hint = Який вигляд матиме Forge
 settings_appearance_font_interface = ІНТЕРФЕЙС
@@ -1301,6 +1302,7 @@ server_throughput_title = Пропускна здатність
 server_throughput_meta = останні { $seconds }с · пік { $peak } КБ/с
 server_overlay_files_title = Файли оверлею
 server_btn_open = ВІДКРИТИ
+server_open_overlay_folder_failed = Не вдалося відкрити теку оверлеїв
 server_clients_live = наживо
 server_footer_totals = Надіслано всього: { $sent } · Подій всього: { $events }
 server_disconnect_confirm_title = Відключити клієнта?
@@ -1447,6 +1449,8 @@ globals_menu_rename = Перейменувати
 globals_menu_persist = Зберігати
 globals_menu_session_only = Лише сесія
 globals_toast_error = Глобальні змінні: { $message }
+globals_export_done = Глобальні змінні експортовано до { $path }
+globals_export_failed = Не вдалося експортувати глобальні змінні: { $error }
 
 ## Глобальні змінні - редактор значень
 
@@ -1541,6 +1545,7 @@ integration_disconnect_title = Відключити інтеграцію
 integration_settings_coming_soon = Налаштування зʼявляться згодом
 integration_control_failed = Команда керування не виконалася
 integration_quick_action_failed = Швидка дія не виконалася
+integration_open_url_failed = Не вдалося відкрити посилання в браузері
 integration_quick_action_na = Н/Д
 integration_state_connecting_title = Підключення…
 integration_state_connecting_detail = Встановлення сеансу з цією інтеграцією.

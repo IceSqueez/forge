@@ -404,12 +404,14 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    pub(crate) fn open_url(&self, url: String) {
-        self.rt_handle.spawn(async move {
-            if let Err(e) = open::that(&url) {
-                tracing::warn!(error = %e, url = %url, "open browser failed");
-            }
-        });
+    pub(crate) fn open_url(&self, url: String, cx: &mut Context<Self>) {
+        async_bridge::open_external(
+            &self.rt_handle,
+            url,
+            ErrorSink::Toast,
+            tr!("integration_open_url_failed"),
+            cx,
+        );
     }
 
     pub(crate) fn install_twitch_bundle(

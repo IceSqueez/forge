@@ -12,14 +12,13 @@ use gpui::{
     Window, div, prelude::*, px, relative,
 };
 
+use crate::async_bridge;
 use crate::home_stats::{HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::shell::refresh_dashboard_stats;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
-
-const IMPORT_CANCELLED: &str = "import cancelled";
 
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
@@ -125,7 +124,7 @@ impl HomeView {
                 refresh_dashboard_stats(stats, backend, rt_handle, cx).await;
             }
             Ok(Err(e)) => {
-                if e == IMPORT_CANCELLED {
+                if e == async_bridge::DIALOG_CANCELLED {
                     return;
                 }
                 let _ = this.update(cx, |_this, cx| {
@@ -934,14 +933,11 @@ fn grow_col(grow: f32, child: impl IntoElement) -> impl IntoElement {
 }
 
 async fn import_action(dp: Arc<dyn DataProvider>) -> Result<String, String> {
-    let Some(handle) = rfd::AsyncFileDialog::new()
-        .add_filter("JSON", &["json"])
-        .pick_file()
-        .await
-    else {
-        return Err(IMPORT_CANCELLED.to_owned());
+    let filter = async_bridge::DialogFilter {
+        name: "JSON".to_owned(),
+        extensions: &["json"],
     };
-    let path = handle.path().to_path_buf();
+    let path = async_bridge::pick_file(Some(filter)).await?;
     let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
     let mut action: forge_types::Action =
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;

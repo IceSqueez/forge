@@ -109,9 +109,9 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    pub(crate) fn twitch_open_auth_url(&mut self, _cx: &mut Context<Self>) {
+    pub(crate) fn twitch_open_auth_url(&mut self, cx: &mut Context<Self>) {
         if let TwitchPanelState::AwaitingAuthorization { auth_url, .. } = &self.twitch_state {
-            self.open_url(auth_url.clone());
+            self.open_url(auth_url.clone(), cx);
         }
     }
 
@@ -134,7 +134,7 @@ impl IntegrationDetail {
             auth_url: data.auth_url,
             expires_at: data.expires_at,
         };
-        self.open_url(auth_url);
+        self.open_url(auth_url, cx);
 
         let Some(flow) = self.twitch_flow.clone() else {
             self.twitch_state = TwitchPanelState::Error("no active flow handle".to_owned());

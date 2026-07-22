@@ -107,7 +107,7 @@ impl IntegrationDetail {
         let auth_url = data.auth_url.clone();
         self.flow_auth_url = Some(data.auth_url);
         self.flow_phase = LocalCallbackFlowPhase::Waiting;
-        self.open_url(auth_url);
+        self.open_url(auth_url, cx);
 
         let credentials = Arc::clone(&self.credentials);
         match self.connect_platform {
@@ -193,9 +193,9 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    fn open_current_url(&mut self, _cx: &mut Context<Self>) {
+    fn open_current_url(&mut self, cx: &mut Context<Self>) {
         if let Some(url) = self.flow_auth_url.clone() {
-            self.open_url(url);
+            self.open_url(url, cx);
         }
     }
 

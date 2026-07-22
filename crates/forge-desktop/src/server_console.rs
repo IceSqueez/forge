@@ -17,6 +17,7 @@ use gpui::{
     UniformListScrollHandle, Window, div, prelude::*, px, relative,
 };
 
+use crate::async_bridge::{self, ErrorSink};
 use crate::presentation::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
@@ -400,20 +401,20 @@ impl ServerConsoleView {
         .detach();
     }
 
-    fn open_overlay_folder(&mut self, _cx: &mut Context<Self>) {
+    fn open_overlay_folder(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
         };
-        self.rt_handle.spawn(async move {
-            let root = handle.overlay_root().await;
-            let path = (*root).clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                if let Err(e) = open::that(&path) {
-                    eprintln!("forge-desktop: failed to open overlay folder: {e}");
-                }
-            })
-            .await;
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move {
+                let root = handle.overlay_root().await;
+                async_bridge::open_path((*root).clone()).await
+            },
+            ErrorSink::Toast,
+            tr!("server_open_overlay_folder_failed"),
+            cx,
+        );
     }
 
     fn select_overlay_file(&mut self, index: usize, cx: &mut Context<Self>) {

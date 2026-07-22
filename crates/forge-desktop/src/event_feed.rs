@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
@@ -15,6 +14,7 @@ use gpui::{
 };
 
 use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
+use crate::async_bridge;
 use crate::event_log::{EventFilter, EventItem, EventLog};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
@@ -33,8 +33,6 @@ const SUFFIX_FS: Pixels = px(10.0);
 const STATUS_DOT: Pixels = px(6.0);
 const ROW_RAIL_W: Pixels = px(2.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
-
-const EXPORT_CANCELLED: &str = "export cancelled";
 
 const FILTER_TABS: [(&str, EventFilter); 7] = [
     ("event-tab-all", EventFilter::All),
@@ -249,51 +247,40 @@ impl EventFeedView {
 
     fn export(&mut self, cx: &mut Context<Self>) {
         let events: Vec<EventItem> = self.log.read(cx).items().iter().cloned().collect();
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<PathBuf, String>>();
-        self.rt_handle.spawn(async move {
-            let outcome = async move {
-                let Some(handle) = rfd::AsyncFileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .set_file_name("forge-events.json")
-                    .save_file()
-                    .await
-                else {
-                    return Err(EXPORT_CANCELLED.to_owned());
+        async_bridge::spawn_dialog(
+            &self.rt_handle,
+            async move {
+                let filter = async_bridge::DialogFilter {
+                    name: "JSON".to_owned(),
+                    extensions: &["json"],
                 };
-                let path = handle.path().to_path_buf();
+                let path =
+                    async_bridge::save_file(Some(filter), Some("forge-events.json".to_owned()))
+                        .await?;
                 let json = serde_json::to_string_pretty(&events).map_err(|e| e.to_string())?;
                 tokio::fs::write(&path, json)
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok(path)
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(path)) => {
-                let path_str = path.display().to_string();
-                let _ = this.update(cx, |_this, cx| {
+            },
+            |_this, result, cx| match result {
+                Ok(path) => {
+                    let path_str = path.display().to_string();
                     cx.push_toast(
                         ToastKind::Success,
                         tr!("event_feed_export_success", path = path_str.as_str()),
                     );
-                });
-            }
-            Ok(Err(e)) => {
-                if e == EXPORT_CANCELLED {
-                    return;
                 }
-                let _ = this.update(cx, |_this, cx| {
+                Err(e) if e == async_bridge::DIALOG_CANCELLED => {}
+                Err(e) => {
                     cx.push_toast(
                         ToastKind::Error,
                         tr!("event_feed_export_failed", error = e.as_str()),
                     );
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     fn replay(&mut self, _cx: &mut Context<Self>) {}

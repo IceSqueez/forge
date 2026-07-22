@@ -415,20 +415,16 @@ impl SettingsWebSocketView {
     }
 
     fn browse_overlay_folder(&mut self, cx: &mut Context<Self>) {
-        let (tx, rx) = tokio::sync::oneshot::channel::<Option<PathBuf>>();
-        self.rt_handle.spawn(async move {
-            let picked = rfd::AsyncFileDialog::new()
-                .pick_folder()
-                .await
-                .map(|handle| handle.path().to_path_buf());
-            let _ = tx.send(picked);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Some(path)) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_overlay_root(path, cx));
-            }
-        })
-        .detach();
+        async_bridge::spawn_dialog(
+            &self.rt_handle,
+            async_bridge::pick_folder(),
+            |this, result, cx| {
+                if let Ok(path) = result {
+                    this.apply_overlay_root(path, cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn apply_overlay_root(&mut self, path: PathBuf, cx: &mut Context<Self>) {

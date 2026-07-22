@@ -28,7 +28,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{EventBatch, recv_event_batch};
+use crate::async_bridge::{self, EventBatch, recv_event_batch};
 use crate::presentation::ActivePresentation;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
@@ -678,22 +678,20 @@ impl SoundboardView {
         if self.modal.is_none() {
             return;
         }
-        let filter_name = tr!("soundboard_file_filter_audio");
-        let (tx, rx) = tokio::sync::oneshot::channel::<Option<PathBuf>>();
-        self.rt_handle.spawn(async move {
-            let picked = rfd::AsyncFileDialog::new()
-                .add_filter(filter_name, &["mp3", "wav", "ogg", "flac", "aac", "m4a"])
-                .pick_file()
-                .await
-                .map(|handle| handle.path().to_path_buf());
-            let _ = tx.send(picked);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Some(path)) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_picked_file(path, cx));
-            }
-        })
-        .detach();
+        let filter = async_bridge::DialogFilter {
+            name: tr!("soundboard_file_filter_audio"),
+            extensions: &["mp3", "wav", "ogg", "flac", "aac", "m4a"],
+        };
+        async_bridge::spawn_dialog(
+            &self.rt_handle,
+            async_bridge::pick_file(Some(filter)),
+            |this, result, cx| {
+                if let Ok(path) = result {
+                    this.apply_picked_file(path, cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn apply_picked_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {

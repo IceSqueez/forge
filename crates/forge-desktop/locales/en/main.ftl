@@ -121,6 +121,7 @@ settings_appearance_density_spacious = Spacious
 settings_appearance_density_spacious_hint = Extra breathing room between elements
 settings_theme_persist_failed = Failed to save theme
 settings_density_persist_failed = Failed to save interface density
+settings_check_updates_failed = Could not open the releases page
 settings_appearance_fonts_label = Fonts
 settings_appearance_theme_hint = How Forge should look
 settings_appearance_font_interface = INTERFACE
@@ -1289,6 +1290,7 @@ server_throughput_title = Throughput
 server_throughput_meta = last { $seconds }s · peak { $peak } KB/s
 server_overlay_files_title = Overlay Files
 server_btn_open = OPEN
+server_open_overlay_folder_failed = Could not open the overlay folder
 server_clients_live = live
 server_footer_totals = Total sent: { $sent } · Total events: { $events }
 server_disconnect_confirm_title = Disconnect client?
@@ -1430,6 +1432,8 @@ globals_menu_rename = Rename
 globals_menu_persist = Persist
 globals_menu_session_only = Session only
 globals_toast_error = Globals: { $message }
+globals_export_done = Globals exported to { $path }
+globals_export_failed = Globals export failed: { $error }
 
 ## Globals - variant editor modal
 
@@ -1522,6 +1526,7 @@ integration_disconnect_title = Disconnect integration
 integration_settings_coming_soon = Settings coming soon
 integration_control_failed = Control command failed
 integration_quick_action_failed = Quick action failed
+integration_open_url_failed = Could not open the link in your browser
 integration_quick_action_na = N/A
 integration_state_connecting_title = Connecting…
 integration_state_connecting_detail = Establishing a session with this integration.

@@ -1,4 +1,5 @@
 use super::*;
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::triggers_screen::{
     ConfigField, FILL_VAL_FS, fold_config_field, overlay_field_values, platform_dot_color,
@@ -27,8 +28,6 @@ use gpui::{
     Window, div, px,
 };
 use std::collections::HashMap;
-
-const EXPORT_CANCELLED: &str = "export cancelled";
 
 fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
     let text = match finding {
@@ -77,24 +76,15 @@ fn sanitize_action_stem(name: &str) -> String {
 async fn export_action_to_chosen_file(action: Action) -> Result<std::path::PathBuf, String> {
     let json = serde_json::to_string_pretty(&action).map_err(|e| e.to_string())?;
     let default_name = format!("{}.forge.json", sanitize_action_stem(&action.name));
-    let Some(handle) = rfd::AsyncFileDialog::new()
-        .add_filter("JSON", &["json"])
-        .set_file_name(&default_name)
-        .save_file()
-        .await
-    else {
-        return Err(EXPORT_CANCELLED.to_owned());
+    let filter = async_bridge::DialogFilter {
+        name: "JSON".to_owned(),
+        extensions: &["json"],
     };
-    let path = handle.path().to_path_buf();
+    let path = async_bridge::save_file(Some(filter), Some(default_name)).await?;
     tokio::fs::write(&path, json)
         .await
         .map_err(|e| e.to_string())?;
     Ok(path)
-}
-
-async fn pick_file_path() -> Option<String> {
-    let handle = rfd::AsyncFileDialog::new().pick_file().await?;
-    Some(handle.path().to_string_lossy().into_owned())
 }
 
 fn is_var_key(key: &str) -> bool {
@@ -2285,53 +2275,44 @@ impl ScreenActionsView {
         };
         let action = detail.action.clone();
         self.header_menu_open = None;
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<std::path::PathBuf, String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(export_action_to_chosen_file(action).await);
-        });
-        cx.spawn(async move |this, cx| match rx.await {
-            Ok(Ok(path)) => {
-                let shown = path.display().to_string();
-                let _ = this.update(cx, |_, cx| {
+        async_bridge::spawn_dialog(
+            &self.rt_handle,
+            export_action_to_chosen_file(action),
+            |_this, result, cx| match result {
+                Ok(path) => {
+                    let shown = path.display().to_string();
                     cx.push_toast(
                         ToastKind::Success,
                         tr!("action_editor_export_done", path = shown.as_str()),
                     );
-                });
-            }
-            Ok(Err(reason)) => {
-                if reason == EXPORT_CANCELLED {
-                    return;
                 }
-                let _ = this.update(cx, |_, cx| {
+                Err(reason) if reason == async_bridge::DIALOG_CANCELLED => {}
+                Err(reason) => {
                     cx.push_toast(
                         ToastKind::Error,
                         tr!("action_editor_export_failed", error = reason.as_str()),
                     );
-                });
-            }
-            Err(_) => {}
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 
     pub(super) fn browse_sub_field(&mut self, input: Entity<TextInput>, cx: &mut Context<Self>) {
-        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(pick_file_path().await);
-        });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Some(path)) = rx.await {
-                let _ = this.update(cx, |_, cx| {
+        async_bridge::spawn_dialog(
+            &self.rt_handle,
+            async_bridge::pick_file(None),
+            move |_this, result, cx| {
+                if let Ok(path) = result {
                     input.update(cx, |input, cx| {
-                        input.set_content(path, cx);
+                        input.set_content(path.to_string_lossy().into_owned(), cx);
                         cx.notify();
                     });
-                });
-            }
-        })
-        .detach();
+                }
+            },
+            cx,
+        );
     }
 
     pub(super) fn open_datetime_picker(

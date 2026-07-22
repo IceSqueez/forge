@@ -24,6 +24,7 @@ use gpui::{
     Subscription, UniformListScrollHandle, Window, div, prelude::*, px, svg,
 };
 
+use crate::async_bridge;
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
@@ -39,8 +40,6 @@ const EDITOR_KINDS: [VariantKind; 7] = [
 ];
 
 const NAME_LIMIT: usize = 64;
-
-const EXPORT_CANCELLED: &str = "export cancelled";
 
 const ROW_DOT: gpui::Pixels = px(6.0);
 const VALUE_ICON: gpui::Pixels = px(11.0);
@@ -379,23 +378,27 @@ impl GlobalsView {
 
     fn export(&mut self, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.backend);
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<PathBuf, String>>();
-        self.rt_handle.spawn(async move {
-            let _ = tx.send(export_globals_to_chosen_file(repo).await);
-        });
-        cx.spawn(async move |_this, _cx| match rx.await {
-            Ok(Ok(path)) => {
-                eprintln!("forge-desktop: globals exported to {}", path.display());
-            }
-            Ok(Err(reason)) => {
-                if reason == EXPORT_CANCELLED {
-                    return;
+        async_bridge::spawn_dialog(
+            &self.rt_handle,
+            export_globals_to_chosen_file(repo),
+            |_this, result, cx| match result {
+                Ok(path) => {
+                    let shown = path.display().to_string();
+                    cx.push_toast(
+                        ToastKind::Success,
+                        tr!("globals_export_done", path = shown.as_str()),
+                    );
                 }
-                eprintln!("forge-desktop: globals export failed: {reason}");
-            }
-            Err(_) => {}
-        })
-        .detach();
+                Err(reason) if reason == async_bridge::DIALOG_CANCELLED => {}
+                Err(reason) => {
+                    cx.push_toast(
+                        ToastKind::Error,
+                        tr!("globals_export_failed", error = reason.as_str()),
+                    );
+                }
+            },
+            cx,
+        );
     }
 
     fn start_rename(&mut self, name: SharedString, window: &mut Window, cx: &mut Context<Self>) {
@@ -1731,15 +1734,11 @@ async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<Pat
         "forge-globals-{}.json",
         time::OffsetDateTime::now_utc().unix_timestamp()
     );
-    let Some(handle) = rfd::AsyncFileDialog::new()
-        .add_filter("JSON", &["json"])
-        .set_file_name(&default_name)
-        .save_file()
-        .await
-    else {
-        return Err(EXPORT_CANCELLED.to_owned());
+    let filter = async_bridge::DialogFilter {
+        name: "JSON".to_owned(),
+        extensions: &["json"],
     };
-    let path = handle.path().to_path_buf();
+    let path = async_bridge::save_file(Some(filter), Some(default_name)).await?;
     tokio::fs::write(&path, json)
         .await
         .map_err(|e| e.to_string())?;

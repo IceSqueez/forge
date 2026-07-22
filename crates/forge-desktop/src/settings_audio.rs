@@ -9,6 +9,7 @@ use forge_components::{
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{AnyElement, ClickEvent, Context, FocusHandle, Pixels, Window, div, prelude::*, px};
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 const PANEL_WIDTH: Pixels = px(360.0);
@@ -46,6 +47,7 @@ pub struct SettingsAudioView {
     picker_open: bool,
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
+    devices_gen: async_bridge::Generation,
 }
 
 impl SettingsAudioView {
@@ -68,6 +70,7 @@ impl SettingsAudioView {
             picker_open: false,
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
+            devices_gen: async_bridge::Generation::default(),
         };
         view.load_devices(false, cx);
         view
@@ -76,6 +79,7 @@ impl SettingsAudioView {
     fn load_devices(&mut self, uncached: bool, cx: &mut Context<Self>) {
         self.loading = true;
         self.devices_error = None;
+        let ticket = self.devices_gen.next();
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
@@ -83,7 +87,11 @@ impl SettingsAudioView {
         });
         cx.spawn(async move |this, cx| {
             if let Ok(result) = rx.await {
-                let _ = this.update(cx, |this, cx| this.apply_devices_loaded(result, cx));
+                let _ = this.update(cx, |this, cx| {
+                    if this.devices_gen.is_current(ticket) {
+                        this.apply_devices_loaded(result, cx);
+                    }
+                });
             }
         })
         .detach();

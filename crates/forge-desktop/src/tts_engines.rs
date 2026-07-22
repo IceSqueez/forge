@@ -40,12 +40,6 @@ struct EngineEntry {
     kind: &'static str,
 }
 
-struct EngineParamSnapshot {
-    pitch: f32,
-    rate: f32,
-    volume: f32,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
     None,
@@ -68,6 +62,7 @@ pub struct TtsEnginesView {
     add_open: bool,
     regions: HashMap<String, String>,
     cloud: Entity<CloudCredentialsView>,
+    params_debounce: async_bridge::Debounced,
     _subs: Vec<Subscription>,
 }
 
@@ -116,6 +111,7 @@ impl TtsEnginesView {
             add_open: false,
             regions: HashMap::new(),
             cloud,
+            params_debounce: async_bridge::Debounced::new(async_bridge::SLIDER_PERSIST_DEBOUNCE),
             _subs: vec![sub],
         }
     }
@@ -212,36 +208,25 @@ impl TtsEnginesView {
         );
     }
 
-    fn param_snapshot(&self) -> EngineParamSnapshot {
-        EngineParamSnapshot {
-            pitch: self.pitch_semitones,
-            rate: self.rate_multiplier,
-            volume: self.volume,
-        }
-    }
-
     fn set_pitch(&mut self, value: f32, cx: &mut Context<Self>) {
-        let snapshot = self.param_snapshot();
         self.pitch_semitones = value.clamp(-12.0, 12.0);
-        self.push_engine_params(snapshot, cx);
+        self.push_engine_params();
         cx.notify();
     }
 
     fn set_speed(&mut self, value: f32, cx: &mut Context<Self>) {
-        let snapshot = self.param_snapshot();
         self.rate_multiplier = value.clamp(0.5, 2.0);
-        self.push_engine_params(snapshot, cx);
+        self.push_engine_params();
         cx.notify();
     }
 
     fn set_engine_volume(&mut self, value: f32, cx: &mut Context<Self>) {
-        let snapshot = self.param_snapshot();
         self.volume = value.clamp(0.0, 1.0);
-        self.push_engine_params(snapshot, cx);
+        self.push_engine_params();
         cx.notify();
     }
 
-    fn push_engine_params(&mut self, snapshot: EngineParamSnapshot, cx: &mut Context<Self>) {
+    fn push_engine_params(&mut self) {
         let Some(engine_id) = self.selected_engine_id() else {
             return;
         };
@@ -259,10 +244,8 @@ impl TtsEnginesView {
         };
         let persist_id = engine_id.clone();
         let eid = EngineId(engine_id);
-        async_bridge::optimistic(
-            &self.rt_handle,
-            snapshot,
-            async move {
+        self.params_debounce
+            .schedule(&self.rt_handle, "engine params", async move {
                 if let Some(speak) = speak {
                     speak
                         .send(SpeakCommand::SetEngineParams(eid, defaults, gain))
@@ -272,15 +255,7 @@ impl TtsEnginesView {
                 forge_storage::set_engine_params(settings.as_ref(), &persist_id, params)
                     .await
                     .map_err(|e| e.to_string())
-            },
-            |this, snapshot, message, cx| {
-                this.pitch_semitones = snapshot.pitch;
-                this.rate_multiplier = snapshot.rate;
-                this.volume = snapshot.volume;
-                ErrorSink::Toast.report(message, cx);
-            },
-            cx,
-        );
+            });
     }
 
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {

@@ -120,6 +120,8 @@ pub struct SoundboardView {
     clips_repo: Arc<dyn SoundboardClipsRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
+    master_volume_debounce: async_bridge::Debounced,
+    reload_gen: async_bridge::Generation,
     _event_bridge: Task<()>,
 }
 
@@ -171,6 +173,10 @@ impl SoundboardView {
             clips_repo,
             settings_repo,
             rt_handle,
+            master_volume_debounce: async_bridge::Debounced::new(
+                async_bridge::SLIDER_PERSIST_DEBOUNCE,
+            ),
+            reload_gen: async_bridge::Generation::default(),
             _event_bridge: event_bridge,
         };
         view.reload(cx);
@@ -262,6 +268,7 @@ impl SoundboardView {
     }
 
     fn reload(&self, cx: &mut Context<Self>) {
+        let ticket = self.reload_gen.next();
         let repo = Arc::clone(&self.clips_repo);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
@@ -269,10 +276,18 @@ impl SoundboardView {
         });
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(clips)) => {
-                let _ = this.update(cx, |this, cx| this.apply_clips(clips, cx));
+                let _ = this.update(cx, |this, cx| {
+                    if this.reload_gen.is_current(ticket) {
+                        this.apply_clips(clips, cx);
+                    }
+                });
             }
             Ok(Err(message)) => {
-                let _ = this.update(cx, |this, cx| this.on_load_error(message, cx));
+                let _ = this.update(cx, |this, cx| {
+                    if this.reload_gen.is_current(ticket) {
+                        this.on_load_error(message, cx);
+                    }
+                });
             }
             Err(_) => {}
         })
@@ -471,11 +486,11 @@ impl SoundboardView {
         self.settings.master_volume = value;
         self.player.update_settings(self.settings.clone());
         let repo = Arc::clone(&self.settings_repo);
-        self.rt_handle.spawn(async move {
-            if let Err(e) = set_soundboard_master_volume(repo.as_ref(), value).await {
-                tracing::warn!(error = %e, "failed to persist soundboard master volume");
-            }
-        });
+        self.master_volume_debounce.schedule(
+            &self.rt_handle,
+            "soundboard master volume",
+            async move { set_soundboard_master_volume(repo.as_ref(), value).await },
+        );
         cx.notify();
     }
 

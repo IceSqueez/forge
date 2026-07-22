@@ -1,6 +1,10 @@
+use std::cell::Cell;
 use std::fmt::Display;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use forge_components::ToastKind;
 use forge_events::{Event, EventsError};
@@ -11,6 +15,8 @@ use tokio::runtime::Handle;
 use crate::toasts::PushToast;
 
 const BRIDGE_DRAIN_CAP: usize = 128;
+
+pub const SLIDER_PERSIST_DEBOUNCE: Duration = Duration::from_millis(400);
 
 pub enum EventBatch {
     Ready(Vec<Event>),
@@ -192,6 +198,57 @@ pub fn spawn_dialog<V, Fut, T>(
         }
     })
     .detach();
+}
+
+pub struct Debounced {
+    generation: Arc<AtomicU64>,
+    delay: Duration,
+}
+
+impl Debounced {
+    pub fn new(delay: Duration) -> Self {
+        Self {
+            generation: Arc::new(AtomicU64::new(0)),
+            delay,
+        }
+    }
+
+    /// Runs `fut` after `delay` of quiet, superseding any still-pending write so only the last value of a burst reaches disk (last-write-wins). The write is dispatched on `handle`, so it outlives a drop of the calling view mid-debounce; failures log (no view is guaranteed to survive to toast on).
+    pub fn schedule<F, E>(&self, handle: &Handle, context: impl Into<SharedString>, fut: F)
+    where
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
+        let ticket = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation = Arc::clone(&self.generation);
+        let delay = self.delay;
+        let context = context.into();
+        handle.spawn(async move {
+            tokio::time::sleep(delay).await;
+            if generation.load(Ordering::SeqCst) != ticket {
+                return;
+            }
+            if let Err(e) = fut.await {
+                tracing::warn!(error = %e, context = %context, "debounced write failed");
+            }
+        });
+    }
+}
+
+#[derive(Default)]
+pub struct Generation(Cell<u64>);
+
+impl Generation {
+    pub fn next(&self) -> u64 {
+        let next = self.0.get().wrapping_add(1);
+        self.0.set(next);
+        next
+    }
+
+    /// True only for the most recently issued ticket; a stale async result (an older request that resolved after a newer one) compares false and must be discarded.
+    pub fn is_current(&self, ticket: u64) -> bool {
+        self.0.get() == ticket
+    }
 }
 
 pub fn optimistic<V, S, F, E>(

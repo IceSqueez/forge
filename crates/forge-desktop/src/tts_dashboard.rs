@@ -15,6 +15,7 @@ use gpui::{
     SharedString, Subscription, Window, bounce, div, ease_in_out, prelude::*, px, relative,
 };
 
+use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
 
@@ -114,6 +115,7 @@ pub struct TtsDashboardView {
     engines: Vec<EngineStatus>,
     pending_stop_all: bool,
     test_input: Entity<TextInput>,
+    volume_debounce: async_bridge::Debounced,
     _test_sub: Subscription,
     _speak_obs: Subscription,
 }
@@ -155,6 +157,7 @@ impl TtsDashboardView {
             engines: load_engine_roster(registry.as_ref()),
             pending_stop_all: false,
             test_input,
+            volume_debounce: async_bridge::Debounced::new(async_bridge::SLIDER_PERSIST_DEBOUNCE),
             _test_sub: test_sub,
             _speak_obs: speak_obs,
         }
@@ -222,11 +225,10 @@ impl TtsDashboardView {
         self.volume = volume;
         self.dispatch(SpeakCommand::SetVolume(volume));
         let settings = Arc::clone(&self.settings);
-        self.rt_handle.spawn(async move {
-            if let Err(e) = forge_storage::set_master_volume(settings.as_ref(), volume).await {
-                eprintln!("forge-desktop: persist master volume failed: {e}");
-            }
-        });
+        self.volume_debounce
+            .schedule(&self.rt_handle, "tts master volume", async move {
+                forge_storage::set_master_volume(settings.as_ref(), volume).await
+            });
         cx.notify();
     }
 

@@ -132,6 +132,7 @@ struct ServerStats {
     bandwidth_peak_kbps: f32,
     total_bytes_sent: u64,
     total_events_out: u64,
+    dropped_events: u64,
 }
 
 pub struct ServerConsoleView {
@@ -276,11 +277,12 @@ impl ServerConsoleView {
             self.stats = ServerStats {
                 events_per_second: snapshot.aggregate_events_per_second,
                 events_per_second_avg: snapshot.aggregate_events_per_second,
-                http_requests: 0,
+                http_requests: snapshot.http_requests_total,
                 bandwidth_kbps: kbps,
                 bandwidth_peak_kbps: peak_kbps,
                 total_bytes_sent: snapshot.bandwidth.outbound_bytes_total,
-                total_events_out: 0,
+                total_events_out: snapshot.events_out_total,
+                dropped_events: snapshot.dropped_events_total,
             };
             self.bandwidth_samples.push(kbps);
             if self.bandwidth_samples.len() > MAX_BANDWIDTH_SAMPLES {
@@ -875,6 +877,16 @@ impl ServerConsoleView {
                         peak = format!("{:.0}", self.stats.bandwidth_peak_kbps)
                     )),
                     Some(success),
+                    palette,
+                )
+                .into_any_element(),
+            ))
+            .child(cell(
+                metric_card(
+                    tr!("server_stat_dropped"),
+                    format!("{}", self.stats.dropped_events),
+                    Some(tr!("server_stat_dropped_sub")),
+                    (self.stats.dropped_events > 0).then_some(palette.warning),
                     palette,
                 )
                 .into_any_element(),

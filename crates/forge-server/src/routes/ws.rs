@@ -142,6 +142,7 @@ async fn handle_socket(
                     Err(RecvError::Closed) => break,
                     Err(RecvError::Lagged(n)) => {
                         client.drop_counter.fetch_add(n, Ordering::Relaxed);
+                        state.server_info.record_dropped_events(n);
                         let notice = dropped_notification(n);
                         let len = notice.len() as u64;
                         if socket.send(Message::Text(notice.into())).await.is_err() {

@@ -26,6 +26,9 @@ pub struct ServerSnapshot {
     pub connected_clients: Vec<ConnectedClientSnapshot>,
     pub bandwidth: BandwidthSnapshot,
     pub aggregate_events_per_second: f32,
+    pub http_requests_total: u64,
+    pub events_out_total: u64,
+    pub dropped_events_total: u64,
 }
 
 pub(crate) async fn build_server_snapshot(
@@ -45,6 +48,9 @@ pub(crate) async fn build_server_snapshot(
             peak_outbound_bytes_per_second: bw.peak(),
         },
         aggregate_events_per_second,
+        http_requests_total: server_info.http_requests(),
+        events_out_total: server_info.events_out(),
+        dropped_events_total: server_info.dropped_events(),
     }
 }
 

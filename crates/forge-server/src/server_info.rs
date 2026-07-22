@@ -16,6 +16,7 @@ pub struct ServerInfo {
     pub bandwidth: Arc<BandwidthTracker>,
     pub http_requests_total: AtomicU64,
     pub events_out_total: AtomicU64,
+    pub dropped_events_total: AtomicU64,
 }
 
 impl ServerInfo {
@@ -27,6 +28,7 @@ impl ServerInfo {
             bandwidth: Arc::new(BandwidthTracker::new()),
             http_requests_total: AtomicU64::new(0),
             events_out_total: AtomicU64::new(0),
+            dropped_events_total: AtomicU64::new(0),
         })
     }
 
@@ -38,12 +40,21 @@ impl ServerInfo {
         self.events_out_total.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_dropped_events(&self, count: u64) {
+        self.dropped_events_total
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
     pub fn http_requests(&self) -> u64 {
         self.http_requests_total.load(Ordering::Relaxed)
     }
 
     pub fn events_out(&self) -> u64 {
         self.events_out_total.load(Ordering::Relaxed)
+    }
+
+    pub fn dropped_events(&self) -> u64 {
+        self.dropped_events_total.load(Ordering::Relaxed)
     }
 
     pub fn uptime_seconds(&self) -> i64 {

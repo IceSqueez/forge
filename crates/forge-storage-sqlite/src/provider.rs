@@ -4,23 +4,22 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
-    ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, ChatHistoryRepo,
-    CredentialId, CredentialsRepo, DataProvider, EXPECTED_SCHEMA_VERSION, EventLogRepo,
-    ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, ImportMode, QueueRepo,
-    ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo,
+    ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
+    EXPECTED_SCHEMA_VERSION, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalTransit,
+    GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
-use forge_types::{ActionId, ScriptId, Variant};
+use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
 use crate::error::SqliteStorageError;
 use crate::retention_task::spawn_retention_task;
 use crate::{
-    SqliteActionRepo, SqliteBundleRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo,
-    SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo,
-    SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
+    SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
+    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
+    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
     SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect,
 };
 
@@ -43,7 +42,6 @@ pub struct SqliteBackend {
     viewer: Arc<SqliteViewerRepo>,
     tts_filters: Arc<SqliteTtsFiltersRepo>,
     chat_history: Arc<SqliteChatHistoryRepo>,
-    bundle: SqliteBundleRepo,
     shutdown: Arc<Notify>,
 }
 
@@ -146,7 +144,6 @@ impl SqliteBackend {
             viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
             tts_filters: Arc::new(SqliteTtsFiltersRepo::new(pool.clone())),
             chat_history: Arc::new(SqliteChatHistoryRepo::new(pool.clone())),
-            bundle: SqliteBundleRepo::new(pool.clone()),
             credentials,
             shutdown,
             pool,
@@ -399,27 +396,6 @@ impl CredentialsRepo for SqliteBackend {
 
     async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
         self.credentials.mark_refreshed(id).await
-    }
-}
-
-#[async_trait]
-impl BundleRepo for SqliteBackend {
-    async fn import_bundle(
-        &self,
-        bytes: &[u8],
-        mode: ImportMode,
-    ) -> Result<BundleImportOutcome, StorageError> {
-        self.bundle.import_bundle(bytes, mode).await
-    }
-
-    async fn export_bundle(
-        &self,
-        action_ids: &[ActionId],
-        include_orphan_globals: bool,
-    ) -> Result<BundleExportOutcome, StorageError> {
-        self.bundle
-            .export_bundle(action_ids, include_orphan_globals)
-            .await
     }
 }
 

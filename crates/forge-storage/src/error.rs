@@ -36,15 +36,6 @@ pub enum StorageError {
         sample_action_names: Vec<String>,
     },
 
-    #[error("bundle bytes are not valid JSON or do not match the expected envelope shape")]
-    MalformedBundle,
-
-    #[error(
-        "bundle format version {found} is below the minimum supported version \
-         {minimum_supported}; upgrade the bundle to continue"
-    )]
-    BundleVersionTooOld { found: u32, minimum_supported: u32 },
-
     #[error("parse error: {0}")]
     Parse(String),
 

@@ -21,13 +21,12 @@ use forge_storage::user_globals::MockUserGlobalsRepo;
 use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
-    ActionRepo, BundleExportOutcome, BundleImportOutcome, BundleRepo, ChatHistoryRepo,
-    CredentialId, CredentialsRepo, DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry,
-    GlobalsRepo, HistoryRepo, ImportMode, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
+    ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo,
+    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
-use forge_types::{ActionId, ScriptId, Variant};
+use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 
 pub struct TestDataProvider {
@@ -304,25 +303,6 @@ impl CredentialsRepo for TestDataProvider {
 
     async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
         self.credentials_repo.mark_refreshed(id).await
-    }
-}
-
-#[async_trait]
-impl BundleRepo for TestDataProvider {
-    async fn import_bundle(
-        &self,
-        _bytes: &[u8],
-        _mode: ImportMode,
-    ) -> Result<BundleImportOutcome, StorageError> {
-        Err(StorageError::NotReady)
-    }
-
-    async fn export_bundle(
-        &self,
-        _action_ids: &[ActionId],
-        _include_orphan_globals: bool,
-    ) -> Result<BundleExportOutcome, StorageError> {
-        Err(StorageError::NotReady)
     }
 }
 

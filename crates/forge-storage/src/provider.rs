@@ -6,44 +6,15 @@ use crate::{
     ActionRepo, ChatHistoryRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo,
     QueueRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
     TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
-    transit::{BundleExportOutcome, BundleImportOutcome, ImportMode},
 };
-use forge_types::ActionId;
 
 /// Schema version this build expects. The startup gate compares `schema_version()`
 /// against this constant; a mismatch routes to `Screen::SchemaUpgradeRequired`.
 pub const EXPECTED_SCHEMA_VERSION: u32 = 36;
 
 #[async_trait]
-pub trait BundleRepo: Send + Sync {
-    /// Impl owns deserialization + version gating. Only hard failures (malformed JSON,
-    /// version below `MINIMUM_SUPPORTED_BUNDLE_VERSION`, DB write error) produce `Err`;
-    /// soft conditions land in `BundleImportOutcome::warnings`.
-    async fn import_bundle(
-        &self,
-        bytes: &[u8],
-        mode: ImportMode,
-    ) -> Result<BundleImportOutcome, StorageError>;
-
-    /// Collects the full transitive closure from the root Action IDs. Missing deleted
-    /// dependencies surface as warnings in the outcome; they do not abort the export.
-    async fn export_bundle(
-        &self,
-        action_ids: &[ActionId],
-        include_orphan_globals: bool,
-    ) -> Result<BundleExportOutcome, StorageError>;
-}
-
-#[async_trait]
 pub trait DataProvider:
-    GlobalsRepo
-    + UserGlobalsRepo
-    + SettingsRepo
-    + ScriptRepo
-    + CredentialsRepo
-    + BundleRepo
-    + Send
-    + Sync
+    GlobalsRepo + UserGlobalsRepo + SettingsRepo + ScriptRepo + CredentialsRepo + Send + Sync
 {
     fn action_repo(&self) -> Arc<dyn ActionRepo>;
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo>;

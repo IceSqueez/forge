@@ -1,5 +1,4 @@
 pub mod action_impl;
-pub mod bundle_impl;
 pub mod chat_history_impl;
 pub mod credentials_impl;
 pub mod crypto;
@@ -23,7 +22,6 @@ pub mod viewer_impl;
 pub mod voice_alias_impl;
 
 pub use action_impl::SqliteActionRepo;
-pub use bundle_impl::SqliteBundleRepo;
 pub use chat_history_impl::SqliteChatHistoryRepo;
 pub use credentials_impl::SqliteCredentialsRepo;
 pub use error::SqliteStorageError;

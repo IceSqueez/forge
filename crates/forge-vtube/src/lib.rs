@@ -6,6 +6,7 @@ pub mod credentials;
 pub mod error;
 pub mod events;
 pub mod health;
+mod payload_fields;
 pub mod protocol;
 pub mod quick_actions;
 pub(crate) mod request;

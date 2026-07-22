@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::gift as fields;
+
 pub(crate) struct ChannelMemberGiftReceivedDescriptor;
 
 impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
@@ -64,25 +66,25 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let level_name = event
             .payload
-            .get("gift.level_name")
+            .get(fields::LEVEL_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let gifter_display_name = event
             .payload
-            .get("gifter.display_name")
+            .get(fields::GIFTER_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let recipient_channel_id = event
             .payload
-            .get("recipient.channel_id")
+            .get(fields::RECIPIENT_CHANNEL_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let recipient_display_name = event
             .payload
-            .get("recipient.display_name")
+            .get(fields::RECIPIENT_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

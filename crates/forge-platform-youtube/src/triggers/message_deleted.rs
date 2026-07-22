@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::chat_mod as fields;
+
 pub(crate) struct ChatMessageDeletedDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
@@ -63,19 +65,19 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let message_id = event
             .payload
-            .get("chat.message_id")
+            .get(fields::MESSAGE_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let target_channel_id = event
             .payload
-            .get("chat.target_user.channel_id")
+            .get(fields::TARGET_USER_CHANNEL_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let moderator_channel_id = event
             .payload
-            .get("chat.moderator.channel_id")
+            .get(fields::MODERATOR_CHANNEL_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

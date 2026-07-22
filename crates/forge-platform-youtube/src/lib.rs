@@ -9,6 +9,7 @@ pub mod credentials_manager;
 mod event_channel;
 pub mod live_chat_id;
 pub mod moderation;
+mod payload_fields;
 pub mod quota_state;
 pub mod send_chat;
 pub mod stream_metadata;

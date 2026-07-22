@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::port as fields;
+
 pub struct MidiDeviceDisconnectedDescriptor;
 
 impl TriggerKindDescriptor for MidiDeviceDisconnectedDescriptor {
@@ -76,7 +78,10 @@ impl TriggerKindDescriptor for MidiDeviceDisconnectedDescriptor {
         if let Some(Variant::String(d)) = config.get("direction")
             && !d.is_empty()
         {
-            let event_dir = event.payload.get("direction").and_then(|v| v.as_str());
+            let event_dir = event
+                .payload
+                .get(fields::DIRECTION)
+                .and_then(|v| v.as_str());
             if event_dir != Some(d.as_str()) {
                 return false;
             }
@@ -86,13 +91,17 @@ impl TriggerKindDescriptor for MidiDeviceDisconnectedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get("name").and_then(|v| v.as_str()) {
+        if let Some(name) = event.payload.get(fields::NAME).and_then(|v| v.as_str()) {
             stack = stack.set(
                 "midi.device.name".to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
-        if let Some(dir) = event.payload.get("direction").and_then(|v| v.as_str()) {
+        if let Some(dir) = event
+            .payload
+            .get(fields::DIRECTION)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "midi.device.direction".to_owned(),
                 Variant::String(dir.to_owned()),

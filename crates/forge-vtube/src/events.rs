@@ -4,6 +4,10 @@ use serde_json::json;
 
 use crate::client::VtsWs;
 use crate::error::VTubeError;
+use crate::payload_fields::{
+    expression as expression_fields, hotkey as hotkey_fields, item as item_fields,
+    model as model_fields, tracking as tracking_fields,
+};
 use crate::protocol::new_request;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -46,13 +50,13 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
                 publisher.publish(Event::new(
                     EventSource::VTube,
                     "model.loaded",
-                    json!({ "model_id": model_id, "model_name": model_name }),
+                    json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
                 ));
             } else {
                 publisher.publish(Event::new(
                     EventSource::VTube,
                     "model.unloaded",
-                    json!({ "model_id": model_id, "model_name": model_name }),
+                    json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
                 ));
             }
         }
@@ -61,7 +65,7 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
             publisher.publish(Event::new(
                 EventSource::VTube,
                 "model.config_changed",
-                json!({ "model_name": model_name }),
+                json!({ (model_fields::MODEL_NAME): model_name }),
             ));
         }
         "HotkeyTriggeredEvent" => {
@@ -70,7 +74,7 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
             publisher.publish(Event::new(
                 EventSource::VTube,
                 "hotkey.triggered",
-                json!({ "hotkey_id": hotkey_id, "hotkey_name": hotkey_name }),
+                json!({ (hotkey_fields::HOTKEY_ID): hotkey_id, (hotkey_fields::HOTKEY_NAME): hotkey_name }),
             ));
         }
         "ExpressionActivationEvent" => {
@@ -79,7 +83,7 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
             publisher.publish(Event::new(
                 EventSource::VTube,
                 "expression.state_changed",
-                json!({ "expression_name": expression_name, "active": active }),
+                json!({ (expression_fields::EXPRESSION_NAME): expression_name, (expression_fields::ACTIVE): active }),
             ));
         }
         "TrackingStatusChangedEvent" => {
@@ -95,8 +99,8 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
                 EventSource::VTube,
                 kind,
                 json!({
-                    "left_hand_found": left_hand_found,
-                    "right_hand_found": right_hand_found,
+                    (tracking_fields::LEFT_HAND_FOUND): left_hand_found,
+                    (tracking_fields::RIGHT_HAND_FOUND): right_hand_found,
                 }),
             ));
         }
@@ -114,8 +118,8 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
                     EventSource::VTube,
                     kind,
                     json!({
-                        "item_instance_id": item_instance_id,
-                        "item_file_name": item_file_name,
+                        (item_fields::ITEM_INSTANCE_ID): item_instance_id,
+                        (item_fields::ITEM_FILE_NAME): item_file_name,
                     }),
                 ));
             }

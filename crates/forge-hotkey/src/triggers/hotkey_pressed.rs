@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields as fields;
+
 pub struct HotkeyPressedDescriptor;
 
 impl TriggerKindDescriptor for HotkeyPressedDescriptor {
@@ -81,7 +83,7 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
         if let Some(Variant::String(combo)) = config.get("combo") {
             let event_combo = event
                 .payload
-                .get("combo")
+                .get(fields::COMBO)
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             return combo == event_combo;
@@ -91,13 +93,17 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(combo) = event.payload.get("combo").and_then(|v| v.as_str()) {
+        if let Some(combo) = event.payload.get(fields::COMBO).and_then(|v| v.as_str()) {
             stack = stack.set("hotkey.combo".to_owned(), Variant::String(combo.to_owned()));
         }
-        if let Some(id) = event.payload.get("id").and_then(|v| v.as_u64()) {
+        if let Some(id) = event.payload.get(fields::ID).and_then(|v| v.as_u64()) {
             stack = stack.set("hotkey.id".to_owned(), Variant::Int(id as i64));
         }
-        if let Some(ts) = event.payload.get("timestamp_us").and_then(|v| v.as_u64()) {
+        if let Some(ts) = event
+            .payload
+            .get(fields::TIMESTAMP_US)
+            .and_then(|v| v.as_u64())
+        {
             stack = stack.set("hotkey.timestamp_us".to_owned(), Variant::Int(ts as i64));
         }
         stack

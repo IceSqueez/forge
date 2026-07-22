@@ -14,6 +14,7 @@ use crate::content::{record_midi_event, record_port_added, record_port_removed};
 use crate::decode::decode_midi_bytes;
 use crate::events::{MidiEvent, MidiPortInfo, PortDirection};
 use crate::health::{MidiHealthSnapshot, events_per_minute};
+use crate::payload_fields::{input as input_fields, port as port_fields};
 
 pub(crate) type RawEvent = (u64, Vec<u8>, String);
 
@@ -195,7 +196,7 @@ fn emit_port_event(client: &Arc<MidiClient>, name: &str, direction: PortDirectio
     let event = Event::new(
         EventSource::Midi,
         kind,
-        serde_json::json!({ "name": name, "direction": dir_str }),
+        serde_json::json!({ (port_fields::NAME): name, (port_fields::DIRECTION): dir_str }),
     );
     client.publisher.publish(event);
 }
@@ -219,10 +220,10 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
         } => (
             "midi.input.note_on",
             serde_json::json!({
-                "note": note,
-                "velocity": velocity,
-                "channel": channel,
-                "port": port_name,
+                (input_fields::NOTE): note,
+                (input_fields::VELOCITY): velocity,
+                (input_fields::CHANNEL): channel,
+                (input_fields::PORT): port_name,
             }),
         ),
         MidiEvent::NoteOff {
@@ -232,10 +233,10 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
         } => (
             "midi.input.note_off",
             serde_json::json!({
-                "note": note,
-                "velocity": velocity,
-                "channel": channel,
-                "port": port_name,
+                (input_fields::NOTE): note,
+                (input_fields::VELOCITY): velocity,
+                (input_fields::CHANNEL): channel,
+                (input_fields::PORT): port_name,
             }),
         ),
         MidiEvent::ControlChange {
@@ -245,26 +246,26 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
         } => (
             "midi.input.control_change",
             serde_json::json!({
-                "controller": controller,
-                "value": value,
-                "channel": channel,
-                "port": port_name,
+                (input_fields::CONTROLLER): controller,
+                (input_fields::VALUE): value,
+                (input_fields::CHANNEL): channel,
+                (input_fields::PORT): port_name,
             }),
         ),
         MidiEvent::PitchBend { value, channel } => (
             "midi.input.pitch_bend",
             serde_json::json!({
-                "value": value,
-                "channel": channel,
-                "port": port_name,
+                (input_fields::VALUE): value,
+                (input_fields::CHANNEL): channel,
+                (input_fields::PORT): port_name,
             }),
         ),
         MidiEvent::ProgramChange { program, channel } => (
             "midi.input.program_change",
             serde_json::json!({
-                "program": program,
-                "channel": channel,
-                "port": port_name,
+                (input_fields::PROGRAM): program,
+                (input_fields::CHANNEL): channel,
+                (input_fields::PORT): port_name,
             }),
         ),
     };

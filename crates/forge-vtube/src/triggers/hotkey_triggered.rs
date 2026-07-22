@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::hotkey as fields;
+
 pub struct HotkeyTriggeredDescriptor;
 
 impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
@@ -64,13 +66,21 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get("hotkey_name").and_then(|v| v.as_str()) {
+        if let Some(name) = event
+            .payload
+            .get(fields::HOTKEY_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "vtube.hotkey.name".to_owned(),
                 Variant::String(name.to_owned()),
             );
         }
-        if let Some(id) = event.payload.get("hotkey_id").and_then(|v| v.as_str()) {
+        if let Some(id) = event
+            .payload
+            .get(fields::HOTKEY_ID)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set("vtube.hotkey.id".to_owned(), Variant::String(id.to_owned()));
         }
         stack

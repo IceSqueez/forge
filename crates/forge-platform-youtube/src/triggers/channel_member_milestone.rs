@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{chat as chat_fields, member as fields};
+
 pub(crate) struct SupportMemberMilestoneDescriptor;
 
 impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
@@ -64,18 +66,18 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let user_display_name = event
             .payload
-            .get("user_display_name")
+            .get(chat_fields::USER_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let member_month = event
             .payload
-            .get("member_month")
+            .get(fields::MEMBER_MONTH)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let message_text = event
             .payload
-            .get("message_text")
+            .get(chat_fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

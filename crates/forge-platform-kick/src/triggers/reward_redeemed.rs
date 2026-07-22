@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::reward as fields;
+
 pub(crate) struct RewardRedeemedDescriptor;
 
 impl TriggerKindDescriptor for RewardRedeemedDescriptor {
@@ -64,37 +66,37 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let redemption_id = event
             .payload
-            .get("id")
+            .get(fields::ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let reward = event.payload.get("reward");
+        let reward = event.payload.get(fields::REWARD);
         let reward_id = reward
-            .and_then(|r| r.get("id"))
+            .and_then(|r| r.get(fields::ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_title = reward
-            .and_then(|r| r.get("title"))
+            .and_then(|r| r.get(fields::REWARD_TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let redeemer = event.payload.get("redeemer");
+        let redeemer = event.payload.get(fields::REDEEMER);
         let user_id = redeemer
-            .and_then(|r| r.get("user_id"))
+            .and_then(|r| r.get(fields::REDEEMER_USER_ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
         let username = redeemer
-            .and_then(|r| r.get("username"))
+            .and_then(|r| r.get(fields::REDEEMER_USERNAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let user_input = event
             .payload
-            .get("user_input")
+            .get(fields::USER_INPUT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

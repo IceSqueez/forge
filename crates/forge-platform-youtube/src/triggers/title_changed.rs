@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::stream as fields;
+
 pub(crate) struct ChannelBroadcastTitleChangedDescriptor;
 
 impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
@@ -63,13 +65,13 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let title_old = event
             .payload
-            .get("stream.title_old")
+            .get(fields::TITLE_OLD)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let title_new = event
             .payload
-            .get("stream.title_new")
+            .get(fields::TITLE_NEW)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

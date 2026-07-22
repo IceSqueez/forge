@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::chat as fields;
+
 pub(crate) struct ChatCommandDescriptor;
 
 impl TriggerKindDescriptor for ChatCommandDescriptor {
@@ -110,7 +112,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 
         let message = event
             .payload
-            .get("message_text")
+            .get(fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -124,31 +126,31 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let message_text = event
             .payload
-            .get("message_text")
+            .get(fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let command_name = event
             .payload
-            .get("command_name")
+            .get(fields::COMMAND_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let args = event
             .payload
-            .get("args")
+            .get(fields::ARGS)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_display_name = event
             .payload
-            .get("user_display_name")
+            .get(fields::USER_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let channel_id = event
             .payload
-            .get("channel_id")
+            .get(fields::CHANNEL_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

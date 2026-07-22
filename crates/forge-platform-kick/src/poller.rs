@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::channel::{ChannelSnapshot, KickChannel};
+use crate::payload_fields::{reward as reward_fields, stream as stream_fields};
 use crate::rewards::{KickRewards, RedemptionRecord};
 
 const CHANNEL_POLL_INTERVAL: Duration = Duration::from_secs(30);
@@ -43,25 +44,37 @@ fn diff_channel(prev: &ChannelSnapshot, next: &ChannelSnapshot) -> ChannelDelta 
 
 fn status_payload(snapshot: &ChannelSnapshot) -> serde_json::Value {
     serde_json::json!({
-        "is_live": snapshot.is_live,
-        "stream_title": snapshot.stream_title,
-        "category": { "id": snapshot.category_id, "name": snapshot.category_name },
+        (stream_fields::IS_LIVE): snapshot.is_live,
+        (stream_fields::STREAM_TITLE): snapshot.stream_title,
+        (stream_fields::CATEGORY): {
+            (stream_fields::CATEGORY_ID): snapshot.category_id,
+            (stream_fields::CATEGORY_NAME): snapshot.category_name,
+        },
     })
 }
 
 fn metadata_payload(snapshot: &ChannelSnapshot) -> serde_json::Value {
     serde_json::json!({
-        "stream_title": snapshot.stream_title,
-        "category": { "id": snapshot.category_id, "name": snapshot.category_name },
+        (stream_fields::STREAM_TITLE): snapshot.stream_title,
+        (stream_fields::CATEGORY): {
+            (stream_fields::CATEGORY_ID): snapshot.category_id,
+            (stream_fields::CATEGORY_NAME): snapshot.category_name,
+        },
     })
 }
 
 fn redemption_payload(record: &RedemptionRecord) -> serde_json::Value {
     serde_json::json!({
-        "id": record.id,
-        "reward": { "id": record.reward_id, "title": record.reward_title },
-        "redeemer": { "user_id": record.redeemer_user_id, "username": record.redeemer_username },
-        "user_input": record.user_input,
+        (reward_fields::ID): record.id,
+        (reward_fields::REWARD): {
+            (reward_fields::ID): record.reward_id,
+            (reward_fields::REWARD_TITLE): record.reward_title,
+        },
+        (reward_fields::REDEEMER): {
+            (reward_fields::REDEEMER_USER_ID): record.redeemer_user_id,
+            (reward_fields::REDEEMER_USERNAME): record.redeemer_username,
+        },
+        (reward_fields::USER_INPUT): record.user_input,
     })
 }
 

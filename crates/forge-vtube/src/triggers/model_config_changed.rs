@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::model as fields;
+
 pub struct ModelConfigChangedDescriptor;
 
 impl TriggerKindDescriptor for ModelConfigChangedDescriptor {
@@ -64,7 +66,11 @@ impl TriggerKindDescriptor for ModelConfigChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get("model_name").and_then(|v| v.as_str()) {
+        if let Some(name) = event
+            .payload
+            .get(fields::MODEL_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "vtube.model.name".to_owned(),
                 Variant::String(name.to_owned()),

@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::item as fields;
+
 pub struct ItemRemovedDescriptor;
 
 impl TriggerKindDescriptor for ItemRemovedDescriptor {
@@ -66,7 +68,7 @@ impl TriggerKindDescriptor for ItemRemovedDescriptor {
         let mut stack = ArgStack::new();
         if let Some(id) = event
             .payload
-            .get("item_instance_id")
+            .get(fields::ITEM_INSTANCE_ID)
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
@@ -74,7 +76,11 @@ impl TriggerKindDescriptor for ItemRemovedDescriptor {
                 Variant::String(id.to_owned()),
             );
         }
-        if let Some(file) = event.payload.get("item_file_name").and_then(|v| v.as_str()) {
+        if let Some(file) = event
+            .payload
+            .get(fields::ITEM_FILE_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "vtube.item.file_name".to_owned(),
                 Variant::String(file.to_owned()),

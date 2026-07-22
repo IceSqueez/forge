@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::expression as fields;
+
 pub struct ExpressionStateChangedDescriptor;
 
 impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
@@ -66,7 +68,7 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
         let mut stack = ArgStack::new();
         if let Some(name) = event
             .payload
-            .get("expression_name")
+            .get(fields::EXPRESSION_NAME)
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
@@ -74,7 +76,7 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
                 Variant::String(name.to_owned()),
             );
         }
-        if let Some(active) = event.payload.get("active").and_then(|v| v.as_bool()) {
+        if let Some(active) = event.payload.get(fields::ACTIVE).and_then(|v| v.as_bool()) {
             stack = stack.set("vtube.expression.active".to_owned(), Variant::Bool(active));
         }
         stack

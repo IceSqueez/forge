@@ -6,6 +6,7 @@ pub(crate) mod decode;
 pub mod error;
 pub mod events;
 pub(crate) mod health;
+mod payload_fields;
 pub mod quick_actions;
 pub mod runners;
 pub mod sink;

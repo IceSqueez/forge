@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::stream as fields;
+
 pub(crate) struct ChannelBroadcastEndedDescriptor;
 
 impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
@@ -63,7 +65,7 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let broadcast_id = event
             .payload
-            .get("broadcast_id")
+            .get(fields::BROADCAST_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

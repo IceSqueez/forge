@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use crate::backend::HotkeyFiredEvent;
 use crate::client::HotkeyClient;
 use crate::health::build_trigger_delta;
+use crate::payload_fields;
 
 pub(crate) async fn run_supervisor(
     client: Arc<HotkeyClient>,
@@ -30,9 +31,9 @@ pub(crate) async fn run_supervisor(
             EventSource::Hotkey,
             "hotkey.global.pressed",
             serde_json::json!({
-                "combo": combo_str,
-                "id": id_u32,
-                "timestamp_us": event.timestamp_us,
+                (payload_fields::COMBO): combo_str,
+                (payload_fields::ID): id_u32,
+                (payload_fields::TIMESTAMP_US): event.timestamp_us,
             }),
         ));
 

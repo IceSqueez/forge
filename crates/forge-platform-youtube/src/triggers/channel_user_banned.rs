@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::ban as fields;
+
 pub(crate) struct ChannelUserBannedDescriptor;
 
 impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
@@ -95,10 +97,10 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
 
         match filter {
             "permanent" => {
-                event.payload.get("ban.type").and_then(|v| v.as_str()) == Some("permanent")
+                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some("permanent")
             }
             "temporary" => {
-                event.payload.get("ban.type").and_then(|v| v.as_str()) == Some("temporary")
+                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some("temporary")
             }
             _ => true,
         }
@@ -107,35 +109,35 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let target_display_name = event
             .payload
-            .get("ban.target.display_name")
+            .get(fields::TARGET_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let target_channel_id = event
             .payload
-            .get("ban.target.channel_id")
+            .get(fields::TARGET_CHANNEL_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let moderator_channel_id = event
             .payload
-            .get("ban.moderator.channel_id")
+            .get(fields::MODERATOR_CHANNEL_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let ban_type = event
             .payload
-            .get("ban.type")
+            .get(fields::TYPE)
             .and_then(|v| v.as_str())
             .unwrap_or("permanent")
             .to_owned();
 
         let ban_duration_seconds = event
             .payload
-            .get("ban.duration_seconds")
+            .get(fields::DURATION_SECONDS)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 

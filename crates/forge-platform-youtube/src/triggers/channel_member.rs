@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{chat as chat_fields, member as fields};
+
 pub(crate) struct SupportNewMemberDescriptor;
 
 impl TriggerKindDescriptor for SupportNewMemberDescriptor {
@@ -64,13 +66,13 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let user_display_name = event
             .payload
-            .get("user_display_name")
+            .get(chat_fields::USER_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let member_level_name = event
             .payload
-            .get("member_level_name")
+            .get(fields::MEMBER_LEVEL_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

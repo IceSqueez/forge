@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::input as fields;
+
 pub struct MidiNoteOffDescriptor;
 
 impl TriggerKindDescriptor for MidiNoteOffDescriptor {
@@ -105,7 +107,7 @@ impl TriggerKindDescriptor for MidiNoteOffDescriptor {
         if let Some(Variant::Int(n)) = config.get("note") {
             let event_note = event
                 .payload
-                .get("note")
+                .get(fields::NOTE)
                 .and_then(|v| v.as_u64())
                 .unwrap_or(u64::MAX);
             if *n as u64 != event_note {
@@ -115,7 +117,7 @@ impl TriggerKindDescriptor for MidiNoteOffDescriptor {
         if let Some(Variant::Int(c)) = config.get("channel") {
             let event_ch = event
                 .payload
-                .get("channel")
+                .get(fields::CHANNEL)
                 .and_then(|v| v.as_u64())
                 .unwrap_or(u64::MAX);
             if *c as u64 != event_ch {
@@ -127,16 +129,16 @@ impl TriggerKindDescriptor for MidiNoteOffDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(n) = event.payload.get("note").and_then(|v| v.as_u64()) {
+        if let Some(n) = event.payload.get(fields::NOTE).and_then(|v| v.as_u64()) {
             stack = stack.set("midi.note".to_owned(), Variant::Int(n as i64));
         }
-        if let Some(v) = event.payload.get("velocity").and_then(|v| v.as_u64()) {
+        if let Some(v) = event.payload.get(fields::VELOCITY).and_then(|v| v.as_u64()) {
             stack = stack.set("midi.velocity".to_owned(), Variant::Int(v as i64));
         }
-        if let Some(c) = event.payload.get("channel").and_then(|v| v.as_u64()) {
+        if let Some(c) = event.payload.get(fields::CHANNEL).and_then(|v| v.as_u64()) {
             stack = stack.set("midi.channel".to_owned(), Variant::Int(c as i64));
         }
-        if let Some(p) = event.payload.get("port").and_then(|v| v.as_str()) {
+        if let Some(p) = event.payload.get(fields::PORT).and_then(|v| v.as_str()) {
             stack = stack.set("midi.port".to_owned(), Variant::String(p.to_owned()));
         }
         stack

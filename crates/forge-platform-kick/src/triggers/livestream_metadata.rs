@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::stream as fields;
+
 pub(crate) struct LivestreamMetadataDescriptor;
 
 impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
@@ -63,18 +65,18 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let stream_title = event
             .payload
-            .get("stream_title")
+            .get(fields::STREAM_TITLE)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let category = event.payload.get("category");
+        let category = event.payload.get(fields::CATEGORY);
         let category_id = category
-            .and_then(|c| c.get("id"))
+            .and_then(|c| c.get(fields::CATEGORY_ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
         let category_name = category
-            .and_then(|c| c.get("name"))
+            .and_then(|c| c.get(fields::CATEGORY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

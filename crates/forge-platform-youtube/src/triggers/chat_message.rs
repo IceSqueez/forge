@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::chat as fields;
+
 pub(crate) struct ChatMessageDescriptor;
 
 impl TriggerKindDescriptor for ChatMessageDescriptor {
@@ -64,19 +66,19 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let message_text = event
             .payload
-            .get("message_text")
+            .get(fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_display_name = event
             .payload
-            .get("user_display_name")
+            .get(fields::USER_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let channel_id = event
             .payload
-            .get("channel_id")
+            .get(fields::CHANNEL_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

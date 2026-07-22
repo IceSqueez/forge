@@ -11,6 +11,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::live_chat_id::LiveChatIdHandle;
+use crate::payload_fields::{
+    ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, gift as gift_fields,
+    member as member_fields, stream as stream_fields, support as support_fields,
+};
 use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, QuotaState, today_pacific};
 
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
@@ -147,8 +151,8 @@ impl YoutubeChatPoller {
                         EventSource::YouTube,
                         "youtube.stream.title_changed",
                         serde_json::json!({
-                            "stream.title_old": prev,
-                            "stream.title_new": current_title,
+                            (stream_fields::TITLE_OLD): prev,
+                            (stream_fields::TITLE_NEW): current_title,
                         }),
                     ))
                     .is_err()
@@ -385,7 +389,7 @@ impl YoutubeChatPoller {
                 let event = Event::new(
                     EventSource::YouTube,
                     "youtube.stream.offline",
-                    serde_json::json!({ "broadcast_id": id }),
+                    serde_json::json!({ (stream_fields::BROADCAST_ID): id }),
                 );
                 Some(event)
             }
@@ -425,15 +429,15 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "message_text": text,
-                    "user_display_name": author,
-                    "channel_id": self.channel_id,
+                    (chat_fields::MESSAGE_TEXT): text,
+                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (chat_fields::CHANNEL_ID): self.channel_id,
                 });
 
                 if is_command {
                     let (cmd_name, args) = parse_command(&text);
-                    payload["command_name"] = serde_json::Value::String(cmd_name);
-                    payload["args"] = serde_json::Value::String(args);
+                    payload[chat_fields::COMMAND_NAME] = serde_json::Value::String(cmd_name);
+                    payload[chat_fields::ARGS] = serde_json::Value::String(args);
                 }
 
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
@@ -486,12 +490,12 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "user_display_name": author,
-                    "amount_micros": amount_micros,
-                    "currency": currency,
+                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (support_fields::AMOUNT_MICROS): amount_micros,
+                    (support_fields::CURRENCY): currency,
                 });
                 if let Some(msg) = message {
-                    payload["message_text"] = serde_json::Value::String(msg);
+                    payload[chat_fields::MESSAGE_TEXT] = serde_json::Value::String(msg);
                 }
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -542,10 +546,10 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "user_display_name": author,
-                    "sticker_id": sticker_id,
-                    "amount_micros": amount_micros,
-                    "currency": currency,
+                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (support_fields::STICKER_ID): sticker_id,
+                    (support_fields::AMOUNT_MICROS): amount_micros,
+                    (support_fields::CURRENCY): currency,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -581,8 +585,8 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "user_display_name": author,
-                    "member_level_name": level,
+                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (member_fields::MEMBER_LEVEL_NAME): level,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -632,11 +636,11 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "user_display_name": author,
-                    "member_month": months,
+                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (member_fields::MEMBER_MONTH): months,
                 });
                 if let Some(msg) = message {
-                    payload["message_text"] = serde_json::Value::String(msg);
+                    payload[chat_fields::MESSAGE_TEXT] = serde_json::Value::String(msg);
                 }
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -691,10 +695,10 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "ban.target.display_name": display_name,
-                    "ban.target.channel_id": channel_id,
-                    "ban.type": ban_type,
-                    "ban.duration_seconds": ban_duration_secs as i64,
+                    (ban_fields::TARGET_DISPLAY_NAME): display_name,
+                    (ban_fields::TARGET_CHANNEL_ID): channel_id,
+                    (ban_fields::TYPE): ban_type,
+                    (ban_fields::DURATION_SECONDS): ban_duration_secs as i64,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -734,9 +738,9 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "chat.message_id": deleted_message_id,
-                    "chat.target_user.channel_id": "",
-                    "chat.moderator.channel_id": moderator_channel_id,
+                    (chat_mod_fields::MESSAGE_ID): deleted_message_id,
+                    (chat_mod_fields::TARGET_USER_CHANNEL_ID): "",
+                    (chat_mod_fields::MODERATOR_CHANNEL_ID): moderator_channel_id,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -780,10 +784,10 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "gift.count": count,
-                    "gift.level_name": level_name,
-                    "gifter.channel_id": gifter_channel_id,
-                    "gifter.display_name": gifter_display_name,
+                    (gift_fields::COUNT): count,
+                    (gift_fields::LEVEL_NAME): level_name,
+                    (gift_fields::GIFTER_CHANNEL_ID): gifter_channel_id,
+                    (gift_fields::GIFTER_DISPLAY_NAME): gifter_display_name,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -820,10 +824,10 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    "gift.level_name": level_name,
-                    "gifter.display_name": "",
-                    "recipient.channel_id": recipient_channel_id,
-                    "recipient.display_name": recipient_display_name,
+                    (gift_fields::LEVEL_NAME): level_name,
+                    (gift_fields::GIFTER_DISPLAY_NAME): "",
+                    (gift_fields::RECIPIENT_CHANNEL_ID): recipient_channel_id,
+                    (gift_fields::RECIPIENT_DISPLAY_NAME): recipient_display_name,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(

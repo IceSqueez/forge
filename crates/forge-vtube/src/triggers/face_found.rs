@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::tracking as fields;
+
 pub struct FaceFoundDescriptor;
 
 impl TriggerKindDescriptor for FaceFoundDescriptor {
@@ -66,7 +68,7 @@ impl TriggerKindDescriptor for FaceFoundDescriptor {
         let mut stack = ArgStack::new();
         if let Some(left) = event
             .payload
-            .get("left_hand_found")
+            .get(fields::LEFT_HAND_FOUND)
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(
@@ -76,7 +78,7 @@ impl TriggerKindDescriptor for FaceFoundDescriptor {
         }
         if let Some(right) = event
             .payload
-            .get("right_hand_found")
+            .get(fields::RIGHT_HAND_FOUND)
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(

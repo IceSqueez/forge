@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{chat as chat_fields, support as fields};
+
 pub(crate) struct SupportSuperChatDescriptor;
 
 impl TriggerKindDescriptor for SupportSuperChatDescriptor {
@@ -64,24 +66,24 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let user_display_name = event
             .payload
-            .get("user_display_name")
+            .get(chat_fields::USER_DISPLAY_NAME)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let amount_micros = event
             .payload
-            .get("amount_micros")
+            .get(fields::AMOUNT_MICROS)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let currency = event
             .payload
-            .get("currency")
+            .get(fields::CURRENCY)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let message_text = event
             .payload
-            .get("message_text")
+            .get(chat_fields::MESSAGE_TEXT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

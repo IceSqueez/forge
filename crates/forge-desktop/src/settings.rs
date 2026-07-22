@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_LG,
-    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ThemeId, badge,
-    breadcrumb, card, field_hint, field_label, field_title, ghost_button_with_icon, icon,
-    metric_card, primary_button, primary_button_with_icon, radius, spacing, tr, with_alpha,
+    FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ThemeId, badge, card,
+    field_hint, field_label, field_title, ghost_button_with_icon, icon, metric_card, page_frame,
+    primary_button, primary_button_with_icon, radius, spacing, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -295,8 +295,8 @@ impl SettingsView {
         cx.reveal_path(&dir);
     }
 
-    fn render_header(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
-        let saved = div()
+    fn render_status(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
+        div()
             .flex()
             .items_center()
             .gap(px(5.0))
@@ -307,15 +307,7 @@ impl SettingsView {
                     .text_size(FONT_XS)
                     .text_color(palette.success)
                     .child(tr!("settings_ws_all_saved")),
-            );
-        breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("settings_page_title")),
-                BreadcrumbCrumb::leaf(self.section.label()),
-            ],
-            palette,
-        )
-        .right(saved)
+            )
     }
 
     fn render_nav(
@@ -994,26 +986,28 @@ impl Render for SettingsView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header = self.render_header(&palette);
+        let status = self.render_status(&palette);
         let nav = self.render_nav(&palette, density, cx);
         let pane = self.render_pane(&palette, density, cx);
 
-        div()
-            .size_full()
+        let body = div()
+            .w_full()
+            .flex_1()
             .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(header)
-            .child(
-                div()
-                    .w_full()
-                    .flex_1()
-                    .flex()
-                    .flex_row()
-                    .overflow_hidden()
-                    .child(nav)
-                    .child(pane),
-            )
+            .flex_row()
+            .overflow_hidden()
+            .child(nav)
+            .child(pane);
+
+        page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("settings_page_title")),
+                BreadcrumbCrumb::leaf(self.section.label()),
+            ],
+            &palette,
+        )
+        .header_right(status)
+        .body(body)
     }
 }
 

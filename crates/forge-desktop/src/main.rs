@@ -40,6 +40,7 @@ mod settings_shortcuts;
 mod settings_storage;
 mod settings_websocket;
 mod shell;
+mod shutdown;
 mod sidebar;
 mod soundboard;
 mod speak_boot;

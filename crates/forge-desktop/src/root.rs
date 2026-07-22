@@ -145,6 +145,17 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                     );
                     let shell =
                         cx.new(|cx| AppShell::new(status, topics, handles_for_shell, window, cx));
+                    let mut shutdown =
+                        Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
+                    cx.on_app_quit(move |_root, _cx| {
+                        let taken = shutdown.take();
+                        async move {
+                            if let Some(handles) = taken {
+                                handles.run_graceful().await;
+                            }
+                        }
+                    })
+                    .detach();
                     root.mark_ready(shell, handles);
                     cx.notify();
                 });

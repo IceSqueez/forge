@@ -8,7 +8,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 use time::OffsetDateTime;
-use tokio::sync::{Notify, broadcast};
+use tokio::sync::{Notify, broadcast, oneshot};
 
 const CHANNEL_CAP: usize = 1_024;
 const RING_CAP: usize = 10_000;
@@ -56,6 +56,8 @@ pub struct EventBus {
     total_published: AtomicU64,
     event_log: Arc<dyn EventLogRepo>,
     flush_shutdown: Arc<Notify>,
+    /// Resolves once the flush task finishes its shutdown drain (or exits early); consumed by `await_flush`.
+    flush_complete: Mutex<Option<oneshot::Receiver<()>>>,
 }
 
 pub struct EventSubscription(broadcast::Receiver<Event>);
@@ -101,6 +103,7 @@ impl EventBus {
             total_published: AtomicU64::new(0),
             event_log,
             flush_shutdown: Arc::new(Notify::new()),
+            flush_complete: Mutex::new(None),
         })
     }
 
@@ -208,12 +211,26 @@ impl EventBus {
         let recv = bus.sender.subscribe();
         let repo = Arc::clone(&bus.event_log);
         let shutdown = Arc::clone(&bus.flush_shutdown);
-        tokio::spawn(event_log_flush_task(recv, repo, shutdown));
+        let (done_tx, done_rx) = oneshot::channel();
+        *bus.flush_complete.lock().unwrap_or_else(|p| p.into_inner()) = Some(done_rx);
+        tokio::spawn(event_log_flush_task(recv, repo, shutdown, done_tx));
     }
 
     /// Uses `notify_one` so the permit is stored even if the flush task hasn't polled yet.
     pub fn shutdown(&self) {
         self.flush_shutdown.notify_one();
+    }
+
+    /// Awaits the flush task's shutdown drain; returns immediately if the task already exited or never spawned.
+    pub async fn await_flush(&self) {
+        let rx = self
+            .flush_complete
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(rx) = rx {
+            let _ = rx.await;
+        }
     }
 }
 
@@ -221,6 +238,7 @@ async fn event_log_flush_task(
     mut recv: broadcast::Receiver<Event>,
     repo: Arc<dyn EventLogRepo>,
     shutdown: Arc<Notify>,
+    done: oneshot::Sender<()>,
 ) {
     loop {
         tokio::select! {
@@ -232,6 +250,7 @@ async fn event_log_flush_task(
                         tracing::warn!(error = %e, "event_log drain insert failed");
                     }
                 }
+                let _ = done.send(());
                 return;
             }
             result = recv.recv() => {

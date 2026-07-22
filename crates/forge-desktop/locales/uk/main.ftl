@@ -1336,6 +1336,7 @@ stream_apps_vtube_desc = Керування аватаром Vtuber: гаряч�
 
 ## Живий чат - заголовок / фільтри
 
+chat_breadcrumb_audience = Аудиторія
 chat_breadcrumb_chat = Чат
 chat_filter_all = Всі
 chat_filter_events = Лише події

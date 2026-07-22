@@ -1091,7 +1091,10 @@ impl ChatView {
             .child(drawer_btn);
 
         breadcrumb(
-            vec![BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_chat"))],
+            vec![
+                BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_audience")),
+                BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_chat")),
+            ],
             palette,
         )
         .right(cluster)

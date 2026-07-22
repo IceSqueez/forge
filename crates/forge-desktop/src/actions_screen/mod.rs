@@ -3,7 +3,7 @@ use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
-    DateTimePicker, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, TextArea,
+    DateTimePicker, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition, Picker, TextArea,
     TextInput, ToastKind, drive_overlay_focus, fmt_number, fmt_relative_time, icon, overlay,
     search_input, tr,
 };
@@ -692,6 +692,13 @@ struct GridPickerForm {
     _sub: Subscription,
 }
 
+struct SelectPickerForm {
+    key: String,
+    picker: Entity<Picker>,
+    pos: Point<Pixels>,
+    _sub: Subscription,
+}
+
 struct DateTimePickerForm {
     picker: Entity<DateTimePicker>,
     target_input: Entity<TextInput>,
@@ -735,8 +742,7 @@ struct EditSubActionForm {
     name_input: Entity<TextInput>,
     condition_input: Entity<TextInput>,
     continue_on_error: bool,
-    select_menu_open: Option<String>,
-    select_menu_pos: Option<Point<Pixels>>,
+    select_picker: Option<SelectPickerForm>,
 }
 
 enum SubFormField {

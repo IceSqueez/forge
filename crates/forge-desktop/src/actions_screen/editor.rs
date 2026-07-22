@@ -8,11 +8,11 @@ use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DateTimePicker, DateTimePickerEvent,
     DateTimePickerLabels, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
-    GridPickerSubtitle, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition,
-    PlatformKind, Radius, Spacing, TextInput, anchored_popover, context_menu, field_label,
-    ghost_button_with_icon, icon, json_highlighted, menu_button, menu_divider, menu_item, modal,
-    overlay, platform_color, primary_button, radius, row_card, secondary_button, spacing,
-    status_dot, toggle, tooltip_lines_builder, tr, with_alpha,
+    GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition, Picker,
+    PickerEvent, PickerItem, PickerLabels, PlatformKind, Radius, Spacing, TextInput,
+    anchored_popover, field_label, ghost_button_with_icon, icon, json_highlighted, menu_button,
+    menu_divider, menu_item, modal, overlay, platform_color, primary_button, radius, row_card,
+    secondary_button, spacing, status_dot, toggle, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
     CodeLanguage, FormField, SubActionCategory, SubActionRegistry, SubActionRunner,
@@ -135,6 +135,18 @@ fn field_wrap(label: &str, control: AnyElement, palette: &ForgePalette) -> AnyEl
     field_label(palette, label.to_owned(), control)
         .tone(palette.text_muted)
         .into_any_element()
+}
+
+fn select_picker_items(options: &[(String, String)]) -> Vec<PickerItem> {
+    options
+        .iter()
+        .map(|(value, label)| PickerItem {
+            id: SharedString::from(value.clone()),
+            label: SharedString::from(label.clone()),
+            sublabel: None,
+            icon: Icon::Circle,
+        })
+        .collect()
 }
 
 pub(super) fn sub_action_summary(step: &SubActionStep) -> (&'static str, String, Option<String>) {
@@ -993,8 +1005,7 @@ impl ScreenActionsView {
             name_input,
             condition_input,
             continue_on_error,
-            select_menu_open: None,
-            select_menu_pos: None,
+            select_picker: None,
         });
         self.fetch_select_options(cx);
         cx.notify();
@@ -1135,42 +1146,106 @@ impl ScreenActionsView {
                     *options = opts.clone();
                 }
             }
+            if let Some(picker_form) = form.select_picker.as_ref() {
+                let key = picker_form.key.clone();
+                if let Some(SubFormField::Select { options, .. }) = form
+                    .fields
+                    .iter()
+                    .find(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
+                {
+                    let items = select_picker_items(options);
+                    picker_form
+                        .picker
+                        .update(cx, |picker, cx| picker.set_items(items, cx));
+                }
+            }
         }
         self.select_options = map;
         cx.notify();
     }
 
-    fn open_select_menu(&mut self, key: String, pos: Point<Pixels>, cx: &mut Context<Self>) {
+    fn open_select_picker(
+        &mut self,
+        key: String,
+        pos: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let already_open = self
+            .sub_form
+            .as_ref()
+            .and_then(|form| form.select_picker.as_ref())
+            .is_some_and(|picker_form| picker_form.key == key);
+        if already_open {
+            self.close_select_picker(cx);
+            return;
+        }
+        let Some(form) = self.sub_form.as_ref() else {
+            return;
+        };
+        let Some(SubFormField::Select { label, options, .. }) = form
+            .fields
+            .iter()
+            .find(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
+        else {
+            return;
+        };
+        let palette = cx.palette();
+        let picker_labels = PickerLabels {
+            title: label.clone().into(),
+            placeholder: tr!("widget_picker_search_placeholder").into(),
+            empty: tr!("actions_sub_select_empty").into(),
+            loading: tr!("widget_picker_loading").into(),
+            cancel: tr!("common_cancel").into(),
+        };
+        let items = select_picker_items(options);
+        let picker = cx.new(|cx| Picker::new(picker_labels, items, palette, cx));
+        let sub = cx.subscribe(&picker, Self::on_select_picker_event);
+        picker.update(cx, |f, cx| f.focus(window, cx));
         if let Some(form) = self.sub_form.as_mut() {
-            if form.select_menu_open.as_deref() == Some(key.as_str()) {
-                form.select_menu_open = None;
-            } else {
-                form.select_menu_open = Some(key);
-                form.select_menu_pos = Some(pos);
-            }
+            form.select_picker = Some(SelectPickerForm {
+                key,
+                picker,
+                pos,
+                _sub: sub,
+            });
         }
         cx.notify();
     }
 
-    fn close_select_menu(&mut self, cx: &mut Context<Self>) {
+    fn on_select_picker_event(
+        &mut self,
+        _picker: Entity<Picker>,
+        event: &PickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            PickerEvent::Selected(id) => self.pick_select_option(id.to_string(), cx),
+            PickerEvent::Cancelled => self.close_select_picker(cx),
+        }
+    }
+
+    fn close_select_picker(&mut self, cx: &mut Context<Self>) {
         if let Some(form) = self.sub_form.as_mut() {
-            form.select_menu_open = None;
+            form.select_picker = None;
         }
         cx.notify();
     }
 
-    fn pick_select_option(&mut self, key: String, value: String, cx: &mut Context<Self>) {
+    fn pick_select_option(&mut self, value: String, cx: &mut Context<Self>) {
         if let Some(form) = self.sub_form.as_mut() {
-            for field in &mut form.fields {
-                if let SubFormField::Select {
-                    key: k, selected, ..
-                } = field
-                    && *k == key
-                {
-                    *selected = value.clone();
+            if let Some(key) = form.select_picker.as_ref().map(|p| p.key.clone()) {
+                for field in &mut form.fields {
+                    if let SubFormField::Select {
+                        key: k, selected, ..
+                    } = field
+                        && *k == key
+                    {
+                        *selected = value.clone();
+                    }
                 }
             }
-            form.select_menu_open = None;
+            form.select_picker = None;
         }
         cx.notify();
     }
@@ -1182,8 +1257,7 @@ impl ScreenActionsView {
         label: &str,
         options: &[(String, String)],
         selected: &str,
-        is_open: bool,
-        menu_pos: Option<Point<Pixels>>,
+        open_picker: Option<&SelectPickerForm>,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1198,7 +1272,7 @@ impl ScreenActionsView {
         };
 
         let key_open = key.to_owned();
-        let border_color = if is_open {
+        let border_color = if open_picker.is_some() {
             palette.brand
         } else {
             palette.border_input
@@ -1219,8 +1293,8 @@ impl ScreenActionsView {
             .bg(palette.shell)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
-            .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
-                this.open_select_menu(key_open.clone(), ev.position(), cx)
+            .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                this.open_select_picker(key_open.clone(), ev.position(), window, cx)
             }))
             .child(
                 div()
@@ -1232,46 +1306,14 @@ impl ScreenActionsView {
             )
             .child(icon(Icon::ChevronDown, FONT_SM, palette.text_faint));
 
-        let menu: Option<AnyElement> = if is_open {
-            menu_pos.map(|pos| {
-                let mut items: Vec<MenuItem> = Vec::new();
-                if options.is_empty() {
-                    items.push(
-                        menu_item(
-                            SharedString::from(format!("actions-sub-select-{key}-empty")),
-                            tr!("actions_sub_select_empty"),
-                            |_, _, _| {},
-                        )
-                        .disabled(true)
-                        .into(),
-                    );
-                } else {
-                    for (i, (value, opt_label)) in options.iter().enumerate() {
-                        let field_key = key.to_owned();
-                        let value = value.clone();
-                        items.push(
-                            menu_item(
-                                SharedString::from(format!("actions-sub-select-{key}-opt-{i}")),
-                                opt_label.clone(),
-                                cx.listener(move |this, _: &ClickEvent, _, cx| {
-                                    this.pick_select_option(field_key.clone(), value.clone(), cx)
-                                }),
-                            )
-                            .into(),
-                        );
-                    }
-                }
-                let view = cx.entity();
-                context_menu(pos, palette)
-                    .items(items)
-                    .on_dismiss(move |_window, cx| {
-                        view.update(cx, |this, cx| this.close_select_menu(cx));
-                    })
-                    .into_any_element()
-            })
-        } else {
-            None
-        };
+        let popover = open_picker.map(|form| {
+            let view = cx.entity();
+            anchored_popover(form.pos, form.picker.clone())
+                .on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_select_picker(cx));
+                })
+                .into_any_element()
+        });
 
         div()
             .flex()
@@ -1285,7 +1327,7 @@ impl ScreenActionsView {
                     .child(label.to_owned()),
             )
             .child(trigger)
-            .children(menu)
+            .children(popover)
             .into_any_element()
     }
 
@@ -1555,8 +1597,7 @@ impl ScreenActionsView {
             name_input,
             condition_input,
             continue_on_error: false,
-            select_menu_open: None,
-            select_menu_pos: None,
+            select_picker: None,
         });
         self.fetch_select_options(cx);
         cx.notify();
@@ -3892,6 +3933,10 @@ impl ScreenActionsView {
                     if !gate_on(gate) {
                         continue;
                     }
+                    let open_picker = form
+                        .select_picker
+                        .as_ref()
+                        .filter(|picker_form| picker_form.key == *key);
                     grid_items.push((
                         true,
                         self.render_select_field(
@@ -3899,8 +3944,7 @@ impl ScreenActionsView {
                             label,
                             options,
                             selected,
-                            form.select_menu_open.as_deref() == Some(key.as_str()),
-                            form.select_menu_pos,
+                            open_picker,
                             palette,
                             cx,
                         ),

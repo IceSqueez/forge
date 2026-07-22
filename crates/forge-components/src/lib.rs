@@ -20,9 +20,11 @@ pub mod overlay;
 pub mod page_frame;
 pub mod palette;
 pub mod picker;
+pub mod radio_row;
 pub mod resize_handle;
 pub mod search_state;
 pub mod section_label;
+pub mod segmented;
 pub mod side_sheet;
 pub mod slider;
 pub mod sparkline;
@@ -84,9 +86,11 @@ pub use palette::{
     with_alpha,
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
+pub use radio_row::{RadioRow, radio_row, radio_row_label};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use search_state::SearchState;
 pub use section_label::section_label;
+pub use segmented::{Segment, SegmentedControl, segment, segmented};
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use sparkline::{Sparkline, sparkline};

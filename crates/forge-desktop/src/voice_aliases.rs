@@ -6,8 +6,8 @@ use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
     SearchState, Spacing, TextInput, avatar_tile, badge, card, column, confirm_modal, data_table,
     empty_state, field_label, hash_accent, icon, modal, overlay, primary_button,
-    primary_button_with_icon, secondary_button, spacing, toggle, toolbar_row, tr, virtual_table,
-    with_alpha,
+    primary_button_with_icon, secondary_button, segment, segmented, spacing, toggle, toolbar_row,
+    tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
@@ -32,11 +32,6 @@ const ROW_PAD_V: Pixels = px(9.0);
 const ROW_PAD_H: Pixels = px(12.0);
 const VOICE_FS: Pixels = px(11.5);
 const META_FS: Pixels = px(11.0);
-const SEG_PAD_V: Pixels = px(5.0);
-const SEG_PAD_H: Pixels = px(11.0);
-const SEG_FS: Pixels = px(11.0);
-const SEG_RADIUS: Pixels = px(5.0);
-const GROUP_RADIUS: Pixels = px(7.0);
 const PAGE_PAD_H: Pixels = px(18.0);
 
 const VIEWER_GROW: f32 = 1.4;
@@ -558,24 +553,19 @@ impl VoiceAliasesView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut segmented = div()
-            .flex()
-            .flex_row()
-            .p(px(2.0))
-            .rounded(GROUP_RADIUS)
-            .border(BORDER_THIN)
-            .border_color(palette.surface_overlay)
-            .bg(palette.shell);
-        for choice in StrategyChoice::ALL {
-            let active = self.strategy == choice;
-            segmented = segmented.child(seg_button(
-                SharedString::from(format!("va-strat-{}", choice.key())),
-                choice.label(),
-                active,
-                palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_strategy(choice, cx)),
-            ));
-        }
+        let segments = StrategyChoice::ALL
+            .into_iter()
+            .map(|choice| {
+                let active = self.strategy == choice;
+                segment(
+                    SharedString::from(format!("va-strat-{}", choice.key())),
+                    choice.label(),
+                    active,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.set_strategy(choice, cx)),
+                )
+            })
+            .collect();
+        let strategy_segments = segmented(segments, palette);
 
         let heading = div()
             .flex_1()
@@ -604,7 +594,7 @@ impl VoiceAliasesView {
             .gap(spacing(Spacing::Sm, density))
             .child(icon(Icon::Wand, BANNER_ICON, palette.brand))
             .child(heading)
-            .child(segmented);
+            .child(strategy_segments);
 
         div()
             .w_full()
@@ -974,18 +964,22 @@ impl VoiceAliasesView {
                 .child(tr!("tts_aliases_form_blocked_note"))
                 .into_any_element()
         } else {
-            let mut chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
-            for opt in &ENGINE_OPTIONS {
-                let active = form.engine.as_deref() == Some(opt.id);
-                let id = opt.id;
-                chips = chips.child(seg_button(
-                    SharedString::from(format!("va-form-eng-{id}")),
-                    opt.label,
-                    active,
-                    palette,
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.set_form_engine(id, cx)),
-                ));
-            }
+            let engine_segments = ENGINE_OPTIONS
+                .iter()
+                .map(|opt| {
+                    let active = form.engine.as_deref() == Some(opt.id);
+                    let id = opt.id;
+                    segment(
+                        SharedString::from(format!("va-form-eng-{id}")),
+                        opt.label,
+                        active,
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.set_form_engine(id, cx)
+                        }),
+                    )
+                })
+                .collect();
+            let chips = segmented(engine_segments, palette).wrap(spacing(Spacing::Xxs, density));
             let engine_block = labelled(
                 tr!("tts_aliases_form_engine_label"),
                 chips,
@@ -1151,44 +1145,6 @@ fn role_badge(
     palette: &ForgePalette,
 ) -> impl IntoElement {
     badge(palette.surface_overlay, color, label, true, ROLE_BADGE_FS)
-}
-
-fn seg_button(
-    id: SharedString,
-    label: impl Into<SharedString>,
-    active: bool,
-    palette: &ForgePalette,
-    handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> impl IntoElement {
-    let fg = if active {
-        palette.shell
-    } else {
-        palette.text_secondary
-    };
-    let weight = if active {
-        FontWeight::MEDIUM
-    } else {
-        FontWeight::NORMAL
-    };
-    let mut chip = div()
-        .id(id)
-        .py(SEG_PAD_V)
-        .px(SEG_PAD_H)
-        .rounded(SEG_RADIUS)
-        .cursor_pointer()
-        .font_family(DEFAULT_BODY_FAMILY)
-        .font_weight(weight)
-        .text_size(SEG_FS)
-        .text_color(fg)
-        .on_click(handler)
-        .child(label.into());
-    if active {
-        chip = chip.bg(palette.brand);
-    } else {
-        let hover = with_alpha(palette.border_regular, 0.06);
-        chip = chip.hover(move |s| s.bg(hover));
-    }
-    chip
 }
 
 fn labelled(

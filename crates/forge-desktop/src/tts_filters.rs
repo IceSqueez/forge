@@ -4,7 +4,7 @@ use forge_components::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Radius, Spacing, TextArea,
     TextInput, card, field_label, ghost_button, icon, modal, overlay, primary_button_with_icon,
-    radius, spacing, toggle, tr, with_alpha,
+    radio_row, radio_row_label, radius, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
     PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -24,9 +24,6 @@ use crate::presentation::ActivePresentation;
 const STAGE_CIRCLE: Pixels = px(22.0);
 const PREVIEW_W: Pixels = px(320.0);
 const MODAL_W: Pixels = px(480.0);
-const DISABLED_ROW_OPACITY: f32 = 0.5;
-const RADIO_SIZE: Pixels = px(15.0);
-const RADIO_DOT: Pixels = px(7.0);
 
 #[derive(Clone, Copy)]
 enum SkipRule {
@@ -1436,92 +1433,6 @@ impl TtsFiltersView {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn radio_row(
-        &self,
-        id: SharedString,
-        label: SharedString,
-        hint: Option<SharedString>,
-        selected: bool,
-        disabled: bool,
-        color: Rgba,
-        palette: &ForgePalette,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> AnyElement {
-        let mut dot = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(RADIO_SIZE)
-            .rounded(radius(Radius::Pill))
-            .border(px(1.5))
-            .border_color(if selected {
-                color
-            } else {
-                palette.border_regular
-            });
-        if selected {
-            dot = dot.child(
-                div()
-                    .size(RADIO_DOT)
-                    .rounded(radius(Radius::Pill))
-                    .bg(color),
-            );
-        }
-
-        let label_color = if selected {
-            palette.text_primary
-        } else {
-            palette.text_secondary
-        };
-
-        let mut row = div()
-            .id(id)
-            .flex()
-            .items_center()
-            .gap(px(10.0))
-            .px(px(11.0))
-            .py(px(9.0))
-            .rounded(radius(Radius::Sm))
-            .bg(if selected {
-                palette.surface_overlay
-            } else {
-                palette.shell
-            })
-            .border(BORDER_THIN)
-            .border_color(if selected {
-                color
-            } else {
-                palette.border_regular
-            })
-            .child(dot)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_SM)
-                    .text_color(label_color)
-                    .child(label),
-            );
-        if let Some(hint) = hint {
-            row = row.child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(hint),
-            );
-        }
-
-        if disabled {
-            row.opacity(DISABLED_ROW_OPACITY).into_any_element()
-        } else {
-            row.cursor_pointer().on_click(handler).into_any_element()
-        }
-    }
-
     fn render_skip_body(
         &self,
         modal: &AddFilterModal,
@@ -1534,16 +1445,19 @@ impl TtsFiltersView {
         for preset in SKIP_PRESETS {
             let selected = modal.skip_preset == preset;
             let id = SharedString::from(format!("filt-modal-skip-{}", preset.key()));
-            list = list.child(self.radio_row(
-                id,
-                preset.label(),
-                None,
-                selected,
-                false,
-                color,
-                palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_skip_preset(preset, cx)),
-            ));
+            list =
+                list.child(
+                    radio_row(
+                        id,
+                        selected,
+                        color,
+                        radio_row_label(preset.label(), None, selected, palette),
+                        palette,
+                    )
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _, cx| this.set_skip_preset(preset, cx),
+                    )),
+                );
         }
 
         let mut body = div()
@@ -1576,16 +1490,19 @@ impl TtsFiltersView {
             let selected = modal.output_preset == preset;
             let disabled = preset.disabled();
             let id = SharedString::from(format!("filt-modal-output-{}", preset.key()));
-            list = list.child(self.radio_row(
-                id,
-                preset.label(),
-                Some(preset.hint()),
-                selected,
-                disabled,
-                color,
-                palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.set_output_preset(preset, cx)),
-            ));
+            list = list.child(
+                radio_row(
+                    id,
+                    selected,
+                    color,
+                    radio_row_label(preset.label(), Some(preset.hint()), selected, palette),
+                    palette,
+                )
+                .disabled(disabled)
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.set_output_preset(preset, cx)
+                })),
+            );
         }
 
         div()
@@ -1619,30 +1536,40 @@ impl TtsFiltersView {
             .flex()
             .flex_col()
             .gap(px(5.0))
-            .child(self.radio_row(
-                "filt-modal-bl-censor".into(),
-                tr!("tts_filters_modal_blocklist_censor_row").into(),
-                Some(tr!("tts_filters_modal_blocklist_censor_row_hint").into()),
-                censor_selected,
-                false,
-                palette.warning,
-                palette,
-                cx.listener(|this, _: &ClickEvent, _, cx| {
+            .child(
+                radio_row(
+                    "filt-modal-bl-censor",
+                    censor_selected,
+                    palette.warning,
+                    radio_row_label(
+                        tr!("tts_filters_modal_blocklist_censor_row"),
+                        Some(tr!("tts_filters_modal_blocklist_censor_row_hint").into()),
+                        censor_selected,
+                        palette,
+                    ),
+                    palette,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.set_modal_blocklist_mode(BlocklistMode::Censor, cx)
-                }),
-            ))
-            .child(self.radio_row(
-                "filt-modal-bl-skip".into(),
-                tr!("tts_filters_modal_blocklist_skip_row").into(),
-                Some(tr!("tts_filters_modal_blocklist_skip_row_hint").into()),
-                skip_selected,
-                false,
-                palette.warning,
-                palette,
-                cx.listener(|this, _: &ClickEvent, _, cx| {
+                })),
+            )
+            .child(
+                radio_row(
+                    "filt-modal-bl-skip",
+                    skip_selected,
+                    palette.warning,
+                    radio_row_label(
+                        tr!("tts_filters_modal_blocklist_skip_row"),
+                        Some(tr!("tts_filters_modal_blocklist_skip_row_hint").into()),
+                        skip_selected,
+                        palette,
+                    ),
+                    palette,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.set_modal_blocklist_mode(BlocklistMode::Suppress, cx)
-                }),
-            ));
+                })),
+            );
 
         div()
             .flex()

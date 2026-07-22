@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BulletItem, BulletKind, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
-    FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius,
-    Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, field_hint, field_title,
-    ghost_button_with_icon, icon, overlay, radius, setting_row, spacing, toggle, tr,
+    BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
+    Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
+    Radius, Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, field_hint, field_title,
+    ghost_button_with_icon, icon, overlay, radio_row, radius, setting_row, spacing, toggle, tr,
     type_to_confirm,
 };
 use forge_server::{ServerHandle, ServerSettings};
@@ -597,31 +597,6 @@ impl SettingsWebSocketView {
             ),
         };
 
-        let border_color = if selected {
-            accent
-        } else {
-            palette.border_regular
-        };
-        let radio_border = if selected {
-            accent
-        } else {
-            palette.border_input
-        };
-
-        let mut radio = div()
-            .flex_none()
-            .mt(px(1.0))
-            .size(px(16.0))
-            .rounded(radius(Radius::Pill))
-            .border(px(2.0))
-            .border_color(radio_border)
-            .flex()
-            .items_center()
-            .justify_center();
-        if selected {
-            radio = radio.child(div().size(px(7.0)).rounded(radius(Radius::Pill)).bg(accent));
-        }
-
         let badge = div()
             .flex_none()
             .flex()
@@ -680,25 +655,23 @@ impl SettingsWebSocketView {
             BindChoice::Lan => "settings-ws-bind-lan".into(),
         };
 
-        div()
-            .id(id)
-            .flex()
-            .items_start()
+        let pad = spacing(Spacing::Sm, density);
+        radio_row(id, selected, accent, info, palette)
+            .dot_metrics(px(16.0), px(7.0), px(2.0))
+            .dot_unselected(palette.border_input)
+            .align_start()
             .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Md))
-            .border(if selected { px(1.0) } else { BORDER_THIN })
-            .border_color(border_color)
-            .bg(palette.base)
-            .cursor_pointer()
+            .padding(pad, pad)
+            .corner_radius(radius(Radius::Md))
+            .row_border(BORDER_ACCENT, BORDER_THIN)
+            .row_border_color(palette.border_regular)
+            .background(palette.base, palette.base)
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, window, cx| match choice {
                     BindChoice::Localhost => this.select_localhost(cx),
                     BindChoice::Lan => this.open_lan_modal(window, cx),
                 }),
             )
-            .child(radio)
-            .child(info)
     }
 
     fn port_column(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {

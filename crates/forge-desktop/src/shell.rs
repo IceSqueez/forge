@@ -126,7 +126,6 @@ impl AppShell {
                     ChatView::new(
                         topics.chat_feed.clone(),
                         topics.home_stats.clone(),
-                        topics.status.clone(),
                         rt_handle,
                         viewer_repo,
                         action_engine,

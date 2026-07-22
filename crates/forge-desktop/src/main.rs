@@ -55,7 +55,6 @@ mod tts_dashboard;
 mod tts_engines;
 mod tts_filters;
 mod twitch_panel;
-mod uptime_view;
 mod voice_aliases;
 
 use forge_components::{IconAssets, bind_picker_keys, bind_text_area_keys, bind_text_input_keys};

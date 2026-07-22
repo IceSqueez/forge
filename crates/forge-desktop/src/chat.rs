@@ -8,9 +8,9 @@ use forge_components::{
     DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge,
     ResizeRange, Spacing, TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label,
-    breadcrumb, chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button,
-    menu_divider, menu_header, menu_item, platform_color, radius, search_input,
-    search_input_on_surface, spacing, status_dot, toolbar_row, tr,
+    chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider,
+    menu_header, menu_item, page_frame, platform_color, radius, search_input,
+    search_input_on_surface, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -30,13 +30,11 @@ use crate::chat_drawer::{
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::home_stats::HomeStats;
 use crate::presentation::ActivePresentation;
-use crate::runtime_status::RuntimeStatus;
 use crate::toasts::PushToast;
-use crate::uptime_view::UptimeView;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
-const SEARCH_FIELD_WIDTH: Pixels = px(220.0);
+const SEARCH_W: Pixels = px(240.0);
 const VIEWER_DOT: Pixels = px(6.0);
 const CHIP_DIVIDER_W: Pixels = px(0.5);
 const CHIP_DIVIDER_H: Pixels = px(14.0);
@@ -215,7 +213,6 @@ impl Render for ChatViewerCount {
 pub struct ChatView {
     feed: Entity<ChatFeed>,
     viewer_count: Entity<ChatViewerCount>,
-    uptime_view: Entity<UptimeView>,
     rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     voice_alias_repo: Arc<dyn VoiceAliasRepo>,
@@ -225,10 +222,8 @@ pub struct ChatView {
     platform_filter: PlatformFilter,
     events_only: bool,
     hide_bots: bool,
-    search_open: bool,
     search_query: String,
     visible: Rc<Vec<ChatMessage>>,
-    drawer_open: bool,
     drawer_width: Pixels,
     drawer_search: Entity<TextInput>,
     drawer_query: String,
@@ -266,7 +261,6 @@ impl ChatView {
     pub fn new(
         feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,
-        status: Entity<RuntimeStatus>,
         rt_handle: tokio::runtime::Handle,
         viewer_repo: Arc<dyn ViewerRepo>,
         action_engine: ActionEngineHandle,
@@ -284,8 +278,6 @@ impl ChatView {
         });
         let reply_input =
             cx.new(|cx| TextInput::new(tr!("chat_reply_placeholder"), cx).with_palette(palette));
-
-        let uptime_view = cx.new(|cx| UptimeView::new(status, cx));
 
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
         let viewer_count = cx.new(|cx| ChatViewerCount::new(home_stats, cx));
@@ -317,7 +309,6 @@ impl ChatView {
         let mut this = Self {
             feed,
             viewer_count,
-            uptime_view,
             rt_handle,
             action_engine,
             voice_alias_repo,
@@ -327,10 +318,8 @@ impl ChatView {
             platform_filter: PlatformFilter::All,
             events_only: false,
             hide_bots: false,
-            search_open: false,
             search_query: String::new(),
             visible: Rc::new(Vec::new()),
-            drawer_open: true,
             drawer_width: DRAWER_WIDTH,
             drawer_search,
             drawer_query: String::new(),
@@ -450,9 +439,6 @@ impl ChatView {
     }
 
     fn recompute_drawer_summaries(&mut self, cx: &mut Context<Self>) {
-        if !self.drawer_open {
-            return;
-        }
         let palette = cx.palette();
         let messages = self.feed.read(cx).messages().to_vec();
         self.drawer_summaries = drawer_summaries_for(&messages, &self.viewers, &palette);
@@ -517,22 +503,6 @@ impl ChatView {
         cx.notify();
     }
 
-    fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_open = !self.search_open;
-        if self.search_open {
-            self.search_field.update(cx, |f, cx| f.focus(window, cx));
-        }
-        cx.notify();
-    }
-
-    fn toggle_drawer(&mut self, cx: &mut Context<Self>) {
-        self.drawer_open = !self.drawer_open;
-        if self.drawer_open {
-            self.recompute_drawer_summaries(cx);
-        }
-        cx.notify();
-    }
-
     fn set_drawer_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
         if self.drawer_width != width {
             self.drawer_width = width;
@@ -542,7 +512,6 @@ impl ChatView {
 
     fn open_viewer(&mut self, username: SharedString, cx: &mut Context<Self>) {
         self.selected_viewer = Some(username.to_string());
-        self.drawer_open = true;
         self.recompute_drawer_summaries(cx);
         cx.notify();
     }
@@ -1042,70 +1011,16 @@ impl ChatView {
         }
     }
 
-    fn render_header(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let separator = div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_faint)
-            .child("·");
-
-        let drawer_label = if self.drawer_open {
-            tr!("chat_hide_viewers")
-        } else {
-            tr!("chat_show_viewers")
-        };
-        let border = palette.border_regular;
-        let drawer_btn = div()
-            .id("chat-drawer-toggle")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .py(spacing(Spacing::Xxs, Density::Cozy))
-            .px(spacing(Spacing::Xs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(border)
-            .cursor_pointer()
-            .hover(move |s| s.border_color(border))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_drawer(cx)))
-            .child(icon(Icon::LayoutSidebar, px(11.0), palette.text_secondary))
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_secondary)
-                    .child(drawer_label),
-            );
-
-        let cluster = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(self.viewer_count.clone())
-            .child(separator)
-            .child(self.uptime_view.clone())
-            .child(drawer_btn);
-
-        breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_audience")),
-                BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_chat")),
-            ],
-            palette,
-        )
-        .right(cluster)
+    fn render_header_right(&self) -> impl IntoElement + use<> {
+        self.viewer_count.clone()
     }
 
-    fn render_filter_bar(
+    fn render_filter_left(
         &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
+    ) -> AnyElement {
         let platform_chips = [
             (
                 "chat-chip-all",
@@ -1181,35 +1096,20 @@ impl ChatView {
             ),
         );
 
-        let surf = palette.surface_overlay;
-        let text = palette.text_primary;
-        let faint = palette.text_faint;
-        let green = palette.success;
-
-        let toggle_icon = if self.search_open {
-            Icon::X
-        } else {
-            Icon::Search
-        };
-        let search_toggle = div()
-            .id("chat-search-toggle")
+        div()
             .flex()
             .items_center()
-            .justify_center()
-            .p(ICON_BTN_PAD)
-            .rounded(ICON_BTN_RADIUS)
-            .cursor_pointer()
-            .hover(move |s| s.bg(surf))
-            .on_click(
-                cx.listener(|this, _: &ClickEvent, window, cx| this.toggle_search(window, cx)),
-            )
-            .child(icon(
-                toggle_icon,
-                px(14.0),
-                if self.search_open { text } else { faint },
-            ));
+            .gap(spacing(Spacing::Sm, density))
+            .child(div().w(SEARCH_W).child(self.search_field.clone()))
+            .child(chips)
+            .into_any_element()
+    }
 
-        let export_btn = div()
+    fn render_filter_right(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let surf = palette.surface_overlay;
+        let green = palette.success;
+
+        div()
             .id("chat-export")
             .flex()
             .items_center()
@@ -1219,21 +1119,8 @@ impl ChatView {
             .cursor_pointer()
             .hover(move |s| s.bg(surf))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_chat_log(cx)))
-            .child(icon(Icon::Download, px(14.0), green));
-
-        let mut search_control = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density));
-        if self.search_open {
-            search_control =
-                search_control.child(div().w(SEARCH_FIELD_WIDTH).child(self.search_field.clone()));
-        }
-        let search_control = search_control.child(search_toggle).child(export_btn);
-
-        toolbar_row(chips, search_control)
-            .attached(palette)
-            .density(density)
+            .child(icon(Icon::Download, px(14.0), green))
+            .into_any_element()
     }
 
     fn render_chat_area(
@@ -1243,7 +1130,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let query = self.search_query.to_lowercase();
-        let search_active = self.search_open && !query.is_empty();
+        let search_active = !query.is_empty();
 
         let snapshot: Rc<Vec<ChatMessage>> = self.visible.clone();
         let empty = snapshot.is_empty();
@@ -2163,45 +2050,55 @@ impl Render for ChatView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header = self.render_header(&palette, cx);
-        let filter_bar = self.render_filter_bar(&palette, density, cx);
+        let header_right = self.render_header_right();
+        let filter_left = self.render_filter_left(&palette, density, cx);
+        let filter_right = self.render_filter_right(&palette, cx);
         let chat_area = self.render_chat_area(&palette, density, cx);
-        let drawer = self
-            .drawer_open
-            .then(|| self.render_drawer(&palette, density, cx));
+        let drawer = self.render_drawer(&palette, density, cx);
         let user_menu = self.render_user_menu(&palette, cx);
         let reply_compose = self
             .reply_target
             .clone()
             .map(|target| self.render_reply_compose(target.username, &palette, density, cx));
 
-        div()
-            .size_full()
+        let body = div()
+            .flex_1()
+            .min_h(px(0.0))
             .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(header)
-            .child(filter_bar)
+            .flex_row()
+            .overflow_hidden()
             .child(
                 div()
                     .flex_1()
                     .min_h(px(0.0))
                     .flex()
-                    .flex_row()
+                    .flex_col()
                     .overflow_hidden()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_h(px(0.0))
-                            .flex()
-                            .flex_col()
-                            .overflow_hidden()
-                            .child(chat_area)
-                            .children(reply_compose)
-                            .child(self.input.clone()),
-                    )
-                    .children(drawer),
+                    .child(chat_area)
+                    .children(reply_compose)
+                    .child(self.input.clone()),
             )
+            .child(drawer);
+
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_audience")),
+                BreadcrumbCrumb::leaf(tr!("chat_breadcrumb_chat")),
+            ],
+            &palette,
+        )
+        .header_right(header_right)
+        .subheader_left(filter_left)
+        .subheader_right(filter_right)
+        .density(density)
+        .body(body);
+
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(palette.base)
+            .child(frame)
             .children(user_menu)
     }
 }

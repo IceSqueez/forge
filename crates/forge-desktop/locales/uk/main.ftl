@@ -1618,6 +1618,7 @@ widget_confirm_delete_kind_script = скрипт
 
 ## Widget - save indicator
 
+widget_copied_toast = Скопійовано в буфер обміну
 widget_save_all_saved = Усі зміни збережено
 widget_save_saving = Збереження…
 widget_save_unsaved = Незбережені зміни

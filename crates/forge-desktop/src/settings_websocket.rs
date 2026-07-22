@@ -12,8 +12,8 @@ use forge_components::{
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
-    AnyElement, App, ClickEvent, ClipboardItem, Context, Div, Entity, FontWeight, Rgba,
-    SharedString, Subscription, Window, div, prelude::*, px, relative,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px, relative,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -447,7 +447,7 @@ impl SettingsWebSocketView {
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(self.bearer_token.clone()));
+        crate::toasts::copy_to_clipboard(self.bearer_token.clone(), cx);
     }
 
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {

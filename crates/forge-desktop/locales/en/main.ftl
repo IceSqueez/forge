@@ -1598,6 +1598,7 @@ widget_confirm_delete_kind_script = script
 
 ## Widget - save indicator
 
+widget_copied_toast = Copied to clipboard
 widget_save_all_saved = All changes saved
 widget_save_saving = Saving…
 widget_save_unsaved = Unsaved changes

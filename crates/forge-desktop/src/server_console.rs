@@ -13,7 +13,7 @@ use forge_events::EventSource;
 use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSnapshot};
 use forge_storage::{CredentialId, CredentialsRepo};
 use gpui::{
-    AnyElement, ClickEvent, ClipboardItem, Context, Div, FontWeight, Pixels, Rgba, SharedString,
+    AnyElement, ClickEvent, Context, Div, FontWeight, Pixels, Rgba, SharedString,
     UniformListScrollHandle, Window, div, prelude::*, px, relative,
 };
 
@@ -307,15 +307,15 @@ impl ServerConsoleView {
     }
 
     fn copy_bind_address(&mut self, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(self.bind_address.clone()));
+        crate::toasts::copy_to_clipboard(self.bind_address.clone(), cx);
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(self.bearer_token.clone()));
+        crate::toasts::copy_to_clipboard(self.bearer_token.clone(), cx);
     }
 
     fn copy_overlay_url(&mut self, url: String, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(url));
+        crate::toasts::copy_to_clipboard(url, cx);
     }
 
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {

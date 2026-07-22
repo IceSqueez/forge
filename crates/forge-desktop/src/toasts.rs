@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use forge_components::{Icon, ToastAction, ToastData, ToastKind};
+use forge_components::{Icon, ToastAction, ToastData, ToastKind, tr};
 use gpui::{App, Global, SharedString};
 
 const DEFAULT_TOAST_MS: u64 = 4000;
@@ -59,6 +59,11 @@ impl Default for Toasts {
 }
 
 impl Global for Toasts {}
+
+pub fn copy_to_clipboard(text: impl Into<String>, cx: &mut App) {
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.into()));
+    cx.push_toast(ToastKind::Success, tr!("widget_copied_toast"));
+}
 
 pub trait PushToast {
     fn push_toast(&mut self, kind: ToastKind, message: impl Into<SharedString>);

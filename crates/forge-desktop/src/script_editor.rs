@@ -4,8 +4,8 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
     ModalSize, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextArea, TextInput,
-    badge, breadcrumb, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
-    inline_edit, install_resize, menu_divider, menu_item, modal, overlay, primary_button, radius,
+    badge, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon, inline_edit,
+    install_resize, menu_divider, menu_item, modal, overlay, page_frame, primary_button, radius,
     spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
@@ -1209,12 +1209,7 @@ impl ScriptEditorView {
         }
     }
 
-    fn page_header(&self, palette: &ForgePalette) -> AnyElement {
-        let crumbs = vec![
-            BreadcrumbCrumb::leaf(tr!("script_editor_breadcrumb_automation")),
-            BreadcrumbCrumb::leaf(tr!("nav_script_editor")),
-        ];
-
+    fn render_header_right(&self, palette: &ForgePalette) -> AnyElement {
         let total = self.scripts.len();
         let ok = self.scripts.iter().filter(|e| e.status_ok).count();
 
@@ -1257,7 +1252,7 @@ impl ScriptEditorView {
                 .child("Rhai 1.25"),
         );
 
-        breadcrumb(crumbs, palette).right(right).into_any_element()
+        right.into_any_element()
     }
 
     fn file_bar(
@@ -2553,7 +2548,7 @@ impl Render for ScriptEditorView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header = self.page_header(&palette);
+        let header_right = self.render_header_right(&palette);
         let file_bar = self.file_bar(&palette, density, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let left = self.left_pane(&palette, density, cx);
@@ -2590,6 +2585,16 @@ impl Render for ScriptEditorView {
             .child(centre)
             .children(right);
 
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("script_editor_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("nav_script_editor")),
+            ],
+            &palette,
+        )
+        .header_right(header_right)
+        .body(body);
+
         let overlay = if self.run_modal.is_some() {
             self.run_modal_overlay(&palette, cx)
         } else if self.pending_delete.is_some() {
@@ -2607,8 +2612,7 @@ impl Render for ScriptEditorView {
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(header)
-            .child(body)
+            .child(frame)
             .children(overlay)
             .children(row_menu)
     }

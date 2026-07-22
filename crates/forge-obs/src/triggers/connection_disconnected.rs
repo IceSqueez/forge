@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::connection as fields;
+
 pub struct ConnectionDisconnectedDescriptor;
 
 impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
@@ -64,7 +66,7 @@ impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(reason) = event.payload.get("reason").and_then(|v| v.as_str()) {
+        if let Some(reason) = event.payload.get(fields::REASON).and_then(|v| v.as_str()) {
             stack = stack.set("obs.reason".to_owned(), Variant::String(reason.to_owned()));
         }
         stack

@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::source as fields;
+
 pub struct SourceSceneItemVisibilityChangedDescriptor;
 
 impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
@@ -64,19 +66,19 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(scene) = event.payload.get("scene").and_then(|v| v.as_str()) {
+        if let Some(scene) = event.payload.get(fields::SCENE).and_then(|v| v.as_str()) {
             stack = stack.set(
                 "obs.scene.name".to_owned(),
                 Variant::String(scene.to_owned()),
             );
         }
-        if let Some(source) = event.payload.get("source").and_then(|v| v.as_str()) {
+        if let Some(source) = event.payload.get(fields::SOURCE).and_then(|v| v.as_str()) {
             stack = stack.set(
                 "obs.source.name".to_owned(),
                 Variant::String(source.to_owned()),
             );
         }
-        if let Some(visible) = event.payload.get("visible").and_then(|v| v.as_bool()) {
+        if let Some(visible) = event.payload.get(fields::VISIBLE).and_then(|v| v.as_bool()) {
             stack = stack.set("obs.source.is_enabled".to_owned(), Variant::Bool(visible));
         }
         stack

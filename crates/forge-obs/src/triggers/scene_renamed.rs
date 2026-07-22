@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::scene as fields;
+
 pub struct SceneRenamedDescriptor;
 
 impl TriggerKindDescriptor for SceneRenamedDescriptor {
@@ -64,13 +66,21 @@ impl TriggerKindDescriptor for SceneRenamedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(old) = event.payload.get("scene_name_old").and_then(|v| v.as_str()) {
+        if let Some(old) = event
+            .payload
+            .get(fields::SCENE_NAME_OLD)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.scene.name_old".to_owned(),
                 Variant::String(old.to_owned()),
             );
         }
-        if let Some(new) = event.payload.get("scene_name_new").and_then(|v| v.as_str()) {
+        if let Some(new) = event
+            .payload
+            .get(fields::SCENE_NAME_NEW)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.scene.name_new".to_owned(),
                 Variant::String(new.to_owned()),

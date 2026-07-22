@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::source as fields;
+
 pub struct SourceSceneItemLockChangedDescriptor;
 
 impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
@@ -64,19 +66,23 @@ impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(scene) = event.payload.get("scene").and_then(|v| v.as_str()) {
+        if let Some(scene) = event.payload.get(fields::SCENE).and_then(|v| v.as_str()) {
             stack = stack.set(
                 "obs.scene.name".to_owned(),
                 Variant::String(scene.to_owned()),
             );
         }
-        if let Some(source) = event.payload.get("source").and_then(|v| v.as_str()) {
+        if let Some(source) = event.payload.get(fields::SOURCE).and_then(|v| v.as_str()) {
             stack = stack.set(
                 "obs.source.name".to_owned(),
                 Variant::String(source.to_owned()),
             );
         }
-        if let Some(locked) = event.payload.get("is_locked").and_then(|v| v.as_bool()) {
+        if let Some(locked) = event
+            .payload
+            .get(fields::IS_LOCKED)
+            .and_then(|v| v.as_bool())
+        {
             stack = stack.set("obs.source.is_locked".to_owned(), Variant::Bool(locked));
         }
         stack

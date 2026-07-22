@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::source as fields;
+
 pub struct SourceInputRenamedDescriptor;
 
 impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
@@ -66,7 +68,7 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
         let mut stack = ArgStack::new();
         if let Some(name) = event
             .payload
-            .get("source_name_old")
+            .get(fields::SOURCE_NAME_OLD)
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
@@ -76,7 +78,7 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
         }
         if let Some(name) = event
             .payload
-            .get("source_name_new")
+            .get(fields::SOURCE_NAME_NEW)
             .and_then(|v| v.as_str())
         {
             stack = stack.set(

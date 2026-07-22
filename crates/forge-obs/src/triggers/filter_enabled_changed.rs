@@ -9,6 +9,7 @@ use forge_types::{
 };
 
 use super::filter_removed::{build_filter_source_arg_stack, filter_source_variables};
+use crate::payload_fields::filter as fields;
 
 pub struct FilterEnabledChangedDescriptor;
 
@@ -66,7 +67,11 @@ impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = build_filter_source_arg_stack(event);
-        if let Some(enabled) = event.payload.get("is_enabled").and_then(|v| v.as_bool()) {
+        if let Some(enabled) = event
+            .payload
+            .get(fields::IS_ENABLED)
+            .and_then(|v| v.as_bool())
+        {
             stack = stack.set("obs.filter.is_enabled".to_owned(), Variant::Bool(enabled));
         }
         stack

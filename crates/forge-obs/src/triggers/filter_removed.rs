@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::filter as fields;
+
 pub struct FilterRemovedDescriptor;
 
 impl TriggerKindDescriptor for FilterRemovedDescriptor {
@@ -92,13 +94,21 @@ pub(crate) fn filter_source_variables() -> Vec<DeclaredVariable> {
 
 pub(crate) fn build_filter_source_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(name) = event.payload.get("source_name").and_then(|v| v.as_str()) {
+    if let Some(name) = event
+        .payload
+        .get(fields::SOURCE_NAME)
+        .and_then(|v| v.as_str())
+    {
         stack = stack.set(
             "obs.source.name".to_owned(),
             Variant::String(name.to_owned()),
         );
     }
-    if let Some(name) = event.payload.get("filter_name").and_then(|v| v.as_str()) {
+    if let Some(name) = event
+        .payload
+        .get(fields::FILTER_NAME)
+        .and_then(|v| v.as_str())
+    {
         stack = stack.set(
             "obs.filter.name".to_owned(),
             Variant::String(name.to_owned()),

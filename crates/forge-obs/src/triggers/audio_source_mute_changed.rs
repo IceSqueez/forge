@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::audio as fields;
+
 pub struct AudioSourceMuteChangedDescriptor;
 
 impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
@@ -102,13 +104,21 @@ impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
 
 pub(crate) fn build_mute_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(name) = event.payload.get("source_name").and_then(|v| v.as_str()) {
+    if let Some(name) = event
+        .payload
+        .get(fields::SOURCE_NAME)
+        .and_then(|v| v.as_str())
+    {
         stack = stack.set(
             "obs.source.name".to_owned(),
             Variant::String(name.to_owned()),
         );
     }
-    if let Some(muted) = event.payload.get("is_muted").and_then(|v| v.as_bool()) {
+    if let Some(muted) = event
+        .payload
+        .get(fields::IS_MUTED)
+        .and_then(|v| v.as_bool())
+    {
         stack = stack.set("obs.source.is_muted".to_owned(), Variant::Bool(muted));
     }
     stack
@@ -117,7 +127,11 @@ pub(crate) fn build_mute_arg_stack(event: &Event) -> ArgStack {
 pub(crate) fn source_name_matches(config: &TriggerConfig, event: &Event) -> bool {
     match config.get("source_name") {
         Some(Variant::String(s)) if !s.is_empty() => {
-            event.payload.get("source_name").and_then(|v| v.as_str()) == Some(s.as_str())
+            event
+                .payload
+                .get(fields::SOURCE_NAME)
+                .and_then(|v| v.as_str())
+                == Some(s.as_str())
         }
         _ => true,
     }

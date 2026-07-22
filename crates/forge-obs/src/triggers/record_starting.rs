@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::recording as fields;
+
 pub struct RecordStartingDescriptor;
 
 impl TriggerKindDescriptor for RecordStartingDescriptor {
@@ -98,16 +100,28 @@ pub(crate) fn record_variables() -> Vec<DeclaredVariable> {
 
 pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(s) = event.payload.get("output_state").and_then(|v| v.as_str()) {
+    if let Some(s) = event
+        .payload
+        .get(fields::OUTPUT_STATE)
+        .and_then(|v| v.as_str())
+    {
         stack = stack.set(
             "obs.record.output_state".to_owned(),
             Variant::String(s.to_owned()),
         );
     }
-    if let Some(b) = event.payload.get("is_active").and_then(|v| v.as_bool()) {
+    if let Some(b) = event
+        .payload
+        .get(fields::IS_ACTIVE)
+        .and_then(|v| v.as_bool())
+    {
         stack = stack.set("obs.record.is_active".to_owned(), Variant::Bool(b));
     }
-    if let Some(p) = event.payload.get("output_path").and_then(|v| v.as_str()) {
+    if let Some(p) = event
+        .payload
+        .get(fields::OUTPUT_PATH)
+        .and_then(|v| v.as_str())
+    {
         stack = stack.set(
             "obs.record.output_path".to_owned(),
             Variant::String(p.to_owned()),

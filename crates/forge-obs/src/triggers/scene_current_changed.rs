@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::scene as fields;
+
 pub struct SceneCurrentChangedDescriptor;
 
 impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
@@ -75,7 +77,7 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
         }
         match config.get("scene") {
             Some(Variant::String(s)) if !s.is_empty() => {
-                event.payload.get("to_scene").and_then(|v| v.as_str()) == Some(s.as_str())
+                event.payload.get(fields::TO_SCENE).and_then(|v| v.as_str()) == Some(s.as_str())
             }
             _ => true,
         }
@@ -83,10 +85,14 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(to) = event.payload.get("to_scene").and_then(|v| v.as_str()) {
+        if let Some(to) = event.payload.get(fields::TO_SCENE).and_then(|v| v.as_str()) {
             stack = stack.set("obs.scene".to_owned(), Variant::String(to.to_owned()));
         }
-        if let Some(from) = event.payload.get("from_scene").and_then(|v| v.as_str()) {
+        if let Some(from) = event
+            .payload
+            .get(fields::FROM_SCENE)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.previous_scene".to_owned(),
                 Variant::String(from.to_owned()),

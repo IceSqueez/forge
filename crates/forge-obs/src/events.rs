@@ -7,6 +7,12 @@ use serde_json::json;
 
 use crate::catalog::ObsCatalog;
 use crate::health::HealthSnapshot;
+use crate::payload_fields::{
+    audio as audio_fields, collection as collection_fields, connection as connection_fields,
+    filter as filter_fields, profile as profile_fields, recording as recording_fields,
+    scene as scene_fields, source as source_fields, streaming as streaming_fields,
+    studio as studio_fields, transition as transition_fields, virtualcam as virtualcam_fields,
+};
 
 pub(crate) fn make_connection_connected() -> Event {
     Event::new(EventSource::Obs, "connection.connected", json!({}))
@@ -16,7 +22,7 @@ pub(crate) fn make_connection_disconnected(reason: &str) -> Event {
     Event::new(
         EventSource::Obs,
         "connection.disconnected",
-        json!({ "reason": reason }),
+        json!({ (connection_fields::REASON): reason }),
     )
 }
 
@@ -24,7 +30,7 @@ pub(crate) fn make_connection_auth_failed(message: &str) -> Event {
     Event::new(
         EventSource::Obs,
         "connection.auth_failed",
-        json!({ "error_message": message }),
+        json!({ (connection_fields::ERROR_MESSAGE): message }),
     )
 }
 
@@ -34,8 +40,8 @@ pub(crate) fn make_scene_changed_event(
     cause: Option<EventId>,
 ) -> Event {
     let payload = json!({
-        "from_scene": from_scene.unwrap_or(""),
-        "to_scene": to_scene,
+        (scene_fields::FROM_SCENE): from_scene.unwrap_or(""),
+        (scene_fields::TO_SCENE): to_scene,
     });
     match cause {
         Some(c) => Event::caused_by(EventSource::Obs, "scene.changed", payload, c),
@@ -49,7 +55,11 @@ pub(crate) fn make_record_event(active: bool, path: Option<&str>) -> Event {
     } else {
         "recording.stopped"
     };
-    Event::new(EventSource::Obs, kind, json!({ "output_path": path }))
+    Event::new(
+        EventSource::Obs,
+        kind,
+        json!({ (recording_fields::OUTPUT_PATH): path }),
+    )
 }
 
 pub(crate) fn make_record_state_event(
@@ -83,7 +93,11 @@ pub(crate) fn make_record_state_event(
     Event::new(
         EventSource::Obs,
         kind,
-        json!({ "output_state": state_str, "is_active": active, "output_path": path }),
+        json!({
+            (recording_fields::OUTPUT_STATE): state_str,
+            (recording_fields::IS_ACTIVE): active,
+            (recording_fields::OUTPUT_PATH): path,
+        }),
     )
 }
 
@@ -114,7 +128,10 @@ pub(crate) fn make_virtualcam_event(active: bool, state: &obws::events::OutputSt
     Event::new(
         EventSource::Obs,
         kind,
-        json!({ "output_state": state_str, "is_active": active }),
+        json!({
+            (virtualcam_fields::OUTPUT_STATE): state_str,
+            (virtualcam_fields::IS_ACTIVE): active,
+        }),
     )
 }
 
@@ -149,7 +166,10 @@ pub(crate) fn make_stream_event(active: bool, state: &obws::events::OutputState)
     Event::new(
         EventSource::Obs,
         kind,
-        json!({ "output_state": state_str, "is_active": active }),
+        json!({
+            (streaming_fields::OUTPUT_STATE): state_str,
+            (streaming_fields::IS_ACTIVE): active,
+        }),
     )
 }
 
@@ -166,8 +186,8 @@ pub(crate) fn map_obs_event(
             EventSource::Obs,
             "scene.preview_changed",
             json!({
-                "name_old": from_scene.unwrap_or(""),
-                "name_new": id.name,
+                (scene_fields::NAME_OLD): from_scene.unwrap_or(""),
+                (scene_fields::NAME_NEW): id.name,
             }),
         )),
         obws::events::Event::SceneListChanged { scenes } => {
@@ -175,50 +195,53 @@ pub(crate) fn map_obs_event(
             Some(Event::new(
                 EventSource::Obs,
                 "scene.list_changed",
-                json!({ "all_names": names }),
+                json!({ (scene_fields::ALL_NAMES): names }),
             ))
         }
         obws::events::Event::SceneCreated { id, .. } => Some(Event::new(
             EventSource::Obs,
             "scene.created",
-            json!({ "scene_name": id.name }),
+            json!({ (scene_fields::SCENE_NAME): id.name }),
         )),
         obws::events::Event::SceneRemoved { id, .. } => Some(Event::new(
             EventSource::Obs,
             "scene.removed",
-            json!({ "scene_name": id.name }),
+            json!({ (scene_fields::SCENE_NAME): id.name }),
         )),
         obws::events::Event::SceneNameChanged {
             old_name, new_name, ..
         } => Some(Event::new(
             EventSource::Obs,
             "scene.renamed",
-            json!({ "scene_name_old": old_name, "scene_name_new": new_name }),
+            json!({
+                (scene_fields::SCENE_NAME_OLD): old_name,
+                (scene_fields::SCENE_NAME_NEW): new_name,
+            }),
         )),
         obws::events::Event::CurrentProfileChanged { name } => Some(Event::new(
             EventSource::Obs,
             "profile.current_changed",
-            json!({ "profile_name": name }),
+            json!({ (profile_fields::PROFILE_NAME): name }),
         )),
         obws::events::Event::ProfileListChanged { profiles } => Some(Event::new(
             EventSource::Obs,
             "profile.list_changed",
-            json!({ "all_names": profiles }),
+            json!({ (profile_fields::ALL_NAMES): profiles }),
         )),
         obws::events::Event::SceneCollectionListChanged { collections } => Some(Event::new(
             EventSource::Obs,
             "collection.list_changed",
-            json!({ "all_names": collections }),
+            json!({ (collection_fields::ALL_NAMES): collections }),
         )),
         obws::events::Event::CurrentSceneCollectionChanging { name } => Some(Event::new(
             EventSource::Obs,
             "collection.changing",
-            json!({ "name": name }),
+            json!({ (collection_fields::NAME): name }),
         )),
         obws::events::Event::CurrentSceneCollectionChanged { name } => Some(Event::new(
             EventSource::Obs,
             "collection.changed",
-            json!({ "name": name }),
+            json!({ (collection_fields::NAME): name }),
         )),
         obws::events::Event::RecordStateChanged {
             active,
@@ -236,7 +259,7 @@ pub(crate) fn map_obs_event(
         obws::events::Event::RecordFileChanged { path } => Some(Event::new(
             EventSource::Obs,
             "recording.file_changed",
-            json!({ "output_path_new": path }),
+            json!({ (recording_fields::OUTPUT_PATH_NEW): path }),
         )),
         obws::events::Event::StreamStateChanged { active, state } => {
             Some(make_stream_event(*active, state))
@@ -253,43 +276,50 @@ pub(crate) fn map_obs_event(
             Some(Event::new(
                 EventSource::Obs,
                 kind,
-                json!({ "enabled": enabled }),
+                json!({ (studio_fields::ENABLED): enabled }),
             ))
         }
         obws::events::Event::SceneTransitionStarted { id } => Some(Event::new(
             EventSource::Obs,
             "transition.started",
-            json!({ "transition_name": id.name }),
+            json!({ (transition_fields::TRANSITION_NAME): id.name }),
         )),
         obws::events::Event::SceneTransitionEnded { id } => Some(Event::new(
             EventSource::Obs,
             "transition.ended",
-            json!({ "transition_name": id.name }),
+            json!({ (transition_fields::TRANSITION_NAME): id.name }),
         )),
         obws::events::Event::SceneTransitionVideoEnded { id } => Some(Event::new(
             EventSource::Obs,
             "transition.video_ended",
-            json!({ "transition_name": id.name }),
+            json!({ (transition_fields::TRANSITION_NAME): id.name }),
         )),
         obws::events::Event::InputMuteStateChanged { id, muted } => Some(Event::new(
             EventSource::Obs,
             "audio.source_mute_changed",
-            json!({ "source_name": id.name, "is_muted": muted }),
+            json!({ (audio_fields::SOURCE_NAME): id.name, (audio_fields::IS_MUTED): muted }),
         )),
         obws::events::Event::InputVolumeChanged { id, mul, db } => Some(Event::new(
             EventSource::Obs,
             "audio.source_volume_changed",
-            json!({ "source_name": id.name, "volume_db": db, "volume_multiplier": mul }),
+            json!({
+                (audio_fields::SOURCE_NAME): id.name,
+                (audio_fields::VOLUME_DB): db,
+                (audio_fields::VOLUME_MULTIPLIER): mul,
+            }),
         )),
         obws::events::Event::InputAudioBalanceChanged { id, audio_balance } => Some(Event::new(
             EventSource::Obs,
             "audio.source_balance_changed",
-            json!({ "source_name": id.name, "balance": audio_balance }),
+            json!({ (audio_fields::SOURCE_NAME): id.name, (audio_fields::BALANCE): audio_balance }),
         )),
         obws::events::Event::InputAudioSyncOffsetChanged { id, offset } => Some(Event::new(
             EventSource::Obs,
             "audio.source_sync_offset_changed",
-            json!({ "source_name": id.name, "sync_offset_ms": offset.whole_milliseconds() }),
+            json!({
+                (audio_fields::SOURCE_NAME): id.name,
+                (audio_fields::SYNC_OFFSET_MS): offset.whole_milliseconds(),
+            }),
         )),
         obws::events::Event::InputCreated {
             id,
@@ -298,19 +328,25 @@ pub(crate) fn map_obs_event(
         } => Some(Event::new(
             EventSource::Obs,
             "source.input_created",
-            json!({ "source_name": id.name, "source_kind": unversioned_kind }),
+            json!({
+                (source_fields::SOURCE_NAME): id.name,
+                (source_fields::SOURCE_KIND): unversioned_kind,
+            }),
         )),
         obws::events::Event::InputRemoved { id } => Some(Event::new(
             EventSource::Obs,
             "source.input_removed",
-            json!({ "source_name": id.name }),
+            json!({ (source_fields::SOURCE_NAME): id.name }),
         )),
         obws::events::Event::InputNameChanged {
             old_name, new_name, ..
         } => Some(Event::new(
             EventSource::Obs,
             "source.input_renamed",
-            json!({ "source_name_old": old_name, "source_name_new": new_name }),
+            json!({
+                (source_fields::SOURCE_NAME_OLD): old_name,
+                (source_fields::SOURCE_NAME_NEW): new_name,
+            }),
         )),
         obws::events::Event::SourceFilterCreated {
             source,
@@ -320,12 +356,19 @@ pub(crate) fn map_obs_event(
         } => Some(Event::new(
             EventSource::Obs,
             "filter.created",
-            json!({ "source_name": source, "filter_name": filter, "filter_kind": kind }),
+            json!({
+                (filter_fields::SOURCE_NAME): source,
+                (filter_fields::FILTER_NAME): filter,
+                (filter_fields::FILTER_KIND): kind,
+            }),
         )),
         obws::events::Event::SourceFilterRemoved { source, filter } => Some(Event::new(
             EventSource::Obs,
             "filter.removed",
-            json!({ "source_name": source, "filter_name": filter }),
+            json!({
+                (filter_fields::SOURCE_NAME): source,
+                (filter_fields::FILTER_NAME): filter,
+            }),
         )),
         obws::events::Event::SourceFilterEnableStateChanged {
             source,
@@ -334,7 +377,11 @@ pub(crate) fn map_obs_event(
         } => Some(Event::new(
             EventSource::Obs,
             "filter.enabled_changed",
-            json!({ "source_name": source, "filter_name": filter, "is_enabled": enabled }),
+            json!({
+                (filter_fields::SOURCE_NAME): source,
+                (filter_fields::FILTER_NAME): filter,
+                (filter_fields::IS_ENABLED): enabled,
+            }),
         )),
         _ => None,
     }
@@ -344,7 +391,11 @@ pub(crate) fn map_scene_item_visibility(scene: &str, source: &str, enabled: bool
     Event::new(
         EventSource::Obs,
         "source.visibility.changed",
-        json!({ "scene": scene, "source": source, "visible": enabled }),
+        json!({
+            (source_fields::SCENE): scene,
+            (source_fields::SOURCE): source,
+            (source_fields::VISIBLE): enabled,
+        }),
     )
 }
 
@@ -352,7 +403,11 @@ pub(crate) fn map_scene_item_lock(scene: &str, source: &str, locked: bool) -> Ev
     Event::new(
         EventSource::Obs,
         "source.scene_item_lock_changed",
-        json!({ "scene": scene, "source": source, "is_locked": locked }),
+        json!({
+            (source_fields::SCENE): scene,
+            (source_fields::SOURCE): source,
+            (source_fields::IS_LOCKED): locked,
+        }),
     )
 }
 

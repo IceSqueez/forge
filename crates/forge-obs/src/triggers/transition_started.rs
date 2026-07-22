@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::transition as fields;
+
 pub struct TransitionStartedDescriptor;
 
 impl TriggerKindDescriptor for TransitionStartedDescriptor {
@@ -86,7 +88,7 @@ pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
     if let Some(name) = event
         .payload
-        .get("transition_name")
+        .get(fields::TRANSITION_NAME)
         .and_then(|v| v.as_str())
     {
         stack = stack.set(

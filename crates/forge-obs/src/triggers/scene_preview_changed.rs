@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::scene as fields;
+
 pub struct ScenePreviewChangedDescriptor;
 
 impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
@@ -75,7 +77,7 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
         }
         match config.get("scene") {
             Some(Variant::String(s)) if !s.is_empty() => {
-                event.payload.get("name_new").and_then(|v| v.as_str()) == Some(s.as_str())
+                event.payload.get(fields::NAME_NEW).and_then(|v| v.as_str()) == Some(s.as_str())
             }
             _ => true,
         }
@@ -83,10 +85,10 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(new) = event.payload.get("name_new").and_then(|v| v.as_str()) {
+        if let Some(new) = event.payload.get(fields::NAME_NEW).and_then(|v| v.as_str()) {
             stack = stack.set("obs.scene".to_owned(), Variant::String(new.to_owned()));
         }
-        if let Some(old) = event.payload.get("name_old").and_then(|v| v.as_str()) {
+        if let Some(old) = event.payload.get(fields::NAME_OLD).and_then(|v| v.as_str()) {
             stack = stack.set(
                 "obs.previous_scene".to_owned(),
                 Variant::String(old.to_owned()),

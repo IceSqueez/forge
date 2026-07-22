@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::recording as fields;
+
 pub struct RecordFileChangedDescriptor;
 
 impl TriggerKindDescriptor for RecordFileChangedDescriptor {
@@ -66,7 +68,7 @@ impl TriggerKindDescriptor for RecordFileChangedDescriptor {
         let mut stack = ArgStack::new();
         if let Some(p) = event
             .payload
-            .get("output_path_new")
+            .get(fields::OUTPUT_PATH_NEW)
             .and_then(|v| v.as_str())
         {
             stack = stack.set(

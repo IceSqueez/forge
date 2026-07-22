@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::profile as fields;
+
 pub struct ProfileCurrentChangedDescriptor;
 
 impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
@@ -64,7 +66,11 @@ impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get("profile_name").and_then(|v| v.as_str()) {
+        if let Some(name) = event
+            .payload
+            .get(fields::PROFILE_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.profile.name".to_owned(),
                 Variant::String(name.to_owned()),

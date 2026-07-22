@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::studio as fields;
+
 pub struct StudioEnabledDescriptor;
 
 impl TriggerKindDescriptor for StudioEnabledDescriptor {
@@ -84,7 +86,7 @@ pub(crate) fn studio_variables() -> Vec<DeclaredVariable> {
 
 pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(b) = event.payload.get("enabled").and_then(|v| v.as_bool()) {
+    if let Some(b) = event.payload.get(fields::ENABLED).and_then(|v| v.as_bool()) {
         stack = stack.set("obs.studio.enabled".to_owned(), Variant::Bool(b));
     }
     stack

@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::scene as fields;
+
 pub struct SceneRemovedDescriptor;
 
 impl TriggerKindDescriptor for SceneRemovedDescriptor {
@@ -64,7 +66,11 @@ impl TriggerKindDescriptor for SceneRemovedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get("scene_name").and_then(|v| v.as_str()) {
+        if let Some(name) = event
+            .payload
+            .get(fields::SCENE_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.scene.name".to_owned(),
                 Variant::String(name.to_owned()),

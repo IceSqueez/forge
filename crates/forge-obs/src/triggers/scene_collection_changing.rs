@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::collection as fields;
+
 pub struct SceneCollectionChangingDescriptor;
 
 impl TriggerKindDescriptor for SceneCollectionChangingDescriptor {
@@ -64,7 +66,7 @@ impl TriggerKindDescriptor for SceneCollectionChangingDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get("name").and_then(|v| v.as_str()) {
+        if let Some(name) = event.payload.get(fields::NAME).and_then(|v| v.as_str()) {
             stack = stack.set(
                 "obs.collection".to_owned(),
                 Variant::String(name.to_owned()),

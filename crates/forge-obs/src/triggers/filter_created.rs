@@ -9,6 +9,7 @@ use forge_types::{
 };
 
 use super::filter_removed::{build_filter_source_arg_stack, filter_source_variables};
+use crate::payload_fields::filter as fields;
 
 pub struct FilterCreatedDescriptor;
 
@@ -66,7 +67,11 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = build_filter_source_arg_stack(event);
-        if let Some(kind) = event.payload.get("filter_kind").and_then(|v| v.as_str()) {
+        if let Some(kind) = event
+            .payload
+            .get(fields::FILTER_KIND)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.filter.kind".to_owned(),
                 Variant::String(kind.to_owned()),

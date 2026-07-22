@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::connection as fields;
+
 pub struct ConnectionAuthFailedDescriptor;
 
 impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
@@ -64,7 +66,11 @@ impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(msg) = event.payload.get("error_message").and_then(|v| v.as_str()) {
+        if let Some(msg) = event
+            .payload
+            .get(fields::ERROR_MESSAGE)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.error_message".to_owned(),
                 Variant::String(msg.to_owned()),

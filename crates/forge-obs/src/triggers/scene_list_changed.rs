@@ -8,6 +8,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::scene as fields;
+
 pub struct SceneListChangedDescriptor;
 
 impl TriggerKindDescriptor for SceneListChangedDescriptor {
@@ -64,7 +66,11 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(names) = event.payload.get("all_names").and_then(|v| v.as_array()) {
+        if let Some(names) = event
+            .payload
+            .get(fields::ALL_NAMES)
+            .and_then(|v| v.as_array())
+        {
             let scenes: Vec<Variant> = names
                 .iter()
                 .filter_map(|v| v.as_str())

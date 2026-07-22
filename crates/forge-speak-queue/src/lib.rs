@@ -158,6 +158,9 @@ pub enum SpeakEvent {
 pub enum SpeakError {
     #[error("speak queue actor has stopped")]
     ActorGone,
+
+    #[error("subscriber is lagging; events were dropped")]
+    LaggingReceiver,
 }
 
 pub struct QueueConfig {
@@ -268,7 +271,13 @@ pub struct SpeakEventStream(tokio::sync::broadcast::Receiver<SpeakEvent>);
 
 impl SpeakEventStream {
     pub async fn recv(&mut self) -> Result<SpeakEvent, SpeakError> {
-        self.0.recv().await.map_err(|_| SpeakError::ActorGone)
+        match self.0.recv().await {
+            Ok(event) => Ok(event),
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => Err(SpeakError::ActorGone),
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                Err(SpeakError::LaggingReceiver)
+            }
+        }
     }
 }
 

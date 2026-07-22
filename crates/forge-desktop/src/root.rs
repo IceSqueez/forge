@@ -27,7 +27,7 @@ use crate::runtime_status::RuntimeStatus;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::topics::Topics;
-use forge_speak_queue::SpeakEventStream;
+use forge_speak_queue::{SpeakError, SpeakEventStream};
 
 enum BootState {
     Booting,
@@ -398,12 +398,20 @@ fn apply_persisted_shortcuts(
 
 fn start_speak_bridge(cx: &mut AsyncApp, speak: Entity<SpeakState>, mut events: SpeakEventStream) {
     cx.spawn(async move |cx| {
-        while let Ok(event) = events.recv().await {
-            speak.update(cx, |state, cx| {
-                if state.apply_event(event) {
-                    cx.notify();
+        loop {
+            match events.recv().await {
+                Ok(event) => {
+                    speak.update(cx, |state, cx| {
+                        if state.apply_event(event) {
+                            cx.notify();
+                        }
+                    });
                 }
-            });
+                Err(SpeakError::LaggingReceiver) => {
+                    tracing::warn!("speak event bridge lagged; dropped events");
+                }
+                Err(SpeakError::ActorGone) => break,
+            }
         }
     })
     .detach();

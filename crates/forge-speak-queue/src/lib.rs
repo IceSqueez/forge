@@ -385,4 +385,34 @@ mod tests {
         let received = sub.try_recv().expect("receiver must see the event");
         assert!(matches!(received, SpeakEvent::Cleared));
     }
+
+    // Regression: a broadcast overflow (`Lagged`) must surface as
+    // `LaggingReceiver`, NOT `ActorGone` - the desktop speak-state bridge
+    // treats `ActorGone` as terminal and would exit forever on a mere lag.
+    // The same stream must keep delivering events after the lag.
+    #[tokio::test]
+    async fn lagging_receiver_surfaces_lagging_error_and_stream_stays_usable() {
+        let (tx, rx) = tokio::sync::broadcast::channel::<SpeakEvent>(2);
+        let mut stream = SpeakEventStream(rx);
+        for queue_len in 0..4 {
+            tx.send(SpeakEvent::QueueChanged { queue_len })
+                .expect("send must succeed while a receiver is alive");
+        }
+
+        let lagged = stream.recv().await;
+        assert!(matches!(lagged, Err(SpeakError::LaggingReceiver)));
+
+        let next = stream.recv().await;
+        assert!(matches!(next, Ok(SpeakEvent::QueueChanged { .. })));
+    }
+
+    #[tokio::test]
+    async fn closed_sender_surfaces_actor_gone() {
+        let (tx, rx) = tokio::sync::broadcast::channel::<SpeakEvent>(2);
+        let mut stream = SpeakEventStream(rx);
+        drop(tx);
+
+        let result = stream.recv().await;
+        assert!(matches!(result, Err(SpeakError::ActorGone)));
+    }
 }

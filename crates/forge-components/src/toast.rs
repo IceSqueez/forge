@@ -1,10 +1,11 @@
 use gpui::{
-    App, BoxShadow, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, hsla, point,
-    px,
+    AnimationExt, App, BoxShadow, ClickEvent, ElementId, InteractiveElement, IntoElement,
+    ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, hsla, point, px,
 };
 
 use crate::icons::{Icon, icon};
+use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, Density, FONT_SM, Radius, Spacing, body_family, radius, spacing};
 
@@ -92,6 +93,7 @@ impl ToastData {
 
 #[derive(IntoElement)]
 pub struct ToastCard {
+    anim_id: ElementId,
     kind: ToastKind,
     message: SharedString,
     icon: Option<Icon>,
@@ -108,13 +110,15 @@ pub struct ToastCard {
     accent: Rgba,
 }
 
-/// Defaults to the kind's own glyph with no action and no dismiss control; layer those on through the builder methods.
+/// `id` must be distinct per live toast card, or the enter animation shares one clock across them (gpui keys animation state by `ElementId`).
 pub fn toast_card(
+    id: impl Into<ElementId>,
     kind: ToastKind,
     message: impl Into<SharedString>,
     palette: &ForgePalette,
 ) -> ToastCard {
     ToastCard {
+        anim_id: id.into(),
         kind,
         message: message.into(),
         icon: None,
@@ -241,5 +245,8 @@ impl RenderOnce for ToastCard {
             }])
             .child(stripe)
             .child(content)
+            .with_animation(self.anim_id, enter_animation(), |el, delta| {
+                el.opacity(delta)
+            })
     }
 }

@@ -36,6 +36,10 @@ fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(3)
 }
 
+pub(crate) fn enter_animation() -> Animation {
+    Animation::new(std::time::Duration::from_millis(ENTER_MS)).with_easing(ease_out_cubic)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OverlayPosition {
     Center,
@@ -114,8 +118,7 @@ impl Overlay {
                         Arc::new(self.dismiss_id.clone()),
                         SharedString::new_static("scrim"),
                     ),
-                    Animation::new(std::time::Duration::from_millis(ENTER_MS))
-                        .with_easing(ease_out_cubic),
+                    enter_animation(),
                     move |el, delta| el.bg(with_alpha(scrim, base_a * delta)),
                 )
                 .into_any_element()
@@ -136,10 +139,6 @@ impl RenderOnce for Overlay {
     fn render(mut self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let position = self.position;
         let content = std::mem::replace(&mut self.content, div().into_any_element());
-
-        let anim = || {
-            Animation::new(std::time::Duration::from_millis(ENTER_MS)).with_easing(ease_out_cubic)
-        };
 
         let root: Div = match position {
             OverlayPosition::Center => {
@@ -172,7 +171,7 @@ impl RenderOnce for Overlay {
                     .h_full()
                     .occlude()
                     .child(content)
-                    .with_animation(panel_id, anim(), move |el, delta| {
+                    .with_animation(panel_id, enter_animation(), move |el, delta| {
                         el.left(width * -(1.0 - delta))
                     });
 
@@ -194,7 +193,7 @@ impl RenderOnce for Overlay {
                     .h_full()
                     .occlude()
                     .child(content)
-                    .with_animation(panel_id, anim(), move |el, delta| {
+                    .with_animation(panel_id, enter_animation(), move |el, delta| {
                         el.right(width * -(1.0 - delta))
                     });
 
@@ -224,7 +223,7 @@ impl RenderOnce for Overlay {
         match position {
             OverlayPosition::Center => deferred(root.with_animation(
                 self.dismiss_id.clone(),
-                anim(),
+                enter_animation(),
                 |el, delta| el.opacity(delta),
             ))
             .with_priority(OVERLAY_PRIORITY)
@@ -301,18 +300,24 @@ impl RenderOnce for AnchoredPopover {
             .anchor(Anchor::TopLeft)
             .child(div().w(viewport.width).h(viewport.height).child(backdrop));
 
+        let content = div().child(self.content).with_animation(
+            ElementId::Name(SharedString::new_static("forge-popover-content")),
+            enter_animation(),
+            |el, delta| el.opacity(delta),
+        );
+
         let panel_layer = match self.placement {
             PopoverPlacement::Window(position) => anchored()
                 .position_mode(AnchoredPositionMode::Window)
                 .position(position)
                 .anchor(Anchor::TopLeft)
                 .snap_to_window()
-                .child(self.content),
+                .child(content),
             PopoverPlacement::BelowAnchor(offset) => anchored()
                 .anchor(Anchor::TopLeft)
                 .offset(point(px(0.0), offset))
                 .snap_to_window()
-                .child(self.content),
+                .child(content),
         };
 
         let mut root = div().child(backdrop_layer).child(panel_layer);

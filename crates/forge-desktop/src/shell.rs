@@ -436,12 +436,15 @@ impl AppShell {
 
         for data in toasts.items() {
             let id = data.id;
-            let mut card = toast_card(data.kind, data.message.clone(), &palette).on_dismiss(
-                ("toast-dismiss", id as usize),
-                move |_, _, cx: &mut App| {
-                    cx.global_mut::<Toasts>().dismiss(id);
-                },
-            );
+            let mut card = toast_card(
+                ("toast-card", id as usize),
+                data.kind,
+                data.message.clone(),
+                &palette,
+            )
+            .on_dismiss(("toast-dismiss", id as usize), move |_, _, cx: &mut App| {
+                cx.global_mut::<Toasts>().dismiss(id);
+            });
             if let Some(glyph) = data.icon {
                 card = card.icon(glyph);
             }

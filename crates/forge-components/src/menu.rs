@@ -1,13 +1,15 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
-    Anchor, AnchoredPositionMode, AnyElement, App, ClickEvent, Div, ElementId, FocusHandle,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window,
-    anchored, deferred, div, point, px,
+    Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, ClickEvent, Div, ElementId,
+    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, StatefulInteractiveElement,
+    Styled, Window, anchored, deferred, div, point, px,
 };
 
 use crate::icons::{Icon, icon};
+use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius,
@@ -378,11 +380,20 @@ impl RenderOnce for MenuButton {
         }
 
         let (anchor_corner, offset) = self.placement.anchor_and_offset();
-        let panel = self.ink.render_panel(
-            std::mem::take(&mut self.items),
-            self.escape_focus.as_ref(),
-            self.on_dismiss.clone(),
+        let panel_anim_id = ElementId::NamedChild(
+            Arc::new(self.trigger_id.clone()),
+            SharedString::new_static("panel"),
         );
+        let panel = self
+            .ink
+            .render_panel(
+                std::mem::take(&mut self.items),
+                self.escape_focus.as_ref(),
+                self.on_dismiss.clone(),
+            )
+            .with_animation(panel_anim_id, enter_animation(), |el, delta| {
+                el.opacity(delta)
+            });
 
         let viewport = window.viewport_size();
         let mut backdrop = div().size_full().occlude();
@@ -455,7 +466,12 @@ impl RenderOnce for ContextMenu {
     fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let panel = self
             .ink
-            .render_panel(self.items, None, self.on_dismiss.clone());
+            .render_panel(self.items, None, self.on_dismiss.clone())
+            .with_animation(
+                ElementId::Name(SharedString::new_static("forge-context-menu-panel")),
+                enter_animation(),
+                |el, delta| el.opacity(delta),
+            );
 
         let viewport = window.viewport_size();
         let mut backdrop = div().size_full().occlude();

@@ -16,10 +16,14 @@ const DISCORD_KIND_ID_REMAP: &[(&str, &str)] = &[
     ("discord.edit_message", "discord.webhook.update_message"),
 ];
 
-async fn migrate_discord_sub_action_ids(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
-    type Row = (String, String);
+#[derive(sqlx::FromRow)]
+struct ActionSubActionsRow {
+    id: String,
+    sub_actions: String,
+}
 
-    let rows: Vec<Row> =
+async fn migrate_discord_sub_action_ids(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
+    let rows: Vec<ActionSubActionsRow> =
         sqlx::query_as("SELECT id, sub_actions FROM actions WHERE format_version = 1")
             .fetch_all(pool)
             .await
@@ -31,11 +35,11 @@ async fn migrate_discord_sub_action_ids(pool: &sqlx::SqlitePool) -> Result<(), S
 
     let mut tx = pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
 
-    for (id, sub_actions_json) in rows {
-        let new_sub_actions_json = remap_discord_kind_ids(&sub_actions_json)?;
+    for row in rows {
+        let new_sub_actions_json = remap_discord_kind_ids(&row.sub_actions)?;
         sqlx::query("UPDATE actions SET sub_actions = ?, format_version = 2 WHERE id = ?")
             .bind(&new_sub_actions_json)
-            .bind(&id)
+            .bind(&row.id)
             .execute(&mut *tx)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -63,9 +67,7 @@ fn remap_discord_kind_ids(sub_actions_json: &str) -> Result<String, SqliteStorag
 }
 
 async fn migrate_actions(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
-    type Row = (String, String);
-
-    let rows: Vec<Row> =
+    let rows: Vec<ActionSubActionsRow> =
         sqlx::query_as("SELECT id, sub_actions FROM actions WHERE format_version = 0")
             .fetch_all(pool)
             .await
@@ -77,11 +79,11 @@ async fn migrate_actions(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageErr
 
     let mut tx = pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
 
-    for (id, sub_actions_json) in rows {
-        let new_sub_actions_json = convert_sub_actions(&sub_actions_json)?;
+    for row in rows {
+        let new_sub_actions_json = convert_sub_actions(&row.sub_actions)?;
         sqlx::query("UPDATE actions SET sub_actions = ?, format_version = 1 WHERE id = ?")
             .bind(&new_sub_actions_json)
-            .bind(&id)
+            .bind(&row.id)
             .execute(&mut *tx)
             .await
             .map_err(SqliteStorageError::Sqlx)?;

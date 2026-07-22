@@ -38,20 +38,28 @@ fn decode_contract(json: &str) -> Result<ScriptContract, SqliteStorageError> {
         .map_err(|e| SqliteStorageError::Decode(format!("invalid contract json: {e}")))
 }
 
-type ScriptRow = (String, String, String, String, String, i64, i64, i64);
+#[derive(sqlx::FromRow)]
+struct ScriptRow {
+    id: String,
+    name: String,
+    body: String,
+    contract_json: String,
+    body_hash: String,
+    enabled: i64,
+    created_at: i64,
+    last_modified: i64,
+}
 
-fn decode_row(
-    (id_str, name, body, contract_json, body_hash, enabled, created_at_ms, last_modified_ms): ScriptRow,
-) -> Result<ScriptRecord, SqliteStorageError> {
+fn decode_row(row: ScriptRow) -> Result<ScriptRecord, SqliteStorageError> {
     Ok(ScriptRecord {
-        id: parse_script_id(&id_str)?,
-        name,
-        body,
-        contract: decode_contract(&contract_json)?,
-        body_hash,
-        enabled: enabled != 0,
-        created_at: from_epoch_ms(created_at_ms)?,
-        last_modified: from_epoch_ms(last_modified_ms)?,
+        id: parse_script_id(&row.id)?,
+        name: row.name,
+        body: row.body,
+        contract: decode_contract(&row.contract_json)?,
+        body_hash: row.body_hash,
+        enabled: row.enabled != 0,
+        created_at: from_epoch_ms(row.created_at)?,
+        last_modified: from_epoch_ms(row.last_modified)?,
     })
 }
 
@@ -202,9 +210,14 @@ impl ScriptRepo for SqliteScriptRepo {
         let now = OffsetDateTime::now_utc();
         let start_of_today = now.replace_time(time::Time::MIDNIGHT).unix_timestamp();
 
-        type TelemetryRow = (Option<i64>, i64, Option<f64>);
+        #[derive(sqlx::FromRow)]
+        struct TelemetryRow {
+            last_run: Option<i64>,
+            runs_today: i64,
+            avg_duration_ms: Option<f64>,
+        }
 
-        let (last_run_raw, runs_today_raw, avg_dur_raw): TelemetryRow = sqlx::query_as(
+        let row: TelemetryRow = sqlx::query_as(
             "WITH \
                lr AS (SELECT MAX(started_at) AS v \
                       FROM script_executions WHERE script_id = ?), \
@@ -214,7 +227,8 @@ impl ScriptRepo for SqliteScriptRepo {
                ad AS (SELECT AVG(duration_ms) AS v \
                       FROM (SELECT duration_ms FROM script_executions \
                             WHERE script_id = ? ORDER BY started_at DESC LIMIT 100)) \
-             SELECT lr.v, rt.v, ad.v FROM lr, rt, ad",
+             SELECT lr.v AS last_run, rt.v AS runs_today, ad.v AS avg_duration_ms \
+             FROM lr, rt, ad",
         )
         .bind(&id_str)
         .bind(&id_str)
@@ -225,9 +239,11 @@ impl ScriptRepo for SqliteScriptRepo {
         .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(ScriptTelemetry {
-            last_run: last_run_raw.and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok()),
-            runs_today: runs_today_raw.max(0) as u64,
-            avg_duration_ms: avg_dur_raw.map(|v| v.round() as u64),
+            last_run: row
+                .last_run
+                .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok()),
+            runs_today: row.runs_today.max(0) as u64,
+            avg_duration_ms: row.avg_duration_ms.map(|v| v.round() as u64),
         })
     }
 

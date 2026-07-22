@@ -16,16 +16,23 @@ impl SqliteTtsFiltersRepo {
     }
 }
 
-type RuleRow = (String, String, i64, i64, String, String);
+#[derive(sqlx::FromRow)]
+struct RuleRow {
+    id: String,
+    name: String,
+    enabled: i64,
+    position: i64,
+    kind: String,
+    params: String,
+}
 
 fn decode_rule_row(row: RuleRow) -> Result<FilterRule, StorageError> {
-    let (id, name, enabled, position, kind_str, params_json) = row;
-    let kind = decode_rule_kind(&kind_str, &params_json)?;
+    let kind = decode_rule_kind(&row.kind, &row.params)?;
     Ok(FilterRule {
-        id,
-        name,
-        enabled: enabled != 0,
-        position: position as u32,
+        id: row.id,
+        name: row.name,
+        enabled: row.enabled != 0,
+        position: row.position as u32,
         kind,
     })
 }
@@ -126,95 +133,79 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> (&'static str, String) {
     }
 }
 
-#[allow(clippy::type_complexity)]
-type SettingsRow = (
-    String,
-    Option<i64>,
-    String,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    String,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-);
-type SettingsExtRow = (Option<String>, i64, i64, String, i64);
+#[derive(sqlx::FromRow)]
+struct SettingsRow {
+    url_mode: String,
+    max_length: Option<i64>,
+    blocklist_mode: String,
+    strip_twitch_emotes: i64,
+    strip_reward_emotes: i64,
+    skip_contains_url: i64,
+    skip_starts_with_bang: i64,
+    skip_from_bot_accounts: i64,
+    bot_accounts: String,
+    skip_longer_than: i64,
+    longer_than_max_chars: i64,
+    skip_repeat_of_recent: i64,
+    repeat_of_recent_window: i64,
+    output_read_display_name_first: i64,
+    output_emote_to_word: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct SettingsExtRow {
+    skip_prefix: Option<String>,
+    skip_emote_only: i64,
+    skip_mostly_non_latin: i64,
+    skip_custom_regexes: String,
+    output_sanitize_punctuation: i64,
+}
 
 fn decode_settings_row(
     row: SettingsRow,
     ext: SettingsExtRow,
 ) -> Result<TtsPipelineSettings, StorageError> {
-    let (
-        url_mode_str,
-        max_length,
-        blocklist_mode_str,
-        strip_twitch,
-        strip_reward,
-        skip_contains_url,
-        skip_starts_with_bang,
-        skip_from_bot_accounts,
-        bot_accounts_json,
-        skip_longer_than,
-        longer_than_max_chars,
-        skip_repeat_of_recent,
-        repeat_of_recent_window,
-        output_read_display_name_first,
-        output_emote_to_word,
-    ) = row;
-    let (
-        skip_prefix,
-        skip_emote_only,
-        skip_mostly_non_latin,
-        skip_custom_regexes_json,
-        output_sanitize_punctuation,
-    ) = ext;
+    let url_mode: UrlMode = serde_json::from_str(&format!("\"{}\"", row.url_mode))
+        .map_err(|_| StorageError::Parse(format!("unknown url_mode: {}", row.url_mode)))?;
 
-    let url_mode: UrlMode = serde_json::from_str(&format!("\"{url_mode_str}\""))
-        .map_err(|_| StorageError::Parse(format!("unknown url_mode: {url_mode_str}")))?;
-
-    let blocklist_mode: BlocklistMode = serde_json::from_str(&format!("\"{blocklist_mode_str}\""))
-        .map_err(|_| {
-            StorageError::Parse(format!("unknown blocklist_mode: {blocklist_mode_str}"))
+    let blocklist_mode: BlocklistMode =
+        serde_json::from_str(&format!("\"{}\"", row.blocklist_mode)).map_err(|_| {
+            StorageError::Parse(format!("unknown blocklist_mode: {}", row.blocklist_mode))
         })?;
 
-    let bot_accounts: Vec<String> = serde_json::from_str(&bot_accounts_json).map_err(|_| {
-        StorageError::Parse(format!("invalid bot_accounts json: {bot_accounts_json}"))
+    let bot_accounts: Vec<String> = serde_json::from_str(&row.bot_accounts).map_err(|_| {
+        StorageError::Parse(format!("invalid bot_accounts json: {}", row.bot_accounts))
     })?;
 
-    let skip_custom_regexes: Vec<String> = serde_json::from_str(&skip_custom_regexes_json)
-        .map_err(|_| {
+    let skip_custom_regexes: Vec<String> =
+        serde_json::from_str(&ext.skip_custom_regexes).map_err(|_| {
             StorageError::Parse(format!(
-                "invalid skip_custom_regexes json: {skip_custom_regexes_json}"
+                "invalid skip_custom_regexes json: {}",
+                ext.skip_custom_regexes
             ))
         })?;
 
     Ok(TtsPipelineSettings {
         url_mode,
-        max_length: max_length.map(|v| v as u32),
+        max_length: row.max_length.map(|v| v as u32),
         blocklist_mode,
-        strip_twitch_emotes: strip_twitch != 0,
-        strip_reward_emotes: strip_reward != 0,
-        skip_contains_url: skip_contains_url != 0,
-        skip_starts_with_bang: skip_starts_with_bang != 0,
-        skip_prefix,
-        skip_from_bot_accounts: skip_from_bot_accounts != 0,
+        strip_twitch_emotes: row.strip_twitch_emotes != 0,
+        strip_reward_emotes: row.strip_reward_emotes != 0,
+        skip_contains_url: row.skip_contains_url != 0,
+        skip_starts_with_bang: row.skip_starts_with_bang != 0,
+        skip_prefix: ext.skip_prefix,
+        skip_from_bot_accounts: row.skip_from_bot_accounts != 0,
         bot_accounts,
-        skip_longer_than: skip_longer_than != 0,
-        longer_than_max_chars: longer_than_max_chars as u32,
-        skip_repeat_of_recent: skip_repeat_of_recent != 0,
-        repeat_of_recent_window: repeat_of_recent_window as u32,
-        output_read_display_name_first: output_read_display_name_first != 0,
-        output_emote_to_word: output_emote_to_word != 0,
-        skip_emote_only: skip_emote_only != 0,
-        skip_mostly_non_latin: skip_mostly_non_latin != 0,
+        skip_longer_than: row.skip_longer_than != 0,
+        longer_than_max_chars: row.longer_than_max_chars as u32,
+        skip_repeat_of_recent: row.skip_repeat_of_recent != 0,
+        repeat_of_recent_window: row.repeat_of_recent_window as u32,
+        output_read_display_name_first: row.output_read_display_name_first != 0,
+        output_emote_to_word: row.output_emote_to_word != 0,
+        skip_emote_only: ext.skip_emote_only != 0,
+        skip_mostly_non_latin: ext.skip_mostly_non_latin != 0,
         skip_custom_regexes,
-        output_sanitize_punctuation: output_sanitize_punctuation != 0,
+        output_sanitize_punctuation: ext.output_sanitize_punctuation != 0,
     })
 }
 

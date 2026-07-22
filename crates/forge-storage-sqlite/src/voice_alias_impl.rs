@@ -17,31 +17,31 @@ impl SqliteVoiceAliasRepo {
     }
 }
 
-type AliasRow = (
-    String,
-    String,
-    String,
-    String,
-    String,
-    Option<f64>,
-    Option<f64>,
-    String,
-);
+#[derive(sqlx::FromRow)]
+struct AliasRow {
+    id: String,
+    viewer_id: String,
+    viewer_name: String,
+    engine_id: String,
+    voice_id: String,
+    pitch_semitones: Option<f64>,
+    rate_multiplier: Option<f64>,
+    state: String,
+}
 
 fn decode_alias_row(row: AliasRow) -> Result<VoiceAlias, StorageError> {
-    let (id_str, viewer_id, viewer_name, engine_id, voice_id, pitch, rate, state_str) = row;
-    let state = match state_str.as_str() {
+    let state = match row.state.as_str() {
         "Blocked" => AliasState::Blocked,
         _ => AliasState::Active,
     };
     Ok(VoiceAlias {
-        id: AliasId(id_str),
-        viewer_id,
-        viewer_name,
-        engine_id: EngineId(engine_id),
-        voice_id: VoiceId(voice_id),
-        pitch_semitones: pitch.map(|v| v as f32),
-        rate_multiplier: rate.map(|v| v as f32),
+        id: AliasId(row.id),
+        viewer_id: row.viewer_id,
+        viewer_name: row.viewer_name,
+        engine_id: EngineId(row.engine_id),
+        voice_id: VoiceId(row.voice_id),
+        pitch_semitones: row.pitch_semitones.map(|v| v as f32),
+        rate_multiplier: row.rate_multiplier.map(|v| v as f32),
         state,
     })
 }
@@ -144,7 +144,13 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     }
 
     async fn get_ignore_profile(&self) -> Result<IgnoreProfile, StorageError> {
-        let row: Option<(String, String)> = sqlx::query_as(
+        #[derive(sqlx::FromRow)]
+        struct IgnoreProfileRow {
+            excluded_voice_ids: String,
+            excluded_locales: String,
+        }
+
+        let row: Option<IgnoreProfileRow> = sqlx::query_as(
             "SELECT excluded_voice_ids, excluded_locales FROM ignore_profile WHERE id = 1",
         )
         .fetch_optional(&self.pool)
@@ -153,11 +159,12 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
 
         match row {
             None => Ok(IgnoreProfile::default()),
-            Some((voice_ids_json, locales_json)) => {
+            Some(row) => {
                 let excluded_voice_ids: Vec<VoiceId> =
-                    serde_json::from_str(&voice_ids_json).map_err(StorageError::Serialization)?;
-                let excluded_locales: Vec<String> =
-                    serde_json::from_str(&locales_json).map_err(StorageError::Serialization)?;
+                    serde_json::from_str(&row.excluded_voice_ids)
+                        .map_err(StorageError::Serialization)?;
+                let excluded_locales: Vec<String> = serde_json::from_str(&row.excluded_locales)
+                    .map_err(StorageError::Serialization)?;
                 Ok(IgnoreProfile {
                     excluded_voice_ids,
                     excluded_locales,

@@ -11,18 +11,19 @@ fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, S
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
 }
 
-type ActionRow = (
-    String,
-    String,
-    String,
-    String,
-    i64,
-    i64,
-    i64,
-    String,
-    String,
-    String,
-);
+#[derive(sqlx::FromRow)]
+struct ActionRow {
+    id: String,
+    name: String,
+    group_name: String,
+    queue_id: String,
+    enabled: i64,
+    concurrent: i64,
+    bypass_pause: i64,
+    description: String,
+    sub_actions: String,
+    execution_mode: String,
+}
 
 fn parse_execution_mode(s: &str) -> ExecutionMode {
     match s {
@@ -39,40 +40,28 @@ fn encode_execution_mode(m: ExecutionMode) -> &'static str {
 }
 
 fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
-    let (
-        id_str,
-        name,
-        group_name,
-        queue_id_str,
-        enabled,
-        concurrent,
-        bypass_pause,
-        description,
-        sub_actions_json,
-        execution_mode_str,
-    ) = row;
-    let id: ActionId = parse_id(&id_str, "action")?;
-    let queue_id: QueueId = parse_id(&queue_id_str, "queue")?;
-    let sub_actions: Vec<SubActionStep> = serde_json::from_str(&sub_actions_json)
+    let id: ActionId = parse_id(&row.id, "action")?;
+    let queue_id: QueueId = parse_id(&row.queue_id, "queue")?;
+    let sub_actions: Vec<SubActionStep> = serde_json::from_str(&row.sub_actions)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid sub_actions json: {e}")))?;
 
     Ok(Action {
         id,
-        name,
-        group: if group_name.is_empty() {
+        name: row.name,
+        group: if row.group_name.is_empty() {
             None
         } else {
-            Some(group_name)
+            Some(row.group_name)
         },
         queue_id,
-        enabled: enabled != 0,
-        concurrent: concurrent != 0,
-        bypass_pause: bypass_pause != 0,
-        execution_mode: parse_execution_mode(&execution_mode_str),
-        description: if description.is_empty() {
+        enabled: row.enabled != 0,
+        concurrent: row.concurrent != 0,
+        bypass_pause: row.bypass_pause != 0,
+        execution_mode: parse_execution_mode(&row.execution_mode),
+        description: if row.description.is_empty() {
             None
         } else {
-            Some(description)
+            Some(row.description)
         },
         sub_actions,
     })
@@ -250,18 +239,7 @@ impl ActionRepo for SqliteActionRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        let (
-            _,
-            _,
-            group_name,
-            queue_id_str,
-            enabled,
-            concurrent,
-            bypass_pause,
-            description,
-            sub_actions_json,
-            execution_mode_str,
-        ) = row.ok_or_else(|| StorageError::NotFound {
+        let row = row.ok_or_else(|| StorageError::NotFound {
             key: source_id_str.clone(),
         })?;
 
@@ -271,14 +249,14 @@ impl ActionRepo for SqliteActionRepo {
         )
         .bind(&new_id_str)
         .bind(new_name)
-        .bind(&group_name)
-        .bind(&queue_id_str)
-        .bind(enabled)
-        .bind(concurrent)
-        .bind(bypass_pause)
-        .bind(&description)
-        .bind(&sub_actions_json)
-        .bind(&execution_mode_str)
+        .bind(&row.group_name)
+        .bind(&row.queue_id)
+        .bind(row.enabled)
+        .bind(row.concurrent)
+        .bind(row.bypass_pause)
+        .bind(&row.description)
+        .bind(&row.sub_actions)
+        .bind(&row.execution_mode)
         .execute(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -304,40 +282,47 @@ impl ActionRepo for SqliteActionRepo {
         let start_of_today = now.replace_time(time::Time::MIDNIGHT).unix_timestamp();
         let start_of_7d = (now - time::Duration::days(7)).unix_timestamp();
 
-        type TelemetryRow = (Option<i64>, i64, Option<f64>, i64);
+        #[derive(sqlx::FromRow)]
+        struct TelemetryRow {
+            last_fired_at: Option<i64>,
+            runs_today: i64,
+            avg_duration_ms: Option<f64>,
+            errors_7d: i64,
+        }
 
-        let (last_fired_raw, runs_today_raw, avg_dur_raw, errors_7d_raw): TelemetryRow =
-            sqlx::query_as(
-                "WITH \
-                   lf AS (SELECT MAX(started_at) AS v \
-                          FROM action_executions WHERE action_id = ?), \
-                   rt AS (SELECT COUNT(*) AS v \
-                          FROM action_executions \
-                          WHERE action_id = ? AND started_at >= ?), \
-                   ad AS (SELECT AVG(duration_ms) AS v \
-                          FROM (SELECT duration_ms FROM action_executions \
-                                WHERE action_id = ? ORDER BY started_at DESC LIMIT 100)), \
-                   e7 AS (SELECT COUNT(*) AS v \
-                          FROM action_executions \
-                          WHERE action_id = ? AND status = 'err' AND started_at >= ?) \
-                 SELECT lf.v, rt.v, ad.v, e7.v FROM lf, rt, ad, e7",
-            )
-            .bind(&id_str)
-            .bind(&id_str)
-            .bind(start_of_today)
-            .bind(&id_str)
-            .bind(&id_str)
-            .bind(start_of_7d)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let row: TelemetryRow = sqlx::query_as(
+            "WITH \
+               lf AS (SELECT MAX(started_at) AS v \
+                      FROM action_executions WHERE action_id = ?), \
+               rt AS (SELECT COUNT(*) AS v \
+                      FROM action_executions \
+                      WHERE action_id = ? AND started_at >= ?), \
+               ad AS (SELECT AVG(duration_ms) AS v \
+                      FROM (SELECT duration_ms FROM action_executions \
+                            WHERE action_id = ? ORDER BY started_at DESC LIMIT 100)), \
+               e7 AS (SELECT COUNT(*) AS v \
+                      FROM action_executions \
+                      WHERE action_id = ? AND status = 'err' AND started_at >= ?) \
+             SELECT lf.v AS last_fired_at, rt.v AS runs_today, \
+                    ad.v AS avg_duration_ms, e7.v AS errors_7d FROM lf, rt, ad, e7",
+        )
+        .bind(&id_str)
+        .bind(&id_str)
+        .bind(start_of_today)
+        .bind(&id_str)
+        .bind(&id_str)
+        .bind(start_of_7d)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         Ok(ActionTelemetry {
-            last_fired_at: last_fired_raw
+            last_fired_at: row
+                .last_fired_at
                 .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok()),
-            runs_today: runs_today_raw.max(0) as u64,
-            avg_duration_ms: avg_dur_raw.map(|v| v.round() as u64),
-            errors_7d: errors_7d_raw.max(0) as u64,
+            runs_today: row.runs_today.max(0) as u64,
+            avg_duration_ms: row.avg_duration_ms.map(|v| v.round() as u64),
+            errors_7d: row.errors_7d.max(0) as u64,
         })
     }
 

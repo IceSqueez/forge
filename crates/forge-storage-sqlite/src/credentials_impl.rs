@@ -59,19 +59,25 @@ impl CredentialsRepo for SqliteCredentialsRepo {
     }
 
     async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        let row: Option<(Vec<u8>, Vec<u8>)> =
+        #[derive(sqlx::FromRow)]
+        struct CredentialRow {
+            encrypted: Vec<u8>,
+            nonce: Vec<u8>,
+        }
+
+        let row: Option<CredentialRow> =
             sqlx::query_as("SELECT encrypted, nonce FROM credentials WHERE id = ?")
                 .bind(id.as_str())
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
-        let Some((ciphertext, nonce)) = row else {
+        let Some(row) = row else {
             return Ok(None);
         };
 
         let plaintext =
-            crypto::decrypt(&self.key, &ciphertext, &nonce).map_err(StorageError::from)?;
+            crypto::decrypt(&self.key, &row.encrypted, &row.nonce).map_err(StorageError::from)?;
 
         Ok(Some(plaintext))
     }

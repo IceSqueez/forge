@@ -10,24 +10,25 @@ fn parse_queue_id(s: &str) -> Result<QueueId, SqliteStorageError> {
         .map_err(|e| SqliteStorageError::Decode(format!("invalid queue id '{s}': {e}")))
 }
 
-fn decode_row(
-    id_str: String,
+#[derive(sqlx::FromRow)]
+struct QueueRow {
+    id: String,
     name: String,
     description: String,
     concurrency: i64,
     paused: i64,
-) -> Result<Queue, SqliteStorageError> {
-    let id = parse_queue_id(&id_str)?;
-    Ok(Queue {
-        id,
-        name,
-        description,
-        concurrency: concurrency.max(1) as u32,
-        paused: paused != 0,
-    })
 }
 
-type QueueRow = (String, String, String, i64, i64);
+fn decode_row(row: QueueRow) -> Result<Queue, SqliteStorageError> {
+    let id = parse_queue_id(&row.id)?;
+    Ok(Queue {
+        id,
+        name: row.name,
+        description: row.description,
+        concurrency: row.concurrency.max(1) as u32,
+        paused: row.paused != 0,
+    })
+}
 
 pub struct SqliteQueueRepo {
     pool: sqlx::SqlitePool,
@@ -50,9 +51,7 @@ impl QueueRepo for SqliteQueueRepo {
         .map_err(SqliteStorageError::Sqlx)?;
 
         rows.into_iter()
-            .map(|(id, name, description, concurrency, paused)| {
-                decode_row(id, name, description, concurrency, paused).map_err(StorageError::from)
-            })
+            .map(|row| decode_row(row).map_err(StorageError::from))
             .collect()
     }
 
@@ -66,10 +65,8 @@ impl QueueRepo for SqliteQueueRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        row.map(|(id, name, description, concurrency, paused)| {
-            decode_row(id, name, description, concurrency, paused).map_err(StorageError::from)
-        })
-        .transpose()
+        row.map(|row| decode_row(row).map_err(StorageError::from))
+            .transpose()
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<Queue>, StorageError> {
@@ -81,10 +78,8 @@ impl QueueRepo for SqliteQueueRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        row.map(|(id, name, description, concurrency, paused)| {
-            decode_row(id, name, description, concurrency, paused).map_err(StorageError::from)
-        })
-        .transpose()
+        row.map(|row| decode_row(row).map_err(StorageError::from))
+            .transpose()
     }
 
     async fn save(&self, queue: &Queue) -> Result<(), StorageError> {

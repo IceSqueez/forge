@@ -29,19 +29,20 @@ impl SqliteSoundboardClipsRepo {
     }
 }
 
-type ClipRow = (
-    String,
-    String,
-    String,
-    f64,
-    String,
-    Option<String>,
-    i64,
-    String,
-    bool,
-    Option<f64>,
-    Option<String>,
-);
+#[derive(sqlx::FromRow)]
+struct ClipRow {
+    id: String,
+    name: String,
+    file_path: String,
+    volume: f64,
+    output_device: String,
+    hotkey: Option<String>,
+    created_at: i64,
+    category: String,
+    loop_playback: bool,
+    duration_secs: Option<f64>,
+    builtin_id: Option<String>,
+}
 
 #[async_trait]
 impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
@@ -133,43 +134,33 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
 }
 
 fn row_to_clip(row: ClipRow) -> Result<StoredClip, StorageError> {
-    let (
-        id_str,
-        name,
-        path,
-        volume,
-        device_json,
-        hotkey,
-        created_ms,
-        category,
-        loop_playback,
-        duration_secs,
-        builtin_id,
-    ) = row;
-    let id = parse_clip_id(&id_str)?;
-    let output_device: OutputDevice = serde_json::from_str(&device_json).map_err(|e| {
+    let id = parse_clip_id(&row.id)?;
+    let output_device: OutputDevice = serde_json::from_str(&row.output_device).map_err(|e| {
         StorageError::from(SqliteStorageError::Decode(format!(
             "invalid output_device json: {e}"
         )))
     })?;
-    let created_at = OffsetDateTime::from_unix_timestamp_nanos(i128::from(created_ms) * 1_000_000)
-        .map_err(|e| {
-            StorageError::from(SqliteStorageError::Decode(format!(
-                "invalid created_at {created_ms}: {e}"
-            )))
-        })?;
+    let created_at = OffsetDateTime::from_unix_timestamp_nanos(
+        i128::from(row.created_at) * 1_000_000,
+    )
+    .map_err(|e| {
+        StorageError::from(SqliteStorageError::Decode(format!(
+            "invalid created_at {}: {e}",
+            row.created_at
+        )))
+    })?;
     Ok(StoredClip {
         id,
-        name,
-        file_path: PathBuf::from(path),
-        volume: volume as f32,
+        name: row.name,
+        file_path: PathBuf::from(row.file_path),
+        volume: row.volume as f32,
         output_device,
-        hotkey,
+        hotkey: row.hotkey,
         created_at,
-        category,
-        loop_playback,
-        duration_secs: duration_secs.map(|d| d as f32),
-        builtin_id,
+        category: row.category,
+        loop_playback: row.loop_playback,
+        duration_secs: row.duration_secs.map(|d| d as f32),
+        builtin_id: row.builtin_id,
     })
 }
 

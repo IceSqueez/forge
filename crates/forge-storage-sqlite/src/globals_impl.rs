@@ -25,23 +25,32 @@ impl SqliteGlobalsRepo {
     }
 }
 
-type GlobalRow = (String, String, i64, i64, i64, i64, i64);
+#[derive(sqlx::FromRow)]
+struct GlobalRow {
+    name: String,
+    value: String,
+    persisted: i64,
+    reads: i64,
+    writes: i64,
+    created_at: i64,
+    last_modified: i64,
+}
 
 fn decode_entries(rows: Vec<GlobalRow>) -> Result<Vec<GlobalEntry>, StorageError> {
     let mut entries = Vec::with_capacity(rows.len());
-    for (name, value_json, persisted_int, reads, writes, created_at_ms, last_modified_ms) in rows {
-        let value: Variant = serde_json::from_str(&value_json)
-            .map_err(|e| StorageError::Parse(format!("variant decode for '{name}': {e}")))?;
+    for row in rows {
+        let value: Variant = serde_json::from_str(&row.value)
+            .map_err(|e| StorageError::Parse(format!("variant decode for '{}': {e}", row.name)))?;
 
-        let created_at = from_epoch_ms(created_at_ms)?;
-        let last_modified = from_epoch_ms(last_modified_ms)?;
+        let created_at = from_epoch_ms(row.created_at)?;
+        let last_modified = from_epoch_ms(row.last_modified)?;
 
         entries.push(GlobalEntry {
-            name,
+            name: row.name,
             value,
-            persisted: persisted_int != 0,
-            reads: reads as u64,
-            writes: writes as u64,
+            persisted: row.persisted != 0,
+            reads: row.reads as u64,
+            writes: row.writes as u64,
             created_at,
             last_modified,
         });

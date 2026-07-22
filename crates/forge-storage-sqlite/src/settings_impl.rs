@@ -52,11 +52,17 @@ impl SettingsRepo for SqliteSettingsRepo {
     }
 
     async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
-        let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM settings")
+        #[derive(sqlx::FromRow)]
+        struct SettingRow {
+            key: String,
+            value: String,
+        }
+
+        let rows: Vec<SettingRow> = sqlx::query_as("SELECT key, value FROM settings")
             .fetch_all(&self.pool)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
-        Ok(rows.into_iter().collect())
+        Ok(rows.into_iter().map(|row| (row.key, row.value)).collect())
     }
 }

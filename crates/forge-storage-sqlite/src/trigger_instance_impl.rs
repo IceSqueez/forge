@@ -10,35 +10,35 @@ fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, S
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
 }
 
-type InstanceRow = (String, String, String, String, i64, i64, String, i64, i64);
+#[derive(sqlx::FromRow)]
+struct InstanceRow {
+    id: String,
+    kind_id: String,
+    name: String,
+    overrides: String,
+    enabled: i64,
+    user_defined: i64,
+    platform_scope: String,
+    cooldown_secs: i64,
+    cooldown_global: i64,
+}
 
 fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
-    let (
-        id_str,
-        kind_id,
-        name,
-        overrides_json,
-        enabled,
-        user_defined,
-        platform_scope_json,
-        cooldown_secs,
-        cooldown_global,
-    ) = row;
-    let id: TriggerInstanceId = parse_id(&id_str, "trigger_instance")?;
-    let overrides = serde_json::from_str(&overrides_json)
+    let id: TriggerInstanceId = parse_id(&row.id, "trigger_instance")?;
+    let overrides = serde_json::from_str(&row.overrides)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid overrides json: {e}")))?;
-    let platform_scope = serde_json::from_str::<PlatformScope>(&platform_scope_json)
+    let platform_scope = serde_json::from_str::<PlatformScope>(&row.platform_scope)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid platform_scope json: {e}")))?;
     Ok(TriggerInstance {
         id,
-        kind_id,
-        name,
+        kind_id: row.kind_id,
+        name: row.name,
         overrides,
-        enabled: enabled != 0,
-        user_defined: user_defined != 0,
+        enabled: row.enabled != 0,
+        user_defined: row.user_defined != 0,
         platform_scope,
-        cooldown_secs: cooldown_secs.max(0) as u32,
-        cooldown_global: cooldown_global != 0,
+        cooldown_secs: row.cooldown_secs.max(0) as u32,
+        cooldown_global: row.cooldown_global != 0,
     })
 }
 

@@ -20,20 +20,29 @@ fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, S
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
 }
 
-type EventLogRow = (String, String, String, i64, String, Option<String>, i64);
+#[derive(sqlx::FromRow)]
+struct EventLogRow {
+    id: String,
+    source: String,
+    kind: String,
+    timestamp: i64,
+    payload: String,
+    caused_by: Option<String>,
+    replay: i64,
+}
 
 fn decode_row(row: EventLogRow) -> Result<Event, SqliteStorageError> {
-    let (id_str, source_str, kind, timestamp_secs, payload_str, caused_by_str, replay_int) = row;
-
-    let id: EventId = parse_id(&id_str, "event id")?;
-    let source: EventSource = parse_id(&source_str, "event source")?;
-    let timestamp = from_epoch_secs(timestamp_secs)?;
-    let payload: serde_json::Value = serde_json::from_str(&payload_str)
+    let id: EventId = parse_id(&row.id, "event id")?;
+    let source: EventSource = parse_id(&row.source, "event source")?;
+    let timestamp = from_epoch_secs(row.timestamp)?;
+    let payload: serde_json::Value = serde_json::from_str(&row.payload)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid payload json: {e}")))?;
-    let caused_by: Option<EventId> = caused_by_str
+    let caused_by: Option<EventId> = row
+        .caused_by
         .as_deref()
         .map(|s| parse_id(s, "caused_by"))
         .transpose()?;
+    let kind = row.kind;
 
     Ok(Event {
         id,
@@ -42,7 +51,7 @@ fn decode_row(row: EventLogRow) -> Result<Event, SqliteStorageError> {
         timestamp,
         payload,
         caused_by,
-        replay: replay_int != 0,
+        replay: row.replay != 0,
     })
 }
 

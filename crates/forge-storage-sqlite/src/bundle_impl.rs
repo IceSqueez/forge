@@ -50,6 +50,61 @@ fn extract_global_names_from_body(body: &str, re: &Regex) -> Vec<String> {
         .collect()
 }
 
+#[derive(sqlx::FromRow)]
+struct BundleActionRow {
+    id: String,
+    name: String,
+    group_name: String,
+    #[allow(dead_code)]
+    queue_id: String,
+    enabled: i64,
+    concurrent: i64,
+    bypass_pause: i64,
+    description: String,
+    sub_actions: String,
+    execution_mode: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct BundleScriptRow {
+    id: String,
+    name: String,
+    body: String,
+    contract_json: String,
+    body_hash: String,
+    enabled: i64,
+    created_at: i64,
+    last_modified: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct BundleInstanceRow {
+    id: String,
+    kind_id: String,
+    name: String,
+    overrides: String,
+    enabled: i64,
+    #[allow(dead_code)]
+    user_defined: i64,
+    #[allow(dead_code)]
+    platform_scope: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct BundleGlobalRow {
+    name: String,
+    value: String,
+    #[allow(dead_code)]
+    type_tag: String,
+    #[allow(dead_code)]
+    persisted: i64,
+    reads: i64,
+    writes: i64,
+    #[allow(dead_code)]
+    created_at: i64,
+    last_modified: i64,
+}
+
 pub struct SqliteBundleRepo {
     pub(crate) pool: sqlx::SqlitePool,
 }
@@ -128,20 +183,7 @@ impl BundleRepo for SqliteBundleRepo {
                         continue;
                     }
 
-                    type ActionRow = (
-                        String, // id
-                        String, // name
-                        String, // group_name
-                        String, // queue_id
-                        i64,    // enabled
-                        i64,    // concurrent
-                        i64,    // bypass_pause
-                        String, // description
-                        String, // sub_actions
-                        String, // execution_mode
-                    );
-
-                    let row: Option<ActionRow> = sqlx::query_as(
+                    let row: Option<BundleActionRow> = sqlx::query_as(
                         "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, \
                          description, sub_actions, execution_mode \
                          FROM actions WHERE id = ?",
@@ -151,19 +193,7 @@ impl BundleRepo for SqliteBundleRepo {
                     .await
                     .map_err(SqliteStorageError::Sqlx)?;
 
-                    let Some((
-                        id_str,
-                        name,
-                        group_name,
-                        _queue_id,
-                        enabled,
-                        concurrent,
-                        bypass_pause,
-                        description,
-                        sub_actions_json,
-                        execution_mode,
-                    )) = row
-                    else {
+                    let Some(row) = row else {
                         warnings.push(format!(
                             "action '{}' not found in database; skipped",
                             action_id_str
@@ -172,7 +202,7 @@ impl BundleRepo for SqliteBundleRepo {
                     };
 
                     let sub_actions: JsonValue =
-                        serde_json::from_str(&sub_actions_json).unwrap_or(JsonValue::Array(vec![]));
+                        serde_json::from_str(&row.sub_actions).unwrap_or(JsonValue::Array(vec![]));
 
                     let script_names = extract_script_names_from_sub_actions(&sub_actions);
                     for sn in script_names {
@@ -198,21 +228,21 @@ impl BundleRepo for SqliteBundleRepo {
                     collected_action_ids.insert(action_id_str.clone());
 
                     doc.actions.push(ActionTransit {
-                        id: parse_action_id(&id_str)?,
-                        name,
-                        group: if group_name.is_empty() {
+                        id: parse_action_id(&row.id)?,
+                        name: row.name,
+                        group: if row.group_name.is_empty() {
                             None
                         } else {
-                            Some(group_name)
+                            Some(row.group_name)
                         },
-                        enabled: enabled != 0,
-                        concurrent: concurrent != 0,
-                        bypass_pause: bypass_pause != 0,
-                        execution_mode,
-                        description: if description.is_empty() {
+                        enabled: row.enabled != 0,
+                        concurrent: row.concurrent != 0,
+                        bypass_pause: row.bypass_pause != 0,
+                        execution_mode: row.execution_mode,
+                        description: if row.description.is_empty() {
                             None
                         } else {
-                            Some(description)
+                            Some(row.description)
                         },
                         sub_actions,
                         // actions has no created_at/last_modified columns; transit's String
@@ -228,9 +258,7 @@ impl BundleRepo for SqliteBundleRepo {
                     }
                     collected_script_names.insert(script_name.clone());
 
-                    type ScriptRow = (String, String, String, String, String, i64, i64, i64);
-
-                    let row: Option<ScriptRow> = sqlx::query_as(
+                    let row: Option<BundleScriptRow> = sqlx::query_as(
                         "SELECT id, name, body, contract_json, body_hash, enabled, created_at, \
                          last_modified FROM scripts WHERE name = ?",
                     )
@@ -239,17 +267,7 @@ impl BundleRepo for SqliteBundleRepo {
                     .await
                     .map_err(SqliteStorageError::Sqlx)?;
 
-                    let Some((
-                        id_str,
-                        name,
-                        body,
-                        contract_json,
-                        body_hash,
-                        enabled,
-                        created_ms,
-                        last_modified_ms,
-                    )) = row
-                    else {
+                    let Some(row) = row else {
                         warnings.push(format!(
                             "script '{}' referenced by a sub-action but not found in database; skipped",
                             script_name
@@ -257,41 +275,39 @@ impl BundleRepo for SqliteBundleRepo {
                         continue;
                     };
 
-                    let nested_names = extract_script_names_from_body_text(&body);
+                    let nested_names = extract_script_names_from_body_text(&row.body);
                     for nn in nested_names {
                         if !collected_script_names.contains(&nn) {
                             worklist.push_back(WorkItem::Script(nn));
                         }
                     }
 
-                    let global_names = extract_global_names_from_body(&body, &GLOBAL_ACCESS_RE);
+                    let global_names = extract_global_names_from_body(&row.body, &GLOBAL_ACCESS_RE);
                     for gn in global_names {
                         collected_global_names.insert(gn);
                     }
 
-                    let contract: JsonValue = serde_json::from_str(&contract_json)
+                    let contract: JsonValue = serde_json::from_str(&row.contract_json)
                         .unwrap_or(JsonValue::Object(Default::default()));
 
                     doc.scripts.push(ScriptTransit {
-                        id: parse_script_id(&id_str)?,
-                        name,
-                        body,
-                        enabled: enabled != 0,
+                        id: parse_script_id(&row.id)?,
+                        name: row.name,
+                        body: row.body,
+                        enabled: row.enabled != 0,
                         contract,
                         // Not recomputed here: the DB recomputes on every save, so the stored
                         // value is already authoritative for the current body.
-                        body_hash,
-                        created_at: ms_to_iso(created_ms),
-                        last_modified: ms_to_iso(last_modified_ms),
+                        body_hash: row.body_hash,
+                        created_at: ms_to_iso(row.created_at),
+                        last_modified: ms_to_iso(row.last_modified),
                     });
                 }
             }
         }
 
         for ti_id_str in &collected_trigger_instance_ids {
-            type InstanceRow = (String, String, String, String, i64, i64, String);
-
-            let row: Option<InstanceRow> = sqlx::query_as(
+            let row: Option<BundleInstanceRow> = sqlx::query_as(
                 "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope \
                  FROM trigger_instances WHERE id = ? AND user_defined = 1",
             )
@@ -300,24 +316,21 @@ impl BundleRepo for SqliteBundleRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
-            if let Some((id_str, kind_id, name, overrides_json, enabled, _user_defined, _ps)) = row
-            {
-                let overrides: JsonValue = serde_json::from_str(&overrides_json)
+            if let Some(row) = row {
+                let overrides: JsonValue = serde_json::from_str(&row.overrides)
                     .unwrap_or(JsonValue::Object(Default::default()));
                 doc.trigger_instances.push(TriggerInstanceTransit {
-                    id: parse_trigger_instance_id(&id_str)?,
-                    kind_id,
-                    name,
-                    enabled: enabled != 0,
+                    id: parse_trigger_instance_id(&row.id)?,
+                    kind_id: row.kind_id,
+                    name: row.name,
+                    enabled: row.enabled != 0,
                     overrides,
                 });
             }
         }
 
         for global_name in &collected_global_names {
-            type GlobalRow = (String, String, String, i64, i64, i64, i64, i64);
-
-            let row: Option<GlobalRow> = sqlx::query_as(
+            let row: Option<BundleGlobalRow> = sqlx::query_as(
                 "SELECT name, value, type_tag, persisted, reads, writes, created_at, last_modified \
                  FROM globals WHERE name = ? AND persisted = 1",
             )
@@ -334,9 +347,7 @@ impl BundleRepo for SqliteBundleRepo {
         }
 
         if include_orphan_globals {
-            type GlobalRow = (String, String, String, i64, i64, i64, i64, i64);
-
-            let all_persisted: Vec<GlobalRow> = sqlx::query_as(
+            let all_persisted: Vec<BundleGlobalRow> = sqlx::query_as(
                 "SELECT name, value, type_tag, persisted, reads, writes, created_at, last_modified \
                  FROM globals WHERE persisted = 1 ORDER BY name",
             )
@@ -345,8 +356,7 @@ impl BundleRepo for SqliteBundleRepo {
             .map_err(SqliteStorageError::Sqlx)?;
 
             for global_row in all_persisted {
-                let name = &global_row.0;
-                if !collected_global_names.contains(name.as_str())
+                if !collected_global_names.contains(global_row.name.as_str())
                     && let Some(transit) = decode_global_row(global_row)?
                 {
                     doc.globals.push(transit);
@@ -800,31 +810,28 @@ fn ms_to_iso(ms: i64) -> String {
         .unwrap_or_default()
 }
 
-fn decode_global_row(
-    row: (String, String, String, i64, i64, i64, i64, i64),
-) -> Result<Option<GlobalTransit>, StorageError> {
-    let (name, value_json, _type_tag, _persisted, reads, writes, _created_ms, last_modified_ms) =
-        row;
-
-    let value: forge_types::Variant = serde_json::from_str(&value_json)
-        .map_err(|e| StorageError::Parse(format!("invalid global value for '{name}': {e}")))?;
+fn decode_global_row(row: BundleGlobalRow) -> Result<Option<GlobalTransit>, StorageError> {
+    let value: forge_types::Variant = serde_json::from_str(&row.value).map_err(|e| {
+        StorageError::Parse(format!("invalid global value for '{}': {e}", row.name))
+    })?;
 
     let last_modified = OffsetDateTime::from_unix_timestamp_nanos(
-        last_modified_ms as i128 * 1_000_000,
+        row.last_modified as i128 * 1_000_000,
     )
     .map_err(|e| {
         StorageError::Parse(format!(
-            "invalid last_modified timestamp for global '{name}': {e}"
+            "invalid last_modified timestamp for global '{}': {e}",
+            row.name
         ))
     })?;
 
     Ok(Some(GlobalTransit {
-        name,
+        name: row.name,
         value,
         persisted: true,
         last_modified,
-        reads: reads.max(0) as u64,
-        writes: writes.max(0) as u64,
+        reads: row.reads.max(0) as u64,
+        writes: row.writes.max(0) as u64,
     }))
 }
 

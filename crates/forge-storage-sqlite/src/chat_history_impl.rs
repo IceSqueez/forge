@@ -29,69 +29,58 @@ fn encode_source(source: ChatSource) -> Result<String, StorageError> {
         .to_string())
 }
 
-type ChatHistoryRow = (
-    String,
-    String,
-    String,
-    i64,
-    String,
-    Option<String>,
-    String,
-    String,
-    i64,
-    Option<String>,
-    String,
-);
+#[derive(sqlx::FromRow)]
+struct ChatHistoryRow {
+    id: String,
+    event_id: String,
+    source: String,
+    received_at: i64,
+    author: String,
+    author_color: Option<String>,
+    body_segments: String,
+    badges: String,
+    is_event: i64,
+    event_detail: Option<String>,
+    moderation: String,
+}
 
 fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError> {
-    let (
-        id,
-        event_id_str,
-        source_str,
-        received_at_ms,
-        author,
-        author_color_str,
-        body_segments_str,
-        badges_str,
-        is_event_int,
-        event_detail_str,
-        moderation_str,
-    ) = row;
-
-    let event_id: EventId = parse_id(&event_id_str, "event id")?;
-    let source: ChatSource = parse_id(&source_str, "chat source")?;
-    let received_at = from_epoch_ms(received_at_ms)?;
-    let author_color: Option<[u8; 3]> = author_color_str
+    let event_id: EventId = parse_id(&row.event_id, "event id")?;
+    let source: ChatSource = parse_id(&row.source, "chat source")?;
+    let received_at = from_epoch_ms(row.received_at)?;
+    let author_color: Option<[u8; 3]> = row
+        .author_color
         .as_deref()
         .map(|s| {
             serde_json::from_str(s)
                 .map_err(|e| SqliteStorageError::Decode(format!("invalid author_color json: {e}")))
         })
         .transpose()?;
-    let body_segments: Vec<ChatSegment> = serde_json::from_str(&body_segments_str)
+    let body_segments: Vec<ChatSegment> = serde_json::from_str(&row.body_segments)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid body_segments json: {e}")))?;
-    let badges: Vec<UserBadge> = serde_json::from_str(&badges_str)
+    let badges: Vec<UserBadge> = serde_json::from_str(&row.badges)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid badges json: {e}")))?;
-    let event_detail: Option<ChatEventDetail> = event_detail_str
+    let event_detail: Option<ChatEventDetail> = row
+        .event_detail
         .as_deref()
         .map(|s| {
             serde_json::from_str(s)
                 .map_err(|e| SqliteStorageError::Decode(format!("invalid event_detail json: {e}")))
         })
         .transpose()?;
-    let moderation: ModerationMarks = serde_json::from_str(&moderation_str)
+    let moderation: ModerationMarks = serde_json::from_str(&row.moderation)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid moderation json: {e}")))?;
 
     Ok(UnifiedChatRow {
-        id,
+        id: row.id,
         event_id,
         source,
         received_at,
-        author,
+        author: row.author,
         author_color,
         body_segments,
         badges,
-        is_event: is_event_int != 0,
+        is_event: row.is_event != 0,
         event_detail,
         moderation,
     })

@@ -111,7 +111,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         broadcaster_id: &str,
         user_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
+        let rows: Vec<UserGlobalRow> = sqlx::query_as(
             "SELECT broadcaster_id, user_id, name, value, last_modified \
              FROM user_globals \
              WHERE broadcaster_id = ? AND user_id = ?",
@@ -129,7 +129,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         &self,
         broadcaster_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
+        let rows: Vec<UserGlobalRow> = sqlx::query_as(
             "SELECT broadcaster_id, user_id, name, value, last_modified \
              FROM user_globals \
              WHERE broadcaster_id = ?",
@@ -143,18 +143,25 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
     }
 }
 
-fn decode_rows(
-    rows: Vec<(String, String, String, String, i64)>,
-) -> Result<Vec<UserGlobalEntry>, StorageError> {
+#[derive(sqlx::FromRow)]
+struct UserGlobalRow {
+    broadcaster_id: String,
+    user_id: String,
+    name: String,
+    value: String,
+    last_modified: i64,
+}
+
+fn decode_rows(rows: Vec<UserGlobalRow>) -> Result<Vec<UserGlobalEntry>, StorageError> {
     let mut entries = Vec::with_capacity(rows.len());
-    for (broadcaster_id, user_id, name, value_json, last_modified_ms) in rows {
-        let value: Variant = serde_json::from_str(&value_json)
-            .map_err(|e| StorageError::Parse(format!("variant decode for '{name}': {e}")))?;
-        let last_modified = from_epoch_ms(last_modified_ms)?;
+    for row in rows {
+        let value: Variant = serde_json::from_str(&row.value)
+            .map_err(|e| StorageError::Parse(format!("variant decode for '{}': {e}", row.name)))?;
+        let last_modified = from_epoch_ms(row.last_modified)?;
         entries.push(UserGlobalEntry {
-            broadcaster_id,
-            user_id,
-            name,
+            broadcaster_id: row.broadcaster_id,
+            user_id: row.user_id,
+            name: row.name,
             value,
             last_modified,
         });

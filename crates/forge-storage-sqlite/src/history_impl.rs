@@ -105,7 +105,14 @@ impl HistoryRepo for SqliteHistoryRepo {
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
         let since_ms = to_epoch_ms(since);
 
-        let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+        #[derive(sqlx::FromRow)]
+        struct StatsSummaryRow {
+            action_id: String,
+            last_started: i64,
+            runs_24h: i64,
+        }
+
+        let rows: Vec<StatsSummaryRow> = sqlx::query_as(
             "SELECT action_id,
                     MAX(started_at) AS last_started,
                     SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS runs_24h
@@ -118,20 +125,21 @@ impl HistoryRepo for SqliteHistoryRepo {
         .map_err(SqliteStorageError::Sqlx)?;
 
         let mut out = HashMap::with_capacity(rows.len());
-        for (id_str, last_ms, runs_24h) in rows {
-            let id = parse_action_id(&id_str)?;
+        for row in rows {
+            let id = parse_action_id(&row.action_id)?;
             let last_ran_at =
-                OffsetDateTime::from_unix_timestamp_nanos(i128::from(last_ms) * 1_000_000)
+                OffsetDateTime::from_unix_timestamp_nanos(i128::from(row.last_started) * 1_000_000)
                     .map_err(|e| {
                         StorageError::from(SqliteStorageError::Decode(format!(
-                            "invalid started_at {last_ms}: {e}"
+                            "invalid started_at {}: {e}",
+                            row.last_started
                         )))
                     })?;
             out.insert(
                 id,
                 ActionStats {
                     last_ran_at,
-                    runs_24h: u32::try_from(runs_24h).unwrap_or(u32::MAX),
+                    runs_24h: u32::try_from(row.runs_24h).unwrap_or(u32::MAX),
                 },
             );
         }

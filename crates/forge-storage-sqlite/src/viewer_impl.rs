@@ -26,30 +26,39 @@ impl SqliteViewerRepo {
     }
 }
 
-fn row_to_viewer(
-    row: (String, String, String, i64, i64, i64, i64),
-) -> Result<Viewer, StorageError> {
-    let (platform_str, viewer_id, username, first_ms, last_ms, count, greeting) = row;
-    let platform = ViewerPlatform::parse(&platform_str).ok_or_else(|| {
+#[derive(sqlx::FromRow)]
+struct ViewerRow {
+    platform: String,
+    viewer_id: String,
+    username: String,
+    first_seen_at: i64,
+    last_seen_at: i64,
+    message_count: i64,
+    custom_greeting: i64,
+}
+
+fn row_to_viewer(row: ViewerRow) -> Result<Viewer, StorageError> {
+    let platform = ViewerPlatform::parse(&row.platform).ok_or_else(|| {
         StorageError::from(SqliteStorageError::Decode(format!(
-            "unknown platform `{platform_str}`"
+            "unknown platform `{}`",
+            row.platform
         )))
     })?;
     Ok(Viewer {
-        viewer_id,
+        viewer_id: row.viewer_id,
         platform,
-        username,
-        first_seen_at: from_epoch_ms(first_ms)?,
-        last_seen_at: from_epoch_ms(last_ms)?,
-        message_count: u64::try_from(count).unwrap_or(0),
-        custom_greeting: greeting != 0,
+        username: row.username,
+        first_seen_at: from_epoch_ms(row.first_seen_at)?,
+        last_seen_at: from_epoch_ms(row.last_seen_at)?,
+        message_count: u64::try_from(row.message_count).unwrap_or(0),
+        custom_greeting: row.custom_greeting != 0,
     })
 }
 
 #[async_trait]
 impl ViewerRepo for SqliteViewerRepo {
     async fn list(&self) -> Result<Vec<Viewer>, StorageError> {
-        let rows: Vec<(String, String, String, i64, i64, i64, i64)> = sqlx::query_as(
+        let rows: Vec<ViewerRow> = sqlx::query_as(
             "SELECT platform, viewer_id, username, first_seen_at, last_seen_at,
                     message_count, custom_greeting
              FROM viewers
@@ -75,7 +84,7 @@ impl ViewerRepo for SqliteViewerRepo {
         platform: ViewerPlatform,
         viewer_id: &str,
     ) -> Result<Option<Viewer>, StorageError> {
-        let row: Option<(String, String, String, i64, i64, i64, i64)> = sqlx::query_as(
+        let row: Option<ViewerRow> = sqlx::query_as(
             "SELECT platform, viewer_id, username, first_seen_at, last_seen_at,
                     message_count, custom_greeting
              FROM viewers WHERE platform = ? AND viewer_id = ?",

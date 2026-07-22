@@ -1,5 +1,6 @@
 use forge_components::{
-    ForgePalette, InlineEdit, PlatformKind, TextInput, ToastKind, platform_color, search_input, tr,
+    BreadcrumbCrumb, Density, ForgePalette, InlineEdit, PlatformKind, TextInput, ToastKind,
+    page_frame, platform_color, search_input, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
@@ -46,9 +47,7 @@ const KIND_GLYPH: Pixels = px(11.0);
 const NAME_FS: Pixels = px(11.0);
 const KIND_FS: Pixels = px(11.0);
 const USED_FS: Pixels = px(11.0);
-const STATS_FS: Pixels = px(11.5);
 const BADGE_FS: Pixels = px(9.0);
-const FILTER_PAD_V: Pixels = px(8.0);
 const FILTER_DIV_W: Pixels = px(1.0);
 const FILTER_DIV_H: Pixels = px(16.0);
 const SEARCH_W: Pixels = px(240.0);
@@ -398,8 +397,9 @@ impl Render for TriggersRegistryView {
             window.focus(&self.list_focus, cx);
         }
 
-        let header = self.render_header(&palette);
-        let filter_bar = self.render_filter_bar(&palette, cx);
+        let stats = self.render_stats(&palette);
+        let filter_left = self.render_filter_left(&palette, cx);
+        let filter_right = self.render_filter_right(&palette, cx);
         let list = div()
             .track_focus(&self.list_focus)
             .key_context(LIST_CONTEXT)
@@ -435,14 +435,25 @@ impl Render for TriggersRegistryView {
             .as_ref()
             .map(|stage| self.render_create(stage, &palette, cx));
 
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("triggers_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("triggers_breadcrumb_triggers")),
+            ],
+            &palette,
+        )
+        .header_right(stats)
+        .subheader_left(filter_left)
+        .subheader_right(filter_right)
+        .density(Density::Cozy)
+        .body(body);
+
         div()
             .size_full()
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(header)
-            .child(filter_bar)
-            .child(body)
+            .child(frame)
             .children(disable_modal)
             .children(delete_modal)
             .children(row_menu)

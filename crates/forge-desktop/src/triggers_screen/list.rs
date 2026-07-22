@@ -3,11 +3,11 @@ use crate::actions::{ListActivate, ListSelectNext, ListSelectPrev};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, OverlayPosition, Spacing,
-    TextInput, ToastAction, ToastKind, badge, breadcrumb, chip, confirm_modal, context_menu,
-    ghost_button_with_icon, icon, inline_edit, menu_divider, menu_item, overlay,
-    primary_button_with_icon, spacing, status_dot, toggle, toolbar_row, tr,
+    BORDER_THIN, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
+    FONT_XXS, ForgePalette, Icon, InlineEditEvent, InputEvent, OverlayPosition, Spacing, TextInput,
+    ToastAction, ToastKind, badge, chip, confirm_modal, context_menu, ghost_button_with_icon,
+    header_stat, header_stats, icon, inline_edit, menu_divider, menu_item, overlay,
+    primary_button_with_icon, spacing, status_dot, toggle, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
@@ -422,66 +422,27 @@ impl TriggersRegistryView {
         );
     }
 
-    pub(super) fn render_header(&self, palette: &ForgePalette) -> AnyElement {
-        let sep = || {
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(STATS_FS)
-                .text_color(palette.text_faint)
-                .child("\u{b7}")
-        };
-        let stat = |value: String, value_color: Rgba, label: SharedString| {
-            div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xxs, Density::Cozy))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_size(STATS_FS)
-                        .text_color(value_color)
-                        .child(value),
-                )
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(STATS_FS)
-                        .text_color(palette.text_muted)
-                        .child(label),
-                )
-        };
-
-        let stats = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(stat(
-                self.instances.len().to_string(),
-                palette.text_primary,
-                tr!("triggers_stat_instances").into(),
-            ))
-            .child(sep())
-            .child(stat(
-                self.used_count().to_string(),
-                palette.success,
-                tr!("triggers_stat_used").into(),
-            ))
-            .child(sep())
-            .child(stat(
-                self.disabled_count().to_string(),
-                palette.warning,
-                tr!("triggers_stat_disabled").into(),
-            ));
-
-        breadcrumb(
+    pub(super) fn render_stats(&self, palette: &ForgePalette) -> AnyElement {
+        header_stats(
             vec![
-                BreadcrumbCrumb::leaf(tr!("triggers_breadcrumb_automation")),
-                BreadcrumbCrumb::leaf(tr!("triggers_breadcrumb_triggers")),
+                header_stat(
+                    self.instances.len().to_string(),
+                    palette.text_primary,
+                    tr!("triggers_stat_instances"),
+                ),
+                header_stat(
+                    self.used_count().to_string(),
+                    palette.success,
+                    tr!("triggers_stat_used"),
+                ),
+                header_stat(
+                    self.disabled_count().to_string(),
+                    palette.warning,
+                    tr!("triggers_stat_disabled"),
+                ),
             ],
             palette,
         )
-        .right(stats)
         .into_any_element()
     }
 
@@ -493,7 +454,7 @@ impl TriggersRegistryView {
             .into_any_element()
     }
 
-    pub(super) fn render_filter_bar(
+    pub(super) fn render_filter_left(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -567,7 +528,7 @@ impl TriggersRegistryView {
                 ),
             );
 
-        let left = div()
+        div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
@@ -575,20 +536,20 @@ impl TriggersRegistryView {
             .child(self.divider(palette))
             .child(platform_chips)
             .child(self.divider(palette))
-            .child(usage_chips);
+            .child(usage_chips)
+            .into_any_element()
+    }
 
-        let new_trigger =
-            primary_button_with_icon(Icon::Plus, tr!("triggers_new_trigger"), palette).on_click(
+    pub(super) fn render_filter_right(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        primary_button_with_icon(Icon::Plus, tr!("triggers_new_trigger"), palette)
+            .on_click(
                 "triggers-new",
                 cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
-            );
-
-        toolbar_row(left, new_trigger)
-            .attached(palette)
-            .density(Density::Cozy)
-            .py(FILTER_PAD_V)
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .flex_none()
+            )
             .into_any_element()
     }
 

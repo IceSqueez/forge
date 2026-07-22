@@ -8,11 +8,11 @@ use forge_components::tokens::ModalSize;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
-    OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge,
-    breadcrumb, chip, column, confirm_modal, context_menu, empty_state, fmt_relative_time,
-    hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, primary_button,
-    primary_button_with_icon, radius, search_input, secondary_button, spacing, status_dot, toggle,
-    toolbar_row, tr, virtual_table, with_alpha,
+    OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge, chip,
+    column, confirm_modal, context_menu, empty_state, fmt_relative_time, header_stat, header_stats,
+    hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, page_frame,
+    primary_button, primary_button_with_icon, radius, search_input, secondary_button, spacing,
+    status_dot, toggle, tr, virtual_table, with_alpha,
 };
 use std::path::PathBuf;
 
@@ -707,77 +707,36 @@ impl GlobalsView {
         ed.build_variant(cx).is_ok()
     }
 
-    fn render_header(
+    fn render_stats<'a>(
         &self,
-        palette: &ForgePalette,
+        palette: &'a ForgePalette,
         cx: &Context<Self>,
-    ) -> impl IntoElement + use<> {
+    ) -> impl IntoElement + use<'a> {
         let globals = self.globals.read(cx);
-        let total = globals.total();
-        let persisted = globals.persisted_count();
-        let session = globals.session_count();
 
-        let stat = |value: usize, label: SharedString, hue: Rgba| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(4.0))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(hue)
-                        .child(format!("{value}")),
-                )
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_muted)
-                        .child(label),
-                )
-        };
-        let dot = || {
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(FONT_XS)
-                .text_color(palette.text_faint)
-                .child("·")
-        };
-
-        let cluster = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(stat(
-                total,
-                tr!("globals_stat_total").into(),
-                palette.text_primary,
-            ))
-            .child(dot())
-            .child(stat(
-                persisted,
-                tr!("globals_stat_persisted").into(),
-                palette.success,
-            ))
-            .child(dot())
-            .child(stat(
-                session,
-                tr!("globals_stat_in_memory").into(),
-                palette.warning,
-            ));
-
-        breadcrumb(
+        header_stats(
             vec![
-                BreadcrumbCrumb::leaf(tr!("globals_breadcrumb_automation")),
-                BreadcrumbCrumb::leaf(tr!("globals_breadcrumb_globals")),
+                header_stat(
+                    globals.total().to_string(),
+                    palette.text_primary,
+                    tr!("globals_stat_total"),
+                ),
+                header_stat(
+                    globals.persisted_count().to_string(),
+                    palette.success,
+                    tr!("globals_stat_persisted"),
+                ),
+                header_stat(
+                    globals.session_count().to_string(),
+                    palette.warning,
+                    tr!("globals_stat_in_memory"),
+                ),
             ],
             palette,
         )
-        .right(cluster)
     }
 
-    fn render_action_bar(
+    fn render_filter_left(
         &self,
         palette: &ForgePalette,
         density: Density,
@@ -821,13 +780,20 @@ impl GlobalsView {
 
         let search = div().w(px(200.0)).child(self.search.clone());
 
-        let left = div()
+        div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .child(search)
-            .child(chip_row);
+            .child(chip_row)
+    }
 
+    fn render_filter_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let export_hover = palette.surface_overlay;
         let export = div()
             .id("globals-export")
@@ -847,14 +813,13 @@ impl GlobalsView {
                     "globals-new",
                     cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
                 );
-        let right = div()
+
+        div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(export)
-            .child(new_btn);
-
-        toolbar_row(left, right).attached(palette).density(density)
+            .child(new_btn)
     }
 
     fn render_table(
@@ -1615,9 +1580,23 @@ impl Render for GlobalsView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header = self.render_header(&palette, cx);
-        let action_bar = self.render_action_bar(&palette, density, cx);
+        let stats = self.render_stats(&palette, cx);
+        let filter_left = self.render_filter_left(&palette, density, cx);
+        let filter_right = self.render_filter_right(&palette, density, cx);
         let table = self.render_table(&palette, density, cx);
+
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("globals_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("globals_breadcrumb_globals")),
+            ],
+            &palette,
+        )
+        .header_right(stats)
+        .subheader_left(filter_left)
+        .subheader_right(filter_right)
+        .density(density)
+        .body(table);
 
         let delete_overlay = self
             .pending_delete
@@ -1637,9 +1616,7 @@ impl Render for GlobalsView {
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(header)
-            .child(action_bar)
-            .child(table)
+            .child(frame)
             .children(delete_overlay)
             .children(editor_overlay)
             .children(inspect_overlay)

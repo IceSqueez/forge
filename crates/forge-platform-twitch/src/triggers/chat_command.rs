@@ -5,6 +5,7 @@ use forge_registry::{
 use forge_types::{ArgStack, PlatformId, TriggerConfig, VariableSchema, Variant};
 
 use super::chat_arg_stack::{base_chat_args, base_chat_schema};
+use crate::payload_fields::chat as fields;
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -109,7 +110,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 
         let message = event
             .payload
-            .get("message")
+            .get(fields::MESSAGE)
             .and_then(|v| v.as_str())
             .unwrap_or("");
 

@@ -9,6 +9,7 @@ pub mod credentials;
 pub mod credentials_manager;
 mod event_channel;
 pub mod helix;
+mod payload_fields;
 pub mod sub_actions;
 pub mod subscriptions;
 pub mod triggers;

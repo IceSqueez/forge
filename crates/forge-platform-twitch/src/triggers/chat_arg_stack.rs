@@ -3,36 +3,38 @@ use forge_types::{
     ArgStack, DeclaredVariable, SynthesisHint, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::chat as fields;
+
 pub(super) fn base_chat_args(event: &Event) -> ArgStack {
     let message_text = event
         .payload
-        .get("message")
+        .get(fields::MESSAGE)
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();
     let user_login = event
         .payload
-        .get("user")
-        .and_then(|u| u.get("login"))
+        .get(fields::USER)
+        .and_then(|u| u.get(fields::USER_LOGIN))
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();
     let user_id = event
         .payload
-        .get("user")
-        .and_then(|u| u.get("id"))
+        .get(fields::USER)
+        .and_then(|u| u.get(fields::USER_ID))
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();
     let channel = event
         .payload
-        .get("channel")
+        .get(fields::CHANNEL)
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();
     let color = event
         .payload
-        .get("color")
+        .get(fields::COLOR)
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();

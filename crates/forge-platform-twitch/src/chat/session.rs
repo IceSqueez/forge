@@ -15,6 +15,7 @@ use tracing::{debug, info, warn};
 
 use super::dispatch;
 use super::payload;
+use crate::payload_fields::chat as chat_fields;
 
 const EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws";
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -311,15 +312,15 @@ impl ChatSession {
 
         let chat_payload = payload::build_chat_message_chat_payload(event_data);
         let mut forge_payload = serde_json::json!({
-            "channel": channel,
-            "user": {
-                "login": user_login,
-                "id": user_id,
-                "roles": roles,
+            (chat_fields::CHANNEL): channel,
+            (chat_fields::USER): {
+                (chat_fields::USER_LOGIN): user_login,
+                (chat_fields::USER_ID): user_id,
+                (chat_fields::USER_ROLES): roles,
             },
-            "message": message,
-            "badges": badges,
-            "color": color,
+            (chat_fields::MESSAGE): message,
+            (chat_fields::BADGES): badges,
+            (chat_fields::COLOR): color,
         });
 
         if let Some(bits) = event_data
@@ -328,7 +329,8 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
         {
             // channel.chat.message cheer object carries only {bits}; no anonymity signal.
-            forge_payload["cheer"] = serde_json::json!({ "bits": bits });
+            forge_payload[chat_fields::CHEER] =
+                serde_json::json!({ (chat_fields::CHEER_BITS): bits });
         }
 
         let broadcaster_id = event_data
@@ -353,9 +355,9 @@ impl ChatSession {
                     .filter(|s| !s.is_empty()),
             )
         {
-            forge_payload["from_channel"] = serde_json::json!({
-                "login": login,
-                "display_name": display_name,
+            forge_payload[chat_fields::FROM_CHANNEL] = serde_json::json!({
+                (chat_fields::FROM_CHANNEL_LOGIN): login,
+                (chat_fields::FROM_CHANNEL_DISPLAY_NAME): display_name,
             });
         }
 

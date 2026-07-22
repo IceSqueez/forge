@@ -8,6 +8,7 @@ use forge_types::{
 };
 
 use super::chat_arg_stack::{base_chat_args, base_chat_schema};
+use crate::payload_fields::chat as fields;
 
 pub(crate) struct ChatCheerMessageDescriptor;
 
@@ -102,8 +103,8 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
         let bits = match event
             .payload
-            .get("cheer")
-            .and_then(|c| c.get("bits"))
+            .get(fields::CHEER)
+            .and_then(|c| c.get(fields::CHEER_BITS))
             .and_then(|v| v.as_i64())
         {
             Some(b) => b,
@@ -145,8 +146,8 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let bits = event
             .payload
-            .get("cheer")
-            .and_then(|c| c.get("bits"))
+            .get(fields::CHEER)
+            .and_then(|c| c.get(fields::CHEER_BITS))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 

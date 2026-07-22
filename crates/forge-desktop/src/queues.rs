@@ -3,19 +3,19 @@ use std::sync::Arc;
 
 use forge_components::confirm::ConfirmTone;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_SM,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextInput, badge, breadcrumb, card, confirm_modal,
-    empty_state, ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal,
-    overlay, primary_button, primary_button_with_icon, radius, secondary_button, slider, spacing,
-    spinner, toolbar_row, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, ChipGlyph, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
+    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
+    OverlayPosition, Radius, Spacing, TextInput, badge, card, chip, confirm_modal, empty_state,
+    ghost_button_with_icon, header_stat, header_stats, icon, menu_button, menu_divider, menu_item,
+    modal, overlay, page_frame, primary_button, primary_button_with_icon, radius, search_input,
+    secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Queue, QueueId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Point, Rgba, SharedString,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Point, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
 
@@ -28,7 +28,6 @@ const BADGE_GLYPH: Pixels = px(9.0);
 const PANEL_GLYPH: Pixels = px(12.0);
 const CARDS_PER_ROW: usize = 2;
 const STATS_FS: Pixels = px(11.5);
-const HEADER_PAD_V: Pixels = px(8.0);
 const CARD_PAD: Pixels = px(14.0);
 const SECTION_GAP: Pixels = px(10.0);
 const HEADER_GAP: Pixels = px(12.0);
@@ -40,6 +39,64 @@ const SERIAL_CONCURRENCY: u32 = 1;
 const PARALLEL_CONCURRENCY: u32 = 8;
 const MIN_CONCURRENCY: u32 = 1;
 const MAX_CONCURRENCY: u32 = 16;
+const SEARCH_W: Pixels = px(240.0);
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum QueueFilter {
+    #[default]
+    All,
+    Running,
+    Paused,
+    Parallel,
+    Sequential,
+}
+
+impl QueueFilter {
+    const TABS: [(&'static str, QueueFilter); 5] = [
+        ("queue-filter-all", QueueFilter::All),
+        ("queue-filter-running", QueueFilter::Running),
+        ("queue-filter-paused", QueueFilter::Paused),
+        ("queue-filter-parallel", QueueFilter::Parallel),
+        ("queue-filter-sequential", QueueFilter::Sequential),
+    ];
+
+    fn keeps(self, row: &QueueRow, effective_paused: bool) -> bool {
+        match self {
+            QueueFilter::All => true,
+            QueueFilter::Running => !effective_paused,
+            QueueFilter::Paused => effective_paused,
+            QueueFilter::Parallel => !row.blocking,
+            QueueFilter::Sequential => row.blocking,
+        }
+    }
+
+    fn label_key(self) -> &'static str {
+        match self {
+            QueueFilter::All => "queues_filter_all",
+            QueueFilter::Running => "queues_filter_running",
+            QueueFilter::Paused => "queues_filter_paused",
+            QueueFilter::Parallel => "queues_filter_parallel",
+            QueueFilter::Sequential => "queues_filter_sequential",
+        }
+    }
+
+    fn dot(self, palette: &ForgePalette) -> gpui::Rgba {
+        match self {
+            QueueFilter::All => palette.brand,
+            QueueFilter::Running => palette.success,
+            QueueFilter::Paused => palette.warning,
+            QueueFilter::Parallel => palette.info,
+            QueueFilter::Sequential => palette.bits,
+        }
+    }
+}
+
+fn queue_matches(row: &QueueRow, filter: QueueFilter, query: &str, effective_paused: bool) -> bool {
+    if !filter.keeps(row, effective_paused) {
+        return false;
+    }
+    query.is_empty() || row.name.to_lowercase().contains(query)
+}
 
 struct QueueRow {
     id: QueueId,
@@ -90,7 +147,11 @@ pub struct QueuesView {
     queue_repo: Arc<dyn QueueRepo>,
     action_repo: Arc<dyn ActionRepo>,
     rt_handle: tokio::runtime::Handle,
+    status_filter: QueueFilter,
+    search: Entity<TextInput>,
+    search_query: String,
     _health_obs: Subscription,
+    _search_sub: Subscription,
 }
 
 impl QueuesView {
@@ -104,7 +165,10 @@ impl QueuesView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
+        let palette = cx.palette();
         let health_obs = cx.observe(&queue_health, |_this, _health, cx| cx.notify());
+        let search = cx.new(|cx| search_input(tr!("queues_search_placeholder"), palette, cx));
+        let search_sub = cx.subscribe(&search, Self::on_search_event);
         let view = Self {
             queues: vec![],
             loading: true,
@@ -120,10 +184,48 @@ impl QueuesView {
             queue_repo,
             action_repo,
             rt_handle,
+            status_filter: QueueFilter::default(),
+            search,
+            search_query: String::new(),
             _health_obs: health_obs,
+            _search_sub: search_sub,
         };
         view.reload(cx);
         view
+    }
+
+    fn on_search_event(
+        &mut self,
+        _f: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if let InputEvent::Changed(text) = event {
+            self.search_query = text.to_string();
+            cx.notify();
+        }
+    }
+
+    fn set_status_filter(&mut self, filter: QueueFilter, cx: &mut Context<Self>) {
+        self.status_filter = filter;
+        cx.notify();
+    }
+
+    fn effective_paused(&self, row: &QueueRow, cx: &Context<Self>) -> bool {
+        row.paused || self.queue_health.read(cx).is_paused(row.id)
+    }
+
+    fn visible_indices(&self, cx: &Context<Self>) -> Vec<usize> {
+        let query = self.search_query.trim().to_lowercase();
+        self.queues
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                let effective_paused = self.effective_paused(row, cx);
+                queue_matches(row, self.status_filter, &query, effective_paused)
+            })
+            .map(|(i, _)| i)
+            .collect()
     }
 
     fn reload(&self, cx: &mut Context<Self>) {
@@ -502,7 +604,7 @@ impl QueuesView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let paused = q.paused || self.queue_health.read(cx).is_paused(q.id);
+        let paused = self.effective_paused(q, cx);
         let not_live = self.diverged.contains(&q.id);
 
         let border_color = if paused {
@@ -810,11 +912,10 @@ impl QueuesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let gap = spacing(Spacing::Sm, density);
-        let cards: Vec<AnyElement> = self
-            .queues
-            .iter()
-            .enumerate()
-            .map(|(index, q)| self.queue_card(index, q, palette, density, cx))
+        let visible = self.visible_indices(cx);
+        let cards: Vec<AnyElement> = visible
+            .into_iter()
+            .map(|index| self.queue_card(index, &self.queues[index], palette, density, cx))
             .collect();
 
         let mut grid = div().w_full().flex().flex_col().gap(gap);
@@ -1084,107 +1185,128 @@ impl QueuesView {
     }
 }
 
-impl Render for QueuesView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = cx.palette();
-        let density = cx.density();
+impl QueuesView {
+    fn render_stats<'a>(
+        &self,
+        palette: &'a ForgePalette,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<'a> {
+        let paused_count = self
+            .queues
+            .iter()
+            .filter(|q| self.effective_paused(q, cx))
+            .count();
+        let running_count = self.queues.len().saturating_sub(paused_count);
 
+        header_stats(
+            vec![
+                header_stat(
+                    self.queues.len().to_string(),
+                    palette.text_primary,
+                    tr!("queues_stat_queues"),
+                ),
+                header_stat(
+                    running_count.to_string(),
+                    palette.success,
+                    tr!("queues_stat_running"),
+                ),
+                header_stat(
+                    paused_count.to_string(),
+                    palette.warning,
+                    tr!("queues_stat_paused"),
+                ),
+            ],
+            palette,
+        )
+    }
+
+    fn render_subheader_left(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let mut chips = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density));
+        for (id, filter) in QueueFilter::TABS {
+            let active = self.status_filter == filter;
+            chips = chips.child(
+                chip(
+                    tr!(filter.label_key()),
+                    ChipGlyph::Dot(filter.dot(palette)),
+                    active,
+                    palette,
+                )
+                .density(density)
+                .on_click(
+                    id,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.set_status_filter(filter, cx)
+                    }),
+                ),
+            );
+        }
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(div().w(SEARCH_W).child(self.search.clone()))
+            .child(chips)
+    }
+
+    fn render_subheader_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let pause_all =
-            ghost_button_with_icon(Icon::PlayerPause, tr!("queues_pause_all_btn"), &palette)
+            ghost_button_with_icon(Icon::PlayerPause, tr!("queues_pause_all_btn"), palette)
                 .ink(palette.warning)
                 .on_click(
                     "q-pause-all",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.pause_all(cx)),
                 );
-        let new_queue = primary_button_with_icon(Icon::Plus, tr!("queues_new_queue_btn"), &palette)
+        let new_queue = primary_button_with_icon(Icon::Plus, tr!("queues_new_queue_btn"), palette)
             .density(density)
             .on_click(
                 "q-new",
                 cx.listener(|this, _: &ClickEvent, window, cx| this.open_new(window, cx)),
             );
-        let sep = || {
-            div()
-                .font_family(DEFAULT_BODY_FAMILY)
-                .text_size(STATS_FS)
-                .text_color(palette.text_faint)
-                .child("\u{b7}")
-        };
-        let stat = |value: String, value_color: Rgba, label: SharedString| {
-            div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xxs, density))
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_size(STATS_FS)
-                        .text_color(value_color)
-                        .child(value),
-                )
-                .child(
-                    div()
-                        .font_family(DEFAULT_BODY_FAMILY)
-                        .text_size(STATS_FS)
-                        .text_color(palette.text_muted)
-                        .child(label),
-                )
-        };
-        let paused_count = self.queues.iter().filter(|q| q.paused).count();
-        let running_count = self.queues.len().saturating_sub(paused_count);
-        let stats = div()
+
+        div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(stat(
-                self.queues.len().to_string(),
-                palette.text_primary,
-                tr!("queues_stat_queues").into(),
-            ))
-            .child(sep())
-            .child(stat(
-                running_count.to_string(),
-                palette.success,
-                tr!("queues_stat_running").into(),
-            ))
-            .child(sep())
-            .child(stat(
-                paused_count.to_string(),
-                palette.warning,
-                tr!("queues_stat_paused").into(),
-            ));
+            .gap(spacing(Spacing::Xs, density))
+            .child(pause_all)
+            .child(new_queue)
+    }
+}
 
-        let header = breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("queues_breadcrumb_automation")),
-                BreadcrumbCrumb::leaf(tr!("queues_breadcrumb_queues")),
-            ],
-            &palette,
-        )
-        .right(stats);
+impl Render for QueuesView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+
+        let stats = self.render_stats(&palette, cx);
+        let subheader_left = self.render_subheader_left(&palette, density, cx);
+        let subheader_right = self.render_subheader_right(&palette, density, cx);
 
         let subtitle = div()
             .font_family(DEFAULT_BODY_FAMILY)
             .text_size(STATS_FS)
             .text_color(palette.text_muted)
             .child(tr!("queues_subtitle"));
-        let toolbar_actions = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(pause_all)
-            .child(new_queue);
-        let toolbar = toolbar_row(subtitle, toolbar_actions)
-            .attached(&palette)
-            .density(density)
-            .py(HEADER_PAD_V)
-            .flex_none();
 
         let feedback = self
             .feedback
             .clone()
             .map(|message| self.feedback_banner(message, &palette, density));
 
+        let visible_count = self.visible_indices(cx).len();
         let body = if self.queues.is_empty() {
             let caption = if self.loading {
                 SharedString::from(tr!("queues_loading"))
@@ -1196,6 +1318,10 @@ impl Render for QueuesView {
                 state = state.loading("queues-loading");
             }
             state.into_any_element()
+        } else if visible_count == 0 {
+            empty_state(tr!("queues_no_filter_match"), &palette)
+                .density(density)
+                .into_any_element()
         } else {
             self.queue_grid(&palette, density, cx)
         };
@@ -1206,7 +1332,37 @@ impl Render for QueuesView {
             .h_full()
             .overflow_y_scroll()
             .bg(palette.base)
-            .child(div().w_full().p(spacing(Spacing::Md, density)).child(body));
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap(spacing(Spacing::Sm, density))
+                    .p(spacing(Spacing::Md, density))
+                    .child(subtitle)
+                    .child(body),
+            );
+
+        let body_col = div()
+            .flex_1()
+            .h_full()
+            .flex()
+            .flex_col()
+            .children(feedback)
+            .child(scroll);
+
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("queues_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("queues_breadcrumb_queues")),
+            ],
+            &palette,
+        )
+        .header_right(stats)
+        .subheader_left(subheader_left)
+        .subheader_right(subheader_right)
+        .density(density)
+        .body(body_col);
 
         let modal_overlay = self
             .modal
@@ -1223,10 +1379,7 @@ impl Render for QueuesView {
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(header)
-            .child(toolbar)
-            .children(feedback)
-            .child(scroll)
+            .child(frame)
             .children(modal_overlay)
             .children(delete_overlay)
     }

@@ -15,8 +15,8 @@ use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Queue, QueueId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Point, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Point,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -125,6 +125,18 @@ impl QueueRow {
     }
 }
 
+struct QueueDraft {
+    editing: Option<QueueId>,
+    name: String,
+    description: String,
+    concurrency: u32,
+}
+
+enum EditQueueEvent {
+    Submit(QueueDraft),
+    Cancel,
+}
+
 struct EditQueueModal {
     editing: Option<QueueId>,
     orig_name: String,
@@ -135,11 +147,278 @@ struct EditQueueModal {
     _name_sub: Subscription,
 }
 
+impl EventEmitter<EditQueueEvent> for EditQueueModal {}
+
+impl EditQueueModal {
+    fn new(
+        editing: Option<QueueId>,
+        name_seed: &str,
+        desc_seed: &str,
+        concurrency: u32,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let palette = cx.palette();
+        let orig_name = name_seed.to_owned();
+        let name_seed = name_seed.to_owned();
+        let desc_seed = desc_seed.to_owned();
+        let name_input = cx.new(|cx| {
+            let mut ti =
+                TextInput::new(tr!("queues_create_name_placeholder"), cx).with_palette(palette);
+            ti.set_content(name_seed, cx);
+            ti
+        });
+        let desc_input = cx.new(|cx| {
+            let mut ti =
+                TextInput::new(tr!("queues_create_desc_placeholder"), cx).with_palette(palette);
+            ti.set_content(desc_seed, cx);
+            ti
+        });
+        let name_sub = cx.subscribe(
+            &name_input,
+            |this, _f, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.submit(cx),
+                InputEvent::Cancelled => this.cancel(cx),
+                InputEvent::Changed(_) => cx.notify(),
+            },
+        );
+        EditQueueModal {
+            editing,
+            orig_name,
+            name_input,
+            desc_input,
+            concurrency: concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
+            saving: false,
+            _name_sub: name_sub,
+        }
+    }
+
+    fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.name_input.update(cx, |f, cx| f.focus(window, cx));
+    }
+
+    fn set_concurrency(&mut self, value: u32, cx: &mut Context<Self>) {
+        self.concurrency = value.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
+        cx.notify();
+    }
+
+    fn is_saveable(&self, cx: &App) -> bool {
+        !self.saving && !self.name_input.read(cx).content().trim().is_empty()
+    }
+
+    fn submit(&mut self, cx: &mut Context<Self>) {
+        if !self.is_saveable(cx) {
+            return;
+        }
+        let draft = QueueDraft {
+            editing: self.editing,
+            name: self.name_input.read(cx).content().trim().to_owned(),
+            description: self.desc_input.read(cx).content().trim().to_owned(),
+            concurrency: self.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
+        };
+        cx.emit(EditQueueEvent::Submit(draft));
+    }
+
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(EditQueueEvent::Cancel);
+    }
+}
+
+impl Render for EditQueueModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        let title = if self.editing.is_some() {
+            tr!("queues_edit_title", name = self.orig_name.clone())
+        } else {
+            tr!("queues_create_title")
+        };
+
+        let concurrency = self.concurrency;
+        let concurrency_hint = if concurrency <= SERIAL_CONCURRENCY {
+            SharedString::from(tr!("queues_concurrency_serial"))
+        } else {
+            SharedString::from(tr!("queues_concurrency_parallel", count = concurrency))
+        };
+        let name_field = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(SharedString::from(
+                        tr!("queues_create_name_label").to_uppercase(),
+                    )),
+            )
+            .child(div().child(self.name_input.clone()));
+
+        let desc_field = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_faint)
+                            .child(SharedString::from(
+                                tr!("queues_create_desc_label").to_uppercase(),
+                            )),
+                    )
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_muted)
+                            .child(SharedString::from(tr!("queues_create_desc_optional"))),
+                    ),
+            )
+            .child(div().child(self.desc_input.clone()));
+
+        let concurrency_box = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .py(px(10.0))
+            .px(px(12.0))
+            .rounded(px(7.0))
+            .border(BORDER_THIN)
+            .border_color(palette.border_input)
+            .bg(palette.shell)
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(px(14.0))
+                    .child(
+                        div().flex_1().child(
+                            slider(
+                                concurrency as f32,
+                                MIN_CONCURRENCY as f32,
+                                MAX_CONCURRENCY as f32,
+                                &palette,
+                            )
+                            .on_change(
+                                "q-modal-concurrency",
+                                cx.listener(|this, value: &f32, _, cx| {
+                                    this.set_concurrency(value.round() as u32, cx)
+                                }),
+                            ),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .w(px(28.0))
+                            .flex()
+                            .justify_end()
+                            .font_family(DEFAULT_MONO_FAMILY)
+                            .text_size(FONT_SM)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(palette.text_primary)
+                            .child(concurrency.to_string()),
+                    ),
+            )
+            .child(
+                div()
+                    .font_family(DEFAULT_BODY_FAMILY)
+                    .text_size(DESC_FS)
+                    .text_color(palette.text_muted)
+                    .child(concurrency_hint),
+            );
+
+        let concurrency_field = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(DEFAULT_MONO_FAMILY)
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(SharedString::from(
+                        tr!("queues_concurrency_label").to_uppercase(),
+                    )),
+            )
+            .child(concurrency_box);
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(name_field)
+            .child(desc_field)
+            .child(concurrency_field);
+
+        let saveable = self.is_saveable(cx);
+        let save_label = if self.editing.is_some() {
+            tr!("queues_edit_btn")
+        } else {
+            tr!("queues_create_btn")
+        };
+        let cancel = secondary_button(tr!("queues_create_cancel"), &palette).on_click(
+            "q-modal-cancel",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+        );
+        let save = primary_button(save_label, &palette)
+            .disabled(!saveable)
+            .on_click(
+                "q-modal-save",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
+            );
+        let hint = div()
+            .font_family(DEFAULT_BODY_FAMILY)
+            .text_size(FONT_XS)
+            .text_color(palette.text_faint)
+            .child(SharedString::from(tr!("queues_create_kbd_hint")));
+        let buttons = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(cancel)
+            .child(save);
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(hint)
+            .child(buttons);
+
+        let card = modal(title, body, &palette)
+            .header_icon(Icon::Stack2, palette.bits)
+            .subtitle(tr!("queues_create_subtitle"))
+            .size(ModalSize::Md)
+            .footer(footer)
+            .on_close(
+                "q-modal-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(card, &palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("q-modal-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel(cx));
+            })
+            .into_any_element()
+    }
+}
+
 pub struct QueuesView {
     queues: Vec<QueueRow>,
     loading: bool,
     feedback: Option<SharedString>,
-    modal: Option<EditQueueModal>,
+    modal: Option<Entity<EditQueueModal>>,
+    _modal_sub: Option<Subscription>,
     pending_delete: Confirm<QueueId>,
     menu_open: Option<QueueId>,
     menu_click_pos: Option<Point<Pixels>>,
@@ -176,6 +455,7 @@ impl QueuesView {
             loading: true,
             feedback: None,
             modal: None,
+            _modal_sub: None,
             pending_delete: Confirm::default(),
             menu_open: None,
             menu_click_pos: None,
@@ -417,8 +697,9 @@ impl QueuesView {
     }
 
     fn open_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let modal = Self::build_modal(None, "", "", PARALLEL_CONCURRENCY, cx);
-        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
+        let modal = cx.new(|cx| EditQueueModal::new(None, "", "", PARALLEL_CONCURRENCY, cx));
+        modal.update(cx, |m, cx| m.focus(window, cx));
+        self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
         cx.notify();
     }
@@ -430,56 +711,29 @@ impl QueuesView {
         let name = q.name.clone();
         let description = q.description.clone();
         let concurrency = q.concurrency;
-        let modal = Self::build_modal(Some(id), &name, &description, concurrency, cx);
-        modal.name_input.update(cx, |f, cx| f.focus(window, cx));
+        let modal =
+            cx.new(|cx| EditQueueModal::new(Some(id), &name, &description, concurrency, cx));
+        modal.update(cx, |m, cx| m.focus(window, cx));
+        self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
         cx.notify();
     }
 
-    fn build_modal(
-        editing: Option<QueueId>,
-        name_seed: &str,
-        desc_seed: &str,
-        concurrency: u32,
+    fn on_modal_event(
+        &mut self,
+        _modal: Entity<EditQueueModal>,
+        event: &EditQueueEvent,
         cx: &mut Context<Self>,
-    ) -> EditQueueModal {
-        let palette = cx.palette();
-        let orig_name = name_seed.to_owned();
-        let name_seed = name_seed.to_owned();
-        let desc_seed = desc_seed.to_owned();
-        let name_input = cx.new(|cx| {
-            let mut ti =
-                TextInput::new(tr!("queues_create_name_placeholder"), cx).with_palette(palette);
-            ti.set_content(name_seed, cx);
-            ti
-        });
-        let desc_input = cx.new(|cx| {
-            let mut ti =
-                TextInput::new(tr!("queues_create_desc_placeholder"), cx).with_palette(palette);
-            ti.set_content(desc_seed, cx);
-            ti
-        });
-        let name_sub = cx.subscribe(
-            &name_input,
-            |this, _f, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.save(cx),
-                InputEvent::Cancelled => this.close_modal(cx),
-                InputEvent::Changed(_) => cx.notify(),
-            },
-        );
-        EditQueueModal {
-            editing,
-            orig_name,
-            name_input,
-            desc_input,
-            concurrency: concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
-            saving: false,
-            _name_sub: name_sub,
+    ) {
+        match event {
+            EditQueueEvent::Submit(draft) => self.persist(draft, cx),
+            EditQueueEvent::Cancel => self.close_modal(cx),
         }
     }
 
     fn close_modal(&mut self, cx: &mut Context<Self>) {
         self.modal = None;
+        self._modal_sub = None;
         cx.notify();
     }
 
@@ -498,45 +752,26 @@ impl QueuesView {
         cx.notify();
     }
 
-    fn set_concurrency(&mut self, value: u32, cx: &mut Context<Self>) {
-        if let Some(modal) = self.modal.as_mut() {
-            modal.concurrency = value.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
-        }
-        cx.notify();
-    }
-
-    fn modal_saveable(&self, cx: &Context<Self>) -> bool {
-        self.modal.as_ref().is_some_and(|modal| {
-            !modal.saving && !modal.name_input.read(cx).content().trim().is_empty()
-        })
-    }
-
-    fn save(&mut self, cx: &mut Context<Self>) {
-        if !self.modal_saveable(cx) {
-            return;
-        }
-        let Some(modal) = self.modal.as_ref() else {
-            return;
-        };
-        let name = modal.name_input.read(cx).content().trim().to_owned();
-        let description = modal.desc_input.read(cx).content().trim().to_owned();
-        let concurrency = modal.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
-        let editing = modal.editing;
+    fn persist(&mut self, draft: &QueueDraft, cx: &mut Context<Self>) {
+        let editing = draft.editing;
         let paused = editing
             .and_then(|id| self.queues.iter().find(|q| q.id == id))
             .map(|q| q.paused)
             .unwrap_or(false);
         let queue = Queue {
-            id: editing.unwrap_or_else(QueueId::new),
-            name,
-            description,
-            concurrency,
+            id: editing.unwrap_or_default(),
+            name: draft.name.clone(),
+            description: draft.description.clone(),
+            concurrency: draft.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
             paused,
         };
         let id = queue.id;
         let is_edit = editing.is_some();
-        if let Some(modal) = self.modal.as_mut() {
-            modal.saving = true;
+        if let Some(modal) = self.modal.as_ref() {
+            modal.update(cx, |m, cx| {
+                m.saving = true;
+                cx.notify();
+            });
         }
         cx.notify();
 
@@ -556,9 +791,8 @@ impl QueuesView {
             move |this, result, cx| match result {
                 Ok(membership) => {
                     this.apply_membership_outcome(id, membership);
-                    this.modal = None;
+                    this.close_modal(cx);
                     this.reload(cx);
-                    cx.notify();
                 }
                 Err(message) => this.on_save_error(&message, cx),
             },
@@ -568,8 +802,11 @@ impl QueuesView {
 
     fn on_save_error(&mut self, message: &str, cx: &mut Context<Self>) {
         eprintln!("forge-desktop: queue save failed: {message}");
-        if let Some(modal) = self.modal.as_mut() {
-            modal.saving = false;
+        if let Some(modal) = self.modal.as_ref() {
+            modal.update(cx, |m, cx| {
+                m.saving = false;
+                cx.notify();
+            });
         }
         cx.notify();
     }
@@ -911,198 +1148,6 @@ impl QueuesView {
         grid.into_any_element()
     }
 
-    fn render_modal(
-        &self,
-        modal_state: &EditQueueModal,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let title = if modal_state.editing.is_some() {
-            tr!("queues_edit_title", name = modal_state.orig_name.clone())
-        } else {
-            tr!("queues_create_title")
-        };
-
-        let concurrency = modal_state.concurrency;
-        let concurrency_hint = if concurrency <= SERIAL_CONCURRENCY {
-            SharedString::from(tr!("queues_concurrency_serial"))
-        } else {
-            SharedString::from(tr!("queues_concurrency_parallel", count = concurrency))
-        };
-        let name_field = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(SharedString::from(
-                        tr!("queues_create_name_label").to_uppercase(),
-                    )),
-            )
-            .child(div().child(modal_state.name_input.clone()));
-
-        let desc_field = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .child(
-                        div()
-                            .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(FONT_XXS)
-                            .text_color(palette.text_faint)
-                            .child(SharedString::from(
-                                tr!("queues_create_desc_label").to_uppercase(),
-                            )),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_XXS)
-                            .text_color(palette.text_muted)
-                            .child(SharedString::from(tr!("queues_create_desc_optional"))),
-                    ),
-            )
-            .child(div().child(modal_state.desc_input.clone()));
-
-        let concurrency_box = div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap(px(4.0))
-            .py(px(10.0))
-            .px(px(12.0))
-            .rounded(px(7.0))
-            .border(BORDER_THIN)
-            .border_color(palette.border_input)
-            .bg(palette.shell)
-            .child(
-                div()
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .gap(px(14.0))
-                    .child(
-                        div().flex_1().child(
-                            slider(
-                                concurrency as f32,
-                                MIN_CONCURRENCY as f32,
-                                MAX_CONCURRENCY as f32,
-                                palette,
-                            )
-                            .on_change(
-                                "q-modal-concurrency",
-                                cx.listener(|this, value: &f32, _, cx| {
-                                    this.set_concurrency(value.round() as u32, cx)
-                                }),
-                            ),
-                        ),
-                    )
-                    .child(
-                        div()
-                            .w(px(28.0))
-                            .flex()
-                            .justify_end()
-                            .font_family(DEFAULT_MONO_FAMILY)
-                            .text_size(FONT_SM)
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(palette.text_primary)
-                            .child(concurrency.to_string()),
-                    ),
-            )
-            .child(
-                div()
-                    .font_family(DEFAULT_BODY_FAMILY)
-                    .text_size(DESC_FS)
-                    .text_color(palette.text_muted)
-                    .child(concurrency_hint),
-            );
-
-        let concurrency_field = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(DEFAULT_MONO_FAMILY)
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(SharedString::from(
-                        tr!("queues_concurrency_label").to_uppercase(),
-                    )),
-            )
-            .child(concurrency_box);
-
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(name_field)
-            .child(desc_field)
-            .child(concurrency_field);
-
-        let saveable = self.modal_saveable(cx);
-        let save_label = if modal_state.editing.is_some() {
-            tr!("queues_edit_btn")
-        } else {
-            tr!("queues_create_btn")
-        };
-        let cancel = secondary_button(tr!("queues_create_cancel"), palette).on_click(
-            "q-modal-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
-        );
-        let save = primary_button(save_label, palette)
-            .disabled(!saveable)
-            .on_click(
-                "q-modal-save",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
-            );
-        let hint = div()
-            .font_family(DEFAULT_BODY_FAMILY)
-            .text_size(FONT_XS)
-            .text_color(palette.text_faint)
-            .child(SharedString::from(tr!("queues_create_kbd_hint")));
-        let buttons = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(cancel)
-            .child(save);
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(hint)
-            .child(buttons);
-
-        let card = modal(title, body, palette)
-            .header_icon(Icon::Stack2, palette.bits)
-            .subtitle(tr!("queues_create_subtitle"))
-            .size(ModalSize::Md)
-            .footer(footer)
-            .on_close(
-                "q-modal-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.close_modal(cx)),
-            );
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("q-modal-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.close_modal(cx));
-            })
-            .into_any_element()
-    }
-
     fn render_delete_confirm(
         &self,
         name: SharedString,
@@ -1342,10 +1387,7 @@ impl Render for QueuesView {
         .density(density)
         .body(body_col);
 
-        let modal_overlay = self
-            .modal
-            .as_ref()
-            .map(|modal_state| self.render_modal(modal_state, &palette, density, cx));
+        let modal_overlay = self.modal.clone();
 
         let delete_overlay = self.pending_delete.get().copied().and_then(|id| {
             let name = self.queues.iter().find(|q| q.id == id)?.name.clone();

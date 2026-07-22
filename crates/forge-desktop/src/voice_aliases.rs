@@ -13,8 +13,8 @@ use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, Spe
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
 use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
-    Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
+    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -108,6 +108,11 @@ const ENGINE_OPTIONS: [EngineOption; 4] = [
     },
 ];
 
+enum AliasFormEvent {
+    Submit(VoiceAlias),
+    Cancel,
+}
+
 struct AliasForm {
     editing: Option<AliasId>,
     viewer: Entity<TextInput>,
@@ -118,6 +123,262 @@ struct AliasForm {
     blocked: bool,
     saving: bool,
     _subs: Vec<Subscription>,
+}
+
+impl EventEmitter<AliasFormEvent> for AliasForm {}
+
+impl AliasForm {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        editing: Option<AliasId>,
+        viewer: &str,
+        engine: Option<String>,
+        voice: &str,
+        pitch: &str,
+        rate: &str,
+        blocked: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let palette = cx.palette();
+        let viewer = text_field(
+            tr!("tts_aliases_form_viewer_placeholder"),
+            viewer,
+            palette,
+            cx,
+        );
+        let voice = text_field(
+            tr!("tts_aliases_form_voice_placeholder"),
+            voice,
+            palette,
+            cx,
+        );
+        let pitch = text_field(
+            tr!("tts_aliases_form_pitch_placeholder"),
+            pitch,
+            palette,
+            cx,
+        );
+        let rate = text_field(tr!("tts_aliases_form_rate_placeholder"), rate, palette, cx);
+
+        let mut subs = Vec::new();
+        subs.push(cx.subscribe(
+            &viewer,
+            |this, _input, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.submit(cx),
+                InputEvent::Changed(_) => cx.notify(),
+                InputEvent::Cancelled => this.cancel(cx),
+            },
+        ));
+        for field in [&voice, &pitch, &rate] {
+            subs.push(
+                cx.subscribe(field, |this, _input, event: &InputEvent, cx| match event {
+                    InputEvent::Changed(_) => cx.notify(),
+                    InputEvent::Cancelled => this.cancel(cx),
+                    InputEvent::Submitted(_) => this.submit(cx),
+                }),
+            );
+        }
+
+        AliasForm {
+            editing,
+            viewer,
+            voice,
+            pitch,
+            rate,
+            engine,
+            blocked,
+            saving: false,
+            _subs: subs,
+        }
+    }
+
+    fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.viewer.update(cx, |f, cx| f.focus(window, cx));
+    }
+
+    fn set_engine(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        self.engine = Some(id.to_owned());
+        cx.notify();
+    }
+
+    fn toggle_blocked(&mut self, cx: &mut Context<Self>) {
+        self.blocked = !self.blocked;
+        cx.notify();
+    }
+
+    fn is_saveable(&self, cx: &App) -> bool {
+        !self.saving && !self.viewer.read(cx).content().trim().is_empty()
+    }
+
+    fn submit(&mut self, cx: &mut Context<Self>) {
+        if !self.is_saveable(cx) {
+            return;
+        }
+        let alias = form_to_alias(self, cx);
+        cx.emit(AliasFormEvent::Submit(alias));
+    }
+
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(AliasFormEvent::Cancel);
+    }
+}
+
+impl Render for AliasForm {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        let title = if self.editing.is_some() {
+            tr!("tts_aliases_form_title_edit")
+        } else {
+            tr!("tts_aliases_form_title_assign")
+        };
+
+        let viewer_field = form_field(
+            tr!("tts_aliases_form_viewer_label"),
+            self.viewer.clone(),
+            &palette,
+            density,
+        );
+
+        let block_row = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .gap(spacing(Spacing::Xxs, density))
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_SM)
+                            .text_color(palette.text_primary)
+                            .child(tr!("tts_aliases_form_block_label")),
+                    )
+                    .child(
+                        div()
+                            .font_family(DEFAULT_BODY_FAMILY)
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(tr!("tts_aliases_form_block_desc")),
+                    ),
+            )
+            .child(toggle(self.blocked, &palette).on_click(
+                "va-form-block",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_blocked(cx)),
+            ));
+
+        let config: AnyElement = if self.blocked {
+            div()
+                .font_family(DEFAULT_MONO_FAMILY)
+                .text_size(FONT_SM)
+                .text_color(palette.text_faint)
+                .child(tr!("tts_aliases_form_blocked_note"))
+                .into_any_element()
+        } else {
+            let engine_segments = ENGINE_OPTIONS
+                .iter()
+                .map(|opt| {
+                    let active = self.engine.as_deref() == Some(opt.id);
+                    let id = opt.id;
+                    segment(
+                        SharedString::from(format!("va-form-eng-{id}")),
+                        opt.label,
+                        active,
+                        cx.listener(move |this, _: &ClickEvent, _, cx| this.set_engine(id, cx)),
+                    )
+                })
+                .collect();
+            let chips = segmented(engine_segments, &palette).wrap(spacing(Spacing::Xxs, density));
+            let engine_block = labelled(
+                tr!("tts_aliases_form_engine_label"),
+                chips,
+                &palette,
+                density,
+            );
+            let voice_block = form_field(
+                tr!("tts_aliases_form_voice_label"),
+                self.voice.clone(),
+                &palette,
+                density,
+            );
+            let pitch_block = form_field(
+                tr!("tts_aliases_form_pitch_label"),
+                self.pitch.clone(),
+                &palette,
+                density,
+            );
+            let rate_block = form_field(
+                tr!("tts_aliases_form_rate_label"),
+                self.rate.clone(),
+                &palette,
+                density,
+            );
+            div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Sm, density))
+                .child(engine_block)
+                .child(voice_block)
+                .child(
+                    div()
+                        .flex()
+                        .gap(spacing(Spacing::Sm, density))
+                        .child(div().flex_1().child(pitch_block))
+                        .child(div().flex_1().child(rate_block)),
+                )
+                .into_any_element()
+        };
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(viewer_field)
+            .child(block_row)
+            .child(config);
+
+        let save_label = if self.editing.is_some() {
+            tr!("common_save")
+        } else {
+            tr!("tts_aliases_form_create")
+        };
+        let footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(secondary_button(tr!("common_cancel"), &palette).on_click(
+                "va-form-cancel",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            ))
+            .child(
+                primary_button(save_label, &palette)
+                    .disabled(!self.is_saveable(cx))
+                    .on_click(
+                        "va-form-save",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
+                    ),
+            );
+
+        let card = modal(title, body, &palette)
+            .width(MODAL_W)
+            .footer(footer)
+            .on_close(
+                "va-form-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(card, &palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("va-form-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel(cx));
+            })
+            .into_any_element()
+    }
 }
 
 pub struct VoiceAliasesView {
@@ -133,7 +394,8 @@ pub struct VoiceAliasesView {
     viewer_count: usize,
     search: SearchState,
     table_scroll: UniformListScrollHandle,
-    form: Option<AliasForm>,
+    form: Option<Entity<AliasForm>>,
+    _form_sub: Option<Subscription>,
     pending_delete: Confirm<usize>,
     _search_sub: Subscription,
 }
@@ -169,6 +431,7 @@ impl VoiceAliasesView {
             search,
             table_scroll: UniformListScrollHandle::new(),
             form: None,
+            _form_sub: None,
             pending_delete: Confirm::default(),
             _search_sub: search_sub,
         };
@@ -290,8 +553,9 @@ impl VoiceAliasesView {
     }
 
     fn open_assign(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let form = self.build_form(None, "", None, "", "", "", false, cx);
-        form.viewer.update(cx, |f, cx| f.focus(window, cx));
+        let form = cx.new(|cx| AliasForm::new(None, "", None, "", "", "", false, cx));
+        form.update(cx, |f, cx| f.focus(window, cx));
+        self._form_sub = Some(cx.subscribe(&form, Self::on_form_event));
         self.form = Some(form);
         cx.notify();
     }
@@ -307,53 +571,48 @@ impl VoiceAliasesView {
         let pitch = fmt_field(row.pitch_semitones);
         let rate = fmt_field(row.rate_multiplier);
         let blocked = row.blocked;
-        let form = self.build_form(
-            Some(id),
-            &viewer,
-            engine,
-            &voice,
-            &pitch,
-            &rate,
-            blocked,
-            cx,
-        );
-        form.viewer.update(cx, |f, cx| f.focus(window, cx));
+        let form = cx.new(|cx| {
+            AliasForm::new(
+                Some(id),
+                &viewer,
+                engine,
+                &voice,
+                &pitch,
+                &rate,
+                blocked,
+                cx,
+            )
+        });
+        form.update(cx, |f, cx| f.focus(window, cx));
+        self._form_sub = Some(cx.subscribe(&form, Self::on_form_event));
         self.form = Some(form);
         cx.notify();
     }
 
+    fn on_form_event(
+        &mut self,
+        _form: Entity<AliasForm>,
+        event: &AliasFormEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            AliasFormEvent::Submit(alias) => self.persist(alias.clone(), cx),
+            AliasFormEvent::Cancel => self.close_form(cx),
+        }
+    }
+
     fn close_form(&mut self, cx: &mut Context<Self>) {
         self.form = None;
+        self._form_sub = None;
         cx.notify();
     }
 
-    fn set_form_engine(&mut self, id: &'static str, cx: &mut Context<Self>) {
-        if let Some(form) = self.form.as_mut() {
-            form.engine = Some(id.to_owned());
-        }
-        cx.notify();
-    }
-
-    fn toggle_form_blocked(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.form.as_mut() {
-            form.blocked = !form.blocked;
-        }
-        cx.notify();
-    }
-
-    fn save_form(&mut self, cx: &mut Context<Self>) {
-        let Some(form) = self.form.as_ref() else {
-            return;
-        };
-        if form.saving {
-            return;
-        }
-        if form.viewer.read(cx).content().trim().is_empty() {
-            return;
-        }
-        let alias = form_to_alias(form, cx);
-        if let Some(form) = self.form.as_mut() {
-            form.saving = true;
+    fn persist(&mut self, alias: VoiceAlias, cx: &mut Context<Self>) {
+        if let Some(form) = self.form.as_ref() {
+            form.update(cx, |f, cx| {
+                f.saving = true;
+                cx.notify();
+            });
         }
         cx.notify();
 
@@ -373,12 +632,14 @@ impl VoiceAliasesView {
             |this, result, cx| match result {
                 Ok(aliases) => {
                     this.apply_aliases(aliases, cx);
-                    this.form = None;
-                    cx.notify();
+                    this.close_form(cx);
                 }
                 Err(message) => {
-                    if let Some(form) = this.form.as_mut() {
-                        form.saving = false;
+                    if let Some(form) = this.form.as_ref() {
+                        form.update(cx, |f, cx| {
+                            f.saving = false;
+                            cx.notify();
+                        });
                     }
                     this.on_repo_error(&message, cx);
                 }
@@ -454,77 +715,6 @@ impl VoiceAliasesView {
             },
             cx,
         );
-    }
-
-    fn saveable(&self, cx: &Context<Self>) -> bool {
-        self.form
-            .as_ref()
-            .is_some_and(|f| !f.saving && !f.viewer.read(cx).content().trim().is_empty())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn build_form(
-        &self,
-        editing: Option<AliasId>,
-        viewer: &str,
-        engine: Option<String>,
-        voice: &str,
-        pitch: &str,
-        rate: &str,
-        blocked: bool,
-        cx: &mut Context<Self>,
-    ) -> AliasForm {
-        let palette = cx.palette();
-        let viewer = text_field(
-            tr!("tts_aliases_form_viewer_placeholder"),
-            viewer,
-            palette,
-            cx,
-        );
-        let voice = text_field(
-            tr!("tts_aliases_form_voice_placeholder"),
-            voice,
-            palette,
-            cx,
-        );
-        let pitch = text_field(
-            tr!("tts_aliases_form_pitch_placeholder"),
-            pitch,
-            palette,
-            cx,
-        );
-        let rate = text_field(tr!("tts_aliases_form_rate_placeholder"), rate, palette, cx);
-
-        let mut subs = Vec::new();
-        subs.push(cx.subscribe(
-            &viewer,
-            |this, _input, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.save_form(cx),
-                InputEvent::Changed(_) => cx.notify(),
-                InputEvent::Cancelled => this.close_form(cx),
-            },
-        ));
-        for field in [&voice, &pitch, &rate] {
-            subs.push(
-                cx.subscribe(field, |this, _input, event: &InputEvent, cx| match event {
-                    InputEvent::Changed(_) => cx.notify(),
-                    InputEvent::Cancelled => this.close_form(cx),
-                    InputEvent::Submitted(_) => this.save_form(cx),
-                }),
-            );
-        }
-
-        AliasForm {
-            editing,
-            viewer,
-            voice,
-            pitch,
-            rate,
-            engine,
-            blocked,
-            saving: false,
-            _subs: subs,
-        }
     }
 
     fn strategy_banner(
@@ -872,182 +1062,15 @@ impl VoiceAliasesView {
         ])
     }
 
-    fn active_overlay(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
+    fn active_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
         if let Some(form) = self.form.as_ref() {
-            Some(self.form_modal(form, palette, density, cx))
+            Some(form.clone().into_any_element())
         } else {
             self.pending_delete
                 .get()
                 .copied()
                 .map(|index| self.delete_confirm(index, palette, cx))
         }
-    }
-
-    fn form_modal(
-        &self,
-        form: &AliasForm,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let title = if form.editing.is_some() {
-            tr!("tts_aliases_form_title_edit")
-        } else {
-            tr!("tts_aliases_form_title_assign")
-        };
-
-        let viewer_field = form_field(
-            tr!("tts_aliases_form_viewer_label"),
-            form.viewer.clone(),
-            palette,
-            density,
-        );
-
-        let block_row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Xxs, density))
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(tr!("tts_aliases_form_block_label")),
-                    )
-                    .child(
-                        div()
-                            .font_family(DEFAULT_BODY_FAMILY)
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_muted)
-                            .child(tr!("tts_aliases_form_block_desc")),
-                    ),
-            )
-            .child(toggle(form.blocked, palette).on_click(
-                "va-form-block",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_form_blocked(cx)),
-            ));
-
-        let config: AnyElement = if form.blocked {
-            div()
-                .font_family(DEFAULT_MONO_FAMILY)
-                .text_size(FONT_SM)
-                .text_color(palette.text_faint)
-                .child(tr!("tts_aliases_form_blocked_note"))
-                .into_any_element()
-        } else {
-            let engine_segments = ENGINE_OPTIONS
-                .iter()
-                .map(|opt| {
-                    let active = form.engine.as_deref() == Some(opt.id);
-                    let id = opt.id;
-                    segment(
-                        SharedString::from(format!("va-form-eng-{id}")),
-                        opt.label,
-                        active,
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.set_form_engine(id, cx)
-                        }),
-                    )
-                })
-                .collect();
-            let chips = segmented(engine_segments, palette).wrap(spacing(Spacing::Xxs, density));
-            let engine_block = labelled(
-                tr!("tts_aliases_form_engine_label"),
-                chips,
-                palette,
-                density,
-            );
-            let voice_block = form_field(
-                tr!("tts_aliases_form_voice_label"),
-                form.voice.clone(),
-                palette,
-                density,
-            );
-            let pitch_block = form_field(
-                tr!("tts_aliases_form_pitch_label"),
-                form.pitch.clone(),
-                palette,
-                density,
-            );
-            let rate_block = form_field(
-                tr!("tts_aliases_form_rate_label"),
-                form.rate.clone(),
-                palette,
-                density,
-            );
-            div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Sm, density))
-                .child(engine_block)
-                .child(voice_block)
-                .child(
-                    div()
-                        .flex()
-                        .gap(spacing(Spacing::Sm, density))
-                        .child(div().flex_1().child(pitch_block))
-                        .child(div().flex_1().child(rate_block)),
-                )
-                .into_any_element()
-        };
-
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(viewer_field)
-            .child(block_row)
-            .child(config);
-
-        let save_label = if form.editing.is_some() {
-            tr!("common_save")
-        } else {
-            tr!("tts_aliases_form_create")
-        };
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(secondary_button(tr!("common_cancel"), palette).on_click(
-                "va-form-cancel",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.close_form(cx)),
-            ))
-            .child(
-                primary_button(save_label, palette)
-                    .disabled(!self.saveable(cx))
-                    .on_click(
-                        "va-form-save",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.save_form(cx)),
-                    ),
-            );
-
-        let card = modal(title, body, palette)
-            .width(MODAL_W)
-            .footer(footer)
-            .on_close(
-                "va-form-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.close_form(cx)),
-            );
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("va-form-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.close_form(cx));
-            })
-            .into_any_element()
     }
 
     fn delete_confirm(
@@ -1099,7 +1122,7 @@ impl Render for VoiceAliasesView {
         let banner = self.strategy_banner(&palette, density, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let table = self.table(&palette, density, cx);
-        let overlay = self.active_overlay(&palette, density, cx);
+        let overlay = self.active_overlay(&palette, cx);
 
         div()
             .size_full()
@@ -1154,7 +1177,7 @@ fn text_field(
     placeholder: impl Into<SharedString>,
     initial: &str,
     palette: ForgePalette,
-    cx: &mut Context<VoiceAliasesView>,
+    cx: &mut Context<AliasForm>,
 ) -> Entity<TextInput> {
     let initial = initial.to_owned();
     cx.new(|cx| {

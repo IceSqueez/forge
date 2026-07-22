@@ -7,9 +7,9 @@ use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
     Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
-    TextInput, breadcrumb, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock,
-    ghost_button_with_icon, icon, modal, overlay, pad_tile, primary_button, radius, search_input,
-    secondary_button, slider, spacing, status_dot, toggle, toolbar_row, tr, with_alpha,
+    TextInput, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, ghost_button_with_icon,
+    icon, modal, overlay, pad_tile, page_frame, primary_button, radius, search_input,
+    secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
@@ -971,7 +971,7 @@ impl SoundboardView {
             .into_any_element()
     }
 
-    fn render_controls(
+    fn render_subheader_left(
         &self,
         palette: &ForgePalette,
         density: Density,
@@ -1006,7 +1006,22 @@ impl SoundboardView {
             );
         }
 
-        let stop_all = div()
+        div()
+            .flex()
+            .items_center()
+            .gap(GRID_GAP)
+            .child(div().w(SEARCH_WIDTH).child(self.search.clone()))
+            .child(chips)
+            .into_any_element()
+    }
+
+    fn render_subheader_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
             .id("sb-stop-all")
             .flex()
             .items_center()
@@ -1024,16 +1039,8 @@ impl SoundboardView {
                     .text_size(FONT_XS)
                     .text_color(palette.random)
                     .child(tr!("soundboard_stop_all")),
-            );
-
-        let left = div()
-            .flex()
-            .items_center()
-            .gap(GRID_GAP)
-            .child(div().w(SEARCH_WIDTH).child(self.search.clone()))
-            .child(chips);
-
-        toolbar_row(left, stop_all).into_any_element()
+            )
+            .into_any_element()
     }
 
     fn render_pad(
@@ -1737,14 +1744,9 @@ impl Render for SoundboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header = breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_builtin")),
-                BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_soundboard")),
-            ],
-            &palette,
-        )
-        .right(self.render_header_right(&palette));
+        let header_right = self.render_header_right(&palette);
+        let subheader_left = self.render_subheader_left(&palette, density, cx);
+        let subheader_right = self.render_subheader_right(&palette, density, cx);
 
         let inner = if self.loading {
             empty_state(tr!("soundboard_loading"), &palette)
@@ -1780,7 +1782,6 @@ impl Render for SoundboardView {
                 .gap(SECTION_GAP)
                 .children(error_banner)
                 .child(self.render_hero(&palette, density, cx))
-                .child(self.render_controls(&palette, density, cx))
                 .child(self.render_pads(&palette, density, cx))
                 .children(self.render_library(&palette, density, cx))
                 .child(self.render_add_bar(&palette, cx))
@@ -1803,6 +1804,19 @@ impl Render for SoundboardView {
                     .child(inner),
             );
 
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_builtin")),
+                BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_soundboard")),
+            ],
+            &palette,
+        )
+        .header_right(header_right)
+        .subheader_left(subheader_left)
+        .subheader_right(subheader_right)
+        .density(density)
+        .body(body);
+
         let active_overlay = if let Some(modal_state) = self.modal.as_ref() {
             Some(self.render_modal(modal_state, &palette, density, cx))
         } else {
@@ -1815,8 +1829,7 @@ impl Render for SoundboardView {
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(header)
-            .child(body)
+            .child(frame)
             .children(active_overlay)
     }
 }

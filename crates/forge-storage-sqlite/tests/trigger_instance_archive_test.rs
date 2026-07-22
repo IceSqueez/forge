@@ -204,10 +204,6 @@ async fn restore_returns_archived_instance_to_visibility() {
 
 #[tokio::test]
 async fn delete_is_blocked_by_link_from_archived_action() {
-    // EDGE: delete()'s reference probe queries action_trigger_instances directly,
-    // unfiltered by archived_at, because the FK is ON DELETE RESTRICT regardless
-    // of the linked action's archive state. Archiving the action must NOT unblock
-    // the instance's hard delete.
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "archived blocker").await;
@@ -246,9 +242,6 @@ async fn delete_is_blocked_by_link_from_archived_action() {
 
 #[tokio::test]
 async fn actions_using_excludes_archived_actions() {
-    // actions_using() joins on live actions only (a.archived_at IS NULL), so an
-    // archived action drops out of the usage list - contrast with delete()'s
-    // unfiltered probe above.
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let live = insert_action(&backend, "live user").await;

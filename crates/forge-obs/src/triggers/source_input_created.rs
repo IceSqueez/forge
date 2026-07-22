@@ -102,13 +102,6 @@ impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // The four `source.`-prefixed descriptors share the `kind_prefix: "source."` event
-    // filter, so the registry hands all four candidates any `source.*` event and relies on
-    // `matches_trigger` to discriminate by exact kind. The load-bearing case is the
-    // prefix collision between the three input-lifecycle kinds (`source.input_*`) and the
-    // visibility kind (`source.visibility.changed`): each must accept ONLY its own kind and
-    // reject the other three despite the shared prefix. That 1:1 discrimination is tested
-    // once here; each sibling file tests only its own typed arg-stack extraction.
     use super::super::{
         SourceInputCreatedDescriptor, SourceInputRemovedDescriptor, SourceInputRenamedDescriptor,
         SourceSceneItemVisibilityChangedDescriptor,
@@ -124,10 +117,6 @@ mod tests {
         "source.visibility.changed",
     ];
 
-    /// Each `source.`-prefixed descriptor fires on exactly its own kind and rejects the
-    /// other three. The input/visibility prefix collision is the real risk: a descriptor
-    /// that matched on prefix instead of exact kind would mis-fire user actions on the
-    /// wrong OBS event.
     #[test]
     fn each_source_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
@@ -152,7 +141,6 @@ mod tests {
         }
     }
 
-    /// A non-`source.` kind reaching a source descriptor must never match.
     #[test]
     fn source_descriptor_rejects_non_source_kind() {
         let event = Event::new(EventSource::Obs, "scene.changed", json!({}));

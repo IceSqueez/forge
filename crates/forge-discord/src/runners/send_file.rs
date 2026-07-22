@@ -273,7 +273,6 @@ mod tests {
         RunContext::leaf(stack, 0, EventId::new(), publisher)
     }
 
-    /// Writes `bytes` to a uniquely named file under the OS temp dir and returns its path.
     fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!("forge-discord-test-{name}"));
         std::fs::write(&path, bytes).unwrap();

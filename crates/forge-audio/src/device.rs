@@ -45,8 +45,7 @@ const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
 
 static DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
 
-/// Opaque stable handle for an output device. Backend-defined string under the hood -
-/// callers must not parse it.
+/// Backend-defined string under the hood; callers must not parse it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(pub String);
 
@@ -67,10 +66,7 @@ pub struct DeviceInfo {
     pub is_default: bool,
 }
 
-/// Enumerate output devices via the default cpal host. Returns an empty Vec on hosts
-/// with no audio support. Results cached for 5s - cpal enumeration is expensive
-/// on Linux (PipeWire round-trip) and gets called repeatedly by the audio device
-/// picker subscription.
+/// Cached for 5s: cpal enumeration is expensive on Linux (PipeWire round-trip).
 pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     if let Ok(guard) = DEVICE_CACHE.lock()
         && let Some((stamp, ref devices)) = *guard
@@ -85,8 +81,7 @@ pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     Ok(fresh)
 }
 
-/// Bypass the 5s cache. Used by the "Refresh devices" button so the user always
-/// sees the live device list after plugging/unplugging hardware.
+/// Bypasses the 5s cache so a device picker refresh sees just-plugged hardware.
 pub fn refresh_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     let fresh = enumerate_uncached()?;
     if let Ok(mut guard) = DEVICE_CACHE.lock() {

@@ -372,9 +372,6 @@ mod tests {
 
     #[test]
     fn matches_trigger_applies_reward_id_then_title_precedence() {
-        // Event reward is { id: "r1", title: "Hydrate" }. Each row exercises the
-        // filter precedence: reward_id wins when set; reward_title is consulted
-        // only when reward_id is blank; both blank matches any reward.
         let cases = [
             ("both blank matches any", "", "", true),
             ("reward_id hit", "r1", "", true),
@@ -396,8 +393,6 @@ mod tests {
     #[test]
     fn build_arg_stack_exposes_all_redemption_user_and_reward_vars() {
         let stack = ChannelPointsRedemptionDescriptor.build_arg_stack(&redemption_event());
-        // redemption.id is the chaining var that feeds %redemption.id% into the
-        // fulfill/cancel sub-actions, so it must survive intact.
         assert_eq!(
             stack.get("redemption.id"),
             Some(&Variant::String("redemption-42".to_owned()))
@@ -434,8 +429,6 @@ mod tests {
             stack.get("reward.title"),
             Some(&Variant::String("Hydrate".to_owned()))
         );
-        // reward.cost must marshal as Int, not String, so numeric comparisons in
-        // downstream actions work.
         assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(500)));
         assert_eq!(
             stack.get("reward.prompt"),

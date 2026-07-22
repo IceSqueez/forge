@@ -57,22 +57,16 @@ impl UpdateAutomodSettingsRunner {
             .map(|key| parse_level(config, key))
             .collect();
 
-        // All nine selects left at "unchanged" → nothing to change. Skip the
-        // network call entirely; an empty PUT body would be rejected and a
-        // full echo would waste a rate-limit token (Helix 800/min budget).
+        // All unchanged: skip the call, an empty PUT body would be rejected.
         if overall.is_none() && categories.iter().all(Option::is_none) {
             return SubActionOutcome::Success;
         }
 
-        // Twitch forbids mixing overall_level with the per-category fields. When
-        // the user sets overall_level we send ONLY that - overall wins and any
-        // individual selects are intentionally ignored.
+        // Twitch forbids mixing overall_level with per-category fields; overall wins.
         let body = if let Some(level) = overall {
             serde_json::json!({ OVERALL_KEY: level })
         } else {
-            // Individual mode: PUT requires all eight categories. A category left
-            // at "unchanged" keeps its current value, so we GET the live settings
-            // first and merge the user's overrides over them.
+            // PUT requires all eight categories; GET current values to fill in unchanged ones.
             let current = match self.fetch_current(&user_id).await {
                 Ok(c) => c,
                 Err(e) => return SubActionOutcome::Failed(e.to_string()),
@@ -87,8 +81,7 @@ impl UpdateAutomodSettingsRunner {
             serde_json::Value::Object(map)
         };
 
-        // moderator_id == broadcaster_id == self: the broadcaster manages their
-        // own AutoMod settings, so both query params carry the same id.
+        // moderator_id == broadcaster_id == self.
         let request = HelixRequest::new(HelixMethod::Put, PATH)
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
@@ -270,8 +263,6 @@ mod tests {
         )
     }
 
-    /// Config with every select at "unchanged", then the given overrides applied
-    /// on top - mirrors how the UI hands the runner a full nine-key map.
     fn config_with(overrides: &[(&str, &str)]) -> SubActionConfig {
         let r = UpdateAutomodSettingsRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)))
@@ -307,8 +298,6 @@ mod tests {
         );
     }
 
-    // ── Branch 2: overall mode - single PUT, overall_level number, no categories ─
-
     #[tokio::test]
     async fn overall_level_sends_single_put_with_numeric_overall_and_no_categories() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
@@ -341,8 +330,6 @@ mod tests {
     async fn overall_level_wins_over_individual_categories() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = runner(Arc::clone(&transport));
-        // Both overall AND an individual category set - overall must win and the
-        // category keys must be absent from the body entirely.
         let config = config_with(&[("overall_level", "4"), ("swearing", "1")]);
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
@@ -365,8 +352,6 @@ mod tests {
         }
     }
 
-    // ── Branch 3: individual mode - GET then PUT, merge overrides over current ──
-
     #[tokio::test]
     async fn individual_mode_merges_overrides_over_fetched_current_levels() {
         let get_response = serde_json::json!({
@@ -386,8 +371,6 @@ mod tests {
             Ok(serde_json::Value::Null),
         ]));
         let runner = runner(Arc::clone(&transport));
-        // overall unchanged; override two categories, leave the other six to the
-        // values the GET reports.
         let config = config_with(&[("aggression", "3"), ("swearing", "1")]);
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
@@ -406,9 +389,6 @@ mod tests {
         let put_req = transport.request(1);
         assert_eq!(put_req.method, HelixMethod::Put);
         let body = put_req.body.unwrap();
-        // Overridden categories take the user's value; unchanged ones take the
-        // GET's current value. This is the merge contract: a wrong source for
-        // an unchanged key fails here.
         assert_eq!(body["aggression"], serde_json::json!(3), "override");
         assert_eq!(body["swearing"], serde_json::json!(1), "override");
         assert_eq!(body["bullying"], serde_json::json!(2), "from GET current");
@@ -429,7 +409,6 @@ mod tests {
             serde_json::json!(0),
             "from GET current"
         );
-        // Individual mode must never carry overall_level.
         assert!(
             body.get("overall_level").is_none(),
             "individual-mode PUT must omit overall_level"
@@ -465,7 +444,6 @@ mod tests {
             serde_json::Value::Null,
         ))));
         for value in ["unchanged", "0", "1", "2", "3", "4"] {
-            // Apply the value to every one of the nine keys at once.
             let mut config = runner.default_config();
             for key in std::iter::once(OVERALL_KEY).chain(CATEGORY_KEYS.iter().copied()) {
                 config.insert(key.to_owned(), Variant::String(value.to_owned()));
@@ -482,7 +460,6 @@ mod tests {
         let runner = runner(Arc::new(MockTransport::returning(Ok(
             serde_json::Value::Null,
         ))));
-        // Each bad value placed on a different key proves every select is checked.
         for (key, bad) in [
             ("overall_level", "5"),
             ("aggression", "high"),

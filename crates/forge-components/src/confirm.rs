@@ -250,9 +250,6 @@ mod tests {
         assert_eq!(got.a, want.a, "alpha channel");
     }
 
-    // Pins the tone->palette-field mapping so a mis-wire (e.g. Warning keyed onto
-    // `random`, `brand`, or `text_muted`) fails here. Channel-wise so it also
-    // catches a swap to any other field that happened to share a component.
     #[test]
     fn tone_resolves_to_its_severity_palette_field() {
         let p = &FORGE_DEFAULT;
@@ -264,9 +261,6 @@ mod tests {
         }
     }
 
-    // Guard giving the mapping test teeth: the two tones must land on visibly
-    // different hues, so pinning each to a distinct field is a real constraint
-    // rather than two names for one colour.
     #[test]
     fn destructive_and_warning_are_distinct_hues() {
         let p = &FORGE_DEFAULT;

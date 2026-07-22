@@ -402,8 +402,7 @@ const TRANSPARENT: Rgba = Rgba {
     a: 0.0,
 };
 
-// Idle paints transparent so selecting swaps only color, never geometry - the row
-// never shifts as it selects.
+// Idle paints transparent so selecting swaps only color, never geometry - the row never shifts as it selects.
 const ROW_BORDER: Pixels = px(2.0);
 
 const TITLE_META_GAP: Pixels = px(2.0);
@@ -536,16 +535,14 @@ impl RowCard {
         self
     }
 
-    /// Top-aligns leading / body / trailing instead of centering - for multi-line
-    /// cards whose leading tile and trailing glyph should sit at the top edge.
+    /// Top-aligns leading / body / trailing instead of centering, for multi-line cards.
     #[must_use]
     pub fn align_top(mut self) -> Self {
         self.align_top = true;
         self
     }
 
-    /// Keeps the trailing element hidden (its width still reserved) until the pointer
-    /// enters the row, then reveals it. `group` must be unique per rendered row.
+    /// Keeps the trailing element hidden (width still reserved) until pointer-hover; `group` must be unique per rendered row.
     #[must_use]
     pub fn trailing_reveal(mut self, group: impl Into<SharedString>) -> Self {
         self.reveal_trailing_group = Some(group.into());
@@ -789,8 +786,7 @@ impl PadTile {
         self
     }
 
-    /// Ignores `top_right`/`sublabel`/`progress` - renders icon + title centered
-    /// in one row instead of the stacked icon-tile layout.
+    /// Ignores `top_right`/`sublabel`/`progress` - renders icon + title centered in one row instead of the stacked icon-tile layout.
     #[must_use]
     pub fn bar(mut self, palette: &ForgePalette) -> Self {
         self.shape = PadTileShape::Bar;
@@ -1054,8 +1050,6 @@ mod tests {
             && (a.a - b.a).abs() < EPS
     }
 
-    /// Assert a resolved border slot: `None` = transparent rule, `Some` compared
-    /// channel-wise (including alpha).
     #[allow(clippy::panic)]
     fn assert_border(actual: Option<Rgba>, want: Option<Rgba>, label: &str) {
         match (actual, want) {
@@ -1072,11 +1066,6 @@ mod tests {
         row_card(SharedString::from("row"), &P).colors
     }
 
-    // The load-bearing contract of a default row-card: which `ForgePalette` field
-    // each interaction state fills with, and that ONLY the selected state draws the
-    // accent border. Fills are compared channel-wise so a mis-wire to a neighbouring
-    // field (hover→elevated, selected→surface_overlay) fails - see the distinct-hue
-    // guard below, which pins that these three fields really are different.
     #[test]
     fn resolve_maps_each_state_to_its_keyed_fill_and_border() {
         let c = default_colors();
@@ -1097,18 +1086,12 @@ mod tests {
 
     #[test]
     fn idle_fill_is_fully_transparent_not_an_opaque_field() {
-        // Why: idle blends into the parent surface via alpha 0.0, NOT by borrowing an
-        // opaque near-black palette field. Pin the literal so wiring idle to any
-        // opaque field (which would carry alpha 1.0) fails here.
         let idle_fill = default_colors().resolve(RowState::Idle).0;
         assert_eq!(idle_fill.a, 0.0);
     }
 
     #[test]
     fn idle_hover_and_selected_fills_are_distinguishable_hues() {
-        // Why: the per-state test compares fills channel-wise, so it only catches a
-        // mis-wire between states if their source palette fields are actually
-        // distinct. Guard that assumption so the main test keeps its teeth.
         let c = default_colors();
         let idle = c.resolve(RowState::Idle).0;
         let hover = c.resolve(RowState::Hover).0;
@@ -1126,8 +1109,6 @@ mod tests {
 
     #[test]
     fn bordered_gives_idle_a_persistent_border_that_selected_overrides() {
-        // `.bordered` promotes the flat list-row to a bordered card: idle and hover
-        // now paint the explicit border, but the selected accent must still win.
         let border_color = P.border_regular;
         let c = row_card(SharedString::from("row"), &P)
             .bordered(border_color, px(1.0), px(6.0))

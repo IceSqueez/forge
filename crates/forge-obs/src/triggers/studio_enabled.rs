@@ -93,9 +93,6 @@ pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // Studio Mode enable/disable share one `TriggerKindDescriptor` shape and the
-    // `build_studio_arg_stack` helper, so their discrimination contract lives here
-    // together rather than re-stating each descriptor's `id()` literal.
     use super::super::{StudioDisabledDescriptor, StudioEnabledDescriptor};
     use super::*;
     use forge_registry::TriggerKindDescriptor;
@@ -105,9 +102,6 @@ mod tests {
         Event::new(EventSource::Obs, kind, json!({ "enabled": enabled }))
     }
 
-    /// Each studio descriptor must fire on exactly its own kind and reject its
-    /// sibling - a descriptor that matched the wrong kind would mis-fire actions
-    /// (run "studio enabled" handlers when studio mode was turned off).
     #[test]
     fn each_studio_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();

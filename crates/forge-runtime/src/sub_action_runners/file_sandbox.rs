@@ -44,8 +44,7 @@ pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
     Ok(canon_prefix.join(tail))
 }
 
-/// `*` wildcard matches any character sequence in `name`; all other characters are literal.
-/// Matching is case-sensitive and operates on the entry basename only.
+/// `*` matches any character sequence; all other characters are literal and matching is case-sensitive.
 pub(super) fn glob_matches(pattern: &str, name: &str) -> bool {
     if pattern.is_empty() || pattern == "*" {
         return true;
@@ -80,8 +79,6 @@ pub(super) fn glob_matches(pattern: &str, name: &str) -> bool {
 mod tests {
     use super::*;
 
-    // Security boundary: every input here MUST be rejected. A regression that
-    // lets any of them through is a sandbox escape (read/write outside assets/).
     #[tokio::test]
     async fn resolve_sandboxed_rejects_traversal_and_rooted_paths() {
         let escapes = [
@@ -108,45 +105,34 @@ mod tests {
         let root = forge_platform_core::paths::data_dir().join("assets");
         let expected_root = tokio::fs::canonicalize(&root).await.unwrap_or(root);
         let resolved = resolve_sandboxed("sub/file.txt").await.unwrap();
-        // Confined to the assets root...
         assert!(
             resolved.starts_with(&expected_root),
             "{resolved:?} escaped {expected_root:?}"
         );
-        // ...and the relative tail is appended verbatim (not dropped/rewritten).
         assert_eq!(resolved, expected_root.join("sub").join("file.txt"));
     }
 
-    // `*` is the only wildcard; every other char (including `?`) is literal;
-    // matching is case-sensitive. Each expected value is hand-derived.
     #[test]
     fn glob_matches_table() {
         let cases = [
-            // empty / catch-all patterns match anything
             ("*", "anything.txt", true),
             ("", "anything.txt", true),
-            // literal (no wildcard) must match exactly
             ("file.txt", "file.txt", true),
             ("file.txt", "other.txt", false),
             ("File", "file", false),  // case-sensitive
             ("abcdef", "abc", false), // pattern longer than name
-            // leading-star = suffix match
             ("*.txt", "file.txt", true),
             ("*.txt", "file.md", false),
-            // trailing-star = prefix match
             ("file.*", "file.txt", true),
             ("file.*", "other.txt", false),
-            // interior star spans any (incl. empty) run
             ("a*b", "axxxb", true),
             ("a*b", "ab", true),    // star matches empty span
             ("a*b", "a", false),    // shorter than prefix+suffix
             ("a*b", "axbq", false), // suffix mismatch
-            // multiple stars
             ("a*b*c", "axbyc", true),
             ("a*b*c", "axyc", false), // missing middle literal
             ("*mid*", "xxmidyy", true),
             ("*mid*", "xxxyy", false),
-            // `?` is NOT a wildcard - treated literally
             ("f?le", "f?le", true),
             ("f?le", "file", false),
         ];

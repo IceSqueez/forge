@@ -147,8 +147,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_marshals_slot_count_as_int_and_moderator_flag_as_bool() {
-        // A copy-paste stringify regression would be a real bug: downstream scripts
-        // do arithmetic on %guest_star.slot_count% (Int) and branch on the Bool flag.
         let stack = GuestStarSettingsUpdatedDescriptor.build_arg_stack(&settings_event());
         assert_eq!(stack.get("guest_star.slot_count"), Some(&Variant::Int(5)));
         assert_eq!(

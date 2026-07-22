@@ -1,8 +1,4 @@
-//! The scheduler's queue registry is seeded at spawn and kept live thereafter
-//! through register/deregister/reconfigure commands. Dropping a slot's `sender`
-//! closes its task channel; the spawned runner then drains its buffered tasks
-//! and exits when `recv()` returns `None` - this is the membership-change drain
-//! guarantee, not a leak.
+//! Dropping a slot's `sender` closes its channel; the runner drains and exits - a drain guarantee, not a leak.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -18,11 +14,7 @@ use tracing::warn;
 
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
-/// Lock-free, settable holder for the live `QueueSchedulerHandle`. Queue-control
-/// sub-action runners are registered at boot, before the scheduler task exists;
-/// this cell is handed to them empty and filled once `QueueScheduler::spawn`
-/// returns, so runners reach the live scheduler without a registration-order
-/// dependency.
+/// Filled once `QueueScheduler::spawn` returns, avoiding a boot registration-order dependency.
 #[derive(Clone, Default)]
 pub struct SchedulerCell {
     inner: Arc<ArcSwapOption<QueueSchedulerHandle>>,
@@ -92,10 +84,7 @@ struct QueueSlot {
     inflight: InflightTracker,
 }
 
-/// Holds the cancel signal of each execution a queue's runner has started but
-/// not yet seen finish, so `Clear` with `keep_current = false` can cooperatively
-/// cancel the running chain(s). A runner registers before dispatching and removes
-/// on completion, so a finished execution is never cancelled retroactively.
+/// Tracks in-flight cancel signals so `Clear(keep_current = false)` never cancels a finished execution.
 #[derive(Clone, Default)]
 struct InflightTracker {
     inner: Arc<Mutex<InflightInner>>,
@@ -165,9 +154,7 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
 
-    /// Discards the queue's pending (not-yet-started) executions. With
-    /// `keep_current = false` the in-flight execution is cancelled cooperatively
-    /// too; with `true` it runs to completion.
+    /// Discards pending executions; with `keep_current = false` also cancels the in-flight one.
     pub async fn clear(&self, queue_id: QueueId, keep_current: bool) -> Result<(), SchedulerError> {
         let (tx, rx) = oneshot::channel();
         self.sender
@@ -347,9 +334,7 @@ impl QueueScheduler {
                             MembershipOutcome::Applied
                         }
                         Some(old) => {
-                            // A concurrency change rebuilds the runner, but must carry pause
-                            // state forward, else a config edit silently resumes a paused
-                            // queue with no event.
+                            // Rebuild must carry pause state forward, else it silently resumes.
                             let was_paused = old.state.read().await.paused;
                             let id = queue.id;
                             let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
@@ -468,10 +453,7 @@ impl QueueScheduler {
             if !keep_current {
                 slot.inflight.cancel_all();
             }
-            // Aborting the runner drops its task receiver, discarding every
-            // buffered (not-yet-started) execution. With keep_current = false the
-            // running chain unwinds cooperatively via the cancel signal set above;
-            // with true it keeps running to completion in the engine.
+            // Abort discards buffered executions; the signal above unwinds the in-flight one.
             slot.runner.abort();
 
             (
@@ -923,8 +905,6 @@ mod tests {
 
     #[tokio::test]
     async fn register_new_queue_returns_applied_and_enables_dispatch() {
-        // Core fix verification: a queue registered post-spawn must actually
-        // receive and execute work (not emit queue_not_found skipped).
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let a_id = ActionId::new();
@@ -940,7 +920,6 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
-        // Spawn with NO initial queues - q_id is unregistered.
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
         let mut sub = bus.subscribe();
 
@@ -959,7 +938,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Must reach action.done, NOT action.skipped with reason=queue_not_found.
         assert!(
             collect_events(&mut sub, "action.done", 30, 300).await,
             "newly registered queue must execute dispatched actions"
@@ -987,12 +965,10 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
-        // Pause the slot, then attempt to re-register the same id.
         sched.pause(q_id).await.unwrap();
         let outcome = sched.register(nonblocking(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::AlreadyRegistered);
 
-        // Existing slot must remain paused (not replaced by a fresh unpaused slot).
         sched
             .dispatch(SchedulerRequest {
                 queue_id: q_id,
@@ -1005,7 +981,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Drain briefly: must see skipped (still paused), not done.
         tokio::time::sleep(Duration::from_millis(120)).await;
         let mut saw_skipped = false;
         let mut saw_done = false;
@@ -1060,7 +1035,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Dispatch after deregister must hit the queue_not_found safety net.
         assert!(
             collect_events(&mut sub, "action.skipped", 10, 200).await,
             "dispatch after deregister must emit action.skipped"
@@ -1088,8 +1062,6 @@ mod tests {
 
     #[tokio::test]
     async fn reconfigure_rename_preserves_pause_state_and_runner() {
-        // Same `blocking` value → only `name` is updated; runner is NOT torn
-        // down and rebuilt. A paused queue must remain paused after the rename.
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let a_id = ActionId::new();
@@ -1110,7 +1082,6 @@ mod tests {
 
         sched.pause(q_id).await.unwrap();
 
-        // Rename only - blocking stays false.
         let renamed = Queue {
             id: q_id,
             name: "renamed".to_string(),
@@ -1121,7 +1092,6 @@ mod tests {
         let outcome = sched.reconfigure(renamed).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        // Dispatch: must still be skipped (pause survived rename).
         sched
             .dispatch(SchedulerRequest {
                 queue_id: q_id,
@@ -1158,8 +1128,6 @@ mod tests {
 
     #[tokio::test]
     async fn reconfigure_blocking_flip_accepts_work_after_rebuild() {
-        // blocking-flip builds a fresh slot; the queue must still accept and
-        // execute dispatched work.
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let a_id = ActionId::new();
@@ -1175,7 +1143,6 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
-        // Start non-blocking, flip to blocking.
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
@@ -1204,11 +1171,6 @@ mod tests {
 
     #[tokio::test]
     async fn reconfigure_blocking_flip_preserves_pause() {
-        // Regression: before 8bc1b04, a blocking-flip reconfigure rebuilt the
-        // slot with paused=false, silently resuming a paused queue.  After the
-        // fix, `was_paused` is carried forward into the new slot.
-        //
-        // Arrange: non-blocking queue, paused before the flip.
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let a_id = ActionId::new();
@@ -1227,12 +1189,10 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
-        // Pause first, then flip to blocking.
         sched.pause(q_id).await.unwrap();
         let outcome = sched.reconfigure(blocking_q(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        // Dispatch into the rebuilt (now blocking) queue.
         sched
             .dispatch(SchedulerRequest {
                 queue_id: q_id,
@@ -1245,7 +1205,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Allow time for the action to execute if it were to slip through.
         tokio::time::sleep(Duration::from_millis(120)).await;
 
         let mut saw_skipped = false;
@@ -1297,9 +1256,6 @@ mod tests {
         sched.shutdown();
     }
 
-    /// An action whose only step is a `core.logic.wait` of `ms` milliseconds.
-    /// Used to hold a blocking queue's single execution slot so that later
-    /// dispatches observably pile up as pending (not-yet-started) work.
     fn wait_action(id: ActionId, queue_id: QueueId, ms: i64) -> Action {
         let mut config = std::collections::BTreeMap::new();
         config.insert("ms".to_owned(), Variant::Int(ms));
@@ -1348,8 +1304,6 @@ mod tests {
             .map(str::to_owned)
     }
 
-    /// Bounded poll for the `action.start` of a specific action - i.e. proof
-    /// that the action has acquired its slot and is in-flight.
     async fn await_action_start(
         sub: &mut EventSubscription,
         action_id: ActionId,
@@ -1371,11 +1325,6 @@ mod tests {
         false
     }
 
-    /// Drain every `action.done` published within `window`, returning the set of
-    /// completed action ids. A deadline-bounded drain (not a fixed sleep): it
-    /// returns as soon as the bus goes quiet for the remaining budget, and the
-    /// window is sized to exceed the in-flight action's own wait so a surviving
-    /// execution WOULD be observed if the clear failed to discard/abort it.
     async fn drain_dones(
         sub: &mut EventSubscription,
         window: Duration,
@@ -1425,11 +1374,6 @@ mod tests {
 
     #[tokio::test]
     async fn clear_discards_pending_and_rebuilt_queue_runs_new_work() {
-        // A holds the blocking queue's single slot (150 ms wait); B and C queue
-        // up behind it as pending work. A `clear(keep_current = true)` must drop
-        // B and C while letting A finish, and the rebuilt slot must still run a
-        // fresh dispatch D. Window (800 ms) exceeds A's wait, so had B/C survived
-        // they would have run after A and shown up in the done set.
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let (a, b, c, d) = (
@@ -1495,17 +1439,6 @@ mod tests {
 
     #[tokio::test]
     async fn clear_with_keep_current_false_aborts_in_flight_action() {
-        // REGRESSION (currently FAILING - reproduces a bug, do not weaken):
-        // `clear(keep_current = false)` calls `InflightTracker::abort_all`, but the
-        // tracker only owns the dispatch-SEND future (`ActionEngineHandle::dispatch`
-        // returns once the request is enqueued on the engine's mpsc). The real
-        // execution runs detached in `ActionEngine::run`, so aborting the tracked
-        // task is a no-op: an action that has already started runs to completion.
-        //
-        // A is mid-flight (150 ms wait) when clear(keep_current = false) fires;
-        // its execution must be aborted (no action.done), while the rebuilt slot
-        // still runs a fresh dispatch D. The 800 ms window exceeds A's wait, so a
-        // non-aborted A would have completed and been observed.
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let (a, d) = (ActionId::new(), ActionId::new());
@@ -1554,10 +1487,6 @@ mod tests {
 
     #[tokio::test]
     async fn clear_preserves_paused_state_across_slot_rebuild() {
-        // Load-bearing carry-forward: clearing rebuilds the queue's slot, and the
-        // paused flag must survive that rebuild (mirrors the blocking-flip
-        // reconfigure pause-preservation). Asserted directly via paused_queues so
-        // the test pins the state, not a downstream side effect.
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let queue = nonblocking(q_id);

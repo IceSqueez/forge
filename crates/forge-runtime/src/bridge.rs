@@ -5,8 +5,7 @@ use std::sync::Arc;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{StreamExt as _, wrappers::errors::BroadcastStreamRecvError};
 
-/// Wraps the bus into a `Stream<Item = Event>`. Lagged items are silently dropped;
-/// lag count is logged at WARN so operators can tune `CHANNEL_CAP`.
+/// Lagged items are silently dropped; the lag count is logged at WARN.
 pub fn bus_subscription(bus: Arc<EventBus>) -> impl Stream<Item = Event> + Send + 'static {
     let receiver = bus.subscribe().into_receiver();
     BroadcastStream::new(receiver).filter_map(|result| match result {

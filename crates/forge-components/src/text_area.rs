@@ -175,8 +175,7 @@ pub struct TextArea {
     gutter: bool,
     gutter_marks: Vec<usize>,
     fill: bool,
-    /// When true, prepaint keeps the caret in view (after edits/moves); a wheel
-    /// scroll clears it so the content can be scrolled away from the caret.
+    /// When true, prepaint keeps the caret in view (after edits/moves); a wheel scroll clears it so the content can be scrolled away from the caret.
     follow_caret: bool,
     blink_visible: bool,
     focused_cached: bool,
@@ -717,9 +716,7 @@ impl EntityInputHandler for TextArea {
     }
 }
 
-/// Splits every run overlapping `[start, end)` at those boundaries, then runs `f`
-/// over the pieces that fall inside the range, so a selection/marked attribute can
-/// be layered on top of already-colored foreground runs.
+/// Splits every run overlapping `[start, end)` at those boundaries, then runs `f` over the pieces inside the range, layering a selection/marked attribute on already-colored foreground runs.
 fn apply_range(runs: &mut Vec<TextRun>, start: usize, end: usize, f: impl Fn(&mut TextRun)) {
     let mut out: Vec<TextRun> = Vec::with_capacity(runs.len() + 2);
     let mut pos = 0usize;
@@ -808,9 +805,7 @@ fn json_literal_at(chars: &[(usize, char)], i: usize) -> Option<usize> {
     None
 }
 
-/// Byte-length foreground runs covering the whole buffer: object keys, string
-/// values, numbers, and `true`/`false`/`null` literals each get their design hue;
-/// everything else (punctuation, whitespace) stays the primary text color.
+/// Returns byte-length runs (not byte-offset pairs) covering the whole buffer.
 pub fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let n = chars.len();
@@ -910,9 +905,7 @@ fn is_rhai_keyword(word: &str) -> bool {
     )
 }
 
-/// Byte-length foreground runs for a Rhai buffer: keywords, strings, numbers,
-/// line comments, and call-position identifiers each get their design hue; other
-/// identifiers stay primary and punctuation/whitespace stay muted.
+/// Returns byte-length runs (not byte-offset pairs) for a Rhai buffer.
 fn rhai_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let n = chars.len();
@@ -1106,7 +1099,6 @@ impl Element for AreaElement {
             total_height: y,
         };
 
-        // Keep the caret within the viewport.
         let mut scroll_offset = input.scroll_offset;
         let view_h = bounds.size.height;
         let caret_point = if selected_range.is_empty() {
@@ -1357,12 +1349,6 @@ impl Render for TextArea {
 mod tests {
     use super::*;
 
-    // Seed a headless TextArea with `content`, then run `f` against its private editing
-    // methods and return what `f` observes. gpui's TestAppContext backs the window with a
-    // headless TestWindow (NoopTextSystem, no GPU, no paint scheduling, no network) - the
-    // sanctioned in-process harness. Tests that exercise caret geometry (Up/Down) must
-    // instead force a paint first (see `with_painted_area`), because `move_vertical` reads
-    // the layout cached at the last paint and is a no-op before it.
     fn with_area<R>(
         cx: &mut gpui::TestAppContext,
         content: &str,
@@ -1377,9 +1363,6 @@ mod tests {
             .unwrap()
     }
 
-    // Like `with_area`, but paints the window once after seeding so `last_layout` is
-    // populated with the NoopTextSystem's deterministic monospaced shaping (every ASCII
-    // glyph advances one fixed em-width). Vertical caret motion needs that cached layout.
     fn with_painted_area<R>(
         cx: &mut gpui::TestAppContext,
         content: &str,
@@ -1391,7 +1374,7 @@ mod tests {
                 area.set_content(content.to_string(), cx);
             })
             .unwrap();
-        cx.run_until_parked(); // first paint caches the shaped layout used by Up/Down
+        cx.run_until_parked();
         window
             .update(cx, |area, window, cx| f(area, window, cx))
             .unwrap()
@@ -1399,32 +1382,24 @@ mod tests {
 
     #[gpui::test]
     fn enter_inserts_a_newline_at_the_cursor_instead_of_submitting(cx: &mut gpui::TestAppContext) {
-        // The defining multi-line behavior: Enter splits the buffer with a '\n' at the
-        // caret and advances past it, where the single-line input would emit a submit and
-        // leave the text untouched.
         let (content, cursor) = with_area(cx, "abcd", |area, window, cx| {
             area.move_to(2, cx);
             area.insert_newline(&InsertNewline, window, cx);
             (area.content().to_string(), area.cursor_offset())
         });
         assert_eq!(content, "ab\ncd");
-        assert_eq!(cursor, 3); // caret sits just after the inserted '\n'
+        assert_eq!(cursor, 3);
     }
 
     #[gpui::test]
     fn down_holds_the_goal_column_across_a_shorter_intervening_line(cx: &mut gpui::TestAppContext) {
-        // The bug-prone case. Caret starts at column 6 of a long line; the middle line is
-        // one char, so Down must clamp there, THEN the next Down must return to column 6 -
-        // proving the goal column survived the clamp. A naive impl that overwrites the goal
-        // column with the clamped x would land at column 1 on the third line (offset 13),
-        // not column 6 (offset 18).
         let stops = with_painted_area(cx, "long line\nx\nanother line", |area, window, cx| {
-            area.move_to(6, cx); // column 6 of "long line"
+            area.move_to(6, cx);
             let mut seen = Vec::new();
             area.down(&Down, window, cx);
-            seen.push(area.cursor_offset()); // clamps onto the 1-char middle line
+            seen.push(area.cursor_offset());
             area.down(&Down, window, cx);
-            seen.push(area.cursor_offset()); // goal column 6 restored on the third line
+            seen.push(area.cursor_offset());
             seen
         });
         assert_eq!(stops, vec![11usize, 18]);
@@ -1432,14 +1407,13 @@ mod tests {
 
     #[gpui::test]
     fn up_holds_the_goal_column_across_a_shorter_intervening_line(cx: &mut gpui::TestAppContext) {
-        // Symmetric to the Down case, exercising the `caret.y - lh*0.5` branch.
         let stops = with_painted_area(cx, "long line\nx\nanother line", |area, window, cx| {
-            area.move_to(18, cx); // column 6 of "another line"
+            area.move_to(18, cx);
             let mut seen = Vec::new();
             area.up(&Up, window, cx);
-            seen.push(area.cursor_offset()); // clamps onto the 1-char middle line
+            seen.push(area.cursor_offset());
             area.up(&Up, window, cx);
-            seen.push(area.cursor_offset()); // goal column 6 restored on the first line
+            seen.push(area.cursor_offset());
             seen
         });
         assert_eq!(stops, vec![11usize, 6]);
@@ -1447,23 +1421,19 @@ mod tests {
 
     #[gpui::test]
     fn paste_preserves_embedded_newlines(cx: &mut gpui::TestAppContext) {
-        // A text area pastes multi-line clipboard text verbatim; the single-line input
-        // would flatten the '\n's away.
         let (content, cursor) = with_area(cx, "", |area, window, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string("a\nb\nc".to_string()));
             area.paste(&Paste, window, cx);
             (area.content().to_string(), area.cursor_offset())
         });
         assert_eq!(content, "a\nb\nc");
-        assert_eq!(cursor, 5); // caret advances past the whole pasted block
+        assert_eq!(cursor, 5);
     }
 
     #[gpui::test]
     fn home_moves_to_the_start_of_the_current_hard_line(cx: &mut gpui::TestAppContext) {
-        // Home binds to the hard line the caret is on, not the whole buffer: from inside
-        // "second" it lands at that line's first byte (6), never at 0.
         let cursor = with_area(cx, "first\nsecond\nthird", |area, window, cx| {
-            area.move_to(9, cx); // mid-"second"
+            area.move_to(9, cx);
             area.home(&Home, window, cx);
             area.cursor_offset()
         });
@@ -1472,10 +1442,8 @@ mod tests {
 
     #[gpui::test]
     fn end_moves_to_the_end_of_the_current_hard_line(cx: &mut gpui::TestAppContext) {
-        // End binds to the hard line, landing before the trailing '\n' (12), never at the
-        // buffer end (18).
         let cursor = with_area(cx, "first\nsecond\nthird", |area, window, cx| {
-            area.move_to(9, cx); // mid-"second"
+            area.move_to(9, cx);
             area.end(&End, window, cx);
             area.cursor_offset()
         });

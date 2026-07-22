@@ -173,7 +173,6 @@ mod tests {
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String("Hi".to_owned()));
         cfg.insert("separator".to_owned(), Variant::String(String::new()));
-        // Rust's `split("")` yields empty boundary parts at both ends.
         assert_eq!(split_parts(&cfg).await, vec!["", "H", "i", ""]);
     }
 }

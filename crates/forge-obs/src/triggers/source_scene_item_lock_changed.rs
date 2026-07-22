@@ -127,9 +127,6 @@ mod tests {
         assert!(SourceSceneItemLockChangedDescriptor.matches_trigger(&cfg, &event));
     }
 
-    // The descriptor shares the `source.` event-filter prefix with the visibility and
-    // input descriptors; `matches_trigger` must discriminate on the FULL kind, not the
-    // prefix, or a lock action would fire on a sibling visibility/input event.
     #[test]
     fn matches_trigger_rejects_sibling_source_kinds() {
         let cfg = TriggerConfig::new();
@@ -167,8 +164,6 @@ mod tests {
         );
     }
 
-    // An `is_locked: false` payload (unlock) must map to `Variant::Bool(false)` - not be
-    // dropped or coerced - so actions can distinguish unlock from lock.
     #[test]
     fn build_arg_stack_preserves_false_locked_flag() {
         let event = lock_event(json!({ "scene": "Main", "source": "Cam", "is_locked": false }));

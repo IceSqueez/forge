@@ -46,10 +46,7 @@ impl ChannelInfoFetcher {
         }
     }
 
-    /// Fetches channel info from the unofficial v2 endpoint.
-    ///
-    /// Returns `KickError::ChannelInfoUnavailable` if the endpoint is unreachable or returns a
-    /// non-2xx status. Callers must retry with backoff on this variant.
+    /// Callers must retry with backoff on `KickError::ChannelInfoUnavailable`.
     pub async fn fetch(&self) -> Result<KickChannelInfo, KickError> {
         let url = format!("{}/{}", self.endpoint_base, self.slug);
         let response = self

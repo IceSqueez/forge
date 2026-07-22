@@ -7,15 +7,7 @@ pub enum SoundPlayerError {
     Play(String),
 }
 
-/// Narrow playback contract used by the action engine.
-///
-/// Implemented by `forge_soundboard::SoundboardPlayer`. Keeping the trait here
-/// breaks the dependency cycle: `forge-runtime` never imports `forge-soundboard`.
-///
-/// Every method except `play` has a default impl: `stop`/`stop_all` are no-ops
-/// returning `Ok`, `set_master_volume` discards the value. A non-bridge impl
-/// (the runner test doubles) stays correct without wiring playback state - only
-/// `forge_soundboard::SoundboardPlayer` overrides them against a live registry.
+/// Lives here to avoid a dependency cycle; every method except `play` defaults to a no-op/discard.
 #[async_trait]
 pub trait SoundPlayer: Send + Sync {
     async fn play(
@@ -24,8 +16,7 @@ pub trait SoundPlayer: Send + Sync {
         output_device_override: Option<OutputDevice>,
     ) -> Result<(), SoundPlayerError>;
 
-    /// Halts every in-flight playback of `clip_id`. Stopping a clip that is not
-    /// currently playing succeeds without effect.
+    /// Stopping a clip that is not currently playing succeeds without effect.
     async fn stop(&self, clip_id: ClipId) -> Result<(), SoundPlayerError> {
         let _ = clip_id;
         Ok(())

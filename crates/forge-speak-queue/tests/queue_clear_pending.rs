@@ -1,11 +1,3 @@
-//! The load-bearing distinction between `ClearPending` and `Clear`:
-//!
-//! - `ClearPending` drops pending items but lets the IN-FLIGHT item finish.
-//! - `Clear` also abandons the active item.
-//!
-//! Both are driven with a gated synthesis engine so exactly one item is in-flight
-//! when the command lands; the tests assert they DIFFER on the active item.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
@@ -24,8 +16,6 @@ use tokio::sync::Notify;
 
 use common::{assert_no_event, make_deps, recording_sink, request, voice, wait_for};
 
-/// Engine whose `synthesize` blocks on a gate, pinning one item in-flight until the
-/// test releases it - `list_voices` stays unblocked so the catalog still builds.
 struct GatedEngine {
     gate: Arc<Notify>,
 }
@@ -87,7 +77,6 @@ async fn clear_pending_lets_the_in_flight_item_finish() {
         .send(SpeakCommand::Enqueue(request("v1", "in flight")))
         .await
         .unwrap();
-    // First Started (empty ids) confirms the item is active and synth is gated.
     wait_for(
         &mut stream,
         |e| matches!(e, SpeakEvent::Started { .. }),
@@ -96,7 +85,6 @@ async fn clear_pending_lets_the_in_flight_item_finish() {
     .await;
 
     handle.send(SpeakCommand::ClearPending).await.unwrap();
-    // QueueChanged{0} is ClearPending's processed barrier.
     wait_for(
         &mut stream,
         |e| matches!(e, SpeakEvent::QueueChanged { queue_len: 0 }),
@@ -104,7 +92,6 @@ async fn clear_pending_lets_the_in_flight_item_finish() {
     )
     .await;
 
-    // Release synthesis; the active item must complete despite ClearPending.
     gate.notify_one();
     wait_for(
         &mut stream,
@@ -139,10 +126,8 @@ async fn clear_abandons_the_in_flight_item() {
     .await;
 
     handle.send(SpeakCommand::Clear).await.unwrap();
-    // Cleared is Clear's processed barrier; it clears active_request_id.
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Cleared), 2_000).await;
 
-    // Release synthesis; the synth result must be discarded - no playback, no Finished.
     gate.notify_one();
     assert_no_event(
         &mut stream,

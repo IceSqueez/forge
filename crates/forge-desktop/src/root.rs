@@ -33,8 +33,7 @@ enum BootState {
     Booting,
     Ready {
         shell: Entity<AppShell>,
-        // Held (unread) to keep the runtime's tasks alive for the app's lifetime; the
-        // shell holds a second `Arc` clone through which screens reach the runtime.
+        // Held (unread) to keep the runtime's tasks alive; the shell holds a second `Arc` clone through which screens reach the runtime.
         #[allow(dead_code)]
         handles: Arc<RuntimeHandles>,
     },
@@ -106,8 +105,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
         };
         match outcome {
             Ok(mut handles) => {
-                // Not `Clone` - take the sole subscription out so the bridge below owns
-                // the only drain.
+                // Not `Clone` - take the sole subscription out so the bridge below owns the only drain.
                 let speak_events = handles.speak_events.take();
                 let handles = Arc::new(handles);
                 let bus = Arc::clone(&handles.bus);
@@ -127,8 +125,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 let backend_for_history = Arc::clone(&handles.backend);
                 let rt_handle_for_history = handles.rt_handle.clone();
                 let applied = window.update(cx, |root, window, cx| {
-                    // Render-thread install: the fluent bundle is thread-local and must be set
-                    // before the shell's first render resolves any translated string.
+                    // Render-thread install: the fluent bundle is thread-local and must be set before the shell's first render resolves any translated string.
                     crate::i18n::install_language(handles.startup_language);
                     cx.set_global(crate::presentation::ActiveLanguage(
                         handles.startup_language,

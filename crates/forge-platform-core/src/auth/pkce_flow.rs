@@ -77,10 +77,8 @@ impl PkceFlow {
         }
     }
 
-    /// Binds a loopback listener, generates PKCE + state, stores the driver, and
-    /// returns the URL the caller should open in the user's browser. `extra_trailing_params`
-    /// lets a caller add call-time-only query params (e.g. Google's optional `prompt=consent`)
-    /// after the fixed PKCE fields.
+    /// `extra_trailing_params` lets a caller add call-time-only query params (e.g. Google's
+    /// optional `prompt=consent`) after the fixed PKCE fields.
     pub async fn start(
         &mut self,
         extra_trailing_params: &[(&str, &str)],
@@ -91,9 +89,7 @@ impl PkceFlow {
         Ok(PkceAuthorizeUrl { auth_url })
     }
 
-    /// Consumes the pending driver, awaits the loopback callback, and exchanges the
-    /// authorization code for a token (PKCE `code_verifier`, no `client_secret` unless
-    /// the config supplies one).
+    /// Uses PKCE `code_verifier`; no `client_secret` unless the config supplies one.
     pub async fn exchange(
         &mut self,
         timeout: Duration,
@@ -132,9 +128,8 @@ impl PkceRefresher {
         }
     }
 
-    /// Public-client `grant_type=refresh_token` POST (adds `client_secret` only when the
-    /// config carries one). Maps to `PlatformError::ReauthRequired` per the configured
-    /// `ReauthPolicy`, otherwise `PlatformError::Http`.
+    /// Maps to `PlatformError::ReauthRequired` per the configured `ReauthPolicy`, otherwise
+    /// `PlatformError::Http`.
     pub async fn refresh(&self, refresh_token: &str) -> Result<PkceTokenResponse, PlatformError> {
         let mut form: Vec<(&str, &str)> = vec![
             ("grant_type", "refresh_token"),

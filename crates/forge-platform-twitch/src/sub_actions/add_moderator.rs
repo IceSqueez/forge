@@ -161,11 +161,6 @@ mod tests {
         )])
     }
 
-    //
-    // Verifies that each runner (a) issues exactly 2 Helix calls, (b) first
-    // resolves the login via GET /helix/users, and (c) issues the expected
-    // method + path with broadcaster_id==SELF and user_id==resolved "555".
-
     #[tokio::test]
     async fn resolve_then_act_runners_each_call_users_then_action_endpoint() {
         struct Case {
@@ -293,8 +288,6 @@ mod tests {
 
     #[tokio::test]
     async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
-        // Shared pre-check code path is the same across all four runners;
-        // a single representative (AddModeratorRunner) is sufficient.
         let (transport, runner) = runner_with(vec![users_fixture("555")]);
         let stack = ArgStack::new().set("user_login".to_owned(), Variant::String(String::new()));
 
@@ -315,7 +308,6 @@ mod tests {
 
     #[tokio::test]
     async fn action_call_http_error_maps_to_failed_without_token_or_url() {
-        // A representative runner is sufficient (shared error-propagation path).
         let (transport, runner) = runner_with(vec![
             users_fixture("555"),
             Err(HelixError::Http {

@@ -66,9 +66,8 @@ impl YoutubeStreamMetadata {
         self.update(Field::Privacy, value).await
     }
 
-    /// Fetch-merge-write: `videos.update` clears any `part` field omitted from the
-    /// request body, so the current `snippet`+`status` is fetched, the single target
-    /// field merged in, and the full merged resource written back.
+    /// `videos.update` clears any `part` field omitted from the request body, so the
+    /// current `snippet`+`status` is fetched, the target field merged in, and written back.
     async fn update(&self, field: Field, value: &str) -> Result<(), PlatformError> {
         let broadcast_id =
             self.active_broadcast_id
@@ -209,8 +208,6 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
     }
 
-    /// Builds a metadata client pointed at a wiremock server, with the active
-    /// broadcast id resolved so the fetch-merge-write path is reachable.
     fn metadata_on(server: &MockServer) -> (YoutubeStreamMetadata, Arc<Mutex<QuotaState>>) {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
@@ -220,8 +217,6 @@ mod tests {
         (meta, quota)
     }
 
-    /// A resource whose snippet+status carry distinct pre-existing values in every
-    /// slot, so a merge that clobbers a non-target field is caught.
     fn current_resource() -> Value {
         json!({
             "items": [{
@@ -256,7 +251,6 @@ mod tests {
             .await;
     }
 
-    /// Returns the JSON body of the single PUT the server received.
     async fn put_body(server: &MockServer) -> Value {
         let reqs = server.received_requests().await.unwrap();
         let put = reqs
@@ -277,7 +271,6 @@ mod tests {
 
         let body = put_body(&server).await;
         assert_eq!(body["snippet"]["title"], "NEW TITLE");
-        // Untouched fields must survive the merge (videos.update clears omitted parts).
         assert_eq!(body["snippet"]["description"], "OLD DESC");
         assert_eq!(body["snippet"]["categoryId"], "20");
         assert_eq!(body["status"]["privacyStatus"], "private");
@@ -325,7 +318,6 @@ mod tests {
         meta.set_privacy("public").await.unwrap();
 
         let body = put_body(&server).await;
-        // Target lives under `status`, never under `snippet`.
         assert_eq!(body["status"]["privacyStatus"], "public");
         assert_eq!(body["snippet"]["title"], "OLD TITLE");
         assert_eq!(body["snippet"]["description"], "OLD DESC");
@@ -352,8 +344,7 @@ mod tests {
     #[tokio::test]
     async fn no_active_broadcast_returns_unsupported_without_any_http_call() {
         let server = MockServer::start().await;
-        // No mocks mounted: any HTTP call would surface as an unmatched request.
-        let handle = ActiveBroadcastIdHandle::new(); // left at None
+        let handle = ActiveBroadcastIdHandle::new();
         let quota = Arc::new(Mutex::new(QuotaState::default()));
         let meta = YoutubeStreamMetadata::new(token_source(), handle, Arc::clone(&quota))
             .with_api_base(server.uri());

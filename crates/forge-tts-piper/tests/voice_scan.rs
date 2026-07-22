@@ -1,9 +1,3 @@
-//! Regression: PiperEngine voice scanner reads onnx + sidecar JSON correctly.
-//!
-//! Uses a synthetic voices directory with hand-crafted .onnx stubs and
-//! .onnx.json sidecars. No real Piper binary is required - the scanner only
-//! reads the filesystem.
-
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -47,9 +41,6 @@ fn fake_piper_binary(dir: &std::path::Path) -> PathBuf {
 
 #[tokio::test]
 async fn end_to_end_voice_listing_through_engine() {
-    // E2E happy path: 2 single-speaker + 1 multi-speaker (3 speakers) → expect 5 voices
-    // through the public list_voices() path. The internal scanner is covered by lib.rs unit
-    // tests; this confirms the engine wires it through correctly.
     let tmp = tempfile::tempdir().expect("tmpdir");
     let voices_dir = tmp.path().join("voices");
     std::fs::create_dir(&voices_dir).expect("mkdir voices");

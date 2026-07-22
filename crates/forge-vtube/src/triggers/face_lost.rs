@@ -121,9 +121,7 @@ mod tests {
         let d = FaceLostDescriptor;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("tracking.face_lost", json!({}))));
-        // Sibling under the same `tracking.` prefix must not match.
         assert!(!d.matches_trigger(&cfg, &event("tracking.face_found", json!({}))));
-        // Foreign kind.
         assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
     }
 

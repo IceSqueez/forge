@@ -109,8 +109,8 @@ impl YoutubeChatPoller {
                 Ok(None) => {
                     self.live_chat_id.set(None);
                     self.active_broadcast_id.set(None);
-                    // A later go-live with a different title is a fresh session, not
-                    // an edit; resetting prevents the next resolution mis-firing.
+                    // Resetting here means a later go-live with a different title is a fresh
+                    // session, not an edit.
                     last_seen_title = None;
                     let event = Event::new(
                         EventSource::YouTube,
@@ -246,10 +246,7 @@ impl YoutubeChatPoller {
         }
     }
 
-    /// Resolves the active broadcast in one `liveBroadcasts.list` call, returning
-    /// its `liveChatId` (for polling), its resource `id` (the video id used by
-    /// `videos.update`), and its current `snippet.title` - same request, no extra
-    /// quota.
+    /// Resolves `liveChatId`, the video id, and current title in one call - no extra quota.
     async fn fetch_live_chat_id(
         &self,
         token: &str,
@@ -1449,7 +1446,6 @@ mod tests {
     #[tokio::test]
     async fn active_broadcast_sets_broadcast_id_to_items_first_id_alongside_live_chat_id() {
         let server = MockServer::start().await;
-        // broadcast_response always carries `items[0].id == "broadcast-1"`.
         mount_broadcast_mock(&server, broadcast_response("lc-active-xyz")).await;
         mount_chat_mock(&server, chat_response(json!([]), 3000)).await;
 
@@ -1700,8 +1696,6 @@ mod tests {
             event.payload["chat.moderator.channel_id"].as_str().unwrap(),
             "UCmod"
         );
-        // The live-chat API does not report the deleted message's author; the
-        // field must stay empty so a future fabrication is noticed.
         assert_eq!(
             event.payload["chat.target_user.channel_id"]
                 .as_str()
@@ -1771,8 +1765,6 @@ mod tests {
 
     #[tokio::test]
     async fn membership_gifting_event_parses_string_count_into_int() {
-        // Why: the YouTube API renders integer counters as JSON strings; the
-        // parse arm must coerce "12" into a numeric gift.count, not 0.
         let server = MockServer::start().await;
         mount_broadcast_mock(&server, broadcast_response("chat-gift-str")).await;
         mount_chat_mock(
@@ -1825,18 +1817,8 @@ mod tests {
             event.payload["recipient.display_name"].as_str().unwrap(),
             "LuckyViewer"
         );
-        // The received-event snippet carries no gifter identity; field stays empty.
         assert_eq!(event.payload["gifter.display_name"].as_str().unwrap(), "");
     }
-
-    // --- stream title-changed diff coverage --------------------------------
-    //
-    // Driving two broadcast resolutions in one `run()` without waiting the real
-    // 60s BROADCAST_CADENCE: seed the quota so exactly two broadcast charges fit
-    // and the FIRST chat-poll charge of each inner loop fails, breaking 'inner
-    // immediately and forcing an early re-resolution. After the second
-    // resolution the third broadcast charge is denied and the poller parks on
-    // the 60s sleep, at which point the test cancels.
 
     fn broadcast_response_titled(live_chat_id: &str, title: &str) -> serde_json::Value {
         json!({
@@ -1850,8 +1832,6 @@ mod tests {
         })
     }
 
-    /// Quota seeded so only two `BROADCAST_COST` charges succeed and every
-    /// `CHAT_POLL_COST` charge is denied - yielding back-to-back resolutions.
     fn quota_for_two_resolutions() -> Arc<tokio::sync::Mutex<QuotaState>> {
         Arc::new(tokio::sync::Mutex::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 2 * BROADCAST_COST,
@@ -1886,9 +1866,6 @@ mod tests {
         (poller, live, rx)
     }
 
-    /// Mounts two sequenced `liveBroadcasts.list` bodies (first then second),
-    /// each answering exactly one request. A final fallback keeps later calls
-    /// from 404-ing if the poller probes again.
     async fn mount_sequenced_broadcasts(
         server: &MockServer,
         first: serde_json::Value,
@@ -1913,11 +1890,6 @@ mod tests {
             .await;
     }
 
-    /// Runs the poller on paused time, advancing through cadence parks until the
-    /// live-chat handle reaches `until_live_chat_id` (proving every queued
-    /// broadcast resolution has run), then cancels and drains title_changed
-    /// events. The handle reaching the final session's id is the deterministic
-    /// completion signal - no wall-clock guesswork.
     async fn run_until_resolution_and_drain_titles(
         poller: YoutubeChatPoller,
         live: LiveChatIdHandle,
@@ -1928,11 +1900,6 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        // Under start_paused, parking the test task on a short timer lets the
-        // runtime poll the poller's real wiremock round-trip, then advance time
-        // to the poller's next pending timer (the 60s cadence / quota-fail
-        // sleep). Each loop the clock jumps to the nearest pending sleep, so the
-        // poller progresses resolution-by-resolution with no wall-clock cost.
         let mut reached = false;
         for _ in 0..5_000 {
             if live.get().as_deref() == Some(until_live_chat_id) {
@@ -1961,9 +1928,6 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn first_broadcast_resolution_records_title_without_emitting_event() {
         let server = MockServer::start().await;
-        // Distinct live-chat ids let the harness observe the second resolution
-        // landing; identical titles mean any event would be a spurious
-        // first-resolve fire, which must NOT happen.
         mount_sequenced_broadcasts(
             &server,
             broadcast_response_titled("lc-1", "Steady Title"),
@@ -2027,18 +1991,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn title_diff_across_intervening_offline_clear_does_not_fire() {
-        // live(TitleA) -> offline(no broadcast) -> live(TitleB). The offline
-        // clear resets last-seen, so the go-live with a different title is a
-        // fresh session, not an edit, and must NOT fire title_changed.
-        //
-        // The no-active-broadcast path always parks on the 60s cadence sleep
-        // (no quota lever can short-circuit it), so this test runs on paused
-        // time: the cadence sleep auto-advances once the only pending future is
-        // the timer, letting the third (live) resolution run without wall time.
         let server = MockServer::start().await;
-        // Resolution 1: live "Title A". Resolution 2: offline (no broadcast).
-        // Resolution 3+: live "Title B". Order matters - wiremock matches the
-        // first non-exhausted mount in registration order.
         Mock::given(method("GET"))
             .and(path("/liveBroadcasts"))
             .respond_with(
@@ -2063,9 +2016,6 @@ mod tests {
             .mount(&server)
             .await;
 
-        // Budget for three broadcast charges: live, offline, live-again. Chat
-        // charges are denied so each inner loop breaks immediately; the only
-        // sleeps left are the 60s cadence parks, which paused time advances.
         let quota = Arc::new(tokio::sync::Mutex::new(QuotaState {
             used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
             peak_seen: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
@@ -2074,9 +2024,6 @@ mod tests {
         }));
 
         let (poller, live, rx) = poller_with_quota(&server, quota);
-        // Title B is served from lc-2; the offline resolution clears the handle
-        // to None in between, so observing "lc-2" proves all three resolutions
-        // (live A -> offline -> live B) ran.
         let events = run_until_resolution_and_drain_titles(poller, live, rx, "lc-2").await;
 
         assert!(

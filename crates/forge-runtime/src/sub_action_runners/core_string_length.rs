@@ -128,7 +128,6 @@ mod tests {
 
     #[tokio::test]
     async fn length_bytes_mode_exceeds_char_count_for_non_ascii() {
-        // "Привіт": 6 Cyrillic chars, each 2 UTF-8 bytes.
         assert_eq!(length_of("chars").await, 6);
         assert_eq!(length_of("bytes").await, 12);
     }

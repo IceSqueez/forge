@@ -414,10 +414,6 @@ mod tests {
 
     #[test]
     fn map_badges_maps_extended_set_ids_to_their_variants() {
-        // Real Twitch badge set_ids -> UserBadge. Guards against set_id typos
-        // (note the hyphens in "hype-train"/"bits-leader") and against wiring a
-        // set_id to the wrong variant. bits/bits-leader parse `info` into the
-        // amount/rank field.
         let cases = [
             ("partner", "", UserBadge::Partner),
             ("premium", "", UserBadge::Premium),

@@ -38,19 +38,13 @@ pub trait ActionRepo: Send + Sync {
         duration_ms: u64,
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
-    /// Removes execution telemetry rows started before `cutoff`; returns rows removed.
+    /// Returns rows removed.
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 
-    /// Copies `source_id`'s row into a new action `new_id` named `new_name`.
-    ///
-    /// Errors with [`StorageError::NotFound`] if `source_id` does not exist.
-    ///
-    /// The default impl composes `get`/`save` and copies only the `Action`
-    /// row itself - it does **not** carry over trigger-instance links, since
-    /// this trait has no visibility into `action_trigger_instances`. A real
-    /// backend should override this with a single transaction that also
-    /// re-points every linked trigger instance to `new_id`, so the duplicate
-    /// ends up with the same trigger links as the source instead of zero.
+    /// Errors with [`StorageError::NotFound`] if `source_id` does not exist. The default
+    /// impl copies only the `Action` row itself, not its trigger-instance links (this
+    /// trait has no visibility into `action_trigger_instances`); a real backend should
+    /// override this to re-point links in the same transaction.
     async fn duplicate(
         &self,
         source_id: ActionId,
@@ -68,31 +62,20 @@ pub trait ActionRepo: Send + Sync {
         self.save(&copy).await
     }
 
-    /// Marks `id` archived: invisible to `get`, `list`, and `list_by_group` until
-    /// [`Self::restore`] is called. The row and its telemetry survive untouched - this
-    /// is a soft delete, not [`Self::delete`]. Returns `false` when `id` does not
-    /// exist or is already archived.
-    ///
-    /// The default impl has no generic representation of archived state without a
-    /// dedicated column, so it returns [`StorageError::NotReady`]; a real backend
-    /// must override this.
+    /// Soft delete (not [`Self::delete`]): hides `id` from `get`/`list`/`list_by_group`
+    /// until [`Self::restore`]; telemetry survives untouched. Default impl has no
+    /// generic archived-state representation and returns [`StorageError::NotReady`];
+    /// a real backend must override this.
     async fn archive(&self, _id: ActionId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Clears the marker set by [`Self::archive`], restoring `id` to `get`/`list`/
-    /// `list_by_group` visibility. Returns `false` when `id` does not exist or is not
-    /// currently archived.
-    ///
-    /// See [`Self::archive`] for the default-impl caveat.
+    /// Reverses [`Self::archive`]; see its default-impl caveat.
     async fn restore(&self, _id: ActionId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Returns archived actions only - the mirror of `list`, which excludes them.
-    ///
-    /// The default impl reports no archived entries, consistent with a backend that
-    /// does not support archiving.
+    /// Mirror of `list`, which excludes archived entries. Default impl reports none.
     async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
         Ok(Vec::new())
     }

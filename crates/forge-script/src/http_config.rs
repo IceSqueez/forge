@@ -132,7 +132,6 @@ mod tests {
             .await
             .unwrap();
         let cfg = load_script_http_config(&backend).await;
-        // Pre-JSON rows survive: split on commas, trim, drop the trailing empty.
         assert_eq!(cfg.allowed_domains, vec!["a.com", "b.com", "c.com"]);
     }
 
@@ -148,8 +147,6 @@ mod tests {
         .await
         .unwrap();
         let cfg = load_script_http_config(&backend).await;
-        // A CSV split of `["good.com","also.com"]` would mangle into bracket/quote
-        // fragments; getting the clean pair proves the JSON path wins.
         assert_eq!(cfg.allowed_domains, domains);
     }
 

@@ -124,8 +124,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
             })?;
             let cfg = engine_cfg;
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            // reqwest::blocking::Client must be built inside spawn_blocking - constructing it on
-            // the outer async task causes a runtime conflict on drop.
+            // reqwest::blocking::Client must be built inside spawn_blocking, not the outer async task.
             let http_client =
                 ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
                     script: body.clone(),

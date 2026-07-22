@@ -44,11 +44,7 @@ impl GuestStarRemoveGuestRunner {
                 Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
             };
 
-        // "Remove guest from session" maps to Delete Guest Star Slot, which
-        // unassigns the guest from their seat. Twitch requires ALL of
-        // broadcaster_id, moderator_id, session_id, guest_id AND slot_id - both
-        // the guest identity and the slot it occupies must match. broadcaster ==
-        // moderator == self; guest_id is the resolved target.
+        // Twitch requires guest_id AND slot_id together - both identity and seat must match.
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/slot")
             .query("broadcaster_id", ctx.self_id.clone())
             .query("moderator_id", ctx.self_id)

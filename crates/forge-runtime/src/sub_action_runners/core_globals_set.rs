@@ -137,7 +137,6 @@ mod tests {
 
     #[derive(Default)]
     struct MapGlobals {
-        // value + the `persisted` flag it was written with.
         map: Mutex<BTreeMap<String, (Variant, bool)>>,
     }
 
@@ -189,9 +188,6 @@ mod tests {
 
     #[tokio::test]
     async fn set_runner_honors_configured_persisted_flag() {
-        // Regression for CORE-2 / DT-05-F12: the set runner must forward the
-        // `persisted` config toggle, defaulting to session when it is absent.
-        // A hardcoded `false` (the original bug) fails the Some(true) row.
         for (configured, expected) in [(Some(true), true), (Some(false), false), (None, false)] {
             let globals = Arc::new(MapGlobals::default());
             let mut config = SubActionConfig::new();

@@ -1,8 +1,3 @@
-//! Smoke tests for the symphonia-backed PCM decoder.
-//!
-//! Uses synthetic WAV data constructed in-memory so no real audio files are needed.
-//! All tests run without an audio device.
-
 #![allow(
     clippy::unwrap_used,
     clippy::cast_possible_truncation,

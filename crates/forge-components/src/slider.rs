@@ -16,8 +16,7 @@ const KNOB_RIGHT: Pixels = px(-5.5);
 
 type ChangeHandler = Box<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
 
-/// A non-positive span (collapsed or inverted range) yields `0.0` rather than dividing
-/// by zero.
+/// A non-positive span (collapsed or inverted range) yields `0.0` rather than dividing by zero.
 pub(crate) fn fraction(value: f32, min: f32, max: f32) -> f32 {
     let span = max - min;
     if span <= 0.0 {
@@ -55,8 +54,7 @@ pub fn slider(value: f32, min: f32, max: f32, palette: &ForgePalette) -> Slider 
     }
 }
 
-/// Drag-payload preview gpui renders at the cursor; deliberately paints nothing - the
-/// moving thumb is the only feedback.
+/// Drag-payload preview gpui renders at the cursor; deliberately paints nothing - the moving thumb is the only feedback.
 struct DragGhost;
 
 impl Render for DragGhost {
@@ -65,10 +63,7 @@ impl Render for DragGhost {
     }
 }
 
-/// Drag payload; `on_drag_move` keys on an active drag of this type to keep
-/// delivering move events once the cursor leaves the track bounds. Carries the
-/// originating slider's id because gpui fans a typed drag out to EVERY listener
-/// of that type - each handler must ignore drags it did not start.
+/// Drag payload carrying the originating slider's id: gpui fans a typed drag out to EVERY listener of that type, so each handler must ignore drags it did not start.
 struct SliderDrag {
     id: ElementId,
 }
@@ -81,8 +76,7 @@ impl Slider {
         self
     }
 
-    /// Makes the slider draggable; without it the slider is a static read-only bar. The
-    /// handler gets each new (already-clamped) value as the drag moves.
+    /// Makes the slider draggable; without it the slider is a static read-only bar. The handler gets each new (already-clamped) value as the drag moves.
     #[must_use]
     pub fn on_change(
         mut self,
@@ -194,8 +188,6 @@ mod tests {
 
     #[test]
     fn fraction_returns_zero_when_span_is_not_positive() {
-        // Why: a naive (value - min) / (max - min) divides by zero here and yields
-        // NaN/inf, which would corrupt the track width. The guard must return 0.0.
         for (min, max) in [(50.0, 50.0), (100.0, 20.0)] {
             let f = fraction(75.0, min, max);
             assert!(

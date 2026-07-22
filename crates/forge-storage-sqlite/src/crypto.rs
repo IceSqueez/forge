@@ -6,9 +6,8 @@ use crate::error::SqliteStorageError;
 
 const NONCE_LEN: usize = 12;
 
-// File-canonical key avoids secret-service session-collection amnesia: the OS keyring on Linux
-// often stores entries in a *session* collection that is wiped on logout, so a later boot mints a
-// different key and all previously-encrypted credentials become permanently unreadable.
+// File-canonical, not OS keyring: Linux secret-service session collections get wiped on
+// logout, which would mint a new key and strand every previously-encrypted credential.
 pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
     let path = if let Ok(p) = std::env::var("FORGE_CREDENTIAL_KEY_FILE") {
         std::path::PathBuf::from(p)
@@ -181,8 +180,6 @@ mod tests {
         assert!(decrypt(&wrong_key, &ciphertext, &nonce).is_err());
     }
 
-    // Why: the nonce comes from the DB, so a corrupted/truncated blob is a plausible
-    // input; this used to panic before the fallible try_from conversion.
     #[test]
     fn decrypt_wrong_length_nonce_returns_crypto_error() {
         let key = [0x0cu8; 32];

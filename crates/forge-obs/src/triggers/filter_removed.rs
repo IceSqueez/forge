@@ -110,10 +110,6 @@ pub(crate) fn build_filter_source_arg_stack(event: &Event) -> ArgStack {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // The three filter descriptors share the `TriggerKindDescriptor` shape and the
-    // `build_filter_source_arg_stack` helper. Their 1:1 kind discrimination and the shared
-    // source/filter-name extraction are tested together here; each sibling file tests only
-    // the extra typed field it adds on top of the shared helper.
     use super::super::{
         FilterCreatedDescriptor, FilterEnabledChangedDescriptor, FilterRemovedDescriptor,
     };
@@ -124,8 +120,6 @@ mod tests {
     const ALL_FILTER_KINDS: [&str; 3] =
         ["filter.created", "filter.removed", "filter.enabled_changed"];
 
-    /// Each filter descriptor must fire on exactly its own kind and reject the other two.
-    /// A descriptor matching a sibling kind would mis-fire user actions on the wrong event.
     #[test]
     fn each_filter_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
@@ -146,7 +140,6 @@ mod tests {
         }
     }
 
-    /// A non-filter kind on the same OBS source must never match any filter descriptor.
     #[test]
     fn filter_descriptors_reject_non_filter_kind() {
         let cfg = BTreeMap::new();

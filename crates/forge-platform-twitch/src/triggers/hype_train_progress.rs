@@ -212,7 +212,6 @@ mod tests {
 
     #[test]
     fn matches_trigger_fires_only_when_level_at_or_above_min_level() {
-        // event level is fixed at 3; min_level filter is `level >= min_level`.
         let cases = [
             ("min below event level", config_with_min_level(1), true),
             (

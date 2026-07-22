@@ -33,13 +33,10 @@ pub struct YoutubePlatform {
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     quota: Arc<tokio::sync::Mutex<QuotaState>>,
-    // YouTube polls rather than holding a socket, so `connection_state()` reports this
-    // coarse owned flag instead of a live transport state. Shared with the poller-exit
-    // task; the lock is never held across an `.await`.
+    // YouTube polls rather than holding a socket; never held across an `.await`.
     state: Arc<Mutex<ConnectionState>>,
     // Persists across poller runs, unlike `state`'s writers, so a receiver taken once stays live.
     state_tx: watch::Sender<ConnectionState>,
-    // Lock never held across an `.await`.
     cancel: Mutex<Option<CancellationToken>>,
 }
 
@@ -270,8 +267,6 @@ mod tests {
         }
     }
 
-    // A platform with no stored credentials: the poller's token source fails, so it
-    // never touches the network and only cancellation drives it to exit.
     fn platform() -> YoutubePlatform {
         let manager = Arc::new(YoutubeCredentialsManager::new(
             Arc::new(EmptyRepo),
@@ -300,8 +295,6 @@ mod tests {
 
     #[tokio::test]
     async fn connect_publishes_connecting_then_connected_optimistically() {
-        // The flag is coarse: `connect` reports Connected on spawn, not on a confirmed
-        // broadcast. The observable contract is the ordered Connecting -> Connected pair.
         let p = platform();
         let mut stream = p.events();
         p.connect().await.unwrap();
@@ -327,15 +320,11 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_disconnect_deduplicates_the_redundant_poller_exit_transition() {
-        // connect -> Connecting,Connected; disconnect -> Disconnected AND cancels the
-        // poller. When the cancelled poller exits it also asks to publish Disconnected,
-        // but `publish_transition` must suppress that redundant same-state event.
-        // Without the dedup guard the drained sequence would carry a 4th Disconnected.
         let p = platform();
         let mut stream = p.events();
         p.connect().await.unwrap();
         p.disconnect().await.unwrap();
-        drop(p); // release the platform's own channel handle so the drain can terminate
+        drop(p);
 
         let mut states = Vec::new();
         while let Ok(event) = stream.recv().await {

@@ -2,12 +2,7 @@ use std::collections::BTreeMap;
 
 use forge_types::Variant;
 
-/// Shallow merge of a patch onto a default config.
-///
-/// For each key in `overrides`, the patch value wins outright. Keys absent
-/// from `overrides` fall through to their value in `default`. Nested
-/// `Variant::Object` / `Variant::Array` values are NOT deep-merged - the
-/// override replaces the whole sub-tree (consistent with RFC-047 §3).
+/// Shallow merge: `overrides` values win outright; nested `Object`/`Array` values are replaced wholesale, not deep-merged.
 pub fn effective_config(
     default: &BTreeMap<String, Variant>,
     overrides: &BTreeMap<String, Variant>,

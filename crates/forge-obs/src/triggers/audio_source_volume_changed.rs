@@ -135,8 +135,6 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
 
-    /// Volume carries two float metrics: dB level and linear multiplier. Both must land
-    /// as `Variant::Float` under their canonical arg keys.
     #[test]
     fn volume_arg_stack_extracts_name_db_and_multiplier_as_floats() {
         let event = Event::new(

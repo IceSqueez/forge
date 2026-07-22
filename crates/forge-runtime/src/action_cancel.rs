@@ -20,9 +20,7 @@ impl ActionCancelRegistry {
         Self::default()
     }
 
-    /// The returned id identifies this single execution within its action's
-    /// inner map, so deregistering one finished run never strands a concurrent
-    /// run of the same action.
+    /// Keyed per-execution, so deregistering one finished run never strands a concurrent run.
     pub fn register(&self, action_id: ActionId, signal: CancelSignal) -> u64 {
         let mut inner = self.lock();
         let exec_id = inner.next_exec_id;
@@ -104,9 +102,6 @@ mod tests {
 
     #[test]
     fn deregister_of_one_execution_leaves_a_concurrent_run_of_the_same_action_cancellable() {
-        // Why: the inner map is keyed per-execution so a finished run that
-        // deregisters never strands a concurrent run of the SAME action_id. A
-        // regression to whole-bucket keying would drop both here and cancel 0.
         let registry = ActionCancelRegistry::new();
         let action = ActionId::new();
         let finished = CancelSignal::new();

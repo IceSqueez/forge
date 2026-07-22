@@ -7,9 +7,8 @@ pub const CURRENT_FORMAT_VERSION: u32 = 1;
 
 pub const BUNDLE_FORMAT_VERSION: u32 = 1;
 
-/// Oldest bundle version the importer will accept without a hard error.
-/// Bumped only when a structural field removal or type change would produce
-/// incorrect data if parsed as an older version (not on field addition).
+/// Bump only for a structural field removal or type change that would misparse an
+/// older bundle; field additions alone don't require a bump.
 pub const MINIMUM_SUPPORTED_BUNDLE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,9 +48,8 @@ pub struct ActionTransit {
     pub bypass_pause: bool,
     pub execution_mode: String,
     pub description: Option<String>,
-    // Why: sub-actions are stored as a JSON blob in SQLite; re-parsing the polymorphic
-    // chain here would require transit types for every SubAction variant - deferred to
-    // the runtime crate that owns the type hierarchy.
+    // Kept as raw JSON: typing this would need a transit type per SubAction variant,
+    // owned by the runtime crate, not this one.
     pub sub_actions: JsonValue,
     pub created_at: String,
     pub last_modified: String,
@@ -81,9 +79,7 @@ pub struct ScriptTransit {
     pub last_modified: String,
 }
 
-/// Only `format_version` is required; absence of an entity array equals an empty
-/// array. Unknown fields are silently ignored for forward compat (no
-/// `deny_unknown_fields`).
+/// Unknown fields are silently ignored (no `deny_unknown_fields`) for forward compat.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleDocument {
     pub format_version: u32,
@@ -124,17 +120,15 @@ impl Default for BundleDocument {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportMode {
-    /// Skip on identity match (UUID for Actions/TriggerInstances; case-sensitive name for
-    /// Scripts/Globals). No existing entity is modified or deleted.
+    /// Skips on identity match; never modifies or deletes an existing entity.
     MergeAdd,
-    /// Wipe Actions, user-defined TriggerInstances, Scripts, and persisted Globals first,
-    /// then insert bundle entities. Credentials, settings, user_globals, and event_log
-    /// are never touched. Calling this method IS the confirmation - UI owns the guard.
+    /// Wipes Actions/user-defined TriggerInstances/Scripts/persisted Globals before
+    /// inserting; credentials, settings, user_globals, and event_log survive. Calling
+    /// this method IS the confirmation - the UI owns the guard.
     ReplaceConfirm,
 }
 
-/// Emitted by `MergeAdd` on identity collision. Carries both display names so the UI
-/// can offer a per-item override without re-querying storage.
+/// Carries both display names so the UI can offer a per-item override without re-querying storage.
 #[derive(Debug, Clone)]
 pub struct SkippedEntity {
     pub bundle_display_name: String,
@@ -149,14 +143,11 @@ pub struct BundleImportOutcome {
     pub trigger_instances_inserted: u32,
     pub scripts_inserted: u32,
     pub globals_inserted: u32,
-    /// Entities present in the bundle but skipped due to identity collision in `MergeAdd`
-    /// mode. Empty in `ReplaceConfirm` mode.
+    /// Always empty outside `MergeAdd`; wipes leave nothing to collide with.
     pub actions_skipped: Vec<SkippedEntity>,
     pub trigger_instances_skipped: Vec<SkippedEntity>,
     pub scripts_skipped: Vec<SkippedEntity>,
     pub globals_skipped: Vec<SkippedEntity>,
-    /// Non-fatal warnings: missing soundboard clips, unknown trigger `kind_id`s,
-    /// `format_version` newer than the current runtime, etc.
     pub warnings: Vec<String>,
 }
 
@@ -164,7 +155,5 @@ pub struct BundleImportOutcome {
 #[derive(Debug, Clone)]
 pub struct BundleExportOutcome {
     pub document: BundleDocument,
-    /// Non-fatal warnings: deleted scripts referenced by sub-actions, unresolvable
-    /// global names, etc.
     pub warnings: Vec<String>,
 }

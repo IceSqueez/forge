@@ -56,10 +56,7 @@ pub(crate) fn validate_prediction_config(
     }
 }
 
-/// PATCH /helix/predictions - broadcaster_id is a query param; id and status go in the body.
 /// Status values are uppercase: "LOCKED", "RESOLVED", "CANCELED" (American single-L).
-/// winning_outcome_id is only sent for RESOLVED; lock and cancel pass None.
-/// Requires channel:manage:predictions scope.
 pub(crate) async fn patch_prediction_status(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
@@ -120,7 +117,6 @@ pub(crate) async fn execute_prediction_runner(
         );
     }
 
-    // winning_outcome_id is only present for the resolve runner (status RESOLVED).
     let winning_outcome_id_owned = winning_outcome_id_key
         .and_then(|key| config.str(key).map(|t| ctx.arg_stack.interpolate(t)));
 
@@ -250,9 +246,6 @@ mod tests {
         )
     }
 
-    // SHARED (asserted ONCE via lock as representative for the prediction helper):
-    // PATCH /helix/predictions, broadcaster_id=self in QUERY, body carries the
-    // interpolated id and the runner's status with NO winning_outcome_id key.
     #[tokio::test]
     async fn lock_patches_predictions_with_broadcaster_query_and_locked_body() {
         let (transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
@@ -280,7 +273,6 @@ mod tests {
         );
     }
 
-    // SHARED: prediction_id resolves through the default %prediction.id% template.
     #[tokio::test]
     async fn prediction_id_interpolates_from_template() {
         let (transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
@@ -301,7 +293,6 @@ mod tests {
         );
     }
 
-    // SHARED: empty prediction_id short-circuits before any Helix call.
     #[tokio::test]
     async fn empty_prediction_id_fails_without_helix_call() {
         let (transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
@@ -317,7 +308,6 @@ mod tests {
         );
     }
 
-    // SHARED: validate_config gates on prediction_id being a non-empty String.
     #[test]
     fn validate_config_rejects_empty_or_missing_prediction_id() {
         let (_transport, runner) = lock_runner_with(Ok(serde_json::Value::Null));
@@ -341,7 +331,6 @@ mod tests {
         }
     }
 
-    // SHARED: a Helix failure maps to Failed without leaking the sentinel token.
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_token() {
         let (_transport, runner) = lock_runner_with(Err(HelixError::Http {

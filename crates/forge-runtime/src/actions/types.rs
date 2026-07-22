@@ -7,9 +7,7 @@ pub struct ActionSummary {
     pub name: String,
     pub enabled: bool,
     pub sub_action_count: u16,
-    /// Author-assigned group name (from the create-action form); when set it
-    /// buckets the action under a custom sidebar group rather than a
-    /// trigger-derived category.
+    /// When set, buckets the action under a custom sidebar group rather than a trigger-derived category.
     pub group: Option<String>,
     pub first_trigger_kind_id: Option<String>,
     pub queue_name: String,

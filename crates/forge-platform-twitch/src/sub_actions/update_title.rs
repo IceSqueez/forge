@@ -40,7 +40,6 @@ impl UpdateTitleRunner {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        // PATCH /helix/channels returns 204 No Content on success; Value::Null from transport.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({ "title": title }));
@@ -186,8 +185,6 @@ mod tests {
 
     #[tokio::test]
     async fn empty_title_after_interpolation_fails_without_helix_call() {
-        // %missing% resolves to empty here because the template IS the whole value
-        // and the stack has no binding; production must reject before any PATCH.
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new();
 

@@ -146,8 +146,7 @@ impl SubActionRunner for CoreFileListRunner {
     }
 }
 
-/// Iterative BFS walk to avoid stack overflow on deep directory trees.
-/// Entry paths are relative to `root` and use `/` as separator on all platforms.
+/// Iterative (not recursive) to avoid stack overflow on deep directory trees.
 async fn collect_entries(
     root: &Path,
     pattern: &str,
@@ -206,9 +205,6 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    // A traversal path must surface the sandbox-rejection outcome rather than
-    // reach tokio::fs::metadata (which would yield a "directory not found"
-    // message), and must produce no scope stack.
     #[tokio::test]
     async fn list_rejects_parent_traversal_before_touching_disk() {
         let mut cfg = SubActionConfig::new();

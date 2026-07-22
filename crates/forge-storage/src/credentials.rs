@@ -29,7 +29,6 @@ impl std::fmt::Display for CredentialId {
 pub trait CredentialsRepo: Send + Sync {
     async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError>;
 
-    /// Returns None if the credential is not present.
     async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError>;
 
     /// Returns true if a credential was actually removed.

@@ -3,11 +3,7 @@ use time::OffsetDateTime;
 
 use crate::EventId;
 
-/// Wire-format envelope that platform crates attach under `Event::payload["_chat"]`
-/// whenever an event should surface in LiveChat.
-///
-/// The `_` prefix is reserved for forge-internal payload keys; ArgStack keys
-/// (top-level in `Event::payload`) never start with `_`.
+/// Attached under `Event::payload["_chat"]`; the `_` prefix is reserved for forge-internal keys (ArgStack keys never start with `_`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatPayload {
     pub platform_msg_id: String,
@@ -22,13 +18,10 @@ pub struct ChatPayload {
 }
 
 impl ChatPayload {
-    /// Reserved payload key for chat envelope. Call sites must use this constant
-    /// rather than the bare string to avoid silent drift.
+    /// Call sites must use this constant rather than the bare string to avoid silent drift.
     pub const KEY: &'static str = "_chat";
 
-    /// Parses `#RRGGBB` or `RRGGBB` (case-insensitive) into a 3-byte RGB tuple.
-    /// Returns `None` for any input that is not exactly 6 hex digits (with or
-    /// without a leading `#`).
+    /// `None` unless `s` is exactly 6 hex digits, with or without a leading `#`.
     pub fn parse_color(s: &str) -> Option<[u8; 3]> {
         let hex = s.strip_prefix('#').unwrap_or(s);
         if hex.len() != 6 {
@@ -47,8 +40,7 @@ pub struct ChatModerationPayload {
 }
 
 impl ChatModerationPayload {
-    /// Reserved payload key for the moderation envelope. Call sites must use this
-    /// constant rather than the bare string to avoid silent drift.
+    /// Call sites must use this constant rather than the bare string to avoid silent drift.
     pub const KEY: &'static str = "_chat_mod";
 }
 
@@ -364,9 +356,6 @@ mod tests {
 
     #[test]
     fn moderation_action_serde_tag_and_envelope_roundtrip() {
-        // Contract the runtime relies on: every action is internally tagged under
-        // "type" (snake_case), the payload wraps it in an "action" field, and both
-        // survive a round-trip through the reserved envelope KEY the consumer reads.
         let cases = [
             (
                 ChatModerationAction::DeleteMessage {

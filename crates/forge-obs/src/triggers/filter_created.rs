@@ -90,9 +90,6 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // Source/filter-name extraction and kind discrimination are covered in `filter_removed`
-    // (where the shared helper lives). Here we cover only the extra `obs.filter.kind` field
-    // this descriptor layers on top of the shared stack.
     use super::*;
     use serde_json::json;
 

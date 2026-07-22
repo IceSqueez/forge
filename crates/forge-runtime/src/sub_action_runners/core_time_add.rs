@@ -25,8 +25,7 @@ fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, S
     })
 }
 
-/// Add calendar months to a datetime, clamping to the last valid day when the
-/// original day exceeds the target month's length (e.g. Jan 31 + 1 month → Feb 28/29).
+/// Clamps to the target month's last valid day when the original day exceeds it (Jan 31 + 1mo -> Feb 28/29).
 fn add_calendar_months(dt: OffsetDateTime, months: i64) -> OffsetDateTime {
     let date = dt.date();
     let total = date.year() as i64 * 12 + (date.month() as i64 - 1) + months;
@@ -201,8 +200,6 @@ mod tests {
 
     #[tokio::test]
     async fn add_calendar_month_and_year_arithmetic_clamps_to_valid_day() {
-        // time-of-day must be preserved across calendar shifts; day clamps to the
-        // target month's length when the source day would be invalid.
         let cases = [
             (
                 (2024, Month::January, 31),
@@ -279,7 +276,6 @@ mod tests {
             (25, "hours", utc(2024, Month::January, 2, 1, 0, 0)),
             (1, "days", utc(2024, Month::January, 2, 0, 0, 0)),
             (-1, "days", utc(2023, Month::December, 31, 0, 0, 0)),
-            // Unknown unit falls back to seconds.
             (5, "weeks", utc(2024, Month::January, 1, 0, 0, 5)),
         ];
         for (amount, unit, expected) in cases {

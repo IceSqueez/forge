@@ -92,8 +92,6 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
 
-    /// The `scene.` prefix is shared by six kinds. `scene.created` must fire on its own
-    /// kind and reject every sibling under the same prefix.
     #[test]
     fn matches_only_scene_created_kind_within_scene_family() {
         let d = SceneCreatedDescriptor;

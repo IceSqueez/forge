@@ -110,10 +110,6 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // 1:1 kind discrimination across the `source.` family is covered in
-    // `source_input_created`. Here we test only this descriptor's typed arg-stack
-    // extraction, whose two independent keys (`name_old` / `name_new`) are extracted
-    // independently.
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;

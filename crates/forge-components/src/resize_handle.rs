@@ -36,8 +36,7 @@ impl Render for ResizeGhost {
     }
 }
 
-/// `marker` must be a type unique to this handle: `on_drag_move::<T>` fans out to every
-/// listener of type `T`, so two panels sharing a marker would resize together.
+/// `marker` must be a type unique to this handle: `on_drag_move::<T>` fans out to every listener of type `T`, so two panels sharing a marker would resize together.
 pub fn install_resize<T: 'static>(
     panel: Div,
     marker: T,

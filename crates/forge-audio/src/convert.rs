@@ -1,10 +1,3 @@
-//! PCM format conversion: sample-rate resampling and channel count remixing.
-//!
-//! Uses rubato's `Async` polynomial resampler (Septic degree) - processes the entire
-//! input as a single fixed-size chunk (no streaming latency) and is fast enough for
-//! pre-rendered soundboard clips. Quality difference vs sinc-based is inaudible at >=44.1 kHz.
-//! Reference: <https://docs.rs/rubato/3.0/>
-
 use rubato::audioadapter::Adapter;
 use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
@@ -72,12 +65,7 @@ pub fn resample(
     Ok(out)
 }
 
-/// Remix interleaved PCM from `src_channels` to `dst_channels`.
-///
-/// - mono → any: duplicate the single channel into all outputs.
-/// - any → mono: average all source channels per frame.
-/// - src_channels < dst_channels: pad missing channels with silence.
-/// - src_channels > dst_channels: truncate to the first `dst_channels`.
+/// Mismatched channel counts pad with silence or truncate to the first `dst_channels`.
 pub fn remix(src: &[i16], src_channels: u16, dst_channels: u16) -> Vec<i16> {
     if src_channels == dst_channels {
         return src.to_vec();
@@ -165,7 +153,6 @@ mod tests {
 
     #[test]
     fn remix_truncates_excess_channels() {
-        // 2 frames × 6 channels → 2 frames × 2 channels (keep first two channels)
         let src: Vec<i16> = vec![10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120];
         let out = remix(&src, 6, 2);
         assert_eq!(out, vec![10, 20, 70, 80]);

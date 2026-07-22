@@ -43,10 +43,7 @@ impl YoutubeSendChat {
         self
     }
 
-    /// Charges quota and issues `DELETE /liveChat/messages?id={message_id}`.
-    ///
-    /// The caller supplies the raw message resource id (not a live-chat id); no
-    /// active broadcast is required - the resource id is self-contained.
+    /// Takes the raw message resource id (not a live-chat id); no active broadcast required.
     pub async fn delete(&self, message_id: &str) -> Result<(), PlatformError> {
         {
             let today = today_pacific();
@@ -375,7 +372,6 @@ mod tests {
     async fn delete_returns_quota_exhausted_without_issuing_http_call() {
         let server = MockServer::start().await;
 
-        // Mounted with expect(0): if delete reaches the transport the test fails.
         Mock::given(method("DELETE"))
             .and(path("/liveChat/messages"))
             .respond_with(ResponseTemplate::new(204))

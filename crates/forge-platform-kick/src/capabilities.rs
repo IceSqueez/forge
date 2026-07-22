@@ -1,7 +1,6 @@
 use forge_platform_core::PlatformCapabilities;
 
-/// Disclaimer surfaced in UI: Kick OAuth covers chat-write but chat-receive still
-/// flows through the unofficial Pusher WebSocket - this hybrid posture is unique to Kick.
+/// This hybrid posture (official write API, unofficial chat-receive WS) is unique to Kick.
 pub const KICK_COMMUNITY_NOTE: &str = "Chat receive uses the unofficial Pusher WebSocket - Kick exposes no official chat:read \
      scope. Chat send uses the official OAuth API. Not affiliated with Kick.com.";
 
@@ -24,9 +23,6 @@ mod tests {
 
     #[test]
     fn kick_reports_full_write_tier_not_limited() {
-        // Why: beta-14 deliberately flipped Kick from the read-only/community posture
-        // to a full write tier. These three flags gate moderation + rewards UI; a
-        // regression to the old `limited` posture would silently hide those surfaces.
         let caps = kick_capabilities();
         assert!(caps.can_moderate, "moderation write tier must be enabled");
         assert!(

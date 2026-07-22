@@ -28,25 +28,14 @@ use crate::helix::{
 };
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
-/// Poll cadence for the `GET /helix/streams` viewer-count metric. Viewer counts
-/// do not need sub-minute freshness, and a 60s cadence keeps this bundle-local
-/// poll a negligible fraction of the Helix budget regardless of how busy the
-/// sub-action/chat-send transports (which draw on their own shared bucket) are.
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Twitch's documented Helix budget (per client-id): 800 requests / 60s. This
-/// bundle owns a dedicated bucket sized to match it purely to bound the viewer
-/// poll's own request rate - it is NOT the same bucket instance the sub-action
-/// and chat-send transports draw on (those are wired up in the app crate at
-/// boot), so it cannot report true cross-transport budget usage. See the
-/// "API Calls" health metric below for the consequence.
+/// Dedicated bucket sized to Twitch's 800/60s Helix budget for this poll only -
+/// NOT the shared bucket the sub-action/chat-send transports draw on (wired up
+/// separately in the app crate), so it cannot report true cross-transport usage.
 const HELIX_BUDGET_CAPACITY: u32 = 800;
 const HELIX_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
-/// Latest outcome of the periodic viewer-count poll. `Unknown` before the
-/// first poll completes (drives the `-` placeholder); `Offline` when Helix
-/// reports no active stream for the broadcaster; `Live` carries the last
-/// observed `viewer_count`.
 #[derive(Debug, Clone, Copy, Default)]
 enum ViewerPollState {
     #[default]
@@ -64,9 +53,7 @@ impl ViewerPollState {
     }
 }
 
-/// Bridges the bundle's viewer poll into the runtime live-viewer aggregate.
-/// Holds only a `watch` receiver, so it does not keep the bundle alive: once the
-/// bundle's sender drops the report stream ends, dropping the aggregate slot.
+/// Holds only a `watch` receiver, so it does not keep the bundle alive.
 struct TwitchViewerSource {
     reports: watch::Receiver<ViewerReport>,
 }
@@ -77,7 +64,6 @@ impl LiveViewerSource for TwitchViewerSource {
     }
 }
 
-/// Inputs required to (re)build a chat session for the bundle's broadcaster.
 pub struct ChatSessionConfig {
     pub client_id: String,
     pub broadcaster_id: String,
@@ -93,8 +79,7 @@ pub struct TwitchIntegrationBundle {
     config: ChatSessionConfig,
     bus: Arc<dyn EventPublisher>,
     creds: Arc<dyn CredentialsRepo>,
-    // Parked here so the &self-async control verbs can take() the consume-on-shutdown
-    // handle without racing a concurrent disconnect/reconnect.
+    // Mutex lets &self-async control verbs take() the handle without racing a concurrent disconnect/reconnect.
     handle: Mutex<Option<TwitchChatHandle>>,
     viewer_state: std::sync::RwLock<ViewerPollState>,
     viewer_report_tx: watch::Sender<ViewerReport>,
@@ -131,9 +116,6 @@ impl TwitchIntegrationBundle {
         bundle
     }
 
-    /// Builds a Helix transport dedicated to the viewer-count poll, backed by
-    /// its own rate-limit bucket (see `HELIX_BUDGET_CAPACITY`/`_WINDOW`) and
-    /// the same proactive-refresh token source `refresh_token()` uses.
     fn build_viewer_transport(
         config: &ChatSessionConfig,
         bus: &Arc<dyn EventPublisher>,
@@ -158,11 +140,6 @@ impl TwitchIntegrationBundle {
         )
     }
 
-    /// Bridges chat-connection and EventSub-subscription state changes onto
-    /// `health_tx` so `BuiltinHealth::stream()` (subscribed by the UI) is fed
-    /// live deltas instead of only ever answering the one-shot `metrics()`
-    /// snapshot taken at detail-screen construction. Ends on its own once the
-    /// underlying chat session's `watch::Sender` drops (session shutdown).
     fn spawn_health_bridge(bundle: &Arc<Self>) {
         let bundle = Arc::clone(bundle);
         let mut state_rx = bundle.state_rx.clone();
@@ -183,14 +160,7 @@ impl TwitchIntegrationBundle {
         });
     }
 
-    /// Periodically polls `GET /helix/streams` for the broadcaster's current
-    /// viewer count and bridges the result onto `health_tx` (index 2, matching
-    /// the "Viewers" row in `metrics()`). Runs for the bundle's lifetime -
-    /// independent of the chat/IRC connection state, since viewer count is a
-    /// property of the stream, not the chat session. A failed poll (network,
-    /// rate limit, expired credentials) is skipped silently and retried on the
-    /// next tick; the last known value is kept on screen rather than flashing
-    /// back to the placeholder.
+    /// A failed poll is skipped silently and retried next tick; last known value stays on screen.
     fn spawn_viewer_poll(bundle: &Arc<Self>, transport: Arc<dyn HelixTransport>) {
         let bundle = Arc::clone(bundle);
         let broadcaster_id = bundle.config.broadcaster_id.clone();
@@ -339,8 +309,7 @@ impl TwitchIntegrationBundle {
     }
 }
 
-/// Pulls `data[0].viewer_count` out of a `GET /helix/streams` response body.
-/// An empty `data` array means the broadcaster is not currently live.
+/// Empty `data` array means the broadcaster is not currently live.
 fn extract_viewer_count(body: &serde_json::Value) -> Option<u64> {
     body.get("data")?
         .as_array()?
@@ -403,12 +372,7 @@ impl BuiltinHealth for TwitchIntegrationBundle {
             },
             HealthMetric {
                 label: "API Calls".to_owned(),
-                // Deferred: this bundle's Helix calls (the viewer poll above) run
-                // on their own dedicated rate-limit bucket, not the one the
-                // sub-action/chat-send transports share (wired up separately at
-                // boot). Reporting a Ratio from the local bucket would show a
-                // number disconnected from the app's real Helix call volume, so
-                // this stays a placeholder until the two share one bucket.
+                // Placeholder: this bucket is local to the viewer poll, not the shared budget.
                 value: HealthValue::Text {
                     primary: "\u{2014}".to_owned(),
                     secondary: None,
@@ -860,9 +824,6 @@ mod tests {
         assert!(actions.iter().all(|a| !a.enabled));
     }
 
-    // Compile-time object-safety guard: the bundle must coerce into
-    // `Arc<dyn BuiltinControl>` so the generic UI renderer can dispatch
-    // lifecycle verbs through one trait object.
     #[test]
     fn bundle_coerces_to_dyn_builtin_control() {
         fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
@@ -870,9 +831,6 @@ mod tests {
         accepts(b);
     }
 
-    // Missing-credentials guard: both `refresh_token` and `reconnect` `load()`
-    // creds up front. With a store that yields None they must report
-    // NotConnected without touching the network (NullCreds never connects).
     #[tokio::test]
     async fn refresh_token_without_stored_credentials_reports_not_connected() {
         let b = make_bundle(ChatConnectionState::Disconnected);
@@ -893,8 +851,6 @@ mod tests {
         );
     }
 
-    // Disconnect with an empty handle slot is the reachable no-session branch:
-    // it must reject with NotConnected rather than silently succeed.
     #[tokio::test]
     async fn disconnect_with_no_live_session_reports_not_connected() {
         let b = make_bundle(ChatConnectionState::Disconnected);

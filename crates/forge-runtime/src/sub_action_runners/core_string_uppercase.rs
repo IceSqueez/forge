@@ -105,8 +105,6 @@ mod tests {
 
     #[tokio::test]
     async fn uppercase_emits_facade_telemetry_shape() {
-        // Mass-migration safety net: a migrated runner must route telemetry
-        // through StepTimer verbatim - kind/index from ctx, empty arg maps.
         let mut cfg = SubActionConfig::new();
         cfg.insert("source".to_owned(), Variant::String("hi".to_owned()));
         let stack = ArgStack::new();

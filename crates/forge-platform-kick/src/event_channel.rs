@@ -24,8 +24,6 @@ impl PlatformEventChannel {
 
 impl EventPublisher for PlatformEventChannel {
     fn publish(&self, event: Event) {
-        // A send error means no bridge is currently subscribed; the event is dropped
-        // rather than blocking the producing task.
         let _ = self.sender.send(event);
     }
 }
@@ -37,9 +35,6 @@ mod tests {
 
     use super::*;
 
-    // Why: this is the RFC-094 owned-stream contract - a subscriber taps the SAME
-    // sender the platform publishes to. If `subscribe()` ever created a fresh channel
-    // instead of tapping `self.sender`, the published event would never arrive.
     #[tokio::test]
     async fn published_event_reaches_a_prior_subscriber() {
         let channel = PlatformEventChannel::new();

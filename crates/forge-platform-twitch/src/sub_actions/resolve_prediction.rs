@@ -136,9 +136,6 @@ mod tests {
         ])
     }
 
-    // The behavior resolve owns: RESOLVED body that ALSO carries winning_outcome_id,
-    // both ids resolved from the stack. broadcaster_id stays in the query (shared path
-    // covered by lock). Fails if resolve drops winning_outcome_id or sends wrong status.
     #[tokio::test]
     async fn resolve_sends_resolved_body_with_winning_outcome_id() {
         let (transport, runner) = resolve_runner();
@@ -180,7 +177,6 @@ mod tests {
         );
     }
 
-    // winning_outcome_id flows through its own template, not the prediction_id one.
     #[tokio::test]
     async fn winning_outcome_id_interpolates_from_its_own_template() {
         let (transport, runner) = resolve_runner();
@@ -200,7 +196,6 @@ mod tests {
         );
     }
 
-    // Empty winning_outcome_id (with a valid prediction_id) short-circuits before PATCH.
     #[tokio::test]
     async fn empty_winning_outcome_id_fails_without_helix_call() {
         let (transport, runner) = resolve_runner();
@@ -217,7 +212,6 @@ mod tests {
         );
     }
 
-    // validate requires BOTH prediction_id and winning_outcome_id non-empty.
     #[test]
     fn validate_config_requires_both_ids_non_empty() {
         let (_transport, runner) = resolve_runner();

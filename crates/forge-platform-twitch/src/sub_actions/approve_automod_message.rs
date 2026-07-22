@@ -56,14 +56,7 @@ pub(crate) fn validate_automod_config(
     }
 }
 
-/// POST /helix/moderation/automod/message to allow or deny a held AutoMod message.
-///
-/// `user_id` is the MODERATOR's own id (self), not the sender's id - the Twitch API
-/// uses it to verify the caller has moderator rights on the channel.
-/// `action` must be uppercase "ALLOW" or "DENY" (lowercase is rejected by Twitch).
-/// All three fields go in the JSON body, not as query params.
-///
-/// Reference: https://dev.twitch.tv/docs/api/reference/#manage-held-automod-messages
+/// `user_id` is the moderator's own id, not the sender's. `action` must be uppercase "ALLOW"/"DENY".
 pub(crate) async fn manage_automod_message(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
@@ -204,11 +197,6 @@ mod tests {
         BTreeMap::from([("message_id".to_owned(), Variant::String(value.to_owned()))])
     }
 
-    // Distinct-body contract for approve_message: POST the automod/message endpoint
-    // with NO query params and a body of exactly user_id(self) / msg_id(resolved) /
-    // action "ALLOW". The self-as-user_id placement in the BODY (not query) is the
-    // moderation-auth contract Twitch verifies; deny re-uses this shape and asserts
-    // only its own "DENY" action in-file.
     #[tokio::test]
     async fn approve_posts_allow_with_self_user_id_in_body_and_no_query() {
         let (transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
@@ -241,9 +229,6 @@ mod tests {
         );
     }
 
-    // SHARED behavior (asserted ONCE via the representative runner): the message_id
-    // template resolves through the ArgStack. Default config holds %automod.message_id%,
-    // so the body msg_id must equal the stack-resolved value, not the literal template.
     #[tokio::test]
     async fn message_id_template_interpolates_from_stack() {
         let (transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
@@ -263,8 +248,6 @@ mod tests {
         );
     }
 
-    // SHARED behavior: an empty message_id after interpolation fails BEFORE any Helix
-    // call (no message targeted). An explicitly empty template is the deterministic case.
     #[tokio::test]
     async fn empty_message_id_fails_without_helix_call() {
         let (transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
@@ -281,7 +264,6 @@ mod tests {
         );
     }
 
-    // SHARED behavior: validate_config gates on a non-empty message_id String.
     #[tokio::test]
     async fn validate_config_requires_non_empty_message_id() {
         let (_transport, runner) = approve_runner_with(Ok(serde_json::Value::Null));
@@ -306,8 +288,6 @@ mod tests {
         }
     }
 
-    // SHARED behavior: a Helix failure surfaces as Failed carrying the status, and
-    // the sentinel token never leaks into the outcome message.
     #[tokio::test]
     async fn helix_failure_maps_to_failed_with_status_and_no_token() {
         let (_transport, runner) = approve_runner_with(Err(HelixError::Http {

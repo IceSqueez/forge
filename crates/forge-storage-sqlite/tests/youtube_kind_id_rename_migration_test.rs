@@ -1,13 +1,5 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-//! Regression coverage for the YouTube `kind_id` rewrite data migration.
-//!
-//! The migration is pure DML (DELETE/UPDATE on `trigger_instances` keyed by
-//! `kind_id`), so it is safe to re-run against rows seeded after the schema is
-//! in place. Each test applies the full schema, seeds legacy rows, then runs
-//! the REAL migration SQL (loaded verbatim from the file, never a copy) so the
-//! production statements - not a reimplementation - are under test.
-
 use forge_storage_sqlite::{apply_migrations, connect};
 use sqlx::SqlitePool;
 
@@ -63,8 +55,6 @@ async fn default_row_with_old_youtube_id_is_deleted() {
 
 #[tokio::test]
 async fn user_defined_rows_are_renamed_to_canonical_ids() {
-    // The six straight 1-to-1 renames. ban/timeout consolidation is covered
-    // separately because both collapse onto a single target id.
     let renames = [
         ("youtube.support.super_chat", "youtube.chat.super_chat"),
         (
@@ -110,8 +100,6 @@ async fn user_defined_ban_and_timeout_both_consolidate_to_user_banned() {
 
     run_migration(&pool).await;
 
-    // Both override rows survive (each is a distinct user-configured trigger)
-    // and both now point at the consolidated canonical id.
     assert_eq!(
         kind_id_of(&pool, "user-ban").await.as_deref(),
         Some("youtube.channel.user_banned"),
@@ -136,7 +124,6 @@ async fn user_defined_ban_and_timeout_both_consolidate_to_user_banned() {
 #[tokio::test]
 async fn unmapped_kind_ids_are_left_untouched() {
     let pool = fresh_pool().await;
-    // A default row and a user row, neither in the rewrite set.
     seed(&pool, "def-unmapped", "youtube.chat.message", 0).await;
     seed(&pool, "user-unmapped", "twitch.chat.message", 1).await;
 

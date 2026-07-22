@@ -1,9 +1,3 @@
-//! Shared test doubles for the OBS sub-action runners.
-//!
-//! Every runner test needs a no-op `ObsSink` and a throwaway `RunContext`.
-//! Keeping one copy here stops the five-way drift that recurs whenever the
-//! `ObsSink` trait gains a method.
-
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
@@ -13,7 +7,6 @@ use forge_types::{ArgStack, EventId, Variant};
 
 use crate::{ObsError, ObsSink};
 
-/// An `ObsSink` whose every method succeeds without side effects.
 pub(crate) struct MockSink;
 
 #[async_trait]
@@ -136,7 +129,6 @@ impl EventPublisher for NoopPublisher {
     fn publish(&self, _: Event) {}
 }
 
-/// Builds a `RunContext` borrowing the given arg stack with a no-op publisher.
 pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
     RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
 }

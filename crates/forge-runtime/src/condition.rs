@@ -79,14 +79,7 @@ enum Lit {
     Str(String),
 }
 
-/// Conservative fast path for the catalog's "simple binary expression" form. It
-/// fires only for `literal OP literal` where both operands are the same primitive
-/// kind and ordering operators are restricted to numerics; every other shape
-/// (identifiers, calls, logical/arithmetic operators, mixed kinds, ordered
-/// string/bool comparison, escaped or embedded-quote strings) returns `None` and
-/// defers to the rhai evaluator, the single semantic source of truth. Because the
-/// fast path resolves only cases where Rust and rhai comparison agree, it can
-/// never reach a verdict that full evaluation would not.
+/// Resolves only `literal OP literal` of matching primitive kind; every other shape defers to rhai.
 fn literal_compare(expr: &str) -> Option<bool> {
     let (op_start, op_end, op) = find_operator(expr)?;
     let lhs = parse_literal(&expr[..op_start])?;
@@ -171,11 +164,6 @@ mod tests {
         })
     }
 
-    /// THE PARITY INVARIANT. For each expression the gate's verdict (which may be
-    /// reached by the literal fast path) must equal full rhai evaluation, which in
-    /// turn must equal the independently-reasoned expected boolean. Rows split
-    /// between cases the fast path resolves and cases it defers to rhai; if the
-    /// fast path ever diverged from rhai, a fast-path row would mismatch here.
     #[tokio::test]
     async fn fast_path_verdict_never_diverges_from_full_evaluation() {
         let cfg = Config::default();
@@ -185,10 +173,7 @@ mod tests {
             wall_time_ms: cfg.condition_wall_time_ms,
         });
 
-        // (expr, expected, fast_path_resolves) - the third column documents intent;
-        // the assertion holds regardless of which path the gate actually took.
         let rows: &[(&str, bool, bool)] = &[
-            // --- fast-path-resolved: literal OP literal, same primitive kind ---
             ("5 == 5", true, true),
             ("5 == 6", false, true),
             ("3 < 5", true, true),
@@ -205,7 +190,6 @@ mod tests {
             (r#""abc" == "abc""#, true, true),
             (r#""abc" == "abd""#, false, true),
             (r#""abc" != "abd""#, true, true),
-            // --- deferred to rhai (literal_compare returns None) ---
             ("1 == 1.0", true, false),            // mixed kinds
             ("1 != 1.0", false, false),           // mixed kinds
             (r#""a" < "b""#, true, false),        // string ordering

@@ -16,7 +16,6 @@ pub enum SkipReason {
     EmptyAfterProcessing,
 }
 
-/// Per-stage transformation record for the live-preview API.
 #[derive(Debug, Clone)]
 pub struct StageOutcome {
     pub stage: StageName,
@@ -49,7 +48,6 @@ pub struct EmoteSources {
     pub emoji: bool,
 }
 
-/// A set of emote tokens supplied by the speak-queue actor at construction time.
 #[derive(Debug, Clone, Default)]
 pub struct EmoteTokenSet {
     pub tokens: HashSet<String>,
@@ -130,10 +128,7 @@ pub enum PipelineError {
     },
 }
 
-/// Full, validated configuration for one pipeline run.
-///
-/// Constructed once per settings-save; reused across messages.
-/// Holds pre-compiled `Regex` objects - construction is fallible.
+/// Holds pre-compiled `Regex` objects, so construction is fallible.
 #[derive(Debug, Clone, Default)]
 pub struct PipelineConfig {
     pub emote_sources: EmoteSources,
@@ -458,8 +453,7 @@ const STAGES: [StageName; 4] = [
     StageName::Output,
 ];
 
-/// Pure function - no I/O, no allocation beyond string manipulation.
-/// Never panics. Config must be pre-validated via `PipelineConfig::new`.
+/// Never panics; `config` must be pre-validated via `PipelineConfig::new`.
 pub fn process(text: &str, config: &PipelineConfig, context: &PipelineContext) -> PipelineResult {
     let mut current = text.to_owned();
     for stage in STAGES {
@@ -839,11 +833,6 @@ mod tests {
 
     #[test]
     fn strip_emote_tokens_removes_whole_word_matches_only() {
-        // The extracted strip pass is word-token based, NOT a unicode range or
-        // substring match: a code embedded inside a larger word must survive, and
-        // surrounding non-emote words are untouched. Swapping the whole-word
-        // `filter` for a `contains`/substring test would fail the `LULzy`/`aPog`
-        // rows; dropping the strip entirely fails the removal rows.
         let mut set = EmoteTokenSet::default();
         set.tokens.insert("LUL".into());
         set.tokens.insert("PogChamp".into());
@@ -860,9 +849,6 @@ mod tests {
 
     #[test]
     fn strip_emote_tokens_with_empty_set_preserves_original_spacing() {
-        // Empty set takes the early-return path returning the input verbatim.
-        // The double space proves it is NOT routed through the split/join used
-        // when tokens exist (which would collapse runs of whitespace).
         let set = EmoteTokenSet::default();
         assert_eq!(
             strip_emote_tokens("keep  all   spaces", &set),

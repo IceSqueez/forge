@@ -10,26 +10,21 @@ pub const TWITCH_AUTHORIZE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/authori
 pub const TWITCH_TOKEN_ENDPOINT: &str = "https://id.twitch.tv/oauth2/token";
 
 pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
-    // Chat I/O
     "chat:read",
     "chat:edit",
     "user:read:chat",
     "user:write:chat",
     "user:read:whispers",
     "user:manage:whispers",
-    // Support / loyalty events
     "channel:read:subscriptions",
     "bits:read",
     "channel:read:hype_train",
     "channel:read:charity",
     "channel:read:goals",
-    // Follow events
     "moderator:read:followers",
-    // Moderation - read
     "moderation:read",
     "moderator:read:suspicious_users",
     "moderator:read:automod_settings",
-    // Moderation - manage
     "channel:moderate",
     "moderator:manage:announcements",
     "moderator:manage:automod",
@@ -42,23 +37,18 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "moderator:manage:shoutouts",
     "moderator:manage:unban_requests",
     "moderator:manage:warnings",
-    // Channel management
     "channel:manage:broadcast",
     "user:manage:broadcast",
     "channel:manage:moderators",
     "channel:manage:raids",
     "channel:manage:vips",
-    // Channel Points
     "channel:read:redemptions",
     "channel:manage:redemptions",
-    // Polls / Predictions
     "channel:manage:polls",
     "channel:manage:predictions",
-    // Ads
     "channel:read:ads",
     "channel:manage:ads",
     "channel:edit:commercial",
-    // Guest Star (beta)
     "channel:manage:guest_star",
 ];
 
@@ -89,12 +79,11 @@ pub struct LoopbackCode {
 #[derive(Clone)]
 pub struct TwitchAuthBundle {
     pub access_token: OAuthToken,
-    /// Absent when the grant carried no refresh token; the credential then
-    /// routes its first expiry to re-auth instead of a silent renewal.
+    /// Absent routes the first expiry to re-auth instead of a silent renewal.
     pub refresh_token: Option<OAuthToken>,
     pub user_info: UserInfo,
     pub client_id: String,
-    /// Absolute expiry time. `None` if the upstream token never expires.
+    /// `None` if the upstream token never expires.
     pub expires_at: Option<std::time::SystemTime>,
 }
 
@@ -150,9 +139,7 @@ impl TwitchAuthFlow {
         }
     }
 
-    /// Binds a loopback listener, generates PKCE + state, stores the driver, and
-    /// returns the URL the caller should open in the user's browser. Subsequent
-    /// `wait_for_authorization` will consume the stored driver.
+    /// The stored PKCE driver is consumed by the subsequent `wait_for_authorization` call.
     pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
         let url = self.pkce.start(&[]).await?;
         Ok(LoopbackCode {
@@ -160,9 +147,7 @@ impl TwitchAuthFlow {
         })
     }
 
-    /// Consumes the pending driver, waits for the loopback callback, exchanges
-    /// the code for a Twitch access token (PKCE - no `client_secret`), validates
-    /// against Helix, and resolves the broadcaster's profile.
+    /// PKCE code exchange carries no `client_secret`.
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,
@@ -229,7 +214,7 @@ async fn fetch_user_info_from_token(
     })
 }
 
-/// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` → compile-time `option_env!` → `None`.
+/// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` -> compile-time `option_env!` -> `None`.
 pub fn client_id() -> Option<String> {
     let runtime = std::env::var("FORGE_TWITCH_CLIENT_ID").ok();
     resolve_client_id(runtime.as_deref(), option_env!("FORGE_TWITCH_CLIENT_ID"))

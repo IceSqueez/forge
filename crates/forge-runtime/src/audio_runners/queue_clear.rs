@@ -72,8 +72,7 @@ impl SubActionRunner for QueueClearRunner {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        // When keep_current is false, stop the in-flight item first. The dispatcher
-        // exposes no single "clear-all" method; two calls achieve the same effect.
+        // The dispatcher exposes no single "clear-all" method; two calls achieve the same effect.
         let outcome = if keep_current {
             match self.speak.clear_keep_current().await {
                 Ok(()) => SubActionOutcome::Success,

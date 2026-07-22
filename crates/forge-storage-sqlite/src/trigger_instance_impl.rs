@@ -237,9 +237,9 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
-        // Unfiltered by archived_at - `action_trigger_instances.trigger_instance_id` is
-        // ON DELETE RESTRICT regardless of the linked action's archive state, so a link
-        // from an archived action must still block the hard delete here.
+        // Deliberately unfiltered by archived_at: the FK is ON DELETE RESTRICT regardless
+        // of the linked action's archive state, so a link from an archived action must
+        // still block this hard delete.
         let id_str_probe = id.to_string();
         let linked_rows: Vec<(String,)> = sqlx::query_as(
             "SELECT action_id FROM action_trigger_instances WHERE trigger_instance_id = ?",

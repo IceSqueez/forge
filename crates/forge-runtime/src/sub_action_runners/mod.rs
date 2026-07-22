@@ -325,10 +325,6 @@ mod tests {
     use forge_registry::{FormField, SubActionRunner};
     use std::sync::Arc;
 
-    /// The renderer surfaces a drill-in affordance only for config keys declared
-    /// as `SubChain` / `CaseList`. Each flow-control composite must declare its
-    /// nested-chain keys with the right field-kind, or those branches become
-    /// unauthorable. Catches accidental removal or a wrong field-kind.
     #[test]
     fn flow_control_composites_declare_nested_chain_fields() {
         let gate = Arc::new(ConditionGate::new(&Config::default()));
@@ -336,7 +332,6 @@ mod tests {
         let loop_runner = CoreLogicLoopRunner::new(gate);
         let switch_case = CoreLogicSwitchCaseRunner;
 
-        // (runner, config key, expects CaseList rather than SubChain)
         let expectations: &[(&dyn SubActionRunner, &str, bool)] = &[
             (&if_then_else, "then_chain", false),
             (&if_then_else, "else_chain", false),

@@ -103,6 +103,7 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
+        // Twitch sends the decision status in Title Case ("Approved"); filter options are lowercase.
         event_status.to_lowercase() == filter
     }
 
@@ -192,9 +193,6 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
 mod tests {
     use super::*;
 
-    // Twitch sends the decision status in Title Case ("Approved"); the filter
-    // option is stored lowercase ("approved"). matches_trigger must compare
-    // case-insensitively.
     fn message_event(status: &str) -> Event {
         Event::new(
             EventSource::Twitch,
@@ -268,7 +266,6 @@ mod tests {
             stack.get("automod.message_id"),
             Some(&Variant::String("msg-77".to_owned()))
         );
-        // status is forwarded verbatim (Title Case preserved) for downstream use.
         assert_eq!(
             stack.get("automod.status"),
             Some(&Variant::String("Approved".to_owned()))

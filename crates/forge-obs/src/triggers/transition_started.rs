@@ -100,9 +100,6 @@ pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // The three transition descriptors share one `TriggerKindDescriptor` shape and
-    // the `build_transition_arg_stack` helper, so their 1:1 kind discrimination
-    // contract is tested together here.
     use super::super::{
         TransitionEndedDescriptor, TransitionStartedDescriptor, TransitionVideoEndedDescriptor,
     };
@@ -120,9 +117,6 @@ mod tests {
         Event::new(EventSource::Obs, kind, json!({ "transition_name": name }))
     }
 
-    /// Each transition descriptor must fire on exactly its own kind and reject the
-    /// other two. `video_ended` is a distinct moment (stinger playback complete) from
-    /// `ended` (cut point) - mixing them would fire stinger-end actions early.
     #[test]
     fn each_transition_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();

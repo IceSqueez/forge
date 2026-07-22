@@ -22,10 +22,7 @@ pub enum VoiceGender {
     Neutral,
 }
 
-/// Voice metadata returned by `TtsEngine::list_voices`.
-///
-/// `sample_rate_hint` is the engine's preferred output rate in Hz; callers
-/// must not assume the actual PCM rate matches - use `PcmBuffer::sample_rate`.
+/// `sample_rate_hint` is a preference; the actual PCM rate is `PcmBuffer::sample_rate`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsVoice {
     pub id: VoiceId,
@@ -37,11 +34,7 @@ pub struct TtsVoice {
     pub sample_rate_hint: u32,
 }
 
-/// Input to a single synthesis call.
-///
-/// When `ssml` is `true` the engine interprets `text` as a valid SSML document
-/// (W3C Speech Synthesis Markup Language 1.1). Engines that do not support SSML
-/// MUST return `TtsError::SsmlUnsupported`.
+/// Engines that do not support SSML MUST return `TtsError::SsmlUnsupported` when `ssml` is set.
 #[derive(Debug, Clone)]
 pub struct SynthesisRequest {
     pub text: String,
@@ -53,7 +46,6 @@ pub struct SynthesisRequest {
     pub ssml: bool,
 }
 
-/// Stable set of optional capabilities an engine may advertise.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EngineCapabilities {
     pub ssml: bool,

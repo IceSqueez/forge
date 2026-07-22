@@ -21,8 +21,7 @@ pub enum PlatformError {
     #[error("client-side rate limit exhausted; no budget remaining")]
     RateLimitExhausted,
 
-    /// Daily API quota for this platform has been exhausted; no further calls will succeed
-    /// until midnight reset. Callers should switch to long-interval mode or suspend polling.
+    /// Callers should switch to long-interval mode or suspend polling until reset.
     #[error("daily API quota exhausted; next reset at platform midnight")]
     QuotaExhausted,
 

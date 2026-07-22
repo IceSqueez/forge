@@ -1,13 +1,3 @@
-//! Wiring tests for the queue-control sub-action runners (pause / resume /
-//! clear). Each runner reaches the live `QueueScheduler` through a
-//! `SchedulerCell` filled at boot. These tests exercise that boot-cell path with
-//! a real in-process scheduler and assert the *effect* (paused state flipped,
-//! queue.cleared emitted) - not just that a command was accepted.
-//!
-//! Scheduler-internal clear semantics (pending discard, keep_current abort,
-//! pause carry-forward) are covered by `queue_scheduler`'s own tests; these
-//! tests deliberately do NOT re-exercise them through the runner.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
@@ -49,9 +39,6 @@ fn nonblocking(id: QueueId) -> Queue {
     }
 }
 
-/// Spawns a real scheduler with `queue` registered and hands back a filled
-/// `SchedulerCell` (the boot wiring a runner sees), the handle (for assertions),
-/// and the bus (for event observation).
 async fn live_scheduler(queue: Queue) -> (SchedulerCell, QueueSchedulerHandle, Arc<EventBus>) {
     let dp = make_dp().await;
     dp.queue_repo().save(&queue).await.unwrap();

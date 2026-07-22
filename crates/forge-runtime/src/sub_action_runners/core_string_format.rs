@@ -113,8 +113,6 @@ mod tests {
             "template".to_owned(),
             Variant::String("Hi %name%".to_owned()),
         );
-        // %name% is already resolved upstream; the runner must NOT re-interpolate it,
-        // even when the arg stack carries a matching binding.
         let stack = ArgStack::new().set("name".to_owned(), Variant::String("Alice".to_owned()));
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let out = CoreStringFormatRunner.execute(&cfg, &ctx).await.1.unwrap();

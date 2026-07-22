@@ -32,8 +32,7 @@ impl GetCurrentGoalRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        // GET /helix/goals returns data[0] as the current active goal (one per type at most).
-        // Reference: https://dev.twitch.tv/docs/api/reference/#get-creator-goals
+        // data[0] is the current active goal; Twitch allows at most one per type.
         let request =
             HelixRequest::new(HelixMethod::Get, "/helix/goals").query("broadcaster_id", user_id);
 
@@ -316,7 +315,6 @@ mod tests {
 
     #[tokio::test]
     async fn missing_required_goal_field_maps_to_failed() {
-        // Each required field, individually omitted from an otherwise-valid goal.
         let bases: [(&str, serde_json::Value); 4] = [
             (
                 "id",

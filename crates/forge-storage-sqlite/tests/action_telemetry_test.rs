@@ -1,12 +1,5 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-//! Write→read round-trip of the action telemetry path. Rows are written through
-//! the REAL `ActionRepo::record_execution` (which maps `ExecutionStatus` → the
-//! stored status string) and read back through the REAL `telemetry()` query.
-//! Driving both halves is deliberate: the swap-impl guard for the error path is
-//! that `ExecutionStatus::Error` must map to the exact `'err'` the telemetry SQL
-//! filters on - otherwise `errors_7d` would silently stay 0.
-
 use forge_storage::{DataProvider, ExecutionStatus};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ExecutionMode, QueueId};
@@ -115,10 +108,6 @@ async fn record_execution_success_reflects_in_telemetry() {
 
 #[tokio::test]
 async fn record_execution_error_is_counted_in_errors_7d() {
-    // Swap-impl guard: this only passes if `ExecutionStatus::Error` maps to the
-    // exact `'err'` string the telemetry SQL filters on. Any other mapping either
-    // trips the `CHECK (status IN ('ok','err'))` constraint (record_execution
-    // errors) or lands the row outside the `status = 'err'` filter (errors_7d = 0).
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;
     let action = make_test_action("error_action", queue_id);
@@ -157,11 +146,11 @@ async fn telemetry_aggregates_multiple_recorded_executions() {
     let midnight = now.replace_time(time::Time::MIDNIGHT).unix_timestamp();
 
     let rows = [
-        (at(midnight + 10), 100, ExecutionStatus::Success), // today
-        (at(midnight + 20), 200, ExecutionStatus::Success), // today
-        (at(midnight + 30), 150, ExecutionStatus::Error),   // today, err
-        (now - time::Duration::days(3), 300, ExecutionStatus::Error), // within 7d, err
-        (now - time::Duration::days(8), 400, ExecutionStatus::Error), // outside 7d, err
+        (at(midnight + 10), 100, ExecutionStatus::Success),
+        (at(midnight + 20), 200, ExecutionStatus::Success),
+        (at(midnight + 30), 150, ExecutionStatus::Error),
+        (now - time::Duration::days(3), 300, ExecutionStatus::Error),
+        (now - time::Duration::days(8), 400, ExecutionStatus::Error),
     ];
     for (started, dur, status) in rows {
         backend
@@ -181,9 +170,7 @@ async fn telemetry_aggregates_multiple_recorded_executions() {
         telemetry.runs_today, 3,
         "only the three midnight+N rows are today"
     );
-    // 7-day window boundary: today err + 3-day err count; the 8-day err is excluded.
     assert_eq!(telemetry.errors_7d, 2, "errors_7d honors the 7-day window");
-    // avg has no time window: (100+200+150+300+400)/5 = 230.
     assert_eq!(
         telemetry.avg_duration_ms,
         Some(230),
@@ -205,7 +192,6 @@ async fn prune_executions_before_removes_older_rows_and_telemetry_excludes_them(
     backend.action_repo().save(&action).await.expect("save");
 
     let now = OffsetDateTime::now_utc();
-    // 8 days old - beyond the execution-retention floor; its 999ms must vanish.
     backend
         .action_repo()
         .record_execution(
@@ -252,10 +238,6 @@ async fn prune_executions_before_removes_older_rows_and_telemetry_excludes_them(
 
 #[tokio::test]
 async fn prune_executions_before_uses_second_precision_at_cutoff_boundary() {
-    // Unit guard: action_executions.started_at is stored in SECONDS. A row one
-    // second below the cutoff must be pruned; the row exactly at the cutoff and
-    // one second above must survive the strict `<` comparison. A seconds/millis
-    // (1000x) unit error would misclassify every row and fail this.
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;
     let action = make_test_action("boundary_action", queue_id);
@@ -341,7 +323,6 @@ async fn telemetry_is_scoped_per_action() {
         .await
         .expect("telemetry b");
 
-    // Action A's error count must not leak B's error, and vice versa.
     assert_eq!(tel_a.errors_7d, 0, "a's error count excludes b's error row");
     assert_eq!(
         tel_a.avg_duration_ms,

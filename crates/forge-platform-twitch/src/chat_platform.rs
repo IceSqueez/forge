@@ -22,15 +22,11 @@ pub struct TwitchPlatform {
     auth_flow: AuthFlow,
     capabilities: PlatformCapabilities,
     config: ChatSessionConfig,
-    // The platform's own event origin: chat sessions and the Helix transport
-    // publish here, and `events()` exposes the receiving half.
     events: Arc<PlatformEventChannel>,
     creds: Arc<dyn CredentialsRepo>,
     tracker: SubscriptionTracker,
     rate_limiter: Arc<dyn RateLimiter>,
-    // Synchronized so `connection_state()` (a `&self` snapshot) and the async
-    // lifecycle verbs share one transport handle without `&mut self`. The lock
-    // is never held across an `.await`.
+    // std::sync::Mutex, not tokio: never held across an `.await`.
     handle: Mutex<Option<TwitchChatHandle>>,
     transport: OnceCell<Arc<dyn HelixTransport>>,
 }

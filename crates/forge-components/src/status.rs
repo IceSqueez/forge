@@ -170,9 +170,6 @@ mod tests {
     use super::*;
     use crate::palette::FORGE_DEFAULT;
 
-    /// Variant→field is a hand-written match with plausible wrong wirings (Negative→`warning`,
-    /// Neutral→`text_muted`), so a field swap fails here. `fill.a` is pinned as a literal float,
-    /// not recomputed via `with_alpha` (which would only restate the impl).
     #[test]
     fn colors_map_each_variant_to_its_hue_with_a_translucent_tint_fill() {
         let p = &FORGE_DEFAULT;

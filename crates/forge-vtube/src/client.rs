@@ -37,8 +37,7 @@ pub struct VTubeClient {
     pub(crate) vtube_id: BuiltinId,
     pub(crate) state: Arc<AtomicConnectionState>,
     pub(crate) auth_state: Arc<RwLock<AuthState>>,
-    // Wrapped so reconnect can swap the Notify without a race against the
-    // supervisor's own clone of the Arc.
+    // async Mutex: reconnect swaps the Notify without racing the supervisor's own clone.
     pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     pub(crate) supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -51,8 +50,7 @@ pub struct VTubeClient {
     pub(crate) content_state: Arc<RwLock<crate::content::ContentSnapshot>>,
     pub(crate) content_notifier: crate::content::ContentNotifier,
     content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
-    // Stored so reconnect can re-establish a session without reaching back
-    // through the credential store.  Never logged or surfaced.
+    // Never logged or surfaced.
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
     pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
 }
@@ -455,7 +453,6 @@ pub(crate) mod tests {
             };
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
             serve_full_auth(&mut ws).await;
-            // drop ws to close connection
         });
 
         let publisher = MockPublisher::new();
@@ -490,7 +487,6 @@ pub(crate) mod tests {
                 let _ = accept_tx.send(()).await;
                 let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
                 serve_full_auth(&mut ws).await;
-                // drop ws
             }
         });
 

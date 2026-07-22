@@ -126,10 +126,6 @@ pub(crate) fn source_name_matches(config: &TriggerConfig, event: &Event) -> bool
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // The four audio-source descriptors share the `TriggerKindDescriptor` shape and the
-    // `source_name_matches` filter helper. The 1:1 kind discrimination of all four and the
-    // load-bearing filter logic are tested together here; each sibling file tests only its
-    // own typed arg-stack extraction (not re-testing the shared filter).
     use super::super::{
         AudioSourceBalanceChangedDescriptor, AudioSourceMuteChangedDescriptor,
         AudioSourceSyncOffsetChangedDescriptor, AudioSourceVolumeChangedDescriptor,
@@ -149,8 +145,6 @@ mod tests {
         Event::new(EventSource::Obs, kind, json!({ "source_name": source }))
     }
 
-    /// Each audio descriptor must fire on exactly its own kind and reject the other three.
-    /// A descriptor matching a sibling kind would mis-fire user actions on the wrong event.
     #[test]
     fn each_audio_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
@@ -183,14 +177,12 @@ mod tests {
         }
     }
 
-    /// A non-audio kind sharing the `audio.`-adjacent event source must never match.
     #[test]
     fn audio_descriptor_rejects_non_audio_kind() {
         let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
         assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
-    /// Empty filter (no `source_name` configured) matches any source - the default.
     #[test]
     fn empty_filter_matches_any_source() {
         let cfg = BTreeMap::new();
@@ -200,8 +192,6 @@ mod tests {
         );
     }
 
-    /// An empty-string filter value is treated as "any source", not as a literal match
-    /// against an empty source name.
     #[test]
     fn empty_string_filter_matches_any_source() {
         let mut cfg = BTreeMap::new();
@@ -212,7 +202,6 @@ mod tests {
         );
     }
 
-    /// A configured filter matches when the event's source name equals it.
     #[test]
     fn configured_filter_matches_when_source_name_equals() {
         let mut cfg = BTreeMap::new();
@@ -223,7 +212,6 @@ mod tests {
         );
     }
 
-    /// A configured filter rejects an event whose source name differs.
     #[test]
     fn configured_filter_rejects_when_source_name_differs() {
         let mut cfg = BTreeMap::new();
@@ -234,8 +222,6 @@ mod tests {
         );
     }
 
-    /// A configured filter rejects an event that carries no source name at all (can't
-    /// confirm the source, so the specific filter must not fire).
     #[test]
     fn configured_filter_rejects_when_event_has_no_source_name() {
         let mut cfg = BTreeMap::new();

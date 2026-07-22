@@ -35,8 +35,7 @@ pub enum FormField {
         key: &'static str,
         label: &'static str,
     },
-    /// Free-text field (interpolates `%var%`) paired with a calendar+time picker
-    /// button; the picked value is written as an RFC 3339 string.
+    /// Free-text `%var%` field paired with a calendar+time picker; written as an RFC 3339 string.
     DateTime {
         key: &'static str,
         label: &'static str,
@@ -57,18 +56,12 @@ pub enum FormField {
         label: &'static str,
         inner: Box<FormField>,
     },
-    /// Names a config key holding exactly one nested sub-chain (the canonical
-    /// `Array`-of-`Object` step form). The editor authors its steps in the
-    /// recursive step-list surface, so the renderer offers a drill-in affordance
-    /// rather than a text input.
+    /// Names a config key holding one nested sub-chain; the renderer offers a drill-in affordance rather than a text input.
     SubChain {
         key: &'static str,
         label: &'static str,
     },
-    /// Names a config key holding an ordered list of labeled branches, each
-    /// pairing a single-value match input with one nested sub-chain. The
-    /// renderer offers per-row add/remove/reorder, a single-value match input,
-    /// and a drill-in affordance into each branch.
+    /// Names a config key holding an ordered list of labeled branches, each pairing a match value with a nested sub-chain.
     CaseList {
         key: &'static str,
         label: &'static str,

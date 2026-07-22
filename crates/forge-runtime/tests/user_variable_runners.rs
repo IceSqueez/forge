@@ -1,11 +1,3 @@
-//! Integration tests for the per-user variable sub-action runners
-//! (`core.users.get_var` / `core.users.set_var` / `core.users.increment_var`).
-//!
-//! Storage is an in-memory `UserGlobalsRepo` mock - no SQLite, no services, no network.
-//! The load-bearing edge under test is broadcaster-id resolution: a sub-action runner has
-//! no channel identity, so absent a `%broadcaster_id%` arg every variable shares the
-//! single-broadcaster `"local"` namespace.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::HashMap;
@@ -26,8 +18,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// Empty `GlobalsRepo`: the per-user runners only consult it to resolve `%global%`
-/// tokens during interpolation, which these tests never exercise, so every read is `None`.
 struct EmptyGlobals;
 
 #[async_trait]
@@ -64,8 +54,6 @@ impl GlobalsRepo for EmptyGlobals {
 
 type Key = (String, String, String);
 
-/// In-memory `UserGlobalsRepo`. Records every `get` key so a test can assert the exact
-/// `(broadcaster_id, user_id, name)` tuple the runner resolved.
 #[derive(Default)]
 struct MapUserGlobals {
     store: Mutex<HashMap<Key, Variant>>,
@@ -226,8 +214,6 @@ fn get_config() -> SubActionConfig {
     ])
 }
 
-// ---- get_var --------------------------------------------------------------
-
 #[tokio::test]
 async fn get_var_binds_existing_value_into_output_argument() {
     let repo = Arc::new(MapUserGlobals::seeded(
@@ -249,7 +235,6 @@ async fn get_var_uses_default_when_variable_is_missing() {
     let runner = CoreUsersGetVarRunner::new(Arc::new(EmptyGlobals), repo);
     let (outcome, stack) = run(&runner, &get_config(), &ArgStack::new()).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
-    // Missing var -> default "0" parsed via parse_variant into Int(0).
     assert!(matches!(
         stack.unwrap().get("result"),
         Some(Variant::Int(0))
@@ -258,7 +243,6 @@ async fn get_var_uses_default_when_variable_is_missing() {
 
 #[tokio::test]
 async fn get_var_queries_local_namespace_with_login_as_user_id() {
-    // No %broadcaster_id% arg -> "local" namespace; the login string IS the user_id key.
     let repo = Arc::new(MapUserGlobals::new());
     let runner = CoreUsersGetVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
     let config = cfg(&[
@@ -299,8 +283,6 @@ async fn get_var_reports_failed_on_repo_error() {
     assert!(stack.is_none());
 }
 
-// ---- set_var --------------------------------------------------------------
-
 #[tokio::test]
 async fn set_var_writes_value_under_broadcaster_user_and_name() {
     let repo = Arc::new(MapUserGlobals::new());
@@ -337,8 +319,6 @@ async fn set_var_then_get_var_round_trips_the_value() {
         Some(Variant::Int(7))
     ));
 }
-
-// ---- increment_var --------------------------------------------------------
 
 #[tokio::test]
 async fn increment_starts_missing_variable_at_amount() {
@@ -440,13 +420,8 @@ async fn increment_non_numeric_variable_fails_and_leaves_value_unchanged() {
     ));
 }
 
-// ---- args vs users independence -------------------------------------------
-
 #[tokio::test]
 async fn user_variable_read_is_independent_of_same_named_arg_stack_entry() {
-    // A transient ArgStack arg named "points" must not satisfy a per-user repo read:
-    // get_var resolves the variable's value from the repo only. The output write also
-    // must not clobber the unrelated arg.
     let repo = Arc::new(MapUserGlobals::seeded(
         "local",
         "viewer",

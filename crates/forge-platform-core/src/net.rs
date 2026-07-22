@@ -1,10 +1,8 @@
 use std::net::IpAddr;
 
-/// Blocks loopback, RFC-1918 private, RFC-3927 link-local (including the
-/// `169.254.169.254` cloud-metadata endpoint), RFC-6598 CGNAT, RFC-4193 ULA,
-/// IPv6 link-local, multicast, broadcast and unspecified addresses. This is the
-/// single SSRF first-layer denylist shared by every egress surface; neither the
-/// script HTTP sandbox nor the sub-action egress client keeps its own copy.
+/// Single SSRF first-layer denylist shared by every egress surface (script HTTP sandbox,
+/// sub-action egress client): loopback, RFC-1918/3927/6598/4193 private ranges (incl. the
+/// `169.254.169.254` cloud-metadata endpoint), IPv6 link-local/multicast/unspecified, broadcast.
 pub fn is_private_or_special(addr: IpAddr) -> bool {
     match addr {
         IpAddr::V4(ip) => {
@@ -35,12 +33,6 @@ pub fn is_private_or_special(addr: IpAddr) -> bool {
 mod tests {
     use super::*;
 
-    // Why: this classifier is the single first-layer SSRF denylist shared by the
-    // script HTTP sandbox AND the sub-action egress client. Each row below is
-    // hand-derived from the cited RFC, not echoed from the production match arms,
-    // so a swapped boolean / wrong mask in `is_private_or_special` flips exactly
-    // one assertion. Public rows use RFC 5737 TEST-NET addresses that never route.
-
     fn ip(s: &str) -> IpAddr {
         s.parse().unwrap()
     }
@@ -48,29 +40,20 @@ mod tests {
     #[test]
     fn private_loopback_and_special_addresses_are_blocked() {
         let blocked = [
-            // loopback
             "127.0.0.1",
             "::1",
-            // RFC-1918 private
             "10.0.0.1",
             "172.16.0.1",
             "192.168.1.1",
-            // RFC-3927 link-local incl. the cloud-metadata endpoint
             "169.254.1.1",
             "169.254.169.254",
-            // RFC-6598 CGNAT
             "100.64.0.1",
-            // RFC-4193 ULA
             "fc00::1",
-            // IPv6 link-local
             "fe80::1",
-            // multicast
             "224.0.0.1",
             "ff02::1",
-            // unspecified
             "0.0.0.0",
             "::",
-            // limited broadcast
             "255.255.255.255",
         ];
         for addr in blocked {
@@ -86,10 +69,8 @@ mod tests {
         let allowed = [
             "8.8.8.8",
             "1.1.1.1",
-            // RFC 5737 TEST-NET-1 / TEST-NET-2 - public for classification, never routes
             "192.0.2.1",
             "198.51.100.1",
-            // public IPv6
             "2606:4700::1",
         ];
         for addr in allowed {
@@ -102,9 +83,6 @@ mod tests {
 
     #[test]
     fn cgnat_boundary_distinguishes_100_64_from_public_100_63() {
-        // RFC-6598 is 100.64.0.0/10 → 100.64-100.127. The low edge 100.64 is in
-        // range; 100.63 sits just below it and must read as public. This pins the
-        // `& 0xC0 == 64` mask against an off-by-one widening to all of 100.0.0.0/8.
         assert!(is_private_or_special(ip("100.64.0.0")));
         assert!(is_private_or_special(ip("100.127.255.255")));
         assert!(!is_private_or_special(ip("100.63.255.255")));
@@ -113,7 +91,6 @@ mod tests {
 
     #[test]
     fn rfc1918_172_boundary_excludes_neighbouring_public_blocks() {
-        // 172.16.0.0/12 → 172.16-172.31. Guards the `o[1] & 0xF0 == 16` mask.
         assert!(is_private_or_special(ip("172.16.0.0")));
         assert!(is_private_or_special(ip("172.31.255.255")));
         assert!(!is_private_or_special(ip("172.15.255.255")));

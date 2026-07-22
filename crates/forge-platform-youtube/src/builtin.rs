@@ -52,9 +52,6 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
     Ok(())
 }
 
-/// Wraps the live `YoutubePlatform` + credentials manager so `forge-desktop` can
-/// render the same detail-screen/health/quick-action surface every other
-/// builtin exposes (`BuiltinStatus`/`BuiltinHealth`/`BuiltinContent`/`QuickActions`).
 pub struct YoutubeIntegrationBundle {
     id: BuiltinId,
     channel_id: String,
@@ -142,9 +139,7 @@ impl YoutubeIntegrationBundle {
         &self.platform
     }
 
-    /// Non-blocking: the poller task holds this lock only for the duration of a
-    /// single quota charge, so a contended read here just falls back to a
-    /// "no data yet" reading rather than stalling the sync `metrics()` call.
+    /// Non-blocking: a contended read falls back to "no data yet" rather than stalling.
     fn quota_metric(&self) -> HealthMetric {
         let value = match self.quota.try_lock() {
             Ok(guard) => HealthValue::Ratio {
@@ -308,8 +303,6 @@ mod tests {
     fn register_does_not_drop_descriptors_to_collisions() {
         let mut reg = TriggerRegistry::new();
         register_youtube_triggers(&mut reg).unwrap();
-        // Each register() call must land a distinct kind id; a colliding id would
-        // be silently lost (or error), making the registered count < the call count.
         let registered = reg.all().count();
         let unique_ids: std::collections::HashSet<_> =
             reg.all().map(|d| d.id().to_owned()).collect();
@@ -357,7 +350,6 @@ mod tests {
 
     #[test]
     fn chat_poller_health_value_maps_each_connection_state() {
-        // Both metrics() and the health bridge render from this one fn; pin its mapping.
         for (state, label, active) in [
             (ConnectionState::Connected, "Connected", true),
             (ConnectionState::Connecting, "Connecting", false),
@@ -417,8 +409,6 @@ mod tests {
             }
         }
 
-        // Offline the poller's token source fails and retries without touching the
-        // network, so Connected is a stable terminal state to assert against.
         fn bundle_and_platform() -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
             let manager = Arc::new(YoutubeCredentialsManager::new(
                 Arc::new(EmptyRepo),
@@ -442,8 +432,6 @@ mod tests {
 
         #[tokio::test]
         async fn health_stream_emits_connected_delta_when_platform_connects() {
-            // Regression: stream() previously never emitted; connecting must now surface
-            // a HealthDelta on index 0.
             let (bundle, platform) = bundle_and_platform();
             let mut health = BuiltinHealth::stream(bundle.as_ref());
 

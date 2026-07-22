@@ -60,7 +60,6 @@ async fn retention_task_prunes_old_events_and_spares_recent() {
         .await
         .expect("insert recent event");
 
-    // Wait for at least two prune cycles to complete before asserting.
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     assert!(

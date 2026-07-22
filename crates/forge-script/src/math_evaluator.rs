@@ -6,8 +6,7 @@ use rhai::Dynamic;
 use crate::ScriptError;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
 
-/// Bounded arithmetic evaluator. Carries no `ForgeApi`: math expressions are
-/// side-effect-free; the globals/chat/http surface is structurally unreachable.
+/// Carries no `ForgeApi`; the globals/chat/http surface is structurally unreachable rather than merely unused.
 #[derive(Debug, Clone)]
 pub struct MathEvaluator {
     config: EngineConfig,
@@ -18,9 +17,7 @@ impl MathEvaluator {
         Self { config }
     }
 
-    /// Returns `Variant::Int` or `Variant::Float`. NaN and infinite results
-    /// are rejected - the caller must not assume any special-float semantics
-    /// survive into ArgStack or downstream sub-actions.
+    /// NaN and infinite results are rejected rather than surviving into a `Variant`.
     pub fn eval(&self, expr: &str) -> Result<Variant, ScriptError> {
         let mut inner = rhai::Engine::new_raw();
         register_sandbox_base(&mut inner, &self.config);
@@ -70,16 +67,14 @@ mod tests {
 
     #[test]
     fn eval_computes_arithmetic_with_correct_precedence_and_types() {
-        // Each expected value is distinct, so swapping any single operator's
-        // semantics (precedence, integer vs float division) flips a row.
         for (expr, expected) in [
-            ("2 + 3 * 4", Variant::Int(14)),     // multiplication before addition
-            ("(2 + 3) * 4", Variant::Int(20)),   // parentheses override precedence
-            ("-5 + 2", Variant::Int(-3)),        // negative operand
-            ("10 / 4", Variant::Int(2)),         // integer division truncates
-            ("7 % 3", Variant::Int(1)),          // modulo
-            ("10.0 / 4.0", Variant::Float(2.5)), // float division keeps fraction
-            ("2.5 + 2.5", Variant::Float(5.0)),  // float operands stay Float
+            ("2 + 3 * 4", Variant::Int(14)),
+            ("(2 + 3) * 4", Variant::Int(20)),
+            ("-5 + 2", Variant::Int(-3)),
+            ("10 / 4", Variant::Int(2)),
+            ("7 % 3", Variant::Int(1)),
+            ("10.0 / 4.0", Variant::Float(2.5)),
+            ("2.5 + 2.5", Variant::Float(5.0)),
         ] {
             assert_eq!(eval(expr).unwrap(), expected, "expr: {expr}");
         }
@@ -87,7 +82,6 @@ mod tests {
 
     #[test]
     fn eval_rejects_non_finite_results() {
-        // NaN / infinity must never leak into a Variant downstream.
         for expr in ["0.0 / 0.0", "1.0 / 0.0"] {
             let err = eval(expr).unwrap_err();
             assert!(err.to_string().contains("non-finite"), "expr {expr}: {err}");
@@ -105,9 +99,6 @@ mod tests {
 
     #[test]
     fn eval_treats_percent_tokens_literally_without_re_interpolating() {
-        // `%var%` placeholders are interpolated by the caller BEFORE this point.
-        // The evaluator must parse the raw text - `%kills%` is a syntax error,
-        // not a second interpolation pass.
         assert!(eval("%kills%").is_err());
     }
 

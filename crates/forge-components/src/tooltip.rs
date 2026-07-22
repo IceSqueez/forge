@@ -60,8 +60,7 @@ impl Render for Tooltip {
     }
 }
 
-/// Re-materialises a fresh [`Tooltip`] view on each hover, as gpui's tooltip
-/// contract requires.
+/// Re-materialises a fresh [`Tooltip`] view on each hover, as gpui's tooltip contract requires.
 pub fn tooltip_builder(
     label: impl Into<SharedString>,
     palette: &ForgePalette,

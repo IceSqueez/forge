@@ -107,9 +107,6 @@ pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // The stream lifecycle descriptors all live behind the same `TriggerKindDescriptor`
-    // shape and share `build_stream_arg_stack`, so their discrimination contract is
-    // tested together here rather than re-stating each descriptor's `id()` literal.
     use super::super::{
         StreamStartedDescriptor, StreamStartingDescriptor, StreamStatusChangedDescriptor,
         StreamStoppedDescriptor, StreamStoppingDescriptor,
@@ -135,9 +132,6 @@ mod tests {
         )
     }
 
-    /// Each lifecycle descriptor must fire on exactly its own kind and reject every
-    /// sibling streaming kind. The 1:1 kind→descriptor mapping is the load-bearing
-    /// contract - a descriptor that matched a sibling would mis-fire user actions.
     #[test]
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
@@ -159,8 +153,6 @@ mod tests {
         }
     }
 
-    /// The omnibus descriptor is the inverse: it must match ALL streaming.* kinds,
-    /// including reconnecting/reconnected which have no dedicated descriptor.
     #[test]
     fn omnibus_matches_every_streaming_kind() {
         let cfg = BTreeMap::new();

@@ -172,8 +172,6 @@ mod tests {
 
     #[derive(Default)]
     struct MapGlobals {
-        // value + its stored `persisted` flag, so the runner's read-then-preserve
-        // path (and the create-if-missing default) can be observed.
         map: Mutex<BTreeMap<String, (Variant, bool)>>,
     }
 
@@ -253,7 +251,6 @@ mod tests {
         )]));
         let outcome = run(globals.clone(), &cfg("list", "3", 0)).await;
         assert!(matches!(outcome, SubActionOutcome::Success));
-        // "3" must land as Int(3) (parse_variant), appended at the tail.
         assert_eq!(
             globals.array("list"),
             vec![Variant::Int(1), Variant::Int(2), Variant::Int(3)]
@@ -273,8 +270,6 @@ mod tests {
 
     #[tokio::test]
     async fn array_append_to_created_global_is_session() {
-        // Regression for CORE-2: create-if-missing must default to session
-        // (persisted = false), matching `persisted() -> None -> false`.
         let globals = Arc::new(MapGlobals::default());
         let outcome = run(globals.clone(), &cfg("fresh", "hello", 0)).await;
         assert!(matches!(outcome, SubActionOutcome::Success));
@@ -283,7 +278,6 @@ mod tests {
 
     #[tokio::test]
     async fn array_append_preserves_existing_persisted_flag() {
-        // Appending to a persisted array must keep it persisted, not demote it.
         let globals = Arc::new(MapGlobals::seeded([(
             "list",
             Variant::Array(vec![Variant::Int(1)]),
@@ -309,7 +303,6 @@ mod tests {
         )]));
         let outcome = run(globals.clone(), &cfg("list", "4", 3)).await;
         assert!(matches!(outcome, SubActionOutcome::Success));
-        // FIFO: oldest (Int(1)) drops; window stays at length 3 ending in the new item.
         assert_eq!(
             globals.array("list"),
             vec![Variant::Int(2), Variant::Int(3), Variant::Int(4)]

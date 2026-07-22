@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Wildcard-capable event filter sent by clients in subscribe/unsubscribe payloads.
-/// `"*"` or absent field means wildcard for that axis.
+/// `"*"` or an absent field means wildcard for that axis.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WireEventFilter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -10,10 +9,7 @@ pub struct WireEventFilter {
     pub kind: Option<String>,
 }
 
-/// All methods clients may invoke over the WebSocket connection.
-///
-/// Envelope uses internally tagged serde: the `"request"` JSON field identifies
-/// the variant. Field names follow camelCase to match JS overlay conventions.
+/// Internally tagged via the `"request"` field; field names are camelCase to match JS overlay conventions.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "request", rename_all = "camelCase")]
 pub enum WsRequest {
@@ -82,8 +78,7 @@ pub enum WsResponse {
     },
 }
 
-/// Outer correlation envelope. Wraps both requests (id + flattened WsRequest)
-/// and responses (id + WsResponse).
+/// Wraps both requests (id + flattened `WsRequest`) and responses (id + `WsResponse`).
 #[derive(Debug)]
 pub struct WsEnvelope<T> {
     pub id: Option<String>,
@@ -105,8 +100,7 @@ impl<'de> Deserialize<'de> for WsEnvelope<WsRequest> {
     }
 }
 
-/// The `Ok` variant's data fields are merged into the top-level object alongside
-/// `"id"` and `"status"`. The `Error` variant nests under an `"error"` key.
+/// `Ok` data fields merge into the top-level object alongside `"id"`/`"status"`; `Error` nests under an `"error"` key.
 pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     match &envelope.id {

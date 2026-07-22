@@ -1,6 +1,3 @@
-//! Query surface on `SpeakQueueHandle`: `queue_depth()` (atomic pending mirror),
-//! `available_voices()` and `engines()` (actor-populated catalog).
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
@@ -94,15 +91,11 @@ async fn engines_returns_each_engine_once_despite_multiple_voices() {
     let (handle, _stream) = spawn_standard();
     wait_until_catalog_populated(&handle, 2_000).await;
 
-    // `alpha` owns two voices but must appear exactly once - `engines()` de-duplicates.
     let mut engines: Vec<String> = handle.engines().into_iter().map(|e| e.0).collect();
     engines.sort();
     assert_eq!(engines, vec!["alpha".to_string(), "beta".to_string()]);
 }
 
-// A later command whose event we can observe acts as an ordering barrier: because the
-// actor drains the command channel one at a time, seeing `Paused` proves the prior
-// engine-mutating command already ran and published into the shared cell.
 async fn quiesce_after(
     handle: &SpeakQueueHandle,
     stream: &mut forge_speak_queue::SpeakEventStream,
@@ -122,8 +115,6 @@ async fn disabled_engines_reader_observes_actor_side_toggle() {
         .unwrap();
     quiesce_after(&handle, &mut stream).await;
 
-    // Split-mirror regression: the handle read side must alias the actor's live set,
-    // not a snapshot frozen at spawn (which would report the engine still enabled).
     assert!(handle.disabled_engines().contains(&alpha));
 }
 
@@ -142,6 +133,5 @@ async fn engine_gain_reader_observes_actor_side_set_engine_params() {
         .unwrap();
     quiesce_after(&handle, &mut stream).await;
 
-    // A stale mirror would return the 1.0 absent-engine default instead of 0.5.
     assert_eq!(handle.engine_gain(&beta), 0.5);
 }

@@ -3,58 +3,49 @@ use serde::{Deserialize, Serialize};
 
 use crate::StorageError;
 
-/// Mode controlling what happens when a blocked word is matched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BlocklistMode {
-    /// Replace the matched word with `***`.
+    /// Replaces the matched word with `***`.
     #[default]
     Censor,
-    /// Drop the entire message from the speak queue.
+    /// Drops the entire message, not just the matched word.
     Suppress,
 }
 
-/// How URLs embedded in chat messages are handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum UrlMode {
-    /// Read the URL as-is.
     #[default]
     Speak,
-    /// Replace the URL with a configurable spoken label (default: "link").
+    /// Spoken label defaults to "link".
     Replace,
-    /// Drop the entire message when a URL is present.
+    /// Drops the entire message, not just the URL.
     Suppress,
 }
 
-/// Kind-specific parameters for a single filter rule.
-///
-/// The `Regex` variant stores the SOURCE pattern only - compiled form is never
-/// persisted; the TTS domain re-compiles at load time and rejects invalid patterns.
+/// The `Regex` variant stores the SOURCE pattern only, never the compiled form; the
+/// TTS domain re-compiles at load time and rejects invalid patterns.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FilterRuleKind {
-    /// Case-insensitive literal substring → replacement.
+    /// Case-insensitive literal substring -> replacement.
     Literal {
         pattern: String,
         replacement: String,
     },
-    /// `regex`-crate pattern string → replacement.
+    /// `regex`-crate pattern syntax -> replacement.
     Regex {
         pattern: String,
         replacement: String,
     },
-    /// Blocked-word set with a per-rule censor-or-suppress mode.
     Blocklist {
         words: Vec<String>,
         mode: BlocklistMode,
     },
 }
 
-/// A single user-authored filter rule.
-///
-/// `position` is dense 0..n; gaps are a load-time repair in the TTS domain - the
-/// storage layer stores whatever value the caller provides.
+/// `position` is dense 0..n; gaps are a load-time repair in the TTS domain, not here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FilterRule {
     pub id: String,
@@ -70,9 +61,7 @@ pub struct TtsPipelineSettings {
     pub url_mode: UrlMode,
     pub max_length: Option<u32>,
     pub blocklist_mode: BlocklistMode,
-    /// Strip Twitch-style emote tokens before synthesis.
     pub strip_twitch_emotes: bool,
-    /// Strip channel-point reward emote tokens before synthesis.
     pub strip_reward_emotes: bool,
     #[serde(default)]
     pub skip_contains_url: bool,

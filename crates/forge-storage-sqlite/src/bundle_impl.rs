@@ -20,9 +20,7 @@ fn epoch_ms_now() -> i64 {
     (now.unix_timestamp_nanos() / 1_000_000) as i64
 }
 
-/// Scans a sub_actions JSON blob for `kind_id == "core.script.run_named"` entries and
-/// returns the `"name"` config values found. Non-string values and absent keys are silently
-/// ignored - the bundle still exports without the reference.
+/// Non-string values and absent `name` keys are silently skipped, not an error.
 fn extract_script_names_from_sub_actions(sub_actions: &JsonValue) -> Vec<String> {
     let Some(arr) = sub_actions.as_array() else {
         return Vec::new();
@@ -44,10 +42,8 @@ fn extract_script_names_from_sub_actions(sub_actions: &JsonValue) -> Vec<String>
     names
 }
 
-/// Extracts global variable names accessed via `forge::globals::<fn>("name")` patterns in
-/// a script body. Only double-quoted string literals immediately following the function call
-/// are matched. Dynamic names (variables as keys) cannot be statically extracted and are
-/// not emitted.
+/// Only double-quoted literal names are matched; dynamic (variable) keys cannot be
+/// statically extracted and are silently omitted.
 fn extract_global_names_from_body(body: &str, re: &Regex) -> Vec<String> {
     re.captures_iter(body)
         .filter_map(|cap| cap.get(2).map(|m| m.as_str().to_owned()))
@@ -116,7 +112,6 @@ impl BundleRepo for SqliteBundleRepo {
         let mut collected_global_names: HashSet<String> = HashSet::new();
         let mut collected_trigger_instance_ids: HashSet<String> = HashSet::new();
 
-        // Worklist carries (kind, identifier) pairs for iterative traversal.
         enum WorkItem {
             Action(String),
             Script(String),
@@ -186,7 +181,6 @@ impl BundleRepo for SqliteBundleRepo {
                         }
                     }
 
-                    // Collect user-defined trigger instances linked to this action.
                     let ti_rows: Vec<(String,)> = sqlx::query_as(
                         "SELECT ti.id FROM trigger_instances ti \
                          JOIN action_trigger_instances ati ON ati.trigger_instance_id = ti.id \
@@ -221,8 +215,8 @@ impl BundleRepo for SqliteBundleRepo {
                             Some(description)
                         },
                         sub_actions,
-                        // Timestamps are informational; actions table has no created_at column.
-                        // Use empty strings per transit type contract (String, not OffsetDateTime).
+                        // actions has no created_at/last_modified columns; transit's String
+                        // fields (not Option) mean absent is represented as empty, not omitted.
                         created_at: String::new(),
                         last_modified: String::new(),
                     });
@@ -263,7 +257,6 @@ impl BundleRepo for SqliteBundleRepo {
                         continue;
                     };
 
-                    // Scan this script's body for transitive script calls.
                     let nested_names = extract_script_names_from_body_text(&body);
                     for nn in nested_names {
                         if !collected_script_names.contains(&nn) {
@@ -271,7 +264,6 @@ impl BundleRepo for SqliteBundleRepo {
                         }
                     }
 
-                    // Scan for global accesses.
                     let global_names = extract_global_names_from_body(&body, &GLOBAL_ACCESS_RE);
                     for gn in global_names {
                         collected_global_names.insert(gn);
@@ -286,8 +278,8 @@ impl BundleRepo for SqliteBundleRepo {
                         body,
                         enabled: enabled != 0,
                         contract,
-                        // Trusting the stored hash - the DB recomputes on every save, so the
-                        // stored value is always authoritative for the current body.
+                        // Not recomputed here: the DB recomputes on every save, so the stored
+                        // value is already authoritative for the current body.
                         body_hash,
                         created_at: ms_to_iso(created_ms),
                         last_modified: ms_to_iso(last_modified_ms),
@@ -296,7 +288,6 @@ impl BundleRepo for SqliteBundleRepo {
             }
         }
 
-        // Resolve trigger instances.
         for ti_id_str in &collected_trigger_instance_ids {
             type InstanceRow = (String, String, String, String, i64, i64, String);
 
@@ -323,7 +314,6 @@ impl BundleRepo for SqliteBundleRepo {
             }
         }
 
-        // Resolve reachable persisted globals.
         for global_name in &collected_global_names {
             type GlobalRow = (String, String, String, i64, i64, i64, i64, i64);
 
@@ -343,7 +333,6 @@ impl BundleRepo for SqliteBundleRepo {
             }
         }
 
-        // Orphan globals: all persisted globals not already collected via script analysis.
         if include_orphan_globals {
             type GlobalRow = (String, String, String, i64, i64, i64, i64, i64);
 
@@ -372,10 +361,6 @@ impl BundleRepo for SqliteBundleRepo {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Import helpers
-// ---------------------------------------------------------------------------
-
 async fn import_replace(
     pool: &sqlx::SqlitePool,
     bundle: BundleDocument,
@@ -384,9 +369,8 @@ async fn import_replace(
     let now_ms = epoch_ms_now();
     let mut tx = pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
 
-    // Wipe scope: actions (CASCADE removes action_trigger_instances entries),
-    // user-defined trigger instances, scripts, persisted globals.
-    // Credentials, settings, user_globals, event_log are never touched.
+    // Wipes actions/trigger_instances/scripts/persisted globals only; credentials,
+    // settings, user_globals, and event_log survive a ReplaceConfirm import.
     sqlx::query("DELETE FROM actions")
         .execute(&mut *tx)
         .await
@@ -429,8 +413,6 @@ async fn import_merge(
     merge_scripts(&mut tx, &bundle.scripts, outcome, now_ms).await?;
     merge_globals(&mut tx, &bundle.globals, outcome, now_ms).await?;
 
-    // Warn about unknown trigger kind_ids (no platform template registered means the
-    // trigger_instances table just holds the row; it won't fire until the platform lands).
     for ti in &bundle.trigger_instances {
         let (count,): (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM trigger_instances WHERE kind_id = ? AND user_defined = 0",
@@ -452,10 +434,6 @@ async fn import_merge(
     tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Insert helpers (used by ReplaceConfirm - no collision check needed)
-// ---------------------------------------------------------------------------
 
 async fn insert_actions(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
@@ -524,7 +502,6 @@ async fn insert_trigger_instances(
 
         outcome.trigger_instances_inserted += 1;
 
-        // Check for unknown templates so we can warn the caller.
         let (count,): (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM trigger_instances WHERE kind_id = ? AND user_defined = 0",
         )
@@ -606,10 +583,6 @@ async fn insert_globals(
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Merge helpers (used by MergeAdd - skip on identity collision)
-// ---------------------------------------------------------------------------
 
 async fn merge_actions(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
@@ -802,11 +775,7 @@ async fn merge_globals(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Decode + encode helpers
-// ---------------------------------------------------------------------------
-
-// Why: both patterns are compile-time string constants; Regex::new can only fail on
+// Both patterns are compile-time string constants; Regex::new can only fail on
 // malformed syntax, which would be a programming error caught in CI.
 #[allow(clippy::expect_used)]
 static RUN_NAMED_RE: LazyLock<Regex> =
@@ -817,8 +786,7 @@ static GLOBAL_ACCESS_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"forge::globals::(get|set|incr|del)\s*\(\s*"([^"]+)""#).expect("static regex")
 });
 
-/// Matches rhai `run_named("name")` calls (with or without `forge::scripts::` prefix) -
-/// used to discover transitive script-to-script invocations during export traversal.
+/// Matches `run_named("name")` regardless of any `forge::scripts::` prefix.
 fn extract_script_names_from_body_text(body: &str) -> Vec<String> {
     RUN_NAMED_RE
         .captures_iter(body)

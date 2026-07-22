@@ -1,10 +1,3 @@
-//! Regression: pause must hold dispatch; resume must continue.
-//!
-//! Invariant: while paused, no synthesis starts regardless of queue contents.
-//! VoiceGate pause uses a separate flag from manual pause; both must be
-//! independently releasable (manual Resume only clears the manual flag,
-//! VoiceGateDeactivated only clears the gate flag).
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -198,8 +191,6 @@ async fn pause_prevents_synthesis_until_resume() {
 
 #[tokio::test]
 async fn voicegate_pause_independent_from_manual_pause() {
-    // Manual Resume must not release a VoiceGate-induced pause.
-    // VoiceGateDeactivated must release it.
     let (sink, play_count) = CountingSink::new();
     let config = QueueConfig {
         per_user_limit: 10,
@@ -208,7 +199,6 @@ async fn voicegate_pause_independent_from_manual_pause() {
     };
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
-    // Activate VoiceGate (mic threshold crossed).
     handle.send(SpeakCommand::VoiceGateActivated).await.unwrap();
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
 
@@ -224,7 +214,6 @@ async fn voicegate_pause_independent_from_manual_pause() {
         "must not synthesize while VoiceGate active"
     );
 
-    // VoiceGate deactivated - queue should drain.
     handle
         .send(SpeakCommand::VoiceGateDeactivated)
         .await

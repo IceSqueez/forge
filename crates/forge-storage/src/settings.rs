@@ -162,8 +162,6 @@ pub trait SettingsRepo: Send + Sync {
             .await
     }
 
-    /// Returns the persisted theme identifier (opaque key defined by the UI layer), or
-    /// None if unset (the UI's default theme applies).
     async fn get_theme(&self) -> Result<Option<String>, StorageError> {
         self.get_string(reserved_keys::THEME).await
     }
@@ -172,12 +170,11 @@ pub trait SettingsRepo: Send + Sync {
         self.set_string(reserved_keys::THEME, theme_key).await
     }
 
-    /// Returns stored font family name for interface (body) text, or None if unset (bundled default applies).
     async fn font_body(&self) -> Result<Option<String>, StorageError> {
         self.get_string(reserved_keys::FONT_BODY).await
     }
 
-    /// Sets interface (body) font family name, or passes None to unset and use bundled default.
+    /// `None` clears the override (not a no-op) and falls back to the bundled default.
     async fn set_font_body(&self, name: Option<String>) -> Result<(), StorageError> {
         match name {
             Some(family) => self.set_string(reserved_keys::FONT_BODY, &family).await,
@@ -188,12 +185,11 @@ pub trait SettingsRepo: Send + Sync {
         }
     }
 
-    /// Returns stored font family name for monospace (code) text, or None if unset (bundled default applies).
     async fn font_mono(&self) -> Result<Option<String>, StorageError> {
         self.get_string(reserved_keys::FONT_MONO).await
     }
 
-    /// Sets monospace (code) font family name, or passes None to unset and use bundled default.
+    /// `None` clears the override (not a no-op) and falls back to the bundled default.
     async fn set_font_mono(&self, name: Option<String>) -> Result<(), StorageError> {
         match name {
             Some(family) => self.set_string(reserved_keys::FONT_MONO, &family).await,
@@ -204,15 +200,12 @@ pub trait SettingsRepo: Send + Sync {
         }
     }
 
-    /// Returns the persisted TTS output device id (opaque, backend-defined string), or
-    /// None if unset (OS default device applies).
     async fn audio_output_device_id(&self) -> Result<Option<String>, StorageError> {
         self.get_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID_KEY)
             .await
     }
 
-    /// Sets the persisted TTS output device id, or pass None to clear the preference
-    /// and fall back to the OS default device.
+    /// `None` clears the preference (not a no-op) and falls back to the OS default device.
     async fn set_audio_output_device_id(
         &self,
         device_id: Option<String>,
@@ -511,8 +504,6 @@ mod tests {
     #[tokio::test]
     async fn get_json_setting_yields_none_for_absent_malformed_and_wrong_shape() {
         let repo = MapRepo::default();
-        // Absent, non-JSON, and valid-JSON-but-wrong-type all collapse to None so
-        // every caller falls back to its own default instead of surfacing an error.
         repo.set_string("malformed", "{not json").await.unwrap();
         repo.set_string("wrong_shape", "42").await.unwrap();
 
@@ -563,7 +554,6 @@ mod tests {
 
     #[test]
     fn density_round_trips_through_display_and_from_str() {
-        // Cozy is the product default - display strings are the persisted format.
         assert_eq!(Density::default(), Density::Cozy);
         for density in [Density::Compact, Density::Cozy, Density::Spacious] {
             let s = density.to_string();

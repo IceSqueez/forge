@@ -1,18 +1,3 @@
-//! CORE-9 flat-with-parent-path telemetry: steps run inside a branch / loop / switch
-//! body are lifted into the enclosing chain's flat `telemetry` list as NESTED rows,
-//! each carrying a `parentIndex.arm/…/localIndex.kindId` path locator in `kind`.
-//!
-//! These pin the actual regression - per-step debugging telemetry silently losing
-//! the rows produced inside composite bodies. The existing `core_logic_flow_control`
-//! suite asserts only `signal` + `arg_stack`; NONE of it inspects `ChainRun.telemetry`,
-//! so the whole nesting scheme (`retag`, `TelemetrySink`, `is_nested`, the arm tags)
-//! was shipped untested.
-//!
-//! Driven end-to-end through the real `ChainEngine`, so the `TelemetrySink` drain in
-//! the sequential driver and the per-composite arm-string choice are both exercised.
-//! No services / hardware / network: the condition gate is the in-process rhai
-//! evaluator and `core.args.set` is the observable nested-step probe.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -146,9 +131,6 @@ fn top_level(tel: &[SubActionTelemetry]) -> Vec<&SubActionTelemetry> {
 
 #[tokio::test]
 async fn branch_body_step_is_path_tagged_and_marked_nested_for_the_taken_arm() {
-    // The single composite sits at top-level index 0, so its body step's locator
-    // is `0.<arm>/0.core.args.set`. The arm string is the runner's own choice -
-    // "then" vs "else" - which is exactly what regressed when nested rows vanished.
     let eng = engine();
     for (condition, arm) in [("1 == 1", "then"), ("1 == 2", "else")] {
         let cfg = if_cfg(
@@ -168,10 +150,6 @@ async fn branch_body_step_is_path_tagged_and_marked_nested_for_the_taken_arm() {
 
 #[tokio::test]
 async fn consumers_filtering_out_nested_rows_see_only_positional_top_level_steps() {
-    // A top-level args.set (index 0) then an if whose taken branch runs TWO steps.
-    // The "surfaces keyed by top-level position" contract: exactly the two real
-    // top-level steps survive an `!is_nested()` filter, each keeping its index;
-    // the two branch steps are present in the flat list but marked nested.
     let eng = engine();
     let branch = inline(vec![args_set_step("a", "1"), args_set_step("b", "2")]);
     let steps = vec![
@@ -238,15 +216,8 @@ async fn switch_tags_the_nested_step_with_the_matched_case_index_or_default() {
     }
 }
 
-// ── deep nesting: an already-nested row keeps its trail; the parent path folds ─
-
 #[tokio::test]
 async fn deeply_nested_step_accumulates_the_full_parent_path_across_composites() {
-    // if(then) -> loop -> args.set. The loop row is folded once by the if
-    // (`0.then/0.core.logic.loop`). The args.set row is ALREADY nested from the
-    // loop's own retag (`0.body#0/0.core.args.set`), so the if must PREPEND its
-    // path rather than re-fold the local index - the deepest locator threads
-    // every enclosing arm.
     let eng = engine();
     let inner_loop = chain_step(
         "core.logic.loop",

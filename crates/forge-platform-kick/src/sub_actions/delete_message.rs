@@ -208,9 +208,6 @@ mod tests {
 
     #[test]
     fn default_config_message_id_matches_chat_trigger_arg_stack_key() {
-        // Why: the default placeholder must name the SAME key the Kick chat
-        // triggers push onto the arg stack (`message_id`). A namespaced token
-        // like `%chat.message_id%` never resolves, leaving the runner dead.
         let runner = DeleteMessageRunner::new(
             Arc::new(KickSendChat::new(Arc::new(GrantLimiter))),
             token_source(),

@@ -29,9 +29,7 @@ impl EnableRewardRunner {
     }
 }
 
-/// PATCH /helix/channel_points/custom_rewards with a single boolean field.
-/// Requires channel:manage:redemptions scope. Only the supplied body key is
-/// changed; Twitch leaves all other reward fields as-is.
+/// Requires channel:manage:redemptions scope; Twitch leaves other reward fields as-is.
 pub(crate) async fn patch_reward_bool(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
@@ -193,10 +191,6 @@ mod tests {
         (transport, runner)
     }
 
-    // Distinct-body contract for enable_reward: PATCH the custom_rewards endpoint
-    // with both query params (broadcaster_id=self AND the resolved id) and a body
-    // of exactly {"is_enabled": true}. This is the one body assertion EnableReward
-    // owns; the other three runners assert their own distinct bodies in-file.
     #[tokio::test]
     async fn enable_patches_is_enabled_true_with_both_query_params() {
         let (transport, runner) = enable_runner_with(Ok(serde_json::Value::Null));
@@ -229,9 +223,6 @@ mod tests {
         );
     }
 
-    // SHARED behavior (asserted ONCE via the representative runner): the reward_id
-    // template resolves through the ArgStack. The default config holds %reward.id%,
-    // so the query id must equal the stack-resolved value, not the literal template.
     #[tokio::test]
     async fn reward_id_template_interpolates_from_stack() {
         let (transport, runner) = enable_runner_with(Ok(serde_json::Value::Null));
@@ -252,9 +243,6 @@ mod tests {
         );
     }
 
-    // SHARED behavior: an empty reward_id after interpolation fails BEFORE any Helix
-    // call (no broadcaster targeted). Empty stack leaves %reward.id% unresolved, but
-    // an explicitly empty template is the deterministic empty case.
     #[tokio::test]
     async fn empty_reward_id_fails_without_helix_call() {
         let (transport, runner) = enable_runner_with(Ok(serde_json::Value::Null));
@@ -271,7 +259,6 @@ mod tests {
         );
     }
 
-    // SHARED behavior: validate_config gates on a non-empty reward_id String.
     #[tokio::test]
     async fn validate_config_requires_non_empty_reward_id() {
         let (_transport, runner) = enable_runner_with(Ok(serde_json::Value::Null));
@@ -300,8 +287,6 @@ mod tests {
         }
     }
 
-    // SHARED behavior: a Helix failure surfaces as Failed carrying the status, and
-    // the sentinel token never leaks into the outcome message.
     #[tokio::test]
     async fn helix_failure_maps_to_failed_with_status_and_no_token() {
         let (_transport, runner) = enable_runner_with(Err(HelixError::Http {

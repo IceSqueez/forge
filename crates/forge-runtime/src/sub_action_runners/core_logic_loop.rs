@@ -26,9 +26,7 @@ impl CoreLogicLoopRunner {
     }
 }
 
-/// What a single body run tells the loop to do next. `Continue` carries the
-/// threaded arg-stack forward; `Break`/`Stop`/`Abort` end the loop while keeping
-/// the body's mutations; `Fail` ends it with the child error.
+/// `Break`/`Stop`/`Abort` end the loop while keeping the body's mutations; `Fail` carries the child error.
 enum IterOutcome {
     Continue(ArgStack),
     Break(ArgStack),
@@ -37,8 +35,6 @@ enum IterOutcome {
     Abort(ArgStack),
 }
 
-/// Runs one loop body pass, returning the iteration verdict alongside the body's
-/// per-step telemetry so the caller can re-tag and splice it into the flat list.
 async fn run_body(
     executor: &dyn ChainExecutor,
     body: &[SubActionStep],

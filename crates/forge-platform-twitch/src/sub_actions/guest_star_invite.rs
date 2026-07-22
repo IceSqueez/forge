@@ -39,8 +39,7 @@ impl GuestStarInviteRunner {
                 Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
             };
 
-        // Send Guest Star Invite returns 204 No Content, so there is no invite
-        // id to surface; the runner pushes no output stack.
+        // 204 No Content: no invite id to surface, so this runner pushes no output stack.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/guest_star/invites")
             .query("broadcaster_id", ctx.self_id.clone())
             .query("moderator_id", ctx.self_id)
@@ -148,9 +147,6 @@ mod tests {
         (transport, runner)
     }
 
-    /// Config seeded with a runtime-interpolated session_id (so the resolved
-    /// value comes off the arg stack, mirroring the real Guest Star flow) and a
-    /// literal target login.
     fn config(session_template: &str, target: &str) -> SubActionConfig {
         BTreeMap::from([
             (
@@ -237,7 +233,6 @@ mod tests {
     async fn empty_session_id_after_interpolation_fails_before_any_helix_call() {
         let (transport, runner) =
             runner_with(vec![users_fixture("55"), Ok(serde_json::Value::Null)]);
-        // Stack var resolves to empty -> interpolated session_id is empty.
         let stack = stack_with_session("");
 
         let (telemetry, _) = runner

@@ -14,9 +14,7 @@ use crate::channel_info::ChannelInfoFetcher;
 const POLL_INTERVAL: Duration = Duration::from_secs(45);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A standalone bucket bounding this poll's own request rate so a tick storm can
-/// never burst the unofficial channel endpoint; the real ceiling is the shared
-/// per-client estimate honored by the official-API polls.
+/// Bounds this poll's own request rate so a tick storm never bursts the unofficial endpoint.
 const READ_BUDGET_CAPACITY: u32 = 4;
 const READ_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 const VIEWER_POLL_COST: u32 = 1;
@@ -82,9 +80,7 @@ impl KickViewerPoll {
         }
     }
 
-    /// `Some(Live)` / `Some(Absent)` is a definitive figure to publish; `None` is
-    /// a transient miss (throttle, network, timeout, non-200) whose last known
-    /// figure must be kept rather than erased to zero or absence.
+    /// `None` is a transient miss whose last known figure must be kept, not erased.
     async fn poll_once(&self) -> Option<ViewerReport> {
         match self.rate_limiter.acquire(VIEWER_POLL_COST).await {
             Ok(RateLimitOutcome::Granted) => {}
@@ -142,7 +138,6 @@ mod tests {
 
     #[tokio::test]
     async fn poll_once_reports_live_zero_not_absent_for_genuine_zero_viewers() {
-        // A live channel with zero viewers is Live { 0 }, never Absent.
         let body = json!({
             "chatroom": { "id": 1 },
             "livestream": { "viewer_count": 0, "session_title": "starting soon" }
@@ -168,7 +163,6 @@ mod tests {
 
     #[tokio::test]
     async fn poll_once_returns_none_on_non_200_keeping_last_figure() {
-        // A transient miss must not erase the last figure to Absent or Live { 0 }.
         assert_eq!(
             poll_against("err_slug", ResponseTemplate::new(500)).await,
             None

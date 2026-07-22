@@ -25,8 +25,6 @@ impl Default for EngineConfig {
     }
 }
 
-/// Resolves the user-configured operation and wall-time budgets from persisted
-/// settings, falling back to the built-in defaults for absent or unparseable values.
 pub async fn load_script_engine_config(repo: &dyn SettingsRepo) -> EngineConfig {
     let defaults = EngineConfig::default();
 
@@ -142,9 +140,6 @@ impl Engine {
     }
 }
 
-/// Parses `body` and returns `Ok(())` if the script is syntactically valid.
-///
-/// Does not execute the script. Returns `ScriptError::Compile` for any parse failure.
 pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
     let mut engine = rhai::Engine::new_raw();
     engine.register_global_module(CorePackage::new().as_shared_module());
@@ -340,7 +335,6 @@ mod tests {
     #[tokio::test]
     async fn load_config_falls_back_to_defaults_when_settings_absent() {
         let dp = open_test_dp().await;
-        // Fresh store: neither budget key persisted → both fall back to defaults.
         let cfg = load_script_engine_config(dp.as_ref()).await;
         assert_eq!(cfg, EngineConfig::default());
     }
@@ -380,10 +374,6 @@ mod tests {
 
     #[tokio::test]
     async fn persisted_low_op_limit_aborts_runaway_script_at_that_limit() {
-        // Guards the CORE-3 regression: runners must build the engine from the
-        // PERSISTED op-limit, not EngineConfig::default() (100_000). A low
-        // persisted limit must actually abort a runaway loop at THAT value -
-        // the `ops: 500` pattern fails if the default budget leaks back in.
         let dp = open_test_dp().await;
         dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, "500")
             .await

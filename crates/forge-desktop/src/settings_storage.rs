@@ -297,8 +297,6 @@ mod tests {
 
     #[test]
     fn parse_limit_accepts_positive_integers_and_rejects_everything_else() {
-        // Whitespace is trimmed; zero is rejected by the `>= 1` floor alongside
-        // empty, non-numeric, negative, and fractional input.
         for (raw, expected) in [
             ("500", Some(500)),
             (" 42 ", Some(42)),

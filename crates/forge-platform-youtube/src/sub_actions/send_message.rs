@@ -138,8 +138,6 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
     }
 
-    /// Builds a runner whose sender posts to a live wiremock server (no real
-    /// YouTube), with an active live-chat id so the send path is reachable.
     fn runner_on(server: &MockServer) -> SendMessageRunner {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
@@ -182,8 +180,6 @@ mod tests {
     #[tokio::test]
     async fn empty_message_after_interpolation_fails_without_send() {
         let server = MockServer::start().await;
-        // No mock mounted: any request would 404 and surface as a non-empty
-        // body. Assert via received_requests that the transport is untouched.
         let runner = runner_on(&server);
         let stack = ArgStack::new().set("greeting".to_owned(), Variant::String(String::new()));
 

@@ -200,7 +200,6 @@ mod tests {
 
     #[tokio::test]
     async fn clamps_out_of_range_timeout_instead_of_rejecting() {
-        // Out-of-range timeouts are clamped into [1000, 60000], NOT rejected.
         for (input, expected) in [
             (10_i64, 1000_u32),
             (999, 1000),
@@ -250,8 +249,6 @@ mod tests {
 
     #[test]
     fn validate_counts_unicode_scalar_values_not_bytes() {
-        // Why: 100 emoji = 100 chars but 400 bytes; a byte-length check would
-        // wrongly reject. The boundary is char-counted.
         let runner = CoreNotifyShowRunner::new(Arc::new(RecordingNotifyPort::new()));
         let mut ok = SubActionConfig::new();
         ok.insert("title".to_owned(), Variant::String("😀".repeat(100)));

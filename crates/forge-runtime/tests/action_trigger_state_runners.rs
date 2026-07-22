@@ -1,15 +1,3 @@
-//! Integration tests for the action/trigger enable/disable/toggle sub-action
-//! runners (`core.action.{enable,disable,toggle}` and
-//! `core.trigger.{enable,disable,toggle}`). Each runner reads a persisted entity
-//! and writes back a flipped/forced `enabled` flag.
-//!
-//! Storage is HashMap-backed `ActionRepo` / `TriggerInstanceRepo` mocks - no
-//! SQLite, no services, no network. The mocks mirror the real backend's
-//! load-bearing semantics: a `set_enabled` against an absent id is a no-op `Ok`
-//! (the SQLite `UPDATE ... WHERE id = ?` affects zero rows), and writes can be
-//! forced to error to exercise the persist-failure path the runner must surface
-//! as `Failed` without panicking.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeMap;
@@ -39,9 +27,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// In-memory `ActionRepo`. `writes` counts every `save` attempt (so a test can
-/// prove a runner short-circuited before persisting); `fail_writes` forces
-/// `save` to error.
 struct MockActionRepo {
     map: Mutex<HashMap<ActionId, Action>>,
     writes: AtomicUsize,
@@ -121,9 +106,6 @@ impl ActionRepo for MockActionRepo {
     }
 }
 
-/// In-memory `TriggerInstanceRepo`. `writes` counts every `set_enabled` attempt;
-/// `fail_writes` forces `set_enabled` to error. `set_enabled` against an absent
-/// id is a no-op `Ok`, matching the SQLite backend.
 struct MockTriggerInstanceRepo {
     map: Mutex<HashMap<TriggerInstanceId, TriggerInstance>>,
     writes: AtomicUsize,
@@ -223,7 +205,6 @@ impl TriggerInstanceRepo for MockTriggerInstanceRepo {
                 reason: "forced write failure".to_owned(),
             });
         }
-        // No-op when absent, mirroring `UPDATE ... WHERE id = ?` affecting 0 rows.
         if let Some(instance) = self.map.lock().unwrap().get_mut(&id) {
             instance.enabled = enabled;
         }
@@ -291,8 +272,6 @@ async fn run(runner: &dyn SubActionRunner, config: &SubActionConfig) -> SubActio
 
 #[tokio::test]
 async fn action_enable_and_disable_force_the_persisted_flag() {
-    // enable forces true even from false; disable forces false even from true.
-    // A runner that wrote the wrong constant fails its row.
     type Build = fn(Arc<MockActionRepo>) -> Box<dyn SubActionRunner>;
     let rows: [(Build, bool, bool); 2] = [
         (|r| Box::new(CoreActionEnableRunner::new(r)), false, true),
@@ -407,8 +386,6 @@ async fn action_runners_fail_and_persist_nothing_for_unknown_id() {
 
 #[tokio::test]
 async fn trigger_toggle_fails_and_persists_nothing_for_unknown_id() {
-    // Toggle reads the current state first, so an absent instance is a hard
-    // Failed before any write - unlike enable/disable, which never read.
     let repo = Arc::new(MockTriggerInstanceRepo::new());
     let missing = TriggerInstanceId::new();
 
@@ -425,9 +402,6 @@ async fn trigger_toggle_fails_and_persists_nothing_for_unknown_id() {
 
 #[tokio::test]
 async fn trigger_enable_and_disable_on_unknown_id_are_noop_success() {
-    // Why: enable/disable call `set_enabled` directly with NO existence check,
-    // mirroring the SQLite `UPDATE ... WHERE id = ?` (0 rows = Ok). This pins
-    // the deliberate divergence from toggle, which DOES pre-read and fail.
     type Build = fn(Arc<MockTriggerInstanceRepo>) -> Box<dyn SubActionRunner>;
     let builds: [Build; 2] = [
         |r| Box::new(CoreTriggerEnableRunner::new(r)),

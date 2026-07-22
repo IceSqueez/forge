@@ -1,6 +1,4 @@
-/// Strips trailing whitespace per line, collapses runs of three or more consecutive
-/// blank lines to at most two, and ensures the file ends with exactly one newline.
-/// No AST manipulation, no indentation changes, no operator-spacing changes.
+/// Whitespace-only: no AST manipulation, indentation changes, or operator-spacing changes.
 pub fn format_script(source: &str) -> String {
     let mut output = String::with_capacity(source.len());
     let mut blank_run = 0usize;

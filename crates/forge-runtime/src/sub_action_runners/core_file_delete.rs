@@ -101,8 +101,6 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    // A traversal path must surface the sandbox-rejection outcome rather than
-    // reach tokio::fs::remove_file (which would yield a "file not found" message).
     #[tokio::test]
     async fn delete_rejects_parent_traversal_before_touching_disk() {
         let mut cfg = SubActionConfig::new();
@@ -121,10 +119,6 @@ mod tests {
         );
     }
 
-    // RFC-101: field interpolation is scope-only. A `%name%` present in the arg
-    // stack resolves; a token absent from the stack has no globals fallthrough
-    // and stays verbatim. Both appear in the observable "file not found" path,
-    // so the contract is proven behaviorally rather than via a private API.
     #[tokio::test]
     async fn delete_resolves_scope_token_and_leaves_unknown_token_verbatim() {
         let mut cfg = SubActionConfig::new();

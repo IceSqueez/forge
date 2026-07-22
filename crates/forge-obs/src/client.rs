@@ -26,9 +26,8 @@ pub struct ObsClient {
     pub(crate) last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     endpoint: String,
     state: Arc<AtomicConnectionState>,
-    // Wrapped in an async Mutex so reconnect can swap out the Notify for the
-    // new supervisor cycle without a data race against the running supervisor's
-    // own clone of the Arc.
+    // async Mutex: reconnect swaps the Notify for a new supervisor cycle without racing
+    // the running supervisor's own clone of the Arc.
     shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -39,8 +38,7 @@ pub struct ObsClient {
     pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
     reconnect_host: String,
     reconnect_port: u16,
-    // Stored so reconnect can re-establish an authenticated session without
-    // reaching back through the credential store.  Never logged or surfaced.
+    // Never logged or surfaced.
     reconnect_password: Arc<Option<String>>,
     reconnect_publisher: Arc<dyn EventPublisher>,
 }
@@ -200,9 +198,7 @@ impl BuiltinStatus for ObsClient {
 #[async_trait]
 impl BuiltinControl for ObsClient {
     async fn reconnect(&self) -> ControlOutcome {
-        // Shut down the running supervisor before spawning a replacement.
-        // Locking `shutdown` serialises concurrent reconnect/disconnect calls
-        // so only one supervisor replacement runs at a time.
+        // Locking `shutdown` serialises concurrent reconnect/disconnect calls.
         let mut slot = self.shutdown.lock().await;
         let old_notify = slot.clone();
         old_notify.notify_one();
@@ -357,12 +353,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 tracing::info!(host = %host, port, "connected to OBS");
                 publisher.publish(crate::events::make_connection_connected());
 
-                // obs-websocket has no periodic Stats *event* (verified against obws 0.15.0
-                // and the protocol spec - General category is ExitStarted/VendorEvent/
-                // CustomEvent only; GetStats is request/response-only). CPU/FPS/Dropped are
-                // therefore sourced by polling `general().stats()` on a timer, independent
-                // of `required_event_subscriptions()` - no EventSubscription bitflag is
-                // touched, so there is no double-subscribe/overlap risk (OQ-OBS-1).
+                // No periodic Stats event exists (OQ-OBS-1, INTEGRATIONS_NOTES.md); polled instead.
                 let stats_handle = spawn_stats_poll(
                     Arc::clone(&inner),
                     Arc::clone(&health_state),
@@ -538,12 +529,8 @@ fn handle_obs_event(
     }
 }
 
-/// Seeds catalog + cold-connect health state right after a successful handshake, before the
-/// event stream starts delivering incremental updates. Source lists are snapshotted for
-/// EVERY known scene (not just the active one) so `BuiltinContent::sections()` has non-active
-/// scene source counts available immediately (PL-09-F6), and `GetStreamStatus`/`GetRecordStatus`
-/// seed the Stream/Recording health metrics so they read correctly before the first
-/// `StreamStateChanged`/`RecordStateChanged` event arrives (PL-09-F2).
+/// Snapshots every known scene's sources, not just the active one, so `BuiltinContent::sections()`
+/// has non-active scene counts available immediately after a cold connect.
 async fn snapshot_catalog(
     client: &obws::Client,
     catalog_state: &RwLock<ObsCatalog>,
@@ -608,11 +595,8 @@ async fn snapshot_catalog(
     }
 }
 
-/// Seeds a single Status-shaped health metric (index 0 = Stream, index 1 = Recording) from a
-/// cold-connect `GetStreamStatus`/`GetRecordStatus` response. Only broadcasts a delta when the
-/// value actually differs from the persisted snapshot (e.g. a reconnect where the previous
-/// session's last-known state already matches reality) - mirrors `apply_health_update`'s
-/// change-gating so a cold connect never emits a spurious duplicate delta.
+/// Only broadcasts a delta when the value actually differs from the persisted snapshot, so a
+/// reconnect never emits a spurious duplicate delta.
 fn seed_health_status(
     health_state: &RwLock<HealthSnapshot>,
     health_tx: &broadcast::Sender<HealthDelta>,
@@ -641,13 +625,8 @@ fn seed_health_status(
     }
 }
 
-/// Interval for the CPU/FPS/Dropped-frames poll (`spawn_stats_poll`). Mirrors the 2s cadence
-/// `forge-vtube` uses for its own `StatisticsRequest` poll (see INTEGRATIONS_NOTES.md).
 const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
-/// Periodically polls `GetStats` and feeds the CPU/FPS (index 2) and Dropped-frames (index 3)
-/// health metrics. obs-websocket has no push event for these - see the OQ-OBS-1 resolution
-/// note above `spawn_stats_poll`'s call site - so this poll loop is the only source for them.
 /// The returned handle MUST be `.abort()`-ed on every connection-loss/shutdown exit path;
 /// dropping a `JoinHandle` does not cancel the underlying task.
 fn spawn_stats_poll(
@@ -700,17 +679,10 @@ fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
     }
 }
 
-/// Event categories the registered OBS trigger / health descriptors need. The union excludes
-/// every high-volume opt-in category (volume meters, input active/show state, scene-item
-/// transform) so the bus is never flooded by a continuous stream. The `EventSubscription`
-/// type never crosses the crate boundary.
+/// Excludes every high-volume opt-in category (volume meters, input active/show state,
+/// scene-item transform) so the bus is never flooded by a continuous stream.
 fn required_event_subscriptions() -> obws::requests::EventSubscription {
     use obws::requests::EventSubscription as Sub;
-    // SCENES: program / preview / scene-list. CONFIG: scene-collection lifecycle.
-    // OUTPUTS: stream + record state (health metrics). SCENE_ITEMS: source visibility.
-    // TRANSITIONS: SceneTransitionStarted/Ended/VideoEnded. UI: StudioModeStateChanged.
-    // INPUTS: mute / volume / balance / sync-offset. INPUT_VOLUME_METERS deliberately excluded.
-    // FILTERS: SourceFilterCreated / SourceFilterRemoved / SourceFilterEnableStateChanged.
     Sub::SCENES
         | Sub::CONFIG
         | Sub::OUTPUTS
@@ -765,7 +737,6 @@ mod tests {
         assert!(parse_endpoint("localhost:notaport").is_err());
     }
 
-    // Compile-time object-safety guard for the lifecycle trait.
     #[test]
     fn client_coerces_to_dyn_builtin_control() {
         fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
@@ -774,9 +745,6 @@ mod tests {
         )));
     }
 
-    // Contract: OBS authenticates with a static password, not an OAuth refresh
-    // grant, so refresh_token must always reject as Unsupported. This is the
-    // only lifecycle verb reachable without standing up a WS supervisor.
     #[tokio::test]
     async fn refresh_token_is_unsupported() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());

@@ -17,8 +17,7 @@ impl Default for CoreMathEvaluateRunner {
 }
 
 impl CoreMathEvaluateRunner {
-    /// Op and wall budgets are tighter than a full script but generous enough
-    /// for complex arithmetic - the risk of looping is low but must still be bounded.
+    /// Tighter than a full script's budget, but generous enough for complex arithmetic.
     pub fn new() -> Self {
         Self {
             evaluator: MathEvaluator::with_config(EngineConfig {

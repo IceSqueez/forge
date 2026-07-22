@@ -132,8 +132,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_create_fields_from_publisher_payload() {
-        // Field names mirror `publish_unban_request_create_event`: top-level
-        // `id`, nested `user.login`, and top-level `reason_text`.
         let payload = serde_json::json!({
             "id": "req-7",
             "user": { "login": "banned_viewer" },

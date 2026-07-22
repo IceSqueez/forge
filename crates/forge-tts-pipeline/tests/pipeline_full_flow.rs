@@ -1,11 +1,3 @@
-//! Regression: pipeline stage ordering and combined transforms.
-//!
-//! The canonical order is:
-//!   SkipRules → WordBlocklist → TextReplacements → Output
-//!
-//! Changing stage order silently breaks user-configured pipelines (e.g. a skip
-//! rule that should see the raw message instead seeing already-transformed text).
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_tts_pipeline::{
@@ -22,9 +14,6 @@ fn ctx() -> PipelineContext<'static> {
 
 #[test]
 fn replacement_rule_order_hides_original_text_from_later_rules() {
-    // TextReplacements applies rules in order. A leading rule that rewrites the
-    // URL-like substring must run before a later regex rule that would have
-    // matched the original text.
     let config = PipelineConfig {
         replacement_rules: vec![
             ReplacementRule::Regex {
@@ -53,8 +42,6 @@ fn replacement_rule_order_hides_original_text_from_later_rules() {
 
 #[test]
 fn replacement_output_is_not_caught_by_blocklist() {
-    // WordBlocklist now runs BEFORE TextReplacements. A replacement rule that
-    // introduces a blocked word must NOT be caught - the blocklist already ran.
     let config = PipelineConfig {
         replacement_rules: vec![ReplacementRule::Text {
             pattern: "sneaky".into(),
@@ -78,8 +65,6 @@ fn replacement_output_is_not_caught_by_blocklist() {
 
 #[test]
 fn skip_rules_evaluate_original_message_unaffected_by_output_settings() {
-    // SkipRules is stage 1: it must fire on the pristine original message
-    // regardless of what the Output stage would later do to emote tokens.
     let mut config = PipelineConfig {
         skip_rules: SkipRulesConfig {
             contains_url: true,
@@ -103,8 +88,6 @@ fn skip_rules_evaluate_original_message_unaffected_by_output_settings() {
 
 #[test]
 fn skip_rules_longer_than_checks_original_length_not_post_replacement_length() {
-    // SkipRules runs before TextReplacements, so `longer_than` must evaluate the
-    // ORIGINAL message length, not the length after a replacement rule expands it.
     let config = PipelineConfig {
         skip_rules: SkipRulesConfig {
             longer_than: true,
@@ -133,8 +116,6 @@ fn skip_rules_longer_than_checks_original_length_not_post_replacement_length() {
 
 #[test]
 fn url_skip_rule_prevents_downstream_processing() {
-    // When SkipRules skips the message, no further stages run.
-    // The text must be returned as-is in SkipReason (not mutated by later stages).
     let config = PipelineConfig {
         skip_rules: SkipRulesConfig {
             contains_url: true,
@@ -159,7 +140,6 @@ fn url_skip_rule_prevents_downstream_processing() {
 
 #[test]
 fn blocklist_skip_mode_short_circuits_downstream_stages() {
-    // WordBlocklist in SkipMessage mode skips before TextReplacements/Output ever run.
     let config = PipelineConfig {
         word_blocklist: vec!["forbidden".into()],
         blocklist_mode: BlocklistMode::SkipMessage,

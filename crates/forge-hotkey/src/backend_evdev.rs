@@ -127,8 +127,7 @@ async fn discover_input_devices() -> Result<Vec<PathBuf>, HotkeyError> {
     Ok(devices)
 }
 
-// O_NONBLOCK + AsyncFd keeps device reads on the epoll reactor; a blocking-pool
-// read on an idle device never returns and stalls tokio runtime shutdown.
+// A blocking-pool read on an idle device never returns and stalls tokio runtime shutdown.
 fn open_device_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .read(true)
@@ -166,8 +165,7 @@ async fn read_device_events(
         };
         drop(guard);
 
-        // The kernel writes whole input_event structs; chunks_exact also guards
-        // against ever acting on a partial trailing chunk.
+        // chunks_exact guards against acting on a partial trailing chunk.
         for raw in buf[..read].chunks_exact(INPUT_EVENT_SIZE) {
             handle_key_event(raw, &modifier_state, &registered, &fired_tx).await;
         }

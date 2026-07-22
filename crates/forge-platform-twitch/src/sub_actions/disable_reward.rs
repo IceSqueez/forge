@@ -92,9 +92,6 @@ mod tests {
     use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
     use forge_types::{SubActionOutcome, Variant};
 
-    // Distinct-body contract: disable_reward PATCHes exactly {"is_enabled": false}.
-    // Shared interpolation / validation / failure paths are covered once in
-    // enable_reward.rs; this asserts only the body this runner uniquely emits.
     #[tokio::test]
     async fn disable_patches_is_enabled_false() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));

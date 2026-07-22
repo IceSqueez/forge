@@ -154,9 +154,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_passes_through_unsourced_target_user_as_empty() {
-        // Why: the YouTube live-chat API never reports the deleted message's
-        // author. The empty string must survive into the arg stack so a future
-        // change that fabricates a value here is caught.
         let event = deleted_event(json!({
             "chat.message_id": "msg-removed-2",
             "chat.target_user.channel_id": "",

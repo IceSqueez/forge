@@ -7,10 +7,7 @@ use forge_tts_pipeline::{
 };
 use forge_types::Shared;
 
-/// Errors produced when translating persisted rules into a validated pipeline config.
-///
-/// Only produced by the save posture. The boot posture drops invalid rules instead so a
-/// hand-edited database can never block startup; the save path rejects so the user sees it.
+/// Only produced by the save posture; the boot posture drops invalid rules instead.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterMappingError {
     #[error("rule {index} ({name:?}) has invalid regex pattern `{pattern}`: {source}")]
@@ -162,10 +159,7 @@ fn storage_blocklist_mode_to_pipeline(mode: forge_storage::BlocklistMode) -> Blo
     }
 }
 
-/// Translates a single replacement-kind `FilterRule` into its pipeline equivalent.
-///
-/// Disabled rules and empty literal patterns map to `None`. A regex that fails to
-/// compile is returned as `Err`; the caller decides whether to skip or reject it.
+/// Disabled rules and empty literal patterns map to `None`; a bad regex maps to `Err`.
 fn map_rule_strict(
     rule: &FilterRule,
     index: usize,
@@ -203,8 +197,7 @@ fn map_rule_strict(
             }))
         }
         FilterRuleKind::Blocklist { .. } => {
-            // Blocklist rules map to the word_blocklist field, not replacement_rules.
-            // Collected separately by the caller.
+            // Collected into word_blocklist separately by the caller, not returned here.
             Ok(None)
         }
     }
@@ -216,13 +209,7 @@ struct MappedRules {
     blocklist_mode: BlocklistMode,
 }
 
-/// Translates persisted `FilterRule` rows into pipeline-ready structures.
-///
-/// `strict = true` (save posture): returns `Err` on the first invalid regex so the UI
-/// can reject the save before the live config is touched.
-///
-/// `strict = false` (boot posture): drops invalid rules with a logged WARN and proceeds;
-/// startup never fails on a hand-edited DB entry.
+/// `strict = true` rejects on the first invalid regex; `strict = false` drops it and logs.
 fn map_rules(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
@@ -275,11 +262,7 @@ fn emote_sources_from_settings(settings: &TtsPipelineSettings) -> EmoteSources {
     }
 }
 
-/// Translates persisted filter rules and pipeline settings into a validated
-/// `PipelineConfig`, failing on the first invalid regex pattern.
-///
-/// Use this on the settings-save path so invalid regexes are rejected before the
-/// live config is touched. The live config is never replaced on `Err`.
+/// Rejects on the first invalid regex; the live config is never replaced on `Err`.
 pub fn build_config_strict(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
@@ -301,18 +284,13 @@ pub fn build_config_strict(
     ))
 }
 
-/// Translates persisted filter rules and pipeline settings into a validated
-/// `PipelineConfig`, skipping invalid regex rules rather than failing.
-///
-/// Boot posture drops invalid rules so startup survives a hand-edited DB; the save
-/// path rejects instead so the user sees the offending pattern.
+/// Drops invalid regex rules and logs, so startup survives a hand-edited DB.
 pub fn build_config_lenient(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
 ) -> PipelineConfig {
     let mapped = map_rules(rules, settings, false).unwrap_or_else(|_| {
-        // map_rules with strict=false only returns Err if a bug bypasses the strict guard;
-        // fall back to defaults rather than panic.
+        // Unreachable under strict=false unless the strict guard is bypassed by a bug.
         MappedRules {
             replacement_rules: vec![],
             word_blocklist: vec![],
@@ -351,8 +329,6 @@ impl PipelineConfigHandle {
         self.0.store(next);
     }
 }
-
-// --- helpers used only inside this module for logging ---
 
 impl FilterMappingError {
     fn name_for_log(&self) -> &str {

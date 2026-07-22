@@ -315,8 +315,7 @@ impl MenuButton {
         self
     }
 
-    /// Fires only while the menu is closed; while open the backdrop intercepts the
-    /// trigger and dismisses instead.
+    /// Fires only while the menu is closed; while open the backdrop intercepts the trigger and dismisses instead.
     #[must_use]
     pub fn on_toggle(
         mut self,
@@ -334,8 +333,7 @@ impl MenuButton {
         self
     }
 
-    /// Caller must focus this handle when the menu opens, or Escape stays inert (gpui
-    /// routes keys only down the focus path).
+    /// Caller must focus this handle when the menu opens, or Escape stays inert (gpui routes keys only down the focus path).
     #[must_use]
     pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
         self.escape_focus = Some(focus_handle.clone());

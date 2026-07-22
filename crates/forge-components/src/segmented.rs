@@ -77,8 +77,7 @@ pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedCon
 }
 
 impl SegmentedControl {
-    /// Drops the joined-pill container in favor of a bare wrapping row (each
-    /// segment keeps its own chip chrome) - for a chip-style single-select list.
+    /// Drops the joined-pill container in favor of a bare wrapping row of chip-chrome segments.
     #[must_use]
     pub fn wrap(mut self, gap: Pixels) -> Self {
         self.joined = false;

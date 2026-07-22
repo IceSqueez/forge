@@ -1,9 +1,3 @@
-//! Concurrent playback across multiple audio sinks.
-//!
-//! All sinks receive `play` calls in a single `join_all`, so the first and last
-//! sink begin playback within a single async scheduling quantum. Target drift
-//! between sink starts is <50 ms under normal system load.
-
 use std::sync::Arc;
 
 use crate::error::AudioError;
@@ -11,9 +5,8 @@ use crate::handle::PlaybackHandle;
 use crate::pcm::PcmBuffer;
 use crate::sink::AudioSink;
 
-/// Fans playback across sinks and returns one handle whose `stop` cancels every
-/// child clip that reported a handle. Per-sink `Err` outcomes are preserved
-/// positionally; sinks on the no-op default contribute nothing to the handle.
+/// Started via a single `join_all` to keep cross-sink start drift low; `stop` on the
+/// returned handle cancels every child clip that reported one.
 pub async fn fan_out_stoppable(
     buffer: PcmBuffer,
     sinks: &[Arc<dyn AudioSink>],

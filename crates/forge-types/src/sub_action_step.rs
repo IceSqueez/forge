@@ -57,8 +57,6 @@ mod tests {
 
     #[test]
     fn legacy_json_without_continue_on_error_defaults_to_false() {
-        // Why: actions persisted before the field existed must keep loading;
-        // #[serde(default)] pins the value to false rather than failing the parse.
         let legacy = r#"{"kind_id":"core.log.write","config":{},"enabled":true,"label":null}"#;
         let step: SubActionStep = serde_json::from_str(legacy).unwrap();
         assert!(!step.continue_on_error);

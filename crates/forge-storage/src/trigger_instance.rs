@@ -37,33 +37,20 @@ pub trait TriggerInstanceRepo: Send + Sync {
     ) -> Result<TriggerInstanceId, StorageError>;
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError>;
 
-    /// Marks `id` archived: invisible to `get`, `list_all`, `list_user_defined`, and
-    /// `list_for_action` until [`Self::restore`] is called. The row and its links in
-    /// `action_trigger_instances` survive untouched - this is a soft delete, not
-    /// [`Self::delete`]. Returns `false` when `id` does not exist or is already
-    /// archived.
-    ///
-    /// The default impl has no generic representation of archived state without a
-    /// dedicated column, so it returns [`StorageError::NotReady`]; a real backend
-    /// must override this.
+    /// Soft delete (not [`Self::delete`]): hides `id` from `get`/`list_all`/
+    /// `list_user_defined`/`list_for_action` until [`Self::restore`]; the row and its
+    /// `action_trigger_instances` links survive untouched. Default impl has no generic
+    /// archived-state representation and returns [`StorageError::NotReady`].
     async fn archive(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Clears the marker set by [`Self::archive`], restoring `id` to `get`/`list_all`/
-    /// `list_user_defined`/`list_for_action` visibility. Returns `false` when `id`
-    /// does not exist or is not currently archived.
-    ///
-    /// See [`Self::archive`] for the default-impl caveat.
+    /// Reverses [`Self::archive`]; see its default-impl caveat.
     async fn restore(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Returns archived trigger instances only - the mirror of `list_all`, which
-    /// excludes them.
-    ///
-    /// The default impl reports no archived entries, consistent with a backend that
-    /// does not support archiving.
+    /// Mirror of `list_all`, which excludes archived entries. Default impl reports none.
     async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         Ok(Vec::new())
     }

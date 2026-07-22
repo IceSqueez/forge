@@ -163,11 +163,6 @@ mod tests {
         )
     }
 
-    // Centerpiece: raid_received and raid_sent descriptors share the channel.raid
-    // topic (two condition subscriptions) and distinguish purely by `direction`.
-    // An incoming raid (direction == "received") must fire ONLY raid_received; an
-    // outgoing raid (direction == "sent") must fire ONLY raid_sent. Flipping either
-    // filter is the regression this guards.
     #[test]
     fn direction_routes_received_and_sent_to_opposite_descriptors() {
         let cfg = TriggerConfig::new();
@@ -193,8 +188,6 @@ mod tests {
         );
     }
 
-    // Missing/non-string direction is neither "received" nor "sent": both descriptors
-    // stay silent rather than one firing on a malformed payload.
     #[test]
     fn missing_direction_fires_neither_descriptor() {
         let cfg = TriggerConfig::new();

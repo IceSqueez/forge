@@ -82,8 +82,7 @@ impl Modal {
         self
     }
 
-    /// Replaces the whole title/subtitle column with a caller-owned element (e.g. an
-    /// editable name input as the title); when set, `title` and `subtitle` are ignored.
+    /// Replaces the whole title/subtitle column with a caller-owned element; when set, `title` and `subtitle` are ignored.
     #[must_use]
     pub fn title_slot(mut self, slot: impl IntoElement) -> Self {
         self.title_slot = Some(slot.into_any_element());
@@ -249,8 +248,7 @@ impl RenderOnce for Modal {
         }
         let body = body.child(std::mem::replace(&mut self.body, div().into_any_element()));
 
-        // `overflow_hidden` clips the header/footer bands to the rounded card so the
-        // footer's `shell` fill does not square off the bottom corners.
+        // `overflow_hidden` clips the header/footer bands to the rounded card so the footer's `shell` fill does not square off the bottom corners.
         div()
             .flex()
             .flex_col()

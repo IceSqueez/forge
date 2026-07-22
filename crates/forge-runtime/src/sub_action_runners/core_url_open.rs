@@ -87,9 +87,7 @@ impl SubActionRunner for CoreUrlOpenRunner {
     }
 }
 
-/// Gate the interpolated URL to `http`/`https` before handing it to the OS
-/// opener; interpolation may splice untrusted chat input that would otherwise
-/// reach `file://`, `javascript:`, or `data:` handlers.
+/// Gates interpolated (possibly untrusted chat-sourced) URLs against `file://`, `javascript:`, `data:`, etc.
 fn is_browser_scheme(url: &str) -> bool {
     match url.trim().split_once(':') {
         Some((scheme, _)) => matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https"),
@@ -138,9 +136,6 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_uppercase_and_whitespace_padded_browser_scheme() {
-        // Why: URI schemes are case-insensitive (RFC 3986 §3.1); the gate trims and
-        // lowercases before allowlisting, so HTTP:// and "  https://" still reach the
-        // opener. A case-sensitive gate would wrongly reject these.
         for url in ["HTTP://example.com", "  https://example.com"] {
             let port = Arc::new(RecordingUrlOpenPort::new());
             let outcome = run(Arc::clone(&port), ArgStack::new(), url).await;
@@ -151,9 +146,6 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_non_browser_schemes_without_calling_opener() {
-        // SECURITY: the scheme gate MUST run before the OS opener. Asserting zero
-        // recorded calls proves a malicious scheme never reaches `open`, so a gate
-        // accidentally moved after the OS call would fail this test.
         for url in [
             "file:///etc/passwd",
             "javascript:alert(1)",
@@ -187,7 +179,6 @@ mod tests {
 
     #[tokio::test]
     async fn gates_interpolated_dangerous_scheme_without_calling_opener() {
-        // SECURITY: untrusted input spliced via %var% must still hit the scheme gate.
         let stack = ArgStack::new().set(
             "link".to_owned(),
             Variant::String("javascript:alert(1)".to_owned()),

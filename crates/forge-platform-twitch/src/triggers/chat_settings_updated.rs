@@ -203,9 +203,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_marshals_mode_flags_as_bool_and_durations_as_int() {
-        // A copy-paste regression that stringified these would be a real bug:
-        // downstream scripts compare %settings.slow_mode% as a Bool and do
-        // arithmetic on the *_seconds / *_minutes Ints.
         let stack = ChatSettingsUpdatedDescriptor.build_arg_stack(&settings_event());
         for (key, expected) in [
             ("settings.emote_mode", true),

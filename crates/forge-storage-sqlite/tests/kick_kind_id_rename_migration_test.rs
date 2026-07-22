@@ -1,13 +1,5 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-//! Regression coverage for the Kick `kind_id` rewrite data migration.
-//!
-//! The migration is pure DML (in-place UPDATE on `trigger_instances` keyed by
-//! `kind_id`), so it is safe to re-run against rows seeded after the schema is
-//! in place. Each test applies the full schema, seeds legacy rows, then runs
-//! the REAL migration SQL (loaded verbatim from the file, never a copy) so the
-//! production statements - not a reimplementation - are under test.
-
 use forge_storage_sqlite::{apply_migrations, connect};
 use sqlx::SqlitePool;
 
@@ -47,10 +39,6 @@ async fn kind_id_of(pool: &SqlitePool, id: &str) -> Option<String> {
         .expect("fetch kind_id")
 }
 
-/// Attach an action to `trigger_instance_id` via `action_trigger_instances`,
-/// reproducing the real FK edge (`trigger_instance_id` -> `trigger_instances(id)`
-/// ON DELETE RESTRICT). The action's `queue_id` uses the Default queue sentinel
-/// seeded by migration 0002. Returns nothing; presence is asserted by the caller.
 async fn link_action_to_trigger(pool: &SqlitePool, action_id: &str, trigger_instance_id: &str) {
     sqlx::query("INSERT INTO actions (id, name, queue_id) VALUES (?, 'seed-action', ?)")
         .bind(action_id)
@@ -95,13 +83,6 @@ async fn default_row_with_old_kick_id_is_renamed_in_place() {
 
 #[tokio::test]
 async fn fk_linked_default_row_survives_migration_and_keeps_its_action_link() {
-    // THE regression for 7cef527: a default (user_defined=0) trigger with an
-    // action attached via action_trigger_instances. The pre-fix migration
-    // DELETEd default rows, which the ON DELETE RESTRICT FK aborts with
-    // SQLITE_CONSTRAINT_FOREIGNKEY (1811) - the whole migration fails and the
-    // database never opens. The in-place UPDATE never deletes the referenced
-    // row, so the link survives. This test fails against the DELETE migration
-    // (run_migration panics on the FK abort) and passes against the UPDATE.
     let pool = fresh_pool().await;
     seed(&pool, "def-sub-gift", "kick.sub_gift", 0).await;
     link_action_to_trigger(&pool, "act-sub-gift", "def-sub-gift").await;
@@ -122,7 +103,6 @@ async fn fk_linked_default_row_survives_migration_and_keeps_its_action_link() {
 
 #[tokio::test]
 async fn user_defined_rows_are_renamed_to_canonical_ids() {
-    // All six straight 1-to-1 renames; the Kick migration has no consolidation.
     let renames = [
         ("kick.chat", "kick.chat.message"),
         ("kick.message_deleted", "kick.chat.message_deleted"),
@@ -151,7 +131,6 @@ async fn user_defined_rows_are_renamed_to_canonical_ids() {
 #[tokio::test]
 async fn unmapped_kind_ids_are_left_untouched() {
     let pool = fresh_pool().await;
-    // A default row and a user row, neither in the rewrite set.
     seed(&pool, "def-unmapped", "kick.chat.message", 0).await;
     seed(&pool, "user-unmapped", "twitch.chat.message", 1).await;
 

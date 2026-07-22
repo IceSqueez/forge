@@ -56,10 +56,8 @@ pub trait DataProvider:
     fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo>;
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo>;
 
-    /// Returns the number of migrations currently applied to the database.
     async fn schema_version(&self) -> Result<u32, StorageError>;
 
-    /// Copies the underlying database file to `path`.
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
 
     /// Closes the underlying connection pool. Must be awaited before the host runtime

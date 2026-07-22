@@ -40,8 +40,7 @@ impl CreateMarkerRunner {
             body.insert("description".to_owned(), description.into());
         }
 
-        // POST /helix/streams/markers returns 200 with { "data": [{ "id", "position_seconds",
-        // "created_at", "description" }] }. Requires user:manage:broadcast scope.
+        // Requires user:manage:broadcast scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/streams/markers")
             .query("broadcaster_id", user_id)
             .body(serde_json::Value::Object(body));
@@ -274,7 +273,6 @@ mod tests {
         let (telemetry, _) = runner.execute(&cfg(""), &make_ctx(&stack)).await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        // Optional description: empty must produce an empty object, not "description":"".
         assert_eq!(transport.request(0).body.unwrap(), serde_json::json!({}));
     }
 

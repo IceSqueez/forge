@@ -55,7 +55,6 @@ async fn load_all_returns_all_entries() {
         Some("catppuccin_mocha")
     );
     assert_eq!(map.get("density").map(String::as_str), Some("cozy"));
-    // Migration 0016 seeds app.language = 'en', so the map includes that row too.
     assert_eq!(map.len(), 3);
 }
 
@@ -93,7 +92,6 @@ async fn set_string_overwrites_existing_value() {
 #[tokio::test]
 async fn language_seeds_en_and_round_trips_through_typed_repo() {
     let repo = setup().await;
-    // Migration 0016 seeds 'en' so a fresh install reads En through the typed accessor.
     assert_eq!(repo.language().await.expect("read seeded"), Language::En);
     repo.set_language(Language::Uk).await.expect("write Uk");
     assert_eq!(repo.language().await.expect("read after Uk"), Language::Uk);
@@ -162,7 +160,6 @@ async fn density_corrupt_stored_value_falls_back_to_cozy() {
         .set_string(forge_storage::reserved_keys::DENSITY, "ultra-wide")
         .await
         .expect("inject corrupt density");
-    // Unlike language(), a corrupt density must not error - the UI boots anyway.
     assert_eq!(backend.density().await.expect("get density"), Density::Cozy);
 }
 

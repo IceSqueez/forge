@@ -8,8 +8,7 @@ use crate::palette::with_alpha;
 const DEFAULT_FILL_ALPHA: f32 = 0.14;
 const DEFAULT_STROKE_WIDTH: f32 = 1.5;
 
-/// Degenerate input (empty, single sample, all-equal, non-finite) renders a flat
-/// mid-height line rather than panicking.
+/// Degenerate input (empty, single sample, all-equal, non-finite) renders a flat mid-height line rather than panicking.
 #[derive(IntoElement)]
 pub struct Sparkline {
     samples: Vec<f32>,

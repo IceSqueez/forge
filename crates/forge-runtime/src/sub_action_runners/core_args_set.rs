@@ -114,16 +114,12 @@ mod tests {
 
     #[tokio::test]
     async fn string_value_is_type_inferred_when_bound_to_arg_stack() {
-        // A String config value routes through parse_variant: "42" becomes Int(42),
-        // not a String left verbatim.
         let stack = run(&cfg("answer", Variant::String("42".to_owned()))).await;
         assert!(matches!(stack.get("answer"), Some(Variant::Int(42))));
     }
 
     #[tokio::test]
     async fn pretyped_non_string_value_is_stored_without_reparsing() {
-        // Float(2.0) Displays as "2" and would re-parse to Int(2); the runner must keep
-        // a pre-typed Variant verbatim instead of round-tripping it through string parsing.
         let stack = run(&cfg("ratio", Variant::float(2.0).unwrap())).await;
         assert!(matches!(stack.get("ratio"), Some(Variant::Float(f)) if (*f - 2.0).abs() < 1e-12));
     }

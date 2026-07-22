@@ -84,11 +84,8 @@ impl SqliteBackend {
         ))
     }
 
-    /// Connects, rolls migrations forward, then fails with
-    /// [`SqliteStorageError::SchemaMismatch`] unless the database's applied version equals
-    /// [`EXPECTED_SCHEMA_VERSION`]. A database newer than this build is rejected here rather
-    /// than surfacing as a generic migration failure. Returns only a version-matched pool, so
-    /// no repository is ever constructed against an incompatible schema.
+    /// Fails with [`SqliteStorageError::SchemaMismatch`] (not a generic migration error) if
+    /// the applied version differs from [`EXPECTED_SCHEMA_VERSION`] in either direction.
     async fn migrate_and_gate(url: &str) -> Result<sqlx::SqlitePool, SqliteStorageError> {
         let pool = connect(url).await?;
         apply_migrations(&pool).await?;

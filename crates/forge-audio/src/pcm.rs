@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Sample-rate-independent interleaved PCM buffer (i16 samples).
-///
-/// Layout: `samples.len() == frames * channels`. A "frame" is one sample per channel,
-/// so 1s of stereo 44_100 Hz audio is `frames=44_100`, `samples.len()=88_200`.
+/// Interleaved: `samples.len() == frames * channels`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PcmBuffer {
     pub samples: Vec<i16>,

@@ -15,8 +15,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.automod.add_blocked_term";
 
-// Twitch enforces 2..=500 characters on the blocked term text.
-// Reference: https://dev.twitch.tv/docs/api/reference/#add-blocked-term
 const MIN_TERM_CHARS: usize = 2;
 const MAX_TERM_CHARS: usize = 500;
 
@@ -167,9 +165,7 @@ impl SubActionRunner for AddBlockedTermRunner {
     }
 }
 
-// POST /helix/moderation/blocked_terms
-// broadcaster_id = moderator_id = self (broadcaster is also moderator of their own channel)
-// Returns data[0].id so the caller can chain into remove_blocked_term via %blocked_term.id%
+// broadcaster_id = moderator_id = self.
 async fn post_blocked_term(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
@@ -287,7 +283,6 @@ mod tests {
     #[tokio::test]
     async fn empty_interpolated_text_fails_without_helix_call() {
         let (transport, runner) = runner_with(Ok(term_payload("bt1")));
-        // Global resolves to empty string → must short-circuit before POST.
         let stack = ArgStack::new().set("term".to_owned(), Variant::String(String::new()));
         let (telemetry, output) = runner.execute(&cfg("%term%"), &make_ctx(&stack)).await;
 
@@ -330,8 +325,6 @@ mod tests {
         ));
     }
 
-    // The length bound is enforced in CHARACTERS, not bytes (a byte-vs-char bug
-    // was fixed here): a 500-char Cyrillic term is 1000 bytes and MUST validate.
     #[test]
     fn validate_config_enforces_2_to_500_char_bound() {
         let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -352,8 +345,6 @@ mod tests {
         }
     }
 
-    // Regression: 500 Cyrillic chars = 1000 bytes. If production reverts to
-    // s.len() (byte length) this validates as >500 and wrongly rejects.
     #[test]
     fn validate_config_counts_multibyte_chars_not_bytes() {
         let (_transport, runner) = runner_with(Ok(serde_json::Value::Null));

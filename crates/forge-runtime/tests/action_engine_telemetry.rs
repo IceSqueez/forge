@@ -1,18 +1,3 @@
-//! `ActionEngine` telemetry write path. A live engine is driven through real
-//! executions (via `spawn_action_engine`) and a spy `ActionRepo` captures every
-//! `record_execution` call, proving the engine writes exactly one row per
-//! terminal outcome and maps `ExecutionOutcome` → `ExecutionStatus` correctly.
-//!
-//! Deliberate contracts under test:
-//!   * Success → one row, `ExecutionStatus::Success`.
-//!   * Failed  → one row, `ExecutionStatus::Error`.
-//!   * Cancelled → NO row (the deliberate skip), yet history is still saved.
-//!   * A telemetry write error is swallowed - the engine survives and keeps
-//!     processing later jobs.
-//!
-//! Both collaborators are in-memory spies (no SQLite/services/network); the
-//! action repo doubles as the `get` source so no storage FK coupling is needed.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashMap;
@@ -98,8 +83,6 @@ impl ActionRepo for SpyActionRepo {
         duration_ms: u64,
         status: ExecutionStatus,
     ) -> Result<(), StorageError> {
-        // Record the attempt before signalling failure so the swallow test can
-        // still observe that the call was made.
         self.records
             .lock()
             .unwrap()
@@ -159,8 +142,6 @@ impl HistoryRepo for SpyHistoryRepo {
     }
 }
 
-/// Fails deterministically → drives the chain to `ChainSignal::Error` → the
-/// engine records the run as `ExecutionStatus::Error`.
 struct FailRunner;
 
 #[async_trait]
@@ -212,8 +193,6 @@ impl SubActionRunner for FailRunner {
     }
 }
 
-/// Blocks in-flight until its execution's cancel signal trips, so an external
-/// cancel unwinds the run to `Cancelled`.
 struct GateRunner {
     running: Arc<Notify>,
 }
@@ -308,7 +287,6 @@ fn request(action_id: ActionId) -> ExecutionRequest {
     }
 }
 
-/// Polls `pred` up to two seconds; returns true once it holds.
 async fn eventually<F: Fn() -> bool>(pred: F) -> bool {
     for _ in 0..80 {
         if pred() {
@@ -407,7 +385,6 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
     );
     engine.dispatch(request(id)).await.unwrap();
 
-    // Only cancel once the run is provably in-flight.
     tokio::time::timeout(Duration::from_secs(5), running.notified())
         .await
         .expect("gated action never reached its in-flight point");
@@ -430,9 +407,6 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
 
 #[tokio::test]
 async fn telemetry_write_error_is_swallowed_and_engine_keeps_running() {
-    // The engine must warn-and-continue on a record_execution error. Proof: after
-    // a first run whose telemetry write errors, a second dispatched run is still
-    // processed - the engine loop survived the swallowed error.
     let repo = Arc::new(SpyActionRepo::failing_record());
     let action = action_with(vec![]);
     let id = action.id;

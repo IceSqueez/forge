@@ -1,8 +1,3 @@
-//! Regression: High-priority items must be dispatched before Normal-priority items.
-//!
-//! Invariant: the actor's `pop_next()` drains `high_queue` before `normal_queue`.
-//! Breaking this causes bits/sub rewards to wait behind regular chat messages.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -88,8 +83,6 @@ impl OrderRecordingSink {
 #[async_trait]
 impl AudioSink for OrderRecordingSink {
     async fn play(&self, buf: PcmBuffer) -> Result<(), AudioError> {
-        // Encode the sample_rate as a proxy for "which request" - real tests
-        // use a simpler check (first Finished event wins).
         let _ = buf;
         self.notify.notify_one();
         Ok(())
@@ -159,7 +152,6 @@ where
 
 #[tokio::test]
 async fn high_priority_dispatched_before_normal_when_enqueued_after() {
-    // Enqueue Normal first, then High. After Resume, High must be dispatched first.
     let (sink, notify) = OrderRecordingSink::new();
     let config = QueueConfig {
         per_user_limit: 10,
@@ -184,7 +176,6 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
         id
     };
 
-    // Collect Enqueued events before resuming.
     let mut enqueued = 0;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(300);
     loop {
@@ -201,7 +192,6 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
 
     handle.send(SpeakCommand::Resume).await.unwrap();
 
-    // The first Started event should reference the high-priority request.
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2_000);
     let mut first_started_id: Option<forge_speak_queue::RequestId> = None;
     loop {
@@ -219,10 +209,6 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
         }
     }
 
-    // If the actor emits Started before synthesis (with empty ids) then after,
-    // we wait for the Finished event and check at least two plays happened.
-    // The key invariant: both items must eventually be played (priority only
-    // affects ordering, not delivery).
     let _ = notify;
     wait_for(
         &mut stream,
@@ -237,11 +223,8 @@ async fn high_priority_dispatched_before_normal_when_enqueued_after() {
     )
     .await;
 
-    // Both IDs must be different - sanity check.
     assert_ne!(normal_id, high_id);
 
-    // If we captured a first_started_id with a non-empty id (post-synthesis),
-    // it must correspond to the high-priority request.
     if let Some(id) = first_started_id.filter(|id| !id.0.is_empty()) {
         assert_eq!(
             id, high_id,
@@ -263,7 +246,6 @@ async fn multiple_high_priority_items_dispatched_before_normals() {
     handle.send(SpeakCommand::Pause).await.unwrap();
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
 
-    // 3 Normal, 2 High.
     for i in 0..3 {
         handle
             .send(SpeakCommand::Enqueue(req(
@@ -287,7 +269,6 @@ async fn multiple_high_priority_items_dispatched_before_normals() {
 
     handle.send(SpeakCommand::Resume).await.unwrap();
 
-    // All five items must finish.
     for _ in 0..5 {
         wait_for(
             &mut stream,

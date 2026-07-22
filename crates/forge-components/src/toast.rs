@@ -110,8 +110,7 @@ pub struct ToastCard {
     accent: Rgba,
 }
 
-/// Defaults to the kind's own glyph with no action and no dismiss control; layer those
-/// on through the builder methods.
+/// Defaults to the kind's own glyph with no action and no dismiss control; layer those on through the builder methods.
 pub fn toast_card(
     kind: ToastKind,
     message: impl Into<SharedString>,
@@ -171,8 +170,7 @@ impl RenderOnce for ToastCard {
     fn render(mut self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let glyph = self.icon.unwrap_or_else(|| self.kind.default_icon());
 
-        // The card row keeps flex's default cross-axis stretch, so this height-less
-        // stripe fills the full card height.
+        // The card row keeps flex's default cross-axis stretch, so this height-less stripe fills the full card height.
         let stripe = div().flex_none().w(STRIPE_WIDTH).bg(self.accent);
 
         let mut content = div()

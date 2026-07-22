@@ -339,9 +339,7 @@ impl ChatSession {
             .get("source_broadcaster_user_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        // In a shared-chat session Twitch echoes source_broadcaster_* on every message including
-        // the host's own. Surface from_channel only when the message originates from a different
-        // channel (source present and not the host).
+        // Shared-chat echoes source_broadcaster_* on the host's own messages too; only surface from_channel when it differs.
         if !source_id.is_empty()
             && source_id != broadcaster_id
             && let (Some(login), Some(display_name)) = (
@@ -625,8 +623,7 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        // One channel.raid topic carries both received and sent raids (two condition
-        // subscriptions). The to-broadcaster being self means the raid landed here.
+        // channel.raid carries both received and sent raids on one topic; self as to-broadcaster means received.
         let direction = if to_id == self.config.broadcaster_id {
             "received"
         } else {
@@ -778,8 +775,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        // The channel.chat.message_delete event carries no deleted text and no
-        // moderator identity - Twitch does not include those fields in this topic.
+        // channel.chat.message_delete carries no deleted text or moderator identity.
         info!(target_user_login = %target_user_login, message_id = %message_id, "chat message deleted");
 
         let mut forge_payload = serde_json::json!({
@@ -818,8 +814,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        // The channel.chat.clear event carries no moderator identity - Twitch
-        // does not include that field in this topic.
+        // channel.chat.clear carries no moderator identity.
         info!(broadcaster_login = %broadcaster_login, "chat cleared");
 
         let mut forge_payload = serde_json::json!({
@@ -2574,8 +2569,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
         let automod = event_data.get("automod");
-        // message_id is forwarded in the payload so downstream sub-actions
-        // (approve_message / deny_message) can reference it via %automod.message_id%.
+        // Forwarded so approve_message/deny_message sub-actions can reference it via %automod.message_id%.
         let message_id = automod
             .and_then(|a| a.get("message_id"))
             .and_then(|v| v.as_str())
@@ -3463,9 +3457,7 @@ impl ChatSession {
     }
 }
 
-// start/progress/stop share the same payload shape: campaign id/name/amounts.
-// amount fields (current_amount, target_amount) are objects {value, decimal_places, currency};
-// value is in minor units (e.g. cents).
+// current_amount/target_amount are objects {value, decimal_places, currency}; value is minor units (cents).
 fn build_charity_lifecycle_payload(event_data: &serde_json::Value) -> serde_json::Value {
     let campaign_id = event_data
         .get("id")
@@ -3805,8 +3797,6 @@ mod tests {
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
-        // Shared-chat session echoes source_broadcaster_* on the host's own messages;
-        // when source id == broadcaster id, from_channel must NOT surface.
         let event_data = serde_json::json!({
             "broadcaster_user_login": "host",
             "broadcaster_user_id": "100",
@@ -4023,9 +4013,6 @@ mod tests {
         );
     }
 
-    // Both received and sent raids arrive on the same channel.raid topic; the runtime
-    // distinguishes them by the `direction` field this fn computes from whether the
-    // to-broadcaster is self. make_session sets broadcaster_id == "bcast".
     #[tokio::test]
     async fn raid_to_self_is_tagged_received_with_nested_to_broadcaster() {
         let bus = Arc::new(PlatformEventChannel::new());
@@ -4243,8 +4230,6 @@ mod tests {
 
         assert_eq!(ev.kind, "channel.channel_points_redemption_update");
         assert_eq!(ev.source, EventSource::Twitch);
-        // status is the field the descriptor's status_filter gates on, so it must
-        // survive the flat-event -> nested-redemption remap intact.
         assert_eq!(
             ev.payload["redemption"]["status"].as_str(),
             Some("fulfilled")
@@ -4439,9 +4424,6 @@ mod tests {
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
-        // Helix delivers amount as an object {value, decimal_places, currency};
-        // value is in minor units. The forge payload must flatten it to a scalar
-        // amount_cents int plus a currency_code string.
         let event_data = serde_json::json!({
             "campaign_id": "camp-1",
             "charity_name": "Helping Hands",
@@ -4523,8 +4505,6 @@ mod tests {
 
         assert_eq!(ev.kind, "channel.ban");
         assert_eq!(ev.source, EventSource::Twitch);
-        // is_permanent is the field the ban/timeout descriptors branch on; it must
-        // survive the IRC->forge payload mapping verbatim.
         assert_eq!(ev.payload["is_permanent"].as_bool(), Some(true));
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("777"));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
@@ -4587,7 +4567,6 @@ mod tests {
             ev.payload["moderator"]["display_name"].as_str(),
             Some("ModJane")
         );
-        // An unban payload carries no ban metadata.
         assert!(ev.payload.get("reason").is_none());
         assert!(ev.payload.get("is_permanent").is_none());
     }
@@ -4650,8 +4629,6 @@ mod tests {
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
-        // Helix delivers the moderator as flat moderator_user_* fields; the forge
-        // payload nests them under "moderator" and lifts started_at to the root.
         let event_data = serde_json::json!({
             "moderator_user_id": "42",
             "moderator_user_login": "mod_jane",
@@ -4788,8 +4765,6 @@ mod tests {
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
-        // Helix delivers the message under a nested {"message": {"text": ...}}
-        // object; forge flattens it to a root-level "message_text" field.
         let event_data = serde_json::json!({
             "user_id": "321",
             "user_login": "shady_one",
@@ -5152,9 +5127,6 @@ mod tests {
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
-        // Helix nests the held message under message.text; the forge payload
-        // lifts it to a flat message_text and forwards automod.message_id so
-        // downstream approve/deny sub-actions can reference it.
         let event_data = serde_json::json!({
             "user_id": "777",
             "user_login": "viewer_one",
@@ -5397,9 +5369,6 @@ mod tests {
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
 
-        // Twitch nests the held text under message.text and reports the moderator
-        // decision under a Title-Case status; both must reach the forge payload
-        // unchanged so status_filter and downstream sub-actions can read them.
         let event_data = serde_json::json!({
             "user_id": "777",
             "user_login": "viewer_one",

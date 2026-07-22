@@ -125,8 +125,7 @@ impl Picker {
         cx.notify();
     }
 
-    /// The caller must call this when the picker opens; gpui delivers key events only down
-    /// the focus path, so without it typing and Escape never reach the search field.
+    /// The caller must call this when the picker opens; gpui delivers key events only down the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.search.field().update(cx, |f, cx| f.focus(window, cx));
     }
@@ -390,13 +389,9 @@ mod tests {
             ("OBS Scene", None, "", true),
             ("OBS Scene", None, "scene", true),
             ("OBS Scene", None, "SCENE", true),
-            // The needle lives only in the sublabel; the label alone would miss.
             ("Start", Some("obs.start.recording"), "record", true),
             ("Start", Some("obs.start.recording"), "zzz", false),
-            // Absent sublabel with a non-matching label returns false without panicking.
             ("Start", None, "stop", false),
-            // The hit sits mid-string ("connect" inside "Reconnect"), pinning substring -
-            // not starts_with - semantics.
             ("Reconnect", None, "connect", true),
         ];
 

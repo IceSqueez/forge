@@ -11,9 +11,7 @@ use tokio::runtime::Handle;
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
 
-/// Async TTS hook exposed to rhai scripts as `forge::tts::*`. The concrete impl
-/// lives in `forge-desktop::speak_bridge` to keep this crate cycle-free with respect
-/// to `forge-speak-queue`.
+/// Concrete impl lives in `forge-desktop::speak_bridge` to keep this crate cycle-free with respect to `forge-speak-queue`.
 #[async_trait::async_trait]
 pub trait SpeakRequester: Send + Sync {
     async fn speak(&self, text: String, voice_id_override: Option<String>);
@@ -21,7 +19,6 @@ pub trait SpeakRequester: Send + Sync {
     async fn clear(&self);
 }
 
-/// Created once per script execution; `deadline` is the absolute wall-time limit for `forge::sleep`.
 pub struct ForgeApi {
     publisher: Arc<dyn EventPublisher>,
     globals: Arc<dyn GlobalsRepo>,
@@ -52,21 +49,15 @@ impl ForgeApi {
         }
     }
 
-    /// Tags every `forge::log/warn/error` bus event this API emits with the owning
-    /// script so a single editor console can filter to just its own run.
     pub fn with_script_id(mut self, script_id: ScriptId) -> Self {
         self.script_id = Some(script_id);
         self
     }
 
-    /// Shares the counter incremented by every `forge::error` call so the caller
-    /// can read the real error total after the run completes.
     pub fn error_count_handle(&self) -> Arc<AtomicU32> {
         Arc::clone(&self.error_count)
     }
 
-    /// Optional builder - wires the TTS hook so `forge::tts::*` rhai functions become
-    /// active. Without this, the `tts` sub-module is registered but empty.
     pub fn with_speak_requester(mut self, requester: Arc<dyn SpeakRequester>) -> Self {
         self.speak = Some(requester);
         self
@@ -77,8 +68,6 @@ impl ForgeApi {
         self
     }
 
-    /// Consumes `self` and builds the full `forge::*` module tree ready for
-    /// `Engine::register_static_module("forge", module)`.
     pub fn into_module(self) -> Arc<Module> {
         let mut root = Module::new();
 
@@ -170,9 +159,6 @@ impl ForgeApi {
     }
 }
 
-/// Builds the observability event emitted by `forge::log/warn/error`. `script_id`
-/// is `null` for live action-chain runs (no editor console owns them) and set to
-/// the owning script for editor test-runs so the console can filter to its own run.
 fn script_log_event(
     level: &str,
     message: &str,
@@ -406,8 +392,6 @@ fn build_globals_module(
             match Handle::current().block_on(globals_get.get(key.as_str())) {
                 Ok(Some(v)) => Ok(variant_to_dynamic(v)),
                 Ok(None) => {
-                    // Never silent: a script may hold a name that no longer
-                    // resolves because the global was renamed or deleted.
                     tracing::warn!(
                         global_name = key.as_str(),
                         "script read an unknown global; it may have been renamed or deleted"
@@ -619,8 +603,6 @@ mod tests {
         assert_eq!(ev.payload["key"].as_str(), Some("temp"));
     }
 
-    // Build engine with an http client entirely inside a spawn_blocking closure to avoid
-    // dropping a reqwest::blocking::Client from within a tokio async context.
     fn build_engine_with_http_in_blocking(
         dp: Arc<SqliteBackend>,
         captured: Arc<Mutex<Vec<Event>>>,
@@ -642,7 +624,6 @@ mod tests {
     async fn http_get_registered_under_forge_http_namespace() {
         let dp = open_dp().await;
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        // allowlist is empty → DomainNotAllowed fires without any network access
         let config = Arc::new(ScriptHttpConfig::default());
 
         let result = tokio::task::spawn_blocking(move || {
@@ -705,8 +686,6 @@ mod tests {
 
     #[test]
     fn http_error_display_does_not_contain_url() {
-        // Verify HttpError variants that carry sanitized strings do not include URLs.
-        // The Network variant uses reqwest's without_url() so only the status/reason appears.
         let no_url = HttpError::Network("connection refused".into());
         let msg = no_url.to_string();
         assert!(
@@ -740,9 +719,6 @@ mod tests {
 
     #[tokio::test]
     async fn forge_log_warn_error_emit_script_log_events_with_matching_level_and_script_id() {
-        // Each console-logging builtin publishes exactly one `script.log` bus event
-        // whose `level` distinguishes it, tagged with the owning script so the editor
-        // console can filter to its own run. The message text flows through verbatim.
         for (call, level) in [
             (r#"forge::log("hi")"#, "info"),
             (r#"forge::warn("hi")"#, "warn"),
@@ -792,8 +768,6 @@ mod tests {
 
     #[tokio::test]
     async fn error_count_reflects_only_forge_error_calls() {
-        // The shared counter tracks `forge::error` calls and nothing else - log and
-        // warn must leave it untouched, and repeated errors accumulate.
         let dp = open_dp().await;
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let caused_by = EventId::new();
@@ -825,8 +799,6 @@ mod tests {
 
     #[tokio::test]
     async fn script_log_script_id_is_null_when_api_has_no_script_id() {
-        // Live action-chain runs have no owning editor console, so their `script.log`
-        // events carry a null `script_id` rather than an empty or fabricated one.
         let dp = open_dp().await;
         let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let (api, _caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));

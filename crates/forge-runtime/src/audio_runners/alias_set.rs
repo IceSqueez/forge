@@ -101,8 +101,7 @@ impl SubActionRunner for AliasSetRunner {
             .arg_stack
             .interpolate(config.str("voice_id").unwrap_or_default());
 
-        // alias_name serves as both viewer_id (the identity key) and viewer_name
-        // (the display name) since the config exposes a single field for both.
+        // alias_name double-maps to both viewer_id and viewer_name; the config exposes one field for both.
         let result = self
             .speak
             .alias_set(alias_name.clone(), alias_name, engine_id, voice_id)

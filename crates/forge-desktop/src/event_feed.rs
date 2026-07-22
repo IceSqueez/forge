@@ -510,9 +510,7 @@ impl EventFeedView {
                 .child(item.summary.clone()),
         );
 
-        // gpui shares one `border_color` across all sides, so the selection rail is a
-        // separate leading strip rather than a left border (keeps the row's bottom
-        // hairline a distinct color).
+        // gpui shares one `border_color` across all sides, so the selection rail is a separate leading strip rather than a left border.
         let rail_strip = div().flex_none().w(ROW_RAIL_W).bg(rail);
 
         let content = div()

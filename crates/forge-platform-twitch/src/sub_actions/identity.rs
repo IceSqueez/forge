@@ -14,8 +14,7 @@ impl SelfIdentity {
         Self { creds }
     }
 
-    /// Loaded per call, so a re-auth under a different account takes effect
-    /// without re-registering the runners.
+    /// Loaded per call, so a re-auth under a different account takes effect without re-registering runners.
     pub async fn user_id(&self) -> Result<String, HelixError> {
         let cred = credentials::load(self.creds.as_ref())
             .await
@@ -25,8 +24,6 @@ impl SelfIdentity {
     }
 }
 
-/// Resolves a Twitch login name to a numeric user_id via GET /helix/users.
-///
 /// Costs one Helix rate-limit token per call.
 pub async fn resolve_user_id(
     transport: &dyn HelixTransport,

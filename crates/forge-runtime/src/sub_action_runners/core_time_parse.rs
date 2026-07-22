@@ -105,8 +105,7 @@ impl SubActionRunner for CoreTimeParseRunner {
             Err(e) => return (timer.failed(format!("invalid format: {e}")), None),
         };
 
-        // Try OffsetDateTime first (format includes offset), fall back to
-        // PrimitiveDateTime + assume UTC for formats without an offset component.
+        // Falls back to PrimitiveDateTime + assume UTC for formats without an offset component.
         let dt = OffsetDateTime::parse(&source, &desc)
             .or_else(|_| PrimitiveDateTime::parse(&source, &desc).map(|pdt| pdt.assume_utc()))
             .map_err(|_| format!("cannot parse '{source}' with format '{format_str}'"));
@@ -173,7 +172,6 @@ mod tests {
             .get("time.parsed")
             .and_then(|v| v.as_datetime())
             .unwrap();
-        // 12:00 at +02:00 is 10:00 UTC - offset honoured, not dropped.
         assert_eq!(
             dt.unix_timestamp(),
             utc(2024, Month::January, 15, 10, 0, 0).unix_timestamp()

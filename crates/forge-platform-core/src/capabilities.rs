@@ -9,10 +9,8 @@ pub struct PlatformCapabilities {
     pub can_predictions: bool,
     pub can_channel_points: bool,
     /// `true` if the platform connection uses unofficial / community-implementation endpoints.
-    /// UI shows a prominent disclaimer in that case.
     pub limited: bool,
-    /// Non-empty only when `limited` is true. User-facing single sentence explaining why
-    /// the platform uses unofficial or restricted endpoints.
+    /// Non-empty only when `limited` is true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limited_reason: Option<String>,
 }

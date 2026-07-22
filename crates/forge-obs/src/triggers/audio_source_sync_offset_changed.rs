@@ -122,8 +122,6 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
 
-    /// Sync offset is an integer millisecond delay and must land as `Variant::Int`,
-    /// not coerced to a float.
     #[test]
     fn sync_offset_arg_stack_extracts_name_and_offset_as_int() {
         let event = Event::new(

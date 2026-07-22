@@ -137,16 +137,12 @@ async fn poll_redemptions(
         }
     };
 
-    // The first successful poll seeds the dedupe set without emitting, so a
-    // restart does not replay redemptions that were already pending.
     let emit_allowed = *seeded;
     for record in &records {
         if seen.insert(record.id.clone()) && emit_allowed {
             emit(event_tx, REWARD_REDEEMED_KIND, redemption_payload(record)).await?;
         }
     }
-    // Forget ids no longer pending (accepted/rejected) so `seen` stays bounded by
-    // the live pending set and a still-pending id is never evicted and re-emitted.
     let current: HashSet<&str> = records.iter().map(|r| r.id.as_str()).collect();
     seen.retain(|id| current.contains(id.as_str()));
     *seeded = true;
@@ -278,8 +274,6 @@ mod tests {
         })
     }
 
-    // --- diff_channel ---
-
     #[test]
     fn diff_channel_reports_status_change_only_on_live_flip() {
         let prev = snapshot(false, "Title", 1, "Cat");
@@ -315,8 +309,6 @@ mod tests {
         assert!(!delta.status_changed);
         assert!(!delta.metadata_changed);
     }
-
-    // --- payload builders (poller -> descriptor contract) ---
 
     #[test]
     fn status_payload_carries_is_live_title_and_nested_category() {
@@ -356,8 +348,6 @@ mod tests {
             })
         );
     }
-
-    // --- poll_channel ---
 
     #[tokio::test]
     async fn poll_channel_first_call_seeds_snapshot_and_emits_nothing() {
@@ -481,8 +471,6 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    // --- poll_redemptions ---
-
     #[tokio::test]
     async fn poll_redemptions_first_poll_seeds_silently_and_marks_ids() {
         let server = MockServer::start().await;
@@ -508,7 +496,6 @@ mod tests {
 
         assert!(rx.try_recv().is_err(), "the seeding poll must emit nothing");
         assert!(seeded, "a successful first poll flips the seeded flag");
-        // The pending ids were recorded so a later poll treats them as already seen.
         assert!(seen.contains("rd_1"));
         assert!(seen.contains("rd_2"));
     }
@@ -532,7 +519,7 @@ mod tests {
         let rewards = rewards_on(&server);
         let (tx, mut rx) = mpsc::channel(4);
         let mut seen: HashSet<String> = HashSet::new();
-        seen.insert("rd_1".to_owned()); // previously observed
+        seen.insert("rd_1".to_owned());
         let mut seeded = true;
 
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
@@ -576,9 +563,6 @@ mod tests {
 
     #[tokio::test]
     async fn poll_redemptions_never_re_emits_still_pending_id_and_prunes_resolved() {
-        // Regression: a still-pending id must never be re-emitted across polls,
-        // and ids that leave the pending set must be forgotten so `seen` tracks
-        // the live pending set rather than growing unbounded.
         fn pending(ids: &[&str]) -> serde_json::Value {
             let data: Vec<serde_json::Value> = ids
                 .iter()
@@ -588,8 +572,6 @@ mod tests {
         }
 
         let server = MockServer::start().await;
-        // Three ordered single-shot mounts; the first unconsumed match wins,
-        // so successive polls observe [a,b] -> [a,b,c] -> [a].
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
             .respond_with(ResponseTemplate::new(200).set_body_json(pending(&["a", "b"])))
@@ -614,13 +596,11 @@ mod tests {
         let mut seen: HashSet<String> = HashSet::new();
         let mut seeded = false;
 
-        // Poll 1: [a,b] with seeded=false -> seeds silently, emits nothing.
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
             .await
             .unwrap();
         assert!(rx.try_recv().is_err(), "the seeding poll must emit nothing");
 
-        // Poll 2: [a,b,c] -> only c is new; a and b must not re-emit.
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
             .await
             .unwrap();
@@ -632,7 +612,6 @@ mod tests {
             "still-pending a and b must never be re-emitted"
         );
 
-        // Poll 3: [a] (b,c resolved) -> emits nothing; resolved ids pruned.
         poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
             .await
             .unwrap();

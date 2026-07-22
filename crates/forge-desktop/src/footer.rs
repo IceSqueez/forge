@@ -18,8 +18,6 @@ impl Footer {
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
-        // Repaint on each uptime tick applied by the bridge, on a connection change,
-        // and on theme switch.
         cx.observe(&status, |_, _, cx| cx.notify()).detach();
         cx.observe(&connectivity, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<Presentation>(|_, cx| cx.notify())

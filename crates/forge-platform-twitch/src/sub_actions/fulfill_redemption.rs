@@ -77,9 +77,7 @@ pub(crate) fn validate_redemption_config(
     }
 }
 
-/// PATCH /helix/channel_points/custom_rewards/redemptions with three query params and
-/// status in the body. Twitch requires broadcaster_id + reward_id + id as query params
-/// (not body) with the new status as the sole body field.
+/// broadcaster_id + reward_id + id are query params; status is the sole body field.
 pub(crate) async fn patch_redemption_status(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
@@ -242,9 +240,6 @@ mod tests {
             .set("reward.id".to_owned(), Variant::String("rw7".to_owned()))
     }
 
-    // Distinct PATCH shape AND the shared three-query-param contract (asserted ONCE
-    // here as the representative redemption runner): broadcaster_id=self, reward_id
-    // and id both resolved from the stack, with body {"status":"FULFILLED"}.
     #[tokio::test]
     async fn fulfill_patches_all_three_query_params_with_fulfilled_body() {
         let (transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));
@@ -287,8 +282,6 @@ mod tests {
         );
     }
 
-    // SHARED: both ids interpolate from their distinct templates - reward_id from
-    // %reward.id%, id from %redemption.id% - not passed through verbatim.
     #[tokio::test]
     async fn both_ids_interpolate_from_their_own_templates() {
         let (transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));
@@ -314,7 +307,6 @@ mod tests {
         );
     }
 
-    // SHARED: empty redemption_id fails before any Helix call.
     #[tokio::test]
     async fn empty_redemption_id_fails_without_helix_call() {
         let (transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));
@@ -333,7 +325,6 @@ mod tests {
         );
     }
 
-    // SHARED: empty reward_id (with a valid redemption_id) also fails before the call.
     #[tokio::test]
     async fn empty_reward_id_fails_without_helix_call() {
         let (transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));
@@ -355,7 +346,6 @@ mod tests {
         );
     }
 
-    // SHARED: validate_config gates on BOTH ids being non-empty Strings.
     #[tokio::test]
     async fn validate_config_requires_both_ids_non_empty() {
         let (_transport, runner) = fulfill_runner_with(Ok(serde_json::Value::Null));
@@ -405,7 +395,6 @@ mod tests {
         }
     }
 
-    // SHARED: a Helix failure maps to Failed without leaking the sentinel token.
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_token() {
         let (_transport, runner) = fulfill_runner_with(Err(HelixError::Http {

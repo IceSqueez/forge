@@ -375,8 +375,6 @@ mod tests {
             async fn observe_remote_throttle(&self, _: StdDuration) {}
         }
 
-        // A bundle whose platform has never connected: `connection_state()` reports
-        // `Disconnected` and the credential store is empty.
         fn disconnected_bundle() -> Arc<KickIntegrationBundle> {
             let manager = Arc::new(KickCredentialsManager::new(
                 Arc::new(EmptyRepo),
@@ -394,8 +392,6 @@ mod tests {
 
         #[test]
         fn pusher_ws_health_metric_reports_disconnected_with_slug_topic_while_offline() {
-            // Offline the only reachable state is Disconnected; pins the slug weave into
-            // the Pusher topic (chatrooms.<slug>.v2) and inactive transport.
             let bundle = disconnected_bundle();
             let ws = &bundle.metrics()[0];
             assert_eq!(ws.label, "Pusher WS");
@@ -422,8 +418,6 @@ mod tests {
 
         #[test]
         fn content_surfaces_the_mandatory_kick_disclaimer_banner() {
-            // Why: CLAUDE.md requires the unofficial-WS disclaimer on every Kick UI
-            // surface. This pins that the detail view renders it.
             let bundle = disconnected_bundle();
             assert!(
                 bundle
@@ -449,8 +443,6 @@ mod tests {
 
         #[tokio::test]
         async fn dyn_control_disconnect_while_disconnected_reports_not_connected() {
-            // Also the object-safety guard: the bundle must coerce into
-            // `Arc<dyn BuiltinControl>` for the generic lifecycle renderer.
             let control: Arc<dyn BuiltinControl> = disconnected_bundle();
             let outcome = control.disconnect().await;
             assert_eq!(outcome, Err(ControlFailure::NotConnected));

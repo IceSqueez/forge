@@ -11,13 +11,7 @@ use crate::bus::EventBus;
 
 const DEDUP_WINDOW: usize = 500;
 
-/// Long-lived stream of `UnifiedChatRow`s derived from bus events.
-///
-/// Filters to events whose payload carries the `ChatPayload::KEY` key and whose
-/// `EventSource` maps to a known chat platform. Maintains a per-source sliding
-/// dedup window of 500 `platform_msg_id` values; duplicate ids within the same
-/// source are silently dropped. Lag on the underlying broadcast channel is logged
-/// at WARN and skipped - rows are never yielded for lagged events.
+/// Dedups per-source on a sliding window of 500 `platform_msg_id`s; a lagged broadcast is logged and skipped, never yielded.
 pub fn chat_stream(bus: Arc<EventBus>) -> impl Stream<Item = UnifiedChatRow> + Send + 'static {
     let receiver = bus.subscribe().into_receiver();
     stream::unfold(

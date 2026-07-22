@@ -149,9 +149,6 @@ mod tests {
 
     #[test]
     fn event_filter_targets_own_kind_on_youtube_source() {
-        // Contract: the filter must route the exact kind this descriptor handles,
-        // from the YouTube source. A copy-paste drift pointing kind_prefix at a
-        // sibling trigger would silently never match this descriptor's events.
         let filter = ChannelBroadcastTitleChangedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::YouTube));
         assert_eq!(

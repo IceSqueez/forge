@@ -10,9 +10,7 @@ use gpui::{
 
 use crate::palette::{ForgePalette, with_alpha};
 
-/// Focuses `handle` while an overlay is open (so gpui routes keys, incl. Escape, to it) and
-/// restores the previously focused element once it closes. Call from the opener view's `render`;
-/// [`FocusHandle::is_focused`] gates the work so a steady-open overlay does no per-frame focus churn.
+/// Focuses `handle` while an overlay is open and restores the previously focused element once it closes; call from the opener view's `render` ([`FocusHandle::is_focused`] gates against per-frame focus churn).
 pub fn drive_overlay_focus(
     open: bool,
     handle: &FocusHandle,
@@ -41,11 +39,9 @@ fn ease_out_cubic(t: f32) -> f32 {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OverlayPosition {
     Center,
-    /// Docked full-height to the left edge; the `Pixels` is the panel width and the
-    /// slide-in distance.
+    /// Docked full-height to the left edge; the `Pixels` is the panel width and the slide-in distance.
     Left(Pixels),
-    /// Docked full-height to the right edge; the `Pixels` is the panel width and the
-    /// slide-in distance.
+    /// Docked full-height to the right edge; the `Pixels` is the panel width and the slide-in distance.
     Right(Pixels),
 }
 
@@ -61,8 +57,7 @@ pub struct Overlay {
     escape_focus: Option<FocusHandle>,
 }
 
-/// Defaults to centred with no dismissal wired; add position and dismissal via the
-/// builder methods.
+/// Defaults to centred with no dismissal wired; add position and dismissal via the builder methods.
 pub fn overlay(content: impl IntoElement, palette: &ForgePalette) -> Overlay {
     Overlay {
         content: content.into_any_element(),
@@ -81,8 +76,7 @@ impl Overlay {
         self
     }
 
-    /// Wires scrim-click dismissal; Escape also dismisses only once
-    /// [`Overlay::dismiss_on_escape`] is set.
+    /// Wires scrim-click dismissal; Escape also dismisses only once [`Overlay::dismiss_on_escape`] is set.
     #[must_use]
     pub fn on_dismiss(
         mut self,
@@ -94,8 +88,7 @@ impl Overlay {
         self
     }
 
-    /// The caller must focus `focus_handle` when the overlay opens or Escape stays inert
-    /// (gpui routes keys only down the focus path); scrim-click dismissal is unaffected.
+    /// The caller must focus `focus_handle` when the overlay opens or Escape stays inert (gpui routes keys only down the focus path); scrim-click dismissal is unaffected.
     #[must_use]
     pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
         self.escape_focus = Some(focus_handle.clone());
@@ -257,9 +250,7 @@ pub struct AnchoredPopover {
     escape_focus: Option<FocusHandle>,
 }
 
-/// A free-floating panel anchored at a window-space position with a full-window
-/// backdrop that dismisses on outside click. Unlike [`overlay`] it is not centred
-/// and carries no scrim tint.
+/// A free-floating panel anchored at a window-space position with a full-window backdrop that dismisses on outside click; unlike [`overlay`] it is not centred and carries no scrim tint.
 pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> AnchoredPopover {
     AnchoredPopover {
         placement: PopoverPlacement::Window(position),
@@ -269,8 +260,7 @@ pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> A
     }
 }
 
-/// Anchors to the trigger's natural layout position dropped down by `offset` (the
-/// trigger height), instead of an absolute window point.
+/// Anchors to the trigger's natural layout position dropped down by `offset` (the trigger height), instead of an absolute window point.
 pub fn anchored_popover_below(offset: Pixels, content: impl IntoElement) -> AnchoredPopover {
     AnchoredPopover {
         placement: PopoverPlacement::BelowAnchor(offset),
@@ -287,8 +277,7 @@ impl AnchoredPopover {
         self
     }
 
-    /// The caller must focus `focus_handle` when the popover opens or Escape stays inert
-    /// (gpui routes keys only down the focus path); outside-click dismissal is unaffected.
+    /// The caller must focus `focus_handle` when the popover opens or Escape stays inert (gpui routes keys only down the focus path); outside-click dismissal is unaffected.
     #[must_use]
     pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
         self.escape_focus = Some(focus_handle.clone());
@@ -346,10 +335,6 @@ impl RenderOnce for AnchoredPopover {
 mod tests {
     use super::ease_out_cubic;
 
-    /// Pins the easing to `1 - (1-t)^3`: the two endpoints anchor the [0,1] range, the
-    /// midpoint distinguishes ease-OUT from the plausible wrong curves (ease-in `t^3`
-    /// gives 0.125, quadratic `1-(1-t)^2` gives 0.75, linear gives 0.5), and the
-    /// ascending sweep holds the curve non-decreasing.
     #[test]
     fn ease_out_cubic_traces_the_expected_curve() {
         const EPS: f32 = 1e-6;

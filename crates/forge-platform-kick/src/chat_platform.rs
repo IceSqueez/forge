@@ -27,9 +27,8 @@ pub struct KickPlatform {
     credentials_manager: Arc<KickCredentialsManager>,
     http: reqwest::Client,
     sender: KickSendChat,
-    // Synchronized so `connection_state()` (a `&self` snapshot) and the async lifecycle
-    // verbs share one chat handle without `&mut self`. The lock is never held across an
-    // `.await`.
+    // Lets connection_state() and the async lifecycle verbs share one handle without
+    // `&mut self`; never held across an `.await`.
     handle: Mutex<Option<KickChatHandle>>,
     // Persists across reconnects, unlike `handle`, so a receiver taken once stays live.
     state_tx: watch::Sender<ConnectionState>,
@@ -188,9 +187,6 @@ mod tests {
                 user_id: 42,
                 username: "streamer".to_owned(),
                 client_id: "cid".to_owned(),
-                // Comfortably outside the 5-minute refresh buffer so
-                // `get_valid_access_token` returns the stored token without any
-                // network call.
                 expires_at: OffsetDateTime::now_utc() + Duration::hours(1),
             };
             let mut map = HashMap::new();
@@ -278,9 +274,6 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_with_valid_credentials_delegates_to_rate_limited_sender() {
-        // Valid stored creds pass the reauth gate and yield a token without network;
-        // an exhausted limiter then short-circuits inside the sender. Proves
-        // send_message wires creds -> token -> sender rather than returning early.
         let p = platform(InMemRepo::with_valid_creds(), Arc::new(ExhaustedLimiter));
         let err = p.send_message("chan", "hello").await.unwrap_err();
         assert!(matches!(err, PlatformError::RateLimitExhausted));

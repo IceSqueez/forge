@@ -131,7 +131,6 @@ fn make_ctx_at(
     }
 }
 
-/// Triggering event ids still stored for `action_id` after a prune.
 async fn surviving_event_ids(backend: &SqliteBackend, action_id: ActionId) -> Vec<EventId> {
     backend
         .history_repo()
@@ -188,10 +187,6 @@ async fn prune_before_deletes_older_entries_and_query_excludes_them() {
 
 #[tokio::test]
 async fn prune_before_uses_millisecond_precision_at_cutoff_boundary() {
-    // Unit guard: action_history.started_at is stored in MILLISECONDS. A row one
-    // second below the cutoff must be pruned; the row exactly at the cutoff and
-    // one second above must survive the strict `<` comparison. A seconds/millis
-    // (1000x) unit error would misclassify every row and fail this.
     let backend = setup().await;
     let action_id = ActionId::new();
     let base = OffsetDateTime::now_utc();

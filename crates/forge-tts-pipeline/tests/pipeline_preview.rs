@@ -1,8 +1,3 @@
-//! Regression: preview() returns one StageOutcome per stage with correct before/after.
-//!
-//! The preview API is used by the UI live-preview panel. If it returns fewer than
-//! four stages, or incorrect input/output values, the UI will display wrong diffs.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_tts_pipeline::{

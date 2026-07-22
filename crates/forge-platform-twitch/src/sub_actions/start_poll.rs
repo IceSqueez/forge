@@ -40,8 +40,7 @@ impl StartPollRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        // Choices must be objects with a "title" key, not bare strings.
-        // Twitch rejects a flat string array with HTTP 400.
+        // Twitch rejects a flat string array with HTTP 400; choices must be {"title": ...} objects.
         let choices: Vec<serde_json::Value> = cfg
             .choices
             .iter()
@@ -55,8 +54,6 @@ impl StartPollRunner {
 
         if cfg.channel_points_voting_enabled {
             body.insert("channel_points_voting_enabled".to_owned(), true.into());
-            // channel_points_per_vote is only meaningful when voting is enabled.
-            // Sending it when disabled has no effect, but omitting it keeps the body clean.
             if cfg.channel_points_per_vote > 0 {
                 body.insert(
                     "channel_points_per_vote".to_owned(),
@@ -65,8 +62,6 @@ impl StartPollRunner {
             }
         }
 
-        // POST /helix/polls; broadcaster_id is a query param, not body.
-        // Returns 200 with { "data": [{ "id", ... }] }.
         // Requires channel:manage:polls scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/polls")
             .query("broadcaster_id", user_id)
@@ -95,7 +90,6 @@ struct ResolvedConfig {
     channel_points_per_vote: i64,
 }
 
-/// Splits a textarea value on newlines and commas, trims each entry, drops blanks.
 /// Returns Err if count is outside [2, 5] or any choice exceeds 25 chars.
 fn parse_choices(raw: &str) -> Result<Vec<String>, String> {
     let choices: Vec<String> = raw
@@ -374,7 +368,6 @@ mod tests {
         (transport, runner)
     }
 
-    /// Full valid config; tests override single keys to isolate one branch.
     fn full_cfg() -> SubActionConfig {
         BTreeMap::from([
             ("title".to_owned(), Variant::String("Best map?".to_owned())),
@@ -391,8 +384,6 @@ mod tests {
         ])
     }
 
-    /// Executes (optionally mutated) config and returns the posted body,
-    /// asserting the call succeeded and reached Helix.
     async fn body_for(config: SubActionConfig) -> serde_json::Value {
         let (transport, runner) = runner_with(Ok(poll_payload()));
         let stack = ArgStack::new();
@@ -412,22 +403,18 @@ mod tests {
         let request = transport.request(0);
         assert_eq!(request.method, HelixMethod::Post);
         assert_eq!(request.path, "/helix/polls");
-        // broadcaster_id is the caller's own id and lives in the QUERY, not the body.
         assert!(
             request
                 .query
                 .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
         );
         assert!(request.body.unwrap().get("broadcaster_id").is_none());
-        // Success output exposes poll.id for chaining into End Poll.
         assert_eq!(
             output.unwrap().get("poll.id"),
             Some(&Variant::String("poll-xyz".to_owned()))
         );
     }
 
-    // CRITICAL: Twitch's Create Poll endpoint requires `choices` as an array of
-    // objects `[{"title": "A"}]`. A flat string array `["A"]` returns HTTP 400.
     #[tokio::test]
     async fn choices_are_title_objects_not_bare_strings() {
         let body = body_for(full_cfg()).await;
@@ -437,7 +424,6 @@ mod tests {
         );
     }
 
-    // Twitch removed bits voting; the body must never carry those keys.
     #[tokio::test]
     async fn body_never_contains_bits_voting_fields() {
         let mut cfg = full_cfg();
@@ -456,16 +442,12 @@ mod tests {
         let mut cfg = full_cfg();
         cfg.insert("duration_seconds".to_owned(), Variant::Int(300));
         let body = body_for(cfg).await;
-        // Twitch's body key is `duration` (not `duration_seconds`), an integer.
         assert_eq!(body.get("duration"), Some(&serde_json::json!(300)));
         assert!(body.get("duration_seconds").is_none());
     }
 
-    // The channel-points pair: disabled => neither key; enabled+value => both;
-    // enabled+zero => flag present, value absent.
     #[tokio::test]
     async fn channel_points_fields_track_enable_flag_and_value() {
-        // Disabled: no flag (or false) AND no per-vote value.
         let body = body_for(full_cfg()).await;
         assert_ne!(
             body.get("channel_points_voting_enabled"),
@@ -477,7 +459,6 @@ mod tests {
             "per-vote absent when disabled: {body}"
         );
 
-        // Enabled with a positive per-vote: both keys present.
         let mut on = full_cfg();
         on.insert(
             "channel_points_voting_enabled".to_owned(),
@@ -494,7 +475,6 @@ mod tests {
             Some(&serde_json::json!(500))
         );
 
-        // Enabled with zero per-vote: flag present, value omitted (Twitch default).
         let mut on_zero = full_cfg();
         on_zero.insert(
             "channel_points_voting_enabled".to_owned(),
@@ -558,8 +538,6 @@ mod tests {
         assert_eq!(transport.call_count(), 0);
     }
 
-    // The token sits in the same creds bundle the runner reads; a transport
-    // failure must surface a typed error whose message never leaks it.
     #[tokio::test]
     async fn http_failure_outcome_does_not_leak_token() {
         let (_, runner) = runner_with(Err(HelixError::Http {
@@ -588,7 +566,6 @@ mod tests {
             c
         };
 
-        // (label, config, expect_ok)
         let cases = [
             ("baseline valid", valid.clone(), true),
             (

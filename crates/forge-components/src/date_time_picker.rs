@@ -126,8 +126,7 @@ impl DateTimePicker {
         cx.emit(DateTimePickerEvent::Dismissed);
     }
 
-    /// Emits `YYYY-MM-DDThh:mm:00Z`; the picked wall-clock is treated as UTC so the
-    /// value round-trips through the runtime's RFC 3339 parser without a local offset.
+    /// Emits `YYYY-MM-DDThh:mm:00Z`; the picked wall-clock is treated as UTC so the value round-trips through the runtime's RFC 3339 parser without a local offset.
     fn rfc3339(&self) -> Option<String> {
         let date = Date::from_calendar_date(self.year, self.month, self.day).ok()?;
         let time = Time::from_hms(self.hour, self.minute, 0).ok()?;

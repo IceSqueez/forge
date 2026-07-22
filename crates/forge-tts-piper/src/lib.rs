@@ -28,10 +28,7 @@ pub struct PiperEngine {
 }
 
 impl PiperEngine {
-    /// `piper_binary` - path to the `piper` executable on disk.
-    ///
-    /// Caller is responsible for locating the binary (bundled asset or PATH lookup).
-    /// Returns `TtsError::EngineUnavailable` if the binary is absent.
+    /// Returns `TtsError::EngineUnavailable` if `piper_binary` does not exist on disk.
     pub fn new(
         piper_binary: PathBuf,
         voices_dir: PathBuf,
@@ -191,9 +188,8 @@ impl TtsEngine for PiperEngine {
         Ok(voices)
     }
 
-    /// `pitch_semitones` is deferred to a `forge-audio` post-processing pass; Piper has no native
-    /// pitch flag and synthesizes at the model's native pitch. `rate_multiplier` is honoured via
-    /// `--length_scale`.
+    /// `pitch_semitones` is ignored here; Piper has no native pitch flag, so pitch shift
+    /// is deferred to a `forge-audio` post-processing pass.
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
         if request.ssml {
             return Err(TtsError::SsmlUnsupported {

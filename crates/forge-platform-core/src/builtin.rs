@@ -308,10 +308,8 @@ pub trait QuickActions: Send + Sync {
     fn actions(&self) -> Vec<QuickAction>;
 }
 
-/// Why a lifecycle verb did not complete. The variants are coarse and carry no
-/// transport detail on purpose: a bearer, refresh token, or full request URL
-/// must never reach the UI or any log sink, so the underlying transport error
-/// is collapsed here instead of being propagated.
+/// Coarse on purpose: a bearer, refresh token, or full request URL must never reach the
+/// UI or any log sink, so the transport error is collapsed here instead of propagated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlFailure {
     NotConnected,
@@ -334,18 +332,15 @@ impl fmt::Display for ControlFailure {
 
 impl std::error::Error for ControlFailure {}
 
-/// Whether a dispatched lifecycle verb was accepted. The steady connection
-/// state that follows is observed through `BuiltinStatus::connection()` and the
-/// health stream, not returned here.
+/// The steady connection state that follows is observed through `BuiltinStatus::connection()`
+/// and the health stream, not returned here.
 pub type ControlOutcome = Result<(), ControlFailure>;
 
 #[async_trait]
 pub trait BuiltinControl: Send + Sync {
     async fn reconnect(&self) -> ControlOutcome;
     async fn disconnect(&self) -> ControlOutcome;
-    /// Renews credentials via the OAuth refresh grant while keeping the live
-    /// session open. The renewed token stays inside the implementation; only
-    /// accept/reject crosses this boundary.
+    /// The renewed token stays inside the implementation; only accept/reject crosses this boundary.
     async fn refresh_token(&self) -> ControlOutcome;
 }
 
@@ -358,14 +353,8 @@ mod tests {
 
     use super::*;
 
-    // Invariant #7: a bearer / refresh token / full request URL must never reach
-    // the UI or any log sink. `ControlFailure` deliberately carries no transport
-    // payload, so its Display/Debug can never grow a tokened URL. This regression
-    // guards a future edit that folds a raw `reqwest::Error` into a variant: the
-    // strings must stay a fixed, coarse vocabulary with no secret-shaped tokens.
     #[test]
     fn control_failure_display_is_coarse_and_carries_no_transport_detail() {
-        // A secret a careless future impl might splice in via the wrapped error.
         const SECRET: &str = "DEADBEEF_BEARER";
         const SECRET_URL: &str = "https://id.twitch.tv/oauth2/token?access_token=DEADBEEF_BEARER";
         for failure in [
@@ -380,7 +369,6 @@ mod tests {
                 !shown.contains(SECRET) && !shown.contains(SECRET_URL),
                 "{failure:?} display leaked a token-shaped string: {shown}"
             );
-            // No URL/host/scheme shape can appear in a coarse human reason.
             for shape in ["http://", "https://", "://", "Bearer ", "token=", "?", "@"] {
                 assert!(
                     !shown.contains(shape),
@@ -392,8 +380,6 @@ mod tests {
 
     #[test]
     fn control_failure_debug_carries_no_transport_detail() {
-        // Debug is the form most likely to land in a tracing line; assert the
-        // variant is a bare name with no embedded transport payload.
         for (failure, expected) in [
             (ControlFailure::NotConnected, "NotConnected"),
             (ControlFailure::Unauthorized, "Unauthorized"),

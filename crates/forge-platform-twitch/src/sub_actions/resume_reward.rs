@@ -92,8 +92,6 @@ mod tests {
     use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
     use forge_types::{SubActionOutcome, Variant};
 
-    // Distinct-body contract: resume_reward PATCHes exactly {"is_paused": false}.
-    // Shared paths are covered once in enable_reward.rs.
     #[tokio::test]
     async fn resume_patches_is_paused_false() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));

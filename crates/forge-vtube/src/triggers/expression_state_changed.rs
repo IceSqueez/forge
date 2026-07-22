@@ -114,7 +114,6 @@ mod tests {
         let d = ExpressionStateChangedDescriptor;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("expression.state_changed", json!({}))));
-        // Sibling under the same `expression.` prefix must not match.
         assert!(!d.matches_trigger(&cfg, &event("expression.other", json!({}))));
         assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
     }
@@ -138,7 +137,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_preserves_active_false() {
-        // Boundary: `false` is a present value, not an absent key.
         let d = ExpressionStateChangedDescriptor;
         let stack = d.build_arg_stack(&event(
             "expression.state_changed",

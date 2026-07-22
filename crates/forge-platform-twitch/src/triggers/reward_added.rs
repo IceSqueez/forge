@@ -181,13 +181,11 @@ mod tests {
             stack.get("reward.title"),
             Some(&Variant::String("Hydrate".to_owned()))
         );
-        // cost must marshal as Int (not String) so numeric comparisons work downstream.
         assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(500)));
         assert_eq!(
             stack.get("reward.prompt"),
             Some(&Variant::String("Make the streamer drink water".to_owned()))
         );
-        // is_enabled must marshal as Bool so boolean checks work downstream.
         assert_eq!(stack.get("reward.is_enabled"), Some(&Variant::Bool(true)));
     }
 }

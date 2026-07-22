@@ -8,8 +8,7 @@ use crate::tokens::{Radius, radius};
 
 type ToggleClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-// THUMB_ON_OFFSET = TRACK_WIDTH - THUMB_SIZE - THUMB_INSET (32 - 14 - 2): when on, the
-// thumb clears the track's right edge by THUMB_INSET, mirroring its left gap when off.
+// THUMB_ON_OFFSET = TRACK_WIDTH - THUMB_SIZE - THUMB_INSET (32 - 14 - 2): when on, the thumb clears the track's right edge by THUMB_INSET, mirroring its left gap when off.
 const TRACK_WIDTH: Pixels = px(32.0);
 const TRACK_HEIGHT: Pixels = px(18.0);
 const THUMB_SIZE: Pixels = px(14.0);
@@ -113,18 +112,11 @@ mod tests {
     use super::*;
     use crate::palette::FORGE_DEFAULT;
 
-    /// Pins the on/off → (track, thumb) field mapping AND that the `on_track` accent
-    /// is honored only while on. The accent sentinel is `brand`, deliberately distinct
-    /// from both the bare-`toggle` default (`success`) and the off-track fill
-    /// (`surface_overlay`): so if the off arm wrongly returned `on_track`, the off row
-    /// would paint `brand` instead of `surface_overlay` and fail here.
     #[test]
     fn resolves_track_and_thumb_per_state_applying_accent_only_when_on() {
         let p = &FORGE_DEFAULT;
         let accent = p.brand;
 
-        // Guard: the four keyed hues must be pairwise distinct, else a swapped field
-        // assignment in production could satisfy the assertions by coincidence.
         let keyed = [p.brand, p.shell, p.surface_overlay, p.text_faint];
         for (i, a) in keyed.iter().enumerate() {
             for b in &keyed[i + 1..] {

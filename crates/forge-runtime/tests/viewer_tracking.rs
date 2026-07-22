@@ -29,9 +29,6 @@ fn user_message(source: EventSource, id: &str, login: &str) -> Event {
     )
 }
 
-/// The tracker subscribes on its first poll, before any await. Yielding on the
-/// single-threaded runtime lets that poll park at `recv`, so events published
-/// afterwards are guaranteed delivered in publish order.
 async fn wait_until_subscribed() {
     for _ in 0..16 {
         tokio::task::yield_now().await;
@@ -65,8 +62,6 @@ async fn records_one_message_per_platform_source() {
         got.push(timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap());
     }
 
-    // Each supported chat source maps to its own ViewerPlatform, carrying the
-    // event's id + login through unchanged and preserving publish order.
     assert_eq!(
         got,
         vec![
@@ -89,23 +84,18 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
     spawn_viewer_tracker(Arc::clone(&bus), Arc::new(tracker_recording_into(tx)));
     wait_until_subscribed().await;
 
-    // None of these must reach record_message.
     let skipped = [
-        // Non-chat source: maps to no ViewerPlatform.
         user_message(EventSource::Core, "c1", "core-user"),
-        // Right shape, wrong kind.
         chat_event(
             EventSource::Twitch,
             "chat.whisper",
             serde_json::json!({ "user": { "id": "w1", "login": "whisper" } }),
         ),
-        // No `user` object at all.
         chat_event(
             EventSource::Twitch,
             "chat.message",
             serde_json::json!({ "text": "hi" }),
         ),
-        // Empty id, empty login, and each field missing entirely.
         user_message(EventSource::Twitch, "", "loginonly"),
         user_message(EventSource::Twitch, "idonly", ""),
         chat_event(
@@ -123,9 +113,6 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
         bus.publish(event);
     }
 
-    // A valid sentinel published last. Because delivery preserves order, the
-    // first (and only) recorded call must be the sentinel; any skipped event
-    // that leaked a record_message would arrive ahead of it and fail the match.
     bus.publish(user_message(EventSource::Twitch, "ok", "sentinel"));
 
     let recorded = timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap();

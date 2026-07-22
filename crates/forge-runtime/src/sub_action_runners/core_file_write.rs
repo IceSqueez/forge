@@ -189,7 +189,6 @@ mod tests {
 
     #[test]
     fn encode_content_utf8_returns_raw_utf8_bytes() {
-        // Empty encoding string aliases utf8 - both must yield identical bytes.
         let expected = "héllo".as_bytes().to_vec();
         assert_eq!(encode_content("héllo", "utf8").unwrap(), expected);
         assert_eq!(encode_content("héllo", "").unwrap(), expected);
@@ -197,13 +196,11 @@ mod tests {
 
     #[test]
     fn encode_content_latin1_maps_each_char_to_one_byte() {
-        // 'A' = 0x41, 'ÿ' (U+00FF) = 0xFF.
         assert_eq!(encode_content("Aÿ", "latin1").unwrap(), vec![0x41, 0xFF]);
     }
 
     #[test]
     fn encode_content_latin1_accepts_ff_boundary_and_rejects_above() {
-        // U+00FF is the highest codepoint with a Latin-1 byte; U+0100 is the first without.
         assert_eq!(encode_content("\u{00FF}", "latin1").unwrap(), vec![0xFF]);
         let err = encode_content("\u{0100}", "latin1").unwrap_err();
         assert!(err.contains("Latin-1"), "{err}");
@@ -211,7 +208,6 @@ mod tests {
 
     #[test]
     fn encode_content_base64_decodes_trimmed_input() {
-        // base64("hi") == "aGk="; surrounding whitespace is trimmed before decode.
         assert_eq!(encode_content("aGk=", "raw_base64").unwrap(), b"hi");
         assert_eq!(encode_content("  aGk=\n", "raw_base64").unwrap(), b"hi");
     }
@@ -233,10 +229,6 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    // Proves resolve_sandboxed is wired BEFORE any fs write: a traversal path
-    // yields the sandbox-rejection outcome and binds no scope variable. If the
-    // guard were skipped, the path would reach tokio::fs and produce a different
-    // ("open failed") message instead.
     #[tokio::test]
     async fn write_rejects_parent_traversal_before_touching_disk() {
         let runner = CoreFileWriteRunner;

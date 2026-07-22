@@ -1,5 +1,3 @@
-#![doc = "Event bus contract: Event, EventStream, EventSource taxonomy."]
-
 pub mod bus;
 pub mod publisher;
 pub mod source;
@@ -22,8 +20,7 @@ pub struct Event {
     pub timestamp: OffsetDateTime,
     pub payload: serde_json::Value,
     pub caused_by: Option<EventId>,
-    /// `true` when this event was re-published via `EventBus::replay_and_publish`.
-    /// Persisted events written before this field was introduced deserialize as `false`.
+    /// Persisted events written before this field existed deserialize as `false`.
     #[serde(default)]
     pub replay: bool,
 }

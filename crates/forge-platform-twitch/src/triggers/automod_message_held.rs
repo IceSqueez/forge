@@ -201,14 +201,11 @@ mod tests {
     #[test]
     fn build_arg_stack_exposes_message_id_chaining_var_and_typed_level() {
         let stack = AutomodMessageHeldDescriptor.build_arg_stack(&hold_event());
-        // automod.message_id is the chaining var feeding approve/deny sub-actions.
         assert_eq!(
             stack.get("automod.message_id"),
             Some(&Variant::String("hold-abc-123".to_owned()))
         );
-        // level marshals as Int, not String.
         assert_eq!(stack.get("automod.level"), Some(&Variant::Int(3)));
-        // message_text is read from the already-flattened payload field.
         assert_eq!(
             stack.get("message_text"),
             Some(&Variant::String("borderline message".to_owned()))

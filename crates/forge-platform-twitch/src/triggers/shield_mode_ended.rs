@@ -150,7 +150,6 @@ mod tests {
             stack.get("moderator_id"),
             Some(&Variant::String("42".to_owned()))
         );
-        // ended_at is read from the payload root, not nested under moderator.
         assert_eq!(
             stack.get("ended_at"),
             Some(&Variant::String("2026-06-13T19:00:00Z".to_owned()))

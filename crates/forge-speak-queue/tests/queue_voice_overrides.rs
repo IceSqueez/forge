@@ -1,8 +1,3 @@
-//! `resolve_with_overrides`: `voice_override` / `engine_override` bypass and
-//! precedence. Driven end-to-end by enqueuing a `SpeakRequest` with the override
-//! fields set and asserting which voice/engine the actor resolved (reported on the
-//! post-synthesis `Started` event).
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
@@ -17,19 +12,11 @@ use common::{
     wait_for_resolved_voice,
 };
 
-/// Precedence matrix across the override fields. Each row exercises a distinct
-/// branch of `resolve_with_overrides`, not the underlying resolver strategy.
 #[tokio::test]
 async fn override_fields_decide_resolved_voice_and_engine() {
-    // (engine_override, voice_override, expected_voice, expected_engine, why)
     let cases = [
-        // voice_override only → engine inferred from the catalog entry for that voice.
         (None, Some("alpha-2"), "alpha-2", "alpha"),
-        // both set → voice from voice_override, engine forced by engine_override
-        // (cross-engine: a beta voice forced through the alpha engine).
         (Some("alpha"), Some("beta-1"), "beta-1", "alpha"),
-        // engine_override only → strategy picks within that engine's scoped voices;
-        // beta has exactly one, so the pick is determinate.
         (Some("beta"), None, "beta-1", "beta"),
     ];
 
@@ -85,8 +72,6 @@ async fn voice_override_absent_from_catalog_with_no_engine_override_skips() {
 
 #[tokio::test]
 async fn engine_override_forces_synthesis_for_voice_absent_from_catalog() {
-    // An unknown voice would Skip on its own, but a set engine_override short-circuits
-    // the catalog lookup and forces synthesis through that engine.
     let (sink, _plays) = recording_sink();
     let deps = make_deps(
         standard_registry(),

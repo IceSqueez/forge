@@ -63,9 +63,7 @@ impl ActionEngineHandle {
             .map_err(|_| DispatchError::ChannelClosed)
     }
 
-    /// Drives the execution with the caller-provided `cancel` (so an external
-    /// owner can cancel the live chain) and fires `on_complete` once the run
-    /// terminates, regardless of outcome.
+    /// Fires `on_complete` once the run terminates, regardless of outcome.
     pub(crate) async fn dispatch_tracked(
         &self,
         req: ExecutionRequest,
@@ -253,8 +251,7 @@ impl ActionEngine {
             ChainSignal::Aborted => ExecutionOutcome::Cancelled,
         };
 
-        // An external cancel landing after the chain's last boundary check still
-        // makes this a cancelled run; the leaf may have finished without observing it.
+        // A cancel landing after the chain's last boundary check still makes this a cancelled run.
         if cancel.is_cancelled() {
             ctx.outcome = ExecutionOutcome::Cancelled;
         }
@@ -273,8 +270,7 @@ impl ActionEngine {
             ExecutionOutcome::Cancelled => "cancelled",
         };
 
-        // A cancelled run was killed mid-flight, not completed: it records to
-        // history but emits no completion event onto the bus.
+        // A cancelled run records to history but emits no completion event onto the bus.
         if !matches!(ctx.outcome, ExecutionOutcome::Cancelled) {
             self.bus.publish(Event::caused_by(
                 EventSource::Core,
@@ -570,12 +566,6 @@ mod tests {
         }
     }
 
-    /// Drives the private ChainSignal -> ExecutionOutcome mapping through the
-    /// public dispatch path and reads the recorded outcome back from history.
-    /// Only Completed->Success and Error->Failed are reachable here: the chain
-    /// foundation never emits Stop/Break/Continue, and the per-run cancel signal
-    /// is internal and unreachable by a runner, so Aborted->Cancelled cannot be
-    /// driven via ActionEngine (Aborted itself is covered at the chain level).
     #[tokio::test]
     async fn chain_signal_maps_to_recorded_execution_outcome() {
         let dp: Arc<dyn DataProvider> = Arc::new(
@@ -609,8 +599,6 @@ mod tests {
             ("map.failure", ExecutionOutcome::Failed("kaboom".to_owned())),
         ];
 
-        // The migrations seed exactly one queue (the nil ULID); the actions FK
-        // references it, so reuse that row rather than inventing a queue id.
         let default_queue: forge_types::QueueId =
             serde_json::from_str("\"00000000000000000000000000\"").unwrap();
 

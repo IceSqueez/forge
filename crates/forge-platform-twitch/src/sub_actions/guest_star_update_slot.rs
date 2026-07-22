@@ -16,7 +16,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.guest_star.update_slot";
 
-// Tri-state options mirroring set_mode.rs and update_reward.rs.
 const UNCHANGED: &str = "unchanged";
 const ON: &str = "on";
 const OFF: &str = "off";
@@ -49,10 +48,6 @@ impl GuestStarUpdateSlotRunner {
             Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
         };
 
-        // Build the JSON body including only the fields the user opted to change.
-        // Tri-state selects (audio_enabled, video_enabled) contribute a body key only
-        // when != "unchanged". The Optional volume contributes only when a well-typed
-        // Int is present; a Bool (gate-off) or absent key means "skip".
         let mut body = serde_json::Map::new();
 
         if let Some(on) = toggle_to_bool(mode_toggle(config, "audio_enabled")) {
@@ -65,16 +60,12 @@ impl GuestStarUpdateSlotRunner {
             body.insert("volume".to_owned(), vol.into());
         }
 
-        // Nothing opted-in: the PATCH body would be empty, which changes nothing on
-        // Twitch's side yet still costs a rate-limit token. Short-circuit to Success.
+        // An empty body would still cost a rate-limit token for a no-op PATCH.
         if body.is_empty() {
             return SubActionOutcome::Success;
         }
 
-        // Verified against dev.twitch.tv (2026-06-13, BETA): PATCH
-        // /helix/guest_star/slot_settings. broadcaster_id, moderator_id, session_id,
-        // slot_id are query params; is_audio_enabled, is_video_enabled, volume are
-        // body fields. Scope: channel:manage:guest_star.
+        // Requires channel:manage:guest_star scope.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/guest_star/slot_settings")
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
@@ -101,9 +92,7 @@ fn toggle_to_bool(value: Option<&str>) -> Option<bool> {
     }
 }
 
-// An Optional value-field stores its value under the inner key directly; the
-// paired gate Bool is stored under the same key when the UI toggle is off.
-// A present well-typed Int means "include"; Bool or absent means "skip".
+// A present well-typed Int means "include"; a Bool gate value or absent key means "skip".
 fn read_opt_int(config: &SubActionConfig, key: &str) -> Option<i64> {
     match config.get(key) {
         Some(Variant::Int(n)) => Some(*n),
@@ -271,8 +260,6 @@ mod tests {
         (transport, runner)
     }
 
-    /// A literal session_id + slot_id plus the caller's chosen audio/video/volume
-    /// edits. Bodies are then inspected one branch at a time.
     fn cfg(session: &str, slot: &str, edits: &[(&str, Variant)]) -> SubActionConfig {
         let mut c = BTreeMap::from([
             ("session_id".to_owned(), Variant::String(session.to_owned())),
@@ -288,9 +275,6 @@ mod tests {
         Variant::String(v.to_owned())
     }
 
-    // #1 Happy: every field opted in. ONE PATCH; query carries broadcaster_id,
-    // moderator_id (both self), the resolved session_id + slot_id; the body is
-    // EXACTLY the three mapped keys with their typed values.
     #[tokio::test]
     async fn all_fields_opted_patches_full_body_with_self_query_params() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -352,8 +336,6 @@ mod tests {
         );
     }
 
-    // #2 Partial: only audio opted in. video "unchanged" and a gate-Bool volume
-    // contribute NOTHING; the body holds the single audio key.
     #[tokio::test]
     async fn only_audio_opted_yields_single_key_body() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -377,9 +359,6 @@ mod tests {
         );
     }
 
-    // #3 No-op short-circuit: nothing opted in (both unchanged, volume unset).
-    // Success WITHOUT any Helix call - the runner must not spend a rate token on
-    // an empty PATCH.
     #[tokio::test]
     async fn no_opted_fields_succeeds_without_helix_call() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -403,14 +382,10 @@ mod tests {
         );
     }
 
-    // #4 Optional volume gate: a Bool at the volume key is the "toggled-on but no
-    // value" gate marker - it must be OMITTED. Only a real Int includes volume.
-    // (Paired with #2 this is the high-value Optional-marshaling guard.)
     #[tokio::test]
     async fn volume_gate_bool_is_omitted_only_int_is_sent() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new();
-        // Bool at volume alone => body empty => short-circuit, no call.
         let gated = cfg("SESSION-7", "2", &[("volume", Variant::Bool(true))]);
         let (telemetry, _) = runner.execute(&gated, &make_ctx(&stack)).await;
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
@@ -420,7 +395,6 @@ mod tests {
             "gate-Bool volume contributes no key, so the PATCH is skipped"
         );
 
-        // A real Int does include the volume key.
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let typed = cfg("SESSION-7", "2", &[("volume", Variant::Int(33))]);
         let (telemetry, _) = runner.execute(&typed, &make_ctx(&stack)).await;
@@ -431,7 +405,6 @@ mod tests {
         );
     }
 
-    // #5 Empty resolved ids fail before any Helix call.
     #[tokio::test]
     async fn empty_session_id_fails_before_helix_call() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -456,13 +429,10 @@ mod tests {
         assert_eq!(transport.call_count(), 0);
     }
 
-    // #6 validate_config: session_id + slot_id required; tri-state values
-    // constrained to unchanged/on/off; volume in range only when set.
     #[test]
     fn validate_config_enforces_required_fields_tristate_and_volume_range() {
         let (_t, runner) = runner_with(Ok(serde_json::Value::Null));
 
-        // Accept cases.
         assert!(
             runner
                 .validate_config(&cfg("%guest_star.session_id%", "1", &[]))
@@ -490,7 +460,6 @@ mod tests {
             "boundary volume 100 is valid"
         );
 
-        // Reject cases - one rejection contract per row.
         for (label, config) in [
             ("empty session_id", cfg("", "1", &[])),
             ("empty slot_id", cfg("s", "", &[])),
@@ -514,8 +483,6 @@ mod tests {
         }
     }
 
-    // #9 (slot variant) token-leak: a Helix failure surfaces as Failed and the
-    // sentinel token never appears in the outcome message.
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_token() {
         let (_transport, runner) = runner_with(Err(HelixError::Http {

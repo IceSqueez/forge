@@ -106,8 +106,6 @@ impl DeleteRewardRunner {
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        // DELETE /helix/channel_points/custom_rewards sends both broadcaster_id and
-        // the reward id as query params - no request body (204 on success).
         let request =
             HelixRequest::new(HelixMethod::Delete, "/helix/channel_points/custom_rewards")
                 .query("broadcaster_id", user_id)
@@ -141,8 +139,6 @@ mod tests {
         (transport, runner)
     }
 
-    // Distinct DELETE shape: method DELETE, the custom_rewards path, both query
-    // params (broadcaster_id=self AND id=resolved reward_id), and NO body.
     #[tokio::test]
     async fn delete_issues_bodyless_delete_with_both_query_params() {
         let (transport, runner) = delete_runner_with(Ok(serde_json::Value::Null));

@@ -41,8 +41,7 @@ pub struct SubActionTelemetry {
     pub produced: BTreeMap<String, String>,
 }
 
-/// Trim, peel one enclosing `%...%` pair, trim again. Charset-agnostic: dotted
-/// namespaced names (`time.formatted`, `regex.matched`) survive verbatim.
+/// Trims, peels one enclosing `%...%` pair, then trims again; charset-agnostic so dotted names (`time.formatted`) survive verbatim.
 pub fn strip_var_decoration(raw: &str) -> String {
     let trimmed = raw.trim();
     trimmed
@@ -85,16 +84,10 @@ pub fn variant_preview(value: &Variant) -> String {
 }
 
 impl SubActionTelemetry {
-    /// `index` value marking a row that is not a positional top-level chain step
-    /// but a nested step lifted out of a branch/loop/switch body into the same
-    /// flat list. Such a row carries its parent-path locator in `kind` (segments
-    /// `parentIndex.arm` joined by `/`, ending in `localIndex.kindId`) rather than
-    /// a bare kind id, and holds no top-level position.
+    /// Sentinel `index` for a nested step lifted from a branch/loop/switch body; such a row's `kind` carries a parent-path locator instead of a bare kind id.
     pub const NESTED: usize = usize::MAX;
 
-    /// Whether this row is a nested step surfaced from a composite body. Surfaces
-    /// keyed by top-level position (per-step averages, total-time sums) skip these;
-    /// the full flat list keeps them so a failure inside a branch stays diagnosable.
+    /// Surfaces keyed by top-level position skip nested rows; the full flat list keeps them so a branch failure stays diagnosable.
     pub fn is_nested(&self) -> bool {
         self.index == Self::NESTED
     }
@@ -131,7 +124,6 @@ impl ArgStack {
         self.0.clone()
     }
 
-    /// Returns a new `ArgStack` with `key` bound to `value`.
     pub fn set(mut self, key: String, value: Variant) -> Self {
         self.0.insert(key, value);
         self
@@ -236,8 +228,6 @@ mod tests {
 
     #[test]
     fn interpolate_trims_whitespace_inside_the_token_before_lookup() {
-        // The lookup key is trimmed, so padding inside the `%...%` still resolves
-        // the same binding. An unknown padded token stays verbatim (padding kept).
         let stack = stack_with(&[("index", Variant::Int(3))]);
         for template in ["%index %", "% index%", "% index %"] {
             assert_eq!(stack.interpolate(template), "3", "template {template:?}");

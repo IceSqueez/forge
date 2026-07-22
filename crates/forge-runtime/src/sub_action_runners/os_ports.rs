@@ -1,6 +1,4 @@
-//! Owned ports over OS integration crates (clipboard, desktop notifications, URL
-//! opening). The runner layer depends only on these traits; the backing crate
-//! types never cross this boundary.
+//! The runner layer depends only on these traits; the backing OS crate types never cross this boundary.
 
 use thiserror::Error;
 
@@ -33,8 +31,7 @@ pub trait NotifyPort: Send + Sync {
 
 pub trait ClipboardPort: Send + Sync {
     fn copy(&self, text: String) -> Result<(), OsPortError>;
-    /// An accessible-but-empty clipboard yields `Ok("")`; only a missing
-    /// clipboard service is an error.
+    /// An accessible-but-empty clipboard yields `Ok("")`; only a missing clipboard service errors.
     fn read(&self) -> Result<String, OsPortError>;
 }
 
@@ -90,8 +87,7 @@ impl ClipboardPort for SystemClipboardPort {
     }
 }
 
-// Why: a fresh handle per call lets a headless session surface a per-action
-// failure instead of aborting sub-action registration at boot.
+// A fresh handle per call lets a headless session fail per-action, not abort boot registration.
 fn clipboard() -> Result<arboard::Clipboard, OsPortError> {
     arboard::Clipboard::new().map_err(|e| OsPortError::Unavailable(e.to_string()))
 }
@@ -108,11 +104,6 @@ impl UrlOpenPort for SystemUrlOpenPort {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 pub(crate) mod test_ports {
-    //! Recording / programmable mock ports for runner tests. These NEVER touch a
-    //! real clipboard, notification daemon, or browser - they record every call
-    //! and return a pre-programmed outcome, so the security gate and field
-    //! marshaling can be asserted without OS side effects.
-
     use std::sync::Mutex;
 
     use forge_events::{Event, EventPublisher};
@@ -134,7 +125,6 @@ pub(crate) mod test_ports {
         }
     }
 
-    /// Records every URL handed to the OS opener; performs no real I/O.
     pub(crate) struct RecordingUrlOpenPort {
         opened: Mutex<Vec<String>>,
         err: Option<MockErr>,
@@ -174,7 +164,6 @@ pub(crate) mod test_ports {
         }
     }
 
-    /// Records clipboard writes and serves a programmed read result.
     pub(crate) struct RecordingClipboardPort {
         written: Mutex<Vec<String>>,
         copy_err: Option<MockErr>,
@@ -224,7 +213,6 @@ pub(crate) mod test_ports {
         }
     }
 
-    /// Records every notice handed to the OS notification layer.
     pub(crate) struct RecordingNotifyPort {
         shown: Mutex<Vec<DesktopNotice>>,
         err: Option<MockErr>,
@@ -264,8 +252,6 @@ pub(crate) mod test_ports {
         }
     }
 
-    /// Sink that drops events - RunContext requires a publisher but these runners
-    /// emit none.
     pub(crate) struct NullPublisher;
 
     impl EventPublisher for NullPublisher {

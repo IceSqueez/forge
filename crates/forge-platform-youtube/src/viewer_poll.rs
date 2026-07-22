@@ -16,19 +16,17 @@ const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// `videos.list` costs one Data API unit per call; a live poll never runs while
-/// no broadcast is active, so the ceiling is one unit per `POLL_INTERVAL`.
+/// A live poll never runs while no broadcast is active, so the ceiling is one unit per
+/// `POLL_INTERVAL`.
 const VIEWER_LIST_COST: u32 = 1;
 
-/// A bucket bounding this poll's own request rate. The real Data API ceiling is
-/// the shared daily 10k-unit quota tracked in `QuotaState`; this only stops a
-/// pathological tick storm from bursting past a modest read rate.
+/// Bounds this poll's own request rate; the real ceiling is the shared daily quota in
+/// `QuotaState` - this only stops a pathological tick storm.
 const READ_BUDGET_CAPACITY: u32 = 60;
 const READ_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
-/// Bridges the concurrent-viewer poll into the runtime live-viewer aggregate.
 /// Holds only a `watch` receiver, so it never keeps the poll task alive.
 pub struct YoutubeViewerSource {
     reports: watch::Receiver<ViewerReport>,
@@ -95,10 +93,7 @@ impl YoutubeViewerPoll {
         }
     }
 
-    /// One poll of the active broadcast's `liveStreamingDetails.concurrentViewers`.
-    /// `Some(Live)` / `Some(Absent)` is a definitive figure to publish; `None`
-    /// means a transient miss (throttle, quota, network, non-200) whose last
-    /// known figure must be kept rather than erased to zero or absence.
+    /// `None` is a transient miss whose last known figure must be kept, not erased.
     async fn poll_once(&self) -> Option<ViewerReport> {
         let video_id = match self.active_broadcast_id.get() {
             Some(id) => id,
@@ -151,9 +146,8 @@ impl YoutubeViewerPoll {
     }
 }
 
-/// Pulls `items[0].liveStreamingDetails.concurrentViewers` (an unsigned count
-/// serialized as a string) from a `videos.list` body. Absent for a non-live,
-/// ended, or hidden-count broadcast - never coerced to zero.
+/// The count is serialized as a string; a non-live/hidden-count broadcast is Absent,
+/// never coerced to zero.
 fn extract_concurrent_viewers(body: &serde_json::Value) -> Option<u64> {
     body.get("items")?
         .as_array()?
@@ -195,8 +189,6 @@ mod tests {
 
     #[test]
     fn extract_yields_none_for_every_absent_or_unparseable_shape() {
-        // Each shape breaks the nested path at a different link; none may be
-        // coerced to a zero count (that is the Absent/Live distinction).
         for (label, body) in [
             ("empty items", json!({ "items": [] })),
             ("missing liveStreamingDetails", json!({ "items": [ {} ] })),
@@ -261,8 +253,6 @@ mod tests {
 
     #[tokio::test]
     async fn poll_once_reports_absent_without_active_broadcast() {
-        // No active broadcast id: the poll short-circuits to Absent without a
-        // request, never a transient None.
         let poll = make_poll("http://255.255.255.255".to_owned(), None);
         assert_eq!(poll.poll_once().await, Some(ViewerReport::Absent));
     }

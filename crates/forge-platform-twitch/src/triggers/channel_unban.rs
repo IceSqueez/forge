@@ -167,7 +167,6 @@ mod tests {
             stack.get("moderator_login"),
             Some(&Variant::String("mod_jane".to_owned()))
         );
-        // An unban carries no ban metadata; these vars must be absent.
         assert_eq!(stack.get("reason"), None);
         assert_eq!(stack.get("banned_at"), None);
         assert_eq!(stack.get("ends_at"), None);

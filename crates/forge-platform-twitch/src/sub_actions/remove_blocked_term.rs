@@ -32,8 +32,6 @@ impl RemoveBlockedTermRunner {
 pub(crate) fn remove_blocked_term_default_config() -> SubActionConfig {
     BTreeMap::from([(
         "term_id".to_owned(),
-        // Default chains from add_blocked_term output so add→remove sequences work without
-        // manual config.
         Variant::String("%blocked_term.id%".to_owned()),
     )])
 }
@@ -41,8 +39,6 @@ pub(crate) fn remove_blocked_term_default_config() -> SubActionConfig {
 pub(crate) fn remove_blocked_term_config_fields() -> Vec<FormField> {
     vec![FormField::Text {
         key: "term_id",
-        // The Twitch DELETE endpoint requires the blocked-term ID (not the text).
-        // Use %blocked_term.id% to chain from add_blocked_term output.
         label: "Blocked Term ID",
         placeholder: "%blocked_term.id%",
     }]
@@ -141,10 +137,7 @@ impl SubActionRunner for RemoveBlockedTermRunner {
     }
 }
 
-// DELETE /helix/moderation/blocked_terms
-// broadcaster_id = moderator_id = self (broadcaster manages their own channel's blocked terms)
-// `id` query param is the blocked-term UUID - NOT the blocked text itself.
-// Returns 204 No Content on success.
+// broadcaster_id = moderator_id = self; `id` is the blocked-term UUID, not the text.
 async fn delete_blocked_term(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
@@ -159,7 +152,6 @@ async fn delete_blocked_term(
     let request = HelixRequest::new(HelixMethod::Delete, "/helix/moderation/blocked_terms")
         .query("broadcaster_id", user_id.clone())
         .query("moderator_id", user_id)
-        // Twitch DELETE takes the term UUID, not the term text string.
         .query("id", term_id.to_owned());
 
     match transport.execute(request).await {
@@ -192,8 +184,6 @@ mod tests {
         BTreeMap::from([("term_id".to_owned(), Variant::String(term_id.to_owned()))])
     }
 
-    // Default config chains %blocked_term.id% from add_blocked_term output, so the
-    // default path must resolve that global into the DELETE `id` query param.
     #[tokio::test]
     async fn execute_issues_bodyless_delete_with_self_and_resolved_id() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -241,7 +231,6 @@ mod tests {
     #[tokio::test]
     async fn empty_interpolated_term_id_fails_without_helix_call() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
-        // %blocked_term.id% resolves to an empty string → short-circuit before DELETE.
         let stack =
             ArgStack::new().set("blocked_term.id".to_owned(), Variant::String(String::new()));
         let (telemetry, _) = runner

@@ -142,8 +142,6 @@ mod tests {
             stack.get("moderator_login"),
             Some(&Variant::String("mod_login".to_owned()))
         );
-        // action lives at the payload top level; it is surfaced under the
-        // automod.action chaining var.
         assert_eq!(
             stack.get("automod.action"),
             Some(&Variant::String("add_blocked".to_owned()))

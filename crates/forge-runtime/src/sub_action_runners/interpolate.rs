@@ -1,9 +1,6 @@
 use forge_types::Variant;
 
-/// Parses an interpolated string into the most specific `Variant` type that matches.
-///
-/// Integers win over floats; case-insensitive "true"/"false" yield `Bool`.
-/// Falls through to `Variant::String` when no numeric or boolean parse succeeds.
+/// Integers win over floats; case-insensitive "true"/"false" yield `Bool`; else `String`.
 pub(super) fn parse_variant(s: &str) -> Variant {
     if let Ok(i) = s.parse::<i64>() {
         return Variant::Int(i);

@@ -291,9 +291,6 @@ mod tests {
         }
     }
 
-    /// HashMap-backed `SettingsRepo` for tests that need `restart` to actually
-    /// read persisted values back (the mockall `MockSettingsRepo` from `test_dp`
-    /// panics on any unexpected call).
     struct MapSettings(Mutex<HashMap<String, String>>);
 
     impl MapSettings {
@@ -550,10 +547,6 @@ mod tests {
         );
     }
 
-    // Regression: `stop` takes `shutdown_tx` + `join` out under the guard and
-    // releases it before the drain await. A second `stop` finds `shutdown_tx`
-    // already `None` and must return `Ok` without re-draining a taken join or
-    // panicking - the idempotency the accessor-freeze fix relies on.
     #[tokio::test]
     async fn stop_is_idempotent_on_repeated_calls() {
         let (handle, _addr) = make_server(false, MemCreds::new()).await;
@@ -561,9 +554,6 @@ mod tests {
         handle.stop().await.expect("second stop must be a no-op Ok");
     }
 
-    // Regression (SERVER-1): `restart` must reload persisted settings and rebind
-    // to the CHANGED address, not re-serve the frozen boot-time bind. Guards
-    // against a revert to `guard.state.clone()` re-using the old bind_addr.
     #[tokio::test]
     async fn restart_rebinds_on_persisted_address() {
         let settings = MapSettings::new();
@@ -576,13 +566,10 @@ mod tests {
             Arc::clone(&settings) as Arc<dyn SettingsRepo>,
         );
 
-        // Boot on an ephemeral loopback port and keep it occupied.
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let boot_addr = listener.local_addr().expect("local addr");
         let handle = serve_on(listener, state);
 
-        // With the boot port still held, reserve a DISTINCT free loopback port,
-        // then release it so restart can claim it as the newly-persisted target.
         let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
         let new_port = probe.local_addr().expect("probe addr").port();
         drop(probe);
@@ -592,7 +579,6 @@ mod tests {
             "target port must differ from boot"
         );
 
-        // Persist a bind target changed since boot.
         crate::config::ServerSettings::save_bind_address(&*settings, "127.0.0.1")
             .await
             .expect("save addr");
@@ -602,8 +588,6 @@ mod tests {
 
         handle.restart().await.expect("restart");
 
-        // The rebuilt server must answer on the persisted port, proving restart
-        // reloaded settings instead of re-serving the frozen boot address.
         let url = format!("http://127.0.0.1:{new_port}/api/v1/info");
         let resp = reqwest::Client::new()
             .get(&url)

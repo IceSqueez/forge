@@ -88,9 +88,6 @@ impl TriggerKindDescriptor for SourceInputRemovedDescriptor {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // 1:1 kind discrimination across the `source.` family (incl. the input/visibility
-    // prefix collision) is covered in `source_input_created`. Here we test only this
-    // descriptor's typed arg-stack extraction.
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;

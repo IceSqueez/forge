@@ -1,10 +1,3 @@
-//! Regression: DeterministicByName strategy must be stable across calls.
-//!
-//! Invariant: `sha256(viewer_name) % eligible_voices.len()` produces a
-//! deterministic index, so the same viewer always gets the same voice even
-//! after process restart. Any change to the hash input format or modulo
-//! logic breaks this contract and causes viewer voice reassignment.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_tts_core::{EngineId, VoiceGender, VoiceId};
@@ -63,8 +56,6 @@ fn same_name_same_voice_across_repeated_calls() {
 
 #[test]
 fn same_viewer_id_different_name_still_deterministic_on_name() {
-    // Resolution uses viewer_name for the hash, not viewer_id.
-    // Renaming a viewer changes their voice assignment.
     let (resolver, catalog) = make_resolver(10);
 
     let r_alice = resolver.resolve("uid-1", "alice", &catalog);
@@ -79,8 +70,6 @@ fn same_viewer_id_different_name_still_deterministic_on_name() {
         _ => panic!("expected Speak"),
     };
 
-    // With 10 voices, sha256("alice") and sha256("bob") map to different
-    // indices. Assert that the two names differ (probabilistic near-certainty).
     assert_ne!(
         v_alice, v_bob,
         "alice and bob should resolve to different voices with 10-voice catalog"
@@ -89,8 +78,6 @@ fn same_viewer_id_different_name_still_deterministic_on_name() {
 
 #[test]
 fn catalog_sorted_before_hash_modulo() {
-    // The resolver sorts the eligible list by voice_id before applying modulo.
-    // Catalog insertion order must not affect resolution.
     let catalog_asc: Vec<TtsVoice> = (0..4).map(|i| make_voice(&format!("voice-{i}"))).collect();
     let mut catalog_desc = catalog_asc.clone();
     catalog_desc.reverse();

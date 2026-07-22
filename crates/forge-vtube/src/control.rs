@@ -11,11 +11,8 @@ use crate::supervisor::SupervisorContext;
 #[async_trait]
 impl BuiltinControl for VTubeClient {
     async fn reconnect(&self) -> ControlOutcome {
-        // Serialise concurrent reconnect/disconnect calls: only one supervisor
-        // replacement runs at a time.  Hold the slot only long enough to swap
-        // the Notify; release it before awaiting the old handle so the
-        // supervisor's own shutdown.notified() path can complete without
-        // waiting on us.
+        // Slot held only long enough to swap the Notify; released before awaiting the old
+        // handle so the supervisor's own shutdown.notified() path can complete.
         let new_notify = Arc::new(Notify::new());
         {
             let mut slot = self.shutdown.lock().await;
@@ -34,7 +31,6 @@ impl BuiltinControl for VTubeClient {
             *g = None;
         }
 
-        // Fresh request channel - the previous req_rx is gone with the old supervisor.
         let (new_req_tx, new_req_rx) = tokio::sync::mpsc::unbounded_channel();
         {
             let mut tx_slot = self.req_tx.lock().await;
@@ -89,16 +85,12 @@ mod tests {
 
     use crate::client::VTubeClient;
 
-    // Compile-time object-safety guard for the lifecycle trait.
     #[test]
     fn client_coerces_to_dyn_builtin_control() {
         fn accepts(_: Arc<dyn BuiltinControl>) {}
         accepts(Arc::new(VTubeClient::new_for_test("ws://127.0.0.1:8001/")));
     }
 
-    // Contract: VTube Studio authenticates with a plugin token granted per
-    // session, not an OAuth refresh grant, so refresh_token always rejects as
-    // Unsupported. The only lifecycle verb reachable without a WS supervisor.
     #[tokio::test]
     async fn refresh_token_is_unsupported() {
         let client = VTubeClient::new_for_test("ws://127.0.0.1:8001/");

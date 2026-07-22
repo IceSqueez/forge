@@ -35,8 +35,7 @@ impl ScriptRegistry {
         }
     }
 
-    /// Attach the TTS hook used by `forge::tts::*` rhai functions. Call before
-    /// wrapping the registry in an `Arc` and handing it to the action engine.
+    /// Call before wrapping the registry in an `Arc` and handing it to the action engine.
     pub fn set_speak_requester(&mut self, requester: Arc<dyn SpeakRequester>) {
         self.speak_requester = Some(requester);
     }
@@ -70,11 +69,7 @@ impl ScriptRegistry {
         Ok(())
     }
 
-    /// Hot-reloads a single script after a save.
-    ///
-    /// Validates syntax before acquiring the write lock. On success the registry is
-    /// updated and a `script.reloaded` event is published. The lock is released before
-    /// `bus.publish` so no lock is held across an async operation.
+    /// The write lock is released before `bus.publish` - never held across that async call.
     pub async fn reload(
         &self,
         record: ScriptRecord,

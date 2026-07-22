@@ -113,8 +113,6 @@ mod tests {
 
     #[test]
     fn str_nonempty_rejects_empty_string_but_keeps_whitespace_only() {
-        // Contract: str_nonempty filters on is_empty(), NOT trimmed length, so a
-        // whitespace-only value survives verbatim. A trim() here would break it.
         assert_eq!(cfg(Variant::String(String::new())).str("k"), Some(""));
         assert_eq!(cfg(Variant::String(String::new())).str_nonempty("k"), None);
         assert_eq!(

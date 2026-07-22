@@ -1,9 +1,3 @@
-//! Regression: AliasState::Blocked must return Skip regardless of catalog.
-//!
-//! A blocked viewer alias must never result in audio synthesis even when
-//! the voice catalog is fully populated. The explicit alias check runs
-//! before any strategy fallback.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_tts_core::{EngineId, VoiceGender, VoiceId};
@@ -77,7 +71,6 @@ fn blocked_alias_does_not_affect_other_viewers() {
 
 #[test]
 fn block_matched_by_viewer_id_not_name() {
-    // Block is keyed on viewer_id. A different uid with the same name must pass through.
     let catalog = vec![make_voice("voice-a")];
     let resolver = VoiceAliasResolver::new(
         vec![blocked_alias("uid-blocked")],
@@ -86,7 +79,6 @@ fn block_matched_by_viewer_id_not_name() {
         SynthesisDefaults::default(),
     );
 
-    // Same viewer_name but different viewer_id - must NOT be blocked.
     match resolver.resolve("uid-other", "BlockedViewer", &catalog) {
         ResolveResult::Speak { .. } => {}
         ResolveResult::Skip { reason } => {

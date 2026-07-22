@@ -1,9 +1,3 @@
-//! Regression: per-user limit must reject requests beyond the configured cap.
-//!
-//! Invariant: with per_user_limit=N a single viewer may have at most N items
-//! pending simultaneously. The (N+1)-th request must be rejected with a
-//! `SpeakEvent::Rejected` event - not silently dropped and not panicked.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -149,9 +143,7 @@ async fn sixth_request_rejected_when_limit_is_five() {
     };
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps());
 
-    // Pause the queue so items accumulate without being popped.
     handle.send(SpeakCommand::Pause).await.unwrap();
-    // Drain the Paused event.
     collect_events(&mut stream, 1, 500).await;
 
     let viewer = "heavy-user";
@@ -165,13 +157,11 @@ async fn sixth_request_rejected_when_limit_is_five() {
             .unwrap();
     }
 
-    // 6th request must be rejected.
     handle
         .send(SpeakCommand::Enqueue(speak_req(viewer, "over the limit")))
         .await
         .unwrap();
 
-    // Collect enough events to see the Rejected one.
     let events = collect_events(&mut stream, 15, 1_000).await;
     let rejected_count = events
         .iter()
@@ -183,8 +173,6 @@ async fn sixth_request_rejected_when_limit_is_five() {
 
 #[tokio::test]
 async fn different_viewers_are_tracked_independently() {
-    // Each viewer has their own counter - viewer B's count must not
-    // interfere with viewer A's limit.
     let config = QueueConfig {
         per_user_limit: 2,
         max_queue_len: 50,
@@ -194,7 +182,6 @@ async fn different_viewers_are_tracked_independently() {
     handle.send(SpeakCommand::Pause).await.unwrap();
     collect_events(&mut stream, 1, 500).await;
 
-    // Enqueue 2 for each viewer - no rejections expected.
     for viewer in ["viewer-a", "viewer-b"] {
         for i in 0..2 {
             handle

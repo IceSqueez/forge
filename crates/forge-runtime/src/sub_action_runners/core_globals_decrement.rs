@@ -126,8 +126,6 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    /// In-memory `GlobalsRepo` faithful to the SQLite backend's `incr` contract:
-    /// missing key -> `NotFound`, non-numeric -> `TypeMismatch`, numeric -> add & return.
     #[derive(Default)]
     struct MapGlobals {
         map: Mutex<BTreeMap<String, Variant>>,

@@ -104,7 +104,6 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
                 if remove_all {
                     arr.retain(|item| item != &target);
                 } else {
-                    // Remove only the first matching element (leftmost).
                     if let Some(pos) = arr.iter().position(|item| item == &target) {
                         arr.remove(pos);
                     }
@@ -221,8 +220,6 @@ mod tests {
         c
     }
 
-    /// [1, 2, 1, 3, 1] - the value `1` appears three times so first-only and
-    /// remove-all produce distinguishable results.
     fn seeded() -> Arc<MapGlobals> {
         Arc::new(MapGlobals::with([(
             "list",
@@ -248,7 +245,6 @@ mod tests {
         let globals = seeded();
         let outcome = run(globals.clone(), &cfg("list", "1", false)).await;
         assert!(matches!(outcome, SubActionOutcome::Success));
-        // Only the leftmost Int(1) is gone; later duplicates survive.
         assert_eq!(
             globals.array("list"),
             vec![
@@ -275,7 +271,6 @@ mod tests {
     async fn array_remove_absent_value_leaves_array_unchanged() {
         let globals = seeded();
         let outcome = run(globals.clone(), &cfg("list", "99", false)).await;
-        // Absent value is a no-op success, NOT a failure.
         assert!(matches!(outcome, SubActionOutcome::Success));
         assert_eq!(
             globals.array("list"),

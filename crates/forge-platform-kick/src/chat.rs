@@ -12,9 +12,7 @@ use tracing::{debug, info, warn};
 use crate::channel_info::ChannelInfoFetcher;
 use crate::error::KickError;
 
-/// Community-observed Pusher app key used by kick.com as of 2024.
-/// If Pusher events stop arriving, verify the current key via DevTools:
-/// filter for requests to "ws-us2.pusher.com" in the Network tab.
+/// Community-observed (PLATFORMS_NOTES.md); re-verify via DevTools if events stop arriving.
 pub const PUSHER_APP_KEY: &str = "eb1d5f283081a78b932c";
 
 const PUSHER_WS_BASE: &str = "wss://ws-us2.pusher.com/app";
@@ -55,8 +53,7 @@ impl KickChat {
         format!("{PUSHER_WS_BASE}/{PUSHER_APP_KEY}?{PUSHER_PROTOCOL_PARAMS}")
     }
 
-    /// Reconnects automatically with exponential backoff capped at 60 s. The returned
-    /// handle's `shutdown` signals graceful shutdown; dropping it does the same.
+    /// The returned handle's `shutdown` signals graceful shutdown; dropping it does the same.
     pub async fn connect(self, event_tx: mpsc::Sender<Event>) -> Result<KickChatHandle, KickError> {
         let fetcher = ChannelInfoFetcher::new(self.slug.clone(), self.http.clone());
         let channel_info = fetcher.fetch().await?;
@@ -168,9 +165,8 @@ async fn run_loop(
         warn!(error = %e, "subscribe send failed");
     }
 
-    // Subscribe frame sent; Pusher confirms via pusher_internal:subscription_succeeded.
-    // Treat the WS being open + subscribe sent as Connected - subscription_succeeded is
-    // a Pusher internal frame we silently ignore, so there is no better signal.
+    // subscription_succeeded is a Pusher internal frame we silently ignore, so WS-open +
+    // subscribe-sent is treated as Connected; there is no better signal.
     let _ = state_tx.send(ConnectionState::Connected);
 
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
@@ -210,7 +206,6 @@ async fn run_loop(
         }
     }
 
-    // Broken out of 'session - enter the reconnect loop.
     let _ = state_tx.send(ConnectionState::Reconnecting);
     tokio::time::sleep(backoff.next_delay()).await;
 
@@ -245,7 +240,6 @@ async fn run_loop(
             warn!(error = %e, "subscribe failed on reconnect");
         }
 
-        // WS re-established and subscribe sent after backoff - treat as Connected again.
         let _ = state_tx.send(ConnectionState::Connected);
         ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
         backoff.reset();
@@ -285,7 +279,6 @@ async fn run_loop(
             }
         }
 
-        // Dropped out of inner 'session - still in the outer reconnect loop.
         let _ = state_tx.send(ConnectionState::Reconnecting);
         tokio::time::sleep(backoff.next_delay()).await;
     }

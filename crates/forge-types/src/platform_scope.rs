@@ -10,10 +10,7 @@ use crate::PlatformId;
 pub enum PlatformScope {
     #[default]
     Any,
-    /// INVARIANT: the set is never empty.
-    /// Construct via [`PlatformScope::only`]. Direct enum construction outside of
-    /// `forge-types` tests is forbidden by convention; deserialization runs through
-    /// the `TryFrom<PlatformScopeRaw>` impl, which enforces the same invariant.
+    /// Never empty; construct via [`PlatformScope::only`], which enforces it (as does the `TryFrom<PlatformScopeRaw>` deserialize path).
     Only(BTreeSet<PlatformId>),
 }
 

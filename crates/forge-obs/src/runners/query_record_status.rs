@@ -130,7 +130,6 @@ mod tests {
             stack.get("obs.record.is_active"),
             Some(&Variant::Bool(true))
         );
-        // Load-bearing: a `false` flag must be carried through, not dropped as falsy.
         assert_eq!(
             stack.get("obs.record.is_paused"),
             Some(&Variant::Bool(false))
@@ -139,7 +138,6 @@ mod tests {
             stack.get("obs.record.duration_ms"),
             Some(&Variant::Int(12_000)),
         );
-        // The sink omits `output_path`; the runner must not synthesise the key.
         assert_eq!(stack.get("obs.record.output_path"), None);
     }
 }

@@ -315,8 +315,7 @@ fn feature_chip(label: impl Into<SharedString>, palette: &ForgePalette) -> impl 
         )
 }
 
-/// gpui 0.2.2 has no CSS-grid primitive; the two-column layout is emulated with flex
-/// row pairs, a trailing odd card balanced by an equal-flex spacer.
+/// gpui 0.2.2 has no CSS-grid primitive; the two-column layout is emulated with flex row pairs, a trailing odd card balanced by an equal-flex spacer.
 fn platform_grid(cards: Vec<AnyElement>, density: Density) -> impl IntoElement {
     let gap = spacing(Spacing::Sm, density);
     let mut grid = div().w_full().flex().flex_col().gap(gap);

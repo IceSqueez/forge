@@ -37,8 +37,7 @@ impl AuthState {
         }))
     }
 
-    /// Generates a fresh token, persists it, and rotates the in-memory value.
-    /// Returns the new token so the caller can display it once.
+    /// Returns the new token so the caller can display it once; it is not retrievable again afterward.
     pub async fn regenerate(&self, creds: &dyn CredentialsRepo) -> Result<String, ServerError> {
         let new_token = generate_token();
         let id = CredentialId::new(BEARER_CREDENTIAL_ID);

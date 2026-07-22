@@ -141,8 +141,6 @@ mod tests {
 
     #[tokio::test]
     async fn empty_buffer_succeeds_with_empty_string() {
-        // Contract: an accessible-but-empty clipboard is Success with an empty value,
-        // NOT a failure.
         let port = Arc::new(RecordingClipboardPort::new().reads(""));
         let (outcome, updated) = run(port, "my.var").await;
         assert!(matches!(outcome, SubActionOutcome::Success));

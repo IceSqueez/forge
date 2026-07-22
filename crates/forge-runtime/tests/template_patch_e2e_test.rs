@@ -1,13 +1,3 @@
-//! End-to-end smoke tests for the Template/Patch trigger flow.
-//!
-//! Covered invariants:
-//! - `effective_config` merges descriptor defaults with instance `overrides` before
-//!   `matches_trigger`, making the override visible end-to-end.
-//! - Sub-action execution receives the fully-merged config: override wins for keys
-//!   that are present; `runner.default_config()` fills the gaps.
-//! - `action_trigger_instances` join table is the sole wiring path; an action that
-//!   has no `link_action` entry never fires even when a matching instance exists.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
@@ -230,9 +220,6 @@ impl SubActionRunner for RecordingRunner {
     }
 }
 
-/// A `TriggerInstance` with `overrides` that changes `event_name` must cause
-/// `effective_config` to route the event correctly: the matching name fires,
-/// a different name does not.
 #[tokio::test]
 async fn trigger_evaluator_applies_effective_config_overrides() {
     let backend = make_backend().await;
@@ -312,8 +299,6 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
     );
 }
 
-/// A sub-action step with a partial `config` override must receive the full
-/// merged config: the override value wins and the runner's default fills the rest.
 #[tokio::test]
 async fn sub_action_runner_sees_merged_default_and_override() {
     let backend = make_backend().await;
@@ -414,8 +399,6 @@ async fn sub_action_runner_sees_merged_default_and_override() {
     );
 }
 
-/// An action that has no `link_action` row must never be dispatched, even when a
-/// matching `TriggerInstance` exists in the DB.  The join table is the sole wiring path.
 #[tokio::test]
 async fn linked_action_executes_via_join_table_only() {
     let backend = make_backend().await;
@@ -432,7 +415,6 @@ async fn linked_action_executes_via_join_table_only() {
 
     let instance = custom_instance("go");
     dp.trigger_instance_repo().save(&instance).await.unwrap();
-    // link_action intentionally NOT called - join table has no row.
 
     let (sub_reg, trig_reg) = build_core_registries(
         Arc::clone(&dp) as Arc<dyn GlobalsRepo>,

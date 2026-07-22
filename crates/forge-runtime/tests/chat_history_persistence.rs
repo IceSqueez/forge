@@ -36,9 +36,6 @@ fn chat_event(msg_id: &str) -> Event {
     )
 }
 
-/// The persistence task subscribes to the bus on its first poll, before any
-/// await. On the single-threaded test runtime, yielding lets that poll run to
-/// the parked `recv`, so events published afterwards are guaranteed delivered.
 async fn wait_until_subscribed() {
     for _ in 0..16 {
         tokio::task::yield_now().await;
@@ -75,8 +72,6 @@ async fn append_error_does_not_terminate_persistence_loop() {
     let first = timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap();
     let second = timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap();
 
-    // Reaching the second append proves the loop kept draining after the first
-    // append returned an error instead of tearing down.
     assert_eq!(first, "first");
     assert_eq!(second, "second");
 }
@@ -105,8 +100,6 @@ async fn prune_runs_on_cadence_with_a_freshly_read_store_limit() {
     spawn_chat_history_persistence(Arc::clone(&bus), repo, settings);
     wait_until_subscribed().await;
 
-    // The prune cadence is every 256 successful appends; drive exactly that many
-    // (distinct ids so the stream's dedup window never drops one).
     for i in 0..256 {
         bus.publish(chat_event(&format!("msg-{i}")));
     }
@@ -116,7 +109,5 @@ async fn prune_runs_on_cadence_with_a_freshly_read_store_limit() {
         .unwrap()
         .unwrap();
 
-    // The limit reaching prune_to_limit must be the value read back from settings
-    // at prune time, not a stale or hard-coded default.
     assert_eq!(pruned_to, 1234);
 }

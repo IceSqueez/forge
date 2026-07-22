@@ -91,10 +91,6 @@ mod tests {
     use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
     use forge_types::{SubActionOutcome, Variant};
 
-    // Distinct-action contract: deny_message POSTs action "DENY" (the one field that
-    // differs from approve). The shared body shape, interpolation, validation and
-    // failure paths are covered once in approve_automod_message.rs; this asserts only
-    // that this runner flips the action while still carrying self user_id and msg_id.
     #[tokio::test]
     async fn deny_posts_deny_action_with_user_id_and_msg_id() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));

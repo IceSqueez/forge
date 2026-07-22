@@ -160,9 +160,6 @@ mod tests {
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
-    /// Writes `contents` to a unique temp file, runs the reader under `read_as`
-    /// (absent when `None`, storing into `target_var`), removes the file, and
-    /// returns the outcome plus the value bound to `out_key` (if any).
     async fn read_with(
         read_as: Option<&str>,
         target_var: &str,
@@ -245,8 +242,6 @@ mod tests {
 
     #[tokio::test]
     async fn json_mode_failures_report_typed_message_and_produce_no_binding() {
-        // Malformed text fails at serde; a bare `null` parses but is an
-        // unsupported Variant root. Both fail with no produced stack.
         for (contents, needle) in [
             ("{not valid json", "invalid JSON"),
             ("null", "unsupported JSON value"),
@@ -291,8 +286,6 @@ mod tests {
 
     #[tokio::test]
     async fn target_var_name_is_sanitized_before_binding() {
-        // A `%result%` target name is stored under the bare `result` key, proving
-        // the runner routes the name through strip_var_decoration.
         let (outcome, value) = read_with(Some("Whole file"), "  %result%  ", "result", "hi").await;
         assert_eq!(outcome, SubActionOutcome::Success);
         assert_eq!(value, Some(Variant::String("hi".to_owned())));

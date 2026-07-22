@@ -110,9 +110,7 @@ mod tests {
         let d = ModelLoadedDescriptor;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
-        // Sibling under the same `model.` prefix must not match.
         assert!(!d.matches_trigger(&cfg, &event("model.unloaded", json!({}))));
-        // Foreign kind.
         assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
     }
 

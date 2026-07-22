@@ -130,7 +130,6 @@ mod tests {
         );
     }
 
-    /// Non-string array elements are filtered out by `as_str` rather than crashing.
     #[test]
     fn arg_stack_skips_non_string_array_elements() {
         let event = Event::new(

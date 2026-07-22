@@ -5,9 +5,7 @@ use rhai::Dynamic;
 use crate::ScriptError;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
 
-/// Bounded boolean evaluator for predicate-primitive conditions. It carries no
-/// `ForgeApi`: conditions are side-effect-free, so the globals/chat/http surface
-/// is structurally unreachable from a condition rather than merely unused.
+/// Carries no `ForgeApi`; the globals/chat/http surface is structurally unreachable rather than merely unused.
 #[derive(Debug, Clone)]
 pub struct ConditionEvaluator {
     config: EngineConfig,
@@ -18,9 +16,7 @@ impl ConditionEvaluator {
         Self { config }
     }
 
-    /// Accepts only a genuine boolean result; any other type is a typed error,
-    /// never truthiness-coerced - truthiness across the seven Variant kinds is
-    /// ambiguous and would silently mask authoring mistakes.
+    /// Any non-boolean result is a typed error, never truthiness-coerced.
     pub fn eval(&self, expr: &str) -> Result<bool, ScriptError> {
         let mut inner = rhai::Engine::new_raw();
         register_sandbox_base(&mut inner, &self.config);
@@ -60,8 +56,6 @@ mod tests {
 
     #[test]
     fn eval_returns_the_boolean_each_comparison_operator_computes() {
-        // Covers every comparison/equality operator across the primitive kinds,
-        // with the expected verdict reasoned independently of rhai.
         for (expr, expected) in [
             ("5 > 3", true),
             ("5 < 3", false),
@@ -80,8 +74,6 @@ mod tests {
 
     #[test]
     fn eval_rejects_non_boolean_result_instead_of_coercing_truthiness() {
-        // A condition must be a genuine boolean; ints/floats/strings are a typed
-        // authoring error, never silently truthy.
         for expr in ["1 + 1", "42", "3.14", r#""x""#] {
             let err = eval(expr).unwrap_err();
             assert!(
@@ -102,7 +94,6 @@ mod tests {
 
     #[test]
     fn eval_exceeding_op_limit_returns_typed_error_not_hang() {
-        // Tiny op budget, generous wall budget: the loop must trip the op limit.
         let evaluator = ConditionEvaluator::with_config(EngineConfig {
             op_limit: 100,
             wall_time_ms: 5_000,
@@ -118,7 +109,6 @@ mod tests {
 
     #[test]
     fn eval_exceeding_wall_budget_returns_typed_error_without_hanging() {
-        // Huge op budget, 1ms wall budget: the infinite loop must trip on time.
         let evaluator = ConditionEvaluator::with_config(EngineConfig {
             op_limit: 1_000_000_000,
             wall_time_ms: 1,

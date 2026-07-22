@@ -1,16 +1,3 @@
-//! Wiring tests for the `core.test.fire_trigger` sub-action runner. The runner
-//! looks up a trigger instance, finds the actions bound to it
-//! (`actions_using`), and dispatches each through the live `QueueScheduler`
-//! reached via a `SchedulerCell` filled at boot - seeding every dispatch's
-//! `ArgStack` from the config's `override_outputs` object.
-//!
-//! These tests drive a real in-process scheduler + action engine over an
-//! in-memory SQLite backend, and assert the *effect* (the bound action's chain
-//! runs / the synthetic output reaches the action's execution context) rather
-//! than that a command was merely accepted. Scheduler-internal dispatch
-//! semantics are owned by `queue_scheduler`'s own tests and are NOT re-exercised
-//! here.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
@@ -36,9 +23,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// Live runtime wiring a `core.test.fire_trigger` runner sees at boot: an
-/// in-memory backend (the two repos the runner reads), a filled scheduler cell,
-/// the scheduler handle (for direct barrier dispatches), and the bus.
 struct Harness {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     actions: Arc<dyn ActionRepo>,
@@ -76,10 +60,6 @@ async fn backend() -> Arc<SqliteBackend> {
     )
 }
 
-/// Spawns a real scheduler with `queue` registered and a registry carrying the
-/// `core.globals.set` runner, so a fired action chain leaves an observable
-/// global behind. Returns the filled `SchedulerCell` (the boot wiring) plus the
-/// repos, handle, and bus.
 async fn harness(queue: Queue) -> Harness {
     let backend = backend().await;
     backend.queue_repo().save(&queue).await.unwrap();
@@ -111,10 +91,6 @@ async fn harness(queue: Queue) -> Harness {
     }
 }
 
-/// An action whose single step writes the interpolated `%out_key%` arg into the
-/// global named `set_global`. Reading that global back after the chain runs
-/// proves the action's execution context - i.e. the synthetic outputs the runner
-/// dispatched.
 fn action(id: ActionId, queue_id: QueueId, enabled: bool, set_global: &str) -> Action {
     let mut config = BTreeMap::new();
     config.insert("name".to_owned(), Variant::String(set_global.to_owned()));
@@ -166,8 +142,6 @@ async fn run_outcome(runner: &dyn SubActionRunner, config: &SubActionConfig) -> 
     telemetry.outcome
 }
 
-/// Bounded poll for the `action.done` of a specific action id - proof the chain
-/// ran to completion. Returns early as soon as the event lands.
 async fn await_action_done(
     sub: &mut EventSubscription,
     action_id: ActionId,
@@ -241,9 +215,6 @@ async fn override_outputs_reach_the_fired_actions_execution_context() {
     let mut sub = h.bus.subscribe();
 
     let a_id = ActionId::new();
-    // The action stores `%out_key%` into the `captured` global; the only way that
-    // arg resolves is if the runner seeded the dispatch's ArgStack from
-    // override_outputs.
     h.actions
         .save(&action(a_id, q_id, true, "captured"))
         .await
@@ -280,8 +251,6 @@ async fn override_outputs_reach_the_fired_actions_execution_context() {
 
 #[tokio::test]
 async fn unknown_trigger_instance_id_fails() {
-    // Instance never saved → repo `get` returns None → the runner fails before
-    // it ever reaches the scheduler, so nothing can be dispatched.
     let h = harness(nonblocking(QueueId::new())).await;
     let runner = fire_runner(&h);
 
@@ -297,8 +266,6 @@ async fn unknown_trigger_instance_id_fails() {
 
 #[tokio::test]
 async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
-    // Instance exists, but the boot cell was never filled: the runner must fail
-    // at the scheduler-readiness gate rather than dispatch into the void.
     let backend = backend().await;
     let trigger_instances = backend.trigger_instance_repo();
     let instance_id = trigger_instances
@@ -342,11 +309,6 @@ async fn unparseable_trigger_instance_id_fails() {
 
 #[tokio::test]
 async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
-    // A blocking queue makes dispatch order observable: a trap action exists but
-    // is NOT linked to the instance. After firing we push a barrier action and
-    // await its completion. Because the blocking queue is strict FIFO, the trap
-    // would have run before the barrier had the runner wrongly dispatched it - so
-    // a missing trap global after the barrier proves nothing was fired.
     let q_id = QueueId::new();
     let h = harness(blocking(q_id)).await;
     let mut sub = h.bus.subscribe();
@@ -361,7 +323,6 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
         .upsert_default("test.kind", "Test Trigger")
         .await
         .unwrap();
-    // Deliberately no link_action: the instance has no bound actions.
 
     let runner = fire_runner(&h);
     let outcome = run_outcome(
@@ -404,14 +365,6 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
 
 #[tokio::test]
 async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
-    // Documented limitation: the runner dispatches every bound action, including
-    // disabled ones; the ActionEngine is what skips a disabled action (no
-    // execution, no action.done). This pins that no-op so a future change to
-    // dispatch-time filtering is deliberate.
-    //
-    // Blocking FIFO again gives a deterministic barrier: the disabled action is
-    // enqueued first; once the barrier completes, the disabled action has already
-    // been processed, so its absent side effect is conclusive.
     let q_id = QueueId::new();
     let h = harness(blocking(q_id)).await;
     let mut sub = h.bus.subscribe();

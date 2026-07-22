@@ -117,7 +117,6 @@ mod tests {
     use forge_types::EventId;
     use std::sync::Mutex;
 
-    /// Captures every published event so tests can assert on the runner's output.
     #[derive(Default)]
     struct RecordingPublisher {
         events: Mutex<Vec<Event>>,
@@ -135,8 +134,6 @@ mod tests {
         }
     }
 
-    /// The runner publishes through its OWN injected publisher, never `ctx.publisher`;
-    /// this null sink in the context proves which channel carried the event.
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
@@ -170,9 +167,6 @@ mod tests {
 
     #[tokio::test]
     async fn emit_publishes_custom_prefixed_event_from_server_source() {
-        // Load-bearing round-trip contract: the script.event.custom trigger filters on
-        // source == Server and kind.strip_prefix("custom."). If either side drifts the
-        // emit -> trigger round-trip silently breaks, so pin BOTH exactly.
         let (recorder, outcome) = run(
             &cfg("foo", empty_object()),
             &ArgStack::new(),
@@ -183,7 +177,6 @@ mod tests {
         assert!(matches!(outcome, SubActionOutcome::Success));
         let events = recorder.captured();
         assert_eq!(events.len(), 1, "exactly one event must be published");
-        // Exact string: not "foo" (missing prefix) and not "custom." (missing name).
         assert_eq!(events[0].kind, "custom.foo");
         assert!(matches!(events[0].source, EventSource::Server));
     }
@@ -207,8 +200,6 @@ mod tests {
         )
         .await;
 
-        // The config payload object lands in event.payload; each value is carried through
-        // Variant::to_json, so it decodes back to the original Variant under its key.
         let landed = recorder.captured()[0]
             .payload
             .get("greeting")
@@ -222,7 +213,6 @@ mod tests {
 
     #[tokio::test]
     async fn emit_interpolates_event_name_from_arg_stack_before_prefixing() {
-        // %who% resolves from the stack, THEN the "custom." prefix is applied -> "custom.bar".
         let stack = ArgStack::new().set("who".to_owned(), Variant::String("bar".to_owned()));
         let (recorder, _) = run(&cfg("%who%", empty_object()), &stack, EventId::new()).await;
 

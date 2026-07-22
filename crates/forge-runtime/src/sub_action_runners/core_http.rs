@@ -233,8 +233,7 @@ impl SubActionRunner for CoreHttpRunner {
             (None, None)
         };
 
-        // Strip any caller-supplied Content-Type header once it has been promoted to
-        // the dedicated field so the request never carries it twice.
+        // Strip a caller-supplied Content-Type header once promoted to the dedicated field.
         if content_type.is_some() {
             headers.retain(|k, _| !k.eq_ignore_ascii_case("content-type"));
         }
@@ -454,7 +453,6 @@ mod tests {
 
     #[tokio::test]
     async fn ssrf_rejected_request_fails_with_no_output_vars() {
-        // allow_local defaults to false (key unset) → metadata endpoint blocked.
         let dp = backend().await;
         let mut cfg = SubActionConfig::new();
         cfg.insert(
@@ -472,9 +470,6 @@ mod tests {
 
     #[tokio::test]
     async fn failed_request_error_does_not_leak_token_header_or_query() {
-        // 192.0.2.1 (RFC 5737) is public → passes the denylist, then the connection
-        // times out. The Failed message must not echo the bearer token or the
-        // token-bearing query string.
         let dp = backend().await;
         let mut headers = BTreeMap::new();
         headers.insert(
@@ -500,7 +495,6 @@ mod tests {
         );
         assert!(!msg.contains("QUERY-SECRET"), "leaked query token: {msg}");
         assert!(!msg.contains("192.0.2.1"), "leaked target host: {msg}");
-        // Bounded: the 100ms timeout fired, not an unbounded hang.
         assert!(tel.duration_ms < 5_000, "took {}ms", tel.duration_ms);
     }
 }

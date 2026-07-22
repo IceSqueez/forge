@@ -153,7 +153,7 @@ fn group_integer(n: u64, sep: &str) -> String {
     out
 }
 
-// Missing key → returns the raw key string. Dotted keys map to Fluent underscore IDs.
+// Missing key returns the raw key string. Dotted keys map to Fluent underscore IDs.
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
     let fluent_id: std::borrow::Cow<'_, str> = if key.contains('.') {
         std::borrow::Cow::Owned(key.replace('.', "_"))
@@ -245,11 +245,6 @@ mod tests {
     use super::*;
     use time::{Date, Month, Time};
 
-    // These tests deliberately never call `install_bundle`, so the thread-local
-    // BUNDLE stays `None` on every worker thread. That keeps `tr_lookup` on its
-    // documented miss path (returns the key verbatim) and makes the formatters
-    // that delegate to it deterministic regardless of test execution order.
-
     fn utc(year: i32, month: Month, day: u8, h: u8, m: u8, s: u8, milli: u16) -> OffsetDateTime {
         let date = Date::from_calendar_date(year, month, day).unwrap_or(Date::MIN);
         let time = Time::from_hms_milli(h, m, s, milli).unwrap_or(Time::MIDNIGHT);
@@ -258,8 +253,6 @@ mod tests {
 
     #[test]
     fn tr_lookup_returns_key_verbatim_when_no_bundle_installed() {
-        // Miss path returns the ORIGINAL key, not the dotted->underscore
-        // Fluent id it would have looked up. The dotted case pins that.
         for key in ["some_missing_key", "nav.home", "a.b.c", "plain_key"] {
             assert_eq!(tr_lookup(key, None), key);
         }
@@ -267,7 +260,6 @@ mod tests {
 
     #[test]
     fn fmt_number_groups_and_separates_per_locale() {
-        // (locale, value, decimal_places, expected)
         let cases = [
             ("en", 0.0, 0, "0"),
             ("en", 999.0, 0, "999"),
@@ -290,9 +282,6 @@ mod tests {
 
     #[test]
     fn fmt_short_date_orders_components_per_locale() {
-        // Why: with no bundle the month resolves to its raw key for BOTH
-        // locales, so the only difference under test is the locale-specific
-        // component ORDER and punctuation - which is the branching logic here.
         let date = utc(2026, Month::March, 15, 0, 0, 0, 0);
 
         set_locale_id("en");
@@ -304,7 +293,6 @@ mod tests {
 
     #[test]
     fn fmt_relative_time_none_maps_to_the_never_key() {
-        // The `None` input short-circuits before any wall-clock subtraction.
         assert_eq!(fmt_relative_time(None), "fmt_relative_never");
     }
 }

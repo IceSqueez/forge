@@ -125,9 +125,6 @@ mod tests {
 
     #[tokio::test]
     async fn bool_probability_edges_produce_deterministic_clamped_value() {
-        // 1.0 / 0.0 are the in-range deterministic boundaries; 2.0 / -1.0 are
-        // out of range and would panic in `random_bool` without the clamp. The
-        // produced value now lives in the per-run scope, not GlobalsRepo.
         for (probability, expected) in [(1.0, true), (0.0, false), (2.0, true), (-1.0, false)] {
             let runner = CoreRandomBoolRunner;
             let cfg = cfg(probability, "flag");

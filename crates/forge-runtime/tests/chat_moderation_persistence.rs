@@ -20,7 +20,6 @@ fn bus() -> Arc<EventBus> {
     EventBus::new(Arc::new(NullEventLogRepo))
 }
 
-/// Builds an event carrying the moderation envelope under its reserved key.
 fn mod_event(source: EventSource, action: ChatModerationAction) -> Event {
     let payload = ChatModerationPayload { action };
     Event::new(
@@ -30,9 +29,6 @@ fn mod_event(source: EventSource, action: ChatModerationAction) -> Event {
     )
 }
 
-/// The persistence task subscribes on its first poll before any await. On the
-/// single-threaded test runtime, yielding lets that poll reach the parked recv,
-/// so events published afterwards are guaranteed delivered.
 async fn wait_until_subscribed() {
     for _ in 0..16 {
         tokio::task::yield_now().await;
@@ -45,9 +41,6 @@ async fn stream_yields_chat_source_events_and_drops_non_chat_and_keyless() {
     let stream = chat_moderation_stream(Arc::clone(&bus));
     pin_mut!(stream);
 
-    // A non-chat source carrying the key, and a chat source missing the key, must
-    // both be skipped; the first item the stream yields is the valid chat event
-    // that follows them, proving neither dropped event was mistaken for a match.
     bus.publish(mod_event(
         EventSource::Core,
         ChatModerationAction::ClearChat,
@@ -185,8 +178,6 @@ async fn repo_error_does_not_terminate_persistence_loop() {
         },
     ));
 
-    // Reaching the second call proves the loop kept draining after the first
-    // repo call returned an error instead of tearing down.
     assert_eq!(
         timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap(),
         "first"

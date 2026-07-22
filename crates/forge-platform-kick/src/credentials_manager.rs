@@ -69,10 +69,7 @@ impl KickCredentialsManager {
         self.persist(&creds).await
     }
 
-    /// Returns a valid access token, refreshing proactively when within 5 minutes of expiry.
-    ///
-    /// Returns `Err(PlatformError::ReauthRequired)` when no credentials are stored or when
-    /// the upstream refresh fails.
+    /// Refreshes proactively when within 5 minutes of expiry.
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.load().await?.ok_or_else(reauth_err)?;
         if creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER {
@@ -82,8 +79,7 @@ impl KickCredentialsManager {
         Ok(creds.access_token)
     }
 
-    /// Public-client form POST - no `client_secret`. Returns
-    /// `Err(PlatformError::ReauthRequired)` on 400 or 401 from the upstream.
+    /// Public-client form POST - no `client_secret`.
     pub async fn refresh(&self, refresh_token: &str) -> Result<KickCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
         let parsed = self.refresher.refresh(refresh_token).await?;

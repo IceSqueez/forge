@@ -199,8 +199,7 @@ pub struct TriggersRegistryView {
     list_scroll: UniformListScrollHandle,
     list_focus: FocusHandle,
     focused_once: bool,
-    /// Keyboard highlight cursor; distinct from `selected` so arrow keys move a
-    /// highlight without triggering the async detail load (that is Enter's job).
+    /// Keyboard highlight cursor; distinct from `selected` so arrow keys move a highlight without triggering the async detail load (that is Enter's job).
     list_cursor: Option<TriggerInstanceId>,
     selected: Option<TriggerInstanceId>,
     detail: Option<TriggerDetail>,

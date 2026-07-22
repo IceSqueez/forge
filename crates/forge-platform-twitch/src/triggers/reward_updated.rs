@@ -186,7 +186,6 @@ mod tests {
             stack.get("reward.prompt"),
             Some(&Variant::String("Updated prompt".to_owned()))
         );
-        // disabled reward must surface is_enabled = false, not the empty-default true.
         assert_eq!(stack.get("reward.is_enabled"), Some(&Variant::Bool(false)));
     }
 }

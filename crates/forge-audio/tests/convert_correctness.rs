@@ -1,8 +1,3 @@
-//! Integration tests for PCM format conversion: resample + remix pipeline.
-//!
-//! These tests verify the end-to-end 22050 Hz mono -> 48000 Hz stereo path that
-//! the soundboard uses for every clip played on a typical USB/HDMI audio device.
-
 #![allow(
     clippy::unwrap_used,
     clippy::cast_possible_truncation,

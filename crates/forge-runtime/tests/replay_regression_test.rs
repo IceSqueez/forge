@@ -1,14 +1,3 @@
-//! Regression tests for EventBus::replay_and_publish correctness.
-//!
-//! Covered invariants:
-//! - The replayed root event has a fresh `EventId` and `replay: true`.
-//! - Downstream pipeline events driven by a replayed trigger have IDs that are
-//!   entirely distinct from the original run's IDs.
-//! - The causation chain of downstream replay events is rooted at the replayed
-//!   root event - not at the original event that was replayed.
-//! - Replay-of-a-replay: replaying the result of a previous replay still produces
-//!   a root event with `replay: true` and a fresh `EventId`.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
@@ -165,9 +154,6 @@ fn make_chat_event(msg: &str) -> Event {
     )
 }
 
-/// Replay sets `replay: true` and produces a fresh `EventId` on the root event.
-/// Downstream pipeline events driven by the replayed trigger have IDs entirely
-/// distinct from the original run, proving the pipeline re-ran as new events.
 #[tokio::test]
 async fn replay_sets_flag_and_produces_fresh_downstream_ids() {
     let fixture = spawn_pipeline().await;
@@ -226,11 +212,6 @@ async fn replay_sets_flag_and_produces_fresh_downstream_ids() {
     }
 }
 
-/// The causation chain of downstream replay events is coherent and transitively
-/// rooted at the replayed root event. The full chain must be:
-///   replayed_chat → action.start → {subaction.run, action.done}
-///
-/// action.start must be caused_by the replayed root, anchoring the chain.
 #[tokio::test]
 async fn replay_causation_chain_is_rooted_at_replayed_event() {
     let fixture = spawn_pipeline().await;
@@ -298,9 +279,6 @@ async fn replay_causation_chain_is_rooted_at_replayed_event() {
     );
 }
 
-/// Replaying the result of a previous replay (replay-of-a-replay) must still
-/// produce a root event with `replay: true` and a fresh `EventId`. There is no
-/// special-case handling that would break nested replays.
 #[tokio::test]
 async fn replay_of_replay_still_has_replay_flag() {
     let fixture = spawn_pipeline().await;

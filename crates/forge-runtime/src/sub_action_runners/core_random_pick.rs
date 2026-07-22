@@ -186,8 +186,6 @@ mod tests {
 
     #[tokio::test]
     async fn pick_produces_member_of_source_list() {
-        // Both the array form and the newline-delimited string form must yield
-        // an element of the source set, bound to the target var in the scope.
         let cases = [
             (str_array(&["a", "b", "c"]), ["a", "b", "c"]),
             (Variant::String("x\ny\nz".to_owned()), ["x", "y", "z"]),

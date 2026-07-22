@@ -222,11 +222,8 @@ mod tests {
         assert_eq!(body["reply_parent_message_id"], "msg-abc-123");
     }
 
-    /// Empty message and empty parent_message_id both gate on zero transport calls;
-    /// collapse into one table-driven test.
     #[tokio::test]
     async fn empty_interpolated_message_or_parent_id_fails_before_transport_call() {
-        // (message_template, parent_template, var_value_for_both, case_label)
         let cases: &[(&str, &str, &str, &str)] = &[
             (
                 "%m%",
@@ -267,7 +264,6 @@ mod tests {
 
     #[tokio::test]
     async fn message_limit_enforced_by_character_count_not_byte_count() {
-        // Cyrillic is 2 bytes per char; the 500-char limit must count chars.
         for (char_count, should_send) in [(500usize, true), (501, false)] {
             let (transport, runner) =
                 runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());

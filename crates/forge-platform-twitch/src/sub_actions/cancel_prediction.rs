@@ -94,9 +94,6 @@ mod tests {
     use crate::sub_actions::lock_prediction::prediction_default_config;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx};
 
-    // The ONE behavior cancel owns: body status "CANCELED" (American single-L) and
-    // NO winning_outcome_id key. Fails if "CANCELLED" double-L slips in, or if the
-    // resolve-only winning_outcome_id leaks into cancel. Shared path: lock's tests.
     #[tokio::test]
     async fn cancel_sends_canceled_body_without_winning_outcome_id() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));

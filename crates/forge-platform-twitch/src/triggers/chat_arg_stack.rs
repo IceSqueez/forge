@@ -106,8 +106,6 @@ mod tests {
             ("user_login", "viewer"),
             ("user_id", "123"),
             ("channel", "streamer"),
-            // Why: user_color predates the chat_message/chat_command
-            // consolidation into this helper; it must survive the refactor.
             ("user_color", "#FF0000"),
         ] {
             assert_eq!(

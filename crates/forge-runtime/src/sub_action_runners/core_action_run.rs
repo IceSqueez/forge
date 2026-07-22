@@ -55,18 +55,14 @@ impl CoreActionRunRunner {
                 SubActionOutcome::Failed("core.action.run: max nesting depth exceeded".to_owned())
             }
             Err(e) => SubActionOutcome::Failed(format!("core.action.run: {e}")),
-            // The called action is its own root: its Stop/Break/Continue terminate
-            // the callee chain and never cross back into the caller, so all three
-            // resolve to a successful step here.
+            // The called action is its own root: Stop/Break/Continue never cross back to the caller.
             Ok(child) => match child.signal {
                 ChainSignal::Completed
                 | ChainSignal::Stop(_)
                 | ChainSignal::Break
                 | ChainSignal::Continue => SubActionOutcome::Success,
                 ChainSignal::Error(msg) => SubActionOutcome::Failed(msg),
-                // The shared cancel is already tripped, so the parent's
-                // action-root force-maps the whole execution to Cancelled; a
-                // failed step halts the rest of the parent chain in the meantime.
+                // The parent's action-root force-maps the whole execution to Cancelled separately.
                 ChainSignal::Aborted => {
                     SubActionOutcome::Failed("core.action.run: cancelled".to_owned())
                 }

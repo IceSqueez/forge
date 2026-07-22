@@ -121,9 +121,7 @@ mod tests {
         let d = FaceFoundDescriptor;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("tracking.face_found", json!({}))));
-        // Sibling under the same `tracking.` prefix must not match.
         assert!(!d.matches_trigger(&cfg, &event("tracking.face_lost", json!({}))));
-        // Foreign kind.
         assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
     }
 
@@ -151,7 +149,6 @@ mod tests {
             "tracking.face_found",
             json!({ "left_hand_found": false, "right_hand_found": false }),
         ));
-        // A `false` payload value must surface as Bool(false), distinct from an omitted key.
         assert_eq!(
             stack.get("vtube.tracking.left_hand_found"),
             Some(&Variant::Bool(false))

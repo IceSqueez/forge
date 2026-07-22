@@ -256,8 +256,7 @@ impl Icon {
     }
 }
 
-/// Register once on the `Application` via `with_assets`, or `svg()` can't resolve
-/// an [`Icon::path`].
+/// Register once on the `Application` via `with_assets`, or `svg()` can't resolve an [`Icon::path`].
 pub struct IconAssets;
 
 impl AssetSource for IconAssets {
@@ -287,8 +286,7 @@ pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
         .text_color(color)
 }
 
-/// Continuously rotates `glyph`. Each live instance needs a distinct `id`, or gpui
-/// shares one animation clock across them.
+/// Continuously rotates `glyph`. Each live instance needs a distinct `id`, or gpui shares one animation clock across them.
 pub fn spinner(
     id: impl Into<ElementId>,
     glyph: Icon,
@@ -314,12 +312,6 @@ mod tests {
 
     use super::{Icon, IconAssets};
 
-    // Why: `from_name` is the only hand-written lookup in this file (the rest is
-    // macro-generated). The load-bearing contracts are (1) documented aliases
-    // collapse several distinct strings onto one variant - dropping an alias arm
-    // silently reroutes that string to the fallback - and (2) any unrecognised
-    // name degrades to `InfoCircle` rather than panicking; the compiler forces a
-    // `_` arm to exist but not which variant it yields, so this pins the choice.
     #[test]
     fn from_name_collapses_aliases_and_falls_back_to_info_circle() {
         for (name, expected) in [
@@ -330,8 +322,6 @@ mod tests {
             ("close", Icon::X),
             ("edit", Icon::Edit),
             ("gear", Icon::Settings),
-            // Unrecognised names (incl. the zero-length edge case) hit the
-            // `_ => InfoCircle` fallback, not any explicit arm.
             ("", Icon::InfoCircle),
             ("definitely-not-a-real-icon", Icon::InfoCircle),
         ] {

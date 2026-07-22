@@ -297,8 +297,6 @@ mod tests {
 
     #[test]
     fn matches_reads_content_field_not_message_field() {
-        // The descriptor must read `content`; a payload whose command lives
-        // under `message` (the wrong key) must not match.
         let event = Event::new(
             EventSource::Kick,
             "kick.chat.message",

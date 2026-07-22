@@ -125,8 +125,6 @@ mod tests {
         );
     }
 
-    /// The collector filters with `as_str`, so non-string array elements are dropped
-    /// rather than crashing or coercing.
     #[test]
     fn arg_stack_skips_non_string_array_elements() {
         let event = Event::new(

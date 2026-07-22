@@ -72,7 +72,6 @@ async fn run_synthesis(
     deps: SynthTaskDeps,
     recent_messages: Vec<String>,
 ) -> SynthTaskResult {
-    // Load the current config (atomic Arc clone, read guard dropped immediately).
     let pipeline_cfg = deps.pipeline.load();
 
     let reward_stripped;
@@ -1066,8 +1065,6 @@ mod tests {
     fn set_volume_clamps_into_unit_range() {
         let deps = minimal_deps();
         let (tx, _rx) = tokio::sync::broadcast::channel::<SpeakEvent>(8);
-        // Boundaries (0.0, 1.0) pass through; out-of-range values clamp; an
-        // in-range value is preserved. Removing the clamp fails the 1.5/-0.2 rows.
         for (input, expected) in [
             (1.5_f32, 1.0_f32),
             (-0.2, 0.0),
@@ -1095,8 +1092,6 @@ mod tests {
             &tx,
             SpeakCommand::Enqueue(request("nova", "hi chat", Priority::High)),
         );
-        // The dashboard now-speaking/queue rows read these fields off the event;
-        // before the fix Enqueued shipped only request_id/queue_len.
         let payload = std::iter::from_fn(|| rx.try_recv().ok())
             .find_map(|ev| match ev {
                 SpeakEvent::Enqueued {
@@ -1111,8 +1106,6 @@ mod tests {
         assert_eq!(payload, ("nova".to_owned(), "hi chat".to_owned(), true));
     }
 
-    /// Records the text of every `SynthesisRequest` it receives so a test can
-    /// observe what `run_synthesis` actually handed to the engine.
     struct CapturingEngine {
         id: EngineId,
         seen: Arc<std::sync::Mutex<Vec<String>>>,
@@ -1160,10 +1153,6 @@ mod tests {
 
     #[tokio::test]
     async fn reward_emote_strip_fires_only_when_reward_and_toggle_both_set() {
-        // TTS-7: the reward pre-pass strips `emote_tokens` from the spoken text
-        // ONLY when the message is reward-sourced AND the persisted toggle is on.
-        // Any weaker gate (OR, ignoring one operand, always-on) fails a row.
-        // The engine records the text it actually received to synthesize.
         for (is_reward, strip_reward_emotes, expected) in [
             (true, true, "hi"),
             (false, true, "hi LUL"),

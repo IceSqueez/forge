@@ -405,9 +405,7 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
     }
 }
 
-/// Health metric index 0 ("Stream") value for a given active/offline state. Shared between
-/// the event-driven update (`apply_health_update`) and the cold-connect `GetStreamStatus`
-/// seed (`client.rs::snapshot_catalog`) so both paths render the identical label/detail shape.
+/// Shared by the event-driven update and the cold-connect seed so both render the same shape.
 pub(crate) fn make_stream_health_value(active: bool) -> HealthValue {
     HealthValue::Status {
         label: if active {
@@ -420,9 +418,6 @@ pub(crate) fn make_stream_health_value(active: bool) -> HealthValue {
     }
 }
 
-/// Health metric index 1 ("Recording") value for a given active/off state. Shared between
-/// the event-driven update (`apply_health_update`) and the cold-connect `GetRecordStatus`
-/// seed (`client.rs::snapshot_catalog`).
 pub(crate) fn make_record_health_value(active: bool) -> HealthValue {
     HealthValue::Status {
         label: if active {
@@ -464,11 +459,7 @@ pub(crate) fn apply_health_update(
     }
 }
 
-/// Applies a polled `GetStats` response (obs-websocket has no periodic Stats *event* - see
-/// OQ-OBS-1 resolution in `INTEGRATIONS_NOTES.md` - so this is fed by a periodic
-/// `client.general().stats()` poll, not the event-subscription pipeline) to the CPU/FPS
-/// (index 2) and Dropped-frames (index 3) health metrics. Only emits a delta when the
-/// rendered value actually changed, mirroring `apply_health_update`'s change-gating.
+/// Only emits a delta when the rendered value actually changed.
 pub(crate) fn apply_stats_update(
     stats: &obws::responses::general::Stats,
     snapshot: &mut HealthSnapshot,
@@ -510,18 +501,6 @@ pub(crate) fn apply_stats_update(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // obws::events::Event is #[non_exhaustive] - variants cannot be constructed outside
-    // the defining crate, so map_obs_event / apply_catalog_update / apply_health_update
-    // can't be unit-tested. The payload-builder helpers make_scene_changed_event and
-    // make_record_event are tested here directly.
-    //
-    // COVERAGE GAP: make_stream_event and make_record_state_event each take
-    // &obws::events::OutputState, which is ALSO #[non_exhaustive] (obws 0.15.0
-    // src/events.rs). Its variants cannot be constructed in this crate, so the
-    // kind/state-string mapping (Starting..Resumed + the active-based fallback arm) has no
-    // constructible fixture and is left untested per the no-real-OBS rule. The downstream
-    // contract IS covered: the streaming.* / recording.* trigger descriptors assert
-    // kind-discrimination and build_stream_arg_stack / build_record_arg_stack extraction.
 
     #[test]
     fn make_scene_changed_event_emits_from_and_to_fields() {
@@ -600,9 +579,7 @@ mod tests {
         assert_eq!(ev.payload["error_message"], "authentication rejected");
     }
 
-    // Security regression: the auth-failure message is a fixed string and must never echo
-    // the OBS WebSocket password the user typed. Guard against a future change that
-    // interpolates the credential into the surfaced message.
+    // The auth-failure message must never echo the OBS WebSocket password the user typed.
     #[test]
     fn make_connection_auth_failed_message_carries_nothing_password_like() {
         let ev = make_connection_auth_failed("authentication rejected");
@@ -631,9 +608,6 @@ mod tests {
         assert_eq!(ev.payload["scene"], "BRB");
     }
 
-    // The emitted kind `source.scene_item_lock_changed` is the contract the
-    // SourceSceneItemLockChangedDescriptor matches on; both lock states must round-trip
-    // through `is_locked` as a JSON bool (not be dropped) for unlock to be distinguishable.
     #[test]
     fn map_scene_item_lock_emits_obs_source_event_for_both_states() {
         for locked in [true, false] {

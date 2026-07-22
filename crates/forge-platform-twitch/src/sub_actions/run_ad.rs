@@ -37,8 +37,7 @@ impl RunAdRunner {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        // broadcaster_id goes in the JSON body, not as a query param - this is
-        // how the Twitch Helix /channels/commercial endpoint is specified.
+        // broadcaster_id goes in the JSON body, not as a query param.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channels/commercial")
             .body(serde_json::json!({ "broadcaster_id": user_id, "length": duration }));
         SubActionOutcome::from_result(&self.transport.execute(request).await)
@@ -157,9 +156,6 @@ mod tests {
 
     #[tokio::test]
     async fn execute_posts_self_broadcaster_and_integer_length_in_body() {
-        // Regression: the FormField::Select value arrives as Variant::String("90"),
-        // but the Helix body's `length` must be the JSON number 90 (not "90"), and
-        // broadcaster_id belongs in the BODY, not the query string.
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new();
 
@@ -184,8 +180,6 @@ mod tests {
 
     #[tokio::test]
     async fn execute_falls_back_to_length_60_when_config_is_invalid() {
-        // Variant::Int violates the String convention; production must ignore it and
-        // send the default length 60 rather than parsing or rejecting at execute time.
         for (label, bad) in [
             ("variant int", cfg(Variant::Int(90))),
             ("unlisted duration", cfg(Variant::String("45".to_owned()))),
@@ -224,8 +218,6 @@ mod tests {
                 cfg(Variant::String("45".to_owned())),
                 false,
             ),
-            // Proves the String convention is enforced: an integer 90 is NOT a valid
-            // duration even though "90" is - the form stores Select values as strings.
             ("variant int", cfg(Variant::Int(90)), false),
             ("empty string", cfg(Variant::String(String::new())), false),
             ("missing key", BTreeMap::new(), false),

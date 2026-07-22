@@ -167,14 +167,12 @@ mod tests {
         let (outcome, out) = run(&cfg("iso8601", "", "captured")).await;
         assert!(matches!(outcome, SubActionOutcome::Success));
         let out = out.unwrap();
-        // into_var routes the datetime (not the hardcoded default key).
         let dt = *out.get("captured").and_then(|v| v.as_datetime()).unwrap();
         let formatted = out.get("time.formatted").and_then(|v| v.as_str()).unwrap();
         let unix = out
             .get("time.unix_seconds")
             .and_then(|v| v.as_int())
             .unwrap();
-        // All three documented outputs describe the same instant.
         assert_eq!(OffsetDateTime::parse(formatted, &Rfc3339).unwrap(), dt);
         assert_eq!(unix, dt.unix_timestamp());
     }

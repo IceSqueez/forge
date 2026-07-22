@@ -52,10 +52,7 @@ impl SetModeRunner {
         let subscriber_mode = mode_toggle(config, "subscriber_mode");
         let unique_chat_mode = mode_toggle(config, "unique_chat_mode");
 
-        // Build partial PATCH body: only include fields that differ from unchanged.
-        // Twitch applies only the provided keys; omitted keys are left as-is.
-        // If all modes are unchanged, skip the network call - PATCH with an empty
-        // body is a no-op but wastes a rate-limit token.
+        // Twitch applies only the provided keys; an all-unchanged config skips the call entirely.
         let mut body = serde_json::Map::new();
 
         if let Some(on) = toggle_to_bool(emote_only) {
@@ -315,8 +312,6 @@ mod tests {
 
     #[tokio::test]
     async fn execute_patches_only_changed_modes_and_skips_all_unchanged() {
-        // expected == None means "no Helix call at all" (the unchanged skip).
-        // Exact body equality also proves unchanged keys are ABSENT from the PATCH.
         let shipped_defaults = runner_with(Ok(serde_json::Value::Null)).1.default_config();
         let cases: Vec<(&str, SubActionConfig, Option<serde_json::Value>)> = vec![
             (

@@ -22,11 +22,8 @@ pub(crate) enum NsSpeechRequest {
 pub(crate) fn spawn_worker() -> mpsc::Sender<NsSpeechRequest> {
     let (tx, rx) = mpsc::channel::<NsSpeechRequest>();
     std::thread::spawn(move || {
-        // SAFETY: AVSpeechSynthesizer is created on this dedicated worker thread and never
-        // sent to another thread. Retained<AVSpeechSynthesizer> lives exclusively here for
-        // the entire thread lifetime. The thread pumps no run loop; AVFoundation delivers
-        // writeUtterance:toBufferCallback: callbacks on its own internal background thread,
-        // so this call site is safe without a run loop.
+        // SAFETY: created and used only on this dedicated thread; AVFoundation delivers
+        // callbacks on its own internal thread, so no run loop is required here.
         let synth = unsafe { objc2_avf_audio::AVSpeechSynthesizer::new() };
         worker_loop(synth, rx);
     });
@@ -83,14 +80,9 @@ fn run_synthesis(
     let block: block2::RcBlock<dyn Fn(NonNull<AVAudioBuffer>)> =
         block2::RcBlock::new(move |raw_buf: NonNull<AVAudioBuffer>| {
             objc2::rc::autoreleasepool(|_| {
-                // SAFETY: (a) Apple's writeUtterance:toBufferCallback: always delivers
-                // AVAudioPCMBuffer instances for speech synthesis; the downcast is sound.
-                // (b) The raw_buf pointer is valid for the duration of this autoreleasepool
-                // scope, guaranteed by AVFoundation's callback contract. (c) The shared Arc
-                // is alive for at least as long as the RcBlock, which lives in run_synthesis's
-                // stack frame across the condvar wait. (d) The Mutex guard is held only
-                // within this closure invocation; no deadlock is possible since we never
-                // re-enter the lock recursively.
+                // SAFETY: writeUtterance:toBufferCallback: always delivers AVAudioPCMBuffer;
+                // raw_buf is valid for this autoreleasepool scope, and shared_cb outlives the
+                // RcBlock that owns this closure.
                 let pcm: &AVAudioPCMBuffer =
                     unsafe { &*(raw_buf.as_ptr() as *const AVAudioPCMBuffer) };
 
@@ -111,11 +103,8 @@ fn run_synthesis(
                 state.sample_rate = sr as u32;
                 state.channels = ch;
 
-                // SAFETY: floatChannelData returns a pointer to an array of `channelCount`
-                // float-channel pointers, each valid for `frameLength` samples. The pointer
-                // is non-null because we checked frame_count > 0 and the format is PCM
-                // float (always the case for AVSpeech output). We read only channel 0 for
-                // mono speech output.
+                // SAFETY: non-null and valid for `frameLength` samples since frame_count > 0
+                // was checked above; only channel 0 is read (mono speech output).
                 let channel_ptrs = unsafe { pcm.floatChannelData() };
                 if channel_ptrs.is_null() {
                     state.done = true;
@@ -131,34 +120,25 @@ fn run_synthesis(
         });
 
     objc2::rc::autoreleasepool(|_| {
-        // SAFETY: NSString::from_str creates an immutable NSString from a valid UTF-8 str.
-        // The returned Retained<NSString> is valid inside this autoreleasepool.
         let ns_text = NSString::from_str(&req.text);
         let utterance = unsafe { AVSpeechUtterance::speechUtteranceWithString(&ns_text) };
 
         let ns_voice_id = NSString::from_str(&voice_id.0);
         let voice_opt = unsafe { AVSpeechSynthesisVoice::voiceWithIdentifier(&ns_voice_id) };
         if let Some(voice) = voice_opt {
-            // SAFETY: setVoice: takes an optional voice reference. voice is a valid
-            // Retained<AVSpeechSynthesisVoice> alive within this autoreleasepool.
+            // SAFETY: voice is a valid Retained value alive within this autoreleasepool.
             unsafe { utterance.setVoice(Some(&voice)) };
         }
 
         let apple_rate = crate::synth::rate_apple_from_multiplier(req.rate_multiplier);
         let pitch_mult = crate::synth::pitch_mult_from_semitones(req.pitch_semitones);
-        // SAFETY: setRate: and setPitchMultiplier: accept c_float values; both are simple
-        // property setters on AVSpeechUtterance with no aliasing or lifetime concerns.
+        // SAFETY: simple c_float property setters, no aliasing or lifetime concerns.
         unsafe { utterance.setRate(apple_rate) };
         unsafe { utterance.setPitchMultiplier(pitch_mult) };
 
-        // SAFETY: (a) writeUtterance:toBufferCallback: must be called with a valid block
-        // pointer. RcBlock::as_ptr returns a non-null, heap-allocated block pointer valid
-        // for the RcBlock's lifetime. (b) The RcBlock lives in this function's stack frame
-        // and is kept alive until after the condvar wait returns. (c) The callback is
-        // invoked on Apple's internal audio-synthesis background thread; all captured state
-        // uses Arc<Mutex<...>> which is Send + Sync, so the cross-thread access is sound.
-        // (d) Only Vec<i16> and format scalars leave the callback via the Mutex; no ObjC
-        // pointers cross the thread boundary.
+        // SAFETY: the block pointer is valid for the RcBlock's lifetime, which outlives
+        // the condvar wait below; captured state crosses into Apple's callback thread only
+        // via Arc<Mutex<...>>, so no raw ObjC pointers cross the thread boundary.
         unsafe {
             synth.writeUtterance_toBufferCallback(&utterance, block2::RcBlock::as_ptr(&block));
         }
@@ -184,11 +164,7 @@ fn run_synthesis(
     ))
 }
 
-/// Maps a rate multiplier ([0.25, 4.0]) to AVFoundation's [0.0, 1.0] speech rate scale.
-///
-/// `AVSpeechUtteranceDefaultSpeechRate` (0.5) maps to multiplier 1.0.
-/// Multipliers above 1.0 push toward `AVSpeechUtteranceMaximumSpeechRate` (1.0);
-/// multipliers below 1.0 push toward `AVSpeechUtteranceMinimumSpeechRate` (0.0).
+/// Multiplier 1.0 maps to `AVSpeechUtteranceDefaultSpeechRate` (0.5), not the scale's midpoint.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     const RATE_DEFAULT: f32 = 0.5;
@@ -197,10 +173,7 @@ pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     (RATE_DEFAULT + (multiplier - 1.0) * (RATE_MAX - RATE_DEFAULT)).clamp(RATE_MIN, RATE_MAX)
 }
 
-/// Maps pitch semitones ([-12.0, 12.0]) to AVFoundation pitchMultiplier ([0.5, 2.0]).
-///
-/// Uses the standard semitone-to-frequency-ratio formula: `2^(semitones / 12)`.
-/// The range [-12, +12] maps exactly to [0.5, 2.0] before clamping.
+/// Semitone-to-frequency-ratio formula: `2^(semitones / 12)`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn pitch_mult_from_semitones(semitones: f32) -> f32 {
     2.0_f32.powf(semitones / 12.0).clamp(0.5, 2.0)
@@ -212,9 +185,6 @@ mod tests {
 
     #[test]
     fn rate_maps_multiplier_with_clamping_at_quad_speed() {
-        // (input, expected) - covers identity (1.0→0.5), half (0.5→0.25), double
-        // (2.0→1.0 = max), upper-clamp (4.0→1.0), and lower-bound (0.25→0.125, still
-        // above clamp floor).
         for (input, expected) in [
             (1.0, 0.5),
             (0.25, 0.125),
@@ -232,8 +202,6 @@ mod tests {
 
     #[test]
     fn pitch_maps_semitones_with_clamping_at_octave_extremes() {
-        // (input semitones, expected mult). Covers identity (0→1), full octave
-        // up/down (±12→2.0/0.5 = clamp boundary), half-octave (±6→sqrt(2)/sqrt(0.5)).
         for (input, expected) in [
             (0.0, 1.0),
             (-12.0, 0.5),

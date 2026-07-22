@@ -72,9 +72,6 @@ mod tests {
     use crate::sound_player::{SoundPlayer, SoundPlayerError};
     use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
 
-    /// One recorded dispatcher invocation. The variant pins WHICH method ran;
-    /// the fields pin the marshaled arguments. A runner wired to the wrong
-    /// dispatcher method records the wrong variant and fails the assertion.
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum DispatchCall {
         SpeakWithEngine {
@@ -99,9 +96,6 @@ mod tests {
         },
     }
 
-    /// Capturing test double for `SpeakDispatcher`. Records every call in order;
-    /// when `fail` is set, each method records THEN returns a dispatch error so
-    /// the runner's error path can be exercised without real TTS.
     struct RecordingDispatcher {
         calls: Mutex<Vec<DispatchCall>>,
         fail: bool,
@@ -143,7 +137,6 @@ mod tests {
             _text: String,
             _voice_id_override: Option<String>,
         ) -> Result<(), SpeakDispatchError> {
-            // Not exercised by these runners; SpeakRunner has its own tests.
             Ok(())
         }
 
@@ -222,10 +215,6 @@ mod tests {
         cfg
     }
 
-    /// The four argument-less control runners each forward to exactly ONE
-    /// dispatcher method. Asserting the recorded variant is swap-resistant: a
-    /// runner mistakenly wired to `resume` instead of `pause` records `Resume`
-    /// and fails here. Also pins success outcome + no output ArgStack.
     #[tokio::test]
     async fn each_control_runner_forwards_to_its_dispatcher_method() {
         let disp = RecordingDispatcher::ok();
@@ -305,9 +294,6 @@ mod tests {
         );
     }
 
-    /// `alias_set` exposes one `alias_name` field that the runner double-maps to
-    /// BOTH viewer_id (identity key) and viewer_name (display), alongside engine
-    /// and voice. Interpolation applies before the split.
     #[tokio::test]
     async fn alias_set_double_maps_alias_name_to_viewer_id_and_name() {
         let disp = RecordingDispatcher::ok();
@@ -335,8 +321,6 @@ mod tests {
         );
     }
 
-    /// `alias_switch` is a single-map (viewer_id only, no viewer_name) - the
-    /// contrast with `alias_set` is load-bearing.
     #[tokio::test]
     async fn alias_switch_maps_alias_name_to_viewer_id_with_engine_and_voice() {
         let disp = RecordingDispatcher::ok();
@@ -370,15 +354,12 @@ mod tests {
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
 
-        // default_config sets keep_current = true.
         let (telemetry, _) = runner.execute(&runner.default_config(), &ctx).await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         assert_eq!(disp.calls(), vec![DispatchCall::ClearKeepCurrent]);
     }
 
-    /// With keep_current = false the runner must stop the in-flight item FIRST,
-    /// then clear pending - the order is the contract.
     #[tokio::test]
     async fn queue_clear_without_keep_current_stops_then_clears_in_order() {
         let disp = RecordingDispatcher::ok();
@@ -396,7 +377,6 @@ mod tests {
         );
     }
 
-    /// When the leading stop_current fails, clear_keep_current must NOT run.
     #[tokio::test]
     async fn queue_clear_stop_failure_short_circuits_before_clear() {
         let disp = RecordingDispatcher::failing();
@@ -443,11 +423,6 @@ mod tests {
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
     }
 
-    // ----- soundboard control family (stop / stop_all / set_master_volume) -----
-
-    /// One recorded `SoundPlayer` invocation. The variant pins WHICH method the
-    /// runner forwarded to; the payload pins the marshaled argument. A runner
-    /// wired to the wrong method records the wrong variant and fails.
     #[derive(Debug, Clone, PartialEq)]
     enum SoundCall {
         Play(ClipId),
@@ -456,9 +431,6 @@ mod tests {
         SetMasterVolume(f32),
     }
 
-    /// Capturing test double for `SoundPlayer`. Records every call in order; with
-    /// `fail` set, each method records THEN returns an error so the runner's error
-    /// branch is exercised without real audio.
     struct RecordingSoundPlayer {
         calls: Mutex<Vec<SoundCall>>,
         fail: bool,
@@ -520,8 +492,6 @@ mod tests {
         config(&[("clip_id", Variant::String(clip_id.to_owned()))])
     }
 
-    /// Stop forwards to `stop(clip_id)` with the interpolated/resolved id - not
-    /// `stop_all`, not a different clip. Pins both the method and the id payload.
     #[tokio::test]
     async fn stop_sound_forwards_resolved_clip_id_to_player_stop() {
         let player = RecordingSoundPlayer::ok();
@@ -537,9 +507,6 @@ mod tests {
         assert_eq!(player.calls(), vec![SoundCall::Stop(clip_id)]);
     }
 
-    /// The documented "empty clip = stop everything" contract: an empty clip_id
-    /// must route to `stop_all`, NOT `stop`. Swapping the branch records `Stop`
-    /// (or nothing) and fails here.
     #[tokio::test]
     async fn stop_sound_with_empty_clip_id_routes_to_stop_all() {
         let player = RecordingSoundPlayer::ok();
@@ -553,8 +520,6 @@ mod tests {
         assert_eq!(player.calls(), vec![SoundCall::StopAll]);
     }
 
-    /// A non-empty but unparseable clip_id is rejected before the player is
-    /// touched: outcome Failed AND zero player calls (no accidental stop_all).
     #[tokio::test]
     async fn stop_sound_with_invalid_clip_id_fails_without_touching_player() {
         let player = RecordingSoundPlayer::ok();
@@ -568,7 +533,6 @@ mod tests {
         assert!(player.calls().is_empty());
     }
 
-    /// Stop-all forwards to exactly `stop_all`.
     #[tokio::test]
     async fn stop_all_sounds_forwards_to_player_stop_all() {
         let player = RecordingSoundPlayer::ok();
@@ -583,9 +547,6 @@ mod tests {
         assert_eq!(player.calls(), vec![SoundCall::StopAll]);
     }
 
-    /// Every control runner that reaches the player must surface a player error as
-    /// `Failed` without panicking. One table over the three runners covers each
-    /// independent error branch.
     #[tokio::test]
     async fn sound_control_runners_surface_player_error_as_failed() {
         let player = RecordingSoundPlayer::failing();
@@ -617,23 +578,14 @@ mod tests {
         }
     }
 
-    /// Master-volume runner converts decibels to linear gain (`10^(db/20)`),
-    /// clamping the dB input to the catalog range [-30, 6] first. Covers happy
-    /// (0 dB), both clamp boundaries, the negative-dB attenuation case, the
-    /// absent-config default, and BOTH numeric accessor paths (Int + Float).
     #[tokio::test]
     async fn set_master_volume_converts_db_to_linear_gain_with_clamping() {
-        // (config, expected linear gain). Mixing Int and Float pins the
-        // `as_float().or_else(as_int)` accessor branches.
         let cases: Vec<(SubActionConfig, f32)> = vec![
             (config(&[("volume_db", Variant::Int(0))]), 1.0),
             (config(&[("volume_db", Variant::Float(-6.0))]), 0.501_187),
             (config(&[("volume_db", Variant::Int(6))]), 1.995_262),
-            // below MIN_VOLUME_DB (-30) clamps to -30 dB.
             (config(&[("volume_db", Variant::Float(-60.0))]), 0.031_623),
-            // above MAX_VOLUME_DB (6) clamps to +6 dB.
             (config(&[("volume_db", Variant::Int(30))]), 1.995_262),
-            // absent volume_db defaults to 0 dB → unity gain.
             (SubActionConfig::new(), 1.0),
         ];
 

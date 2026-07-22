@@ -119,9 +119,6 @@ pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // The recording lifecycle descriptors share the `TriggerKindDescriptor` shape and
-    // `build_record_arg_stack`, so their discrimination contract is tested together here
-    // rather than re-stating each descriptor's `id()` literal.
     use super::super::{
         RecordFileChangedDescriptor, RecordPausedDescriptor, RecordResumedDescriptor,
         RecordStartedDescriptor, RecordStartingDescriptor, RecordStatusChangedDescriptor,
@@ -131,9 +128,6 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
 
-    /// The six lifecycle kinds the omnibus descriptor treats as status transitions.
-    /// `recording.file_changed` is deliberately NOT here - it is a file-split event,
-    /// not a state transition.
     const ALL_LIFECYCLE_KINDS: [&str; 6] = [
         "recording.starting",
         "recording.started",
@@ -151,8 +145,6 @@ mod tests {
         )
     }
 
-    /// Each lifecycle descriptor must fire on exactly its own kind and reject every
-    /// sibling. A descriptor that matched a sibling would mis-fire user actions.
     #[test]
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 6] = [
@@ -172,7 +164,6 @@ mod tests {
                     "descriptor for {own_kind} given {kind}",
                 );
             }
-            // A lifecycle descriptor must also reject the file-split kind.
             assert!(
                 !descriptor.matches_trigger(&cfg, &record_event("recording.file_changed")),
                 "descriptor for {own_kind} wrongly matched recording.file_changed",
@@ -180,7 +171,6 @@ mod tests {
         }
     }
 
-    /// The omnibus descriptor matches all SIX lifecycle kinds.
     #[test]
     fn omnibus_matches_every_lifecycle_kind() {
         let cfg = BTreeMap::new();
@@ -192,9 +182,6 @@ mod tests {
         }
     }
 
-    /// Load-bearing exclusion: `recording.file_changed` is a file-split event, NOT a
-    /// lifecycle state transition, so the status-changed omnibus must reject it even
-    /// though it shares the `recording.` prefix.
     #[test]
     fn omnibus_rejects_file_changed() {
         assert!(
@@ -209,8 +196,6 @@ mod tests {
         assert!(!RecordStatusChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
-    /// The file-changed descriptor is the inverse of the omnibus: it fires on the
-    /// file-split kind only and rejects every lifecycle kind.
     #[test]
     fn file_changed_descriptor_matches_only_file_changed() {
         let cfg = BTreeMap::new();

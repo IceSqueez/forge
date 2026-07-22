@@ -114,10 +114,7 @@ impl EventBus {
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Stores an event into the retained ring for later `replay_and_publish`
-    /// and observability, WITHOUT broadcasting it to subscribers. No subscriber
-    /// (including the trigger pipeline) observes a recorded event, so recording
-    /// then replaying evaluates the event exactly once instead of twice.
+    /// Stores into the ring WITHOUT broadcasting, so record-then-replay evaluates the event once, not twice.
     pub fn record(&self, event: Event) {
         self.ring
             .lock()
@@ -150,15 +147,7 @@ impl EventBus {
             .collect()
     }
 
-    /// Returns up to `limit` events in newest-first order.
-    ///
-    /// When `since` is `None` this is equivalent to `recent(limit)`.
-    /// When `since` is `Some(id)` only events published after (exclusive) that
-    /// event are returned.  The ring is checked first; if the anchor id has been
-    /// evicted the call falls back to `EventLogRepo::recent_since`.  If the
-    /// anchor is absent from both ring and log the result is an empty `Vec`.
-    ///
-    /// The ring lock is never held across the async DB fallback.
+    /// Falls back to `EventLogRepo::recent_since` if evicted; the ring lock is never held across that await.
     pub async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event> {
         let since_id = match since {
             None => return self.recent(limit),
@@ -188,11 +177,7 @@ impl EventBus {
             .unwrap_or_default()
     }
 
-    /// Loads the original event from the ring (fast path) or the persistent event log (fallback),
-    /// stamps a fresh `EventId`, sets `replay: true`, and publishes through the full bus pipeline.
-    ///
-    /// Downstream triggers fire exactly as they would for the original event. The replayed event
-    /// carries `caused_by` from the original, preserving causation chain navigability.
+    /// Stamps a fresh `EventId` and `replay: true` but keeps the original `caused_by` for causation navigability.
     pub async fn replay_and_publish(&self, event_id: EventId) -> Result<(), BusError> {
         let original = match self.lookup(event_id) {
             Some(e) => e,
@@ -218,12 +203,7 @@ impl EventBus {
         Ok(())
     }
 
-    /// Subscribes a dedicated persistence receiver and spawns the flush task.
-    ///
-    /// The subscription is created synchronously before the task is spawned, so events
-    /// published immediately after this call are guaranteed to be received by the task.
-    /// Callers that do not need persistence (tests using `NullEventLogRepo`) may skip
-    /// this call entirely.
+    /// Subscribes before spawning the flush task, so events published immediately after never get missed.
     pub fn spawn_flush_task(bus: Arc<Self>) {
         let recv = bus.sender.subscribe();
         let repo = Arc::clone(&bus.event_log);
@@ -231,10 +211,7 @@ impl EventBus {
         tokio::spawn(event_log_flush_task(recv, repo, shutdown));
     }
 
-    /// Signals the flush task to drain remaining events and exit.
-    ///
-    /// Uses `notify_one` (not `notify_waiters`) so the permit is stored even if the
-    /// flush task has not yet polled its shutdown future.
+    /// Uses `notify_one` so the permit is stored even if the flush task hasn't polled yet.
     pub fn shutdown(&self) {
         self.flush_shutdown.notify_one();
     }
@@ -402,9 +379,6 @@ mod tests {
 
     #[test]
     fn record_does_not_broadcast_to_subscribers() {
-        // Crux of the double-fire fix: `record` must store-only. A subscriber
-        // present before the call must observe nothing. If `record` reverts to
-        // `publish`, try_recv yields the event instead of Empty.
         let bus = null_bus();
         let mut rx = bus.subscribe().into_receiver();
         bus.record(core_event("silent.record"));
@@ -416,8 +390,6 @@ mod tests {
 
     #[test]
     fn record_retains_event_in_ring_for_replay() {
-        // `record` is store-only, not a no-op: the event stays in the ring so a
-        // later replay_and_publish / lookup can find it.
         let bus = null_bus();
         let ev = core_event("recorded.candidate");
         let id = ev.id;
@@ -427,9 +399,6 @@ mod tests {
 
     #[tokio::test]
     async fn record_then_replay_delivers_event_exactly_once() {
-        // Regression guard for the test-run double-fire: record (store-only) plus
-        // replay_and_publish must reach a subscriber exactly ONCE - the single
-        // replayed broadcast. A revert of `record` to `publish` delivers twice.
         let bus = null_bus();
         let mut rx = bus.subscribe().into_receiver();
 

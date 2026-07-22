@@ -1663,9 +1663,6 @@ fn inspect_count(value: &Variant) -> (&'static str, usize) {
     }
 }
 
-/// Splits one line of pretty-printed JSON into colored spans: object keys, string
-/// values, numbers, and `true`/`false`/`null` literals each get their own hue;
-/// punctuation and whitespace fall back to the muted default.
 fn json_line_runs(line: &str, palette: &ForgePalette) -> Vec<(String, Rgba)> {
     let chars: Vec<char> = line.chars().collect();
     let n = chars.len();

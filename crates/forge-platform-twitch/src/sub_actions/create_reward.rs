@@ -16,7 +16,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 const KIND_ID: &str = "twitch.channel_points.create_reward";
 const MAX_TITLE_CHARS: usize = 45;
 const MAX_PROMPT_CHARS: usize = 200;
-// Matches the format Twitch accepts: "#RRGGBB" - exactly 7 chars, '#' + 6 hex digits.
 const HEX_COLOR_LEN: usize = 7;
 
 pub struct CreateRewardRunner {
@@ -40,7 +39,6 @@ impl CreateRewardRunner {
 
         let body = build_body(cfg);
 
-        // POST /helix/channel_points/custom_rewards returns 200 with { "data": [{ "id", ... }] }.
         // Requires channel:manage:redemptions scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channel_points/custom_rewards")
             .query("broadcaster_id", user_id)
@@ -100,8 +98,7 @@ fn build_body(cfg: &ResolvedConfig) -> serde_json::Map<String, serde_json::Value
         );
     }
 
-    // Twitch requires both the flag and the value. value==0 means "disabled" from the user's
-    // perspective (maps to enabled=false, value omitted). value>0 means enabled=true + value.
+    // Twitch requires both the flag and the value; 0 maps to enabled=false, value omitted.
     if cfg.max_per_stream > 0 {
         body.insert("is_max_per_stream_enabled".to_owned(), true.into());
         body.insert("max_per_stream".to_owned(), cfg.max_per_stream.into());
@@ -460,8 +457,6 @@ mod tests {
         (transport, runner)
     }
 
-    /// Full valid config, with every key the runner reads from. Individual
-    /// tests override specific keys to exercise one mapping branch at a time.
     fn full_cfg() -> SubActionConfig {
         BTreeMap::from([
             ("title".to_owned(), Variant::String("My Reward".to_owned())),
@@ -483,8 +478,6 @@ mod tests {
         ])
     }
 
-    /// Executes `full_cfg` (optionally mutated) and returns the JSON body the
-    /// runner posted, asserting the call reached Helix.
     async fn body_for(config: SubActionConfig) -> serde_json::Value {
         let (transport, runner) = runner_with(Ok(reward_payload()));
         let stack = ArgStack::new();
@@ -515,8 +508,6 @@ mod tests {
         );
     }
 
-    // Regression: Twitch's Create Custom Reward endpoint rejects `is_paused`
-    // (it was removed from the Create body). The runner must never emit it.
     #[tokio::test]
     async fn body_never_contains_is_paused() {
         let body = body_for(full_cfg()).await;
@@ -526,8 +517,6 @@ mod tests {
         );
     }
 
-    // The runner renames config keys to Twitch's body keys. Assert the body
-    // carries Twitch's names and NOT the config-side names.
     #[tokio::test]
     async fn body_uses_twitch_key_names_not_config_names() {
         let mut cfg = full_cfg();
@@ -607,11 +596,8 @@ mod tests {
         }
     }
 
-    // Each of the three "max"-style settings pairs an enable flag with the
-    // value: 0 => flag false + value key absent; >0 => flag true + value present.
     #[tokio::test]
     async fn paired_limit_flags_track_their_values() {
-        // (config key == body value key for all three; only the flag key differs)
         for (key, flag_key) in [
             ("max_per_stream", "is_max_per_stream_enabled"),
             (
@@ -620,7 +606,6 @@ mod tests {
             ),
             ("global_cooldown_seconds", "is_global_cooldown_enabled"),
         ] {
-            // Disabled (0): flag false, value key absent.
             let mut zero = full_cfg();
             zero.insert(key.to_owned(), Variant::Int(0));
             let body = body_for(zero).await;
@@ -631,7 +616,6 @@ mod tests {
             );
             assert!(body.get(key).is_none(), "{key}=0 value must be absent");
 
-            // Enabled (>0): flag true, value present.
             let mut set = full_cfg();
             set.insert(key.to_owned(), Variant::Int(7));
             let body = body_for(set).await;

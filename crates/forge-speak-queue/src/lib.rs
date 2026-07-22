@@ -34,7 +34,7 @@ impl Default for RequestId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
     Normal,
-    /// Bits/sub/channel-point rewards - head-of-normal-queue but behind other High.
+    /// Head-of-normal-queue but behind other High entries.
     High,
 }
 
@@ -46,17 +46,12 @@ pub struct SpeakRequest {
     pub text: String,
     pub priority: Priority,
     pub alias_override: Option<AliasId>,
-    /// Forces synthesis through this engine, picking a voice from its catalog via
-    /// the resolver strategy. Ignored when `voice_override` is set.
+    /// Ignored when `voice_override` is set.
     pub engine_override: Option<EngineId>,
-    /// Forces this exact voice, bypassing alias and strategy resolution. The engine
-    /// is taken from `engine_override` if set, else inferred from the voice catalog.
+    /// Bypasses alias and strategy resolution entirely.
     pub voice_override: Option<VoiceId>,
     pub source_event_id: forge_types::EventId,
-    /// Set when this message originated from a Twitch channel-points reward
-    /// redemption. Gates `PipelineConfig::strip_reward_emotes` in the actor,
-    /// independently of the `strip_twitch_emotes`-driven stripping applied to
-    /// every message.
+    /// Gates `PipelineConfig::strip_reward_emotes`, independent of `strip_twitch_emotes`.
     pub is_reward: bool,
 }
 
@@ -67,37 +62,30 @@ pub enum SpeakCommand {
     PlayNow(RequestId),
     RemoveQueued(RequestId),
     Clear,
-    /// Drops every pending item but lets the in-flight synthesis/playback finish.
-    /// `Clear` also abandons the active item; `ClearPending` deliberately does not.
+    /// Unlike `Clear`, leaves the in-flight item playing to completion.
     ClearPending,
     Pause,
     Resume,
     Replay,
-    /// Inserts or replaces (by `viewer_id`) an alias in the live resolver.
+    /// Upserts by `viewer_id`.
     SetAlias(VoiceAlias),
-    /// Repoints an existing viewer's alias to a different voice; no-op when the
-    /// viewer has no alias yet (use `SetAlias` to create one).
+    /// No-op if the viewer has no alias yet.
     SwitchAlias {
         viewer_id: String,
         engine_id: EngineId,
         voice_id: VoiceId,
     },
-    /// Replaces the fallback strategy applied to viewers without a manual alias.
     SetStrategy(AssignmentStrategy),
-    /// Sets `QueueConfig::master_volume`, clamped to `0.0..=1.0`.
+    /// Clamped to `0.0..=1.0`.
     SetVolume(f32),
     SetEngineParams(EngineId, SynthesisDefaults, f32),
-    /// Drops an alias from the live resolver by id; no-op when the id is absent.
+    /// No-op if the id is absent.
     RemoveAlias(AliasId),
-    /// Rebuilds the voice catalog from the live `TtsRegistry`. Send this after
-    /// registering a new engine factory into the same registry `Arc` so the
-    /// catalog (and `SpeakQueueHandle::engines`/`available_voices`) picks it up
-    /// without an app restart.
+    /// Send after registering a new engine factory into the live `TtsRegistry` so
+    /// the catalog picks it up without an app restart.
     RefreshVoiceCatalog,
     SetEngineEnabled(EngineId, bool),
-    /// Sent by `forge-audio` when the VoiceGate mic threshold is crossed.
     VoiceGateActivated,
-    /// Sent by `forge-audio` when the VoiceGate mic level drops below threshold.
     VoiceGateDeactivated,
 }
 
@@ -118,8 +106,7 @@ pub enum SpeakEvent {
         engine_id: EngineId,
         viewer_name: String,
         text: String,
-        /// Zero until synthesis resolves an actual voice (the pre-synthesis
-        /// `Started` ships this as 0, same as `voice_id`/`engine_id`).
+        /// Zero until synthesis resolves an actual voice, same as `voice_id`/`engine_id`.
         duration_secs: u32,
     },
     Progress {
@@ -259,9 +246,7 @@ impl SpeakQueueHandle {
         self.send(SpeakCommand::VoiceGateDeactivated).await
     }
 
-    /// Each call returns an independent receiver starting from the next published
-    /// event. Callers may wrap this in `tokio_stream::wrappers::BroadcastStream`
-    /// to adapt it for use with `iced::Subscription`.
+    /// Each call returns an independent receiver starting from the next published event.
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<SpeakEvent> {
         self.event_tx.subscribe()
     }
@@ -281,8 +266,6 @@ impl SpeakEventStream {
     }
 }
 
-/// Returns a `SpeakQueueHandle` for command dispatch and a `SpeakEventStream`
-/// for UI subscriptions.
 pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEventStream) {
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(256);
     let (event_tx, event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(256);

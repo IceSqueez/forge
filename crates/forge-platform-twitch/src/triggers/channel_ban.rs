@@ -177,10 +177,6 @@ mod tests {
         Event::new(EventSource::Twitch, "channel.ban", payload)
     }
 
-    // Centerpiece: ban and timeout descriptors share the channel.ban topic and
-    // distinguish purely by is_permanent. A permanent ban must fire ONLY the ban
-    // descriptor; a timeout (is_permanent == false) must fire ONLY the timeout
-    // descriptor. Flipping either filter is the regression this guards.
     #[test]
     fn is_permanent_routes_ban_and_timeout_to_opposite_descriptors() {
         let cfg = TriggerConfig::new();
@@ -206,7 +202,6 @@ mod tests {
         );
     }
 
-    // is_permanent missing/non-bool defaults to false: ban stays silent, timeout fires.
     #[test]
     fn missing_is_permanent_defaults_to_timeout_not_ban() {
         let cfg = TriggerConfig::new();
@@ -253,7 +248,6 @@ mod tests {
             stack.get("banned_at"),
             Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
         );
-        // A permanent ban has no expiry, so the ban descriptor must not surface ends_at.
         assert_eq!(stack.get("ends_at"), None);
     }
 }

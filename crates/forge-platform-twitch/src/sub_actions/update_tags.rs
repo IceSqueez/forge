@@ -35,7 +35,6 @@ impl UpdateTagsRunner {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        // PATCH /helix/channels returns 204 No Content on success; Value::Null from transport.
         // An empty tags array clears all custom tags.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
@@ -44,8 +43,7 @@ impl UpdateTagsRunner {
     }
 }
 
-/// Splits the textarea value on newlines and commas, trimming each entry and
-/// dropping blanks. Returns `Err` if a tag exceeds 25 chars or there are over 10.
+/// Returns `Err` if a tag exceeds 25 chars or there are over 10.
 fn parse_tags(raw: &str) -> Result<Vec<String>, String> {
     let tags: Vec<String> = raw
         .split(['\n', ','])
@@ -174,8 +172,6 @@ mod tests {
 
     #[test]
     fn parse_tags_splits_trims_and_drops_blanks() {
-        // Mixed newline + comma separators, surrounding whitespace, and blank
-        // entries between separators must collapse to clean tags in order.
         assert_eq!(
             parse_tags(" Speedrun ,\n English\n\n, ,Chill ").unwrap(),
             vec!["Speedrun", "English", "Chill"]
@@ -248,7 +244,6 @@ mod tests {
         let (telemetry, _) = runner.execute(&cfg(""), &make_ctx(&stack)).await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        // Empty input is a clear-all, NOT a skip: a PATCH with an empty array fires.
         assert_eq!(transport.call_count(), 1);
         assert_eq!(
             transport.request(0).body.unwrap(),

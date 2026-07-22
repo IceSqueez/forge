@@ -1,7 +1,3 @@
-//! Regression tests: SoundboardPlayer must emit PlaybackFailed (not crash silently)
-//! when the clip file is missing on disk, and when the sink factory returns an error
-//! (e.g. device disconnect before playback starts).
-
 #![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
@@ -97,8 +93,6 @@ fn stored_clip_with_path(id: ClipId, path: PathBuf) -> StoredClip {
     }
 }
 
-/// Regression: play() with a clip whose file does not exist on disk must
-/// emit PlaybackFailed and return Err (not panic or silently succeed).
 #[tokio::test]
 async fn play_missing_file_emits_playback_failed_and_returns_err() {
     let clip_id = ClipId::new();
@@ -128,8 +122,6 @@ async fn play_missing_file_emits_playback_failed_and_returns_err() {
     );
 }
 
-/// Regression: play() when sink factory returns NoDefaultDevice must emit
-/// PlaybackFailed and return Err - covers audio device disconnect before playback.
 #[tokio::test]
 async fn play_no_default_device_emits_playback_failed_and_returns_err() {
     let clip_id = ClipId::new();

@@ -124,10 +124,6 @@ impl TriggerKindDescriptor for RaidSentDescriptor {
 mod tests {
     use super::*;
 
-    // The received/sent direction-split centerpiece lives in channel_raid_received's
-    // tests, which owns both descriptors. Here we cover only raid_sent's own surface:
-    // event-filter wiring and the outgoing-raid arg stack.
-
     #[test]
     fn event_filter_targets_channel_raid_topic_from_twitch() {
         let filter = RaidSentDescriptor.event_filter();

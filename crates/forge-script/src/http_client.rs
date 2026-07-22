@@ -50,8 +50,7 @@ impl ScriptHttpClient {
         Ok(Self { config, client })
     }
 
-    /// Rate-limit counter is checked before incrementing; only bumped when all
-    /// validation passes and the request is about to be sent.
+    /// The rate-limit counter is only bumped once validation passes and the request is about to be sent.
     pub fn get(&self, url_str: &str, counter: &Arc<AtomicU32>) -> Result<HttpResponse, HttpError> {
         let url = reqwest::Url::parse(url_str).map_err(|e| HttpError::Network(e.to_string()))?;
         self.validate(&url, counter)?;
@@ -285,8 +284,6 @@ mod tests {
 
     #[test]
     fn imds_url_blocked_when_allow_local_false() {
-        // 169.254.169.254 is an IP literal; no DNS resolution is needed.
-        // Even when explicitly allowlisted, the private-IP check fires.
         let config = Arc::new(ScriptHttpConfig {
             allowed_domains: vec!["169.254.169.254".into()],
             allow_local: false,

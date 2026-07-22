@@ -174,7 +174,6 @@ mod tests {
     #[tokio::test]
     async fn empty_message_id_after_interpolation_fails_without_delete() {
         let server = MockServer::start().await;
-        // No mock mounted; assert via received_requests the transport is untouched.
         let runner = runner_on(&server);
         let stack = ArgStack::new().set("mid".to_owned(), Variant::String(String::new()));
 

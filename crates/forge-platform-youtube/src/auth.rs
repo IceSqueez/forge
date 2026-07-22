@@ -120,8 +120,6 @@ impl GoogleAuthFlow {
         }
     }
 
-    /// Binds a loopback listener, generates PKCE + state, stores the driver, and
-    /// returns the URL the caller should open in the user's browser.
     pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
         let extra: &[(&str, &str)] = if self.force_consent {
             &[("prompt", "consent")]
@@ -134,9 +132,7 @@ impl GoogleAuthFlow {
         })
     }
 
-    /// Consumes the pending driver, awaits the loopback callback, exchanges the
-    /// authorization code for tokens (PKCE + Google's `client_secret`), and
-    /// resolves the broadcaster's YouTube channel.
+    /// PKCE + Google's `client_secret`; resolves the broadcaster's YouTube channel.
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,

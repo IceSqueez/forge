@@ -73,8 +73,7 @@ impl KickAuthFlow {
             authorize_endpoint,
             token_endpoint,
             scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
-            // "redirect=127.0.0.1" must precede "redirect_uri" to prevent NextJS
-            // host-rewriting on id.kick.com.
+            // Must precede "redirect_uri" to prevent NextJS host-rewriting on id.kick.com.
             authorize_pre_redirect_params: vec![("redirect".to_owned(), "127.0.0.1".to_owned())],
             authorize_trailing_params: Vec::new(),
         });
@@ -86,8 +85,6 @@ impl KickAuthFlow {
         }
     }
 
-    /// Binds a loopback listener, generates PKCE + state, stores the driver, and returns
-    /// the URL the caller should open in the user's browser.
     pub async fn start(&mut self) -> Result<LoopbackCode, PlatformError> {
         let url = self.pkce.start(&[]).await?;
         Ok(LoopbackCode {
@@ -95,9 +92,8 @@ impl KickAuthFlow {
         })
     }
 
-    /// Consumes the pending driver, waits for the loopback callback, exchanges the code for a
-    /// Kick access token (PKCE - no `client_secret`), then resolves `user_id` + `username` from
-    /// the authenticated-user endpoint.
+    /// PKCE (no `client_secret`); resolves `user_id` + `username` from the authenticated-user
+    /// endpoint after the code exchange.
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,
@@ -215,9 +211,6 @@ mod tests {
         assert_eq!(authorize_url, KICK_AUTHORIZE_ENDPOINT);
         assert_eq!(token_endpoint, KICK_TOKEN_ENDPOINT);
         assert_eq!(redirect_path, CALLBACK_PATH);
-        // Why: a silently-dropped write scope breaks moderation / rewards / chat-send
-        // features at runtime with an opaque 403. Pin each by literal string so an
-        // accidental removal from KICK_SCOPES fails here, not in production.
         for required in [
             "chat:write",
             "moderation:ban",

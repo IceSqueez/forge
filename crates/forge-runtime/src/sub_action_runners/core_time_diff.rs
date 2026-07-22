@@ -132,8 +132,7 @@ impl SubActionRunner for CoreTimeDiffRunner {
             config.str_nonempty("into_var").unwrap_or("time.diff_value"),
         );
 
-        // Nanosecond precision avoids float rounding from whole_seconds() when the
-        // caller asks for fractional minutes/hours/days.
+        // Nanosecond precision avoids float rounding when the caller asks for fractional units.
         let diff_ns = (to_dt - from_dt).whole_nanoseconds() as f64;
         let diff_value = match unit {
             "minutes" => diff_ns / 60_000_000_000.0,
@@ -188,7 +187,6 @@ mod tests {
 
     #[tokio::test]
     async fn diff_computes_signed_fractional_value_per_unit() {
-        // 90 seconds apart → 1.5 minutes: the fraction must survive, not truncate to 1.
         let from = utc(2024, Month::January, 1, 0, 0, 0);
         let to = utc(2024, Month::January, 1, 0, 1, 30);
         for (unit, expected) in [

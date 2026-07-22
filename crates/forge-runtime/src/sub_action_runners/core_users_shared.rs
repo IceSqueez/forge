@@ -3,10 +3,7 @@ use forge_types::ArgStack;
 
 const SINGLE_BROADCASTER_NAMESPACE: &str = "local";
 
-/// Per-user variables are keyed by `(broadcaster_id, user_id, name)`, but a sub-action
-/// runner has no channel identity in its `RunContext`. Triggers that carry one set a
-/// `broadcaster_id` arg (chat triggers do not); when it is absent every user variable
-/// shares the single-broadcaster `"local"` namespace.
+/// Absent a `broadcaster_id` arg or global, every per-user variable shares the `"local"` namespace.
 pub(super) async fn resolve_broadcaster_id(
     arg_stack: &ArgStack,
     globals: &dyn GlobalsRepo,
@@ -35,10 +32,6 @@ mod tests {
     use forge_types::Variant;
     use time::OffsetDateTime;
 
-    // Returns `broadcaster` only for a `get("broadcaster_id")` lookup, so a
-    // regression that queried the wrong key would surface as the "local"
-    // fallback. `forbid_get` turns any lookup into a contract violation, used
-    // to prove the arg-stack value short-circuits before globals are consulted.
     struct FakeGlobals {
         broadcaster: Option<Variant>,
         forbid_get: bool,

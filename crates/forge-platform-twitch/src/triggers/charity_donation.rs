@@ -242,7 +242,6 @@ mod tests {
 
     #[test]
     fn min_amount_cents_filter_compares_at_and_around_boundary() {
-        // Event carries a 500-cent donation. min uses inclusive >= comparison.
         for (min, expected) in [
             (config_min(0), true),        // floor accepts any amount
             (config_min(500), true),      // boundary: equal passes (>=)

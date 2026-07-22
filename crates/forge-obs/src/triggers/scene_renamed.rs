@@ -128,8 +128,6 @@ mod tests {
         }
     }
 
-    /// Rename reads two distinct payload fields into two distinct arg keys; a swapped
-    /// field-to-key wiring would surface here.
     #[test]
     fn arg_stack_binds_old_and_new_names_to_distinct_keys() {
         let event = Event::new(

@@ -1,20 +1,3 @@
-//! Tests for the `core.action.run` composite sub-action runner. It looks up a
-//! target action and re-enters the chain machinery to run that target's
-//! sub-actions one nesting level down via `ChainExecutor::run_child_chain`.
-//!
-//! Two collaborators are mocked, both in-memory, no SQLite/services/network:
-//!   * `MockActionRepo` - a HashMap-backed `ActionRepo` returning a programmable
-//!     target (or `None`, or a forced `Err`).
-//!   * `MockChainExecutor` - records the `run_child_chain` call (which steps,
-//!     which arg-stack snapshot, how many calls) and returns a programmable
-//!     `ChildChainOutcome` signal or `Err(RegistryError::DepthExceeded)`.
-//!
-//! The load-bearing contracts under test: the child chain is the TARGET's
-//! sub-actions; `inherit_args` decides whether the parent arg-stack flows into
-//! the child or the child starts fresh; every `ChainSignal` maps to the right
-//! `SubActionOutcome`; the recursion-depth guard and bad-id paths fail WITHOUT
-//! ever entering the child chain.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::{BTreeMap, HashMap};
@@ -40,8 +23,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// In-memory `ActionRepo`. Only `get` is exercised by `core.action.run`;
-/// `fail_get` forces it to error so the repo-failure arm can be covered.
 struct MockActionRepo {
     map: Mutex<HashMap<ActionId, Action>>,
     fail_get: bool,
@@ -114,7 +95,6 @@ enum ExecResponse {
     DepthExceeded,
 }
 
-/// Snapshot of what the executor was handed for one `run_child_chain` call.
 struct Recorded {
     step_kinds: Vec<String>,
     args: BTreeMap<String, Variant>,
@@ -280,7 +260,6 @@ async fn runs_the_target_actions_sub_actions_as_the_child_chain() {
 
     assert!(matches!(outcome, SubActionOutcome::Success));
     assert_eq!(executor.call_count(), 1);
-    // The child chain must be the TARGET's own sub-actions, not the caller's.
     assert_eq!(
         executor.recorded_step_kinds(),
         vec!["core.log.write", "twitch.chat.send_message"],
@@ -289,7 +268,6 @@ async fn runs_the_target_actions_sub_actions_as_the_child_chain() {
 
 #[tokio::test]
 async fn inherit_args_default_passes_the_parent_arg_stack_to_the_child() {
-    // No `inherit_args` key → defaults to true → child sees the parent's args.
     let repo = std::sync::Arc::new(MockActionRepo::new());
     let target = target_with_steps(&["core.log.write"]);
     let id = target.id;
@@ -459,8 +437,6 @@ fn validate_config_accepts_a_non_empty_action_id() {
 #[test]
 fn validate_config_rejects_empty_or_missing_action_id() {
     let runner = CoreActionRunRunner::new(std::sync::Arc::new(MockActionRepo::new()));
-    // empty string
     assert!(runner.validate_config(&cfg("")).is_err());
-    // key absent entirely
     assert!(runner.validate_config(&SubActionConfig::new()).is_err());
 }

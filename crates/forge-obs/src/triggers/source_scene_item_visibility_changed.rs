@@ -111,11 +111,6 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    // 1:1 kind discrimination across the `source.` family (incl. the input/visibility
-    // prefix collision) is covered in `source_input_created`. Here we test only this
-    // descriptor's typed arg-stack extraction, which renames three distinct payload keys
-    // (`scene` / `source` / `visible`) and is the only `source.` descriptor producing a
-    // `Variant::Bool`.
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
@@ -142,8 +137,6 @@ mod tests {
         );
     }
 
-    /// A `visible: false` payload must map to `Variant::Bool(false)` - not be dropped or
-    /// coerced - so actions can distinguish hide from show.
     #[test]
     fn visibility_arg_stack_preserves_false_enabled_flag() {
         let event = Event::new(

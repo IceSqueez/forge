@@ -43,9 +43,7 @@ impl SendShoutoutRunner {
                 Ok(id) => id,
                 Err(e) => return SubActionOutcome::Failed(e.to_string()),
             };
-        // Shoutout requires three identity params: from (self), to (resolved), and moderator
-        // (self again). Twitch validates that moderator_id has mod privileges in from_broadcaster's
-        // channel; using self satisfies this for the broadcaster's own channel.
+        // moderator_id == from_broadcaster_id == self satisfies Twitch's mod-privilege check.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/chat/shoutouts")
             .query("from_broadcaster_id", self_id.clone())
             .query("to_broadcaster_id", to_broadcaster_id)

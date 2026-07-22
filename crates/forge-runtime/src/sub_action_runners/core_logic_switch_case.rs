@@ -106,9 +106,7 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
     }
 }
 
-/// Resolves the switch selector to a `(matched_index, chain)` pair: the first case
-/// whose `match` value (a single value or any element of a value list) equals the
-/// selector by display form wins, otherwise the default chain runs with index -1.
+/// The first case matching by display form wins; unmatched falls through to the default chain at index -1.
 fn select_case(config: &SubActionConfig, value: &str) -> (i64, Vec<SubActionStep>) {
     let cases = config.get("cases").and_then(Variant::as_array);
     if let Some(cases) = cases {

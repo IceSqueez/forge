@@ -27,9 +27,7 @@ pub struct EgressRequest {
     pub content_type: Option<String>,
     pub timeout: Duration,
     pub follow_redirects: bool,
-    /// When false (default) the SSRF denylist rejects loopback/private/link-local
-    /// targets; when true the denylist is bypassed so LAN/localhost URLs reach the
-    /// network. Read per-execution from settings so the toggle is hot.
+    /// When true, bypasses the SSRF denylist that otherwise blocks loopback/private/link-local targets.
     pub allow_local: bool,
 }
 
@@ -58,12 +56,7 @@ pub enum EgressError {
     Network(String),
 }
 
-/// Cross-cutting HTTP egress for `core.http.*` sub-actions. Owns its own SSRF
-/// denylist and per-request budget instead of routing through the platform
-/// `TokenBucketRateLimiter`: that limiter's buckets are keyed to documented
-/// per-platform API quotas, and an arbitrary user-authored URL maps to no
-/// platform bucket. The global semaphore caps concurrent in-flight egress
-/// requests across the whole runtime.
+/// Owns its own SSRF denylist and budget: `TokenBucketRateLimiter` buckets are keyed to platform quotas, not arbitrary user URLs.
 pub struct EgressClient {
     client: reqwest::Client,
     concurrency: Semaphore,
@@ -82,11 +75,7 @@ impl EgressClient {
         })
     }
 
-    /// Validates the URL against the SSRF denylist, sends it, and follows
-    /// redirects manually so every hop is re-validated against the same
-    /// classifier. The host's resolved IPs are re-checked post-resolution before
-    /// each request leaves - a literal IP or any DNS result inside private space
-    /// is rejected unless `allow_local` is set.
+    /// Redirects are followed manually so every hop is re-validated against the SSRF classifier.
     pub async fn send(&self, req: EgressRequest) -> Result<EgressResponse, EgressError> {
         let _permit = self
             .concurrency
@@ -253,12 +242,6 @@ mod tests {
     use wiremock::matchers::{body_string, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    // wiremock binds an in-process HTTP server on 127.0.0.1 (a mock backend on
-    // loopback - never a real external service). Every SSRF-reject case asserts
-    // the request never left the runtime by checking the mock recorded zero hits.
-
-    // `EgressResponse` has no Debug derive, so `Result::unwrap_err` is unavailable
-    // on the send result; extract the error by match instead.
     fn expect_err(result: Result<EgressResponse, EgressError>) -> EgressError {
         match result {
             Ok(_) => panic!("expected an egress error, got an Ok response"),
@@ -283,7 +266,6 @@ mod tests {
     #[tokio::test]
     async fn loopback_target_is_rejected_before_request_when_allow_local_false() {
         let server = MockServer::start().await;
-        // A catch-all that, if ever hit, would let the request through.
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200))
             .mount(&server)
@@ -293,8 +275,6 @@ mod tests {
         let err = expect_err(client.send(request(server.uri(), false)).await);
 
         assert!(matches!(err, EgressError::BlockedAddress));
-        // Load-bearing: the denylist fired BEFORE any byte left - the loopback
-        // mock saw nothing.
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
@@ -313,7 +293,6 @@ mod tests {
             .await
             .unwrap();
 
-        // The toggle is the ONLY difference from the reject case above.
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "pong");
     }
@@ -345,8 +324,6 @@ mod tests {
 
     #[tokio::test]
     async fn localhost_hostname_is_rejected_after_dns_resolution() {
-        // `localhost` is a name, not a literal IP, so this exercises the
-        // post-resolution branch: the resolved 127.0.0.1 must still be blocked.
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(200))
@@ -368,7 +345,6 @@ mod tests {
     #[tokio::test]
     async fn non_http_scheme_is_rejected() {
         let client = EgressClient::new().unwrap();
-        // allow_local is irrelevant: the scheme guard runs before the toggle.
         let err = expect_err(
             client
                 .send(request("ftp://example.com/file".to_owned(), true))
@@ -379,9 +355,6 @@ mod tests {
 
     #[tokio::test]
     async fn redirect_to_disallowed_scheme_is_revalidated_per_hop() {
-        // The first hop (loopback wiremock, allow_local) passes; the 302 target is
-        // a non-http scheme. If per-hop revalidation were skipped the client would
-        // try to follow blindly - instead the scheme guard must reject the new URL.
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(
@@ -465,7 +438,6 @@ mod tests {
         let elapsed = start.elapsed();
 
         assert!(matches!(err, EgressError::Timeout));
-        // Bounded: the configured 100ms timeout fired, not the 30s mock delay.
         assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
     }
 
@@ -494,8 +466,6 @@ mod tests {
     #[tokio::test]
     async fn post_marshals_method_and_body() {
         let server = MockServer::start().await;
-        // The body matcher means a 201 is returned ONLY if the request actually
-        // arrived as a POST carrying the exact body.
         Mock::given(method("POST"))
             .and(body_string("payload-123"))
             .respond_with(ResponseTemplate::new(201))

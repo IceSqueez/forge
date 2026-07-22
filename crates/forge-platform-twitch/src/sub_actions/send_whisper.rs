@@ -244,7 +244,6 @@ mod tests {
 
     #[tokio::test]
     async fn empty_message_after_interpolation_fails_before_any_helix_call() {
-        // message is checked before identity lookup and before user resolve
         let (transport, runner) = runner_with(vec![users_fixture("555")]);
         let stack = ArgStack::new().set("msg".to_owned(), Variant::String(String::new()));
 

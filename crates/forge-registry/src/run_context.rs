@@ -12,28 +12,18 @@ pub struct RunContext<'a> {
     pub index: usize,
     pub parent_event_id: EventId,
     pub publisher: &'a dyn EventPublisher,
-    /// Re-entrant entry point a composite runner uses to run a nested chain one
-    /// level below the current step; leaf runners are handed a null executor.
+    /// Leaf runners are handed a null executor that runs no nested chain.
     pub executor: &'a dyn ChainExecutor,
-    /// Cancellation shared with every nested child chain of this execution;
-    /// composite/looping runners poll it at boundaries. Leaf runners get a
-    /// fresh, never-tripped signal.
+    /// Leaf runners get a fresh, never-tripped signal.
     pub cancel: CancelSignal,
-    /// Where `break`/`continue`/`stop` leaves raise their flow-control signal for
-    /// the enclosing sequential chain to drain. Drained only by `drive_sequential`;
-    /// a leaf built through `RunContext::leaf` writes into a cell nobody reads.
+    /// Drained only by `drive_sequential`; a leaf-built cell is never drained.
     pub control: ControlCell,
-    /// Where a composite runner deposits the re-tagged telemetry of its nested
-    /// steps for the enclosing chain to splice into its flat list. Drained after
-    /// each step by the chain driver; a leaf writes into a cell nobody drains.
+    /// Drained by the chain driver after each step; a leaf-built cell is never drained.
     pub telemetry: TelemetrySink,
 }
 
 impl<'a> RunContext<'a> {
-    /// Context for a runner that neither launches a child chain nor observes
-    /// cancellation. The re-entrant slots are filled with a null executor (runs
-    /// nothing) and a fresh cancel signal, so it is never correct to call
-    /// `executor`/`cancel` from a runner constructed this way.
+    /// Fills the re-entrant slots with a null executor and a fresh cancel signal; never call `executor`/`cancel` expecting real chain behavior from a leaf.
     pub fn leaf(
         arg_stack: &'a ArgStack,
         index: usize,
@@ -103,10 +93,6 @@ mod tests {
 
     #[tokio::test]
     async fn leaf_executor_runs_nothing_and_reports_completed() {
-        // The null executor must ignore the steps it is handed (a leaf runner is
-        // never supposed to launch a child chain): it returns `Completed` with no
-        // telemetry even when given a real step. A genuine executor would emit a
-        // telemetry row here.
         let stack = ArgStack::new().set("user".to_owned(), Variant::String("alice".to_owned()));
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
 

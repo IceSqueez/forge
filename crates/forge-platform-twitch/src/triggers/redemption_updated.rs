@@ -257,9 +257,6 @@ mod tests {
 
     #[test]
     fn matches_trigger_gates_fulfilled_event_by_status_filter() {
-        // Event status is "fulfilled". Each row exercises the status_filter gate:
-        // "any" fires unconditionally; a concrete filter fires only on an exact
-        // status match. The default config (no override) behaves like "any".
         let event = fulfilled_event();
         let cases = [
             ("any fires", config_with_filter("any"), true),

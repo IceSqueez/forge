@@ -71,9 +71,6 @@ mod tests {
         }
     }
 
-    /// Registers the full discord runner set (same constructors as
-    /// `register_discord_sub_actions`) and asserts every expected id resolves,
-    /// guarding against accidental removal of a runner or an id collision.
     #[test]
     fn registering_all_runners_exposes_every_expected_id() {
         let mut reg = SubActionRegistry::new();

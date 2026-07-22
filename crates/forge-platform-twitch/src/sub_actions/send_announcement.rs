@@ -284,7 +284,6 @@ mod tests {
         for (char_count, should_send) in [(500, true), (501, false)] {
             let (transport, runner) =
                 runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
-            // Cyrillic is 2 bytes per char; the limit must count chars.
             let stack =
                 ArgStack::new().set("msg".to_owned(), Variant::String("я".repeat(char_count)));
 
@@ -331,8 +330,6 @@ mod tests {
 
     #[tokio::test]
     async fn execute_falls_back_to_primary_color_for_unrecognized_stored_color() {
-        // A stale stored color must degrade to the default instead of sending
-        // a value Helix would reject with 400.
         let (transport, runner) =
             runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
         let stack = ArgStack::new();

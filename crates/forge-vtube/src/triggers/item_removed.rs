@@ -117,9 +117,7 @@ mod tests {
         let d = ItemRemovedDescriptor;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("item.removed", json!({}))));
-        // Sibling under the same `item.` prefix must not match.
         assert!(!d.matches_trigger(&cfg, &event("item.added", json!({}))));
-        // Foreign kind.
         assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
     }
 

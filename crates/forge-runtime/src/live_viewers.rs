@@ -10,10 +10,7 @@ use tokio_stream::wrappers::WatchStream;
 
 const COMMAND_CHANNEL_CAP: usize = 64;
 
-/// The summed concurrent-viewer figure across connected reporting platforms.
-/// `Empty` is distinct from `Reporting(0)`: `Empty` means no connected platform
-/// currently reports a figure, while `Reporting(0)` means one or more report and
-/// their figures sum to zero.
+/// `Empty` means no platform currently reports; `Reporting(0)` means one or more report and sum to zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveViewerCount {
     Reporting(u64),
@@ -33,9 +30,7 @@ pub struct LiveViewerAggregatorHandle {
 }
 
 impl LiveViewerAggregatorHandle {
-    /// Wires a platform's viewer-report capability into the aggregate. Each call
-    /// occupies a distinct additive slot (no cross-platform dedup); the slot's
-    /// contribution drops on `Absent` or when the source's stream ends.
+    /// Each call occupies a distinct additive slot (no cross-platform dedup); it drops on `Absent` or stream end.
     pub fn register(&self, source: Box<dyn LiveViewerSource>) {
         let slot = self.next_slot.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
@@ -54,9 +49,7 @@ impl LiveViewerAggregatorHandle {
         });
     }
 
-    /// Yields the current aggregate immediately on first poll, then on every
-    /// change. Latest-value-wins: a slow consumer resynchronizes to the newest
-    /// figure and never blocks the aggregator.
+    /// Latest-value-wins: a slow consumer resynchronizes to the newest figure and never blocks the aggregator.
     pub fn subscribe(&self) -> impl Stream<Item = LiveViewerCount> + Send + 'static {
         WatchStream::new(self.output.clone())
     }
@@ -121,9 +114,6 @@ mod tests {
     use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
-    /// A `LiveViewerSource` whose report stream drains a channel the test drives.
-    /// Holding the sender lets a test feed reports one at a time; dropping it ends
-    /// the stream, exercising the slot-drop path.
     struct ChannelSource {
         rx: Mutex<Option<UnboundedReceiver<ViewerReport>>>,
     }
@@ -148,10 +138,6 @@ mod tests {
         }
     }
 
-    /// Consume aggregate items until `expected` is observed. The watch channel
-    /// coalesces (latest-value-wins), so intermediate values may be skipped; the
-    /// bounded timeout turns a never-arriving value (e.g. a `Reporting(0)` a buggy
-    /// impl collapsed to `Empty`) into a test failure instead of a hang.
     async fn settle_to<S>(stream: &mut S, expected: LiveViewerCount)
     where
         S: Stream<Item = LiveViewerCount> + Unpin,
@@ -232,9 +218,6 @@ mod tests {
 
     #[tokio::test]
     async fn single_zero_report_is_reporting_zero_not_empty() {
-        // Why: a platform reporting zero concurrent viewers (`Reporting(0)`) is a
-        // distinct state from no platform reporting at all (`Empty`). Collapsing
-        // one into the other is the highest-value regression this suite guards.
         let handle = spawn_live_viewer_aggregator();
         let mut sub = Box::pin(handle.subscribe());
         let (src, tx) = channel_source();
@@ -254,8 +237,6 @@ mod tests {
         tx.send(ViewerReport::Live { count: 9 }).unwrap();
         settle_to(&mut early, LiveViewerCount::Reporting(9)).await;
 
-        // A subscriber created only now must observe the current 9 on its first
-        // poll, not the `Empty` the aggregate was seeded with at spawn.
         let mut late = Box::pin(handle.subscribe());
         assert_eq!(late.next().await, Some(LiveViewerCount::Reporting(9)));
     }

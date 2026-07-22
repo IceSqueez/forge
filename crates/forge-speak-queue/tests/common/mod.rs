@@ -1,9 +1,3 @@
-//! Shared multi-engine harness for the speak-queue control/query surface tests.
-//!
-//! Fakes only - no real synthesis engine, audio device, or network. A `FakeEngine`
-//! returns silent PCM; a `RecordingSink` counts playbacks; an `Arc<Notify>` gate is
-//! available for tests that need an item to stay in-flight deterministically.
-
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -77,8 +71,6 @@ impl TtsEngineFactory for FakeFactory {
     }
 }
 
-/// Two engines: `alpha` (voices `alpha-1`, `alpha-2`) and `beta` (voice `beta-1`).
-/// The duplicate-engine `alpha` exercises the `engines()` de-duplication contract.
 pub fn standard_registry() -> TtsRegistry {
     let mut reg = TtsRegistry::new();
     reg.register(
@@ -209,9 +201,6 @@ where
     }
 }
 
-/// Returns `(voice_id, engine_id)` from the first `Started` event carrying a
-/// non-empty voice id - i.e. the post-synthesis event that reports what the actor
-/// actually resolved (the pre-synthesis `Started` ships empty ids).
 pub async fn wait_for_resolved_voice(
     stream: &mut SpeakEventStream,
     max_ms: u64,
@@ -235,7 +224,6 @@ pub async fn wait_for_resolved_voice(
     }
 }
 
-/// Asserts NO event matching `pred` arrives within `window_ms`.
 pub async fn assert_no_event<F>(stream: &mut SpeakEventStream, pred: F, window_ms: u64)
 where
     F: Fn(&SpeakEvent) -> bool,

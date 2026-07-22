@@ -47,23 +47,19 @@ fn sta_worker_main(
     init_tx: mpsc::SyncSender<Result<Vec<TtsVoice>, SapiError>>,
     engine_id: EngineId,
 ) {
-    // SAFETY: CoInitializeEx is called before any SAPI COM object is created on this
-    // thread. This is the dedicated STA thread; all ISpVoice / ISpObjectToken /
-    // ISpObjectTokenCategory pointers are created, used, and dropped exclusively here.
-    // Only Vec<TtsVoice> and PcmBuffer (plain heap data) travel across the channel;
-    // no COM pointer is ever transmitted outside this thread.
+    // SAFETY: this dedicated STA thread creates, uses, and drops every SAPI COM pointer;
+    // only plain heap data (Vec<TtsVoice>, PcmBuffer) crosses the channel.
     if let Err(e) = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok() {
         let _ = init_tx.send(Err(SapiError::ComInit(e.code().0)));
         return;
     }
 
-    // SAFETY: CoCreateInstance is called after CoInitializeEx. The returned ISpVoice
-    // is created and owned exclusively on this STA thread.
+    // SAFETY: called after CoInitializeEx above; ISpVoice is owned exclusively by this thread.
     let voice: ISpVoice = match unsafe { CoCreateInstance(&SpVoice, None, CLSCTX_INPROC_SERVER) } {
         Ok(v) => v,
         Err(e) => {
             let _ = init_tx.send(Err(SapiError::ComInit(e.code().0)));
-            // SAFETY: CoUninitialize balances the CoInitializeEx called above on this thread.
+            // SAFETY: balances the CoInitializeEx above, on the same thread.
             unsafe { CoUninitialize() };
             return;
         }
@@ -73,7 +69,7 @@ fn sta_worker_main(
         Ok(t) => t,
         Err(e) => {
             let _ = init_tx.send(Err(e));
-            // SAFETY: CoUninitialize balances CoInitializeEx called above.
+            // SAFETY: balances the CoInitializeEx above, on the same thread.
             unsafe { CoUninitialize() };
             return;
         }
@@ -95,9 +91,7 @@ fn sta_worker_main(
         }
     }
 
-    // SAFETY: CoUninitialize balances CoInitializeEx called at thread start.
-    // All COM objects created on this thread have been used and will be dropped
-    // naturally when this function returns.
+    // SAFETY: balances the CoInitializeEx called at thread start.
     unsafe { CoUninitialize() };
 }
 
@@ -105,17 +99,16 @@ fn enumerate_voice_tokens(
     _voice: &ISpVoice,
     engine_id: &EngineId,
 ) -> Result<Vec<(TtsVoice, ISpObjectToken)>, SapiError> {
-    // SAFETY: All CoCreateInstance and COM method calls occur on the STA thread where
-    // CoInitializeEx has already been called. No COM pointer escapes this function
-    // beyond the return value, which remains on the STA thread.
+    // SAFETY: this STA thread has already called CoInitializeEx; no COM pointer escapes
+    // this function beyond the return value, which stays on this thread.
     let category: ISpObjectTokenCategory =
         unsafe { CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_INPROC_SERVER) }
             .map_err(|e| SapiError::ComInit(e.code().0))?;
 
-    // SAFETY: SetId selects SPCAT_VOICES - the HKLM voice registry key. false = do not create.
+    // SAFETY: SetId selects the HKLM voice registry key; false means do not create it.
     unsafe { category.SetId(SPCAT_VOICES, false) }.map_err(|e| SapiError::ComInit(e.code().0))?;
 
-    // SAFETY: EnumTokens queries installed SAPI voices. Null PCWSTR = no attribute filter.
+    // SAFETY: null PCWSTR arguments mean no attribute filter is applied.
     let enum_tokens: IEnumSpObjectTokens = unsafe {
         category.EnumTokens(windows::core::PCWSTR::null(), windows::core::PCWSTR::null())
     }
@@ -125,8 +118,8 @@ fn enumerate_voice_tokens(
     loop {
         let mut token: Option<ISpObjectToken> = None;
         let mut fetched: u32 = 0;
-        // SAFETY: Next writes at most 1 token pointer into `token`. `fetched` receives
-        // the actual count. Both are stack-allocated on this STA thread.
+        // SAFETY: writes at most 1 token pointer into `token`; both out-params are
+        // stack-allocated on this STA thread.
         let hr = unsafe { enum_tokens.Next(1, &mut token, Some(&mut fetched)) };
         if hr.is_err() || fetched == 0 {
             break;
@@ -142,22 +135,18 @@ fn enumerate_voice_tokens(
 }
 
 fn get_attribute(token: &ISpObjectToken, name: windows::core::PCWSTR) -> Result<String, SapiError> {
-    // SAFETY: OpenKey opens the "Attributes" subkey of the token. Both the token and
-    // the returned key are valid COM objects on this STA thread.
+    // SAFETY: token is a valid COM object on this STA thread.
     let attrs = unsafe { token.OpenKey(windows::core::w!("Attributes")) }
         .map_err(|e| SapiError::ComInit(e.code().0))?;
-    // SAFETY: GetStringValue reads the named string value from the registry key.
-    // The returned PWSTR points to CoTaskMem-allocated UTF-16 data.
+    // SAFETY: GetStringValue returns a CoTaskMem-allocated, valid, non-null UTF-16 PWSTR.
     let pwstr =
         unsafe { attrs.GetStringValue(name) }.map_err(|e| SapiError::ComInit(e.code().0))?;
-    // SAFETY: The PWSTR is valid, non-null UTF-16 as returned by SAPI's registry read.
     unsafe { pwstr.to_string() }.map_err(|_| SapiError::ComInit(-1))
 }
 
 fn get_id(token: &ISpObjectToken) -> Result<String, SapiError> {
-    // SAFETY: GetId returns the CoTaskMem-allocated registry path string for this token.
+    // SAFETY: GetId returns a CoTaskMem-allocated, valid, non-null UTF-16 PWSTR.
     let pwstr = unsafe { token.GetId() }.map_err(|e| SapiError::ComInit(e.code().0))?;
-    // SAFETY: The PWSTR is valid, non-null UTF-16 as returned by SAPI.
     unsafe { pwstr.to_string() }.map_err(|_| SapiError::ComInit(-1))
 }
 
@@ -187,13 +176,12 @@ fn synthesize_on_sta(
         .map(|(_, tok)| tok)
         .ok_or(SapiError::ComInit(0))?;
 
-    // SAFETY: SetVoice selects the voice for subsequent Speak calls. The token pointer
-    // is valid for the lifetime of this STA thread; both voice and token live here.
+    // SAFETY: voice and token are both valid COM objects owned by this STA thread.
     unsafe { voice.SetVoice(token) }.map_err(|e| SapiError::ComInit(e.code().0))?;
 
     let rate_adj = synth::rate_adj_from_multiplier(req.rate_multiplier);
     if rate_adj != 0 {
-        // SAFETY: SetRate adjusts synthesis speed. i32 is a plain value; no aliasing.
+        // SAFETY: plain i32 value, no aliasing or lifetime concerns.
         unsafe { voice.SetRate(rate_adj) }.map_err(|e| SapiError::ComInit(e.code().0))?;
     }
 

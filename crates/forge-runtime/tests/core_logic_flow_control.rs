@@ -1,21 +1,3 @@
-//! Flow-control composite runners (`if_then_else`, `loop`, `switch_case`) driven
-//! end-to-end through the real `ChainEngine`. Driving through the engine - rather
-//! than hand-constructing `ChainSignal`s - is deliberate: it exercises the actual
-//! `ControlCell` round-trip, so the absorption matrix below reflects how signals
-//! really flow at runtime.
-//!
-//! The load-bearing contracts under test:
-//!   * inline sub-chains (stored as `Variant::Array(Variant::Object)`) are decoded
-//!     AND executed - the regression for commit 8ea1fd9, where they silently never
-//!     ran;
-//!   * a `loop` ABSORBS `Break`/`Continue`; `if`/`switch` are TRANSPARENT and
-//!     re-propagate `Break`/`Continue`/`Stop` to the enclosing control cell;
-//!   * `Stop` and `Error` propagate through a loop to the action-root;
-//!   * a `Break` raised in an inner loop never escapes to an outer loop.
-//!
-//! No services, hardware, or network: the condition gate is the in-process rhai
-//! evaluator and `core.args.set` is the observable body-effect probe.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -42,8 +24,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// Test double that always fails, so the loop's "child error propagates to the
-/// action-root" path can be exercised - no production logic runner fails on demand.
 struct AlwaysFailRunner;
 
 #[async_trait]
@@ -138,8 +118,6 @@ fn step(kind: &str, config: SubActionConfig) -> SubActionStep {
     }
 }
 
-/// Builds one stored inline-chain step in canonical form: an `Object` carrying
-/// `kind_id` / `config` / `enabled`. `decode_steps` must walk exactly this shape.
 fn chain_step(kind: &str, config: SubActionConfig) -> Variant {
     let mut m = SubActionConfig::new();
     m.insert("kind_id".to_owned(), Variant::String(kind.to_owned()));
@@ -202,10 +180,6 @@ fn s(value: &str) -> Variant {
 
 #[tokio::test]
 async fn if_then_else_runs_the_taken_branchs_inline_chain() {
-    // REGRESSION: a branch chain is stored as Array(Object). It must be decoded
-    // AND executed - before the decode fix the body silently never ran, so the
-    // args.set effect (`marker`) stayed unset. We assert the effect actually lands
-    // on both the then and else branch.
     let eng = engine();
     for (condition, branch, marker) in [
         ("1 == 1", "then", "then_hit"),
@@ -235,9 +209,6 @@ async fn if_then_else_runs_the_taken_branchs_inline_chain() {
 
 #[tokio::test]
 async fn loop_runs_its_inline_body_each_iteration_threading_the_index() {
-    // REGRESSION + happy: the loop body is an Array(Object) inline chain that must
-    // run every iteration. The body reads the per-iteration `loop.index` and the
-    // mutation threads forward, so the final value reflects the last iteration.
     let eng = engine();
     let body = inline(vec![chain_step(
         "core.args.set",
@@ -255,8 +226,6 @@ async fn loop_runs_its_inline_body_each_iteration_threading_the_index() {
 
 #[tokio::test]
 async fn if_branch_with_non_array_body_is_a_noop_and_still_succeeds() {
-    // A malformed (non-array) branch decodes to an empty chain: the action runs
-    // nothing for that branch yet still succeeds, rather than erroring.
     let eng = engine();
     let cfg = if_cfg("1 == 1", Variant::Int(7), inline(vec![]));
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
@@ -271,8 +240,6 @@ async fn if_branch_with_non_array_body_is_a_noop_and_still_succeeds() {
 
 #[tokio::test]
 async fn if_condition_error_falls_to_else_when_treating_undefined_as_false() {
-    // "1 + 1" evaluates to an Int, not a Bool → the gate errors. With the default
-    // treat_undefined_as_false the verdict collapses to false → the else branch.
     let eng = engine();
     let cfg = if_cfg(
         "1 + 1",
@@ -461,8 +428,6 @@ async fn break_in_an_inner_loop_does_not_escape_to_the_outer_loop() {
     .await;
 
     assert_eq!(run.signal, ChainSignal::Completed);
-    // The outer loop ran both iterations to natural completion: had the inner
-    // break escaped, the outer would report exit_reason="break" after 1 iteration.
     assert_eq!(
         run.arg_stack.get("loop.iterations_completed"),
         Some(&Variant::Int(2)),
@@ -507,7 +472,6 @@ async fn switch_runs_the_first_matching_cases_chain() {
 
 #[tokio::test]
 async fn switch_matches_a_value_in_a_case_value_list_by_display_form() {
-    // Selector "42" matches the Int(42) element of a value list by display form.
     let eng = engine();
     let cfg = switch_cfg(
         "42",

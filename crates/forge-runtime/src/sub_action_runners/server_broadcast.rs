@@ -99,16 +99,14 @@ impl SubActionRunner for ServerBroadcastRunner {
             )
         } else {
             let payload = config_payload(config);
-            // BusAdapter (forge-server) delivers every bus event to WS clients whose subscription
-            // filter matches. Overlays subscribe with { "source": "Server", "type": "broadcast.*" }
-            // or a wildcard source filter - no forge-server change required.
+            // Overlays subscribe on source == Server, kind "broadcast.*"; forge-server forwards it.
             self.publisher.publish(Event::caused_by(
                 EventSource::Server,
                 format!("broadcast.{event_name}"),
                 payload,
                 ctx.parent_event_id,
             ));
-            // Accurate delivery count requires direct BusAdapter access (not available here).
+            // Hard-wired to 0: an accurate count needs direct BusAdapter access this runner lacks.
             let new_stack = ctx
                 .arg_stack
                 .clone()
@@ -139,7 +137,6 @@ mod tests {
     use forge_types::EventId;
     use std::sync::Mutex;
 
-    /// Captures every published event so tests can assert on the runner's output.
     #[derive(Default)]
     struct RecordingPublisher {
         events: Mutex<Vec<Event>>,
@@ -157,8 +154,6 @@ mod tests {
         }
     }
 
-    /// The runner publishes through its OWN injected publisher, never `ctx.publisher`;
-    /// this null sink in the context proves which channel carried the event.
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
@@ -192,11 +187,6 @@ mod tests {
 
     #[tokio::test]
     async fn broadcast_publishes_prefixed_event_from_server_source() {
-        // Load-bearing overlay round-trip contract: forge-server's BusAdapter forwards bus
-        // events to clients whose EventFilter matches. Overlays subscribe on
-        // source == Server and kind "broadcast.*". Pin BOTH exactly - if the kind drops the
-        // "broadcast." prefix, drops the name, or the source stops being Server, overlays
-        // silently stop receiving broadcasts.
         let (recorder, outcome, _) = run(
             &cfg("alert", empty_object()),
             &ArgStack::new(),
@@ -207,7 +197,6 @@ mod tests {
         assert!(matches!(outcome, SubActionOutcome::Success));
         let events = recorder.captured();
         assert_eq!(events.len(), 1, "exactly one event must be published");
-        // Exact string: not "alert" (missing prefix) and not "broadcast." (missing name).
         assert_eq!(events[0].kind, "broadcast.alert");
         assert!(matches!(events[0].source, EventSource::Server));
     }
@@ -231,8 +220,6 @@ mod tests {
         )
         .await;
 
-        // The config payload object lands in event.payload; each value is carried through
-        // Variant::to_json, so it decodes back to the original Variant under its key.
         let landed = recorder.captured()[0]
             .payload
             .get("amount")
@@ -243,7 +230,6 @@ mod tests {
 
     #[tokio::test]
     async fn broadcast_interpolates_event_name_from_arg_stack_before_prefixing() {
-        // %kind% resolves from the stack, THEN the "broadcast." prefix is applied.
         let stack = ArgStack::new().set("kind".to_owned(), Variant::String("raid".to_owned()));
         let (recorder, _, _) = run(&cfg("%kind%", empty_object()), &stack, EventId::new()).await;
 
@@ -268,9 +254,6 @@ mod tests {
 
     #[tokio::test]
     async fn broadcast_writes_delivered_count_output_var() {
-        // Why: delivered_count is a documented placeholder, hard-wired to 0 because an
-        // accurate count needs direct BusAdapter access the runner doesn't have. Pin the
-        // var's presence + Int(0) so a future real-count impl updates this deliberately.
         let (_, _, updated_stack) = run(
             &cfg("alert", empty_object()),
             &ArgStack::new(),

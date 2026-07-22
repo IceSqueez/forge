@@ -33,10 +33,7 @@ impl GuestStarEndSessionRunner {
             Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
         };
 
-        // Verified against dev.twitch.tv (2026-06-13, BETA): DELETE
-        // /helix/guest_star/session. Only broadcaster_id and session_id are required
-        // in the query; moderator_id is NOT sent - only the broadcaster can end their
-        // own session. Scope: channel:manage:guest_star.
+        // Only the broadcaster can end their own session; moderator_id is NOT sent.
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/session")
             .query("broadcaster_id", user_id)
             .query("session_id", session_id.to_owned());
@@ -142,9 +139,6 @@ mod tests {
         BTreeMap::from([("session_id".to_owned(), Variant::String(session.to_owned()))])
     }
 
-    // #7 Happy: DELETE /helix/guest_star/session with broadcaster_id=self and the
-    // interpolated session_id in the query, NO moderator_id (broadcaster-only),
-    // and no body.
     #[tokio::test]
     async fn ends_session_with_self_and_interpolated_session_no_moderator() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -186,7 +180,6 @@ mod tests {
         assert!(request.body.is_none(), "DELETE carries no body");
     }
 
-    // #8 Empty session_id fails before any Helix call.
     #[tokio::test]
     async fn empty_session_id_fails_before_helix_call() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -209,7 +202,6 @@ mod tests {
         );
     }
 
-    // #9 (session variant) token-leak guard on the failure path.
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_token() {
         let (_transport, runner) = runner_with(Err(HelixError::Http {

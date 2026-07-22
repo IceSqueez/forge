@@ -1,15 +1,5 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-//! Regression coverage for the MIDI / Hotkey `kind_id` rewrite data migration
-//! (`0020_integrations_kind_id_rename.sql`).
-//!
-//! `apply_migrations` runs every migration (incl. 0020) up front, so pre-0020
-//! rows cannot be inserted through the normal boot path. Mirroring the
-//! 0018/0019 pattern, each test applies the full schema, seeds rows carrying
-//! the OLD `kind_id` literals (no constraint forbids them post-migration), then
-//! runs the REAL migration SQL loaded verbatim from the file so the production
-//! statements - not a reimplementation - are under test.
-
 use forge_storage_sqlite::{apply_migrations, connect};
 use sqlx::SqlitePool;
 
@@ -49,10 +39,6 @@ async fn kind_id_of(pool: &SqlitePool, id: &str) -> Option<String> {
         .expect("fetch kind_id")
 }
 
-/// Attach an action to `trigger_instance_id` via `action_trigger_instances`,
-/// reproducing the real FK edge (`trigger_instance_id` -> `trigger_instances(id)`
-/// ON DELETE RESTRICT). The action's `queue_id` uses the Default queue sentinel
-/// seeded by migration 0002.
 async fn link_action_to_trigger(pool: &SqlitePool, action_id: &str, trigger_instance_id: &str) {
     sqlx::query("INSERT INTO actions (id, name, queue_id) VALUES (?, 'seed-action', ?)")
         .bind(action_id)
@@ -83,10 +69,6 @@ async fn link_count_for(pool: &SqlitePool, trigger_instance_id: &str) -> i64 {
 
 #[tokio::test]
 async fn default_rows_with_old_ids_are_renamed_in_place() {
-    // Default rows must be UPDATEd in place (not deleted): action_trigger_instances
-    // has an ON DELETE RESTRICT FK to trigger_instances, so deleting a default that
-    // an action is attached to would abort the whole migration. Boot's
-    // upsert_default later normalizes the surviving default's name/config.
     let renames = [
         ("midi.event.note_on", "midi.input.note_on"),
         ("midi.event.note_off", "midi.input.note_off"),
@@ -112,13 +94,6 @@ async fn default_rows_with_old_ids_are_renamed_in_place() {
 
 #[tokio::test]
 async fn fk_linked_default_row_survives_migration_and_keeps_its_action_link() {
-    // THE regression for 7cef527: a default (user_defined=0) trigger with an
-    // action attached via action_trigger_instances. The pre-fix migration
-    // DELETEd default rows, which the ON DELETE RESTRICT FK aborts with
-    // SQLITE_CONSTRAINT_FOREIGNKEY (1811) - the whole migration fails and the
-    // database never opens. The in-place UPDATE never deletes the referenced
-    // row, so the link survives. This test fails against the DELETE migration
-    // (run_migration panics on the FK abort) and passes against the UPDATE.
     let pool = fresh_pool().await;
     seed(&pool, "def-hotkey", "hotkey.triggered", 0).await;
     link_action_to_trigger(&pool, "act-hotkey", "def-hotkey").await;
@@ -139,7 +114,6 @@ async fn fk_linked_default_row_survives_migration_and_keeps_its_action_link() {
 
 #[tokio::test]
 async fn user_defined_rows_are_renamed_to_canonical_ids() {
-    // All four straight 1-to-1 renames; this migration has no consolidation.
     let renames = [
         ("midi.event.note_on", "midi.input.note_on"),
         ("midi.event.note_off", "midi.input.note_off"),
@@ -166,7 +140,6 @@ async fn user_defined_rows_are_renamed_to_canonical_ids() {
 #[tokio::test]
 async fn unmapped_kind_ids_are_left_untouched() {
     let pool = fresh_pool().await;
-    // A default row and a user row, neither in the rewrite set.
     seed(&pool, "def-unmapped", "obs.scene.current_changed", 0).await;
     seed(&pool, "user-unmapped", "obs.stream.started", 1).await;
 
@@ -186,8 +159,6 @@ async fn unmapped_kind_ids_are_left_untouched() {
 
 #[tokio::test]
 async fn user_defined_old_id_is_renamed_not_deleted() {
-    // Distinguishes the two arms: a user row carrying an old id must be UPDATEd,
-    // never deleted by the default-row DELETE.
     let pool = fresh_pool().await;
     seed(&pool, "user-note-on", "midi.event.note_on", 1).await;
 

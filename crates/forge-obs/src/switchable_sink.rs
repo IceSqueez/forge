@@ -1,5 +1,3 @@
-// Lets runner registration happen at boot (before async client connect) while still
-// forwarding calls to the real client once it arrives.
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -25,8 +23,7 @@ impl SwitchableObsSink {
         *guard = Some(client);
     }
 
-    // Clone the Arc out before any await so the sync RwLock guard is never held
-    // across an async call.
+    // sync RwLock guard must not cross an .await; clone the Arc out first.
     fn get(&self) -> Result<Arc<ObsClient>, ObsError> {
         let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
         guard.clone().ok_or(ObsError::Disconnected)
@@ -192,9 +189,6 @@ impl ObsSink for SwitchableObsSink {
 mod tests {
     use super::*;
     use forge_types::Variant;
-
-    // Forwarding to an installed client is not unit-testable: `install` takes a
-    // concrete `Arc<ObsClient>`, which always opens a WebSocket supervisor.
 
     #[tokio::test]
     async fn every_method_on_an_empty_sink_returns_disconnected() {

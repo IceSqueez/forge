@@ -430,23 +430,18 @@ mod tests {
     use super::*;
     use crate::palette::FORGE_DEFAULT;
 
-    /// Whether two colours are identical channel-wise. `Rgba` carries no `Debug`, so
-    /// this stands in for the `assert_eq!` the tests below would otherwise reach for.
     fn same_rgba(a: Rgba, b: Rgba) -> bool {
         a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
     }
 
     #[test]
     fn matches_holds_only_on_an_exact_case_sensitive_untrimmed_pair() {
-        // The confirm gate is an exact, case-sensitive, untrimmed compare. Every
-        // `false` row would flip to `true` under a naive `.trim()` or case-folding
-        // implementation - that divergence is the signal these rows pin.
         for (typed, target, expected) in [
-            ("delete my-channel", "delete my-channel", true), // exact match clears the gate
-            ("delete my-channe", "delete my-channel", false), // a different string does not
-            ("  target  ", "target", false),                  // no-trim: surrounding space matters
-            ("Target", "target", false),                      // case-sensitive
-            ("", "", true),                                   // empty target is trivially satisfied
+            ("delete my-channel", "delete my-channel", true),
+            ("delete my-channe", "delete my-channel", false),
+            ("  target  ", "target", false),
+            ("Target", "target", false),
+            ("", "", true),
         ] {
             assert_eq!(
                 matches(typed, target),
@@ -459,8 +454,6 @@ mod tests {
     #[test]
     fn match_border_is_brand_when_matched_and_border_input_otherwise() {
         let p = FORGE_DEFAULT;
-        // Guard: the two hues are distinct, so a swapped `if`/`else` returns a
-        // detectably wrong colour rather than the same value on both arms.
         assert!(!same_rgba(p.brand, p.border_input));
         assert!(same_rgba(match_border(true, &p), p.brand));
         assert!(same_rgba(match_border(false, &p), p.border_input));
@@ -469,8 +462,6 @@ mod tests {
     #[test]
     fn bullet_glyph_pairs_each_kind_with_its_tone_glyph_and_hue() {
         let p = FORGE_DEFAULT;
-        // Guard: the three tone hues are distinct, so asserting the per-kind hue below
-        // has teeth - a swapped arm resolves to a different, detectable colour.
         assert!(!same_rgba(p.success, p.warning));
         assert!(!same_rgba(p.warning, p.info));
         assert!(!same_rgba(p.success, p.info));

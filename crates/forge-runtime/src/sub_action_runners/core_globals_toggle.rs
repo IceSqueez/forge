@@ -136,8 +136,6 @@ mod tests {
 
     #[derive(Default)]
     struct MapGlobals {
-        // value + its stored `persisted` flag, so the runner's read-then-preserve
-        // path can be observed end to end.
         map: Mutex<BTreeMap<String, (Variant, bool)>>,
     }
 
@@ -227,8 +225,6 @@ mod tests {
 
     #[tokio::test]
     async fn toggle_preserves_the_stored_persisted_flag() {
-        // Regression for CORE-2 / DT-05-F12: the flip must reuse the global's
-        // existing persistence, not demote it to session by hardcoding false.
         for flag in [true, false] {
             let globals = Arc::new(MapGlobals::seeded([("flag", Variant::Bool(true), flag)]));
             let outcome = run(globals.clone(), &cfg("flag")).await;

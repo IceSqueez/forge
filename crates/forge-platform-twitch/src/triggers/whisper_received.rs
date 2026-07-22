@@ -328,8 +328,6 @@ mod tests {
 
     #[test]
     fn invalid_regex_does_not_panic_and_rejects() {
-        // Key safety case: a malformed pattern from user config must not panic
-        // the matcher; an uncompilable regex matches nothing.
         let cfg = config(&[
             ("match_text", Variant::String("[".to_owned())),
             ("match_is_regex", Variant::Bool(true)),
@@ -345,15 +343,12 @@ mod tests {
             ("from_user", Variant::String("bobx".to_owned())),
             ("match_text", Variant::String("hello".to_owned())),
         ]);
-        // sender matches, text matches → true
         assert!(
             WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "well hello"))
         );
-        // sender matches but text does not → false
         assert!(
             !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "goodbye"))
         );
-        // text matches but sender does not → false
         assert!(
             !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("alice", "well hello"))
         );

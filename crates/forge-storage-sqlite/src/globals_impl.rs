@@ -143,8 +143,6 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             });
         }
 
-        // Only the primary key column changes - value, persisted, type_tag,
-        // reads/writes, created_at, and last_modified all survive untouched.
         let result = sqlx::query("UPDATE globals SET name = ? WHERE name = ?")
             .bind(new_name)
             .bind(old_name)

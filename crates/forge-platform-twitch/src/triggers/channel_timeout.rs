@@ -53,12 +53,11 @@ impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            // channel.ban is the shared topic; is_permanent == false distinguishes timeouts.
             kind_prefix: Some("channel.ban".to_owned()),
         }
     }
 
-    // channel.ban fires for both bans and timeouts; only fire for timeouts here.
+    // channel.ban fires for both bans and timeouts; only fire for timeouts (is_permanent == false).
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
         !event
             .payload
@@ -190,8 +189,6 @@ mod tests {
         Event::new(EventSource::Twitch, "channel.ban", payload)
     }
 
-    // Timeout shares the channel.ban topic with the ban descriptor (the
-    // is_permanent split is verified in channel_ban's centerpiece test).
     #[test]
     fn event_filter_targets_shared_channel_ban_topic_from_twitch() {
         let filter = ChannelTimeoutDescriptor.event_filter();
@@ -218,7 +215,6 @@ mod tests {
             stack.get("banned_at"),
             Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
         );
-        // ends_at is the timeout-only var that distinguishes it from a permanent ban.
         assert_eq!(
             stack.get("ends_at"),
             Some(&Variant::String("2026-06-13T10:10:00Z".to_owned()))

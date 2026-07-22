@@ -133,8 +133,6 @@ mod tests {
 
     #[test]
     fn default_curve_starts_at_250ms_base_and_never_exceeds_60s_cap() {
-        // Why: this is THE shared reconnect curve; 250ms base / 60s cap is a
-        // product decision the whole platform tier depends on.
         for _ in 0..64 {
             let mut backoff = Backoff::default();
             assert!(

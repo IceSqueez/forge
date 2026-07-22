@@ -1,12 +1,9 @@
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Nesting levels permitted below an action's top-level chain; entering a
-    /// child chain past this bound fails the step instead of overflowing the stack.
+    /// A child chain past this bound fails the step instead of overflowing the stack.
     pub max_nesting_depth: u32,
     pub condition_op_limit: u64,
-    /// Per-evaluation wall budget in milliseconds. A predicate condition is
-    /// re-evaluated on every `wait_until` / `while` poll, so this is deliberately
-    /// tighter than a full-script budget.
+    /// Deliberately tighter than a full-script budget: re-evaluated on every poll.
     pub condition_wall_time_ms: u64,
 }
 

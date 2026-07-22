@@ -44,10 +44,7 @@ impl TwitchCredentialsManager {
         load(self.repo.as_ref()).await.map_err(storage_err)
     }
 
-    /// Returns a valid access token, renewing proactively when within five
-    /// minutes of expiry. A credential without a refresh token cannot be
-    /// renewed, so a near-dead one routes to re-auth rather than handing back a
-    /// token about to fail mid-request.
+    /// Renews proactively within the refresh buffer; a refresh-token-less credential near expiry routes to re-auth.
     pub async fn get_valid_access_token(&self) -> Result<OAuthToken, PlatformError> {
         let cred = self.load().await?.ok_or_else(reauth_err)?;
         let near_expiry = cred
@@ -62,10 +59,7 @@ impl TwitchCredentialsManager {
         Ok(cred.access_token)
     }
 
-    /// Public-client `grant_type=refresh_token` POST - no `client_secret`.
-    /// Persists the rotated refresh token Twitch returns and invalidates the
-    /// old one; the prior token is kept only when the response omits a new one.
-    /// A 400/401 means the refresh token itself is rejected → re-auth.
+    /// Public-client refresh (no `client_secret`); keeps the prior refresh token only if the response omits a new one.
     pub async fn refresh(
         &self,
         refresh_token: &OAuthToken,
@@ -155,10 +149,6 @@ mod tests {
     use super::TwitchCredentialsManager;
     use crate::credentials::{StoredCredential, TWITCH_CREDENTIAL_ID};
 
-    // ---------------------------------------------------------------------------
-    // In-memory CredentialsRepo - same pattern as Kick harness.
-    // ---------------------------------------------------------------------------
-
     struct InMemRepo(Mutex<HashMap<String, String>>);
 
     impl InMemRepo {
@@ -166,8 +156,6 @@ mod tests {
             Arc::new(Self(Mutex::new(HashMap::new())))
         }
 
-        /// Seed the repo with a credential by directly writing the JSON blob that
-        /// `store_credential` would produce. Avoids `block_on` inside a tokio test.
         fn seeded(cred: &StoredCredential) -> Arc<Self> {
             let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
                 t.duration_since(std::time::UNIX_EPOCH)
@@ -266,30 +254,20 @@ mod tests {
         )
     }
 
-    // ---------------------------------------------------------------------------
-    // get_valid_access_token: fresh credential - no network call.
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn get_valid_access_token_returns_stored_token_without_refresh_when_far_from_expiry() {
         let server = MockServer::start().await;
-        // Expires 1 hour from now - well beyond the 5-minute buffer.
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
         let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
 
         let token = mgr.get_valid_access_token().await.unwrap();
         assert_eq!(token.expose(), "existing_access");
 
-        // No request must have reached the mock server.
         assert!(
             server.received_requests().await.unwrap().is_empty(),
             "refresh endpoint must not be called for a fresh credential"
         );
     }
-
-    // ---------------------------------------------------------------------------
-    // get_valid_access_token: no credentials → ReauthRequired (no network).
-    // ---------------------------------------------------------------------------
 
     #[tokio::test]
     async fn get_valid_access_token_returns_reauth_required_when_no_credential_stored() {
@@ -306,10 +284,6 @@ mod tests {
             "no network call expected when credentials are absent"
         );
     }
-
-    // ---------------------------------------------------------------------------
-    // refresh: rotated refresh_token from upstream is persisted (RFC-091 §2).
-    // ---------------------------------------------------------------------------
 
     #[tokio::test]
     async fn refresh_persists_rotated_refresh_token_returned_by_upstream() {
@@ -340,10 +314,6 @@ mod tests {
         assert_eq!(stored.access_token.expose(), "new_access");
     }
 
-    // ---------------------------------------------------------------------------
-    // refresh: upstream omits refresh_token → prior one is retained (RFC-091 §2).
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn refresh_retains_prior_refresh_token_when_upstream_omits_it() {
         let server = MockServer::start().await;
@@ -371,10 +341,6 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------------
-    // refresh: HTTP 400 → ReauthRequired (RFC-091 §2).
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn refresh_returns_reauth_required_on_400() {
         let server = MockServer::start().await;
@@ -399,10 +365,6 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------------
-    // refresh: HTTP 401 → ReauthRequired (RFC-091 §2).
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn refresh_returns_reauth_required_on_401() {
         let server = MockServer::start().await;
@@ -424,10 +386,6 @@ mod tests {
             "HTTP 401 must map to ReauthRequired, got: {err}"
         );
     }
-
-    // ---------------------------------------------------------------------------
-    // refresh: form body must not contain client_secret (public-client PKCE).
-    // ---------------------------------------------------------------------------
 
     #[tokio::test]
     async fn refresh_sends_form_without_client_secret() {
@@ -458,10 +416,6 @@ mod tests {
             "client_secret must never appear in the token refresh form (public-client PKCE)"
         );
     }
-
-    // ---------------------------------------------------------------------------
-    // HelixTokenSource: no credentials → HelixError::ReauthRequired.
-    // ---------------------------------------------------------------------------
 
     #[tokio::test]
     async fn helix_token_source_returns_reauth_required_when_no_credential() {

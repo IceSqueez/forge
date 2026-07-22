@@ -40,7 +40,7 @@ impl StartPredictionRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        // Outcomes must be objects with a "title" key - Twitch rejects a flat string array.
+        // Twitch rejects a flat string array; outcomes must be {"title": ...} objects.
         let outcomes: Vec<serde_json::Value> = cfg
             .outcomes
             .iter()
@@ -50,14 +50,12 @@ impl StartPredictionRunner {
         let mut body = serde_json::Map::new();
         body.insert("title".to_owned(), cfg.title.clone().into());
         body.insert("outcomes".to_owned(), outcomes.into());
-        // Twitch's body key is `prediction_window` (not `prediction_window_seconds`).
+        // Twitch's body key is `prediction_window`, not `prediction_window_seconds`.
         body.insert(
             "prediction_window".to_owned(),
             cfg.prediction_window_seconds.into(),
         );
 
-        // POST /helix/predictions; broadcaster_id is a query param, not in the body.
-        // Returns 200 with { "data": [{ "id", ... }] }.
         // Requires channel:manage:predictions scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/predictions")
             .query("broadcaster_id", user_id)
@@ -86,7 +84,6 @@ struct ResolvedConfig {
     prediction_window_seconds: i64,
 }
 
-/// Splits a textarea value on newlines and commas, trims each entry, drops blanks.
 /// Returns Err if count is outside [2, 10] or any outcome title exceeds 25 chars.
 fn parse_outcomes(raw: &str) -> Result<Vec<String>, String> {
     let outcomes: Vec<String> = raw
@@ -337,7 +334,6 @@ mod tests {
         (transport, runner)
     }
 
-    /// Full valid config; tests override single keys to isolate one branch.
     fn full_cfg() -> SubActionConfig {
         BTreeMap::from([
             (
@@ -349,8 +345,6 @@ mod tests {
         ])
     }
 
-    /// Executes (optionally mutated) config and returns the posted body,
-    /// asserting the call succeeded and reached Helix.
     async fn body_for(config: SubActionConfig) -> serde_json::Value {
         let (transport, runner) = runner_with(Ok(prediction_payload()));
         let stack = ArgStack::new();
@@ -370,22 +364,18 @@ mod tests {
         let request = transport.request(0);
         assert_eq!(request.method, HelixMethod::Post);
         assert_eq!(request.path, "/helix/predictions");
-        // broadcaster_id is the caller's own id and lives in the QUERY, not the body.
         assert!(
             request
                 .query
                 .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
         );
         assert!(request.body.unwrap().get("broadcaster_id").is_none());
-        // Success output exposes prediction.id for chaining (e.g. End Prediction).
         assert_eq!(
             output.unwrap().get("prediction.id"),
             Some(&Variant::String("pred-xyz".to_owned()))
         );
     }
 
-    // CRITICAL: Twitch's Create Prediction endpoint requires `outcomes` as an array
-    // of objects `[{"title": "Yes"}]`. A flat string array `["Yes"]` returns HTTP 400.
     #[tokio::test]
     async fn outcomes_are_title_objects_not_bare_strings() {
         let body = body_for(full_cfg()).await;
@@ -400,7 +390,6 @@ mod tests {
         let mut cfg = full_cfg();
         cfg.insert("prediction_window_seconds".to_owned(), Variant::Int(300));
         let body = body_for(cfg).await;
-        // Twitch's body key is `prediction_window` (not `prediction_window_seconds`).
         assert_eq!(body.get("prediction_window"), Some(&serde_json::json!(300)));
         assert!(body.get("prediction_window_seconds").is_none());
     }
@@ -451,8 +440,6 @@ mod tests {
         assert_eq!(transport.call_count(), 0);
     }
 
-    // The token sits in the same creds bundle the runner reads; a transport
-    // failure must surface a typed error whose message never leaks it.
     #[tokio::test]
     async fn http_failure_outcome_does_not_leak_token() {
         let (_, runner) = runner_with(Err(HelixError::Http {
@@ -481,7 +468,6 @@ mod tests {
             c
         };
 
-        // (label, config, expect_ok)
         let cases = [
             ("baseline valid", valid.clone(), true),
             (

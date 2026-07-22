@@ -93,9 +93,6 @@ mod tests {
     use crate::sub_actions::fulfill_redemption::redemption_default_config;
     use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx};
 
-    // The ONE behavior cancel_redemption owns: its body status is "CANCELED"
-    // (American single-L spelling). Fails if a second L slips in. The shared
-    // query/validation/leak path is covered by fulfill_redemption's tests.
     #[tokio::test]
     async fn cancel_sends_status_canceled_single_l() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));

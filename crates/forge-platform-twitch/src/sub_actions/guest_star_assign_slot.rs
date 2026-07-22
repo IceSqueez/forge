@@ -44,9 +44,6 @@ impl GuestStarAssignSlotRunner {
                 Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
             };
 
-        // Assign Guest Star Slot pins an invited guest to a numbered slot in the
-        // session layout. broadcaster_id == moderator_id == self; guest_id is the
-        // resolved target; slot_id targets the layout position.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/guest_star/slot")
             .query("broadcaster_id", ctx.self_id.clone())
             .query("moderator_id", ctx.self_id)

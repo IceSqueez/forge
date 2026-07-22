@@ -200,7 +200,6 @@ mod tests {
             stack.get("regex.matched").and_then(|v| v.as_bool()),
             Some(true)
         );
-        // captures[0] is the whole match, [1..] the numbered groups.
         assert_eq!(captures(&stack), vec!["2026-06", "2026", "06"]);
     }
 

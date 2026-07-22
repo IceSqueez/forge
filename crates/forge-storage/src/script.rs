@@ -44,7 +44,7 @@ pub trait ScriptRepo: Send + Sync {
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
     async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError>;
-    /// Removes execution telemetry rows started before `cutoff`; returns rows removed.
+    /// Returns rows removed.
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 

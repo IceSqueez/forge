@@ -17,8 +17,7 @@ impl<T> Shared<T> {
         Self(Arc::new(RwLock::new(value)))
     }
 
-    /// The read guard is released before returning, so the caller may hold the snapshot
-    /// across an `.await` without keeping the lock.
+    /// The read guard is released before returning; the caller may hold the returned snapshot across an `.await`.
     pub fn load(&self) -> Arc<T> {
         Arc::clone(&self.0.read().unwrap_or_else(PoisonError::into_inner))
     }

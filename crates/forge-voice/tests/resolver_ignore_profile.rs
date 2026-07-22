@@ -1,9 +1,3 @@
-//! Regression: IgnoreProfile must exclude voices from the auto-assignment pool.
-//!
-//! Excluded voices remain accessible via explicit manual aliases but must
-//! never appear in the random/deterministic selection pool. When all voices
-//! are excluded the resolver must return Skip rather than panicking.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_tts_core::{EngineId, VoiceGender, VoiceId};
@@ -41,7 +35,6 @@ fn excluded_voice_id_never_selected_by_deterministic_strategy() {
         SynthesisDefaults::default(),
     );
 
-    // With two voices and one excluded, every resolution must use "allowed-voice".
     for name in ["alice", "bob", "charlie", "delta", "echo"] {
         match resolver.resolve(name, name, &catalog) {
             ResolveResult::Speak { voice_id, .. } => {
@@ -127,7 +120,6 @@ fn random_strategy_never_picks_excluded_voice() {
         SynthesisDefaults::default(),
     );
 
-    // Run enough iterations to make a false-positive statistically negligible.
     for i in 0..200 {
         match resolver.resolve(&format!("uid-{i}"), &format!("viewer{i}"), &catalog) {
             ResolveResult::Speak { voice_id, .. } => {

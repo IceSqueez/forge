@@ -375,10 +375,6 @@ mod tests {
 
     const EPS: f32 = 1e-6;
 
-    /// A resolved slot's expected shape: its hue comes from a `ForgePalette` field
-    /// (compared channel-wise), its alpha is pinned as a literal so a visual
-    /// regression that shifts a wash/dim constant fails here. `None` means the slot
-    /// is expected to carry no color (transparent fill / borderless).
     type Slot = Option<(Rgba, f32)>;
 
     fn same_rgb(a: Rgba, b: Rgba) -> bool {
@@ -410,16 +406,9 @@ mod tests {
         }
     }
 
-    // Each state test asserts the full (fill, ink, border) triple a variant paints
-    // in that state across all five variants. The load-bearing content is which
-    // palette field each hue comes from (mis-wire to a neighbour is caught by the
-    // distinct-hue test) and the alpha literal (a shifted wash/dim constant is a
-    // silent visual regression these pin).
-
     #[test]
     fn rest_colors_resolve_per_variant() {
         let cases: [(ButtonVariant, Slot, Slot, Slot); 5] = [
-            // variant, fill, ink, border
             (
                 ButtonVariant::Primary,
                 Some((P.brand, 1.0)),
@@ -462,7 +451,6 @@ mod tests {
     #[test]
     fn hover_colors_resolve_per_variant() {
         let cases: [(ButtonVariant, Slot, Slot, Slot); 5] = [
-            // variant, hover_fill, hover_ink, hover_border
             (
                 ButtonVariant::Primary,
                 Some((P.brand, 0.92)),
@@ -505,7 +493,6 @@ mod tests {
     #[test]
     fn disabled_colors_resolve_per_variant() {
         let cases: [(ButtonVariant, Slot, Slot, Slot); 5] = [
-            // variant, disabled_fill, disabled_ink, disabled_border
             (
                 ButtonVariant::Primary,
                 Some((P.brand, 0.4)),
@@ -553,10 +540,6 @@ mod tests {
         }
     }
 
-    /// The per-variant resolution tests assert each hue channel-wise against a
-    /// specific palette field; that only catches a mis-wire to a neighbouring field
-    /// if the two fields are actually different hues. Pin that assumption: every
-    /// field the button family keys on is a distinct hue under Mocha.
     #[test]
     fn keyed_palette_fields_are_distinct_hues() {
         let fields = [

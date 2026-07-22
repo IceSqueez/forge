@@ -46,9 +46,7 @@ impl UpdateRewardRunner {
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        // PATCH /helix/channel_points/custom_rewards with broadcaster_id + id query params.
-        // Requires channel:manage:redemptions scope. Twitch applies only the supplied body
-        // keys; absent keys are left as-is.
+        // Requires channel:manage:redemptions scope. Twitch applies only the supplied body keys.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channel_points/custom_rewards")
             .query("broadcaster_id", user_id)
             .query("id", reward_id.to_owned())
@@ -58,9 +56,7 @@ impl UpdateRewardRunner {
     }
 }
 
-// An Optional value-field stores its value under the inner key directly; the paired gate
-// Bool lives under the same key when OFF. A present well-typed value means "include in body";
-// a Bool/absent value means "skip". The gate is a UI affordance only - ignored on read.
+// A present well-typed value means "include in body"; a Bool/absent gate value means "skip".
 fn read_opt_str(config: &SubActionConfig, key: &str) -> Option<String> {
     match config.get(key) {
         Some(Variant::String(s)) => Some(s.clone()),
@@ -116,9 +112,7 @@ fn build_body(
         body.insert("background_color".to_owned(), hex.into());
     }
 
-    // Each limit pairs an enable flag with its value: value>0 => flag true + value;
-    // value==0 => flag false, value omitted. Mirrors Twitch's requirement that the value
-    // is only honored when the matching is_*_enabled flag is true.
+    // Twitch only honors the value when the matching is_*_enabled flag is true.
     if let Some(value) = read_opt_int(config, "max_per_stream") {
         if value > 0 {
             body.insert("is_max_per_stream_enabled".to_owned(), true.into());
@@ -393,8 +387,7 @@ impl SubActionRunner for UpdateRewardRunner {
             SubActionOutcome::Failed("reward_id is required".to_owned())
         } else {
             let body = build_body(config, ctx);
-            // Nothing opted-in => empty body. A PATCH with no fields changes nothing on
-            // Twitch's side yet still costs a rate-limit token, so short-circuit to Success.
+            // An empty body would still cost a rate-limit token for a no-op PATCH.
             if body.is_empty() {
                 SubActionOutcome::Success
             } else {
@@ -437,9 +430,6 @@ mod tests {
         (transport, runner)
     }
 
-    /// A reward_id plus exactly one opted-in field. Tests add/override keys to
-    /// exercise one mapping branch at a time; the base on its own yields only a
-    /// `title` body so the PATCH is never empty.
     fn cfg_with(edits: &[(&str, Variant)]) -> SubActionConfig {
         let mut c = BTreeMap::from([
             ("reward_id".to_owned(), Variant::String("abc".to_owned())),
@@ -451,8 +441,6 @@ mod tests {
         c
     }
 
-    /// Executes the config against a stubbed-OK transport and returns the JSON
-    /// body the runner PATCHed, asserting the call reached Helix.
     async fn body_for(config: SubActionConfig) -> serde_json::Value {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new();
@@ -462,8 +450,6 @@ mod tests {
         transport.request(0).body.unwrap()
     }
 
-    // Behavior 1 + 7: a single opted value-field yields exactly that body key,
-    // and the query carries BOTH broadcaster_id=self AND the interpolated id.
     #[tokio::test]
     async fn single_opted_title_patches_with_both_query_params() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -503,8 +489,6 @@ mod tests {
         assert_eq!(body.get("title"), Some(&serde_json::json!("New Title")));
     }
 
-    // Behavior 2: an Optional value-field holding the gate Bool (toggled on but
-    // no value entered yet) is OMITTED; the same key as a typed Variant is sent.
     #[tokio::test]
     async fn optional_value_field_gate_bool_is_omitted_typed_value_is_sent() {
         let omitted = body_for(cfg_with(&[("cost", Variant::Bool(true))])).await;
@@ -517,9 +501,6 @@ mod tests {
         assert_eq!(sent.get("cost"), Some(&serde_json::json!(200)));
     }
 
-    // Behavior 3: tri-state Selects. "on"->true, "off"->false, "unchanged"->omitted,
-    // for each of the four, asserting requires_user_input RENAMES to
-    // is_user_input_required while the others keep their config key.
     #[tokio::test]
     async fn tristate_selects_map_on_off_unchanged_and_rename_user_input() {
         for (cfg_key, body_key) in [
@@ -537,7 +518,6 @@ mod tests {
                 Some(&serde_json::json!(true)),
                 "{cfg_key}=on -> {body_key}:true"
             );
-            // The config-side name must NOT leak when it differs from the body name.
             if cfg_key != body_key {
                 assert!(
                     on.get(cfg_key).is_none(),
@@ -564,8 +544,6 @@ mod tests {
         }
     }
 
-    // Behavior 4: each paired limit emits flag false + NO value at 0, flag true +
-    // value at >0. Config key == body value key; only the flag key differs.
     #[tokio::test]
     async fn paired_limits_toggle_flag_and_value_together() {
         for (key, flag_key) in [
@@ -594,8 +572,6 @@ mod tests {
         }
     }
 
-    // Behavior 5: nothing opted-in => empty PATCH body would change nothing on
-    // Twitch's side, so the runner short-circuits to Success without a Helix call.
     #[tokio::test]
     async fn all_unchanged_with_no_value_fields_succeeds_without_helix_call() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
@@ -614,7 +590,6 @@ mod tests {
                 "is_paused".to_owned(),
                 Variant::String("unchanged".to_owned()),
             ),
-            // Optional value-fields present only as gate Bools => omitted.
             ("cost".to_owned(), Variant::Bool(true)),
         ]);
 
@@ -625,14 +600,11 @@ mod tests {
         assert_eq!(transport.call_count(), 0, "empty body must skip the PATCH");
     }
 
-    // Behavior 6: an empty reward_id after interpolation fails before any Helix
-    // call (no broadcaster targeted, nothing to update).
     #[tokio::test]
     async fn empty_reward_id_fails_without_helix_call() {
         let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
         let stack = ArgStack::new();
         let cfg = BTreeMap::from([
-            // Empty template interpolates to empty; runner must bail before Helix.
             ("reward_id".to_owned(), Variant::String(String::new())),
             ("title".to_owned(), Variant::String("Hi".to_owned())),
         ]);
@@ -643,8 +615,6 @@ mod tests {
         assert_eq!(transport.call_count(), 0);
     }
 
-    // Behavior 7 (title/prompt half): templated value-fields resolve through the
-    // ArgStack into the body.
     #[tokio::test]
     async fn title_and_prompt_interpolate_from_stack() {
         let stack = ArgStack::new()
@@ -667,8 +637,6 @@ mod tests {
         assert_eq!(body.get("prompt"), Some(&serde_json::json!("Please guess")));
     }
 
-    // Behavior 8: a valid #RRGGBB color is renamed to background_color; an invalid
-    // or empty value is omitted (build_body silently drops bad hex).
     #[tokio::test]
     async fn background_color_included_only_when_valid_hex() {
         for (label, hex, expected) in [
@@ -772,8 +740,6 @@ mod tests {
         }
     }
 
-    // Behavior 10: a Helix failure surfaces as Failed and the sentinel token
-    // never appears in the outcome message.
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_token() {
         let (_transport, runner) = runner_with(Err(HelixError::Http {

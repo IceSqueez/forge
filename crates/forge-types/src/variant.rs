@@ -48,12 +48,7 @@ impl std::str::FromStr for VariantType {
     }
 }
 
-/// Display-facing discriminant for a [`Variant`] value.
-///
-/// Distinct from [`VariantType`]: this type carries abbreviated caps labels
-/// ("INT", "STR", …) suitable for UI pills and script contract annotations,
-/// while [`VariantType`] owns the lowercase serialisation tag used in storage
-/// and error messages.
+/// Distinct from [`VariantType`]: carries abbreviated caps labels ("INT", "STR") for UI pills, not the lowercase serialization tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VariantKind {
@@ -103,10 +98,7 @@ impl VariantKind {
         }
     }
 
-    /// Parses a lowercase type name from a script contract annotation.
-    ///
-    /// Returns `None` for unknown names and for names that are not all-lowercase
-    /// (e.g. `"INT"` → `None`).
+    /// Case-sensitive: `"INT"` returns `None`; only exact lowercase names match.
     pub fn from_contract_name(name: &str) -> Option<Self> {
         match name {
             "int" => Some(Self::Int),

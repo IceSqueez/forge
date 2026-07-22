@@ -159,7 +159,6 @@ mod tests {
             stack.get("moderator_id"),
             Some(&Variant::String("mod-42".to_owned()))
         );
-        // overall_level marshals as Int, not String.
         assert_eq!(stack.get("automod.overall_level"), Some(&Variant::Int(3)));
     }
 }

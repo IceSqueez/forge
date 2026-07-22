@@ -65,9 +65,8 @@ impl LocalCallbackDriver {
         &self.code_verifier
     }
 
-    /// Accepts one HTTP request on the loopback listener, verifies `state`, returns the
-    /// authorization code. Returns `PlatformError::Auth` for state mismatch, missing
-    /// `code`, user denial, or expiry past `dur`.
+    /// Verifies `state`; fails with `PlatformError::Auth` on mismatch, missing `code`, denial,
+    /// or expiry past `dur`.
     pub async fn await_callback(self, dur: Duration) -> Result<CallbackCode, PlatformError> {
         let (mut socket, _peer) =
             timeout(dur, self.listener.accept())
@@ -179,8 +178,7 @@ async fn write_response(
 
 fn random_url_safe(byte_count: usize) -> String {
     let mut bytes = vec![0u8; byte_count];
-    // ThreadRng's try_fill_bytes returns Result<(), Infallible>; matching on Ok consumes
-    // the success path without an .unwrap() lint violation.
+    // try_fill_bytes returns Result<(), Infallible>; matched instead of unwrap()-ed.
     match rand::rng().try_fill_bytes(&mut bytes) {
         Ok(()) => {}
         Err(never) => match never {},
@@ -241,7 +239,6 @@ mod tests {
 
     #[test]
     fn challenge_matches_rfc7636_test_vector() {
-        // RFC 7636 Appendix B test vector.
         let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
         let expected = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
         assert_eq!(challenge_from_verifier(verifier), expected);
@@ -356,10 +353,8 @@ mod tests {
     #[tokio::test]
     async fn bind_state_and_verifier_are_url_safe_lengths() {
         let d = LocalCallbackDriver::bind().await.unwrap();
-        // 32 random bytes → ceil(32 * 4 / 3) = 43 chars in URL_SAFE_NO_PAD.
         assert_eq!(d.state().len(), 43);
         assert_eq!(d.code_verifier().len(), 43);
-        // SHA-256 = 32 bytes → 43 chars URL_SAFE_NO_PAD.
         assert_eq!(d.code_challenge().len(), 43);
     }
 

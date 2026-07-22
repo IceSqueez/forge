@@ -176,7 +176,6 @@ mod tests {
 
     #[tokio::test]
     async fn substring_indices_count_chars_not_bytes() {
-        // "Привіт" is 12 UTF-8 bytes; a byte-slice [0..3] would split a codepoint.
         let out = run(&cfg("Привіт", 0, 3)).await.1.unwrap();
         assert_eq!(
             out.get("string.result").and_then(|v| v.as_str()),
@@ -195,7 +194,6 @@ mod tests {
 
     #[tokio::test]
     async fn substring_out_of_range_or_inverted_bounds_fail_without_panic() {
-        // (start > len), (end > len), (start > end) - each rejected, no slice emitted.
         for (start, end) in [(6, 7), (0, 9), (3, 1)] {
             let (tel, stack) = run(&cfg("hello", start, end)).await;
             assert!(
@@ -221,7 +219,6 @@ mod tests {
     #[test]
     fn validate_config_rejects_negative_start_and_below_minus_one_end() {
         let runner = CoreStringSubstringRunner;
-        // start < 0 and end < -1 are illegal; start>=0 with end==-1 or end>=0 are legal.
         assert!(runner.validate_config(&cfg("x", -1, 5)).is_err());
         assert!(runner.validate_config(&cfg("x", 0, -2)).is_err());
         assert!(runner.validate_config(&cfg("x", 0, -1)).is_ok());

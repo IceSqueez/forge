@@ -79,9 +79,7 @@ impl ServerHandle {
             guard.state.clone()
         };
 
-        // Reload persisted settings so bind address / port / overlay root / HTTP
-        // overlay token / CORS edits made since boot take effect on the new bind.
-        // The shared handles (auth, bus, adapters, repos, engine) are preserved.
+        // Reloads persisted settings for the new bind; shared handles (auth, bus, adapters, repos, engine) are preserved.
         let settings = ServerSettings::load(state.settings.as_ref())
             .await
             .map_err(|e| ServerError::Storage(e.to_string()))?;
@@ -99,8 +97,7 @@ impl ServerHandle {
             .map(PathBuf::from)
             .unwrap_or_else(|| paths::data_dir().join("overlays"));
 
-        // Reject an unauthenticated off-loopback bind before tearing down the
-        // running server, so a bad config leaves the current server untouched.
+        // Validated before teardown, so a bad config leaves the current server untouched.
         server::validate_lan_bind(
             &bind_addr,
             settings.lan_bind_enabled,

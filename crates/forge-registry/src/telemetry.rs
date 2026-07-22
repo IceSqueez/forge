@@ -24,6 +24,7 @@ impl StepTimer {
         self.started_at
     }
 
+    /// Always leaves `args_in`/`produced` empty; only the chain driver fills them, or run-history @in/@out capture is corrupted.
     pub fn finish(self, outcome: SubActionOutcome) -> SubActionTelemetry {
         let duration_ms = (OffsetDateTime::now_utc() - self.started_at)
             .whole_milliseconds()
@@ -76,8 +77,6 @@ mod tests {
         let tel = StepTimer::start(&ctx(&stack, 3), "core.demo").finish(SubActionOutcome::Success);
         assert_eq!(tel.kind, "core.demo");
         assert_eq!(tel.index, 3);
-        // Why (RFC-101): the chain driver alone fills args_in/produced; the facade
-        // MUST leave them empty or run-history @in/@out capture is corrupted.
         assert!(tel.args_in.is_empty());
         assert!(tel.produced.is_empty());
     }

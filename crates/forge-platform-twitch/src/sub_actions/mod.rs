@@ -350,9 +350,7 @@ pub(crate) mod test_support {
             Self::returning_sequence(vec![response])
         }
 
-        /// Queues responses consumed one per `execute` call (FIFO), for
-        /// runners that issue several Helix calls (e.g. resolve-then-act).
-        /// Exhausted queue yields `Ok(Null)`.
+        /// Consumed FIFO, one response per `execute` call; exhausted queue yields `Ok(Null)`.
         pub(crate) fn returning_sequence(
             responses: Vec<Result<serde_json::Value, HelixError>>,
         ) -> Self {
@@ -387,7 +385,6 @@ pub(crate) mod test_support {
         }
     }
 
-    /// Canned GET /helix/users payload resolving the target login to `id`.
     pub(crate) fn users_fixture(id: &str) -> Result<serde_json::Value, HelixError> {
         Ok(serde_json::json!({ "data": [{ "id": id, "login": "target" }] }))
     }
@@ -397,8 +394,6 @@ pub(crate) mod test_support {
     }
 
     impl MockCreds {
-        /// Canned `twitch:broadcaster` bundle with a sentinel token, so leak
-        /// assertions can prove the token never surfaces in outcomes.
         pub(crate) fn with_identity() -> Self {
             Self {
                 bundle: Some(

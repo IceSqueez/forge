@@ -57,10 +57,7 @@ impl YoutubeCredentialsManager {
         self.persist(&creds).await
     }
 
-    /// Returns a valid access token, refreshing proactively when within 5 minutes of expiry.
-    ///
-    /// Returns `Err(PlatformError::ReauthRequired)` when no credentials are stored or when
-    /// the upstream refresh fails with `invalid_grant`.
+    /// Refreshes proactively when within 5 minutes of expiry.
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.load().await?.ok_or_else(reauth_err)?;
         if creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER {
@@ -70,8 +67,7 @@ impl YoutubeCredentialsManager {
         Ok(creds.access_token)
     }
 
-    /// When the Google response omits `refresh_token`, the previously stored token is
-    /// preserved. Returns `Err(PlatformError::ReauthRequired)` on `invalid_grant`.
+    /// When the Google response omits `refresh_token`, the previously stored token is preserved.
     pub async fn refresh(&self, refresh_token: &str) -> Result<YoutubeCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
         let parsed = self.refresher.refresh(refresh_token).await?;

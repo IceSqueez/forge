@@ -160,8 +160,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
             })?;
             let cfg = engine_cfg;
             let deadline = Instant::now() + Duration::from_millis(cfg.wall_time_ms);
-            // reqwest::blocking::Client must be built inside spawn_blocking - constructing it on
-            // the outer async task causes a runtime conflict on drop.
+            // reqwest::blocking::Client must be built inside spawn_blocking, not the outer async task.
             let http_client =
                 ScriptHttpClient::new(http_cfg).map_err(|e| ScriptError::Runtime {
                     script: body.clone(),
@@ -283,9 +282,6 @@ mod tests {
 
     #[test]
     fn body_free_message_reports_the_reason_without_leaking_the_script_body() {
-        // Why: the default Display embeds the `script` field (the full source),
-        // which can carry secrets; the failure surfaced to the user/telemetry
-        // must keep the diagnostic reason but drop the body.
         for (err, expected) in [
             (
                 ScriptError::Compile {
@@ -328,8 +324,6 @@ mod tests {
 
     #[test]
     fn default_display_leaks_the_body_that_body_free_message_strips() {
-        // Pins the leak that body_free_message exists to prevent: the raw Display
-        // does embed the source, so the runner must not surface it directly.
         let err = ScriptError::Compile {
             script: BODY.to_owned(),
             reason: "unexpected token".to_owned(),

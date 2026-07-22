@@ -20,8 +20,7 @@ pub struct YoutubeModeration {
     access_token_source: TokenSource,
     live_chat_id: LiveChatIdHandle,
     quota: Arc<Mutex<QuotaState>>,
-    /// Maps a banned channel id to the ban resource id returned by `insert`, so a
-    /// later unban can target the resource YouTube's API exposes no lookup for.
+    /// YouTube's API exposes no lookup for the ban resource id; unban needs it recorded here.
     ban_ids: Mutex<HashMap<String, String>>,
     api_base: String,
 }
@@ -183,8 +182,7 @@ impl YoutubeModeration {
         Err(self.map_failure(resp).await)
     }
 
-    /// Resolves the `liveChatModerators` resource id whose moderator channel id
-    /// matches `channel_id` by paging the moderator list for the active broadcast.
+    /// Pages the moderator list for the active broadcast to find `channel_id`'s resource id.
     async fn resolve_moderator_id(&self, channel_id: &str) -> Result<String, PlatformError> {
         let live_chat_id = self
             .live_chat_id
@@ -370,8 +368,6 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
     }
 
-    /// Builds a moderation client pointed at a live wiremock server with an
-    /// active live-chat id, so the insert/delete paths are reachable.
     fn moderation_on(server: &MockServer) -> (YoutubeModeration, Arc<Mutex<QuotaState>>) {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
@@ -462,8 +458,6 @@ mod tests {
     #[tokio::test]
     async fn unban_without_a_recorded_ban_fails_unsupported_and_sends_no_request() {
         let server = MockServer::start().await;
-        // A DELETE handler is mounted so that, were unban to call out, the test
-        // would observe the request - proving the no-request guarantee.
         Mock::given(method("DELETE"))
             .and(path("/liveChat/bans"))
             .respond_with(ResponseTemplate::new(204))
@@ -524,8 +518,6 @@ mod tests {
             "a successful insert must charge the documented ban cost"
         );
     }
-
-    // --- add_moderator ---------------------------------------------------
 
     #[tokio::test]
     async fn add_moderator_inserts_with_target_channel_id_in_snippet() {
@@ -589,10 +581,6 @@ mod tests {
         );
     }
 
-    // --- remove_moderator ------------------------------------------------
-
-    /// Mounts a single-page `list` whose only item carries `channel_id`, plus a
-    /// DELETE handler scoped to `resource_id`. Lets a remove resolve in one page.
     async fn mount_list_single_page(server: &MockServer, channel_id: &str, resource_id: &str) {
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
@@ -640,7 +628,6 @@ mod tests {
     #[tokio::test]
     async fn remove_moderator_follows_page_token_to_resolve_target_on_second_page() {
         let server = MockServer::start().await;
-        // First list page: target absent, a nextPageToken steers to page two.
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
             .and(query_param_is_missing("pageToken"))
@@ -653,7 +640,6 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        // Second list page (reached only via pageToken=PAGE2): target present.
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
             .and(query_param("pageToken", "PAGE2"))
@@ -695,7 +681,6 @@ mod tests {
     #[tokio::test]
     async fn remove_moderator_when_target_is_not_a_moderator_fails_and_sends_no_delete() {
         let server = MockServer::start().await;
-        // Two exhausted pages, neither containing the target.
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
             .and(query_param_is_missing("pageToken"))
@@ -719,7 +704,6 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        // DELETE handler present so a stray delete would be observable.
         Mock::given(method("DELETE"))
             .and(path("/liveChat/moderators"))
             .respond_with(ResponseTemplate::new(204))
@@ -760,7 +744,6 @@ mod tests {
 
         moderation.remove_moderator(TARGET_CHANNEL).await.unwrap();
 
-        // One list page (1u) + the delete (50u).
         assert_eq!(
             quota.lock().await.used_today,
             MODERATOR_LIST_COST + MODERATOR_COST,

@@ -6,7 +6,6 @@ use time::OffsetDateTime;
 
 use crate::StorageError;
 
-/// Aggregate stats per action used by the Actions list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActionStats {
     pub last_ran_at: OffsetDateTime,
@@ -22,13 +21,12 @@ pub trait HistoryRepo: Send + Sync {
         action_id: ActionId,
         limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError>;
-    /// Returns last-ran timestamp and 24h run count for every action that has
-    /// at least one entry in history, in a single query.
+    /// Only includes actions with at least one history entry.
     async fn stats_summary(
         &self,
         since: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError>;
-    /// Removes history entries started before `cutoff`; returns rows removed.
+    /// Returns rows removed.
     async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 

@@ -214,7 +214,6 @@ mod tests {
         cfg.insert("source".to_owned(), Variant::String("price".to_owned()));
         cfg.insert("search".to_owned(), Variant::String("price".to_owned()));
         cfg.insert("replace_with".to_owned(), Variant::String("$1".to_owned()));
-        // is_regex defaults false: "$1" must land verbatim, not expand to a group.
         assert_eq!(replaced(&cfg).await, "$1");
     }
 

@@ -166,9 +166,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_all_resolve_fields_from_publisher_payload() {
-        // Payload shape mirrors `publish_unban_request_resolve_event`: the
-        // `status` field surfaces as `unban.resolution`, and moderator data
-        // lives under a nested `moderator` object.
         let payload = serde_json::json!({
             "id": "req-42",
             "user": { "login": "banned_viewer" },

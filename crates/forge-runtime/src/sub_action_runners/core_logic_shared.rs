@@ -1,17 +1,12 @@
 use forge_registry::{ChainSignal, ControlSignal, RunContext};
 use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant};
 
-/// Decodes an inline sub-chain stored under `key` as a serialized step array. A
-/// missing or malformed value yields an empty chain, so an unset branch is a no-op
-/// rather than an error.
+/// A missing or malformed value yields an empty chain, so an unset branch is a no-op, not an error.
 pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubActionStep> {
     decode_steps(config.get(key))
 }
 
-/// Walks the canonical stored chain form - `Variant::Array` of per-step
-/// `Variant::Object`s - into a step list. Anything that is not an array, and any
-/// element lacking a `kind_id`, is dropped so a missing or partially-authored
-/// branch degrades to a no-op instead of failing the action.
+/// Anything not an array, and any element lacking a `kind_id`, is dropped rather than failing the action.
 pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
     let Some(steps) = value.and_then(Variant::as_array) else {
         return Vec::new();
@@ -53,11 +48,7 @@ pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
         .collect()
 }
 
-/// Re-raises a child chain's terminal signal into the enclosing chain unchanged.
-/// `Break`/`Continue`/`Stop` are re-armed on the control cell for an outer loop or
-/// the action-root to act on, `Error` becomes a failed step, and
-/// `Completed`/`Aborted` finish the step (cancellation is observed through the
-/// shared cancel signal at the next boundary).
+/// `Break`/`Continue`/`Stop` re-arm the control cell; `Error` fails the step; others succeed.
 pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionOutcome {
     match signal {
         ChainSignal::Completed | ChainSignal::Aborted => SubActionOutcome::Success,
@@ -77,13 +68,7 @@ pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionO
     }
 }
 
-/// Lifts a nested child chain's telemetry into flat rows for the enclosing chain
-/// to splice after this composite step. Each row gains a leading `parent_index.arm`
-/// path segment (segments joined by `/`) and its `index` is set to
-/// `SubActionTelemetry::NESTED`, so surfaces keyed by top-level position skip it
-/// while the failure trail stays legible. A row already lifted from a deeper body
-/// keeps its trail; a fresh branch-chain row folds its local index and kind id into
-/// the trail's final segment.
+/// Prepends a `parent_index.arm` path segment and marks `index` as `NESTED` so top-level surfaces skip the row.
 pub(super) fn retag(
     children: Vec<SubActionTelemetry>,
     parent_index: usize,

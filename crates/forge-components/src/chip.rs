@@ -140,13 +140,6 @@ mod tests {
     use super::*;
     use crate::palette::FORGE_DEFAULT;
 
-    // Pins the selected-vs-unselected contract of `chip`: active fills with
-    // `surface_overlay` and inks `text_primary`; inactive carries no fill and inks
-    // `text_secondary`. Asserted against a real palette whose fill/ink fields hold
-    // distinct hues (surface_overlay 0x313244 ≠ base; text_primary ≠ text_secondary
-    // ≠ text_muted), so mis-wiring any arm to a neighbouring field - active→base,
-    // ink→text_muted, or dropping/adding the fill - fails here. Not a literal
-    // restatement: the child module reaches the private resolved fields directly.
     #[test]
     fn chip_resolves_fill_and_ink_from_active_state() {
         let p = &FORGE_DEFAULT;

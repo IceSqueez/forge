@@ -7,8 +7,7 @@ pub enum SpeakDispatchError {
     Dispatch(String),
 }
 
-/// Plain voice descriptor returned by query methods. Owned strings keep
-/// forge-speak-queue / forge-tts-core types out of this crate's surface.
+/// Owned strings keep forge-speak-queue / forge-tts-core types out of this crate's surface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoiceDescriptor {
     pub id: String,
@@ -17,18 +16,9 @@ pub struct VoiceDescriptor {
     pub engine_id: String,
 }
 
-/// Narrow speak contract used by the action engine and the §10 TTS runners.
-///
-/// Implemented by the forge-desktop `SpeakBridge` wrapper around `SpeakQueueHandle`.
-/// Keeping the trait here prevents a dependency cycle: `forge-runtime` never imports
-/// `forge-speak-queue`.
-///
-/// Every method except `speak` has a default impl: controls are no-ops returning
-/// `Ok`, queries return empty/zero. Only the forge-desktop bridge wires them to a live
-/// queue - any other impl (test doubles included) is inert without overriding them.
+/// Lives here to avoid a dependency cycle; every method except `speak` defaults to a no-op/empty.
 #[async_trait]
 pub trait SpeakDispatcher: Send + Sync {
-    /// Enqueue a speak request with an optional raw voice-ID override string.
     async fn speak(
         &self,
         text: String,
@@ -62,10 +52,7 @@ pub trait SpeakDispatcher: Send + Sync {
         Ok(())
     }
 
-    /// Enqueue a speak request that originated from a channel-points reward
-    /// redemption, so the pipeline's `strip_reward_emotes` gate sees it as
-    /// reward-sourced. Defaults to plain `speak` for implementers that don't
-    /// need reward-specific gating (test doubles, the rhai bridge).
+    /// Marks the request as reward-sourced so the pipeline's `strip_reward_emotes` gate applies.
     async fn speak_reward_sourced(
         &self,
         text: String,

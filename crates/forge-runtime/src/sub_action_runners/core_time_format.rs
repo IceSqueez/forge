@@ -8,10 +8,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub struct CoreTimeFormatRunner;
 
-/// Resolve a config variant to an `OffsetDateTime`.
-///
-/// `stack_interp` is the ArgStack-interpolated form of the string value; only
-/// consulted when `v` is a string variant.
+/// `stack_interp` is only consulted when `v` is a string variant.
 fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, String> {
     if let Some(dt) = v.as_datetime() {
         return Ok(*dt);

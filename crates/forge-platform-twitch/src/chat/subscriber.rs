@@ -100,10 +100,7 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_raid,
     },
-    // channel.raid accepts from_broadcaster_user_id OR to_broadcaster_user_id but
-    // not both, so raids the broadcaster sends need a separate subscription. Both
-    // share kind "channel.raid" and route through the same dispatch entry; the
-    // direction is recomputed downstream from the broadcaster id in the payload.
+    // channel.raid accepts from_broadcaster_user_id OR to_broadcaster_user_id, not both - a second subscription covers sent raids.
     TopicSpec {
         kind: "channel.raid",
         version: "1",

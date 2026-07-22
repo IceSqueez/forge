@@ -1,12 +1,3 @@
-//! End-to-end wiring for `core.action.cancel`. The runner reaches a *live*
-//! `ActionEngine` through the shared `ActionCancelRegistry` the engine registers
-//! every in-flight run into. These tests prove the feature's whole point - the
-//! runner aborts a run that is actually executing - and the RAII `CancelGuard`
-//! cleanup on the engine's normal exit path.
-//!
-//! Registry-internal semantics (per-execution keying, count returns) live in
-//! `action_cancel`'s own unit tests; these do NOT re-exercise them.
-
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
@@ -35,9 +26,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// Blocks the chain in-flight: announces it is running, then cooperatively polls
-/// the execution's cancel signal until tripped, mirroring how real long-running
-/// leaves observe cancellation between awaits.
 struct GateRunner {
     running: Arc<Notify>,
 }
@@ -106,8 +94,6 @@ async fn make_dp() -> Arc<dyn DataProvider> {
     )
 }
 
-/// The migrations seed exactly one queue (the nil ULID); the actions FK references
-/// it, so reuse that row rather than inventing a queue id.
 fn default_queue() -> QueueId {
     serde_json::from_str("\"00000000000000000000000000\"").unwrap()
 }
@@ -196,7 +182,6 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
         .await
         .unwrap();
 
-    // Only proceed once the run is provably in-flight.
     tokio::time::timeout(Duration::from_secs(5), running.notified())
         .await
         .expect("gated action never reached its in-flight point");
@@ -218,9 +203,6 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
 
 #[tokio::test]
 async fn cancel_guard_deregisters_after_a_run_completes() {
-    // Why: the per-execution CancelGuard must deregister on the engine's normal
-    // exit path. Once a run is in history it has returned, so a later cancel of
-    // that action finds nothing registered and trips zero signals.
     let dp = make_dp().await;
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let cancel_registry = Arc::new(ActionCancelRegistry::new());

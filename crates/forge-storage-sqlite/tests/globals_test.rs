@@ -377,9 +377,6 @@ async fn export_all_round_trips_via_json_envelope() {
 
 #[tokio::test]
 async fn set_stores_the_configured_persisted_flag() {
-    // Guards the DT-05-F12 headline: whatever `persisted` the caller passes to
-    // set() is the value the row carries - a runner passing the WRONG flag
-    // (the original bug) surfaces here. Insert path, both directions.
     let repo = setup().await;
     for (name, flag) in [("kept", true), ("ephemeral", false)] {
         repo.set(name, Variant::Int(1), flag).await.expect("set");
@@ -396,8 +393,6 @@ async fn set_stores_the_configured_persisted_flag() {
 
 #[tokio::test]
 async fn set_on_existing_key_updates_the_persisted_flag_both_directions() {
-    // The ON CONFLICT branch must apply `persisted = excluded.persisted`; if it
-    // dropped that column, toggle's read-then-preserve write would silently fail.
     let repo = setup().await;
     for (name, first, second) in [("promote", false, true), ("demote", true, false)] {
         repo.set(name, Variant::Int(0), first).await.expect("set 1");
@@ -420,9 +415,6 @@ async fn persisted_returns_none_for_absent_key() {
 
 #[tokio::test]
 async fn persisted_query_does_not_count_as_a_read() {
-    // The whole point of the SqliteGlobalsRepo override (vs the list()-based
-    // default) is a SELECT that leaves `reads` untouched. Three persisted()
-    // calls plus one get() must leave reads == 1.
     let repo = setup().await;
     repo.set("k", Variant::Int(0), true).await.expect("set");
     repo.persisted("k").await.expect("persisted 1");

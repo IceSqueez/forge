@@ -263,10 +263,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_drops_non_string_chat_rule_entries() {
-        // Why: marshaling filters with serde_json::Value::as_str, so non-string
-        // array entries (numbers, nested objects) are silently dropped rather
-        // than surfaced or rejected. This pins the observed behavior so a future
-        // change toward stringify-or-reject is a deliberate, reviewed decision.
         let payload = serde_json::json!({
             "user": { "id": "1", "login": "u", "display_name": "U" },
             "moderator": { "login": "m" },

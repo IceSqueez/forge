@@ -16,7 +16,6 @@ async fn setup() -> SqliteGlobalsRepo {
 async fn archive_transitions_live_to_archived_and_is_false_otherwise() {
     let repo = setup().await;
 
-    // Missing name: nothing to archive.
     assert!(
         !repo.archive("ghost").await.expect("archive missing"),
         "archiving a name that never existed must return false"
@@ -26,12 +25,10 @@ async fn archive_transitions_live_to_archived_and_is_false_otherwise() {
         .await
         .expect("set");
 
-    // Live -> archived flips the flag once.
     assert!(
         repo.archive("counter").await.expect("archive live"),
         "archiving a live global must return true"
     );
-    // Already archived: idempotent no-op.
     assert!(
         !repo.archive("counter").await.expect("archive again"),
         "archiving an already-archived global must return false"
@@ -131,8 +128,6 @@ async fn restore_returns_archived_global_to_visibility() {
 
 #[tokio::test]
 async fn set_on_archived_global_resurrects_it_with_new_value() {
-    // set()'s ON CONFLICT(name) DO UPDATE clears archived_at, so writing to an
-    // archived name brings it back to visibility carrying the newly-set value.
     let repo = setup().await;
     repo.set("dup", Variant::Int(1), true).await.expect("set 1");
     repo.archive("dup").await.expect("archive");
@@ -166,9 +161,6 @@ async fn set_on_archived_global_resurrects_it_with_new_value() {
 
 #[tokio::test]
 async fn incr_on_archived_numeric_global_reports_not_found() {
-    // EDGE: incr()'s UPDATE and its fallback type_tag SELECT both filter
-    // archived_at IS NULL, so an archived numeric global is indistinguishable
-    // from an absent one - NotFound, never a mutation of the hidden row.
     let repo = setup().await;
     repo.set("n", Variant::Int(10), false).await.expect("set");
     repo.archive("n").await.expect("archive");

@@ -1,15 +1,5 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-//! Regression coverage for the Discord sub-action `kind_id` rewrite
-//! (registry format 1 -> 2) in `registry_migration::migrate_registry_format`.
-//!
-//! The blobs under test are already `SubActionStep`-shaped (format 1), so the
-//! 0 -> 1 conversion pass is a no-op and the migration exercises the 1 -> 2
-//! discord remap directly. Rows are inserted with `format_version = 1`
-//! explicitly (the column defaults to 0) so the 1 -> 2 path is driven without
-//! going through the 0 -> 1 -> 2 chain. The `actions.format_version = 0`
-//! conversion path is covered by `registry_migration_test.rs`.
-
 use forge_storage_sqlite::{connect, registry_migration};
 use forge_types::{ActionId, SubActionStep, Variant};
 use sqlx::SqlitePool;
@@ -22,7 +12,6 @@ async fn fresh_pool() -> SqlitePool {
     pool
 }
 
-/// Insert a format-1 action with a verbatim `sub_actions` JSON blob.
 async fn insert_format1_action(pool: &SqlitePool, id: &ActionId, sub_actions_json: &str) {
     sqlx::query(
         "INSERT INTO actions (id, name, queue_id, sub_actions, format_version) \
@@ -48,8 +37,6 @@ async fn read_action(pool: &SqlitePool, id: &ActionId) -> (Vec<SubActionStep>, i
 
 #[tokio::test]
 async fn legacy_discord_kind_ids_are_rewritten_to_webhook_ids() {
-    // All three 1-to-1 discord remaps in one format-1 blob; config / enabled /
-    // label must survive untouched.
     let remaps = [
         ("discord.post_text", "discord.webhook.send_message"),
         ("discord.post_embed", "discord.webhook.send_embed"),
@@ -104,8 +91,6 @@ async fn legacy_discord_kind_ids_are_rewritten_to_webhook_ids() {
 
 #[tokio::test]
 async fn non_discord_step_is_byte_identical_after_discord_remap() {
-    // A discord step alongside a non-discord step: only the discord kind_id
-    // changes; the other step round-trips byte-for-byte.
     let pool = fresh_pool().await;
     let id = ActionId::new();
     insert_format1_action(
@@ -133,8 +118,6 @@ async fn non_discord_step_is_byte_identical_after_discord_remap() {
 
 #[tokio::test]
 async fn already_canonical_discord_ids_are_left_untouched_but_bumped() {
-    // discord.webhook.* ids added after the rename are not in the remap table;
-    // they survive verbatim while the row still bumps to format 2.
     let pool = fresh_pool().await;
     let id = ActionId::new();
     insert_format1_action(
@@ -157,8 +140,6 @@ async fn already_canonical_discord_ids_are_left_untouched_but_bumped() {
 
 #[tokio::test]
 async fn second_migration_call_is_a_noop_for_discord_remap() {
-    // After the first run bumps to format 2, the format-1 query matches nothing,
-    // so a second call leaves kind_ids and version stable.
     let pool = fresh_pool().await;
     let id = ActionId::new();
     insert_format1_action(

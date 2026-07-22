@@ -144,7 +144,6 @@ mod tests {
                 .query
                 .contains(&("moderator_id".to_owned(), SELF_USER_ID.to_owned()))
         );
-        // A message_id key would delete a single message instead of clearing chat.
         assert!(
             request.query.iter().all(|(key, _)| key != "message_id"),
             "clear must not scope the delete to one message: {:?}",

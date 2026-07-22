@@ -43,10 +43,7 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        // state_filter="" fires on every state transition.
-        // Named states from Twitch Guest Star BETA docs cover the catalog's
-        // conceptual split (guest_joined=>"live", guest_left=>"removed",
-        // slot_stripped=>"removed", etc.) as a single configurable filter.
+        // Empty state_filter fires on every state transition.
         vec![FormField::Text {
             key: "state_filter",
             label: "Guest state (empty = any)",

@@ -1,13 +1,3 @@
-//! Signal-leaf runners (`break_loop` / `continue_loop` / `stop`) and the
-//! `wait_until` delay runner, tested at the runner boundary with a hand-built
-//! `RunContext` so the `ControlCell`, cancellation, and timeout behaviours can be
-//! observed directly. End-to-end signal flow (absorption / propagation) lives in
-//! `core_logic_flow_control.rs`; here we pin what each leaf writes and how
-//! `wait_until` terminates.
-//!
-//! No services, hardware, or network: the condition gate is the in-process rhai
-//! evaluator and the timeout case uses a paused tokio clock.
-
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::sync::Arc;
@@ -30,8 +20,6 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-/// A `ChainExecutor` that runs nothing - the signal/wait runners never launch a
-/// child chain, so its only job is to satisfy the `RunContext` field.
 struct NoopExec;
 
 #[async_trait]
@@ -53,8 +41,6 @@ impl ChainExecutor for NoopExec {
     }
 }
 
-/// Builds a `RunContext` with caller-controlled `control` and `cancel`, so a test
-/// can read the cell a leaf writes and drive cancellation.
 fn ctx_with<'a>(
     stack: &'a ArgStack,
     publisher: &'a NullPublisher,
@@ -109,8 +95,6 @@ async fn break_and_continue_runners_emit_their_control_signal() {
 async fn stop_runner_maps_config_to_the_control_stop_signal() {
     let stack = ArgStack::new().set("who".to_owned(), Variant::String("bob".to_owned()));
 
-    // (mark_as, reason) → expected StopMark. Covers the completed/failed split,
-    // case-insensitive matching, reason interpolation, and empty-reason filtering.
     let rows: &[(Option<&str>, Option<&str>, StopMark)] = &[
         (
             None,
@@ -220,9 +204,6 @@ async fn wait_until_returns_immediately_when_the_condition_already_holds() {
 
 #[tokio::test(start_paused = true)]
 async fn wait_until_times_out_with_success_and_a_timed_out_flag() {
-    // A never-true condition must end as Success with wait.timed_out=true - a
-    // timeout is a normal terminal state, NOT a Failed outcome. The paused clock
-    // auto-advances over the poll sleep so the test does not wait in real time.
     let stack = ArgStack::new();
     let ctx = ctx_with(
         &stack,
@@ -242,9 +223,6 @@ async fn wait_until_times_out_with_success_and_a_timed_out_flag() {
 
 #[tokio::test]
 async fn wait_until_short_circuits_when_cancellation_is_observed() {
-    // With an always-false condition the runner would otherwise time out; a
-    // pre-tripped cancel signal must break the poll loop first, so timed_out stays
-    // false. This is what distinguishes "cancelled" from "timed out".
     let stack = ArgStack::new();
     let cancel = CancelSignal::new();
     cancel.cancel();

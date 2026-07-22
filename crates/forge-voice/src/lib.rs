@@ -26,10 +26,7 @@ pub enum AliasState {
     Blocked,
 }
 
-/// A manually pinned voice for one viewer.
-///
-/// `viewer_id` is the platform-specific user ID (Twitch user ID string), not username.
-/// Username changes must not break the alias.
+/// `viewer_id` is the platform-specific user ID, not username; renames must not break it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceAlias {
     pub id: AliasId,
@@ -50,18 +47,14 @@ pub enum AssignmentStrategy {
     /// `sha256(viewer_name) % eligible_voices.len()` - stable, deterministic per username.
     #[default]
     DeterministicByName,
-    /// Random pick from eligible voices each message.
     Random,
-    /// Every message uses the same voice.
     Single {
         voice_id: VoiceId,
         engine_id: EngineId,
     },
 }
 
-/// Voices and locales excluded from random/deterministic picks.
-///
-/// Excluded voices are still usable by explicit manual aliases.
+/// Excluded from random/deterministic picks; still usable via explicit manual aliases.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IgnoreProfile {
     pub excluded_voice_ids: Vec<VoiceId>,
@@ -75,7 +68,6 @@ impl IgnoreProfile {
     }
 }
 
-/// Pitch and rate fallback values when a voice has no per-alias override.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SynthesisDefaults {
     pub pitch_semitones: f32,
@@ -91,7 +83,6 @@ impl Default for SynthesisDefaults {
     }
 }
 
-/// Resolution result for one incoming message.
 #[derive(Debug, Clone)]
 pub enum ResolveResult {
     Speak {
@@ -136,10 +127,8 @@ impl VoiceAliasResolver {
             .unwrap_or(self.defaults)
     }
 
-    /// Resolution chain:
-    /// 1. Explicit alias by viewer_id → honours AliasState::Blocked as Skip.
-    /// 2. Strategy fallback using eligible voices from the provided catalog.
-    /// 3. If catalog is empty → Skip("no voices available").
+    /// Explicit alias by `viewer_id` wins first, honouring `Blocked` as Skip, then falls
+    /// back to the strategy over eligible catalog voices.
     pub fn resolve(
         &self,
         viewer_id: &str,

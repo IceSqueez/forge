@@ -183,11 +183,6 @@ mod tests {
         }
     }
 
-    // Why: tokens/PII discipline (CLAUDE.md invariant 7). Twitch's raw
-    // user.update field set includes `email`/`email_verified` when the
-    // `user:read:email` scope is granted. This trigger must NEVER surface
-    // that PII into the ArgStack the user can interpolate into chat/logs.
-    // Guards against a future edit that naively copies the raw user object.
     #[test]
     fn build_arg_stack_never_surfaces_email_pii_even_when_present_in_payload() {
         let secret_email = "streamer@example.com";

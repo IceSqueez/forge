@@ -176,9 +176,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_passes_through_unsourced_gifter_name_as_empty() {
-        // Why: the giftMembershipReceivedEvent snippet carries no gifter
-        // identity, so this field is intentionally empty. Pin it so a future
-        // change that fabricates a gifter name is caught.
         let event = received_event(json!({
             "gift.level_name": "Gold",
             "gifter.display_name": "",

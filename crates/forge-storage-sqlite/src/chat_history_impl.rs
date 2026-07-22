@@ -295,11 +295,6 @@ mod tests {
 
     #[tokio::test]
     async fn append_then_list_recent_preserves_all_rich_fields() {
-        // Every rich field goes through a distinct encoding path: source as a
-        // lowercase enum string, received_at as epoch-ms, author_color/segments/
-        // badges/event_detail/moderation as JSON columns. Comparing the decoded
-        // row against the original proves each survives the round-trip. received_at
-        // is whole seconds so the ms-truncating epoch encoding is lossless here.
         let repo = make_repo().await;
         let row = UnifiedChatRow {
             id: "rich-1".to_string(),
@@ -420,9 +415,6 @@ mod tests {
 
     #[tokio::test]
     async fn list_recent_orders_ties_by_insertion_seq_not_received_at() {
-        // All rows share one received_at; the `seq` column exists precisely so
-        // equal-timestamp rows come back newest-inserted-first instead of in an
-        // order left undefined by `ORDER BY received_at`.
         let repo = make_repo().await;
         seed(&repo, &[("a", 100), ("b", 100), ("c", 100)]).await;
 
@@ -438,8 +430,6 @@ mod tests {
 
     #[tokio::test]
     async fn mark_message_deleted_flags_only_deleted_and_survives_round_trip() {
-        // Decoding through list_recent proves the json_set write persists into the
-        // moderation column and re-parses as ModerationMarks.
         let repo = make_repo().await;
         seed(&repo, &[("m1", 100)]).await;
 
@@ -467,8 +457,6 @@ mod tests {
 
     #[tokio::test]
     async fn mark_user_messages_moderated_sets_branch_flag_only_for_matching_source_and_author() {
-        // timeout=true -> timed_out+deleted; timeout=false -> banned+deleted. In
-        // both branches only rows matching BOTH source and author are touched.
         for (timeout, expected) in [
             (
                 true,

@@ -15,8 +15,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.poll.end";
 
-// Allowed status strings from the config Select; stored as Variant::String.
-// Mapped to uppercase before sending to Twitch (Twitch requires "TERMINATED" or "ARCHIVED").
 const STATUS_TERMINATED: &str = "terminated";
 const STATUS_ARCHIVED: &str = "archived";
 
@@ -39,8 +37,6 @@ impl EndPollRunner {
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        // PATCH /helix/polls - broadcaster_id is a query param; id and status go in the body.
-        // status must be uppercase: "TERMINATED" stops immediately, "ARCHIVED" ends and hides.
         // Requires channel:manage:polls scope.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/polls")
             .query("broadcaster_id", user_id)
@@ -156,7 +152,6 @@ impl SubActionRunner for EndPollRunner {
             );
         }
 
-        // Config stores lowercase ("terminated"/"archived"); Twitch requires uppercase.
         let status_lower = config.str("status").unwrap_or(STATUS_TERMINATED);
         let status_uppercase = status_lower.to_uppercase();
 
@@ -228,7 +223,6 @@ mod tests {
         assert!(body.get("broadcaster_id").is_none());
     }
 
-    // Config stores lowercase; Twitch's PATCH body requires uppercase status.
     #[tokio::test]
     async fn status_is_uppercased_in_body() {
         for (config_status, expected) in [("terminated", "TERMINATED"), ("archived", "ARCHIVED")] {
@@ -295,7 +289,6 @@ mod tests {
             Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
         );
 
-        // (label, config, expect_ok)
         let cases = [
             ("valid terminated", cfg("poll-1", "terminated"), true),
             ("valid archived", cfg("poll-1", "archived"), true),

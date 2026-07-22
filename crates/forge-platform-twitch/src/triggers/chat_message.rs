@@ -97,8 +97,6 @@ mod tests {
 
     #[test]
     fn build_arg_stack_includes_base_chat_args() {
-        // Full base-arg extraction is covered in chat_arg_stack tests;
-        // this only guards the delegation.
         let stack = ChatMessageDescriptor.build_arg_stack(&chat_event("hi there"));
         assert_eq!(
             stack.get("message_text"),

@@ -144,7 +144,6 @@ impl ChainEngine {
         }
     }
 
-    /// Scope for the action's top-level chain (depth 0); its steps run at depth 1.
     pub fn root_scope(self: &Arc<Self>, cancel: CancelSignal) -> ChainScope {
         ChainScope {
             engine: Arc::clone(self),
@@ -153,8 +152,6 @@ impl ChainEngine {
         }
     }
 
-    /// Drives an action's top-level chain sequentially: builds the depth-0 scope
-    /// the steps re-enter through and delegates to the executor-driven loop.
     pub async fn run_sequential(
         self: &Arc<Self>,
         steps: &[SubActionStep],
@@ -167,7 +164,6 @@ impl ChainEngine {
             .await
     }
 
-    /// Drives an action's top-level chain concurrently from the depth-0 scope.
     pub async fn run_concurrent(
         self: &Arc<Self>,
         steps: &[SubActionStep],
@@ -180,9 +176,6 @@ impl ChainEngine {
             .await
     }
 
-    /// Runs `steps` in order, embedding `executor` in each step's `RunContext`
-    /// so a composite step re-enters one nesting level down. Cancellation is read
-    /// from the executor's shared signal and polled at every step boundary.
     async fn drive_sequential(
         &self,
         steps: &[SubActionStep],
@@ -324,9 +317,6 @@ impl ChainEngine {
         }
     }
 
-    /// Concurrent sibling of `drive_sequential`: every enabled step runs on its
-    /// own future with the same embedded `executor`; the first failure in step
-    /// order becomes the chain's `Error` signal.
     async fn drive_concurrent(
         &self,
         steps: &[SubActionStep],
@@ -517,9 +507,6 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    /// Runner whose outcome, arg-stack mutation, and side effects are scripted
-    /// per-test. `runs` and `observed` are shared `Arc`s so a test can inspect
-    /// them after the runner has been moved into the registry.
     struct ScriptedRunner {
         id: String,
         outcome: SubActionOutcome,
@@ -646,8 +633,6 @@ mod tests {
         }
     }
 
-    /// Publisher that records every emitted event so a test can inspect the
-    /// `subaction.run` / `subaction.done` stream and its causation links.
     struct CapturingPublisher {
         events: Arc<Mutex<Vec<Event>>>,
     }
@@ -675,7 +660,6 @@ mod tests {
         (eng, events)
     }
 
-    /// Reads `subaction.done` events (kind, step_index, outcome string, caused_by).
     fn done_events(events: &Arc<Mutex<Vec<Event>>>) -> Vec<(usize, String, Option<EventId>)> {
         events
             .lock()
@@ -690,7 +674,6 @@ mod tests {
             .collect()
     }
 
-    /// Maps each executed step index to the id of its `subaction.run` event.
     fn run_ids(events: &Arc<Mutex<Vec<Event>>>) -> BTreeMap<usize, EventId> {
         events
             .lock()
@@ -701,15 +684,8 @@ mod tests {
             .collect()
     }
 
-    // ---- Depth bound (invariant 1) -------------------------------------------
-
     #[tokio::test]
     async fn child_chain_entry_admitted_only_within_the_depth_bound() {
-        // root_scope sits at depth 0; its first child chain enters depth 1. The
-        // bound is the deepest child level allowed, so 0 rejects the first child
-        // chain and any value >= 1 admits it. Deeper nesting is unreachable from
-        // the public surface (no depth>0 scope constructor yet), so the reachable
-        // boundary is exactly {0 rejects, 1 admits}.
         for (max_depth, admit) in [(0u32, false), (1, true), (4, true)] {
             let reg = registry(vec![Box::new(scripted("d.ok", SubActionOutcome::Success))]);
             let eng = engine(reg, max_depth);
@@ -730,8 +706,6 @@ mod tests {
             }
         }
     }
-
-    // ---- Cancellation (invariant 2) ------------------------------------------
 
     #[tokio::test]
     async fn pre_cancelled_signal_aborts_sequential_before_any_step_runs() {
@@ -795,16 +769,12 @@ mod tests {
 
     #[test]
     fn cancel_signal_propagates_through_clones() {
-        // Why: child chains share the parent's cancel via clone; cancelling one
-        // handle must be observable on every clone or nested chains can't stop.
         let signal = CancelSignal::new();
         let child = signal.clone();
         assert!(!child.is_cancelled());
         signal.cancel();
         assert!(child.is_cancelled());
     }
-
-    // ---- Sequential outcome (invariant 3) ------------------------------------
 
     #[tokio::test]
     async fn sequential_step_failure_halts_chain_with_error_signal() {
@@ -885,9 +855,6 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_step_is_recorded_as_skipped_at_its_real_index_but_not_executed() {
-        // New contract: a disabled step is NOT run, but it DOES push a
-        // Skipped("disabled") telemetry row keeping its positional index so the
-        // row sits between its executed neighbours rather than vanishing.
         let runs = Arc::new(AtomicUsize::new(0));
         let mut mid = scripted("seq.disabled", SubActionOutcome::Success);
         mid.runs = Arc::clone(&runs);
@@ -924,8 +891,6 @@ mod tests {
         assert_eq!(run.telemetry[2].kind, "seq.after");
         assert_eq!(runs.load(Ordering::Relaxed), 0);
     }
-
-    // ---- Concurrent first-failure (invariant 4) ------------------------------
 
     #[tokio::test]
     async fn concurrent_run_reports_first_failure_in_step_order() {
@@ -978,8 +943,6 @@ mod tests {
         assert_eq!(run.telemetry.len(), 2);
     }
 
-    // ---- continue_on_error (sequential) --------------------------------------
-
     #[tokio::test]
     async fn sequential_flagged_step_failure_lets_later_steps_run_and_chain_completes() {
         let downstream_runs = Arc::new(AtomicUsize::new(0));
@@ -1013,8 +976,6 @@ mod tests {
 
     #[tokio::test]
     async fn sequential_unflagged_failure_after_a_flagged_one_still_halts() {
-        // Boundary between the two flags in one chain: the flagged failure is
-        // tolerated, but a later un-flagged failure halts at its own row.
         let third_runs = Arc::new(AtomicUsize::new(0));
         let mut third = scripted("seq.tail", SubActionOutcome::Success);
         third.runs = Arc::clone(&third_runs);
@@ -1050,13 +1011,8 @@ mod tests {
         assert_eq!(third_runs.load(Ordering::Relaxed), 0);
     }
 
-    // ---- continue_on_error (concurrent) --------------------------------------
-
     #[tokio::test]
     async fn concurrent_flagged_failure_does_not_become_the_chain_failure() {
-        // Index 0 fails but is flagged; index 1 fails un-flagged. The first
-        // NON-flagged failure in step order wins, so the flagged earlier one is
-        // skipped over.
         let eng = engine(
             registry(vec![
                 Box::new(scripted(
@@ -1105,13 +1061,8 @@ mod tests {
         assert_eq!(run.telemetry.len(), 2);
     }
 
-    // ---- subaction.done observability ----------------------------------------
-
     #[tokio::test]
     async fn subaction_done_outcome_string_reflects_each_step_outcome() {
-        // One chain exercising all three outcome strings: an executed success,
-        // a flagged executed failure (so the chain reaches every step), and a
-        // disabled step surfaced as skipped.
         let eng_reg = registry(vec![
             Box::new(scripted("d.ok", SubActionOutcome::Success)),
             Box::new(scripted(
@@ -1137,7 +1088,6 @@ mod tests {
             vec![(0, "success"), (1, "failed"), (2, "skipped")],
         );
 
-        // The failed step's done payload carries its message.
         let failed_msg = events
             .lock()
             .unwrap()
@@ -1166,7 +1116,6 @@ mod tests {
         .await;
 
         let runs = run_ids(&events);
-        // The executed step emits a subaction.run; the disabled one does not.
         assert!(runs.contains_key(&0));
         assert!(
             !runs.contains_key(&1),
@@ -1192,8 +1141,6 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_disabled_step_emits_skipped_done_with_parent_causation_and_no_run() {
-        // The concurrent driver has its own disabled-step branch (an early
-        // return inside each future); guard it independently of the sequential one.
         let (eng, events) = capturing_engine(
             registry(vec![Box::new(scripted("c.off", SubActionOutcome::Success))]),
             8,
@@ -1215,12 +1162,8 @@ mod tests {
         assert_eq!(done, vec![(0, "skipped".to_owned(), Some(parent))]);
     }
 
-    // ---- per-step condition gate ---------------------------------------------
-
     #[tokio::test]
     async fn condition_verdict_controls_whether_the_step_runs() {
-        // A single gated step: the boolean verdict decides execution. Empty,
-        // whitespace-only, and absent conditions are all "always run".
         for (condition, should_run) in [
             (Some("1 == 1"), true),  // true -> run
             (Some("1 == 2"), false), // false -> skip
@@ -1311,8 +1254,6 @@ mod tests {
 
     #[tokio::test]
     async fn condition_eval_error_halts_sequential_chain_unless_step_is_flagged() {
-        // "1 + 1" evaluates to an Int, not a Bool -> the gate errors, yielding a
-        // Failed row and no subaction.run. Un-flagged halts; flagged tolerates.
         for (flagged, expect_after_runs, expect_completed) in
             [(false, 0usize, false), (true, 1usize, true)]
         {
@@ -1366,10 +1307,6 @@ mod tests {
 
     #[tokio::test]
     async fn condition_is_interpolated_against_scope_before_evaluation() {
-        // A producer writes `n` into scope; the gated step's condition references
-        // `%n%`. Same condition string, different produced value -> run vs skip.
-        // Without interpolation `n` would be an unknown identifier and the gate
-        // would error for BOTH, so run-vs-skip proves scope-before-eval.
         for (produced, should_run) in [(7i64, true), (3i64, false)] {
             let gated_runs = Arc::new(AtomicUsize::new(0));
             let mut producer = scripted("s.producer", SubActionOutcome::Success);

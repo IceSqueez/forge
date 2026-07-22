@@ -13,13 +13,10 @@ use crate::error::SoundboardError;
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 use crate::sink_factory::AudioSinkFactory;
 
-/// Upper bound on the linear master gain. +6 dB (the catalog ceiling) is ≈2.0;
-/// 4.0 leaves headroom for an interpolated/over-range request without letting a
-/// runaway value blow the sample scaling.
+/// Linear gain; the +6 dB catalog ceiling is ~2.0, this leaves headroom above it.
 const MAX_MASTER_GAIN: f32 = 4.0;
 
-/// Silence drained by the device after a clip's samples are exhausted; the
-/// registry entry outlives the clip by this much so a late `stop` still lands.
+/// Registry entry outlives clip playback by this much so a late `stop` still lands.
 const PLAYBACK_TAIL_MS: u64 = 200;
 
 const LOOP_POLL_MS: u64 = 50;
@@ -57,8 +54,7 @@ pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
     event_sink: Arc<dyn AudioEventSink>,
     clips_repo: Arc<dyn SoundboardClipsRepo>,
-    /// Live stop tokens keyed by clip; the `u64` tags one concrete play so
-    /// concurrent plays of the same clip register and clean up independently.
+    /// The `u64` tags one concrete play so concurrent plays of the same clip differ.
     active: ActiveRegistry,
     next_play_id: AtomicU64,
     master_gain_bits: AtomicU32,
@@ -605,9 +601,6 @@ mod tests {
         }
     }
 
-    /// Writes the exact `samples` as a mono 16-bit PCM wav. 16-bit PCM is
-    /// lossless, so `forge_audio::decode_file` hands them back verbatim - letting
-    /// the scaling assertions compare against known inputs rather than magnitudes.
     fn wav_with_samples(samples: &[i16]) -> tempfile::NamedTempFile {
         let wav_bytes = write_wav(22_050, 1, samples);
         let tmp = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
@@ -615,10 +608,6 @@ mod tests {
         tmp
     }
 
-    /// Plays a clip built from `samples` with the given per-clip volume and an
-    /// optional master gain, returning the samples the sink actually received.
-    /// The capture happens via `CountingSink::play` (the `play_stoppable` default
-    /// forwards to it), so it observes the post-scaling buffer.
     async fn capture_played_samples(
         samples: &[i16],
         clip_volume: f32,
@@ -648,10 +637,6 @@ mod tests {
         buf.as_ref().unwrap().samples.clone()
     }
 
-    /// Asserts `actual[i] ≈ factor × baseline[i]` (within one quantization step,
-    /// clamped to i16 range). Comparing against a unity-gain baseline rather than
-    /// raw input absorbs `decode_file`'s lossy i16→f32→i16 round-trip while still
-    /// pinning the multiplicative scaling factor.
     fn assert_proportional(baseline: &[i16], actual: &[i16], factor: f32) {
         assert_eq!(
             baseline.len(),
@@ -688,9 +673,6 @@ mod tests {
 
         assert_eq!(*play_count.lock().unwrap(), 1, "sink must be called once");
 
-        // PlaybackFinished now fires once the clip's own decoded duration has
-        // actually elapsed (natural-completion cleanup task), not synchronously
-        // after `play` returns - poll with a bound instead of asserting inline.
         let deadline = std::time::Instant::now() + Duration::from_millis(2_000);
         while events.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -719,10 +701,6 @@ mod tests {
         assert_proportional(&baseline, &out, 0.5);
     }
 
-    /// Master gain defaults to unity: a play before any `set_master_volume`
-    /// produces the SAME buffer as an explicit master of 1.0. Guards against a
-    /// non-1.0 default silently attenuating every clip. (Compares two plays so
-    /// the decode round-trip cancels - exact equality is valid here.)
     #[tokio::test]
     async fn master_volume_defaults_to_unity() {
         let samples = vec![0, 100, -100, 12_000, -12_000];
@@ -731,7 +709,6 @@ mod tests {
         assert_eq!(default_master, explicit_unity);
     }
 
-    /// Master gain scales the buffer by that linear factor relative to unity.
     #[tokio::test]
     async fn master_volume_scales_samples_by_linear_gain() {
         let samples = vec![0, 200, -200, 12_000, -12_000];
@@ -740,9 +717,6 @@ mod tests {
         assert_proportional(&baseline, &out, 0.5);
     }
 
-    /// The application point is `clip.volume * master_gain` (multiplicative, not
-    /// additive, not either-factor-alone): clip 0.5 × master 0.5 = 0.25× the
-    /// unity baseline. Pins where master gain folds into the per-clip samples.
     #[tokio::test]
     async fn master_gain_multiplies_with_clip_volume() {
         let samples = vec![0, 400, -400, 8_000, -8_000];
@@ -751,9 +725,6 @@ mod tests {
         assert_proportional(&baseline, &out, 0.25);
     }
 
-    /// Master gain is clamped to the [0, 4] ceiling: a request of 10.0 must apply
-    /// 4.0. Samples chosen so ×4 stays in range while ×10 would clamp to i16::MAX,
-    /// making the assertion distinguish the clamp ceiling from the raw request.
     #[tokio::test]
     async fn master_volume_clamps_gain_above_ceiling() {
         let samples = vec![100, -100, 4_000, -4_000];
@@ -762,7 +733,6 @@ mod tests {
         assert_proportional(&baseline, &out, 4.0);
     }
 
-    /// A negative master gain clamps to 0.0 - silence, never sign inversion.
     #[tokio::test]
     async fn master_volume_clamps_negative_gain_to_silence() {
         let samples = vec![12_000, -12_000, 5_000];
@@ -773,10 +743,6 @@ mod tests {
         );
     }
 
-    /// Stopping an unregistered clip and stop_all on an empty registry succeed
-    /// without effect (documented contract) and without panicking - guards the
-    /// `remove(..).unwrap_or_default()` / `PoisonError::into_inner` paths against
-    /// an accidental `.unwrap()`.
     #[tokio::test]
     async fn stop_on_idle_player_succeeds_without_effect() {
         let (factory, _count, _buf) = CountingFactory::new();

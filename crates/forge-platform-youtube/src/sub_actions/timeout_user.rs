@@ -184,7 +184,6 @@ mod tests {
     fn validate_config_bounds_duration_to_one_through_86400_inclusive() {
         let runner = runner();
         let channel = Variant::String("UC1".to_owned());
-        // Boundaries and ±1 around each edge of 1..=86400.
         let cases: Vec<(&str, Variant, bool)> = vec![
             ("below min (0)", Variant::Int(0), false),
             ("min (1)", Variant::Int(1), true),

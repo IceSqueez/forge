@@ -13,8 +13,7 @@ pub const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 #[derive(Clone)]
 pub struct StoredCredential {
     pub access_token: OAuthToken,
-    /// Absent for credentials persisted before refresh support, or when the
-    /// grant carried no refresh token: routes the first expiry to re-auth.
+    /// Absent routes the first expiry to re-auth (no refresh possible).
     pub refresh_token: Option<OAuthToken>,
     pub user_id: String,
     pub login: String,
@@ -139,10 +138,6 @@ mod tests {
 
     use super::*;
 
-    // ---------------------------------------------------------------------------
-    // Minimal in-memory CredentialsRepo - mirrors the Kick harness pattern.
-    // ---------------------------------------------------------------------------
-
     struct InMemRepo(Mutex<HashMap<String, String>>);
 
     impl InMemRepo {
@@ -207,14 +202,8 @@ mod tests {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // Debug / redaction
-    // ---------------------------------------------------------------------------
-
     #[test]
     fn stored_credential_debug_does_not_expose_access_or_refresh_tokens() {
-        // Why: both tokens are OAuthToken whose Debug impl writes "<redacted>".
-        // A regression here would silently log credentials to tracing INFO.
         let cred = cred_with_refresh(Some("DEADBEEF_REFRESH_SECRET"));
         let debug = format!("{cred:?}");
         assert!(
@@ -231,10 +220,6 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------------
-    // Round-trip: with refresh_token
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn store_load_round_trip_preserves_refresh_token() {
         let repo = InMemRepo::empty();
@@ -250,10 +235,6 @@ mod tests {
         assert_eq!(loaded.login, "streamer");
     }
 
-    // ---------------------------------------------------------------------------
-    // Round-trip: without refresh_token
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn store_load_round_trip_without_refresh_token_loads_as_none() {
         let repo = InMemRepo::empty();
@@ -268,15 +249,8 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------------
-    // Back-compat: blobs persisted BEFORE refresh support (no refresh_token field)
-    // must load without error and produce refresh_token = None.
-    // RFC-091 §1 critical requirement.
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn legacy_blob_without_refresh_token_loads_as_none_not_error() {
-        // Simulate a blob written before RFC-091 (no refresh_token key at all).
         let legacy_json = r#"{"access_token":"old_access","user_id":"u1","login":"streamer","expires_at_unix":9999999999}"#;
         let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, legacy_json);
 
@@ -288,11 +262,6 @@ mod tests {
         assert_eq!(loaded.access_token.expose(), "old_access");
     }
 
-    // ---------------------------------------------------------------------------
-    // Back-compat: blob with null refresh_token (e.g. written when the field was
-    // explicitly null) also loads as None.
-    // ---------------------------------------------------------------------------
-
     #[tokio::test]
     async fn blob_with_null_refresh_token_loads_as_none() {
         let json = r#"{"access_token":"at","refresh_token":null,"user_id":"u1","login":"x","expires_at_unix":9999999999}"#;
@@ -301,10 +270,6 @@ mod tests {
         let loaded = load(&repo).await.unwrap().unwrap();
         assert!(loaded.refresh_token.is_none());
     }
-
-    // ---------------------------------------------------------------------------
-    // expires_at round-trip: zero / negative unix secs → None (not a parse error).
-    // ---------------------------------------------------------------------------
 
     #[tokio::test]
     async fn blob_with_zero_expires_at_loads_as_none() {
@@ -317,10 +282,6 @@ mod tests {
             "expires_at_unix = 0 must decode to None (no expiry)"
         );
     }
-
-    // ---------------------------------------------------------------------------
-    // No credentials → load returns None (not an error).
-    // ---------------------------------------------------------------------------
 
     #[tokio::test]
     async fn load_returns_none_when_no_row_exists() {

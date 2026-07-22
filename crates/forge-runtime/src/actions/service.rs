@@ -105,9 +105,7 @@ impl ActionsService {
         self.actions.telemetry(id).await
     }
 
-    /// The user-defined trigger instances not yet linked to `action_id` - the set
-    /// offered when linking a new trigger to the action. Auto-provisioned default
-    /// instances are excluded; only author-created ones are linkable here.
+    /// Excludes auto-provisioned default instances; only author-created ones are linkable.
     pub async fn list_linkable_triggers(
         &self,
         action_id: ActionId,
@@ -129,8 +127,7 @@ impl ActionsService {
         Ok(available)
     }
 
-    /// Links `instance_id` to `action_id`, appending it after the action's existing
-    /// links (its position is the current linked count).
+    /// Appends after the action's existing links; position is the current linked count.
     pub async fn link_trigger_instance(
         &self,
         action_id: ActionId,
@@ -146,8 +143,7 @@ impl ActionsService {
             .await
     }
 
-    /// Unlinks `instance_id` from `action_id`. The instance itself survives; only the
-    /// action↔trigger link is removed.
+    /// The instance itself survives; only the action-trigger link is removed.
     pub async fn unlink_trigger_instance(
         &self,
         action_id: ActionId,

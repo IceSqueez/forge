@@ -35,9 +35,7 @@ pub(crate) async fn build_connected_clients(
     server_info: &ServerInfo,
     bus_adapter: &BusAdapter,
 ) -> Vec<serde_json::Value> {
-    // Snapshot the per-client synchronous data under the read guard, then
-    // release it before issuing any async bus-adapter lookups so client
-    // register/deregister writers are not blocked for the whole loop.
+    // Snapshot under the read guard, then release it before any async bus-adapter lookups.
     let snapshots: Vec<_> = {
         let clients = server_info.connected_clients.read().await;
         clients
@@ -112,10 +110,6 @@ mod tests {
     use crate::server_info::ServerInfo;
     use crate::ws_client::WsClient;
 
-    // Regression: the snapshot restructure moved every per-client field through
-    // a tuple before the async subscription lookup. Guard against a field
-    // transposition (identification vs remote_addr) and confirm subscriptions
-    // are still resolved for the client after the read guard is released.
     #[tokio::test]
     async fn snapshot_row_preserves_identity_addr_and_subscriptions() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -148,9 +142,6 @@ mod tests {
         assert_eq!(subs[0]["type"], "chat.message");
     }
 
-    // The disconnected-mid-loop case: a client present in `server_info` but not
-    // in the bus adapter registry must degrade to an empty subscription list
-    // rather than fail once the snapshot releases the read guard.
     #[tokio::test]
     async fn client_absent_from_bus_adapter_yields_empty_subscriptions() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));

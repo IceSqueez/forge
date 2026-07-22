@@ -12,9 +12,7 @@ pub enum InlineEditEvent {
     Cancel,
 }
 
-/// A single-line inline rename field: a borderless mono input inside an active-field
-/// wrapper. Commits on Enter, blur, or a click outside; cancels on Escape. The caret
-/// is focused on the frame after it mounts so a double-click lands the cursor at once.
+/// Commits on Enter, blur, or a click outside; cancels on Escape. The caret is focused on the frame after it mounts so a double-click lands the cursor at once.
 pub struct InlineEdit {
     input: Entity<TextInput>,
     palette: ForgePalette,

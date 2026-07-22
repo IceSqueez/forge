@@ -73,17 +73,13 @@ pub trait HelixTokenSource: Send + Sync {
     async fn access_token(&self) -> Result<OAuthToken, HelixError>;
 }
 
-/// Renews the stored token after a Helix 401; a rejected refresh token
-/// surfaces as `ReauthRequired`.
+/// A rejected refresh token surfaces as `ReauthRequired`.
 #[async_trait]
 pub trait HelixTokenRefresher: Send + Sync {
     async fn refresh(&self) -> Result<OAuthToken, HelixError>;
 }
 
-/// Implementations own rate-limit acquisition, auth headers, and failure
-/// telemetry: every non-2xx response publishes a `request.fail` bus event
-/// (endpoint path, status code, body snippet, retry-after) before the error
-/// is returned. An empty success body yields `serde_json::Value::Null`.
+/// Every non-2xx response publishes a `request.fail` bus event before the error is returned.
 #[async_trait]
 pub trait HelixTransport: Send + Sync {
     async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError>;
@@ -115,8 +111,7 @@ impl HelixHttpTransport {
         )
     }
 
-    /// Enables the reactive 401 path: a single refresh-then-retry per request
-    /// before falling through to `ReauthRequired`.
+    /// A single refresh-then-retry per request before falling through to `ReauthRequired`.
     pub fn with_refresher(mut self, refresher: Arc<dyn HelixTokenRefresher>) -> Self {
         self.refresher = Some(refresher);
         self
@@ -156,9 +151,7 @@ impl HelixHttpTransport {
 }
 
 impl HelixHttpTransport {
-    /// Acquires one rate-limit point and issues the request with `token`.
-    /// Returns `Err(ReauthRequired)` on a 401 so the caller can decide whether
-    /// a refresh-then-retry is still available.
+    /// Returns `Err(ReauthRequired)` on a 401 so the caller can decide whether a refresh-then-retry is available.
     async fn attempt(
         &self,
         request: &HelixRequest,
@@ -203,8 +196,7 @@ impl HelixHttpTransport {
                 return Err(HelixError::ReauthRequired);
             }
             if status == 429 {
-                // Feed the server's back-off into the shared bucket so every
-                // transport sharing this limiter stops hammering Helix.
+                // Feeds the shared bucket so every transport sharing this limiter backs off.
                 let cooldown = retry_after.unwrap_or(DEFAULT_RETRY_AFTER_SECS);
                 self.rate_limiter
                     .observe_remote_throttle(Duration::from_secs(cooldown))
@@ -234,9 +226,7 @@ impl HelixTransport for HelixHttpTransport {
         let token = self.tokens.access_token().await?;
         match self.attempt(&request, &token).await {
             Err(HelixError::ReauthRequired) => match &self.refresher {
-                // Single bounded retry: refresh once, then re-issue. A second
-                // 401 after a successful refresh is terminal, so a token Twitch
-                // keeps rejecting cannot loop.
+                // A second 401 after a successful refresh is terminal - a rejected token cannot loop.
                 Some(refresher) => {
                     let fresh = refresher.refresh().await?;
                     self.attempt(&request, &fresh).await
@@ -316,9 +306,6 @@ mod tests {
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
-    /// Throttles the first `throttle_count` acquires (each with `wait_for`),
-    /// then grants. Lets us drive the transport's throttle-sleep loop on the
-    /// paused tokio clock without any wall-clock dependence.
     struct ThrottleThenGrantLimiter {
         wait_for: Duration,
         throttle_count: u32,
@@ -345,8 +332,6 @@ mod tests {
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
-    /// Always throttles, so the transport must give up after its bounded
-    /// acquire attempts rather than spin forever.
     struct AlwaysThrottleLimiter {
         wait_for: Duration,
     }
@@ -366,8 +351,6 @@ mod tests {
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
-    /// Records every `observe_remote_throttle` invocation and its argument, so
-    /// a test can prove the 429 path fed the server's back-off into the bucket.
     struct RecordingLimiter {
         observed: std::sync::Mutex<Vec<Duration>>,
     }
@@ -660,7 +643,6 @@ mod tests {
 
     #[tokio::test]
     async fn refused_connection_yields_transport_error_without_host_or_token() {
-        // Port 1 needs root to bind, so the connection is refused immediately.
         let (t, _bus) = transport("http://127.0.0.1:1".to_owned());
 
         let err = t
@@ -689,9 +671,6 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(payload.clone()))
             .mount(&server)
             .await;
-        // One throttle then grant. A zero `wait_for` makes the loop's
-        // `sleep(ZERO)` return on the next poll with no real elapsed time, so
-        // the test exercises the retry path without any wall-clock dependence.
         let limiter = Arc::new(ThrottleThenGrantLimiter {
             wait_for: Duration::ZERO,
             throttle_count: 1,
@@ -715,10 +694,6 @@ mod tests {
     #[tokio::test]
     async fn persistent_throttle_gives_up_with_rate_limited() {
         let server = MockServer::start().await;
-        // No HTTP request should ever be issued; the loop exits after the
-        // bounded attempt count. A zero `wait_for` keeps each retry's
-        // `sleep(ZERO)` instantaneous, so termination is by attempt count, not
-        // by elapsed time.
         let limiter = Arc::new(AlwaysThrottleLimiter {
             wait_for: Duration::ZERO,
         });

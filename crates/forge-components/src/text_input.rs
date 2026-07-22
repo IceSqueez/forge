@@ -689,8 +689,7 @@ impl Element for TextElement {
             (content.clone(), style.color)
         };
 
-        // Caret and selection offsets index the real buffer; while masked the shaped line
-        // is bullets, so each real byte offset maps to its bullet-string counterpart.
+        // Caret and selection offsets index the real buffer; while masked the shaped line is bullets, so each real byte offset maps to its bullet-string counterpart.
         let display_index = |offset: usize| -> usize {
             if secure {
                 crate::text_edit::mask_offset(&content, offset)
@@ -978,17 +977,8 @@ mod tests {
 
     #[gpui::test]
     fn backspace_deletes_the_whole_previous_grapheme_cluster(cx: &mut gpui::TestAppContext) {
-        // Why: previous_boundary must step one extended grapheme cluster, never a
-        // byte or a codepoint. A byte-based cursor slices mid-emoji (panic on the
-        // non-char-boundary slice); a codepoint-based one tears a ZWJ / flag
-        // cluster apart. set_content parks the caret at the end, so one backspace
-        // removes the final cluster.
-        for (before, after) in [
-            ("a😀", "a"),    // 4-byte astral emoji removed whole
-            ("café", "caf"), // 2-byte é removed whole
-            ("🇺🇦", ""),      // regional-indicator flag: one cluster, 8 bytes
-            ("👨‍👩‍👧", ""),      // ZWJ family: one cluster, many codepoints
-        ] {
+        for (before, after) in [("a😀", "a"), ("café", "caf"), ("🇺🇦", ""), ("👨‍👩‍👧", "")]
+        {
             let content = with_input(cx, before, |input, window, cx| {
                 input.backspace(&Backspace, window, cx);
                 input.content().to_string()
@@ -1011,8 +1001,6 @@ mod tests {
 
     #[gpui::test]
     fn cursor_left_lands_only_on_grapheme_boundaries(cx: &mut gpui::TestAppContext) {
-        // "a😀b": grapheme starts sit at byte offsets 0, 1, 5 (total len 6). The
-        // caret must never rest at 2, 3 or 4 (inside the emoji's 4 bytes).
         let stops = with_input(cx, "a😀b", |input, window, cx| {
             input.end(&End, window, cx);
             let mut seen = Vec::new();
@@ -1064,8 +1052,6 @@ mod tests {
 
     #[gpui::test]
     fn backspace_with_a_selection_deletes_exactly_the_selection(cx: &mut gpui::TestAppContext) {
-        // A non-empty selection means backspace deletes the selection verbatim and
-        // does NOT swallow an extra grapheme before it.
         let content = with_input(cx, "hello", |input, window, cx| {
             input.home(&Home, window, cx);
             for _ in 0..3 {
@@ -1099,9 +1085,6 @@ mod tests {
 
     #[gpui::test]
     fn utf16_offsets_map_across_the_astral_plane(cx: &mut gpui::TestAppContext) {
-        // "a😀b": 😀 is 4 UTF-8 bytes but 2 UTF-16 code units (a surrogate pair).
-        // The IME coordinate mapping must count surrogate pairs, not chars - a
-        // char-count impl would report byte 5 as utf16 2 instead of 3.
         with_input(cx, "a😀b", |input, _window, _cx| {
             for (byte, utf16) in [(0usize, 0usize), (1, 1), (5, 3), (6, 4)] {
                 assert_eq!(input.offset_to_utf16(byte), utf16, "byte {byte} -> utf16");

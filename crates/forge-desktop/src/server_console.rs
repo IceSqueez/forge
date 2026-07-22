@@ -2,8 +2,8 @@ use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ColumnWidth, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition, PlatformKind, Radius,
-    Spacing, badge, breadcrumb, card, column, confirm_modal, data_table, empty_state, fmt_bytes,
-    fmt_uptime, fmt_uptime_short, icon, metric_card, overlay, platform_color, radius, spacing,
+    Spacing, badge, card, column, confirm_modal, data_table, empty_state, fmt_bytes, fmt_uptime,
+    fmt_uptime_short, icon, metric_card, overlay, page_frame, platform_color, radius, spacing,
     sparkline, status_dot, tr, virtual_table, with_alpha,
 };
 use std::sync::Arc;
@@ -1495,14 +1495,6 @@ impl Render for ServerConsoleView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let page_header = breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
-                BreadcrumbCrumb::leaf(tr!("server_breadcrumb_server")),
-            ],
-            &palette,
-        );
-
         let panels = div()
             .w_full()
             .flex()
@@ -1544,14 +1536,30 @@ impl Render for ServerConsoleView {
 
         let overlay = self.disconnect_confirm(&palette, cx);
 
+        let frame = page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
+                BreadcrumbCrumb::leaf(tr!("server_breadcrumb_server")),
+            ],
+            &palette,
+        )
+        .body(
+            div()
+                .flex_1()
+                .min_h(px(0.0))
+                .w_full()
+                .flex()
+                .flex_col()
+                .child(scroll)
+                .child(self.footer_bar(&palette, density)),
+        );
+
         div()
             .size_full()
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(page_header)
-            .child(scroll)
-            .child(self.footer_bar(&palette, density))
+            .child(frame)
             .children(overlay)
     }
 }

@@ -1,6 +1,6 @@
 use forge_components::{
     BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, ForgePalette, Icon, Spacing,
-    breadcrumb, connection_status_badge, icon, nav_card, spacing, tr,
+    connection_status_badge, icon, nav_card, page_frame, spacing, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Subscription, Window, div,
@@ -181,11 +181,6 @@ impl Render for StreamAppsView {
             .child(section_header)
             .child(app_grid(cards, density));
 
-        let header = breadcrumb(
-            vec![BreadcrumbCrumb::leaf(tr!("stream_apps_breadcrumb"))],
-            &palette,
-        );
-
         let scroll = div()
             .id("stream-apps-scroll")
             .flex_1()
@@ -200,13 +195,11 @@ impl Render for StreamAppsView {
                     .child(body),
             );
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(header)
-            .child(scroll)
+        page_frame(
+            vec![BreadcrumbCrumb::leaf(tr!("stream_apps_breadcrumb"))],
+            &palette,
+        )
+        .body(scroll)
     }
 }
 

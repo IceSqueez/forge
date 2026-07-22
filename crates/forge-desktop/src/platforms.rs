@@ -1,6 +1,6 @@
 use forge_components::{
     BreadcrumbCrumb, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, ForgePalette, Radius,
-    Spacing, avatar_tile, breadcrumb, connection_status_badge, nav_card, radius, spacing, tr,
+    Spacing, avatar_tile, connection_status_badge, nav_card, page_frame, radius, spacing, tr,
 };
 use std::collections::HashMap;
 
@@ -277,11 +277,6 @@ impl Render for PlatformsView {
             .child(section_header)
             .child(platform_grid(cards, density));
 
-        let header = breadcrumb(
-            vec![BreadcrumbCrumb::leaf(tr!("platforms_breadcrumb"))],
-            &palette,
-        );
-
         let scroll = div()
             .id("platforms-scroll")
             .flex_1()
@@ -296,13 +291,11 @@ impl Render for PlatformsView {
                     .child(body),
             );
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(header)
-            .child(scroll)
+        page_frame(
+            vec![BreadcrumbCrumb::leaf(tr!("platforms_breadcrumb"))],
+            &palette,
+        )
+        .body(scroll)
     }
 }
 

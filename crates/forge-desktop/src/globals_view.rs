@@ -20,8 +20,8 @@ use std::path::PathBuf;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
 use gpui::{
-    App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Rgba, SharedString,
-    Subscription, UniformListScrollHandle, Window, div, prelude::*, px, svg,
+    App, ClickEvent, Context, Entity, EventEmitter, MouseButton, MouseDownEvent, Rgba,
+    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px, svg,
 };
 
 use crate::async_bridge;
@@ -51,7 +51,19 @@ enum EditorMode {
     Edit(SharedString),
 }
 
-struct EditorState {
+struct GlobalDraft {
+    name: String,
+    variant: Variant,
+    persisted: bool,
+    rename_from: Option<String>,
+}
+
+enum GlobalEditorEvent {
+    Submit(GlobalDraft),
+    Cancel,
+}
+
+struct GlobalEditor {
     mode: EditorMode,
     kind: VariantKind,
     persisted: bool,
@@ -61,12 +73,187 @@ struct EditorState {
     value_area: Entity<TextArea>,
     error: Option<SharedString>,
     saving: bool,
+    globals: Entity<Globals>,
     _name_sub: Subscription,
     _value_sub: Subscription,
     _area_sub: Subscription,
 }
 
-impl EditorState {
+impl EventEmitter<GlobalEditorEvent> for GlobalEditor {}
+
+impl GlobalEditor {
+    fn new(
+        mode: EditorMode,
+        kind: VariantKind,
+        persisted: bool,
+        prefill: Option<&Global>,
+        globals: Entity<Globals>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let palette = cx.palette();
+        let name_seed = prefill.map(|g| g.name.to_string()).unwrap_or_default();
+        let name_input = cx.new(|cx| {
+            let mut ti =
+                TextInput::new(tr!("globals_editor_name_placeholder"), cx).with_palette(palette);
+            ti.set_content(name_seed, cx);
+            ti
+        });
+
+        let single_seed = prefill.and_then(|g| single_line_seed(&g.value));
+        let value_input = cx.new(|cx| {
+            let mut ti = TextInput::new(single_line_placeholder(kind), cx).with_palette(palette);
+            if let Some(seed) = single_seed {
+                ti.set_content(seed, cx);
+            }
+            ti
+        });
+
+        let area_seed = prefill.and_then(|g| json_seed(&g.value));
+        let value_area = cx.new(|cx| {
+            let mut ta = TextArea::new("[1, 2, 3]", cx)
+                .with_palette(palette)
+                .mono()
+                .json_highlight();
+            if let Some(seed) = area_seed {
+                ta.set_content(seed, cx);
+            }
+            ta
+        });
+
+        let bool_value = matches!(prefill.map(|g| &g.value), Some(Variant::Bool(true)));
+
+        let name_sub = cx.subscribe(
+            &name_input,
+            |this, _f, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.submit(cx),
+                InputEvent::Cancelled => this.cancel(cx),
+                InputEvent::Changed(_) => cx.notify(),
+            },
+        );
+        let value_sub = cx.subscribe(
+            &value_input,
+            |this, _f, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.submit(cx),
+                InputEvent::Cancelled => this.cancel(cx),
+                InputEvent::Changed(_) => cx.notify(),
+            },
+        );
+        let area_sub = cx.subscribe(&value_area, |_this, _f, _event: &InputEvent, cx| {
+            cx.notify()
+        });
+
+        GlobalEditor {
+            mode,
+            kind,
+            persisted,
+            bool_value,
+            name_input,
+            value_input,
+            value_area,
+            error: None,
+            saving: false,
+            globals,
+            _name_sub: name_sub,
+            _value_sub: value_sub,
+            _area_sub: area_sub,
+        }
+    }
+
+    fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.name_input.update(cx, |f, cx| f.focus(window, cx));
+    }
+
+    fn select_kind(&mut self, kind: VariantKind, cx: &mut Context<Self>) {
+        if !matches!(self.mode, EditorMode::Create) {
+            return;
+        }
+        let palette = cx.palette();
+        let value_input =
+            cx.new(|cx| TextInput::new(single_line_placeholder(kind), cx).with_palette(palette));
+        let value_sub = cx.subscribe(
+            &value_input,
+            |this, _f, event: &InputEvent, cx| match event {
+                InputEvent::Submitted(_) => this.submit(cx),
+                InputEvent::Cancelled => this.cancel(cx),
+                InputEvent::Changed(_) => cx.notify(),
+            },
+        );
+        self.kind = kind;
+        self.error = None;
+        self.value_input = value_input;
+        self._value_sub = value_sub;
+        cx.notify();
+    }
+
+    fn toggle_persist(&mut self, cx: &mut Context<Self>) {
+        self.persisted = !self.persisted;
+        cx.notify();
+    }
+
+    fn toggle_bool_value(&mut self, cx: &mut Context<Self>) {
+        self.bool_value = !self.bool_value;
+        cx.notify();
+    }
+
+    fn set_error(&mut self, message: SharedString, cx: &mut Context<Self>) {
+        self.error = Some(message);
+        cx.notify();
+    }
+
+    fn is_saveable(&self, cx: &App) -> bool {
+        let name = self.name(cx);
+        if name.is_empty() {
+            return false;
+        }
+        if self.globals.read(cx).contains(&name) && self.original_name() != Some(name.as_str()) {
+            return false;
+        }
+        self.build_variant(cx).is_ok()
+    }
+
+    fn submit(&mut self, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let name = self.name(cx);
+        let original = self.original_name().map(str::to_owned);
+        let build = self.build_variant(cx);
+
+        if name.is_empty() {
+            self.set_error(tr!("globals_error_name_required").into(), cx);
+            return;
+        }
+        let collides =
+            self.globals.read(cx).contains(&name) && original.as_deref() != Some(name.as_str());
+        if collides {
+            self.set_error(tr!("globals_error_name_taken").into(), cx);
+            return;
+        }
+        let variant = match build {
+            Ok(v) => v,
+            Err(reason) => {
+                self.set_error(reason, cx);
+                return;
+            }
+        };
+        let persisted = self.persisted;
+        let rename_from = match &original {
+            Some(old) if old.as_str() != name.as_str() => Some(old.clone()),
+            _ => None,
+        };
+        self.error = None;
+        cx.emit(GlobalEditorEvent::Submit(GlobalDraft {
+            name,
+            variant,
+            persisted,
+            rename_from,
+        }));
+    }
+
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(GlobalEditorEvent::Cancel);
+    }
+
     fn build_variant(&self, cx: &gpui::App) -> Result<Variant, SharedString> {
         match self.kind {
             VariantKind::Int => self
@@ -133,7 +320,8 @@ pub struct GlobalsView {
     filter: GlobalsFilter,
     search: SearchState,
     visible: Vec<Global>,
-    editor: Option<EditorState>,
+    editor: Option<Entity<GlobalEditor>>,
+    _editor_sub: Option<Subscription>,
     pending_delete: Confirm<SharedString>,
     inspecting: Option<Global>,
     renaming: Option<RenameState>,
@@ -170,6 +358,7 @@ impl GlobalsView {
             search,
             visible: Vec::new(),
             editor: None,
+            _editor_sub: None,
             pending_delete: Confirm::default(),
             inspecting: None,
             renaming: None,
@@ -443,8 +632,19 @@ impl GlobalsView {
     }
 
     fn open_create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let editor = self.build_editor(EditorMode::Create, VariantKind::Int, false, None, cx);
-        editor.name_input.update(cx, |f, cx| f.focus(window, cx));
+        let globals = self.globals.clone();
+        let editor = cx.new(|cx| {
+            GlobalEditor::new(
+                EditorMode::Create,
+                VariantKind::Int,
+                false,
+                None,
+                globals,
+                cx,
+            )
+        });
+        editor.update(cx, |e, cx| e.focus(window, cx));
+        self._editor_sub = Some(cx.subscribe(&editor, Self::on_editor_event));
         self.editor = Some(editor);
         cx.notify();
     }
@@ -461,177 +661,52 @@ impl GlobalsView {
             return;
         };
         let kind = global.kind();
-        let editor = self.build_editor(
-            EditorMode::Edit(name),
-            kind,
-            global.persisted,
-            Some(&global),
-            cx,
-        );
-        editor.name_input.update(cx, |f, cx| f.focus(window, cx));
+        let globals = self.globals.clone();
+        let editor = cx.new(|cx| {
+            GlobalEditor::new(
+                EditorMode::Edit(name),
+                kind,
+                global.persisted,
+                Some(&global),
+                globals,
+                cx,
+            )
+        });
+        editor.update(cx, |e, cx| e.focus(window, cx));
+        self._editor_sub = Some(cx.subscribe(&editor, Self::on_editor_event));
         self.editor = Some(editor);
         cx.notify();
     }
 
-    fn build_editor(
-        &self,
-        mode: EditorMode,
-        kind: VariantKind,
-        persisted: bool,
-        prefill: Option<&Global>,
-        cx: &mut Context<Self>,
-    ) -> EditorState {
-        let palette = cx.palette();
-        let name_seed = prefill.map(|g| g.name.to_string()).unwrap_or_default();
-        let name_input = cx.new(|cx| {
-            let mut ti =
-                TextInput::new(tr!("globals_editor_name_placeholder"), cx).with_palette(palette);
-            ti.set_content(name_seed, cx);
-            ti
-        });
-
-        let single_seed = prefill.and_then(|g| single_line_seed(&g.value));
-        let value_input = cx.new(|cx| {
-            let mut ti = TextInput::new(single_line_placeholder(kind), cx).with_palette(palette);
-            if let Some(seed) = single_seed {
-                ti.set_content(seed, cx);
-            }
-            ti
-        });
-
-        let area_seed = prefill.and_then(|g| json_seed(&g.value));
-        let value_area = cx.new(|cx| {
-            let mut ta = TextArea::new("[1, 2, 3]", cx)
-                .with_palette(palette)
-                .mono()
-                .json_highlight();
-            if let Some(seed) = area_seed {
-                ta.set_content(seed, cx);
-            }
-            ta
-        });
-
-        let bool_value = matches!(prefill.map(|g| &g.value), Some(Variant::Bool(true)));
-
-        let name_sub = cx.subscribe(
-            &name_input,
-            |this, _f, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.submit_editor(cx),
-                InputEvent::Cancelled => this.cancel_editor(cx),
-                InputEvent::Changed(_) => cx.notify(),
-            },
-        );
-        let value_sub = cx.subscribe(
-            &value_input,
-            |this, _f, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.submit_editor(cx),
-                InputEvent::Cancelled => this.cancel_editor(cx),
-                InputEvent::Changed(_) => cx.notify(),
-            },
-        );
-        let area_sub = cx.subscribe(&value_area, |_this, _f, _event: &InputEvent, cx| {
-            cx.notify()
-        });
-
-        EditorState {
-            mode,
-            kind,
-            persisted,
-            bool_value,
-            name_input,
-            value_input,
-            value_area,
-            error: None,
-            saving: false,
-            _name_sub: name_sub,
-            _value_sub: value_sub,
-            _area_sub: area_sub,
-        }
-    }
-
     fn cancel_editor(&mut self, cx: &mut Context<Self>) {
         self.editor = None;
+        self._editor_sub = None;
         cx.notify();
     }
 
-    fn select_kind(&mut self, kind: VariantKind, cx: &mut Context<Self>) {
-        let palette = cx.palette();
-        let is_create = matches!(
-            self.editor.as_ref().map(|e| &e.mode),
-            Some(EditorMode::Create)
-        );
-        if !is_create {
-            return;
+    fn on_editor_event(
+        &mut self,
+        _editor: Entity<GlobalEditor>,
+        event: &GlobalEditorEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            GlobalEditorEvent::Submit(draft) => self.persist_editor(draft, cx),
+            GlobalEditorEvent::Cancel => self.cancel_editor(cx),
         }
-        let value_input =
-            cx.new(|cx| TextInput::new(single_line_placeholder(kind), cx).with_palette(palette));
-        let value_sub = cx.subscribe(
-            &value_input,
-            |this, _f, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.submit_editor(cx),
-                InputEvent::Cancelled => this.cancel_editor(cx),
-                InputEvent::Changed(_) => cx.notify(),
-            },
-        );
-        if let Some(ed) = self.editor.as_mut() {
-            ed.kind = kind;
-            ed.error = None;
-            ed.value_input = value_input;
-            ed._value_sub = value_sub;
-        }
-        cx.notify();
     }
 
-    fn toggle_editor_persist(&mut self, cx: &mut Context<Self>) {
-        if let Some(ed) = self.editor.as_mut() {
-            ed.persisted = !ed.persisted;
-        }
-        cx.notify();
-    }
-
-    fn toggle_bool_value(&mut self, cx: &mut Context<Self>) {
-        if let Some(ed) = self.editor.as_mut() {
-            ed.bool_value = !ed.bool_value;
-        }
-        cx.notify();
-    }
-
-    fn submit_editor(&mut self, cx: &mut Context<Self>) {
-        let Some(ed) = self.editor.as_ref() else {
-            return;
-        };
-        if ed.saving {
-            return;
-        }
-        let name = ed.name(cx);
-        let original = ed.original_name().map(str::to_owned);
-        let build = ed.build_variant(cx);
-
-        if name.is_empty() {
-            self.set_editor_error_owned(tr!("globals_error_name_required").into(), cx);
-            return;
-        }
-        let collides =
-            self.globals.read(cx).contains(&name) && original.as_deref() != Some(name.as_str());
-        if collides {
-            self.set_editor_error_owned(tr!("globals_error_name_taken").into(), cx);
-            return;
-        }
-        let variant = match build {
-            Ok(v) => v,
-            Err(reason) => {
-                self.set_editor_error_owned(reason, cx);
-                return;
-            }
-        };
-        let persisted = ed.persisted;
-        let rename_from = match &original {
-            Some(old) if old.as_str() != name.as_str() => Some(old.clone()),
-            _ => None,
-        };
-        if let Some(ed) = self.editor.as_mut() {
-            ed.saving = true;
-            ed.error = None;
+    fn persist_editor(&mut self, draft: &GlobalDraft, cx: &mut Context<Self>) {
+        let name = draft.name.clone();
+        let variant = draft.variant.clone();
+        let persisted = draft.persisted;
+        let rename_from = draft.rename_from.clone();
+        if let Some(editor) = self.editor.as_ref() {
+            editor.update(cx, |e, cx| {
+                e.saving = true;
+                e.error = None;
+                cx.notify();
+            });
         }
         cx.notify();
 
@@ -655,37 +730,21 @@ impl GlobalsView {
             |this, result, cx| match result {
                 Ok(entries) => {
                     this.apply_entries(entries, cx);
-                    this.editor = None;
-                    cx.notify();
+                    this.cancel_editor(cx);
                 }
                 Err(message) => {
-                    if let Some(ed) = this.editor.as_mut() {
-                        ed.saving = false;
-                        ed.error = Some(message.into());
+                    if let Some(editor) = this.editor.as_ref() {
+                        editor.update(cx, |e, cx| {
+                            e.saving = false;
+                            e.error = Some(message.into());
+                            cx.notify();
+                        });
                     }
                     cx.notify();
                 }
             },
             cx,
         );
-    }
-
-    fn set_editor_error_owned(&mut self, message: SharedString, cx: &mut Context<Self>) {
-        if let Some(ed) = self.editor.as_mut() {
-            ed.error = Some(message);
-        }
-        cx.notify();
-    }
-
-    fn editor_saveable(&self, ed: &EditorState, cx: &Context<Self>) -> bool {
-        let name = ed.name(cx);
-        if name.is_empty() {
-            return false;
-        }
-        if self.globals.read(cx).contains(&name) && ed.original_name() != Some(name.as_str()) {
-            return false;
-        }
-        ed.build_variant(cx).is_ok()
     }
 
     fn render_stats<'a>(
@@ -1186,13 +1245,13 @@ impl GlobalsView {
             .on_click(handler)
             .child(icon(glyph, FONT_XS, idle))
     }
+}
 
-    fn render_editor(
-        &self,
-        ed: &EditorState,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
+impl Render for GlobalEditor {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let palette = &palette;
+        let ed = &*self;
         let title = match ed.mode {
             EditorMode::Create => tr!("globals_editor_title_create"),
             EditorMode::Edit(_) => tr!("globals_editor_title_edit"),
@@ -1281,7 +1340,7 @@ impl GlobalsView {
             )
             .child(toggle(ed.persisted, palette).on_click(
                 "globals-editor-persist",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_editor_persist(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_persist(cx)),
             ));
         let persist_section = section(
             palette,
@@ -1289,7 +1348,7 @@ impl GlobalsView {
             persist_row,
         );
 
-        let value_control = self.editor_value_control(ed, palette, cx);
+        let value_control = self.editor_value_control(palette, cx);
         let value_section = section(palette, tr!("globals_editor_section_value"), value_control);
 
         let mut body = div()
@@ -1323,7 +1382,7 @@ impl GlobalsView {
             );
         }
 
-        let saveable = self.editor_saveable(ed, cx) && !ed.saving;
+        let saveable = self.is_saveable(cx) && !ed.saving;
         let save_label: SharedString = if ed.saving {
             tr!("globals_editor_saving").into()
         } else {
@@ -1331,13 +1390,13 @@ impl GlobalsView {
         };
         let cancel = secondary_button(tr!("globals_editor_cancel"), palette).on_click(
             "globals-editor-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_editor(cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
         );
         let save = primary_button(save_label, palette)
             .disabled(!saveable)
             .on_click(
                 "globals-editor-save",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_editor(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
             );
         let footer = div()
             .w_full()
@@ -1354,23 +1413,25 @@ impl GlobalsView {
             .kbd_hint(tr!("globals_editor_kbd_hint"))
             .on_close(
                 "globals-editor-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_editor(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
             );
 
         let view = cx.entity();
         overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("globals-editor-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_editor(cx));
+                view.update(cx, |this, cx| this.cancel(cx));
             })
     }
+}
 
+impl GlobalEditor {
     fn editor_value_control(
         &self,
-        ed: &EditorState,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let ed = self;
         match ed.kind {
             VariantKind::Bool => {
                 let (label, hue) = if ed.bool_value {
@@ -1401,7 +1462,9 @@ impl GlobalsView {
             _ => div().child(ed.value_input.clone()).into_any_element(),
         }
     }
+}
 
+impl GlobalsView {
     fn render_delete_confirm(
         &self,
         name: SharedString,
@@ -1584,10 +1647,7 @@ impl Render for GlobalsView {
             .get()
             .cloned()
             .map(|name| self.render_delete_confirm(name, &palette, cx));
-        let editor_overlay = self
-            .editor
-            .as_ref()
-            .map(|ed| self.render_editor_boxed(ed, &palette, cx));
+        let editor_overlay = self.editor.clone();
         let inspect_overlay = self
             .inspecting
             .clone()
@@ -1603,17 +1663,6 @@ impl Render for GlobalsView {
             .children(editor_overlay)
             .children(inspect_overlay)
             .children(self.render_row_context_menu(&palette, cx))
-    }
-}
-
-impl GlobalsView {
-    fn render_editor_boxed(
-        &self,
-        ed: &EditorState,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        self.render_editor(ed, palette, cx).into_any_element()
     }
 }
 

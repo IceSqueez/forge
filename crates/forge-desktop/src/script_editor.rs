@@ -198,13 +198,118 @@ struct RunInput {
     _sub: Subscription,
 }
 
-struct RunModalState {
+struct RunDraft {
+    script_id: ScriptId,
+    script_name: String,
+    args: ArgStack,
+}
+
+enum RunModalEvent {
+    Submit(RunDraft),
+    Cancel,
+}
+
+struct RunModal {
     title: SharedString,
     script_id: ScriptId,
     script_name: String,
     inputs: Vec<RunInput>,
     error: Option<SharedString>,
     running: bool,
+}
+
+impl EventEmitter<RunModalEvent> for RunModal {}
+
+impl RunModal {
+    fn new(
+        title: SharedString,
+        script_id: ScriptId,
+        script_name: String,
+        fields: Vec<(String, VariantKind)>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let palette = cx.palette();
+        let inputs = fields
+            .iter()
+            .map(|(n, k)| Self::build_run_input(n, *k, palette, cx))
+            .collect();
+        RunModal {
+            title,
+            script_id,
+            script_name,
+            inputs,
+            error: None,
+            running: false,
+        }
+    }
+
+    fn build_run_input(
+        name: &str,
+        kind: VariantKind,
+        palette: ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> RunInput {
+        let label = kind.label().to_lowercase();
+        let placeholder = tr!(
+            "script_editor_run_input_placeholder",
+            label = label.as_str()
+        );
+        let input = cx.new(|cx| {
+            TextInput::new(placeholder, cx)
+                .with_palette(palette)
+                .with_font_size(FONT_SM)
+                .on_surface()
+                .static_chrome(palette.border_input, Radius::Sm)
+        });
+        let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event {
+                this.error = None;
+                cx.notify();
+            }
+        });
+        RunInput {
+            name: name.to_owned().into(),
+            label: label.into(),
+            kind,
+            input,
+            _sub: sub,
+        }
+    }
+
+    fn submit(&mut self, cx: &mut Context<Self>) {
+        let raws: Vec<(String, VariantKind, String)> = self
+            .inputs
+            .iter()
+            .map(|f| {
+                (
+                    f.name.to_string(),
+                    f.kind,
+                    f.input.read(cx).content().trim().to_owned(),
+                )
+            })
+            .collect();
+
+        let mut args = ArgStack::new();
+        for (fname, kind, raw) in &raws {
+            match parse_input_to_variant(fname, *kind, raw) {
+                Ok(v) => args = args.set(fname.clone(), v),
+                Err(e) => {
+                    self.error = Some(e.into());
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        cx.emit(RunModalEvent::Submit(RunDraft {
+            script_id: self.script_id,
+            script_name: self.script_name.clone(),
+            args,
+        }));
+    }
+
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(RunModalEvent::Cancel);
+    }
 }
 
 /// `None` = type-check passed; `Some(n)` = error count.
@@ -248,7 +353,8 @@ pub struct ScriptEditorView {
     api_search: SearchState,
     _api_search_sub: Subscription,
 
-    run_modal: Option<RunModalState>,
+    run_modal: Option<Entity<RunModal>>,
+    _run_sub: Option<Subscription>,
 }
 
 impl EventEmitter<NavRequested> for ScriptEditorView {}
@@ -337,6 +443,7 @@ impl ScriptEditorView {
             api_search,
             _api_search_sub: api_search_sub,
             run_modal: None,
+            _run_sub: None,
         };
         view.start_log_bridge(cx);
         view.load_scripts(cx);
@@ -687,61 +794,17 @@ impl ScriptEditorView {
             self.run_inline_exec(body, ArgStack::new(), script_id, cx);
             cx.notify();
         } else {
-            let palette = cx.palette();
             let fields: Vec<(String, VariantKind)> = contract
                 .inputs
                 .iter()
                 .map(|i| (i.name.clone(), i.kind))
                 .collect();
-            let inputs = fields
-                .iter()
-                .map(|(n, k)| self.build_run_input(n, *k, palette, cx))
-                .collect();
-            self.run_modal = Some(RunModalState {
-                title: tr!("script_editor_run_modal_title", name = name.as_str()).into(),
-                script_id,
-                script_name: name,
-                inputs,
-                error: None,
-                running: false,
-            });
+            let title: SharedString =
+                tr!("script_editor_run_modal_title", name = name.as_str()).into();
+            let modal = cx.new(|cx| RunModal::new(title, script_id, name, fields, cx));
+            self._run_sub = Some(cx.subscribe(&modal, Self::on_run_event));
+            self.run_modal = Some(modal);
             cx.notify();
-        }
-    }
-
-    fn build_run_input(
-        &self,
-        name: &str,
-        kind: VariantKind,
-        palette: ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> RunInput {
-        let label = kind.label().to_lowercase();
-        let placeholder = tr!(
-            "script_editor_run_input_placeholder",
-            label = label.as_str()
-        );
-        let input = cx.new(|cx| {
-            TextInput::new(placeholder, cx)
-                .with_palette(palette)
-                .with_font_size(FONT_SM)
-                .on_surface()
-                .static_chrome(palette.border_input, Radius::Sm)
-        });
-        let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| {
-            if let InputEvent::Changed(_) = event
-                && let Some(modal) = this.run_modal.as_mut()
-            {
-                modal.error = None;
-                cx.notify();
-            }
-        });
-        RunInput {
-            name: name.to_owned().into(),
-            label: label.into(),
-            kind,
-            input,
-            _sub: sub,
         }
     }
 
@@ -784,6 +847,7 @@ impl ScriptEditorView {
         match result {
             Ok(r) => {
                 self.run_modal = None;
+                self._run_sub = None;
                 self.push_console(LogTag::Ok, format!("returned: {}", r.output_display));
                 self.push_console(
                     LogTag::Stats,
@@ -794,9 +858,12 @@ impl ScriptEditorView {
                 }
             }
             Err(e) => {
-                if let Some(modal) = self.run_modal.as_mut() {
-                    modal.running = false;
-                    modal.error = Some(e.clone().into());
+                if let Some(modal) = self.run_modal.as_ref() {
+                    modal.update(cx, |m, cx| {
+                        m.running = false;
+                        m.error = Some(e.clone().into());
+                        cx.notify();
+                    });
                 }
                 self.push_console(LogTag::Err, format!("run error: {e}"));
             }
@@ -804,45 +871,32 @@ impl ScriptEditorView {
         cx.notify();
     }
 
-    fn submit_run(&mut self, cx: &mut Context<Self>) {
-        let Some(modal) = self.run_modal.as_ref() else {
-            return;
-        };
-        let script_id = modal.script_id;
-        let name = modal.script_name.clone();
-        let raws: Vec<(String, VariantKind, String)> = modal
-            .inputs
-            .iter()
-            .map(|f| {
-                (
-                    f.name.to_string(),
-                    f.kind,
-                    f.input.read(cx).content().trim().to_owned(),
-                )
-            })
-            .collect();
-
-        let mut args = ArgStack::new();
-        for (fname, kind, raw) in &raws {
-            match parse_input_to_variant(fname, *kind, raw) {
-                Ok(v) => args = args.set(fname.clone(), v),
-                Err(e) => {
-                    if let Some(modal) = self.run_modal.as_mut() {
-                        modal.error = Some(e.into());
-                    }
-                    cx.notify();
-                    return;
-                }
-            }
+    fn on_run_event(
+        &mut self,
+        _modal: Entity<RunModal>,
+        event: &RunModalEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            RunModalEvent::Submit(draft) => self.run_with_inputs(draft, cx),
+            RunModalEvent::Cancel => self.cancel_run(cx),
         }
+    }
 
+    fn run_with_inputs(&mut self, draft: &RunDraft, cx: &mut Context<Self>) {
         if self.open.is_none() {
             return;
         }
+        let script_id = draft.script_id;
+        let name = draft.script_name.clone();
+        let args = draft.args.clone();
         let body = self.code_input.read(cx).content().to_owned();
-        if let Some(modal) = self.run_modal.as_mut() {
-            modal.running = true;
-            modal.error = None;
+        if let Some(modal) = self.run_modal.as_ref() {
+            modal.update(cx, |m, cx| {
+                m.running = true;
+                m.error = None;
+                cx.notify();
+            });
         }
         self.push_console(LogTag::Run, format!("running {name} with inputs"));
         self.console_tab = ConsoleTab::Output;
@@ -853,6 +907,7 @@ impl ScriptEditorView {
 
     fn cancel_run(&mut self, cx: &mut Context<Self>) {
         self.run_modal = None;
+        self._run_sub = None;
         cx.notify();
     }
 
@@ -2366,13 +2421,13 @@ impl ScriptEditorView {
         )
         .into_any_element()
     }
+}
 
-    fn run_modal_overlay(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let modal_state = self.run_modal.as_ref()?;
+impl Render for RunModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let palette = &palette;
+        let modal_state = &*self;
 
         let mut body = div()
             .flex()
@@ -2425,7 +2480,7 @@ impl ScriptEditorView {
             primary_button(tr!("script_editor_run"), palette)
                 .on_click(
                     "script-run-submit",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.submit_run(cx)),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
                 )
                 .into_any_element()
         };
@@ -2438,7 +2493,7 @@ impl ScriptEditorView {
             .child(
                 ghost_button(tr!("script_editor_run_modal_cancel"), palette).on_click(
                     "script-run-cancel",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_run(cx)),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
                 ),
             )
             .child(submit);
@@ -2448,20 +2503,20 @@ impl ScriptEditorView {
             .footer(footer)
             .on_close(
                 "script-run-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_run(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
             );
 
         let view = cx.entity();
-        Some(
-            overlay(card, palette)
-                .position(OverlayPosition::Center)
-                .on_dismiss("script-run-scrim", move |_window, cx| {
-                    view.update(cx, |this, cx| this.cancel_run(cx));
-                })
-                .into_any_element(),
-        )
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("script-run-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel(cx));
+            })
+            .into_any_element()
     }
+}
 
+impl ScriptEditorView {
     fn discard_overlay(
         &self,
         palette: &ForgePalette,
@@ -2551,8 +2606,8 @@ impl Render for ScriptEditorView {
         .header_right(header_right)
         .body(body);
 
-        let overlay = if self.run_modal.is_some() {
-            self.run_modal_overlay(&palette, cx)
+        let overlay = if let Some(modal) = self.run_modal.clone() {
+            Some(modal.into_any_element())
         } else if self.pending_delete.is_pending() {
             self.delete_overlay(&palette, cx)
         } else if self.pending_nav.is_some() {

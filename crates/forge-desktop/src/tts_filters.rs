@@ -15,8 +15,8 @@ use forge_storage::{
 };
 use forge_tts_pipeline::{PipelineResult, SkipReason, StageAction, StageName, StageOutcome};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window,
-    div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -205,6 +205,30 @@ enum ReplaceKind {
     Regex,
 }
 
+enum FilterDraft {
+    Skip {
+        preset: SkipPreset,
+        param: String,
+    },
+    Output {
+        preset: OutputPreset,
+    },
+    Blocklist {
+        words: Vec<String>,
+        mode: BlocklistMode,
+    },
+    Replace {
+        kind: ReplaceKind,
+        from: String,
+        to: String,
+    },
+}
+
+enum AddFilterEvent {
+    Submit(FilterDraft),
+    Cancel,
+}
+
 struct AddFilterModal {
     stage: ModalStage,
     skip_preset: SkipPreset,
@@ -215,6 +239,123 @@ struct AddFilterModal {
     replace_kind: ReplaceKind,
     replace_from: Entity<TextInput>,
     replace_to: Entity<TextInput>,
+}
+
+impl EventEmitter<AddFilterEvent> for AddFilterModal {}
+
+impl AddFilterModal {
+    fn new(stage: ModalStage, blocklist_mode: BlocklistMode, cx: &mut Context<Self>) -> Self {
+        let palette = cx.palette();
+        let param = cx.new(|cx| TextInput::new(SharedString::default(), cx).with_palette(palette));
+        let blocklist_words = cx.new(|cx| {
+            TextArea::new(tr!("tts_filters_modal_blocklist_words_placeholder"), cx)
+                .with_palette(palette)
+                .on_surface()
+                .with_height(px(62.0))
+        });
+        let replace_from = cx.new(|cx| {
+            TextInput::new(tr!("tts_filters_modal_replace_find_placeholder"), cx)
+                .with_palette(palette)
+        });
+        let replace_to = cx.new(|cx| {
+            TextInput::new(
+                tr!("tts_filters_modal_replace_replace_text_placeholder"),
+                cx,
+            )
+            .with_palette(palette)
+        });
+        AddFilterModal {
+            stage,
+            skip_preset: SkipPreset::Url,
+            output_preset: OutputPreset::Name,
+            param,
+            blocklist_words,
+            blocklist_mode,
+            replace_kind: ReplaceKind::Text,
+            replace_from,
+            replace_to,
+        }
+    }
+
+    fn set_skip_preset(&mut self, preset: SkipPreset, cx: &mut Context<Self>) {
+        self.skip_preset = preset;
+        let placeholder = preset.placeholder();
+        self.param.update(cx, |field, cx| {
+            field.set_placeholder(placeholder, cx);
+            field.set_content("", cx);
+        });
+        cx.notify();
+    }
+
+    fn set_output_preset(&mut self, preset: OutputPreset, cx: &mut Context<Self>) {
+        if preset.disabled() {
+            return;
+        }
+        self.output_preset = preset;
+        cx.notify();
+    }
+
+    fn set_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
+        self.blocklist_mode = mode;
+        cx.notify();
+    }
+
+    fn set_replace_kind(&mut self, kind: ReplaceKind, cx: &mut Context<Self>) {
+        self.replace_kind = kind;
+        cx.notify();
+    }
+
+    fn is_valid(&self, cx: &App) -> bool {
+        match self.stage {
+            ModalStage::Skip => match self.skip_preset {
+                SkipPreset::Prefix | SkipPreset::Regex => {
+                    !self.param.read(cx).content().trim().is_empty()
+                }
+                SkipPreset::Length => self.param.read(cx).content().trim().parse::<u32>().is_ok(),
+                _ => true,
+            },
+            ModalStage::Output => !self.output_preset.disabled(),
+            ModalStage::Blocklist => !self.blocklist_words.read(cx).content().trim().is_empty(),
+            ModalStage::Replace => !self.replace_from.read(cx).content().trim().is_empty(),
+        }
+    }
+
+    fn submit(&mut self, cx: &mut Context<Self>) {
+        if !self.is_valid(cx) {
+            return;
+        }
+        let draft = match self.stage {
+            ModalStage::Skip => FilterDraft::Skip {
+                preset: self.skip_preset,
+                param: self.param.read(cx).content().trim().to_owned(),
+            },
+            ModalStage::Output => FilterDraft::Output {
+                preset: self.output_preset,
+            },
+            ModalStage::Blocklist => FilterDraft::Blocklist {
+                words: self
+                    .blocklist_words
+                    .read(cx)
+                    .content()
+                    .split([',', '\n'])
+                    .map(str::trim)
+                    .filter(|w| !w.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+                mode: self.blocklist_mode,
+            },
+            ModalStage::Replace => FilterDraft::Replace {
+                kind: self.replace_kind,
+                from: self.replace_from.read(cx).content().trim().to_owned(),
+                to: self.replace_to.read(cx).content().trim().to_owned(),
+            },
+        };
+        cx.emit(AddFilterEvent::Submit(draft));
+    }
+
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(AddFilterEvent::Cancel);
+    }
 }
 
 struct CachedPreview {
@@ -229,7 +370,8 @@ pub struct TtsFiltersView {
     rt_handle: tokio::runtime::Handle,
     rules: Vec<FilterRule>,
     settings: TtsPipelineSettings,
-    add_modal: Option<AddFilterModal>,
+    add_modal: Option<Entity<AddFilterModal>>,
+    _add_sub: Option<Subscription>,
     save_error: Option<String>,
     blocklist_expanded: bool,
     preview_input: Entity<TextArea>,
@@ -270,6 +412,7 @@ impl TtsFiltersView {
             rules: Vec::new(),
             settings: TtsPipelineSettings::default(),
             add_modal: None,
+            _add_sub: None,
             save_error: None,
             blocklist_expanded: false,
             preview_input,
@@ -526,119 +669,59 @@ impl TtsFiltersView {
     }
 
     fn open_add_modal(&mut self, stage: ModalStage, cx: &mut Context<Self>) {
-        let palette = cx.palette();
-        let param = cx.new(|cx| TextInput::new(SharedString::default(), cx).with_palette(palette));
-        let blocklist_words = cx.new(|cx| {
-            TextArea::new(tr!("tts_filters_modal_blocklist_words_placeholder"), cx)
-                .with_palette(palette)
-                .on_surface()
-                .with_height(px(62.0))
-        });
-        let replace_from = cx.new(|cx| {
-            TextInput::new(tr!("tts_filters_modal_replace_find_placeholder"), cx)
-                .with_palette(palette)
-        });
-        let replace_to = cx.new(|cx| {
-            TextInput::new(
-                tr!("tts_filters_modal_replace_replace_text_placeholder"),
-                cx,
-            )
-            .with_palette(palette)
-        });
-        self.add_modal = Some(AddFilterModal {
-            stage,
-            skip_preset: SkipPreset::Url,
-            output_preset: OutputPreset::Name,
-            param,
-            blocklist_words,
-            blocklist_mode: self.settings.blocklist_mode,
-            replace_kind: ReplaceKind::Text,
-            replace_from,
-            replace_to,
-        });
+        let mode = self.settings.blocklist_mode;
+        let modal = cx.new(|cx| AddFilterModal::new(stage, mode, cx));
+        self._add_sub = Some(cx.subscribe(&modal, Self::on_add_event));
+        self.add_modal = Some(modal);
         self.save_error = None;
         cx.notify();
     }
 
     fn close_add_modal(&mut self, cx: &mut Context<Self>) {
         self.add_modal = None;
+        self._add_sub = None;
         self.save_error = None;
         cx.notify();
     }
 
-    fn set_skip_preset(&mut self, preset: SkipPreset, cx: &mut Context<Self>) {
-        if let Some(modal) = self.add_modal.as_mut() {
-            modal.skip_preset = preset;
-            let placeholder = preset.placeholder();
-            modal.param.update(cx, |field, cx| {
-                field.set_placeholder(placeholder, cx);
-                field.set_content("", cx);
-            });
-        }
-        cx.notify();
-    }
-
-    fn set_output_preset(&mut self, preset: OutputPreset, cx: &mut Context<Self>) {
-        if preset.disabled() {
-            return;
-        }
-        if let Some(modal) = self.add_modal.as_mut() {
-            modal.output_preset = preset;
-        }
-        cx.notify();
-    }
-
-    fn set_modal_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
-        if let Some(modal) = self.add_modal.as_mut() {
-            modal.blocklist_mode = mode;
-        }
-        cx.notify();
-    }
-
-    fn set_replace_kind(&mut self, kind: ReplaceKind, cx: &mut Context<Self>) {
-        if let Some(modal) = self.add_modal.as_mut() {
-            modal.replace_kind = kind;
-        }
-        cx.notify();
-    }
-
-    fn modal_valid(&self, modal: &AddFilterModal, cx: &Context<Self>) -> bool {
-        match modal.stage {
-            ModalStage::Skip => match modal.skip_preset {
-                SkipPreset::Prefix | SkipPreset::Regex => {
-                    !modal.param.read(cx).content().trim().is_empty()
-                }
-                SkipPreset::Length => modal.param.read(cx).content().trim().parse::<u32>().is_ok(),
-                _ => true,
-            },
-            ModalStage::Output => !modal.output_preset.disabled(),
-            ModalStage::Blocklist => !modal.blocklist_words.read(cx).content().trim().is_empty(),
-            ModalStage::Replace => !modal.replace_from.read(cx).content().trim().is_empty(),
+    fn on_add_event(
+        &mut self,
+        _modal: Entity<AddFilterModal>,
+        event: &AddFilterEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            AddFilterEvent::Submit(draft) => self.apply_draft(draft, cx),
+            AddFilterEvent::Cancel => self.close_add_modal(cx),
         }
     }
 
-    fn submit_add_modal(&mut self, cx: &mut Context<Self>) {
-        let Some(modal) = self.add_modal.take() else {
-            return;
+    fn apply_draft(&mut self, draft: &FilterDraft, cx: &mut Context<Self>) {
+        let applied = match draft {
+            FilterDraft::Skip { preset, param } => {
+                self.apply_skip_preset(*preset, param.clone(), cx)
+            }
+            FilterDraft::Output { preset } => self.apply_output_preset(*preset, cx),
+            FilterDraft::Blocklist { words, mode } => {
+                self.apply_blocklist_words(words.clone(), *mode, cx)
+            }
+            FilterDraft::Replace { kind, from, to } => {
+                self.apply_replacement(*kind, from.clone(), to.clone(), cx)
+            }
         };
-        if !self.modal_valid(&modal, cx) {
-            self.add_modal = Some(modal);
-            return;
-        }
-        let applied = match modal.stage {
-            ModalStage::Skip => self.apply_skip_preset(&modal, cx),
-            ModalStage::Output => self.apply_output_preset(&modal, cx),
-            ModalStage::Blocklist => self.apply_blocklist_words(&modal, cx),
-            ModalStage::Replace => self.apply_replacement(&modal, cx),
-        };
-        if !applied {
-            self.add_modal = Some(modal);
+        if applied {
+            self.close_add_modal(cx);
+        } else {
+            cx.notify();
         }
     }
 
-    fn apply_skip_preset(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
-        let param = modal.param.read(cx).content().trim().to_owned();
-        let preset = modal.skip_preset;
+    fn apply_skip_preset(
+        &mut self,
+        preset: SkipPreset,
+        param: String,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.try_apply(cx, |this| match preset {
             SkipPreset::Url => this.settings.skip_contains_url = true,
             SkipPreset::Prefix => {
@@ -659,8 +742,7 @@ impl TtsFiltersView {
         })
     }
 
-    fn apply_output_preset(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
-        let preset = modal.output_preset;
+    fn apply_output_preset(&mut self, preset: OutputPreset, cx: &mut Context<Self>) -> bool {
         self.try_apply(cx, |this| match preset {
             OutputPreset::Name => this.settings.output_read_display_name_first = true,
             OutputPreset::Emote => this.settings.output_emote_to_word = true,
@@ -669,20 +751,15 @@ impl TtsFiltersView {
         })
     }
 
-    fn apply_blocklist_words(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
-        let words: Vec<String> = modal
-            .blocklist_words
-            .read(cx)
-            .content()
-            .split([',', '\n'])
-            .map(str::trim)
-            .filter(|w| !w.is_empty())
-            .map(str::to_owned)
-            .collect();
+    fn apply_blocklist_words(
+        &mut self,
+        words: Vec<String>,
+        mode: BlocklistMode,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if words.is_empty() {
             return false;
         }
-        let mode = modal.blocklist_mode;
         self.try_apply(cx, |this| {
             this.settings.blocklist_mode = mode;
             if let Some(rule) = this
@@ -715,10 +792,13 @@ impl TtsFiltersView {
         })
     }
 
-    fn apply_replacement(&mut self, modal: &AddFilterModal, cx: &mut Context<Self>) -> bool {
-        let from = modal.replace_from.read(cx).content().trim().to_owned();
-        let to = modal.replace_to.read(cx).content().trim().to_owned();
-        let kind = modal.replace_kind;
+    fn apply_replacement(
+        &mut self,
+        kind: ReplaceKind,
+        from: String,
+        to: String,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.try_apply(cx, |this| {
             let filter_kind = match kind {
                 ReplaceKind::Text => FilterRuleKind::Literal {
@@ -1389,7 +1469,9 @@ impl TtsFiltersView {
             density,
         )
     }
+}
 
+impl AddFilterModal {
     fn modal_meta(
         stage: ModalStage,
     ) -> (Icon, fn(&ForgePalette) -> Rgba, SharedString, SharedString) {
@@ -1423,7 +1505,6 @@ impl TtsFiltersView {
 
     fn render_skip_body(
         &self,
-        modal: &AddFilterModal,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -1431,7 +1512,7 @@ impl TtsFiltersView {
         let color = palette.random;
         let mut list = div().flex().flex_col().gap(px(5.0));
         for preset in SKIP_PRESETS {
-            let selected = modal.skip_preset == preset;
+            let selected = self.skip_preset == preset;
             let id = SharedString::from(format!("filt-modal-skip-{}", preset.key()));
             list =
                 list.child(
@@ -1458,8 +1539,8 @@ impl TtsFiltersView {
                 list,
             ));
 
-        if let Some(param_label) = modal.skip_preset.param_label() {
-            body = body.child(field_label(palette, param_label, modal.param.clone()));
+        if let Some(param_label) = self.skip_preset.param_label() {
+            body = body.child(field_label(palette, param_label, self.param.clone()));
         }
 
         body.into_any_element()
@@ -1467,7 +1548,6 @@ impl TtsFiltersView {
 
     fn render_output_body(
         &self,
-        modal: &AddFilterModal,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -1475,7 +1555,7 @@ impl TtsFiltersView {
         let color = palette.success;
         let mut list = div().flex().flex_col().gap(px(5.0));
         for preset in OUTPUT_PRESETS {
-            let selected = modal.output_preset == preset;
+            let selected = self.output_preset == preset;
             let disabled = preset.disabled();
             let id = SharedString::from(format!("filt-modal-output-{}", preset.key()));
             list = list.child(
@@ -1507,7 +1587,6 @@ impl TtsFiltersView {
 
     fn render_blocklist_body(
         &self,
-        modal: &AddFilterModal,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -1518,8 +1597,8 @@ impl TtsFiltersView {
             .text_color(palette.text_faint)
             .child(tr!("tts_filters_modal_blocklist_note"));
 
-        let censor_selected = modal.blocklist_mode == BlocklistMode::Censor;
-        let skip_selected = modal.blocklist_mode == BlocklistMode::Suppress;
+        let censor_selected = self.blocklist_mode == BlocklistMode::Censor;
+        let skip_selected = self.blocklist_mode == BlocklistMode::Suppress;
         let mode_list = div()
             .flex()
             .flex_col()
@@ -1538,7 +1617,7 @@ impl TtsFiltersView {
                     palette,
                 )
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.set_modal_blocklist_mode(BlocklistMode::Censor, cx)
+                    this.set_blocklist_mode(BlocklistMode::Censor, cx)
                 })),
             )
             .child(
@@ -1555,7 +1634,7 @@ impl TtsFiltersView {
                     palette,
                 )
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.set_modal_blocklist_mode(BlocklistMode::Suppress, cx)
+                    this.set_blocklist_mode(BlocklistMode::Suppress, cx)
                 })),
             );
 
@@ -1566,7 +1645,7 @@ impl TtsFiltersView {
             .child(field_label(
                 palette,
                 tr!("tts_filters_modal_blocklist_words_label"),
-                modal.blocklist_words.clone(),
+                self.blocklist_words.clone(),
             ))
             .child(note)
             .child(field_label(
@@ -1579,12 +1658,11 @@ impl TtsFiltersView {
 
     fn render_replace_body(
         &self,
-        modal: &AddFilterModal,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let is_regex = modal.replace_kind == ReplaceKind::Regex;
+        let is_regex = self.replace_kind == ReplaceKind::Regex;
         let mut tabs = div()
             .flex()
             .p(px(2.0))
@@ -1600,7 +1678,7 @@ impl TtsFiltersView {
                 tr!("tts_filters_modal_replace_regex_tab"),
             ),
         ] {
-            let active = modal.replace_kind == kind;
+            let active = self.replace_kind == kind;
             let id = SharedString::from(format!("filt-modal-replace-tab-{}", tab_key(kind)));
             let fg = if active {
                 palette.shell
@@ -1640,40 +1718,38 @@ impl TtsFiltersView {
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
             .child(tabs)
-            .child(field_label(palette, find_label, modal.replace_from.clone()))
+            .child(field_label(palette, find_label, self.replace_from.clone()))
             .child(field_label(
                 palette,
                 tr!("tts_filters_modal_replace_replace_label"),
-                modal.replace_to.clone(),
+                self.replace_to.clone(),
             ))
             .child(note)
             .into_any_element()
     }
+}
 
-    fn render_add_modal(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let modal_state = self.add_modal.as_ref()?;
-        let (glyph, color_fn, title, subtitle) = Self::modal_meta(modal_state.stage);
-        let color = color_fn(palette);
+impl Render for AddFilterModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        let (glyph, color_fn, title, subtitle) = Self::modal_meta(self.stage);
+        let color = color_fn(&palette);
 
-        let body: AnyElement = match modal_state.stage {
-            ModalStage::Skip => self.render_skip_body(modal_state, palette, density, cx),
-            ModalStage::Output => self.render_output_body(modal_state, palette, density, cx),
-            ModalStage::Blocklist => self.render_blocklist_body(modal_state, palette, density, cx),
-            ModalStage::Replace => self.render_replace_body(modal_state, palette, density, cx),
+        let body: AnyElement = match self.stage {
+            ModalStage::Skip => self.render_skip_body(&palette, density, cx),
+            ModalStage::Output => self.render_output_body(&palette, density, cx),
+            ModalStage::Blocklist => self.render_blocklist_body(&palette, density, cx),
+            ModalStage::Replace => self.render_replace_body(&palette, density, cx),
         };
 
-        let valid = self.modal_valid(modal_state, cx);
+        let valid = self.is_valid(cx);
         let status_text = if valid {
             tr!("tts_filters_modal_footer_valid")
         } else {
             tr!("tts_filters_modal_footer_invalid")
         };
-        let submit_label = if modal_state.stage == ModalStage::Blocklist {
+        let submit_label = if self.stage == ModalStage::Blocklist {
             tr!("tts_filters_modal_add_words")
         } else {
             tr!("tts_filters_modal_add_rule")
@@ -1696,24 +1772,22 @@ impl TtsFiltersView {
                     .flex()
                     .gap(spacing(Spacing::Xs, density))
                     .child(
-                        ghost_button(tr!("tts_filters_modal_cancel"), palette).on_click(
+                        ghost_button(tr!("tts_filters_modal_cancel"), &palette).on_click(
                             "filt-modal-cancel",
-                            cx.listener(|this, _: &ClickEvent, _, cx| this.close_add_modal(cx)),
+                            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
                         ),
                     )
                     .child(
-                        primary_button_with_icon(Icon::Plus, submit_label, palette)
+                        primary_button_with_icon(Icon::Plus, submit_label, &palette)
                             .disabled(!valid)
                             .on_click(
                                 "filt-modal-submit",
-                                cx.listener(|this, _: &ClickEvent, _, cx| {
-                                    this.submit_add_modal(cx)
-                                }),
+                                cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
                             ),
                     ),
             );
 
-        let card = modal(title, body, palette)
+        let card = modal(title, body, &palette)
             .subtitle(subtitle)
             .header_icon(glyph, color)
             .size(ModalSize::Md)
@@ -1721,20 +1795,20 @@ impl TtsFiltersView {
             .footer(footer)
             .on_close(
                 "filt-modal-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.close_add_modal(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
             );
 
         let view = cx.entity();
-        Some(
-            overlay(card, palette)
-                .position(OverlayPosition::Center)
-                .on_dismiss("filt-modal-scrim", move |_window, cx| {
-                    view.update(cx, |this, cx| this.close_add_modal(cx));
-                })
-                .into_any_element(),
-        )
+        overlay(card, &palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("filt-modal-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel(cx));
+            })
+            .into_any_element()
     }
+}
 
+impl TtsFiltersView {
     fn preview_column(
         &self,
         palette: &ForgePalette,
@@ -1860,7 +1934,7 @@ impl Render for TtsFiltersView {
 
         let pipeline = self.pipeline_column(&palette, density, cx);
         let preview = self.preview_column(&palette, density, cx);
-        let modal_overlay = self.render_add_modal(&palette, density, cx);
+        let modal_overlay = self.add_modal.clone();
 
         div()
             .size_full()

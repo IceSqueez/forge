@@ -1,6 +1,6 @@
 use forge_components::{
-    BreadcrumbCrumb, Density, ForgePalette, InlineEdit, PlatformKind, TextInput, ToastKind,
-    page_frame, platform_color, search_input, tr,
+    BreadcrumbCrumb, Density, ForgePalette, InlineEdit, PlatformKind, SearchState, TextInput,
+    ToastKind, page_frame, platform_color, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
@@ -207,8 +207,7 @@ pub struct TriggersRegistryView {
     hovered: Option<TriggerInstanceId>,
     menu_open: Option<TriggerInstanceId>,
     menu_click_pos: Option<Point<Pixels>>,
-    search: String,
-    search_field: Entity<TextInput>,
+    search: SearchState,
     platforms: Vec<Platform>,
     usage_filter: UsageFilter,
     rename: Option<RenameForm>,
@@ -229,9 +228,8 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search_field =
-            cx.new(|cx| search_input(tr!("triggers_search_placeholder"), palette, cx));
-        let search_sub = cx.subscribe(&search_field, Self::on_search_event);
+        let search = SearchState::new(cx, palette, tr!("triggers_search_placeholder"));
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
 
         let view = Self {
             repo,
@@ -253,8 +251,7 @@ impl TriggersRegistryView {
             hovered: None,
             menu_open: None,
             menu_click_pos: None,
-            search: String::new(),
-            search_field,
+            search,
             platforms: Vec::new(),
             usage_filter: UsageFilter::All,
             rename: None,

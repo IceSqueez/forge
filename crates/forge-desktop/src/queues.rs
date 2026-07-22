@@ -5,10 +5,10 @@ use forge_components::confirm::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize,
-    OverlayPosition, Radius, Spacing, TextInput, badge, card, chip, confirm_modal, empty_state,
-    ghost_button_with_icon, header_stat, header_stats, icon, menu_button, menu_divider, menu_item,
-    modal, overlay, page_frame, primary_button, primary_button_with_icon, radius, search_input,
-    secondary_button, slider, spacing, spinner, tr, with_alpha,
+    OverlayPosition, Radius, SearchState, Spacing, TextInput, badge, card, chip, confirm_modal,
+    empty_state, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
+    menu_divider, menu_item, modal, overlay, page_frame, primary_button, primary_button_with_icon,
+    radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -91,11 +91,13 @@ impl QueueFilter {
     }
 }
 
-fn queue_matches(row: &QueueRow, filter: QueueFilter, query: &str, effective_paused: bool) -> bool {
-    if !filter.keeps(row, effective_paused) {
-        return false;
-    }
-    query.is_empty() || row.name.to_lowercase().contains(query)
+fn queue_matches(
+    row: &QueueRow,
+    filter: QueueFilter,
+    search: &SearchState,
+    effective_paused: bool,
+) -> bool {
+    filter.keeps(row, effective_paused) && search.matches(&row.name)
 }
 
 struct QueueRow {
@@ -148,8 +150,7 @@ pub struct QueuesView {
     action_repo: Arc<dyn ActionRepo>,
     rt_handle: tokio::runtime::Handle,
     status_filter: QueueFilter,
-    search: Entity<TextInput>,
-    search_query: String,
+    search: SearchState,
     _health_obs: Subscription,
     _search_sub: Subscription,
 }
@@ -167,8 +168,8 @@ impl QueuesView {
     ) -> Self {
         let palette = cx.palette();
         let health_obs = cx.observe(&queue_health, |_this, _health, cx| cx.notify());
-        let search = cx.new(|cx| search_input(tr!("queues_search_placeholder"), palette, cx));
-        let search_sub = cx.subscribe(&search, Self::on_search_event);
+        let search = SearchState::new(cx, palette, tr!("queues_search_placeholder"));
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let view = Self {
             queues: vec![],
             loading: true,
@@ -186,7 +187,6 @@ impl QueuesView {
             rt_handle,
             status_filter: QueueFilter::default(),
             search,
-            search_query: String::new(),
             _health_obs: health_obs,
             _search_sub: search_sub,
         };
@@ -200,8 +200,7 @@ impl QueuesView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.search_query = text.to_string();
+        if self.search.on_changed(event) {
             cx.notify();
         }
     }
@@ -216,13 +215,12 @@ impl QueuesView {
     }
 
     fn visible_indices(&self, cx: &Context<Self>) -> Vec<usize> {
-        let query = self.search_query.trim().to_lowercase();
         self.queues
             .iter()
             .enumerate()
             .filter(|(_, row)| {
                 let effective_paused = self.effective_paused(row, cx);
-                queue_matches(row, self.status_filter, &query, effective_paused)
+                queue_matches(row, self.status_filter, &self.search, effective_paused)
             })
             .map(|(i, _)| i)
             .collect()
@@ -1253,7 +1251,7 @@ impl QueuesView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().w(SEARCH_W).child(self.search.clone()))
+            .child(div().w(SEARCH_W).child(self.search.field().clone()))
             .child(chips)
     }
 

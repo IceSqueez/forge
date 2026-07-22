@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, PlatformKind, Radius, SheetWidth, Spacing, TextInput,
-    ToastKind, badge, chip, empty_state, header_status, icon, page_frame, platform_color, radius,
-    search_input, spacing, status_dot, tr, with_alpha,
+    FONT_XXS, ForgePalette, Icon, InputEvent, PlatformKind, Radius, SearchState, SheetWidth,
+    Spacing, TextInput, ToastKind, badge, chip, empty_state, header_status, icon, page_frame,
+    platform_color, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -61,8 +61,7 @@ fn filter_tab_key(filter: EventFilter) -> &'static str {
 pub struct EventFeedView {
     log: Entity<EventLog>,
     active_filter: EventFilter,
-    search: String,
-    search_field: Entity<TextInput>,
+    search: SearchState,
     /// `None` falls back to the newest row, keeping the inspector populated.
     selected: Option<gpui::SharedString>,
     visible: Vec<EventItem>,
@@ -113,11 +112,10 @@ fn compute_projection(
             _ => {}
         }
     }
-    let q = query.trim().to_lowercase();
     let visible: Vec<EventItem> = log
         .items()
         .iter()
-        .filter(|item| item.matches(filter) && matches_query(item, &q))
+        .filter(|item| item.matches(filter) && matches_query(item, query))
         .cloned()
         .collect();
     (visible, downstream, matched)
@@ -130,9 +128,8 @@ impl EventFeedView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search_field =
-            cx.new(|cx| search_input(tr!("event_feed_search_placeholder"), palette, cx));
-        let search_sub = cx.subscribe(&search_field, Self::on_search_event);
+        let search = SearchState::new(cx, palette, tr!("event_feed_search_placeholder"));
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let log_obs = cx.observe(&log, Self::on_log_changed);
         let list_scroll = UniformListScrollHandle::new();
         list_scroll.scroll_to_bottom();
@@ -141,8 +138,7 @@ impl EventFeedView {
         Self {
             log,
             active_filter: EventFilter::default(),
-            search: String::new(),
-            search_field,
+            search,
             selected: None,
             visible,
             downstream,
@@ -208,8 +204,7 @@ impl EventFeedView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.search = text.to_string();
+        if self.search.on_changed(event) {
             self.rebuild_projection(cx);
             cx.notify();
         }
@@ -218,7 +213,7 @@ impl EventFeedView {
     fn rebuild_projection(&mut self, cx: &mut Context<Self>) {
         let (visible, downstream, matched) = {
             let log = self.log.read(cx);
-            compute_projection(log, self.active_filter, &self.search)
+            compute_projection(log, self.active_filter, self.search.query())
         };
         self.visible = visible;
         self.downstream = downstream;
@@ -392,7 +387,7 @@ impl EventFeedView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().w(SEARCH_W).child(self.search_field.clone()))
+            .child(div().w(SEARCH_W).child(self.search.field().clone()))
             .child(chips)
             .into_any_element()
     }

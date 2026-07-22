@@ -77,16 +77,7 @@ impl ScreenActionsView {
     }
 
     fn action_passes(&self, group: &ActionGroup, action: &ActionSummary) -> bool {
-        if !Self::category_visible(self.filter, group.category) {
-            return false;
-        }
-        if self.search.is_empty() {
-            return true;
-        }
-        action
-            .name
-            .to_lowercase()
-            .contains(&self.search.to_lowercase())
+        Self::category_visible(self.filter, group.category) && self.search.matches(&action.name)
     }
 
     pub(super) fn on_search_event(
@@ -95,8 +86,7 @@ impl ScreenActionsView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.search = text.to_string();
+        if self.search.on_changed(event) {
             cx.notify();
         }
     }
@@ -642,7 +632,7 @@ impl ScreenActionsView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(div().w(SEARCH_W).child(self.search_field.clone()))
+            .child(div().w(SEARCH_W).child(self.search.field().clone()))
             .child(divider)
             .child(chips)
             .into_any_element()

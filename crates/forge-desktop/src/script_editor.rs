@@ -3,10 +3,10 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent,
-    ModalSize, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextArea, TextInput,
-    badge, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon, inline_edit,
-    install_resize, menu_divider, menu_item, modal, overlay, page_frame, primary_button, radius,
-    spacing, status_dot, tr, with_alpha,
+    ModalSize, OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextArea,
+    TextInput, badge, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
+    inline_edit, install_resize, menu_divider, menu_item, modal, overlay, page_frame,
+    primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, ScriptRegistry};
@@ -226,7 +226,7 @@ pub struct ScriptEditorView {
     details_width: Pixels,
     console_height: Pixels,
 
-    search: Entity<TextInput>,
+    search: SearchState,
     _search_sub: Subscription,
 
     rename: Option<RenameState>,
@@ -245,7 +245,7 @@ pub struct ScriptEditorView {
     type_check: TypeCheck,
 
     api_docs_open: bool,
-    api_search: Entity<TextInput>,
+    api_search: SearchState,
     _api_search_sub: Subscription,
 
     run_modal: Option<RunModalState>,
@@ -278,30 +278,30 @@ impl ScriptEditorView {
             }
         });
 
-        let search = cx.new(|cx| {
+        let search = SearchState::from_field(cx.new(|cx| {
             TextInput::new(tr!("script_editor_search_placeholder"), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_XS)
                 .leading_icon(Icon::Search, palette.text_faint)
                 .on_surface()
                 .static_chrome(palette.surface_overlay, Radius::Sm)
-        });
-        let search_sub = cx.subscribe(&search, |_this, _f, event: &InputEvent, cx| {
-            if let InputEvent::Changed(_) = event {
+        }));
+        let search_sub = cx.subscribe(search.field(), |this: &mut Self, _f, event, cx| {
+            if this.search.on_changed(event) {
                 cx.notify();
             }
         });
 
-        let api_search = cx.new(|cx| {
+        let api_search = SearchState::from_field(cx.new(|cx| {
             TextInput::new(tr!("script_editor_api_search_placeholder"), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_XS)
                 .leading_icon(Icon::Search, palette.text_faint)
                 .on_surface()
                 .static_chrome(palette.surface_overlay, Radius::Sm)
-        });
-        let api_search_sub = cx.subscribe(&api_search, |_this, _f, event: &InputEvent, cx| {
-            if let InputEvent::Changed(_) = event {
+        }));
+        let api_search_sub = cx.subscribe(api_search.field(), |this: &mut Self, _f, event, cx| {
+            if this.api_search.on_changed(event) {
                 cx.notify();
             }
         });
@@ -1564,8 +1564,6 @@ impl ScriptEditorView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let query = self.search.read(cx).content().trim().to_lowercase();
-
         let title_row = div()
             .w_full()
             .flex()
@@ -1598,7 +1596,7 @@ impl ScriptEditorView {
             .border_b(BORDER_THIN)
             .border_color(palette.surface_overlay)
             .child(title_row)
-            .child(self.search.clone());
+            .child(self.search.field().clone());
 
         let mut scripts = div().flex().flex_col();
         if self.scripts.is_empty() {
@@ -1615,7 +1613,7 @@ impl ScriptEditorView {
             let filtered: Vec<&ScriptEntry> = self
                 .scripts
                 .iter()
-                .filter(|e| query.is_empty() || e.name.to_lowercase().contains(&query))
+                .filter(|e| self.search.matches(&e.name))
                 .collect();
             let action: Vec<&ScriptEntry> = filtered
                 .iter()
@@ -2202,9 +2200,7 @@ impl ScriptEditorView {
         )
     }
 
-    fn right_pane(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let query = self.api_search.read(cx).content().trim().to_lowercase();
-
+    fn right_pane(&self, palette: &ForgePalette) -> AnyElement {
         let header = div()
             .w_full()
             .flex()
@@ -2223,7 +2219,7 @@ impl ScriptEditorView {
 
         let search = div()
             .pb(spacing(Spacing::Sm, Density::Cozy))
-            .child(self.api_search.clone());
+            .child(self.api_search.field().clone());
 
         let mut pane = div()
             .id("script-api-pane")
@@ -2241,13 +2237,10 @@ impl ScriptEditorView {
         let matches: Vec<&'static MethodDescriptor> = forge_script::catalog()
             .iter()
             .filter(|entry| {
-                if query.is_empty() {
-                    return true;
-                }
-                entry.name.to_lowercase().contains(&query)
+                self.api_search.matches(entry.name)
                     || entry
                         .namespace
-                        .is_some_and(|ns| ns.to_lowercase().contains(&query))
+                        .is_some_and(|ns| self.api_search.matches(ns))
             })
             .collect();
 
@@ -2570,7 +2563,7 @@ impl Render for ScriptEditorView {
             .child(console);
 
         let right = if self.api_docs_open {
-            Some(self.right_pane(&palette, cx))
+            Some(self.right_pane(&palette))
         } else if self.open.is_some() {
             Some(self.details_pane(&palette, cx))
         } else {

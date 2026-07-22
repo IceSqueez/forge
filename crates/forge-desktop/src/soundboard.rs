@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY,
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, Spacing,
-    TextInput, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, ghost_button_with_icon,
-    icon, modal, overlay, pad_tile, page_frame, primary_button, radius, search_input,
+    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius,
+    SearchState, Spacing, TextInput, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock,
+    ghost_button_with_icon, icon, modal, overlay, pad_tile, page_frame, primary_button, radius,
     secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
@@ -111,8 +111,7 @@ pub struct SoundboardView {
     ticking: bool,
     settings: SoundboardSettings,
     device_menu_open: bool,
-    search: Entity<TextInput>,
-    search_query: String,
+    search: SearchState,
     category_filter: Option<String>,
     modal: Option<AddModal>,
     pending_delete: Option<ClipId>,
@@ -134,8 +133,8 @@ impl SoundboardView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search = cx.new(|cx| search_input(tr!("soundboard_search_placeholder"), palette, cx));
-        let search_sub = cx.subscribe(&search, Self::on_search_event);
+        let search = SearchState::new(cx, palette, tr!("soundboard_search_placeholder"));
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let settings = (*player.settings_handle().load()).clone();
 
         let subscription = bus.subscribe();
@@ -171,7 +170,6 @@ impl SoundboardView {
             settings,
             device_menu_open: false,
             search,
-            search_query: String::new(),
             category_filter: None,
             modal: None,
             pending_delete: None,
@@ -265,8 +263,7 @@ impl SoundboardView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.search_query = text.to_string();
+        if self.search.on_changed(event) {
             cx.notify();
         }
     }
@@ -836,7 +833,6 @@ impl SoundboardView {
     }
 
     fn filtered_indices(&self) -> Vec<usize> {
-        let query = self.search_query.trim().to_lowercase();
         self.clips
             .iter()
             .enumerate()
@@ -845,7 +841,7 @@ impl SoundboardView {
                     .as_ref()
                     .is_none_or(|f| &c.category == f)
             })
-            .filter(|(_, c)| query.is_empty() || c.name.to_lowercase().contains(&query))
+            .filter(|(_, c)| self.search.matches(&c.name))
             .map(|(i, _)| i)
             .collect()
     }
@@ -1010,7 +1006,7 @@ impl SoundboardView {
             .flex()
             .items_center()
             .gap(GRID_GAP)
-            .child(div().w(SEARCH_WIDTH).child(self.search.clone()))
+            .child(div().w(SEARCH_WIDTH).child(self.search.field().clone()))
             .child(chips)
             .into_any_element()
     }

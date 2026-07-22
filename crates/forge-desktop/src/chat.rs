@@ -7,10 +7,10 @@ use forge_components::{
     BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, DEFAULT_BODY_FAMILY,
     DEFAULT_MONO_FAMILY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputBar, InputBarEvent, InputEvent, MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge,
-    ResizeRange, Spacing, TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label,
-    chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider,
-    menu_header, menu_item, page_frame, platform_color, radius, search_input,
-    search_input_on_surface, spacing, status_dot, tr,
+    ResizeRange, SearchState, Spacing, TextInput, ToastKind, avatar_tile, badge, badge_color,
+    badge_label, chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button,
+    menu_divider, menu_header, menu_item, page_frame, platform_color, radius, spacing, status_dot,
+    tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -218,15 +218,13 @@ pub struct ChatView {
     voice_alias_repo: Arc<dyn VoiceAliasRepo>,
     speak: Option<SpeakQueueHandle>,
     input: Entity<InputBar>,
-    search_field: Entity<TextInput>,
+    search: SearchState,
     platform_filter: PlatformFilter,
     events_only: bool,
     hide_bots: bool,
-    search_query: String,
     visible: Rc<Vec<ChatMessage>>,
     drawer_width: Pixels,
-    drawer_search: Entity<TextInput>,
-    drawer_query: String,
+    drawer_search: SearchState,
     drawer_menu_open: Option<Point<Pixels>>,
     selected_viewer: Option<String>,
     viewers: Vec<Viewer>,
@@ -270,9 +268,9 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> Self {
         let input = cx.new(|cx| InputBar::new(tr!("chat_send_placeholder_connected"), palette, cx));
-        let search_field = cx.new(|cx| search_input(tr!("chat_search_placeholder"), palette, cx));
-        let drawer_search = cx
-            .new(|cx| search_input_on_surface(tr!("chat_drawer_search_placeholder"), palette, cx));
+        let search = SearchState::new(cx, palette, tr!("chat_search_placeholder"));
+        let drawer_search =
+            SearchState::on_surface(cx, palette, tr!("chat_drawer_search_placeholder"));
         let whisper_input = cx.new(|cx| {
             TextInput::new(tr!("chat_drawer_whisper_placeholder"), cx).with_palette(palette)
         });
@@ -282,8 +280,8 @@ impl ChatView {
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
         let viewer_count = cx.new(|cx| ChatViewerCount::new(home_stats, cx));
         let input_sub = cx.subscribe(&input, Self::on_input_event);
-        let search_sub = cx.subscribe(&search_field, Self::on_search_event);
-        let drawer_search_sub = cx.subscribe(&drawer_search, Self::on_drawer_search_event);
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
+        let drawer_search_sub = cx.subscribe(drawer_search.field(), Self::on_drawer_search_event);
         let whisper_sub = cx.subscribe(&whisper_input, Self::on_whisper_event);
         let reply_sub = cx.subscribe(&reply_input, Self::on_reply_event);
 
@@ -314,15 +312,13 @@ impl ChatView {
             voice_alias_repo,
             speak,
             input,
-            search_field,
+            search,
             platform_filter: PlatformFilter::All,
             events_only: false,
             hide_bots: false,
-            search_query: String::new(),
             visible: Rc::new(Vec::new()),
             drawer_width: DRAWER_WIDTH,
             drawer_search,
-            drawer_query: String::new(),
             drawer_menu_open: None,
             selected_viewer: None,
             viewers: Vec::new(),
@@ -479,8 +475,7 @@ impl ChatView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.search_query = text.to_string();
+        if self.search.on_changed(event) {
             cx.notify();
         }
     }
@@ -522,8 +517,7 @@ impl ChatView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.drawer_query = text.to_string();
+        if self.drawer_search.on_changed(event) {
             cx.notify();
         }
     }
@@ -1100,7 +1094,7 @@ impl ChatView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().w(SEARCH_W).child(self.search_field.clone()))
+            .child(div().w(SEARCH_W).child(self.search.field().clone()))
             .child(chips)
             .into_any_element()
     }
@@ -1129,7 +1123,7 @@ impl ChatView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let query = self.search_query.to_lowercase();
+        let query = self.search.query().to_string();
         let search_active = !query.is_empty();
 
         let snapshot: Rc<Vec<ChatMessage>> = self.visible.clone();
@@ -1258,12 +1252,12 @@ impl ChatView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let search = self.drawer_query.to_ascii_lowercase();
+        let search = self.drawer_search.query();
         let total = self.drawer_summaries.len();
         let rows: Vec<ViewerSummary> = self
             .drawer_summaries
             .iter()
-            .filter(|s| drawer_matches(&s.username, &search))
+            .filter(|s| drawer_matches(&s.username, search))
             .cloned()
             .collect();
         let shown = rows.len();
@@ -1353,7 +1347,7 @@ impl ChatView {
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(title)
-            .child(self.drawer_search.clone())
+            .child(self.drawer_search.field().clone())
     }
 
     fn render_selected_detail(

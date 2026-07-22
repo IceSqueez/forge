@@ -3,10 +3,11 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ColumnWidth, ConfirmTone, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, DataRow,
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Spacing,
-    TextInput, avatar_tile, badge, card, column, confirm_modal, data_table, empty_state,
-    field_label, hash_accent, icon, modal, overlay, primary_button, primary_button_with_icon,
-    search_input, secondary_button, spacing, toggle, toolbar_row, tr, virtual_table, with_alpha,
+    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
+    SearchState, Spacing, TextInput, avatar_tile, badge, card, column, confirm_modal, data_table,
+    empty_state, field_label, hash_accent, icon, modal, overlay, primary_button,
+    primary_button_with_icon, secondary_button, spacing, toggle, toolbar_row, tr, virtual_table,
+    with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
@@ -132,10 +133,9 @@ pub struct VoiceAliasesView {
     strategy: StrategyChoice,
     aliases: Vec<AliasRow>,
     visible: Vec<usize>,
-    search_query: String,
     total_count: usize,
     viewer_count: usize,
-    search: Entity<TextInput>,
+    search: SearchState,
     table_scroll: UniformListScrollHandle,
     form: Option<AliasForm>,
     pending_delete: Option<usize>,
@@ -151,10 +151,9 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search = cx.new(|cx| search_input(tr!("tts_aliases_search_placeholder"), palette, cx));
-        let search_sub = cx.subscribe(&search, |this, _input, event: &InputEvent, cx| {
-            if let InputEvent::Changed(text) = event {
-                this.search_query = text.to_string();
+        let search = SearchState::new(cx, palette, tr!("tts_aliases_search_placeholder"));
+        let search_sub = cx.subscribe(search.field(), |this: &mut Self, _input, event, cx| {
+            if this.search.on_changed(event) {
                 this.rebuild_visible();
                 cx.notify();
             }
@@ -169,7 +168,6 @@ impl VoiceAliasesView {
             strategy: StrategyChoice::DeterministicByName,
             aliases: Vec::new(),
             visible: Vec::new(),
-            search_query: String::new(),
             total_count: 0,
             viewer_count: 0,
             search,
@@ -259,14 +257,11 @@ impl VoiceAliasesView {
     }
 
     fn rebuild_visible(&mut self) {
-        let needle = self.search_query.to_ascii_lowercase();
         self.visible = self
             .aliases
             .iter()
             .enumerate()
-            .filter(|(_, a)| {
-                needle.is_empty() || a.viewer_name.to_ascii_lowercase().contains(&needle)
-            })
+            .filter(|(_, a)| self.search.matches(&a.viewer_name))
             .map(|(index, _)| index)
             .collect();
     }
@@ -649,7 +644,7 @@ impl VoiceAliasesView {
             .child(count)
             .child(assign);
 
-        toolbar_row(div().w(SEARCH_W).child(self.search.clone()), right)
+        toolbar_row(div().w(SEARCH_W).child(self.search.field().clone()), right)
             .density(density)
             .px(PAGE_PAD_H)
             .pb(px(12.0))

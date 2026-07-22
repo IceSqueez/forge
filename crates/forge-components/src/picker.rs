@@ -1,6 +1,6 @@
 use gpui::{
-    AnyElement, App, AppContext, ClickEvent, Context, Entity, EventEmitter, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Pixels, Render, ScrollStrategy, SharedString,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
+    KeyBinding, ParentElement, Pixels, Render, ScrollStrategy, SharedString,
     StatefulInteractiveElement, Styled, Subscription, UniformListScrollHandle, Window, actions,
     div, px, uniform_list,
 };
@@ -8,7 +8,8 @@ use gpui::{
 use crate::buttons::secondary_button;
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::text_input::{InputEvent, TextInput, search_input};
+use crate::search_state::SearchState;
+use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
     BORDER_THIN, DEFAULT_BODY_FAMILY, Density, FONT_MD, FONT_SM, Radius, Spacing, radius, spacing,
 };
@@ -63,11 +64,10 @@ pub enum PickerEvent {
 }
 
 pub struct Picker {
-    search: Entity<TextInput>,
+    search: SearchState,
     items: Vec<PickerItem>,
     /// Indices into `items` that match the current query, in original order.
     filtered: Vec<usize>,
-    query: String,
     /// Highlighted position within `filtered` (not an index into `items`).
     selected: usize,
     loading: bool,
@@ -87,14 +87,13 @@ impl Picker {
         cx: &mut Context<Self>,
     ) -> Self {
         let placeholder = labels.placeholder.clone();
-        let search = cx.new(|cx| search_input(placeholder, palette, cx));
-        let search_sub = cx.subscribe(&search, Self::on_search_event);
+        let search = SearchState::new(cx, palette, placeholder);
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
 
         let mut this = Self {
             search,
             items,
             filtered: Vec::new(),
-            query: String::new(),
             selected: 0,
             loading: false,
             labels,
@@ -119,7 +118,7 @@ impl Picker {
 
     pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
         self.palette = palette;
-        self.search.update(cx, |input, cx| {
+        self.search.field().update(cx, |input, cx| {
             input.set_palette(palette, cx);
             input.set_static_chrome(Some((palette.border_regular, Radius::Sm)));
         });
@@ -129,7 +128,7 @@ impl Picker {
     /// The caller must call this when the picker opens; gpui delivers key events only down
     /// the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        self.search.update(cx, |f, cx| f.focus(window, cx));
+        self.search.field().update(cx, |f, cx| f.focus(window, cx));
     }
 
     fn on_search_event(
@@ -139,8 +138,8 @@ impl Picker {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::Changed(text) => {
-                self.query = text.to_string();
+            InputEvent::Changed(_) => {
+                self.search.on_changed(event);
                 self.recompute();
                 cx.notify();
             }
@@ -150,12 +149,12 @@ impl Picker {
     }
 
     fn recompute(&mut self) {
-        let query = self.query.clone();
+        let query = self.search.query();
         self.filtered = self
             .items
             .iter()
             .enumerate()
-            .filter(|(_, item)| item_matches(&item.label, item.sublabel.as_deref(), &query))
+            .filter(|(_, item)| item_matches(&item.label, item.sublabel.as_deref(), query))
             .map(|(idx, _)| idx)
             .collect();
         self.selected = 0;
@@ -320,7 +319,7 @@ impl Render for Picker {
             .px(pad(Spacing::Md))
             .border(BORDER_THIN)
             .border_color(p.border_regular)
-            .child(self.search.clone());
+            .child(self.search.field().clone());
 
         let list_area = if self.loading {
             centered_message(self.labels.loading.clone(), LOADING_HEIGHT, p)

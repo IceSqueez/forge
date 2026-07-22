@@ -47,7 +47,7 @@ impl TriggersRegistryView {
     }
 
     fn has_active_filter(&self) -> bool {
-        !self.search.trim().is_empty()
+        !self.search.is_empty()
             || !self.platforms.is_empty()
             || self.usage_filter != UsageFilter::All
     }
@@ -82,16 +82,12 @@ impl TriggersRegistryView {
             UsageFilter::Unused if instance.used_in_count > 0 => return false,
             _ => {}
         }
-        let q = self.search.trim().to_lowercase();
-        if q.is_empty() {
+        if self.search.is_empty() {
             return true;
         }
-        instance.name.to_lowercase().contains(&q)
-            || instance.kind_id.to_lowercase().contains(&q)
-            || self
-                .kind_label(&instance.kind_id)
-                .to_lowercase()
-                .contains(&q)
+        self.search.matches(&instance.name)
+            || self.search.matches(&instance.kind_id)
+            || self.search.matches(&self.kind_label(&instance.kind_id))
     }
 
     pub(super) fn on_search_event(
@@ -100,8 +96,7 @@ impl TriggersRegistryView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.search = text.to_string();
+        if self.search.on_changed(event) {
             self.rebuild_visible();
             cx.notify();
         }
@@ -134,9 +129,7 @@ impl TriggersRegistryView {
     }
 
     fn clear_filters(&mut self, cx: &mut Context<Self>) {
-        self.search.clear();
-        let field = self.search_field.clone();
-        field.update(cx, |input, cx| input.set_content("", cx));
+        self.search.clear(cx);
         self.platforms.clear();
         self.usage_filter = UsageFilter::All;
         self.rebuild_visible();
@@ -532,7 +525,7 @@ impl TriggersRegistryView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, Density::Cozy))
-            .child(div().w(SEARCH_W).child(self.search_field.clone()))
+            .child(div().w(SEARCH_W).child(self.search.field().clone()))
             .child(self.divider(palette))
             .child(platform_chips)
             .child(self.divider(palette))

@@ -21,6 +21,7 @@ pub mod page_frame;
 pub mod palette;
 pub mod picker;
 pub mod resize_handle;
+pub mod search_state;
 pub mod section_label;
 pub mod side_sheet;
 pub mod slider;
@@ -84,6 +85,7 @@ pub use palette::{
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
+pub use search_state::SearchState;
 pub use section_label::section_label;
 pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};

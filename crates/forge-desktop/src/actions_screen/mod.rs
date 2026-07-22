@@ -4,8 +4,8 @@ use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use forge_components::{
     BreadcrumbCrumb, DateTimePicker, Density, ForgePalette, GridPicker, Icon, InlineEdit,
-    OverlayPosition, Picker, TextArea, TextInput, ToastKind, drive_overlay_focus, fmt_number,
-    fmt_relative_time, icon, overlay, page_frame, search_input, tr,
+    OverlayPosition, Picker, SearchState, TextArea, TextInput, ToastKind, drive_overlay_focus,
+    fmt_number, fmt_relative_time, icon, overlay, page_frame, tr,
 };
 use forge_registry::{CodeLanguage, SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
@@ -190,8 +190,7 @@ pub struct ScreenActionsView {
     loading: bool,
     groups: Vec<ActionGroup>,
     filter: ActionsFilter,
-    search: String,
-    search_field: Entity<TextInput>,
+    search: SearchState,
     selected: Option<ActionId>,
     hovered: Option<ActionId>,
     menu_open: Option<ActionId>,
@@ -240,9 +239,8 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search_field =
-            cx.new(|cx| search_input(tr!("actions_search_placeholder"), palette, cx));
-        let search_sub = cx.subscribe(&search_field, Self::on_search_event);
+        let search = SearchState::new(cx, palette, tr!("actions_search_placeholder"));
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
 
         let view = Self {
             action_repo,
@@ -266,8 +264,7 @@ impl ScreenActionsView {
             loading: true,
             groups: Vec::new(),
             filter: ActionsFilter::All,
-            search: String::new(),
-            search_field,
+            search,
             selected: preselect,
             hovered: None,
             menu_open: None,

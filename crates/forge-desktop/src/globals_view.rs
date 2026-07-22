@@ -2,6 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::SearchState;
 use forge_components::chip::ChipGlyph;
 use forge_components::confirm::ConfirmTone;
 use forge_components::tokens::ModalSize;
@@ -11,8 +12,8 @@ use forge_components::{
     OverlayPosition, Radius, Spacing, TextArea, TextInput, ToastAction, ToastKind, badge, chip,
     column, confirm_modal, context_menu, empty_state, fmt_relative_time, header_stat, header_stats,
     hover_reveal, icon, inline_edit, menu_divider, menu_item, modal, overlay, page_frame,
-    primary_button, primary_button_with_icon, radius, search_input, secondary_button, spacing,
-    status_dot, toggle, tr, virtual_table, with_alpha,
+    primary_button, primary_button_with_icon, radius, secondary_button, spacing, status_dot,
+    toggle, tr, virtual_table, with_alpha,
 };
 use std::path::PathBuf;
 
@@ -131,8 +132,7 @@ pub struct GlobalsView {
     rt_handle: tokio::runtime::Handle,
     loading: bool,
     filter: GlobalsFilter,
-    search: Entity<TextInput>,
-    search_query: String,
+    search: SearchState,
     visible: Vec<Global>,
     editor: Option<EditorState>,
     pending_delete: Option<SharedString>,
@@ -157,10 +157,10 @@ impl GlobalsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let search = cx.new(|cx| search_input(tr!("globals_search_placeholder"), palette, cx));
+        let search = SearchState::new(cx, palette, tr!("globals_search_placeholder"));
 
         let globals_obs = cx.observe(&globals, Self::on_globals_changed);
-        let search_sub = cx.subscribe(&search, Self::on_search_event);
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
 
         let view = Self {
             globals,
@@ -169,7 +169,6 @@ impl GlobalsView {
             loading: true,
             filter: GlobalsFilter::default(),
             search,
-            search_query: String::new(),
             visible: Vec::new(),
             editor: None,
             pending_delete: None,
@@ -248,14 +247,13 @@ impl GlobalsView {
     }
 
     fn rebuild_visible(&mut self, cx: &mut Context<Self>) {
-        let query = self.search_query.trim().to_lowercase();
         let rows: Vec<Global> = self
             .globals
             .read(cx)
             .entries()
             .iter()
             .filter(|g| self.filter.keeps(g))
-            .filter(|g| query.is_empty() || g.name.to_lowercase().contains(&query))
+            .filter(|g| self.search.matches(&g.name))
             .cloned()
             .collect();
         self.visible = rows;
@@ -267,8 +265,7 @@ impl GlobalsView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Changed(text) = event {
-            self.search_query = text.to_string();
+        if self.search.on_changed(event) {
             self.rebuild_visible(cx);
             cx.notify();
         }
@@ -778,7 +775,7 @@ impl GlobalsView {
             );
         }
 
-        let search = div().w(px(200.0)).child(self.search.clone());
+        let search = div().w(px(200.0)).child(self.search.field().clone());
 
         div()
             .flex()

@@ -31,6 +31,8 @@ mod branch;
 mod editor;
 mod list;
 mod nav;
+mod run_history;
+mod sub_action_modal;
 mod test_run;
 mod test_trigger;
 

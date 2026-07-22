@@ -29,7 +29,7 @@ pub async fn load_script_engine_config(repo: &dyn SettingsRepo) -> EngineConfig 
     let defaults = EngineConfig::default();
 
     let op_limit = repo
-        .get_string(reserved_keys::SCRIPT_OP_LIMIT_KEY)
+        .get_string(reserved_keys::SCRIPT_OP_LIMIT)
         .await
         .ok()
         .flatten()
@@ -37,7 +37,7 @@ pub async fn load_script_engine_config(repo: &dyn SettingsRepo) -> EngineConfig 
         .unwrap_or(defaults.op_limit);
 
     let wall_time_ms = repo
-        .get_string(reserved_keys::SCRIPT_TIMEOUT_MS_KEY)
+        .get_string(reserved_keys::SCRIPT_TIMEOUT_MS)
         .await
         .ok()
         .flatten()
@@ -342,10 +342,10 @@ mod tests {
     #[tokio::test]
     async fn load_config_reads_persisted_op_limit_and_timeout() {
         let dp = open_test_dp().await;
-        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, "777")
+        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT, "777")
             .await
             .unwrap();
-        dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS_KEY, "1234")
+        dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS, "1234")
             .await
             .unwrap();
         let cfg = load_script_engine_config(dp.as_ref()).await;
@@ -358,10 +358,10 @@ mod tests {
         let defaults = EngineConfig::default();
         for bad in ["", "abc", "-5", "3.5", "99999999999999999999999999"] {
             let dp = open_test_dp().await;
-            dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, bad)
+            dp.set_string(reserved_keys::SCRIPT_OP_LIMIT, bad)
                 .await
                 .unwrap();
-            dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS_KEY, bad)
+            dp.set_string(reserved_keys::SCRIPT_TIMEOUT_MS, bad)
                 .await
                 .unwrap();
             let cfg = load_script_engine_config(dp.as_ref()).await;
@@ -375,7 +375,7 @@ mod tests {
     #[tokio::test]
     async fn persisted_low_op_limit_aborts_runaway_script_at_that_limit() {
         let dp = open_test_dp().await;
-        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, "500")
+        dp.set_string(reserved_keys::SCRIPT_OP_LIMIT, "500")
             .await
             .unwrap();
         let cfg = load_script_engine_config(dp.as_ref()).await;

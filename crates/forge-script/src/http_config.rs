@@ -25,7 +25,7 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
     let defaults = ScriptHttpConfig::default();
 
     let allowed_domains =
-        match get_json_setting::<Vec<String>>(repo, reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY)
+        match get_json_setting::<Vec<String>>(repo, reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS)
             .await
         {
             Some(domains) => domains,
@@ -33,7 +33,7 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
         };
 
     let max_calls_per_script = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_MAX_CALLS_KEY)
+        .get_string(reserved_keys::SCRIPT_HTTP_MAX_CALLS)
         .await
         .ok()
         .flatten()
@@ -41,7 +41,7 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
         .unwrap_or(defaults.max_calls_per_script);
 
     let timeout_ms = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_TIMEOUT_MS_KEY)
+        .get_string(reserved_keys::SCRIPT_HTTP_TIMEOUT_MS)
         .await
         .ok()
         .flatten()
@@ -50,13 +50,13 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
 
     let allow_local = get_bool_setting(
         repo,
-        reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL_KEY,
+        reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL,
         defaults.allow_local,
     )
     .await;
 
     let max_response_bytes = repo
-        .get_string(reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY)
+        .get_string(reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES)
         .await
         .ok()
         .flatten()
@@ -74,7 +74,7 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
 
 /// Tolerant read of the comma-separated allow-list rows written before the JSON format.
 async fn legacy_csv_domains(repo: &dyn SettingsRepo) -> Vec<String> {
-    repo.get_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY)
+    repo.get_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS)
         .await
         .ok()
         .flatten()
@@ -126,7 +126,7 @@ mod tests {
         let backend = backend().await;
         backend
             .set_string(
-                reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY,
+                reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
                 "a.com, b.com ,c.com,",
             )
             .await
@@ -141,7 +141,7 @@ mod tests {
         let domains = vec!["good.com".to_owned(), "also.com".to_owned()];
         set_json_setting(
             &backend,
-            reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY,
+            reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
             &domains,
         )
         .await
@@ -155,7 +155,7 @@ mod tests {
         for blank in ["", "   ", ",,", " , , "] {
             let backend = backend().await;
             backend
-                .set_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY, blank)
+                .set_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, blank)
                 .await
                 .unwrap();
             let cfg = load_script_http_config(&backend).await;

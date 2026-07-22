@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use forge_storage::reserved_keys::EVENT_LOG_RETENTION_DAYS_KEY;
+use forge_storage::reserved_keys::EVENT_LOG_RETENTION_DAYS;
 use forge_storage::{
     Language, SettingsRepo, event_log_retention_days, set_event_log_retention_days,
 };
@@ -124,7 +124,7 @@ async fn event_log_retention_days_roundtrip() {
 async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
     let backend = setup_backend().await;
     backend
-        .set_string(EVENT_LOG_RETENTION_DAYS_KEY, "not_a_number")
+        .set_string(EVENT_LOG_RETENTION_DAYS, "not_a_number")
         .await
         .expect("set invalid");
     let days = event_log_retention_days(&backend).await.expect("fallback");

@@ -29,7 +29,7 @@ pub trait EventLogRepo: Send + Sync {
 
 pub async fn event_log_retention_days(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
     let raw = repo
-        .get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS_KEY)
+        .get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS)
         .await?;
     Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(7))
 }
@@ -38,11 +38,8 @@ pub async fn set_event_log_retention_days(
     repo: &dyn SettingsRepo,
     days: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::EVENT_LOG_RETENTION_DAYS_KEY,
-        &days.to_string(),
-    )
-    .await
+    repo.set_string(reserved_keys::EVENT_LOG_RETENTION_DAYS, &days.to_string())
+        .await
 }
 
 #[cfg(test)]

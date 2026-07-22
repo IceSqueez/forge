@@ -1460,11 +1460,7 @@ impl ScreenActionsView {
                     self.sub_action_favorites.insert(id.clone());
                 }
                 let favorites = self.sub_action_favorites.clone();
-                self.persist_favorites(
-                    reserved_keys::PICKER_FAVORITES_SUB_ACTIONS_KEY,
-                    favorites,
-                    cx,
-                );
+                self.persist_favorites(reserved_keys::PICKER_FAVORITES_SUB_ACTIONS, favorites, cx);
             }
             GridPickerEvent::Dismissed => self.cancel_grid_picker(cx),
         }
@@ -1620,7 +1616,7 @@ impl ScreenActionsView {
                     self.trigger_favorites.insert(id.clone());
                 }
                 let favorites = self.trigger_favorites.clone();
-                self.persist_favorites(reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY, favorites, cx);
+                self.persist_favorites(reserved_keys::PICKER_FAVORITES_TRIGGERS, favorites, cx);
             }
             GridPickerEvent::Dismissed => self.cancel_trigger_picker(cx),
         }

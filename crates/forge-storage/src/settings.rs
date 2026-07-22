@@ -13,38 +13,38 @@ pub mod reserved_keys {
     pub const DENSITY: &str = "density";
     pub const FONT_BODY: &str = "font_body";
     pub const FONT_MONO: &str = "font_mono";
-    pub const EVENT_LOG_RETENTION_DAYS_KEY: &str = "event_log_retention_days";
-    pub const SERVER_ENABLED_KEY: &str = "server.enabled";
-    pub const SERVER_BIND_ADDRESS_KEY: &str = "server.bind_address";
-    pub const SERVER_PORT_KEY: &str = "server.port";
-    pub const SERVER_LAN_BIND_ENABLED_KEY: &str = "server.lan_bind_enabled";
-    pub const SERVER_AUTH_REQUIRED_FOR_READS_KEY: &str = "server.auth_required_for_reads";
-    pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN_KEY: &str = "server.http_overlay_require_token";
-    pub const SERVER_OVERLAY_CORS_ANY_ORIGIN_KEY: &str = "server.overlay_cors_any_origin";
-    pub const SERVER_OVERLAY_ROOT_KEY: &str = "server.overlay_root";
-    pub const SCRIPT_HTTP_ALLOWED_DOMAINS_KEY: &str = "script.http_allowed_domains";
-    pub const SCRIPT_HTTP_MAX_CALLS_KEY: &str = "script.http_max_calls_per_script";
-    pub const SCRIPT_HTTP_TIMEOUT_MS_KEY: &str = "script.http_timeout_ms";
-    pub const SCRIPT_HTTP_ALLOW_LOCAL_KEY: &str = "script.http_allow_local";
-    pub const SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY: &str = "script.http_max_response_bytes";
-    pub const CORE_HTTP_ALLOW_LOCAL_KEY: &str = "core.http_allow_local";
-    pub const SCRIPT_OP_LIMIT_KEY: &str = "script.op_limit";
-    pub const SCRIPT_TIMEOUT_MS_KEY: &str = "script.timeout_ms";
+    pub const EVENT_LOG_RETENTION_DAYS: &str = "event_log_retention_days";
+    pub const SERVER_ENABLED: &str = "server.enabled";
+    pub const SERVER_BIND_ADDRESS: &str = "server.bind_address";
+    pub const SERVER_PORT: &str = "server.port";
+    pub const SERVER_LAN_BIND_ENABLED: &str = "server.lan_bind_enabled";
+    pub const SERVER_AUTH_REQUIRED_FOR_READS: &str = "server.auth_required_for_reads";
+    pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN: &str = "server.http_overlay_require_token";
+    pub const SERVER_OVERLAY_CORS_ANY_ORIGIN: &str = "server.overlay_cors_any_origin";
+    pub const SERVER_OVERLAY_ROOT: &str = "server.overlay_root";
+    pub const SCRIPT_HTTP_ALLOWED_DOMAINS: &str = "script.http_allowed_domains";
+    pub const SCRIPT_HTTP_MAX_CALLS: &str = "script.http_max_calls_per_script";
+    pub const SCRIPT_HTTP_TIMEOUT_MS: &str = "script.http_timeout_ms";
+    pub const SCRIPT_HTTP_ALLOW_LOCAL: &str = "script.http_allow_local";
+    pub const SCRIPT_HTTP_MAX_RESPONSE_BYTES: &str = "script.http_max_response_bytes";
+    pub const CORE_HTTP_ALLOW_LOCAL: &str = "core.http_allow_local";
+    pub const SCRIPT_OP_LIMIT: &str = "script.op_limit";
+    pub const SCRIPT_TIMEOUT_MS: &str = "script.timeout_ms";
     pub const LANGUAGE: &str = "app.language";
     pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
-    pub const AUDIO_OUTPUT_DEVICE_ID_KEY: &str = "audio.output_device_id";
-    pub const CHAT_HISTORY_STORE_LIMIT_KEY: &str = "chat_history.store_limit";
-    pub const CHAT_HISTORY_DISPLAY_LIMIT_KEY: &str = "chat_history.display_limit";
-    pub const PICKER_FAVORITES_SUB_ACTIONS_KEY: &str = "picker.favorites.sub_actions";
-    pub const PICKER_FAVORITES_TRIGGERS_KEY: &str = "picker.favorites.triggers";
-    pub const TTS_DISABLED_ENGINES_KEY: &str = "tts.disabled_engines";
-    pub const TTS_SYNTHESIS_DEFAULTS_KEY: &str = "tts.synthesis_defaults";
-    pub const TTS_MASTER_VOLUME_KEY: &str = "tts.master_volume";
-    pub const TTS_ENGINE_PARAMS_KEY_PREFIX: &str = "tts.engine_params.";
-    pub const SOUNDBOARD_ENABLED_KEY: &str = "soundboard.enabled";
-    pub const SOUNDBOARD_OUTPUT_DEVICE_KEY: &str = "soundboard.output_device";
-    pub const SOUNDBOARD_MASTER_VOLUME_KEY: &str = "soundboard.master_volume";
-    pub const SOUNDBOARD_ALSO_HEADPHONES_KEY: &str = "soundboard.also_headphones";
+    pub const AUDIO_OUTPUT_DEVICE_ID: &str = "audio.output_device_id";
+    pub const CHAT_HISTORY_STORE_LIMIT: &str = "chat_history.store_limit";
+    pub const CHAT_HISTORY_DISPLAY_LIMIT: &str = "chat_history.display_limit";
+    pub const PICKER_FAVORITES_SUB_ACTIONS: &str = "picker.favorites.sub_actions";
+    pub const PICKER_FAVORITES_TRIGGERS: &str = "picker.favorites.triggers";
+    pub const TTS_DISABLED_ENGINES: &str = "tts.disabled_engines";
+    pub const TTS_SYNTHESIS_DEFAULTS: &str = "tts.synthesis_defaults";
+    pub const TTS_MASTER_VOLUME: &str = "tts.master_volume";
+    pub const TTS_ENGINE_PARAMS_PREFIX: &str = "tts.engine_params.";
+    pub const SOUNDBOARD_ENABLED: &str = "soundboard.enabled";
+    pub const SOUNDBOARD_OUTPUT_DEVICE: &str = "soundboard.output_device";
+    pub const SOUNDBOARD_MASTER_VOLUME: &str = "soundboard.master_volume";
+    pub const SOUNDBOARD_ALSO_HEADPHONES: &str = "soundboard.also_headphones";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -201,8 +201,7 @@ pub trait SettingsRepo: Send + Sync {
     }
 
     async fn audio_output_device_id(&self) -> Result<Option<String>, StorageError> {
-        self.get_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID_KEY)
-            .await
+        self.get_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID).await
     }
 
     /// `None` clears the preference (not a no-op) and falls back to the OS default device.
@@ -212,12 +211,11 @@ pub trait SettingsRepo: Send + Sync {
     ) -> Result<(), StorageError> {
         match device_id {
             Some(id) => {
-                self.set_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID_KEY, &id)
+                self.set_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID, &id)
                     .await
             }
             None => {
-                self.delete(reserved_keys::AUDIO_OUTPUT_DEVICE_ID_KEY)
-                    .await?;
+                self.delete(reserved_keys::AUDIO_OUTPUT_DEVICE_ID).await?;
                 Ok(())
             }
         }
@@ -272,7 +270,7 @@ pub async fn set_json_setting<T: Serialize>(
 
 pub async fn chat_history_store_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
     let raw = repo
-        .get_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT_KEY)
+        .get_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT)
         .await?;
     Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(5000))
 }
@@ -281,17 +279,12 @@ pub async fn set_chat_history_store_limit(
     repo: &dyn SettingsRepo,
     limit: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(
-        reserved_keys::CHAT_HISTORY_STORE_LIMIT_KEY,
-        &limit.to_string(),
-    )
-    .await
+    repo.set_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT, &limit.to_string())
+        .await
 }
 
 pub async fn disabled_tts_engines(repo: &dyn SettingsRepo) -> Result<Vec<String>, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::TTS_DISABLED_ENGINES_KEY)
-        .await?;
+    let raw = repo.get_string(reserved_keys::TTS_DISABLED_ENGINES).await?;
     Ok(raw
         .as_deref()
         .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
@@ -303,7 +296,7 @@ pub async fn set_disabled_tts_engines(
     engine_ids: &[String],
 ) -> Result<(), StorageError> {
     let json = serde_json::to_string(engine_ids).map_err(|e| StorageError::Parse(e.to_string()))?;
-    repo.set_string(reserved_keys::TTS_DISABLED_ENGINES_KEY, &json)
+    repo.set_string(reserved_keys::TTS_DISABLED_ENGINES, &json)
         .await
 }
 
@@ -311,7 +304,7 @@ pub async fn synthesis_defaults(
     repo: &dyn SettingsRepo,
 ) -> Result<SynthesisDefaults, StorageError> {
     let raw = repo
-        .get_string(reserved_keys::TTS_SYNTHESIS_DEFAULTS_KEY)
+        .get_string(reserved_keys::TTS_SYNTHESIS_DEFAULTS)
         .await?;
     Ok(raw
         .as_deref()
@@ -340,7 +333,7 @@ pub async fn engine_params(
     repo: &dyn SettingsRepo,
     engine_id: &str,
 ) -> Result<EngineParams, StorageError> {
-    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_KEY_PREFIX);
+    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_PREFIX);
     let raw = repo.get_string(&key).await?;
     Ok(raw
         .as_deref()
@@ -353,21 +346,19 @@ pub async fn set_engine_params(
     engine_id: &str,
     params: EngineParams,
 ) -> Result<(), StorageError> {
-    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_KEY_PREFIX);
+    let key = format!("{}{engine_id}", reserved_keys::TTS_ENGINE_PARAMS_PREFIX);
     let json = serde_json::to_string(&params).map_err(|e| StorageError::Parse(e.to_string()))?;
     repo.set_string(&key, &json).await
 }
 
 pub async fn master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::TTS_MASTER_VOLUME_KEY)
-        .await?;
+    let raw = repo.get_string(reserved_keys::TTS_MASTER_VOLUME).await?;
     Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
 }
 
 pub async fn set_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(), StorageError> {
     repo.set_string(
-        reserved_keys::TTS_MASTER_VOLUME_KEY,
+        reserved_keys::TTS_MASTER_VOLUME,
         &volume.clamp(0.0, 1.0).to_string(),
     )
     .await
@@ -375,7 +366,7 @@ pub async fn set_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(
 
 pub async fn chat_history_display_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
     let raw = repo
-        .get_string(reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT_KEY)
+        .get_string(reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT)
         .await?;
     Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(500))
 }
@@ -385,27 +376,27 @@ pub async fn set_chat_history_display_limit(
     limit: u32,
 ) -> Result<(), StorageError> {
     repo.set_string(
-        reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT_KEY,
+        reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT,
         &limit.to_string(),
     )
     .await
 }
 
 pub async fn soundboard_enabled(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED_KEY, true).await)
+    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED, true).await)
 }
 
 pub async fn set_soundboard_enabled(
     repo: &dyn SettingsRepo,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED_KEY, enabled).await
+    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ENABLED, enabled).await
 }
 
 pub async fn soundboard_output_device(
     repo: &dyn SettingsRepo,
 ) -> Result<Option<String>, StorageError> {
-    repo.get_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE_KEY)
+    repo.get_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE)
         .await
 }
 
@@ -415,12 +406,11 @@ pub async fn set_soundboard_output_device(
 ) -> Result<(), StorageError> {
     match device_id {
         Some(id) => {
-            repo.set_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE_KEY, &id)
+            repo.set_string(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE, &id)
                 .await
         }
         None => {
-            repo.delete(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE_KEY)
-                .await?;
+            repo.delete(reserved_keys::SOUNDBOARD_OUTPUT_DEVICE).await?;
             Ok(())
         }
     }
@@ -428,7 +418,7 @@ pub async fn set_soundboard_output_device(
 
 pub async fn soundboard_master_volume(repo: &dyn SettingsRepo) -> Result<f32, StorageError> {
     let raw = repo
-        .get_string(reserved_keys::SOUNDBOARD_MASTER_VOLUME_KEY)
+        .get_string(reserved_keys::SOUNDBOARD_MASTER_VOLUME)
         .await?;
     Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(1.0))
 }
@@ -438,21 +428,21 @@ pub async fn set_soundboard_master_volume(
     volume: f32,
 ) -> Result<(), StorageError> {
     repo.set_string(
-        reserved_keys::SOUNDBOARD_MASTER_VOLUME_KEY,
+        reserved_keys::SOUNDBOARD_MASTER_VOLUME,
         &volume.clamp(0.0, 1.0).to_string(),
     )
     .await
 }
 
 pub async fn soundboard_also_headphones(repo: &dyn SettingsRepo) -> Result<bool, StorageError> {
-    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY, false).await)
+    Ok(get_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES, false).await)
 }
 
 pub async fn set_soundboard_also_headphones(
     repo: &dyn SettingsRepo,
     enabled: bool,
 ) -> Result<(), StorageError> {
-    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES_KEY, enabled).await
+    set_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES, enabled).await
 }
 
 #[cfg(test)]

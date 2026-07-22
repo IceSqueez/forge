@@ -301,13 +301,13 @@ impl ScreenActionsView {
         self.rt_handle.spawn(async move {
             let subs = forge_storage::get_json_setting::<Vec<String>>(
                 repo.as_ref(),
-                reserved_keys::PICKER_FAVORITES_SUB_ACTIONS_KEY,
+                reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
             )
             .await
             .unwrap_or_default();
             let trigs = forge_storage::get_json_setting::<Vec<String>>(
                 repo.as_ref(),
-                reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY,
+                reserved_keys::PICKER_FAVORITES_TRIGGERS,
             )
             .await
             .unwrap_or_default();

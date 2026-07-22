@@ -270,7 +270,7 @@ impl TriggersRegistryView {
         self.rt_handle.spawn(async move {
             let ids = forge_storage::get_json_setting::<Vec<String>>(
                 repo.as_ref(),
-                reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY,
+                reserved_keys::PICKER_FAVORITES_TRIGGERS,
             )
             .await
             .unwrap_or_default();
@@ -298,7 +298,7 @@ impl TriggersRegistryView {
             let _ = tx.send(
                 forge_storage::set_json_setting(
                     repo.as_ref(),
-                    reserved_keys::PICKER_FAVORITES_TRIGGERS_KEY,
+                    reserved_keys::PICKER_FAVORITES_TRIGGERS,
                     &ids,
                 )
                 .await

@@ -607,12 +607,8 @@ fn labeled_row(
 async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> Result<ScriptingSnapshot, String> {
     let http = load_script_http_config(repo.as_ref()).await;
     let engine = load_script_engine_config(repo.as_ref()).await;
-    let core_allow_local = get_bool_setting(
-        repo.as_ref(),
-        reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY,
-        false,
-    )
-    .await;
+    let core_allow_local =
+        get_bool_setting(repo.as_ref(), reserved_keys::CORE_HTTP_ALLOW_LOCAL, false).await;
     Ok(ScriptingSnapshot {
         allowed_domains: http.allowed_domains,
         max_calls_per_script: http.max_calls_per_script,
@@ -628,48 +624,48 @@ async fn load_scripting_settings(repo: Arc<dyn SettingsRepo>) -> Result<Scriptin
 async fn do_save(repo: Arc<dyn SettingsRepo>, p: SavePayload) -> Result<(), String> {
     set_json_setting(
         repo.as_ref(),
-        reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS_KEY,
+        reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
         &p.allowed_domains,
     )
     .await
     .map_err(|e| e.to_string())?;
     repo.set_string(
-        reserved_keys::SCRIPT_HTTP_MAX_CALLS_KEY,
+        reserved_keys::SCRIPT_HTTP_MAX_CALLS,
         &p.max_calls.to_string(),
     )
     .await
     .map_err(|e| e.to_string())?;
     repo.set_string(
-        reserved_keys::SCRIPT_HTTP_TIMEOUT_MS_KEY,
+        reserved_keys::SCRIPT_HTTP_TIMEOUT_MS,
         &p.http_timeout_ms.to_string(),
     )
     .await
     .map_err(|e| e.to_string())?;
     set_bool_setting(
         repo.as_ref(),
-        reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL_KEY,
+        reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL,
         p.allow_local,
     )
     .await
     .map_err(|e| e.to_string())?;
     set_bool_setting(
         repo.as_ref(),
-        reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY,
+        reserved_keys::CORE_HTTP_ALLOW_LOCAL,
         p.core_allow_local,
     )
     .await
     .map_err(|e| e.to_string())?;
     repo.set_string(
-        reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES_KEY,
+        reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES,
         &p.max_response_bytes.to_string(),
     )
     .await
     .map_err(|e| e.to_string())?;
-    repo.set_string(reserved_keys::SCRIPT_OP_LIMIT_KEY, &p.op_limit.to_string())
+    repo.set_string(reserved_keys::SCRIPT_OP_LIMIT, &p.op_limit.to_string())
         .await
         .map_err(|e| e.to_string())?;
     repo.set_string(
-        reserved_keys::SCRIPT_TIMEOUT_MS_KEY,
+        reserved_keys::SCRIPT_TIMEOUT_MS,
         &p.engine_timeout_ms.to_string(),
     )
     .await

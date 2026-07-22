@@ -74,7 +74,7 @@ impl CoreHttpRunner {
     async fn allow_local(&self) -> bool {
         get_bool_setting(
             self.settings.as_ref(),
-            reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY,
+            reserved_keys::CORE_HTTP_ALLOW_LOCAL,
             false,
         )
         .await
@@ -389,7 +389,7 @@ mod tests {
             .mount(&server)
             .await;
         let dp = backend().await;
-        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY, "true")
+        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
             .await
             .unwrap();
 
@@ -428,7 +428,7 @@ mod tests {
             .mount(&server)
             .await;
         let dp = backend().await;
-        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL_KEY, "true")
+        dp.set_string(reserved_keys::CORE_HTTP_ALLOW_LOCAL, "true")
             .await
             .unwrap();
 

@@ -1677,6 +1677,8 @@ impl ScriptEditorView {
         let pane = div()
             .flex_none()
             .w(self.list_width)
+            .min_w(self.list_width)
+            .max_w(self.list_width)
             .h_full()
             .flex()
             .flex_col()

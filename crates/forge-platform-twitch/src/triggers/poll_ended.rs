@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::poll as fields;
+
 pub(crate) struct PollEndedDescriptor;
 
 impl TriggerKindDescriptor for PollEndedDescriptor {
@@ -61,25 +63,25 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let poll = event.payload.get("poll");
+        let poll = event.payload.get(fields::POLL);
 
         let poll_id = poll
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(fields::POLL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let title = poll
-            .and_then(|v| v.get("title"))
+            .and_then(|v| v.get(fields::POLL_TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let status = poll
-            .and_then(|v| v.get("status"))
+            .and_then(|v| v.get(fields::STATUS))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let ended_at = poll
-            .and_then(|v| v.get("ended_at"))
+            .and_then(|v| v.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

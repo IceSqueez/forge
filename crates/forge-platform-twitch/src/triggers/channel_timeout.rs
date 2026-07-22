@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::moderation as fields;
+
 pub(crate) struct ChannelTimeoutDescriptor;
 
 impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
@@ -61,50 +63,50 @@ impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
         !event
             .payload
-            .get("is_permanent")
+            .get(fields::IS_PERMANENT)
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get("user");
-        let moderator = event.payload.get("moderator");
+        let user = event.payload.get(fields::USER);
+        let moderator = event.payload.get(fields::MODERATOR);
 
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_name = user
-            .and_then(|u| u.get("display_name"))
+            .and_then(|u| u.get(fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let moderator_login = moderator
-            .and_then(|m| m.get("login"))
+            .and_then(|m| m.get(fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reason = event
             .payload
-            .get("reason")
+            .get(fields::REASON)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let banned_at = event
             .payload
-            .get("banned_at")
+            .get(fields::BANNED_AT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let ends_at = event
             .payload
-            .get("ends_at")
+            .get(fields::ENDS_AT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::reward as fields;
+
 pub(crate) struct RewardAddedDescriptor;
 
 impl TriggerKindDescriptor for RewardAddedDescriptor {
@@ -62,29 +64,29 @@ impl TriggerKindDescriptor for RewardAddedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let reward = event.payload.get("reward");
+        let reward = event.payload.get(fields::REWARD);
 
         let reward_id = reward
-            .and_then(|r| r.get("id"))
+            .and_then(|r| r.get(fields::REWARD_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let title = reward
-            .and_then(|r| r.get("title"))
+            .and_then(|r| r.get(fields::REWARD_TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let cost = reward
-            .and_then(|r| r.get("cost"))
+            .and_then(|r| r.get(fields::REWARD_COST))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let prompt = reward
-            .and_then(|r| r.get("prompt"))
+            .and_then(|r| r.get(fields::REWARD_PROMPT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let is_enabled = reward
-            .and_then(|r| r.get("is_enabled"))
+            .and_then(|r| r.get(fields::REWARD_IS_ENABLED))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 

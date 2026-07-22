@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::prediction as fields;
+
 pub(crate) struct PredictionLockedDescriptor;
 
 impl TriggerKindDescriptor for PredictionLockedDescriptor {
@@ -61,20 +63,20 @@ impl TriggerKindDescriptor for PredictionLockedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let prediction = event.payload.get("prediction");
+        let prediction = event.payload.get(fields::PREDICTION);
 
         let prediction_id = prediction
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(fields::PREDICTION_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let title = prediction
-            .and_then(|v| v.get("title"))
+            .and_then(|v| v.get(fields::PREDICTION_TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let locked_at = prediction
-            .and_then(|v| v.get("locked_at"))
+            .and_then(|v| v.get(fields::LOCKED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::raid as fields;
+
 pub(crate) struct ChannelRaidReceivedDescriptor;
 
 impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
@@ -60,7 +62,7 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
         event
             .payload
-            .get("direction")
+            .get(fields::DIRECTION)
             .and_then(|v| v.as_str())
             .is_some_and(|d| d == "received")
     }
@@ -68,27 +70,27 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let viewer_count = event
             .payload
-            .get("viewer_count")
+            .get(fields::VIEWER_COUNT)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let from_login = event
             .payload
-            .get("from_broadcaster")
-            .and_then(|b| b.get("login"))
+            .get(fields::FROM_BROADCASTER)
+            .and_then(|b| b.get(fields::BROADCASTER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let from_id = event
             .payload
-            .get("from_broadcaster")
-            .and_then(|b| b.get("id"))
+            .get(fields::FROM_BROADCASTER)
+            .and_then(|b| b.get(fields::BROADCASTER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let from_display_name = event
             .payload
-            .get("from_broadcaster")
-            .and_then(|b| b.get("display_name"))
+            .get(fields::FROM_BROADCASTER)
+            .and_then(|b| b.get(fields::BROADCASTER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

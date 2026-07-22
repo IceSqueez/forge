@@ -15,7 +15,18 @@ use tracing::{debug, info, warn};
 
 use super::dispatch;
 use super::payload;
+use crate::payload_fields::channel_points as channel_points_fields;
+use crate::payload_fields::channel_update as channel_update_fields;
 use crate::payload_fields::chat as chat_fields;
+use crate::payload_fields::follow as follow_fields;
+use crate::payload_fields::goal as goal_fields;
+use crate::payload_fields::hype_train as hype_train_fields;
+use crate::payload_fields::moderation as moderation_fields;
+use crate::payload_fields::poll as poll_fields;
+use crate::payload_fields::prediction as prediction_fields;
+use crate::payload_fields::raid as raid_fields;
+use crate::payload_fields::reward as reward_fields;
+use crate::payload_fields::support as support_fields;
 
 const EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws";
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -419,9 +430,13 @@ impl ChatSession {
 
         let chat_payload = payload::build_subscribe_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
-            "user": { "id": user_id, "login": user_login, "display_name": user_display },
-            "tier": tier,
-            "is_gift": is_gift,
+            (support_fields::USER): {
+                (support_fields::USER_ID): user_id,
+                (support_fields::USER_LOGIN): user_login,
+                (support_fields::USER_DISPLAY_NAME): user_display,
+            },
+            (support_fields::TIER): tier,
+            (support_fields::IS_GIFT): is_gift,
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
 
@@ -480,12 +495,16 @@ impl ChatSession {
 
         let chat_payload = payload::build_resubscribe_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
-            "user": { "id": user_id, "login": user_login, "display_name": user_display },
-            "tier": tier,
-            "cumulative_months": cumulative_months,
-            "streak_months": streak_months,
-            "message": message_text,
-            "share_streak": share_streak,
+            (support_fields::USER): {
+                (support_fields::USER_ID): user_id,
+                (support_fields::USER_LOGIN): user_login,
+                (support_fields::USER_DISPLAY_NAME): user_display,
+            },
+            (support_fields::TIER): tier,
+            (support_fields::CUMULATIVE_MONTHS): cumulative_months,
+            (support_fields::STREAK_MONTHS): streak_months,
+            (support_fields::MESSAGE): message_text,
+            (support_fields::SHARE_STREAK): share_streak,
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
 
@@ -530,10 +549,18 @@ impl ChatSession {
 
         let chat_payload = payload::build_gift_sub_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
-            "tier": tier,
-            "is_anonymous": is_anonymous,
-            "gifter": { "id": gifter_id, "login": gifter_login, "display_name": gifter_display },
-            "recipient": { "id": "", "login": "", "display_name": "" },
+            (support_fields::TIER): tier,
+            (support_fields::IS_ANONYMOUS): is_anonymous,
+            (support_fields::GIFTER): {
+                (support_fields::GIFTER_ID): gifter_id,
+                (support_fields::GIFTER_LOGIN): gifter_login,
+                (support_fields::GIFTER_DISPLAY_NAME): gifter_display,
+            },
+            (support_fields::RECIPIENT): {
+                (support_fields::RECIPIENT_ID): "",
+                (support_fields::RECIPIENT_LOGIN): "",
+                (support_fields::RECIPIENT_DISPLAY_NAME): "",
+            },
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
 
@@ -575,10 +602,14 @@ impl ChatSession {
 
         let chat_payload = payload::build_cheer_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
-            "bits": bits,
-            "message": message,
-            "is_anonymous": is_anonymous,
-            "user": { "id": user_id, "login": user_login, "display_name": user_display },
+            (support_fields::BITS): bits,
+            (support_fields::MESSAGE): message,
+            (support_fields::IS_ANONYMOUS): is_anonymous,
+            (support_fields::USER): {
+                (support_fields::USER_ID): user_id,
+                (support_fields::USER_LOGIN): user_login,
+                (support_fields::USER_DISPLAY_NAME): user_display,
+            },
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
 
@@ -636,17 +667,17 @@ impl ChatSession {
 
         let chat_payload = payload::build_raid_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
-            "direction": direction,
-            "viewer_count": viewer_count,
-            "from_broadcaster": {
-                "id": from_id,
-                "login": from_login,
-                "display_name": from_display,
+            (raid_fields::DIRECTION): direction,
+            (raid_fields::VIEWER_COUNT): viewer_count,
+            (raid_fields::FROM_BROADCASTER): {
+                (raid_fields::BROADCASTER_ID): from_id,
+                (raid_fields::BROADCASTER_LOGIN): from_login,
+                (raid_fields::BROADCASTER_DISPLAY_NAME): from_display,
             },
-            "to_broadcaster": {
-                "id": to_id,
-                "login": to_login,
-                "display_name": to_display,
+            (raid_fields::TO_BROADCASTER): {
+                (raid_fields::BROADCASTER_ID): to_id,
+                (raid_fields::BROADCASTER_LOGIN): to_login,
+                (raid_fields::BROADCASTER_DISPLAY_NAME): to_display,
             },
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
@@ -725,22 +756,22 @@ impl ChatSession {
         info!(user_login = %user_login, reward_title = %reward_title, "channel point reward redemption received");
 
         let forge_payload = serde_json::json!({
-            "redemption": {
-                "id": redemption_id,
-                "status": redemption_status,
-                "user_input": user_input,
-                "redeemed_at": redeemed_at,
+            (channel_points_fields::REDEMPTION): {
+                (channel_points_fields::REDEMPTION_ID): redemption_id,
+                (channel_points_fields::REDEMPTION_STATUS): redemption_status,
+                (channel_points_fields::USER_INPUT): user_input,
+                (channel_points_fields::REDEEMED_AT): redeemed_at,
             },
-            "user": {
-                "id": user_id,
-                "login": user_login,
-                "display_name": user_name,
+            (channel_points_fields::USER): {
+                (channel_points_fields::USER_ID): user_id,
+                (channel_points_fields::USER_LOGIN): user_login,
+                (channel_points_fields::USER_DISPLAY_NAME): user_name,
             },
-            "reward": {
-                "id": reward_id,
-                "title": reward_title,
-                "cost": reward_cost,
-                "prompt": reward_prompt,
+            (channel_points_fields::REWARD): {
+                (channel_points_fields::REWARD_ID): reward_id,
+                (channel_points_fields::REWARD_TITLE): reward_title,
+                (channel_points_fields::REWARD_COST): reward_cost,
+                (channel_points_fields::REWARD_PROMPT): reward_prompt,
             },
         });
 
@@ -859,8 +890,12 @@ impl ChatSession {
         info!(user_login = %user_login, "follow event received");
 
         let forge_payload = serde_json::json!({
-            "followed_at": followed_at,
-            "user": { "id": user_id, "login": user_login, "display_name": user_name },
+            (follow_fields::FOLLOWED_AT): followed_at,
+            (follow_fields::USER): {
+                (follow_fields::USER_ID): user_id,
+                (follow_fields::USER_LOGIN): user_login,
+                (follow_fields::USER_DISPLAY_NAME): user_name,
+            },
         });
 
         self.config.bus.publish(Event::new(
@@ -981,14 +1016,14 @@ impl ChatSession {
         info!(level = level, total = total, "hype train began");
 
         let forge_payload = serde_json::json!({
-            "hype": {
-                "id": id,
-                "level": level,
-                "total": total,
-                "goal": goal,
-                "progress": progress,
-                "started_at": started_at,
-                "expires_at": expires_at,
+            (hype_train_fields::HYPE): {
+                (hype_train_fields::HYPE_ID): id,
+                (hype_train_fields::LEVEL): level,
+                (hype_train_fields::TOTAL): total,
+                (hype_train_fields::GOAL): goal,
+                (hype_train_fields::PROGRESS): progress,
+                (hype_train_fields::STARTED_AT): started_at,
+                (hype_train_fields::EXPIRES_AT): expires_at,
             },
         });
 
@@ -1026,12 +1061,12 @@ impl ChatSession {
         info!(level = level, progress = progress, "hype train progressed");
 
         let forge_payload = serde_json::json!({
-            "hype": {
-                "id": id,
-                "level": level,
-                "total": total,
-                "goal": goal,
-                "progress": progress,
+            (hype_train_fields::HYPE): {
+                (hype_train_fields::HYPE_ID): id,
+                (hype_train_fields::LEVEL): level,
+                (hype_train_fields::TOTAL): total,
+                (hype_train_fields::GOAL): goal,
+                (hype_train_fields::PROGRESS): progress,
             },
         });
 
@@ -1074,12 +1109,12 @@ impl ChatSession {
         info!(level = level, total = total, "hype train ended");
 
         let forge_payload = serde_json::json!({
-            "hype": {
-                "id": id,
-                "level": level,
-                "total": total,
-                "ended_at": ended_at,
-                "cooldown_ends_at": cooldown_ends_at,
+            (hype_train_fields::HYPE): {
+                (hype_train_fields::HYPE_ID): id,
+                (hype_train_fields::LEVEL): level,
+                (hype_train_fields::TOTAL): total,
+                (hype_train_fields::ENDED_AT): ended_at,
+                (hype_train_fields::COOLDOWN_ENDS_AT): cooldown_ends_at,
             },
         });
 
@@ -1262,19 +1297,19 @@ impl ChatSession {
         );
 
         let mut forge_payload = serde_json::json!({
-            "user": {
-                "id": user_id,
-                "login": user_login,
-                "display_name": user_display_name,
+            (moderation_fields::USER): {
+                (moderation_fields::USER_ID): user_id,
+                (moderation_fields::USER_LOGIN): user_login,
+                (moderation_fields::USER_DISPLAY_NAME): user_display_name,
             },
-            "moderator": {
-                "login": moderator_login,
-                "display_name": moderator_display_name,
+            (moderation_fields::MODERATOR): {
+                (moderation_fields::MODERATOR_LOGIN): moderator_login,
+                (moderation_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
             },
-            "reason": reason,
-            "banned_at": banned_at,
-            "ends_at": ends_at,
-            "is_permanent": is_permanent,
+            (moderation_fields::REASON): reason,
+            (moderation_fields::BANNED_AT): banned_at,
+            (moderation_fields::ENDS_AT): ends_at,
+            (moderation_fields::IS_PERMANENT): is_permanent,
         });
         attach_moderation_payload(
             &mut forge_payload,
@@ -1321,14 +1356,14 @@ impl ChatSession {
         info!(user_login = %user_login, "unban event received");
 
         let forge_payload = serde_json::json!({
-            "user": {
-                "id": user_id,
-                "login": user_login,
-                "display_name": user_display_name,
+            (moderation_fields::USER): {
+                (moderation_fields::USER_ID): user_id,
+                (moderation_fields::USER_LOGIN): user_login,
+                (moderation_fields::USER_DISPLAY_NAME): user_display_name,
             },
-            "moderator": {
-                "login": moderator_login,
-                "display_name": moderator_display_name,
+            (moderation_fields::MODERATOR): {
+                (moderation_fields::MODERATOR_LOGIN): moderator_login,
+                (moderation_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
             },
         });
 
@@ -1956,11 +1991,11 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.poll.begin",
             serde_json::json!({
-                "poll": {
-                    "id": poll_id,
-                    "title": title,
-                    "started_at": started_at,
-                    "ends_at": ends_at,
+                (poll_fields::POLL): {
+                    (poll_fields::POLL_ID): poll_id,
+                    (poll_fields::POLL_TITLE): title,
+                    (poll_fields::STARTED_AT): started_at,
+                    (poll_fields::ENDS_AT): ends_at,
                 },
             }),
         ));
@@ -1988,9 +2023,9 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.poll.progress",
             serde_json::json!({
-                "poll": {
-                    "id": poll_id,
-                    "title": title,
+                (poll_fields::POLL): {
+                    (poll_fields::POLL_ID): poll_id,
+                    (poll_fields::POLL_TITLE): title,
                 },
             }),
         ));
@@ -2028,11 +2063,11 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.poll.end",
             serde_json::json!({
-                "poll": {
-                    "id": poll_id,
-                    "title": title,
-                    "status": status,
-                    "ended_at": ended_at,
+                (poll_fields::POLL): {
+                    (poll_fields::POLL_ID): poll_id,
+                    (poll_fields::POLL_TITLE): title,
+                    (poll_fields::STATUS): status,
+                    (poll_fields::ENDED_AT): ended_at,
                 },
             }),
         ));
@@ -2070,11 +2105,11 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.prediction.begin",
             serde_json::json!({
-                "prediction": {
-                    "id": prediction_id,
-                    "title": title,
-                    "started_at": started_at,
-                    "locks_at": locks_at,
+                (prediction_fields::PREDICTION): {
+                    (prediction_fields::PREDICTION_ID): prediction_id,
+                    (prediction_fields::PREDICTION_TITLE): title,
+                    (prediction_fields::STARTED_AT): started_at,
+                    (prediction_fields::LOCKS_AT): locks_at,
                 },
             }),
         ));
@@ -2102,9 +2137,9 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.prediction.progress",
             serde_json::json!({
-                "prediction": {
-                    "id": prediction_id,
-                    "title": title,
+                (prediction_fields::PREDICTION): {
+                    (prediction_fields::PREDICTION_ID): prediction_id,
+                    (prediction_fields::PREDICTION_TITLE): title,
                 },
             }),
         ));
@@ -2137,10 +2172,10 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.prediction.lock",
             serde_json::json!({
-                "prediction": {
-                    "id": prediction_id,
-                    "title": title,
-                    "locked_at": locked_at,
+                (prediction_fields::PREDICTION): {
+                    (prediction_fields::PREDICTION_ID): prediction_id,
+                    (prediction_fields::PREDICTION_TITLE): title,
+                    (prediction_fields::LOCKED_AT): locked_at,
                 },
             }),
         ));
@@ -2183,12 +2218,12 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.prediction.end",
             serde_json::json!({
-                "prediction": {
-                    "id": prediction_id,
-                    "title": title,
-                    "winning_outcome_id": winning_outcome_id,
-                    "status": status,
-                    "ended_at": ended_at,
+                (prediction_fields::PREDICTION): {
+                    (prediction_fields::PREDICTION_ID): prediction_id,
+                    (prediction_fields::PREDICTION_TITLE): title,
+                    (prediction_fields::WINNING_OUTCOME_ID): winning_outcome_id,
+                    (prediction_fields::STATUS): status,
+                    (prediction_fields::ENDED_AT): ended_at,
                 },
             }),
         ));
@@ -2234,13 +2269,13 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.goal.begin",
             serde_json::json!({
-                "goal": {
-                    "id": goal_id,
-                    "type": goal_type,
-                    "description": description,
-                    "current_amount": current_amount,
-                    "target_amount": target_amount,
-                    "started_at": started_at,
+                (goal_fields::GOAL): {
+                    (goal_fields::GOAL_ID): goal_id,
+                    (goal_fields::GOAL_TYPE): goal_type,
+                    (goal_fields::DESCRIPTION): description,
+                    (goal_fields::CURRENT_AMOUNT): current_amount,
+                    (goal_fields::TARGET_AMOUNT): target_amount,
+                    (goal_fields::STARTED_AT): started_at,
                 },
             }),
         ));
@@ -2276,11 +2311,11 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.goal.progress",
             serde_json::json!({
-                "goal": {
-                    "id": goal_id,
-                    "type": goal_type,
-                    "current_amount": current_amount,
-                    "target_amount": target_amount,
+                (goal_fields::GOAL): {
+                    (goal_fields::GOAL_ID): goal_id,
+                    (goal_fields::GOAL_TYPE): goal_type,
+                    (goal_fields::CURRENT_AMOUNT): current_amount,
+                    (goal_fields::TARGET_AMOUNT): target_amount,
                 },
             }),
         ));
@@ -2325,13 +2360,13 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.goal.end",
             serde_json::json!({
-                "goal": {
-                    "id": goal_id,
-                    "type": goal_type,
-                    "current_amount": current_amount,
-                    "target_amount": target_amount,
-                    "is_achieved": is_achieved,
-                    "ended_at": ended_at,
+                (goal_fields::GOAL): {
+                    (goal_fields::GOAL_ID): goal_id,
+                    (goal_fields::GOAL_TYPE): goal_type,
+                    (goal_fields::CURRENT_AMOUNT): current_amount,
+                    (goal_fields::TARGET_AMOUNT): target_amount,
+                    (goal_fields::IS_ACHIEVED): is_achieved,
+                    (goal_fields::ENDED_AT): ended_at,
                 },
             }),
         ));
@@ -2369,12 +2404,12 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.channel_points_custom_reward.add",
             serde_json::json!({
-                "reward": {
-                    "id": reward_id,
-                    "title": title,
-                    "cost": cost,
-                    "prompt": prompt,
-                    "is_enabled": is_enabled,
+                (reward_fields::REWARD): {
+                    (reward_fields::REWARD_ID): reward_id,
+                    (reward_fields::REWARD_TITLE): title,
+                    (reward_fields::REWARD_COST): cost,
+                    (reward_fields::REWARD_PROMPT): prompt,
+                    (reward_fields::REWARD_IS_ENABLED): is_enabled,
                 },
             }),
         ));
@@ -2412,12 +2447,12 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.channel_points_custom_reward.update",
             serde_json::json!({
-                "reward": {
-                    "id": reward_id,
-                    "title": title,
-                    "cost": cost,
-                    "prompt": prompt,
-                    "is_enabled": is_enabled,
+                (reward_fields::REWARD): {
+                    (reward_fields::REWARD_ID): reward_id,
+                    (reward_fields::REWARD_TITLE): title,
+                    (reward_fields::REWARD_COST): cost,
+                    (reward_fields::REWARD_PROMPT): prompt,
+                    (reward_fields::REWARD_IS_ENABLED): is_enabled,
                 },
             }),
         ));
@@ -2455,12 +2490,12 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.channel_points_custom_reward.remove",
             serde_json::json!({
-                "reward": {
-                    "id": reward_id,
-                    "title": title,
-                    "cost": cost,
-                    "prompt": prompt,
-                    "is_enabled": is_enabled,
+                (reward_fields::REWARD): {
+                    (reward_fields::REWARD_ID): reward_id,
+                    (reward_fields::REWARD_TITLE): title,
+                    (reward_fields::REWARD_COST): cost,
+                    (reward_fields::REWARD_PROMPT): prompt,
+                    (reward_fields::REWARD_IS_ENABLED): is_enabled,
                 },
             }),
         ));
@@ -2530,21 +2565,21 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.channel_points_redemption_update",
             serde_json::json!({
-                "redemption": {
-                    "id": redemption_id,
-                    "status": status,
-                    "user_input": user_input,
-                    "redeemed_at": redeemed_at,
+                (channel_points_fields::REDEMPTION): {
+                    (channel_points_fields::REDEMPTION_ID): redemption_id,
+                    (channel_points_fields::REDEMPTION_STATUS): status,
+                    (channel_points_fields::USER_INPUT): user_input,
+                    (channel_points_fields::REDEEMED_AT): redeemed_at,
                 },
-                "user": {
-                    "id": user_id,
-                    "login": user_login,
-                    "display_name": user_name,
+                (channel_points_fields::USER): {
+                    (channel_points_fields::USER_ID): user_id,
+                    (channel_points_fields::USER_LOGIN): user_login,
+                    (channel_points_fields::USER_DISPLAY_NAME): user_name,
                 },
-                "reward": {
-                    "id": reward_id,
-                    "title": reward_title,
-                    "cost": reward_cost,
+                (channel_points_fields::REWARD): {
+                    (channel_points_fields::REWARD_ID): reward_id,
+                    (channel_points_fields::REWARD_TITLE): reward_title,
+                    (channel_points_fields::REWARD_COST): reward_cost,
                 },
             }),
         ));
@@ -3229,11 +3264,11 @@ impl ChatSession {
             EventSource::Twitch,
             "channel.update",
             serde_json::json!({
-                "channel": {
-                    "title": title,
-                    "language": language,
-                    "category_id": category_id,
-                    "category_name": category_name,
+                (channel_update_fields::CHANNEL): {
+                    (channel_update_fields::TITLE): title,
+                    (channel_update_fields::LANGUAGE): language,
+                    (channel_update_fields::CATEGORY_ID): category_id,
+                    (channel_update_fields::CATEGORY_NAME): category_name,
                 },
             }),
         ));

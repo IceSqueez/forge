@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::support as fields;
+
 pub(crate) struct SupportGiftSubDescriptor;
 
 impl TriggerKindDescriptor for SupportGiftSubDescriptor {
@@ -64,40 +66,40 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let gifter_login = event
             .payload
-            .get("gifter")
-            .and_then(|g| g.get("login"))
+            .get(fields::GIFTER)
+            .and_then(|g| g.get(fields::GIFTER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let gifter_id = event
             .payload
-            .get("gifter")
-            .and_then(|g| g.get("id"))
+            .get(fields::GIFTER)
+            .and_then(|g| g.get(fields::GIFTER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let is_anonymous = event
             .payload
-            .get("is_anonymous")
+            .get(fields::IS_ANONYMOUS)
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let recipient_login = event
             .payload
-            .get("recipient")
-            .and_then(|r| r.get("login"))
+            .get(fields::RECIPIENT)
+            .and_then(|r| r.get(fields::RECIPIENT_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let recipient_id = event
             .payload
-            .get("recipient")
-            .and_then(|r| r.get("id"))
+            .get(fields::RECIPIENT)
+            .and_then(|r| r.get(fields::RECIPIENT_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let tier = event
             .payload
-            .get("tier")
+            .get(fields::TIER)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

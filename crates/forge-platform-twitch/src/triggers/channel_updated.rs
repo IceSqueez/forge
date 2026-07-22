@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::channel_update as fields;
+
 pub(crate) struct ChannelUpdatedDescriptor;
 
 impl TriggerKindDescriptor for ChannelUpdatedDescriptor {
@@ -61,25 +63,25 @@ impl TriggerKindDescriptor for ChannelUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let channel = event.payload.get("channel");
+        let channel = event.payload.get(fields::CHANNEL);
 
         let title = channel
-            .and_then(|c| c.get("title"))
+            .and_then(|c| c.get(fields::TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let category_id = channel
-            .and_then(|c| c.get("category_id"))
+            .and_then(|c| c.get(fields::CATEGORY_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let category_name = channel
-            .and_then(|c| c.get("category_name"))
+            .and_then(|c| c.get(fields::CATEGORY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let language = channel
-            .and_then(|c| c.get("language"))
+            .and_then(|c| c.get(fields::LANGUAGE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

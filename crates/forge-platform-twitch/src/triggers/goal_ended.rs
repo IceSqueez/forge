@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::goal as fields;
+
 pub(crate) struct GoalEndedDescriptor;
 
 impl TriggerKindDescriptor for GoalEndedDescriptor {
@@ -62,32 +64,32 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let goal = event.payload.get("goal");
+        let goal = event.payload.get(fields::GOAL);
 
         let goal_id = goal
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(fields::GOAL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let goal_type = goal
-            .and_then(|v| v.get("type"))
+            .and_then(|v| v.get(fields::GOAL_TYPE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let current_amount = goal
-            .and_then(|v| v.get("current_amount"))
+            .and_then(|v| v.get(fields::CURRENT_AMOUNT))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let target_amount = goal
-            .and_then(|v| v.get("target_amount"))
+            .and_then(|v| v.get(fields::TARGET_AMOUNT))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let is_achieved = goal
-            .and_then(|v| v.get("is_achieved"))
+            .and_then(|v| v.get(fields::IS_ACHIEVED))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let ended_at = goal
-            .and_then(|v| v.get("ended_at"))
+            .and_then(|v| v.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

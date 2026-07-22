@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::support as fields;
+
 pub(crate) struct SupportResubscriberDescriptor;
 
 impl TriggerKindDescriptor for SupportResubscriberDescriptor {
@@ -64,37 +66,37 @@ impl TriggerKindDescriptor for SupportResubscriberDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let user_login = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("login"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("id"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let tier = event
             .payload
-            .get("tier")
+            .get(fields::TIER)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let cumulative_months = event
             .payload
-            .get("cumulative_months")
+            .get(fields::CUMULATIVE_MONTHS)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let streak_months = event
             .payload
-            .get("streak_months")
+            .get(fields::STREAK_MONTHS)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let message = event
             .payload
-            .get("message")
+            .get(fields::MESSAGE)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

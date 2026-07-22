@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::support as fields;
+
 pub(crate) struct SupportSubscriberDescriptor;
 
 impl TriggerKindDescriptor for SupportSubscriberDescriptor {
@@ -64,27 +66,27 @@ impl TriggerKindDescriptor for SupportSubscriberDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let user_login = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("login"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("id"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let tier = event
             .payload
-            .get("tier")
+            .get(fields::TIER)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let is_gift = event
             .payload
-            .get("is_gift")
+            .get(fields::IS_GIFT)
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 

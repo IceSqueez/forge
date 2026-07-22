@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::hype_train as fields;
+
 pub(crate) struct HypeTrainEndedDescriptor;
 
 impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
@@ -62,28 +64,28 @@ impl TriggerKindDescriptor for HypeTrainEndedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let hype = event.payload.get("hype");
+        let hype = event.payload.get(fields::HYPE);
 
         let id = hype
-            .and_then(|h| h.get("id"))
+            .and_then(|h| h.get(fields::HYPE_ID))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
         let level = hype
-            .and_then(|h| h.get("level"))
+            .and_then(|h| h.get(fields::LEVEL))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let total = hype
-            .and_then(|h| h.get("total"))
+            .and_then(|h| h.get(fields::TOTAL))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let ended_at = hype
-            .and_then(|h| h.get("ended_at"))
+            .and_then(|h| h.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
         let cooldown_ends_at = hype
-            .and_then(|h| h.get("cooldown_ends_at"))
+            .and_then(|h| h.get(fields::COOLDOWN_ENDS_AT))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();

@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::channel_points as fields;
+
 pub(crate) struct RedemptionUpdatedDescriptor;
 
 impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
@@ -98,8 +100,8 @@ impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
 
         let event_status = event
             .payload
-            .get("redemption")
-            .and_then(|r| r.get("status"))
+            .get(fields::REDEMPTION)
+            .and_then(|r| r.get(fields::REDEMPTION_STATUS))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -107,42 +109,42 @@ impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let redemption = event.payload.get("redemption");
-        let user = event.payload.get("user");
-        let reward = event.payload.get("reward");
+        let redemption = event.payload.get(fields::REDEMPTION);
+        let user = event.payload.get(fields::USER);
+        let reward = event.payload.get(fields::REWARD);
 
         let redemption_id = redemption
-            .and_then(|r| r.get("id"))
+            .and_then(|r| r.get(fields::REDEMPTION_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let status = redemption
-            .and_then(|r| r.get("status"))
+            .and_then(|r| r.get(fields::REDEMPTION_STATUS))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_input = redemption
-            .and_then(|r| r.get("user_input"))
+            .and_then(|r| r.get(fields::USER_INPUT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_login = user
-            .and_then(|u| u.get("login"))
+            .and_then(|u| u.get(fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_id = reward
-            .and_then(|r| r.get("id"))
+            .and_then(|r| r.get(fields::REWARD_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_title = reward
-            .and_then(|r| r.get("title"))
+            .and_then(|r| r.get(fields::REWARD_TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

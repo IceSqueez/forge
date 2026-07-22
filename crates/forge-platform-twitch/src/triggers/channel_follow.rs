@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::follow as fields;
+
 pub(crate) struct ChannelFollowDescriptor;
 
 impl TriggerKindDescriptor for ChannelFollowDescriptor {
@@ -64,28 +66,28 @@ impl TriggerKindDescriptor for ChannelFollowDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let user_login = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("login"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("id"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_name = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("display_name"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let followed_at = event
             .payload
-            .get("followed_at")
+            .get(fields::FOLLOWED_AT)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

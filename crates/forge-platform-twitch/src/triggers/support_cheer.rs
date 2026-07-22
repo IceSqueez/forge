@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::support as fields;
+
 pub(crate) struct SupportCheerDescriptor;
 
 impl TriggerKindDescriptor for SupportCheerDescriptor {
@@ -88,7 +90,7 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
 
         let bits = event
             .payload
-            .get("bits")
+            .get(fields::BITS)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
@@ -98,31 +100,31 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let bits = event
             .payload
-            .get("bits")
+            .get(fields::BITS)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let message = event
             .payload
-            .get("message")
+            .get(fields::MESSAGE)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let is_anonymous = event
             .payload
-            .get("is_anonymous")
+            .get(fields::IS_ANONYMOUS)
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let user_login = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("login"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("id"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

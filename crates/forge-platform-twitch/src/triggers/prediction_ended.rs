@@ -6,6 +6,8 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::prediction as fields;
+
 pub(crate) struct PredictionEndedDescriptor;
 
 impl TriggerKindDescriptor for PredictionEndedDescriptor {
@@ -61,30 +63,30 @@ impl TriggerKindDescriptor for PredictionEndedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let prediction = event.payload.get("prediction");
+        let prediction = event.payload.get(fields::PREDICTION);
 
         let prediction_id = prediction
-            .and_then(|v| v.get("id"))
+            .and_then(|v| v.get(fields::PREDICTION_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let title = prediction
-            .and_then(|v| v.get("title"))
+            .and_then(|v| v.get(fields::PREDICTION_TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let winning_outcome_id = prediction
-            .and_then(|v| v.get("winning_outcome_id"))
+            .and_then(|v| v.get(fields::WINNING_OUTCOME_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let status = prediction
-            .and_then(|v| v.get("status"))
+            .and_then(|v| v.get(fields::STATUS))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let ended_at = prediction
-            .and_then(|v| v.get("ended_at"))
+            .and_then(|v| v.get(fields::ENDED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

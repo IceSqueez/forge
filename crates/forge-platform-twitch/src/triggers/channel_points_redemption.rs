@@ -7,6 +7,8 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::channel_points as fields;
+
 pub(crate) struct ChannelPointsRedemptionDescriptor;
 
 impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
@@ -112,8 +114,8 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
         if !reward_id.is_empty() {
             let event_reward_id = event
                 .payload
-                .get("reward")
-                .and_then(|r| r.get("id"))
+                .get(fields::REWARD)
+                .and_then(|r| r.get(fields::REWARD_ID))
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
             return event_reward_id == reward_id;
@@ -133,8 +135,8 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
         if !reward_title.is_empty() {
             let event_reward_title = event
                 .payload
-                .get("reward")
-                .and_then(|r| r.get("title"))
+                .get(fields::REWARD)
+                .and_then(|r| r.get(fields::REWARD_TITLE))
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
             return event_reward_title == reward_title;
@@ -146,77 +148,77 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let redemption_id = event
             .payload
-            .get("redemption")
-            .and_then(|r| r.get("id"))
+            .get(fields::REDEMPTION)
+            .and_then(|r| r.get(fields::REDEMPTION_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let redemption_status = event
             .payload
-            .get("redemption")
-            .and_then(|r| r.get("status"))
+            .get(fields::REDEMPTION)
+            .and_then(|r| r.get(fields::REDEMPTION_STATUS))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_input = event
             .payload
-            .get("redemption")
-            .and_then(|r| r.get("user_input"))
+            .get(fields::REDEMPTION)
+            .and_then(|r| r.get(fields::USER_INPUT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let redeemed_at = event
             .payload
-            .get("redemption")
-            .and_then(|r| r.get("redeemed_at"))
+            .get(fields::REDEMPTION)
+            .and_then(|r| r.get(fields::REDEEMED_AT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_id = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("id"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_login = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("login"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_LOGIN))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let user_name = event
             .payload
-            .get("user")
-            .and_then(|u| u.get("display_name"))
+            .get(fields::USER)
+            .and_then(|u| u.get(fields::USER_DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_id = event
             .payload
-            .get("reward")
-            .and_then(|r| r.get("id"))
+            .get(fields::REWARD)
+            .and_then(|r| r.get(fields::REWARD_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_title = event
             .payload
-            .get("reward")
-            .and_then(|r| r.get("title"))
+            .get(fields::REWARD)
+            .and_then(|r| r.get(fields::REWARD_TITLE))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let reward_cost = event
             .payload
-            .get("reward")
-            .and_then(|r| r.get("cost"))
+            .get(fields::REWARD)
+            .and_then(|r| r.get(fields::REWARD_COST))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let reward_prompt = event
             .payload
-            .get("reward")
-            .and_then(|r| r.get("prompt"))
+            .get(fields::REWARD)
+            .and_then(|r| r.get(fields::REWARD_PROMPT))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();

@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, DEFAULT_BODY_FAMILY, DEFAULT_MONO_FAMILY, Density, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, SheetWidth, Spacing, ToastKind, badge,
-    breadcrumb, chip, empty_state, icon, platform_color, radius, spacing, status_dot, toolbar_row,
-    tr, with_alpha,
+    FONT_XXS, ForgePalette, Icon, InputEvent, PlatformKind, Radius, SheetWidth, Spacing, TextInput,
+    ToastKind, badge, chip, empty_state, header_status, icon, page_frame, platform_color, radius,
+    search_input, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::EventSource;
 use gpui::{
@@ -22,6 +22,8 @@ use crate::toasts::PushToast;
 const INSPECTOR_INITIAL: f32 = 300.0;
 const INSPECTOR_MIN: f32 = 220.0;
 const INSPECTOR_MAX: f32 = 540.0;
+
+const SEARCH_W: Pixels = px(240.0);
 
 const TS_COL_W: Pixels = px(88.0);
 const TYPE_COL_W: Pixels = px(104.0);
@@ -59,6 +61,8 @@ fn filter_tab_key(filter: EventFilter) -> &'static str {
 pub struct EventFeedView {
     log: Entity<EventLog>,
     active_filter: EventFilter,
+    search: String,
+    search_field: Entity<TextInput>,
     /// `None` falls back to the newest row, keeping the inspector populated.
     selected: Option<gpui::SharedString>,
     visible: Vec<EventItem>,
@@ -71,11 +75,22 @@ pub struct EventFeedView {
     focused_once: bool,
     rt_handle: tokio::runtime::Handle,
     _log_obs: Subscription,
+    _search_sub: Subscription,
+}
+
+fn matches_query(item: &EventItem, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    item.kind.to_lowercase().contains(query)
+        || source_label(item.source).to_lowercase().contains(query)
+        || item.summary.to_lowercase().contains(query)
 }
 
 fn compute_projection(
     log: &EventLog,
     filter: EventFilter,
+    query: &str,
 ) -> (
     Vec<EventItem>,
     HashMap<gpui::SharedString, u32>,
@@ -98,10 +113,11 @@ fn compute_projection(
             _ => {}
         }
     }
+    let q = query.trim().to_lowercase();
     let visible: Vec<EventItem> = log
         .items()
         .iter()
-        .filter(|item| item.matches(filter))
+        .filter(|item| item.matches(filter) && matches_query(item, &q))
         .cloned()
         .collect();
     (visible, downstream, matched)
@@ -113,14 +129,20 @@ impl EventFeedView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
+        let palette = cx.palette();
+        let search_field =
+            cx.new(|cx| search_input(tr!("event_feed_search_placeholder"), palette, cx));
+        let search_sub = cx.subscribe(&search_field, Self::on_search_event);
         let log_obs = cx.observe(&log, Self::on_log_changed);
         let list_scroll = UniformListScrollHandle::new();
         list_scroll.scroll_to_bottom();
         let (visible, downstream, matched) =
-            compute_projection(log.read(cx), EventFilter::default());
+            compute_projection(log.read(cx), EventFilter::default(), "");
         Self {
             log,
             active_filter: EventFilter::default(),
+            search: String::new(),
+            search_field,
             selected: None,
             visible,
             downstream,
@@ -132,6 +154,7 @@ impl EventFeedView {
             focused_once: false,
             rt_handle,
             _log_obs: log_obs,
+            _search_sub: search_sub,
         }
     }
 
@@ -179,10 +202,23 @@ impl EventFeedView {
         cx.notify();
     }
 
+    fn on_search_event(
+        &mut self,
+        _field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if let InputEvent::Changed(text) = event {
+            self.search = text.to_string();
+            self.rebuild_projection(cx);
+            cx.notify();
+        }
+    }
+
     fn rebuild_projection(&mut self, cx: &mut Context<Self>) {
         let (visible, downstream, matched) = {
             let log = self.log.read(cx);
-            compute_projection(log, self.active_filter)
+            compute_projection(log, self.active_filter, &self.search)
         };
         self.visible = visible;
         self.downstream = downstream;
@@ -290,11 +326,13 @@ impl EventFeedView {
         cx.notify();
     }
 
-    fn render_header(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
+    fn render_header_right(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let paused = self.log.read(cx).is_paused();
+        let (live_color, live_label) = if paused {
+            (palette.warning, tr!("event_feed_status_paused"))
+        } else {
+            (palette.success, tr!("event_feed_status_live"))
+        };
         let count = self.log.read(cx).items().len();
         let count_readout = div()
             .flex()
@@ -315,23 +353,21 @@ impl EventFeedView {
                     .child(tr!("event_feed_events_live_stream")),
             );
 
-        breadcrumb(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("event_feed_breadcrumb_automation")),
-                BreadcrumbCrumb::leaf(tr!("nav_event_feed")),
-            ],
-            palette,
-        )
-        .right(count_readout)
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .child(header_status(live_color, live_label))
+            .child(count_readout)
+            .into_any_element()
     }
 
-    fn render_toolbar(
+    fn render_filter_left(
         &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let paused = self.log.read(cx).is_paused();
+    ) -> AnyElement {
         let counts = self.filter_counts(cx);
 
         let mut chips = div()
@@ -351,6 +387,23 @@ impl EventFeedView {
                     ),
             );
         }
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(div().w(SEARCH_W).child(self.search_field.clone()))
+            .child(chips)
+            .into_any_element()
+    }
+
+    fn render_filter_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let paused = self.log.read(cx).is_paused();
 
         let (pause_icon, pause_ink) = if paused {
             (Icon::PlayerPlay, palette.success)
@@ -379,18 +432,15 @@ impl EventFeedView {
             .child(Self::action_label(scroll_label, palette))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_auto_scroll(cx)));
 
-        let actions = div()
+        div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .child(pause)
             .child(clear)
             .child(export)
-            .child(auto_scroll);
-
-        toolbar_row(chips, actions)
-            .attached(palette)
-            .density(density)
+            .child(auto_scroll)
+            .into_any_element()
     }
 
     fn outcome_tag(
@@ -929,29 +979,34 @@ impl Render for EventFeedView {
         let selection = self.resolved_selection(cx);
         let selected_id = selection.as_ref().map(|i| i.id.clone());
 
-        let header = self.render_header(&palette, cx);
-        let toolbar = self.render_toolbar(&palette, density, cx);
+        let header_right = self.render_header_right(&palette, cx);
+        let filter_left = self.render_filter_left(&palette, density, cx);
+        let filter_right = self.render_filter_right(&palette, density, cx);
         let list = self.render_list(&palette, density, selected_id.as_ref(), cx);
         let inspector = selection
             .as_ref()
             .map(|item| self.render_inspector(item, &palette, cx));
 
-        div()
-            .size_full()
+        let body = div()
+            .flex_1()
             .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(header)
-            .child(toolbar)
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_row()
-                    .overflow_hidden()
-                    .child(list)
-                    .children(inspector),
-            )
+            .flex_row()
+            .overflow_hidden()
+            .child(list)
+            .children(inspector);
+
+        page_frame(
+            vec![
+                BreadcrumbCrumb::leaf(tr!("event_feed_breadcrumb_automation")),
+                BreadcrumbCrumb::leaf(tr!("nav_event_feed")),
+            ],
+            &palette,
+        )
+        .header_right(header_right)
+        .subheader_left(filter_left)
+        .subheader_right(filter_right)
+        .density(density)
+        .body(body)
     }
 }
 

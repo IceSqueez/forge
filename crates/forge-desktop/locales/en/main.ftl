@@ -1402,6 +1402,9 @@ event_feed_auto_scroll_on = Auto-scroll on
 event_feed_auto_scroll_off = Auto-scroll off
 event_feed_breadcrumb_automation = Automation
 event_feed_events_live_stream = events · live stream
+event_feed_status_live = Live
+event_feed_status_paused = Paused
+event_feed_search_placeholder = Search events…
 
 ## Globals - page header / filters
 

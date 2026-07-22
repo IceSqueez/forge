@@ -1419,6 +1419,9 @@ event_feed_auto_scroll_on = Авто-прокрутка увімкнена
 event_feed_auto_scroll_off = Авто-прокрутка вимкнена
 event_feed_breadcrumb_automation = Автоматизація
 event_feed_events_live_stream = подій · живий стрім
+event_feed_status_live = Наживо
+event_feed_status_paused = Пауза
+event_feed_search_placeholder = Пошук подій…
 
 ## Глобальні змінні - заголовок / фільтри
 

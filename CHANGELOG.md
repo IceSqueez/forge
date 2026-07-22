@@ -1,10 +1,188 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-beta.7] - 2026-07-22
+### ⚙️ Miscellaneous Tasks
+- *(toolchain)* Bump rust to 1.97.1
+- *(i18n)* Drop locale keys with no remaining references
+- Remove unreferenced obs and ui kit surface
+- Remove unreferenced types script hotkey midi discord surface
+- Remove dead twitch kick vtube and server surface
+- Remove dead audio speak-queue and cloud tts surface
+- Remove dead runtime bus stats and registry io surface
+- *(deps)* Bump tokio from 1.53.0 to 1.53.1 (#43)
+- *(deps)* Bump serde_json from 1.0.150 to 1.0.151 (#44)
+- *(deps)* Bump serde from 1.0.228 to 1.0.229 (#45)
+- *(deps)* Bump zbus from 5.17.0 to 5.18.0 (#46)
+- *(deps)* Bump futures-core from 0.3.32 to 0.3.33 (#47)
+- *(deps)* Bump versions
+
+### ⚡ Performance
+- *(desktop)* Key rows on stable ids and cache filtered projections
+- *(desktop)* Drain and batch bus events before ui apply
+- *(desktop)* Virtualize event feed and globals list rendering
+- *(desktop)* Virtualize alias client and trigger lists
+- *(desktop)* Isolate viewer-count repaints and use deque event ring
+- *(ui)* Debounce slider persists and guard stale async appliers
+
+### 🎨 Styling
+- Strip comment creep from the recent tts and soundboard work
+- Strip decorative banner comments
+- *(workspace)* Strip narrative comments to invariant-only survivors
+
+### 🐛 Bug Fixes
+- *(actions)* Anchor test-run modal overlay to screen bounds
+- *(actions)* Tolerate decorated variable names, shorten script errors
+- *(actions)* Stretch history cards, summarize array outputs
+- *(actions)* Capture resolved step inputs, scope script output
+- *(actions)* Drop phantom last line in file read, mark empty outputs
+- *(actions)* Move file write byte count into execution scope
+- *(actions)* Render step health as tinted heartbeat tile
+- *(actions)* Allow linking disabled triggers from add picker
+- *(triggers)* Always show cooldown summary on trigger rows
+- *(triggers)* Fire every action of a trigger within one event
+- *(tts)* Align dashboard header and toolbar with design
+- *(tts)* Pluralize engines-ready header count
+- *(tts)* Match dashboard chrome to design metrics
+- *(tts)* Paint ghost button icons with explicit color
+- *(tts)* Surface voiceless engines and dropped requests
+- *(tts)* Probe piper binary identity, report synth stderr
+- *(tts)* Never auto-pick the null audio output device
+- *(tts)* Report real playback progress and completion
+- *(tts)* Keep speak queue responsive during playback
+- *(components)* Deliver slider drags only to the origin slider
+- *(tts)* Align voice aliases table with design
+- *(tts)* Render live pipeline preview per design
+- *(soundboard)* Use the design's exact pad glyphs
+- *(audio)* Shared null-safe device pick and enumeration filter
+- *(soundboard)* Probe clip duration immediately after save
+- *(platform-core)* Honor rate-limit throttle wait across kick and twitch
+- *(storage)* Unify bool-setting decode across all readers
+- *(server)* Unify path confinement and block symlink escapes
+- *(desktop)* Surface async failures and roll back failed persists
+- *(components)* Route all duration and byte formatting through locale
+- *(i18n)* Remove orphaned select closers left by key cleanup
+- *(settings)* Source script engine limits from the engine loader
+- *(desktop)* Render platform brand colors and share picker popover
+- *(settings)* Persist theme and density across restarts
+- *(components)* Theme-harmonize platform colors and share with nav
+- *(desktop)* Route conflict confirms through kit and wire overlay escape
+- *(ui)* Route platforms nav link and detail crumbs by category
+- *(chat)* Nest breadcrumb under audience section
+- *(scripts)* Pin sidebar width so footer button spans it reliably
+- *(tts)* Keep speak-state bridge alive when event stream lags
+- *(audio)* Prefer canonical output chain and fall back on sink open
+- *(hotkey)* Register app id and complete portal request handshake
+
+### 📚 Documentation
+- *(ui)* Disambiguate overlay intra-doc links to the function
+
+### 🚀 Features
+- *(actions)* Add per-step continue-on-error toggle and enable menu
+- *(actions)* Add live test-run modal with per-step progress
+- *(actions)* Synthesize test runs from trigger schemas, add trigger picker
+- *(actions)* Read file as lines, whole text, or json
+- *(actions)* Gate steps on per-step run conditions
+- *(actions)* Redesign edit-step modal with advanced run condition
+- *(actions)* Standardize output variable fields
+- *(actions)* Route stat cells to run history, tidy step rows
+- *(actions)* Record trigger kind and per-step values in run history
+- *(actions)* Show trigger and step values in run history modal
+- *(actions)* Pretty-print run history values with json highlight
+- *(actions)* Quote string values, tint variables in run history
+- *(actions)* Enforce strict output variable names in step editor
+- *(actions)* Declare produced scope variables on core runners
+- *(actions)* Expose last per-step outcomes in action detail
+- *(actions)* Badge step health from static variable analysis
+- *(actions)* Split run history into rail and detail panes
+- *(triggers)* Replace dual cooldowns with one value and scope flag
+- *(tts)* Name piper voices from sidecar speaker map
+- *(tts)* Redesign engines tab with voice previews
+- *(tts)* Support disabling engines with persisted state
+- *(tts)* Merge cloud engines into engines tab with live toggle
+- *(tts)* Wire default voice parameter sliders end to end
+- *(tts)* Match now-speaking and queue rows to design
+- *(tts)* Pause and resume the playing clip mid-audio
+- *(tts)* Make default voice parameters per-engine
+- *(tts)* Restructure filter pipeline into design stage taxonomy
+- *(tts)* Rebuild filter stages into design cards
+- *(tts)* Add per-stage filter modal with full preset set
+- *(tts)* Remove the triggers tab in favor of regular triggers
+- *(soundboard)* Extend clips, routing, loop and builtin library
+- *(soundboard)* Rebuild screen with pads, library and routing
+- *(soundboard)* Drive pad state from real playback events
+- *(soundboard)* Stock the builtin library with top meme sounds
+- *(soundboard)* Pad edit and delete actions with live progress
+- *(runtime)* Expose non-blocking drain on event subscriptions
+- *(components)* Replace mocha with violet forge default theme
+- *(types)* Add shared swappable-snapshot handle
+- *(settings)* Expose core http allow-local toggle and drop orphans
+- *(desktop)* Add keyboard navigation to picker and virtualized lists
+- *(ui)* Add page_frame scaffold with header slots, pilot on home
+- *(events)* Add feed search and relocate live badge to status
+- *(queues)* Add search and mode filters, rename serial to sequential
+- *(actions)* Add back button and hover affordance to branch trail
+- *(ui)* Confirm clipboard copies with a shared toast helper
+
+### 🚜 Refactor
+- *(audio)* One shared output route for device, gain and sinks
+- *(oauth)* Consolidate PKCE flow and token refresh into one engine
+- *(platform-core)* Unify reconnect backoff on one full-jitter curve
+- *(runtime)* Introduce runner facade for config timing and outcomes
+- *(runtime)* Migrate remaining runners onto shared facade
+- *(platforms)* Adopt runner facade across integration crates
+- *(runtime)* Move audio runners onto shared facade
+- *(desktop)* Unify list placeholders on shared empty state
+- *(settings)* Promote field labels and setting row into the kit
+- *(desktop)* Route pills labels and card chrome through the kit
+- *(components)* Unify hash accent avatars and fix icon button
+- *(desktop)* Migrate hand-rolled tables onto kit data table
+- *(storage)* Route swappable handles and json settings through core
+- *(types)* Canonicalize variant display and var-name peeling
+- *(desktop)* Share toolbar and nav card chrome through the kit
+- *(actions)* Rebuild sub-action modal on kit modal chrome
+- *(soundboard)* Unify pad tiles on shared kit chrome
+- *(actions)* Replace hand-rolled select dropdown with kit picker
+- *(ui)* Adopt page_frame on dashboard screens
+- *(ui)* Re-slot globals and triggers onto page_frame
+- *(soundboard)* Dock toolbar as attached subheader chrome
+- *(chat)* Pin drawer open, inline search, drop header uptime
+- *(actions)* De-hoist header controls into standard subheader
+- *(tts)* Re-slot header and tab bar onto page_frame
+- *(settings)* Re-slot header onto page_frame
+- *(scripts)* Re-slot header onto page_frame
+- *(actions)* Split run-history and sub-action modals into modules
+- *(ui)* Unify search state and matching on kit SearchState
+- *(ui)* Promote radio rows and segmented controls to kit
+- *(ui)* Unify save-state indicator and pending-confirm lifecycle
+- *(ui)* Unify external-open and file-dialog plumbing
+- *(ui)* Unify runtime event bridges on drain_events skeleton
+- *(platform)* Unify connection state labels and atomics
+- *(platform)* Unify poll dedup on shared bounded set
+- *(runtime)* Adopt cancel signal for worker shutdown flags
+- *(storage)* Decode rows by named struct instead of tuples
+- *(storage)* Normalize reserved setting key const names
+- *(ui)* Route async work through shared bridge helpers
+
+### 🛠️ Build
+- *(audit)* Fail only on real vulnerabilities, stop filing issues
+
+### 🧪 Testing
+- *(oauth)* Cover shared PKCE engine url build exchange and refresh
+- *(platform-core)* Cover shared reconnect backoff curve
+- *(runner)* Cover facade timing, config getters, and outcomes
+- *(shared)* Cover swappable handle json settings and queue mirror
+- *(types)* Pin variant display and var-name peeling contracts
+- *(tts)* Pin speak-stream lag vs closed error mapping
+- *(audio)* Pin output-device selection against sysdefault regression
+
 ## [0.3.0-beta.6] - 2026-07-19
 ### ⚠️ BREAKING CHANGES
 - **actions**: random/file sub-action results no longer persist as globals
 - **actions**: fields no longer resolve globals; use a Get Global step
+
+### ⚙️ Miscellaneous Tasks
+- Release
 
 ### 🐛 Bug Fixes
 - *(globals)* Compact rows, icon-only export, single-line header
@@ -32,6 +210,9 @@ All notable changes to this project will be documented in this file.
 - *(actions)* Stop full picker relayout on card hover
 - *(actions)* Virtualize picker card grid, restore star and plus icons
 - *(actions)* Compact picker rows, sort rail, polish card chrome
+
+### 📚 Documentation
+- *(release)* Release v0.3.0-beta.6
 
 ### 🚀 Features
 - *(globals)* Inspect complex values in a read-only modal

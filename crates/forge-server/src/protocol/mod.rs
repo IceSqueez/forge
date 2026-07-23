@@ -934,7 +934,9 @@ mod tests {
         let event = bus_sub.recv().await.unwrap();
         assert_eq!(event.source, EventSource::Server);
         assert_eq!(event.kind, "global.set");
-        assert_eq!(event.payload["name"], "counter");
+        assert_eq!(event.payload["key"], "counter");
+        assert_eq!(event.payload["new_value"], 99);
+        assert_eq!(event.payload["persisted"], false);
         assert_eq!(event.payload["via"], "ws_api");
     }
 

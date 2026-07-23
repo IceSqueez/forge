@@ -92,20 +92,22 @@ impl SubActionRunner for CoreGlobalsSetRunner {
         let persisted = config.bool("persisted").unwrap_or(false);
 
         let prev_value = self.globals.get(&name).await.ok().flatten();
+        let new_value_json = variant.to_plain_json();
+        let prev_value_json = prev_value
+            .as_ref()
+            .map(Variant::to_plain_json)
+            .unwrap_or(serde_json::Value::Null);
 
         let outcome = match self.globals.set(&name, variant, persisted).await {
             Ok(()) => {
-                let mut payload = serde_json::json!({
-                    "key": name,
-                    "new_value": raw,
-                });
-                if let Some(prev) = prev_value {
-                    payload["prev_value"] = serde_json::Value::String(prev.to_string());
-                }
                 ctx.publisher.publish(Event::caused_by(
                     EventSource::Core,
                     "global.set",
-                    payload,
+                    serde_json::json!({
+                        "key": name,
+                        "new_value": new_value_json,
+                        "prev_value": prev_value_json,
+                    }),
                     ctx.parent_event_id,
                 ));
                 SubActionOutcome::Success
@@ -133,6 +135,13 @@ mod tests {
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
+    }
+
+    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
     }
 
     #[derive(Default)]
@@ -209,5 +218,34 @@ mod tests {
                 "configured persisted {configured:?} must reach set() as {expected}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn set_runner_emits_global_set_with_plain_json_values_and_raw_prev() {
+        let globals = Arc::new(MapGlobals::default());
+        globals
+            .set("counter", Variant::Int(1), false)
+            .await
+            .unwrap();
+        let mut config = SubActionConfig::new();
+        config.insert("name".to_owned(), Variant::String("counter".to_owned()));
+        config.insert("value".to_owned(), Variant::String("42".to_owned()));
+
+        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let publisher = CapturingPublisher(Arc::clone(&events));
+        let parent = EventId::new();
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
+        let runner = CoreGlobalsSetRunner::new(Arc::clone(&globals) as Arc<dyn GlobalsRepo>);
+        let outcome = runner.execute(&config, &ctx).await.0.outcome;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let captured = events.lock().unwrap();
+        let ev = &captured[0];
+        assert_eq!(ev.kind, "global.set");
+        assert_eq!(ev.caused_by, Some(parent));
+        assert_eq!(ev.payload["key"], "counter");
+        assert_eq!(ev.payload["new_value"].as_i64(), Some(42));
+        assert_eq!(ev.payload["prev_value"].as_i64(), Some(1));
     }
 }

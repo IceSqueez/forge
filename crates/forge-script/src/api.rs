@@ -414,14 +414,18 @@ fn build_globals_module(
             let key_str = key.as_str();
             let variant =
                 dynamic_to_variant(val).map_err(|e| -> Box<EvalAltResult> { e.into() })?;
-            let new_value_str = variant.to_string();
+            let new_value_json = variant.to_plain_json();
             Handle::current()
                 .block_on(globals_set.set(key_str, variant, persisted))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
             pub_set.publish(Event::caused_by(
                 EventSource::Core,
                 "global.set",
-                serde_json::json!({ "key": key_str, "new_value": new_value_str }),
+                serde_json::json!({
+                    "key": key_str,
+                    "new_value": new_value_json,
+                    "prev_value": serde_json::Value::Null,
+                }),
                 caused_by,
             ));
             Ok(())
@@ -443,7 +447,7 @@ fn build_globals_module(
             };
             pub_incr.publish(Event::caused_by(
                 EventSource::Core,
-                "global.incr",
+                "global.incremented",
                 serde_json::json!({ "key": key_str, "delta": amount, "new_value": new_val_json }),
                 caused_by,
             ));
@@ -462,7 +466,7 @@ fn build_globals_module(
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
             pub_del.publish(Event::caused_by(
                 EventSource::Core,
-                "global.del",
+                "global.deleted",
                 serde_json::json!({ "key": key_str }),
                 caused_by,
             ));
@@ -540,11 +544,12 @@ mod tests {
         let ev = events.iter().find(|e| e.kind == "global.set").unwrap();
         assert_eq!(ev.caused_by, Some(caused_by));
         assert_eq!(ev.payload["key"].as_str(), Some("score"));
-        assert_eq!(ev.payload["new_value"].as_str(), Some("77"));
+        assert_eq!(ev.payload["new_value"].as_i64(), Some(77));
+        assert!(ev.payload["prev_value"].is_null());
     }
 
     #[tokio::test]
-    async fn forge_globals_incr_emits_global_incr_event() {
+    async fn forge_globals_incr_emits_global_incremented_event() {
         let dp = open_dp().await;
         GlobalsRepo::set(dp.as_ref(), "hits", Variant::Int(10), false)
             .await
@@ -564,10 +569,13 @@ mod tests {
 
         let events = captured.lock().unwrap();
         assert!(
-            events.iter().any(|e| e.kind == "global.incr"),
-            "global.incr must be emitted"
+            events.iter().any(|e| e.kind == "global.incremented"),
+            "global.incremented must be emitted"
         );
-        let ev = events.iter().find(|e| e.kind == "global.incr").unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "global.incremented")
+            .unwrap();
         assert_eq!(ev.caused_by, Some(caused_by));
         assert_eq!(ev.payload["key"].as_str(), Some("hits"));
         assert_eq!(ev.payload["delta"].as_i64(), Some(3));
@@ -575,7 +583,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forge_globals_del_emits_global_del_event() {
+    async fn forge_globals_del_emits_global_deleted_event() {
         let dp = open_dp().await;
         GlobalsRepo::set(dp.as_ref(), "temp", Variant::Int(1), false)
             .await
@@ -595,10 +603,10 @@ mod tests {
 
         let events = captured.lock().unwrap();
         assert!(
-            events.iter().any(|e| e.kind == "global.del"),
-            "global.del must be emitted"
+            events.iter().any(|e| e.kind == "global.deleted"),
+            "global.deleted must be emitted"
         );
-        let ev = events.iter().find(|e| e.kind == "global.del").unwrap();
+        let ev = events.iter().find(|e| e.kind == "global.deleted").unwrap();
         assert_eq!(ev.caused_by, Some(caused_by));
         assert_eq!(ev.payload["key"].as_str(), Some("temp"));
     }

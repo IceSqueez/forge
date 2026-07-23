@@ -125,10 +125,11 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
                     Ok(()) => {
                         ctx.publisher.publish(Event::caused_by(
                             EventSource::Core,
-                            "global.set",
+                            "global.array_removed",
                             serde_json::json!({
                                 "key": resolved_key,
                                 "new_length": new_len,
+                                "element": target.to_plain_json(),
                             }),
                             ctx.parent_event_id,
                         ));
@@ -161,6 +162,13 @@ mod tests {
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
+    }
+
+    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
     }
 
     #[derive(Default)]
@@ -296,5 +304,30 @@ mod tests {
         let globals = Arc::new(MapGlobals::with([("list", Variant::Int(5))]));
         let outcome = run(globals, &cfg("list", "1", false)).await;
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn array_remove_runner_emits_global_array_removed_with_element_and_length() {
+        let globals = seeded();
+        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let publisher = CapturingPublisher(Arc::clone(&events));
+        let parent = EventId::new();
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
+        let runner = CoreGlobalsArrayRemoveRunner::new(globals);
+        let outcome = runner
+            .execute(&cfg("list", "1", false), &ctx)
+            .await
+            .0
+            .outcome;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let captured = events.lock().unwrap();
+        let ev = &captured[0];
+        assert_eq!(ev.kind, "global.array_removed");
+        assert_eq!(ev.caused_by, Some(parent));
+        assert_eq!(ev.payload["key"], "list");
+        assert_eq!(ev.payload["new_length"].as_u64(), Some(4));
+        assert_eq!(ev.payload["element"].as_i64(), Some(1));
     }
 }

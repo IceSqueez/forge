@@ -110,6 +110,7 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
                 match array_result {
                     Err(msg) => SubActionOutcome::Failed(msg),
                     Ok(mut arr) => {
+                        let element_json = item.to_plain_json();
                         arr.push(item);
 
                         // When bounded, drop oldest items from the front to stay within max_len.
@@ -134,10 +135,11 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
                             Ok(()) => {
                                 ctx.publisher.publish(Event::caused_by(
                                     EventSource::Core,
-                                    "global.set",
+                                    "global.array_appended",
                                     serde_json::json!({
                                         "key": resolved_key,
                                         "new_length": new_len,
+                                        "element": element_json,
                                     }),
                                     ctx.parent_event_id,
                                 ));
@@ -168,6 +170,13 @@ mod tests {
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
+    }
+
+    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
     }
 
     #[derive(Default)]
@@ -317,5 +326,29 @@ mod tests {
         )]));
         run(globals.clone(), &cfg("list", "4", 0)).await;
         assert_eq!(globals.array("list").len(), 4, "0 must not bound the array");
+    }
+
+    #[tokio::test]
+    async fn array_append_runner_emits_global_array_appended_with_element_and_length() {
+        let globals = Arc::new(MapGlobals::with([(
+            "list",
+            Variant::Array(vec![Variant::Int(1), Variant::Int(2)]),
+        )]));
+        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let publisher = CapturingPublisher(Arc::clone(&events));
+        let parent = EventId::new();
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
+        let runner = CoreGlobalsArrayAppendRunner::new(globals);
+        let outcome = runner.execute(&cfg("list", "3", 0), &ctx).await.0.outcome;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let captured = events.lock().unwrap();
+        let ev = &captured[0];
+        assert_eq!(ev.kind, "global.array_appended");
+        assert_eq!(ev.caused_by, Some(parent));
+        assert_eq!(ev.payload["key"], "list");
+        assert_eq!(ev.payload["new_length"].as_u64(), Some(3));
+        assert_eq!(ev.payload["element"].as_i64(), Some(3));
     }
 }

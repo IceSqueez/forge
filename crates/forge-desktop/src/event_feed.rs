@@ -1151,8 +1151,8 @@ fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
         "command.matched" => palette.brand,
         "action.done" | "obs.scene.changed" => palette.success,
         "chat.send" => palette.info,
-        "action.start" | "script.exec" | "timer.tick" | "subaction.run" | "global.set"
-        | "global.incr" => palette.warning,
+        "action.start" | "script.exec" | "timer.tick" | "subaction.run" => palette.warning,
+        k if k.starts_with("global.") => palette.warning,
         k if k.contains("cheer") || k.contains("bits") => palette.warning,
         k if k.contains("raid") => palette.random,
         k if k.contains("sub") || k.contains("follow") => palette.brand,

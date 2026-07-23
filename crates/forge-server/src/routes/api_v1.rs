@@ -308,6 +308,7 @@ mod tests {
         bus_adapter.spawn();
         let mut tdp = TestDataProvider::new();
         tdp.globals().expect_list().returning(|| Ok(vec![]));
+        tdp.globals().expect_get().returning(|_| Ok(None));
         tdp.globals().expect_set().returning(|_, _, _| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let _registry = Arc::new(ScriptRegistry::new());

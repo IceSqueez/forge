@@ -106,13 +106,18 @@ pub(crate) async fn handle_set_global(
             };
         }
     };
+    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
+    let prev_value = globals_repo.get(&name).await.ok().flatten();
     let event_payload = serde_json::json!({
-        "name": name,
-        "value": variant_to_wire_value(&variant),
+        "key": name,
+        "new_value": variant_to_wire_value(&variant),
+        "prev_value": prev_value
+            .as_ref()
+            .map(variant_to_wire_value)
+            .unwrap_or(serde_json::Value::Null),
         "persisted": persisted,
         "via": "ws_api",
     });
-    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
     match globals_repo.set(&name, variant, persisted).await {
         Ok(()) => {
             ctx.bus

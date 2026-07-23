@@ -93,10 +93,10 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
                 };
                 ctx.publisher.publish(Event::caused_by(
                     EventSource::Core,
-                    "global.incr",
+                    "global.decremented",
                     serde_json::json!({
                         "key": resolved_key,
-                        "delta": -amount,
+                        "delta": amount,
                         "new_value": new_val_json,
                     }),
                     ctx.parent_event_id,
@@ -124,6 +124,13 @@ mod tests {
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
+    }
+
+    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
     }
 
     #[derive(Default)]
@@ -241,6 +248,44 @@ mod tests {
             globals.snapshot("counter"),
             Some(Variant::String("nope".to_owned())),
             "value must be untouched on failure"
+        );
+    }
+
+    async fn capture(globals: Arc<MapGlobals>, config: &SubActionConfig) -> Vec<Event> {
+        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let publisher = CapturingPublisher(Arc::clone(&events));
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
+        let runner = CoreGlobalsDecrementRunner::new(globals);
+        let _ = runner.execute(config, &ctx).await;
+        let captured = events.lock().unwrap();
+        captured.clone()
+    }
+
+    #[tokio::test]
+    async fn decrement_runner_emits_global_decremented_with_positive_delta() {
+        let globals = Arc::new(MapGlobals::with([("counter", Variant::Int(10))]));
+        let events = capture(globals, &cfg("counter", 3)).await;
+        let ev = &events[0];
+        assert_eq!(ev.kind, "global.decremented");
+        assert_eq!(ev.payload["key"], "counter");
+        assert_eq!(ev.payload["delta"].as_i64(), Some(3));
+        assert_eq!(ev.payload["new_value"].as_i64(), Some(7));
+    }
+
+    #[tokio::test]
+    async fn decrement_never_emits_incremented_with_negative_delta() {
+        let globals = Arc::new(MapGlobals::with([("counter", Variant::Int(10))]));
+        let events = capture(globals, &cfg("counter", 4)).await;
+        assert!(
+            !events.iter().any(|e| e.kind.contains("incr")),
+            "decrement must never masquerade as an increment"
+        );
+        assert!(
+            events
+                .iter()
+                .all(|e| e.payload["delta"].as_i64() != Some(-4)),
+            "sign lives in the verb; delta stays positive"
         );
     }
 }

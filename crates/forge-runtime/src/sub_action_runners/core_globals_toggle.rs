@@ -96,10 +96,11 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
                     Ok(()) => {
                         ctx.publisher.publish(Event::caused_by(
                             EventSource::Core,
-                            "global.set",
+                            "global.toggled",
                             serde_json::json!({
                                 "key": resolved_key,
                                 "new_value": !b,
+                                "prev_value": b,
                             }),
                             ctx.parent_event_id,
                         ));
@@ -132,6 +133,13 @@ mod tests {
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
+    }
+
+    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
     }
 
     #[derive(Default)]
@@ -254,5 +262,28 @@ mod tests {
             Some(Variant::Int(7)),
             "value must be untouched on failure"
         );
+    }
+
+    #[tokio::test]
+    async fn toggle_runner_emits_global_toggled_with_both_bools() {
+        for (start, flipped) in [(true, false), (false, true)] {
+            let globals = Arc::new(MapGlobals::with([("flag", Variant::Bool(start))]));
+            let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let publisher = CapturingPublisher(Arc::clone(&events));
+            let parent = EventId::new();
+            let stack = ArgStack::new();
+            let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
+            let runner = CoreGlobalsToggleRunner::new(globals);
+            let outcome = runner.execute(&cfg("flag"), &ctx).await.0.outcome;
+
+            assert!(matches!(outcome, SubActionOutcome::Success));
+            let captured = events.lock().unwrap();
+            let ev = &captured[0];
+            assert_eq!(ev.kind, "global.toggled");
+            assert_eq!(ev.caused_by, Some(parent));
+            assert_eq!(ev.payload["key"], "flag");
+            assert_eq!(ev.payload["new_value"].as_bool(), Some(flipped));
+            assert_eq!(ev.payload["prev_value"].as_bool(), Some(start));
+        }
     }
 }

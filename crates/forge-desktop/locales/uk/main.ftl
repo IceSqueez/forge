@@ -1201,13 +1201,6 @@ platforms_feature_chat = Чат
 platforms_feature_subs = Підписки
 platforms_feature_channel_events = Події каналу
 
-## Загальна сторінка платформи
-
-platform_generic_features_available = ЩО МОЖНА РОБИТИ ПІСЛЯ ПІДКЛЮЧЕННЯ
-platform_generic_kind_platform = Стримінгова платформа
-platform_generic_status_available = доступно - натисніть «Підключити» для авторизації
-platform_generic_connect_btn = Підключити
-
 ## Панель Twitch
 
 twitch_header_subtitle = Підключіть, щоб увімкнути чат, підписки, біти, рейди, нагороди каналу та EventSub
@@ -1246,21 +1239,26 @@ builtin_picker_midi_port = Оберіть порт MIDI
 
 ## OAuth / локальний callback-потік
 
-oauth_header_subtitle = Підключіть для доступу до живого чату та подій
-oauth_auth_title = Авторизувати Forge на { $name }
-oauth_auth_subtitle = Ця платформа використовує авторизацію за кодом. Ви побачите посилання нижче - перейдіть на сайт платформи і підтвердьте. Ми ніколи не бачимо вашого пароля.
+oauth_connect_eyebrow = ПІДКЛЮЧИТИ АКАУНТ
+oauth_connect_explainer_prefix = Forge використовує
+oauth_connect_explainer_emphasis = { " " }OAuth 2.0 Authorization Code з PKCE
+oauth_connect_explainer_suffix = . Ваш браузер відкриває { $name }, а відповідь повертається на локальну loopback-адресу - жоден секрет ніколи не зберігається.
+oauth_status_authorizing = Авторизація
+oauth_status_authorized = Авторизовано
+oauth_step_open_title = Відкрийте { $name } у браузері
+oauth_step_approve_title = Надайте доступ на платформі
+oauth_step_approve_caption = Forge очікує код авторизації на loopback-перенаправленні.
+oauth_step_exchange_title = Обмін коду на токен (+ verifier)
+oauth_step_exchange_caption = PKCE code_verifier підтверджує запит; токени зберігаються зашифрованими на цьому пристрої.
+oauth_step_connected_title = Підключено
+oauth_progress_launching = Запуск браузера…
+oauth_progress_waiting = Очікування підтвердження на { $name }…
+oauth_progress_subline = loopback :{ $port } · scopes: { $scopes }
+oauth_done_authorized = Авторизовано - завершуємо…
+oauth_footer_choose_different = Обрати іншу платформу
+oauth_footer_signin = Увійти через { $name }
 oauth_btn_retry = Повторити
 oauth_btn_cancel = Скасувати
-oauth_btn_return = Повернутися до платформ
-oauth_step1_title = Відкрийте це посилання в будь-якому браузері
-oauth_step1_open = Відкрити
-oauth_step2_title = Підтвердьте у браузері
-oauth_step2_detail = Forge прослуховує локальний порт для зворотного виклику OAuth. Вікно оновиться після підтвердження.
-oauth_polling_primary = Очікування авторизації на платформі…
-oauth_polling_secondary = перевірка кожні 5с
-oauth_requesting = Запит коду авторизації…
-oauth_authorized_title = Підключено до { $name }!
-oauth_authorized_subtitle = Авторизацію завершено.
 oauth_failed_title = Авторизація не вдалася
 
 ## Екран сервера
@@ -1326,18 +1324,10 @@ common_status_not_connected = Не підключено
 ## Деталі платформи YouTube
 
 youtube_description = Живий чат, супер-чати, членство в каналі, підписники.
-youtube_feature_live_chat = Живий чат із маркерами настрою
-youtube_feature_super_chat = Сповіщення Super Chat з рівнями аналогічно бітсам
-youtube_feature_memberships = Події вступу/підвищення/скасування членства в каналі
-youtube_feature_subscribers = Тригери досягнень підписників
 
 ## Деталі платформи Kick
 
 kick_description = Чат, підписки, хости - гібрид: офіційний OAuth API для відправки, Pusher WS спільноти для отримання. Не афілійовано з Kick.com.
-kick_feature_live_chat = Живий чат (отримання + відправка через OAuth)
-kick_feature_subs = Події підписок і подарованих підписок
-kick_feature_hosts_bans = Події хостів і банів
-kick_feature_deleted_replies = Події видалення повідомлень і відповідей
 
 ## Деталі VTube Studio
 

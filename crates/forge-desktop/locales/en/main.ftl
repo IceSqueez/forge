@@ -1194,13 +1194,6 @@ platforms_feature_chat = Chat
 platforms_feature_subs = Subs
 platforms_feature_channel_events = Channel events
 
-## Platform generic detail
-
-platform_generic_features_available = WHAT YOU CAN DO ONCE CONNECTED
-platform_generic_kind_platform = Streaming platform
-platform_generic_status_available = available - click Connect to authorize
-platform_generic_connect_btn = Connect
-
 ## Twitch panel
 
 twitch_header_subtitle = Connect to enable chat, subs, bits, raids, channel points, and EventSub
@@ -1239,21 +1232,26 @@ builtin_picker_midi_port = Choose a MIDI Port
 
 ## OAuth / local callback flow
 
-oauth_header_subtitle = Connect to enable live chat and events
-oauth_auth_title = Authorize Forge on { $name }
-oauth_auth_subtitle = This platform uses device code authorization. You will see a code below - enter it on the platform's site and we will detect when you are done. We never see your password.
+oauth_connect_eyebrow = CONNECT ACCOUNT
+oauth_connect_explainer_prefix = Forge uses
+oauth_connect_explainer_emphasis = { " " }OAuth 2.0 Authorization Code with PKCE
+oauth_connect_explainer_suffix = . Your browser opens { $name }, and the response returns to a local loopback address - no secret is ever stored.
+oauth_status_authorizing = Authorizing
+oauth_status_authorized = Authorized
+oauth_step_open_title = Open { $name } in your browser
+oauth_step_approve_title = Approve access on the platform
+oauth_step_approve_caption = Forge is listening on the loopback redirect for the authorization code.
+oauth_step_exchange_title = Exchange code for token (+ verifier)
+oauth_step_exchange_caption = PKCE code_verifier proves the request; tokens are stored encrypted on this device.
+oauth_step_connected_title = Connected
+oauth_progress_launching = Launching your browser…
+oauth_progress_waiting = Waiting for you to approve on { $name }…
+oauth_progress_subline = loopback :{ $port } · scopes: { $scopes }
+oauth_done_authorized = Authorized - finishing up…
+oauth_footer_choose_different = Choose different platform
+oauth_footer_signin = Sign in with { $name }
 oauth_btn_retry = Retry
 oauth_btn_cancel = Cancel
-oauth_btn_return = Return to Platforms
-oauth_step1_title = Open this URL in any browser
-oauth_step1_open = Open
-oauth_step2_title = Approve in your browser
-oauth_step2_detail = forge is listening on a local port for the OAuth callback. The window will refresh once you approve.
-oauth_polling_primary = Waiting for you to authorize on the platform…
-oauth_polling_secondary = polling every 5s
-oauth_requesting = Requesting authorization code…
-oauth_authorized_title = Connected to { $name }!
-oauth_authorized_subtitle = Authorization complete.
 oauth_failed_title = Authorization failed
 
 ## Server screen
@@ -1314,18 +1312,10 @@ common_status_not_connected = Not connected
 ## YouTube platform detail
 
 youtube_description = Live chat, super chats, channel memberships, subscribers.
-youtube_feature_live_chat = Live chat with sentiment markers
-youtube_feature_super_chat = Super Chat alerts with bits-equivalent tiers
-youtube_feature_memberships = Channel memberships join/upgrade/cancel events
-youtube_feature_subscribers = Subscriber milestone triggers
 
 ## Kick platform detail
 
 kick_description = Chat, subs, hosts - hybrid: official OAuth API for send, community Pusher WS for receive. Not affiliated with Kick.com.
-kick_feature_live_chat = Live chat (receive + send via OAuth)
-kick_feature_subs = Subscription and gifted-sub events
-kick_feature_hosts_bans = Host and ban events
-kick_feature_deleted_replies = Message-deleted and reply events
 
 ## VTube Studio platform detail
 

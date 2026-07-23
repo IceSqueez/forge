@@ -81,6 +81,7 @@ tabler_icons! {
     Lock => "lock.svg",
     X => "x.svg",
     CircleCheck => "circle-check.svg",
+    Check => "check.svg",
     InfoCircle => "info-circle.svg",
     Keyboard => "keyboard.svg",
     Folder => "folder.svg",

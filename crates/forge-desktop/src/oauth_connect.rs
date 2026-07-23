@@ -2,16 +2,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::async_bridge;
+use crate::screen::Screen;
 use forge_components::{
-    BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, ForgePalette, Icon, PlatformKind, Radius,
-    Spacing, avatar_tile, body_family, icon, mono_family, platform_color, radius, spacing, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, Spacing,
+    body_family, icon, mono_family, platform_color, platform_hero, radius, spacing, spinner, tr,
     with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_platform_core::ChatPlatform;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, div, prelude::*, px};
+use gpui::{
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla,
+    Rgba, SharedString, StyledText, div, prelude::*, px,
+};
 
 use crate::integration_detail::IntegrationDetail;
 
@@ -26,6 +30,13 @@ pub(crate) enum LocalCallbackFlowPhase {
     Waiting,
     Authorized,
     Failed,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StepState {
+    Pending,
+    Active,
+    Done,
 }
 
 struct LocalCallbackData {
@@ -43,7 +54,8 @@ impl IntegrationDetail {
             PlatformId::YouTube => {
                 let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
                     self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error = Some(tr!("auth_error_credentials_missing_youtube"));
+                    self.flow_error =
+                        Some(tr!("auth_error_credentials_missing_youtube").to_string());
                     cx.notify();
                     return;
                 };
@@ -56,7 +68,7 @@ impl IntegrationDetail {
             PlatformId::Kick => {
                 let Some(cid) = forge_platform_kick::client_credentials() else {
                     self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error = Some(tr!("auth_error_credentials_missing_kick"));
+                    self.flow_error = Some(tr!("auth_error_credentials_missing_kick").to_string());
                     cx.notify();
                     return;
                 };
@@ -186,13 +198,46 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    fn open_current_url(&mut self, cx: &mut Context<Self>) {
-        if let Some(url) = self.flow_auth_url.clone() {
-            self.open_url(url, cx);
-        }
+    pub(crate) fn connect_status(
+        &self,
+        platform: PlatformId,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
+        let accent = platform_accent(platform, palette);
+        let (indicator, label, color): (AnyElement, String, Rgba) = match self.flow_phase {
+            LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting => (
+                spinner("oauth-status-spin", Icon::Loader2, px(11.0), accent).into_any_element(),
+                tr!("oauth_status_authorizing"),
+                accent,
+            ),
+            LocalCallbackFlowPhase::Authorized => (
+                status_dot(palette.success).into_any_element(),
+                tr!("oauth_status_authorized"),
+                palette.success,
+            ),
+            _ => (
+                status_dot(palette.text_faint).into_any_element(),
+                tr!("common_status_not_connected"),
+                palette.text_faint,
+            ),
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(indicator)
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(color)
+                    .child(label),
+            )
+            .into_any_element()
     }
 
-    pub(crate) fn connect_body(
+    pub(crate) fn oauth_screen(
         &self,
         platform: PlatformId,
         palette: &ForgePalette,
@@ -200,334 +245,95 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let accent = platform_accent(platform, palette);
-        let (letter, desc, features) = connect_copy(platform);
+        let (letter, desc) = connect_copy(platform);
 
-        let tile = avatar_tile(letter, accent, palette)
-            .size(px(48.0))
-            .corner(px(11.0))
-            .font(px(24.0));
+        let hero = platform_hero(letter, accent, self.display_name.clone(), desc, palette)
+            .density(density);
 
-        let status_badge = div()
-            .flex_none()
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Xs, density))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.surface_overlay)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.info)
-                    .child(tr!("common_status_not_connected")),
-            );
+        let eyebrow = div()
+            .font_family(mono_family())
+            .text_size(FONT_XXS)
+            .text_color(palette.text_muted)
+            .mb(spacing(Spacing::Xs, density))
+            .child(tr!("oauth_connect_eyebrow"));
 
-        let name_row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_MD)
-                    .text_color(palette.text_primary)
-                    .child(self.display_name.clone()),
-            )
-            .child(status_badge);
+        let disclaimer = matches!(platform, PlatformId::Kick)
+            .then(|| self.connect_disclaimer(palette, density).into_any_element());
+        let progress = matches!(
+            self.flow_phase,
+            LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting
+        )
+        .then(|| self.oauth_progress_card(accent, palette, density));
+        let done = matches!(self.flow_phase, LocalCallbackFlowPhase::Authorized)
+            .then(|| self.oauth_done_card(palette, density));
+        let error = matches!(self.flow_phase, LocalCallbackFlowPhase::Failed)
+            .then(|| self.oauth_error_card(palette, density, cx));
 
-        let info = div()
-            .flex_1()
-            .min_w(px(0.0))
+        let column = div()
+            .w_full()
+            .max_w(px(640.0))
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(name_row)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(desc),
-            );
+            .child(eyebrow)
+            .child(self.oauth_explainer(palette, density))
+            .children(disclaimer)
+            .child(self.oauth_steps_card(accent, palette, density))
+            .children(progress)
+            .children(done)
+            .children(error)
+            .child(self.oauth_footer(palette, density, cx));
 
-        let hero = div()
+        div()
             .w_full()
             .flex()
-            .items_center()
+            .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .py(spacing(Spacing::Md, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(tile)
-            .child(info);
-
-        let mut features_col = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("platform_generic_features_available")),
-            );
-        for feature in features {
-            features_col = features_col.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::CircleCheck, px(14.0), palette.text_faint))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_secondary)
-                            .child(feature),
-                    ),
-            );
-        }
-
-        let connect_btn = div()
-            .id("integration-connect")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.brand)
-            .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.brand, 0.85)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
-            .child(icon(Icon::Lock, px(14.0), palette.shell))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.shell)
-                    .child(tr!("platform_generic_connect_btn")),
-            );
-        let connect_row = div().w_full().flex().justify_center().child(connect_btn);
-
-        let footer = div()
-            .w_full()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.shell)
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(format!(
-                        "{} \u{00b7} {}",
-                        tr!("platform_generic_kind_platform"),
-                        tr!("platform_generic_status_available"),
-                    )),
-            );
-
-        let mut body = div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(hero);
-        if matches!(platform, PlatformId::Kick) {
-            body = body.child(self.connect_disclaimer(palette, density));
-        }
-        body.child(features_col)
-            .child(connect_row)
-            .child(footer)
+            .child(hero)
+            .child(div().w_full().flex().justify_center().child(column))
             .into_any_element()
     }
 
-    fn connect_disclaimer(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        let text_col = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("iseed_kick_banner_title")),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(forge_platform_kick::capabilities::KICK_COMMUNITY_NOTE),
-            );
+    fn oauth_explainer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        let prefix = tr!("oauth_connect_explainer_prefix");
+        let emphasis = tr!("oauth_connect_explainer_emphasis");
+        let suffix = tr!(
+            "oauth_connect_explainer_suffix",
+            name = self.display_name.as_str()
+        );
+        let start = prefix.len();
+        let end = start + emphasis.len();
+        let full = format!("{prefix}{emphasis}{suffix}");
+        let styled = StyledText::new(SharedString::from(full)).with_highlights(vec![(
+            start..end,
+            HighlightStyle::from(Hsla::from(palette.text_primary)),
+        )]);
         div()
             .w_full()
-            .flex()
-            .items_start()
-            .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.warning)
-            .bg(palette.elevated)
-            .child(icon(Icon::AlertTriangle, px(16.0), palette.warning))
-            .child(text_col)
+            .font_family(body_family())
+            .text_size(FONT_XS)
+            .text_color(palette.text_muted)
+            .line_height(px(20.0))
+            .mb(spacing(Spacing::Lg, density))
+            .child(styled)
+            .into_any_element()
     }
 
-    pub(crate) fn flow_body(
+    fn oauth_steps_card(
         &self,
-        platform: PlatformId,
+        accent: Rgba,
         palette: &ForgePalette,
         density: Density,
-        cx: &mut Context<Self>,
     ) -> AnyElement {
-        let phase_card = match self.flow_phase {
-            LocalCallbackFlowPhase::Starting => self.flow_starting_card(palette, density),
-            LocalCallbackFlowPhase::Waiting => self.flow_polling_card(palette, density, cx),
-            LocalCallbackFlowPhase::Authorized => self.flow_authorized_card(palette, density, cx),
-            LocalCallbackFlowPhase::Failed => self.flow_failed_card(palette, density, cx),
-            LocalCallbackFlowPhase::Idle => div().into_any_element(),
-        };
+        let phase = self.flow_phase;
+        let platform_name = self.display_name.clone();
 
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(self.flow_header_card(platform, palette, density))
-            .child(phase_card)
-            .into_any_element()
-    }
-
-    fn flow_header_card(
-        &self,
-        platform: PlatformId,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> impl IntoElement {
-        let dot = div()
-            .flex_none()
-            .size(px(40.0))
-            .rounded(px(10.0))
-            .bg(platform_accent(platform, palette));
-        let title_col = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(self.display_name.clone()),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("oauth_header_subtitle")),
-            );
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Md, density))
-            .py(spacing(Spacing::Md, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(dot)
-            .child(title_col)
-    }
-
-    fn flow_intro(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::Lock, px(14.0), palette.brand))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(tr!("oauth_auth_title", name = self.display_name.as_str())),
-                    ),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("oauth_auth_subtitle")),
-            )
-    }
-
-    fn flow_starting_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .overflow_hidden()
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(self.flow_intro(palette, density))
-            .child(
-                div()
-                    .w_full()
-                    .flex()
-                    .justify_center()
-                    .p(spacing(Spacing::Md, density))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_muted)
-                            .child(tr!("oauth_requesting")),
-                    ),
-            )
-            .into_any_element()
-    }
-
-    fn flow_polling_card(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let url = self.flow_auth_url.clone().unwrap_or_default();
-
+        let url_text: SharedString = self
+            .flow_auth_url
+            .as_deref()
+            .map(elide_code_challenge)
+            .map_or_else(|| SharedString::from("\u{2014}"), SharedString::from);
         let url_box = div()
-            .flex_1()
-            .min_w(px(0.0))
+            .w_full()
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
@@ -535,118 +341,250 @@ impl IntegrationDetail {
             .border_color(palette.border_regular)
             .bg(palette.shell)
             .font_family(mono_family())
-            .text_size(FONT_SM)
+            .text_size(FONT_XXS)
             .text_color(palette.info)
-            .child(url);
-        let open_btn = div()
-            .id("integration-oauth-open")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.border_regular, 0.06)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_current_url(cx)))
-            .child(icon(Icon::ExternalLink, px(13.0), palette.brand))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.brand)
-                    .child(tr!("oauth_step1_open")),
-            );
-        let step1 = self.flow_step(
+            .child(url_text);
+        let s1 = self.oauth_step_row(
             "1",
+            step_state(phase, 0),
+            tr!("oauth_step_open_title", name = platform_name.as_str()),
+            Some(url_box.into_any_element()),
             false,
-            div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xs, density))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_primary)
-                        .child(tr!("oauth_step1_title")),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(spacing(Spacing::Xs, density))
-                        .child(url_box)
-                        .child(open_btn),
-                )
-                .into_any_element(),
-            palette,
-            density,
-        );
-        let step2 = self.flow_step(
-            "2",
-            true,
-            div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xxs, density))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_primary)
-                        .child(tr!("oauth_step2_title")),
-                )
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_XS)
-                        .text_color(palette.text_muted)
-                        .child(tr!("oauth_step2_detail")),
-                )
-                .into_any_element(),
+            accent,
             palette,
             density,
         );
 
-        let cancel = div()
-            .id("integration-oauth-cancel")
-            .flex_none()
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Xs, density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.border_regular, 0.06)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
+        let s2_active = matches!(step_state(phase, 1), StepState::Active);
+        let loopback: SharedString = self
+            .flow_auth_url
+            .as_deref()
+            .and_then(loopback_display)
+            .map_or_else(|| SharedString::from("\u{2014}"), SharedString::from);
+        let approve = div()
+            .flex()
+            .flex_col()
             .child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.text_secondary)
-                    .child(tr!("oauth_btn_cancel")),
+                    .text_color(palette.text_muted)
+                    .child(tr!("oauth_step_approve_caption")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .mt(spacing(Spacing::Xs, density))
+                    .child(icon(
+                        Icon::Server,
+                        px(12.0),
+                        if s2_active {
+                            accent
+                        } else {
+                            palette.text_faint
+                        },
+                    ))
+                    .child(
+                        div()
+                            .font_family(mono_family())
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_faint)
+                            .child(loopback),
+                    ),
             );
-        let banner = div()
+        let s2 = self.oauth_step_row(
+            "2",
+            step_state(phase, 1),
+            tr!("oauth_step_approve_title"),
+            Some(approve.into_any_element()),
+            false,
+            accent,
+            palette,
+            density,
+        );
+
+        let s3 = self.oauth_step_row(
+            "3",
+            step_state(phase, 2),
+            tr!("oauth_step_exchange_title"),
+            Some(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("oauth_step_exchange_caption"))
+                    .into_any_element(),
+            ),
+            false,
+            accent,
+            palette,
+            density,
+        );
+
+        let s4 = self.oauth_step_row(
+            "4",
+            step_state(phase, 3),
+            tr!("oauth_step_connected_title"),
+            None,
+            true,
+            accent,
+            palette,
+            density,
+        );
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .bg(palette.elevated)
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Md, density))
+            .mb(spacing(Spacing::Md, density))
+            .child(s1)
+            .child(s2)
+            .child(s3)
+            .child(s4)
+            .into_any_element()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn oauth_step_row(
+        &self,
+        n: &'static str,
+        state: StepState,
+        title: String,
+        children: Option<AnyElement>,
+        is_last: bool,
+        accent: Rgba,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
+        let circle_bg = match state {
+            StepState::Active => accent,
+            _ => palette.surface_overlay,
+        };
+        let inner: AnyElement = match state {
+            StepState::Done => icon(Icon::Check, px(13.0), palette.success).into_any_element(),
+            StepState::Active => spinner(
+                SharedString::from(format!("oauth-step-spin-{n}")),
+                Icon::Loader2,
+                px(13.0),
+                palette.shell,
+            )
+            .into_any_element(),
+            StepState::Pending => div()
+                .font_family(body_family())
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(n)
+                .into_any_element(),
+        };
+        let mut circle = div()
+            .flex_none()
+            .size(px(24.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(12.0))
+            .bg(circle_bg);
+        if matches!(state, StepState::Done) {
+            circle = circle.border(px(1.5)).border_color(palette.success);
+        }
+        let circle = circle.child(inner);
+
+        let title_color = if matches!(state, StepState::Pending) {
+            palette.text_faint
+        } else {
+            palette.text_primary
+        };
+        let mut content = div().flex_1().min_w(px(0.0)).flex().flex_col().child(
+            div()
+                .font_family(body_family())
+                .font_weight(FontWeight::MEDIUM)
+                .text_size(FONT_XS)
+                .text_color(title_color)
+                .child(title),
+        );
+        if let Some(children) = children {
+            content = content.gap(spacing(Spacing::Xs, density)).child(children);
+        }
+
+        let mut row = div()
+            .w_full()
+            .flex()
+            .items_start()
+            .gap(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Sm, density))
+            .child(circle)
+            .child(content);
+        if !is_last {
+            row = row
+                .border_b(BORDER_THIN)
+                .border_color(palette.border_regular);
+        }
+        if matches!(state, StepState::Pending) {
+            row = row.opacity(0.6);
+        }
+        row.into_any_element()
+    }
+
+    fn oauth_progress_card(
+        &self,
+        accent: Rgba,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> AnyElement {
+        let name = self.display_name.clone();
+        let (line, pct): (String, &'static str) = match self.flow_phase {
+            LocalCallbackFlowPhase::Starting => (tr!("oauth_progress_launching"), "22%"),
+            _ => (tr!("oauth_progress_waiting", name = name.as_str()), "68%"),
+        };
+        let port = self
+            .flow_auth_url
+            .as_deref()
+            .and_then(loopback_port)
+            .unwrap_or_default();
+        let scopes = self
+            .flow_auth_url
+            .as_deref()
+            .and_then(scopes_display)
+            .unwrap_or_default();
+        let subline = tr!(
+            "oauth_progress_subline",
+            port = port.as_str(),
+            scopes = scopes.as_str()
+        );
+
+        let pulse = div()
+            .flex_none()
+            .size(px(8.0))
+            .rounded(px(4.0))
+            .bg(accent)
+            .with_animation(
+                SharedString::from("oauth-progress-pulse"),
+                Animation::new(Duration::from_millis(1400)).repeat(),
+                |el, delta| el.opacity(1.0 - (delta * 2.0 - 1.0).abs() * 0.6),
+            );
+
+        div()
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, density))
+            .gap(spacing(Spacing::Sm, density))
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
-            .bg(palette.shell)
-            .child(
-                div()
-                    .flex_none()
-                    .size(px(8.0))
-                    .rounded(px(4.0))
-                    .bg(palette.brand),
-            )
+            .bg(palette.elevated)
+            .mb(spacing(Spacing::Md, density))
+            .child(pulse)
             .child(
                 div()
                     .flex_1()
@@ -657,137 +595,56 @@ impl IntegrationDetail {
                     .child(
                         div()
                             .font_family(body_family())
-                            .text_size(FONT_SM)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(FONT_XS)
                             .text_color(palette.text_primary)
-                            .child(tr!("oauth_polling_primary")),
+                            .child(line),
                     )
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_size(FONT_XS)
+                            .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
-                            .child(tr!("oauth_polling_secondary")),
+                            .child(subline),
                     ),
             )
-            .child(cancel);
-
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .overflow_hidden()
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(self.flow_intro(palette, density))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Sm, density))
-                    .p(spacing(Spacing::Md, density))
-                    .child(step1)
-                    .child(step2)
-                    .child(banner),
+                    .flex_none()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(accent)
+                    .child(pct),
             )
             .into_any_element()
     }
 
-    fn flow_step(
-        &self,
-        n: &str,
-        active: bool,
-        content: AnyElement,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> impl IntoElement {
-        let (bg, fg) = if active {
-            (palette.brand, palette.shell)
-        } else {
-            (palette.surface_overlay, palette.text_primary)
-        };
-        let circle = div()
-            .flex_none()
-            .size(px(24.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(12.0))
-            .bg(bg)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(FONT_XS)
-                    .text_color(fg)
-                    .child(n.to_owned()),
-            );
-        div()
-            .flex()
-            .items_start()
-            .gap(spacing(Spacing::Sm, density))
-            .child(circle)
-            .child(div().flex_1().min_w(px(0.0)).child(content))
-    }
-
-    fn flow_authorized_card(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let return_btn = div()
-            .id("integration-oauth-return")
-            .flex_none()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.brand)
-            .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.brand, 0.85)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.shell)
-                    .child(tr!("oauth_btn_return")),
-            );
+    fn oauth_done_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .w_full()
             .flex()
-            .flex_col()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Lg, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
-            .border_color(palette.border_regular)
+            .border_color(palette.success)
             .bg(palette.elevated)
-            .child(icon(Icon::CircleCheck, px(28.0), palette.success))
+            .mb(spacing(Spacing::Md, density))
+            .child(icon(Icon::CircleCheckFilled, px(16.0), palette.success))
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(FONT_SM)
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_XS)
                     .text_color(palette.text_primary)
-                    .child(tr!(
-                        "oauth_authorized_title",
-                        name = self.display_name.as_str()
-                    )),
+                    .child(tr!("oauth_done_authorized")),
             )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("oauth_authorized_subtitle")),
-            )
-            .child(return_btn)
             .into_any_element()
     }
 
-    fn flow_failed_card(
+    fn oauth_error_card(
         &self,
         palette: &ForgePalette,
         density: Density,
@@ -798,7 +655,7 @@ impl IntegrationDetail {
             .clone()
             .unwrap_or_else(|| tr!("oauth_failed_title"));
         let retry = div()
-            .id("integration-oauth-retry")
+            .id("oauth-error-retry")
             .flex_none()
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
@@ -810,12 +667,12 @@ impl IntegrationDetail {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(tr!("oauth_btn_retry")),
             );
         let cancel = div()
-            .id("integration-oauth-failed-cancel")
+            .id("oauth-error-cancel")
             .flex_none()
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))
@@ -837,21 +694,24 @@ impl IntegrationDetail {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Md, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
-            .border_color(palette.border_regular)
+            .border_color(palette.random)
             .bg(palette.elevated)
+            .mb(spacing(Spacing::Md, density))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::AlertTriangle, px(20.0), palette.random))
+                    .child(icon(Icon::AlertTriangle, px(16.0), palette.random))
                     .child(
                         div()
                             .font_family(body_family())
-                            .text_size(FONT_SM)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(tr!("oauth_failed_title")),
                     ),
@@ -873,6 +733,152 @@ impl IntegrationDetail {
             )
             .into_any_element()
     }
+
+    fn oauth_footer(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let back = div()
+            .id("oauth-choose-different")
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .cursor_pointer()
+            .on_click(
+                cx.listener(|this, _: &ClickEvent, _, cx| this.navigate_to(Screen::Platforms, cx)),
+            )
+            .child(icon(Icon::ChevronLeft, px(13.0), palette.text_muted))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("oauth_footer_choose_different")),
+            );
+
+        let right: Option<AnyElement> = match self.flow_phase {
+            LocalCallbackFlowPhase::Idle => {
+                let name = self.display_name.clone();
+                Some(
+                    div()
+                        .id("oauth-signin")
+                        .flex()
+                        .items_center()
+                        .gap(spacing(Spacing::Xs, density))
+                        .py(spacing(Spacing::Xs, density))
+                        .px(spacing(Spacing::Md, density))
+                        .rounded(radius(Radius::Sm))
+                        .bg(palette.brand)
+                        .cursor_pointer()
+                        .hover(|s| s.bg(with_alpha(palette.brand, 0.85)))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
+                        .child(icon(Icon::ExternalLink, px(13.0), palette.shell))
+                        .child(
+                            div()
+                                .font_family(body_family())
+                                .text_size(FONT_XS)
+                                .text_color(palette.shell)
+                                .child(tr!("oauth_footer_signin", name = name.as_str())),
+                        )
+                        .into_any_element(),
+                )
+            }
+            LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting => Some(
+                div()
+                    .id("oauth-footer-cancel")
+                    .flex_none()
+                    .py(spacing(Spacing::Xxs, density))
+                    .px(spacing(Spacing::Xs, density))
+                    .rounded(radius(Radius::Sm))
+                    .border(BORDER_THIN)
+                    .border_color(palette.border_regular)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(with_alpha(palette.border_regular, 0.06)))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_secondary)
+                            .child(tr!("oauth_btn_cancel")),
+                    )
+                    .into_any_element(),
+            ),
+            _ => None,
+        };
+
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .pt(spacing(Spacing::Xxs, density))
+            .child(back)
+            .children(right)
+            .into_any_element()
+    }
+
+    fn connect_disclaimer(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
+        let text_col = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_primary)
+                    .child(tr!("iseed_kick_banner_title")),
+            )
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(forge_platform_kick::capabilities::KICK_COMMUNITY_NOTE),
+            );
+        div()
+            .w_full()
+            .flex()
+            .items_start()
+            .gap(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(palette.warning)
+            .bg(palette.elevated)
+            .mb(spacing(Spacing::Md, density))
+            .child(icon(Icon::AlertTriangle, px(16.0), palette.warning))
+            .child(text_col)
+    }
+}
+
+fn status_dot(color: Rgba) -> impl IntoElement {
+    div().flex_none().size(px(8.0)).rounded(px(4.0)).bg(color)
+}
+
+fn step_state(phase: LocalCallbackFlowPhase, index: usize) -> StepState {
+    match phase {
+        LocalCallbackFlowPhase::Idle | LocalCallbackFlowPhase::Failed => StepState::Pending,
+        LocalCallbackFlowPhase::Starting => {
+            if index == 0 {
+                StepState::Active
+            } else {
+                StepState::Pending
+            }
+        }
+        LocalCallbackFlowPhase::Waiting => match index {
+            0 => StepState::Done,
+            1 => StepState::Active,
+            _ => StepState::Pending,
+        },
+        LocalCallbackFlowPhase::Authorized => StepState::Done,
+    }
 }
 
 fn platform_accent(platform: PlatformId, palette: &ForgePalette) -> Rgba {
@@ -883,28 +889,91 @@ fn platform_accent(platform: PlatformId, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn connect_copy(platform: PlatformId) -> (&'static str, String, Vec<String>) {
+fn connect_copy(platform: PlatformId) -> (&'static str, String) {
     match platform {
-        PlatformId::Kick => (
-            "K",
-            tr!("kick_description"),
-            vec![
-                tr!("kick_feature_live_chat"),
-                tr!("kick_feature_subs"),
-                tr!("kick_feature_hosts_bans"),
-                tr!("kick_feature_deleted_replies"),
-            ],
-        ),
-        _ => (
-            "Y",
-            tr!("youtube_description"),
-            vec![
-                tr!("youtube_feature_live_chat"),
-                tr!("youtube_feature_super_chat"),
-                tr!("youtube_feature_memberships"),
-                tr!("youtube_feature_subscribers"),
-            ],
-        ),
+        PlatformId::Kick => ("K", tr!("kick_description")),
+        _ => ("Y", tr!("youtube_description")),
+    }
+}
+
+fn param_value<'a>(url: &'a str, key: &str) -> Option<&'a str> {
+    let needle = format!("{key}=");
+    let start = url.find(&needle)? + needle.len();
+    let rest = &url[start..];
+    let end = rest.find('&').unwrap_or(rest.len());
+    Some(&rest[..end])
+}
+
+fn elide_code_challenge(url: &str) -> String {
+    let needle = "code_challenge=";
+    let Some(i) = url.find(needle) else {
+        return url.to_owned();
+    };
+    let start = i + needle.len();
+    let end = url[start..].find('&').map_or(url.len(), |j| start + j);
+    format!("{}\u{2026}{}", &url[..start], &url[end..])
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < bytes.len() => match (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                (Some(h), Some(l)) => {
+                    out.push(h * 16 + l);
+                    i += 3;
+                }
+                _ => {
+                    out.push(b'%');
+                    i += 1;
+                }
+            },
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn loopback_display(url: &str) -> Option<String> {
+    param_value(url, "redirect_uri").map(percent_decode)
+}
+
+fn loopback_port(url: &str) -> Option<String> {
+    let display = loopback_display(url)?;
+    let after = display.rsplit_once(':')?.1;
+    Some(after.split('/').next()?.to_owned())
+}
+
+fn scopes_display(url: &str) -> Option<String> {
+    let raw = param_value(url, "scope")?;
+    let joined = raw
+        .split('+')
+        .take(3)
+        .map(percent_decode)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined)
     }
 }
 

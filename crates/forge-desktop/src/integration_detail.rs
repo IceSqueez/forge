@@ -183,7 +183,7 @@ impl IntegrationDetail {
         }
     }
 
-    fn navigate_to(&mut self, screen: Screen, cx: &mut Context<Self>) {
+    pub(crate) fn navigate_to(&mut self, screen: Screen, cx: &mut Context<Self>) {
         cx.emit(NavRequested(screen));
     }
 
@@ -765,10 +765,7 @@ impl Render for IntegrationDetail {
             self.twitch_connect_view(&palette, density, cx)
         } else {
             match self.connect_platform {
-                Some(platform) if self.flow_phase == LocalCallbackFlowPhase::Idle => {
-                    self.connect_body(platform, &palette, density, cx)
-                }
-                Some(platform) => self.flow_body(platform, &palette, density, cx),
+                Some(platform) => self.oauth_screen(platform, &palette, density, cx),
                 None => {
                     let header_card = self.header_card(&palette, density, cx);
                     let reconnecting = matches!(
@@ -839,14 +836,21 @@ impl Render for IntegrationDetail {
             _ => BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
         };
 
-        let frame = page_frame(
+        let oauth_status = self
+            .connect_platform
+            .filter(|_| !self.show_twitch_connect)
+            .map(|platform| self.connect_status(platform, &palette, density));
+        let mut frame = page_frame(
             vec![
                 ancestor_crumb,
                 BreadcrumbCrumb::leaf(self.display_name.clone()),
             ],
             &palette,
-        )
-        .body(scroll);
+        );
+        if let Some(status) = oauth_status {
+            frame = frame.header_right(status);
+        }
+        let frame = frame.body(scroll);
 
         div()
             .size_full()

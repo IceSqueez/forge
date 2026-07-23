@@ -15,7 +15,12 @@ async fn run(bus: Arc<EventBus>, repo: Arc<dyn ViewerRepo>) {
     loop {
         match rx.recv().await {
             Ok(event) => {
-                if event.kind != "chat.message" {
+                if !matches!(
+                    event.kind.as_str(),
+                    "twitch.channel.chat.message"
+                        | "youtube.chat.message"
+                        | "kick.chat.message.sent"
+                ) {
                     continue;
                 }
                 let Some(platform) = map_source_to_platform(event.source) else {

@@ -21,10 +21,10 @@ fn chat_event(source: EventSource, kind: &str, payload: serde_json::Value) -> Ev
     Event::new(source, kind, payload)
 }
 
-fn user_message(source: EventSource, id: &str, login: &str) -> Event {
+fn user_message(source: EventSource, kind: &str, id: &str, login: &str) -> Event {
     chat_event(
         source,
-        "chat.message",
+        kind,
         serde_json::json!({ "user": { "id": id, "login": login } }),
     )
 }
@@ -46,34 +46,49 @@ fn tracker_recording_into(tx: mpsc::UnboundedSender<Recorded>) -> MockViewerRepo
 }
 
 #[tokio::test]
-async fn records_one_message_per_platform_source() {
+async fn records_chat_activity_for_each_live_platforms_real_chat_kind() {
     let bus = bus();
     let (tx, mut rx) = mpsc::unbounded_channel::<Recorded>();
 
     spawn_viewer_tracker(Arc::clone(&bus), Arc::new(tracker_recording_into(tx)));
     wait_until_subscribed().await;
 
-    bus.publish(user_message(EventSource::Twitch, "t1", "alice"));
-    bus.publish(user_message(EventSource::YouTube, "y1", "bob"));
-    bus.publish(user_message(EventSource::Kick, "k1", "carol"));
+    let cases: [(EventSource, &str, ViewerPlatform, &str, &str); 3] = [
+        (
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            ViewerPlatform::Twitch,
+            "t1",
+            "alice",
+        ),
+        (
+            EventSource::YouTube,
+            "youtube.chat.message",
+            ViewerPlatform::YouTube,
+            "y1",
+            "bob",
+        ),
+        (
+            EventSource::Kick,
+            "kick.chat.message.sent",
+            ViewerPlatform::Kick,
+            "k1",
+            "carol",
+        ),
+    ];
+
+    let mut expected: Vec<Recorded> = Vec::new();
+    for (source, kind, platform, id, login) in cases {
+        bus.publish(user_message(source, kind, id, login));
+        expected.push((platform, id.to_string(), login.to_string()));
+    }
 
     let mut got = Vec::new();
-    for _ in 0..3 {
+    for _ in 0..expected.len() {
         got.push(timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap());
     }
 
-    assert_eq!(
-        got,
-        vec![
-            (
-                ViewerPlatform::Twitch,
-                "t1".to_string(),
-                "alice".to_string()
-            ),
-            (ViewerPlatform::YouTube, "y1".to_string(), "bob".to_string()),
-            (ViewerPlatform::Kick, "k1".to_string(), "carol".to_string()),
-        ]
-    );
+    assert_eq!(got, expected);
 }
 
 #[tokio::test]
@@ -85,27 +100,38 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
     wait_until_subscribed().await;
 
     let skipped = [
-        user_message(EventSource::Core, "c1", "core-user"),
-        chat_event(
-            EventSource::Twitch,
-            "chat.whisper",
-            serde_json::json!({ "user": { "id": "w1", "login": "whisper" } }),
+        user_message(
+            EventSource::Core,
+            "twitch.channel.chat.message",
+            "c1",
+            "core-user",
         ),
+        user_message(EventSource::Twitch, "twitch.chat.whisper", "w1", "whisper"),
         chat_event(
             EventSource::Twitch,
-            "chat.message",
+            "twitch.channel.chat.message",
             serde_json::json!({ "text": "hi" }),
         ),
-        user_message(EventSource::Twitch, "", "loginonly"),
-        user_message(EventSource::Twitch, "idonly", ""),
+        user_message(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            "",
+            "loginonly",
+        ),
+        user_message(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            "idonly",
+            "",
+        ),
         chat_event(
             EventSource::Twitch,
-            "chat.message",
+            "twitch.channel.chat.message",
             serde_json::json!({ "user": { "login": "no-id" } }),
         ),
         chat_event(
             EventSource::Twitch,
-            "chat.message",
+            "twitch.channel.chat.message",
             serde_json::json!({ "user": { "id": "no-login" } }),
         ),
     ];
@@ -113,7 +139,12 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
         bus.publish(event);
     }
 
-    bus.publish(user_message(EventSource::Twitch, "ok", "sentinel"));
+    bus.publish(user_message(
+        EventSource::Twitch,
+        "twitch.channel.chat.message",
+        "ok",
+        "sentinel",
+    ));
 
     let recorded = timeout(RECV_TIMEOUT, rx.recv()).await.unwrap().unwrap();
     assert_eq!(

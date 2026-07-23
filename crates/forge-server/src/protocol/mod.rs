@@ -1175,17 +1175,17 @@ mod tests {
         };
         ctx.bus.publish(Event::new(
             EventSource::Twitch,
-            "chat.message",
+            "twitch.channel.chat.message",
             chat_payload("alice", "111"),
         ));
         ctx.bus.publish(Event::new(
             EventSource::Twitch,
-            "chat.message",
+            "twitch.channel.chat.message",
             chat_payload("alice", "111"),
         ));
         ctx.bus.publish(Event::new(
             EventSource::Twitch,
-            "chat.message",
+            "twitch.channel.chat.message",
             chat_payload("bob", "222"),
         ));
         let req = WsEnvelope {

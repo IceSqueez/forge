@@ -320,7 +320,10 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
     let mut viewers: BTreeMap<(&'static str, String), serde_json::Value> = BTreeMap::new();
 
     for ev in events.iter() {
-        if ev.kind != "chat.message" {
+        if !matches!(
+            ev.kind.as_str(),
+            "twitch.channel.chat.message" | "youtube.chat.message" | "kick.chat.message.sent"
+        ) {
             continue;
         }
         if ev.timestamp < cutoff {

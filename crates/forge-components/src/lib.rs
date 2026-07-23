@@ -21,6 +21,7 @@ pub mod overlay;
 pub mod page_frame;
 pub mod palette;
 pub mod picker;
+pub mod platform_hero;
 pub mod radio_row;
 pub mod resize_handle;
 pub mod save_state;
@@ -89,6 +90,7 @@ pub use palette::{
     with_alpha,
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
+pub use platform_hero::{PlatformHero, platform_hero};
 pub use radio_row::{RadioRow, radio_row, radio_row_label};
 pub use resize_handle::{ResizeEdge, ResizeRange, install_resize};
 pub use save_state::{SaveState, save_indicator};

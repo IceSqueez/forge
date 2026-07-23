@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge,
-    body_family, fmt_clock, icon, mono_family, radius, spacing, tr, with_alpha,
+    body_family, fmt_clock, icon, mono_family, platform_hero, radius, spacing, tr, with_alpha,
 };
 use forge_platform_twitch::{TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
 use forge_storage::CredentialsRepo;
@@ -264,55 +264,14 @@ impl IntegrationDetail {
     }
 
     fn twitch_header_card(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        let tile = div()
-            .flex_none()
-            .size(px(48.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(11.0))
-            .bg(palette.brand)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(24.0))
-                    .text_color(palette.shell)
-                    .child("T"),
-            );
-        let title_col = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child("Twitch"),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("twitch_header_subtitle")),
-            );
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Md, density))
-            .py(spacing(Spacing::Md, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(tile)
-            .child(title_col)
+        platform_hero(
+            "T",
+            palette.brand,
+            "Twitch",
+            tr!("twitch_header_subtitle"),
+            palette,
+        )
+        .density(density)
     }
 
     fn twitch_flow_intro(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {

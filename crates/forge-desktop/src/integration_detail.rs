@@ -1,8 +1,8 @@
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS,
-    ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
-    Spacing, ToastKind, avatar_tile, badge, body_family, confirm_modal, fmt_uptime, icon,
-    mono_family, overlay, page_frame, radius, spacing, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette,
+    Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing,
+    ToastKind, badge, body_family, confirm_modal, fmt_uptime, icon, overlay, page_frame,
+    platform_hero, radius, spacing, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -455,25 +455,15 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (letter, brand) = hero_identity(self.icon.as_str(), &self.display_name, palette);
+        let sub = sub_line(self.endpoint.as_deref(), self.uptime);
 
-        let tile = avatar_tile(letter, brand, palette)
-            .size(px(48.0))
-            .corner(px(11.0))
-            .font(px(24.0));
-
-        let mut name_row = div()
+        let mut right = div()
+            .flex_none()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_LG)
-                    .text_color(palette.text_primary)
-                    .child(self.display_name.clone()),
-            );
+            .gap(spacing(Spacing::Xs, density));
         if let Some(version) = &self.version {
-            name_row = name_row.child(pill(version.clone(), palette.text_muted, palette));
+            right = right.child(pill(version.clone(), palette.text_muted, palette));
         }
         if self.capability_flags.limited {
             let label = self
@@ -481,48 +471,15 @@ impl IntegrationDetail {
                 .label
                 .clone()
                 .unwrap_or_else(|| tr!("widget_header_capability_limited"));
-            name_row = name_row.child(pill(label.to_uppercase(), palette.warning, palette));
+            right = right.child(pill(label.to_uppercase(), palette.warning, palette));
         }
-
-        let sub = sub_line(self.endpoint.as_deref(), self.uptime);
-        let info = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(name_row)
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(sub),
-            );
-
-        let mut actions = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density));
         for (i, action) in self.header_actions.iter().enumerate() {
-            actions = actions.child(self.action_button(i, action.clone(), palette, density, cx));
+            right = right.child(self.action_button(i, action.clone(), palette, density, cx));
         }
 
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Md, density))
-            .py(spacing(Spacing::Md, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Lg))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(tile)
-            .child(info)
-            .child(actions)
+        platform_hero(letter, brand, self.display_name.clone(), sub, palette)
+            .density(density)
+            .right(right)
             .into_any_element()
     }
 

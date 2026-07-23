@@ -793,28 +793,10 @@ impl EventFeedView {
     }
 
     fn payload_block(&self, item: &EventItem, palette: &ForgePalette) -> impl IntoElement + use<> {
-        let key = palette.info;
-        let val = palette.success;
-        let brace = palette.text_muted;
+        let mut lines: Vec<gpui::AnyElement> = Vec::new();
+        push_json_lines(&item.payload, 0, None, false, palette, &mut lines);
 
-        let line = |indent: f32, children: Vec<gpui::AnyElement>| {
-            div().flex().pl(px(indent)).children(children)
-        };
-        let kv = |k: &str, v: String, k_color: Rgba, v_color: Rgba| -> Vec<gpui::AnyElement> {
-            vec![
-                div()
-                    .text_color(k_color)
-                    .child(format!("\"{k}\""))
-                    .into_any_element(),
-                div().text_color(brace).child(": ").into_any_element(),
-                div()
-                    .text_color(v_color)
-                    .child(format!("\"{v}\""))
-                    .into_any_element(),
-            ]
-        };
-
-        let mut block = div()
+        div()
             .w_full()
             .flex()
             .flex_col()
@@ -826,52 +808,7 @@ impl EventFeedView {
             .bg(palette.base)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
-            .child(div().text_color(brace).child("{"))
-            .child(line(10.0, kv("event", item.kind.to_string(), key, val)))
-            .child(line(
-                10.0,
-                kv("source", source_label(item.source).to_lowercase(), key, val),
-            ));
-
-        if !item.user_login.is_empty() {
-            block = block
-                .child(line(
-                    10.0,
-                    vec![
-                        div().text_color(key).child("\"user\"").into_any_element(),
-                        div().text_color(brace).child(": {").into_any_element(),
-                    ],
-                ))
-                .child(line(
-                    20.0,
-                    kv("login", item.user_login.to_string(), key, val),
-                ))
-                .child(line(
-                    20.0,
-                    kv("platform", item.user_platform.to_string(), key, val),
-                ))
-                .child(line(
-                    10.0,
-                    vec![div().text_color(brace).child("},").into_any_element()],
-                ));
-        }
-
-        block
-            .child(line(
-                10.0,
-                vec![
-                    div()
-                        .text_color(key)
-                        .child("\"timestamp\"")
-                        .into_any_element(),
-                    div().text_color(brace).child(": ").into_any_element(),
-                    div()
-                        .text_color(palette.warning)
-                        .child(item.timestamp.to_string())
-                        .into_any_element(),
-                ],
-            ))
-            .child(div().text_color(brace).child("}"))
+            .children(lines)
     }
 
     fn resolved_selection(&self, cx: &Context<Self>) -> Option<EventItem> {
@@ -1011,6 +948,105 @@ impl FilterCounts {
             EventFilter::Timers => self.timers,
             EventFilter::Obs => self.obs,
             EventFilter::Errors => self.errors,
+        }
+    }
+}
+
+const JSON_INDENT_PX: f32 = 10.0;
+
+fn json_line(indent: usize, children: Vec<gpui::AnyElement>) -> gpui::AnyElement {
+    div()
+        .flex()
+        .pl(px(indent as f32 * JSON_INDENT_PX))
+        .children(children)
+        .into_any_element()
+}
+
+fn json_span(text: String, color: Rgba) -> gpui::AnyElement {
+    div().text_color(color).child(text).into_any_element()
+}
+
+fn json_scalar_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(_) => value.to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn json_scalar_color(value: &serde_json::Value, palette: &ForgePalette) -> Rgba {
+    match value {
+        serde_json::Value::String(_) => palette.success,
+        serde_json::Value::Number(_) => palette.warning,
+        _ => palette.text_muted,
+    }
+}
+
+fn push_json_lines(
+    value: &serde_json::Value,
+    indent: usize,
+    key: Option<&str>,
+    trailing_comma: bool,
+    palette: &ForgePalette,
+    out: &mut Vec<gpui::AnyElement>,
+) {
+    let brace = palette.text_muted;
+    let key_color = palette.info;
+    let comma = if trailing_comma { "," } else { "" };
+    let prefix = |open: &str| {
+        let mut spans = Vec::new();
+        if let Some(k) = key {
+            spans.push(json_span(format!("\"{k}\""), key_color));
+            spans.push(json_span(": ".to_owned(), brace));
+        }
+        spans.push(json_span(open.to_owned(), brace));
+        spans
+    };
+
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.is_empty() {
+                out.push(json_line(indent, prefix(&format!("{{}}{comma}"))));
+                return;
+            }
+            out.push(json_line(indent, prefix("{")));
+            for (i, (k, v)) in map.iter().enumerate() {
+                let last = i + 1 == map.len();
+                push_json_lines(v, indent + 1, Some(k), !last, palette, out);
+            }
+            out.push(json_line(
+                indent,
+                vec![json_span(format!("}}{comma}"), brace)],
+            ));
+        }
+        serde_json::Value::Array(items) => {
+            if items.is_empty() {
+                out.push(json_line(indent, prefix(&format!("[]{comma}"))));
+                return;
+            }
+            out.push(json_line(indent, prefix("[")));
+            for (i, v) in items.iter().enumerate() {
+                let last = i + 1 == items.len();
+                push_json_lines(v, indent + 1, None, !last, palette, out);
+            }
+            out.push(json_line(
+                indent,
+                vec![json_span(format!("]{comma}"), brace)],
+            ));
+        }
+        scalar => {
+            let mut spans = Vec::new();
+            if let Some(k) = key {
+                spans.push(json_span(format!("\"{k}\""), key_color));
+                spans.push(json_span(": ".to_owned(), brace));
+            }
+            spans.push(json_span(
+                json_scalar_text(scalar),
+                json_scalar_color(scalar, palette),
+            ));
+            if trailing_comma {
+                spans.push(json_span(",".to_owned(), brace));
+            }
+            out.push(json_line(indent, spans));
         }
     }
 }

@@ -42,6 +42,7 @@ pub struct EventItem {
     pub is_error: bool,
     pub user_login: SharedString,
     pub user_platform: SharedString,
+    pub payload: serde_json::Value,
 }
 
 impl EventItem {
@@ -135,6 +136,7 @@ impl EventLog {
             is_error,
             user_login: user_login.into(),
             user_platform: user_platform.into(),
+            payload: event.payload.clone(),
         })
     }
 

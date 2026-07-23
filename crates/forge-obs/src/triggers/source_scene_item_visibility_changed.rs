@@ -56,29 +56,41 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("source.".to_owned()),
+            kind_prefix: Some("obs.source.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "source.visibility.changed"
+        event.kind == "obs.source.visibility_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(scene) = event.payload.get(fields::SCENE).and_then(|v| v.as_str()) {
+        if let Some(scene) = event
+            .payload
+            .get(fields::SCENE_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.scene.name".to_owned(),
                 Variant::String(scene.to_owned()),
             );
         }
-        if let Some(source) = event.payload.get(fields::SOURCE).and_then(|v| v.as_str()) {
+        if let Some(source) = event
+            .payload
+            .get(fields::SOURCE_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.source.name".to_owned(),
                 Variant::String(source.to_owned()),
             );
         }
-        if let Some(visible) = event.payload.get(fields::VISIBLE).and_then(|v| v.as_bool()) {
+        if let Some(visible) = event
+            .payload
+            .get(fields::IS_VISIBLE)
+            .and_then(|v| v.as_bool())
+        {
             stack = stack.set("obs.source.is_enabled".to_owned(), Variant::Bool(visible));
         }
         stack
@@ -121,8 +133,8 @@ mod tests {
     fn visibility_arg_stack_extracts_scene_source_and_enabled_flag() {
         let event = Event::new(
             EventSource::Obs,
-            "source.visibility.changed",
-            json!({ "scene": "Main", "source": "Cam", "visible": true }),
+            "obs.source.visibility_changed",
+            json!({ "scene_name": "Main", "source_name": "Cam", "is_visible": true }),
         );
         let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
         assert_eq!(
@@ -143,8 +155,8 @@ mod tests {
     fn visibility_arg_stack_preserves_false_enabled_flag() {
         let event = Event::new(
             EventSource::Obs,
-            "source.visibility.changed",
-            json!({ "scene": "Main", "source": "Cam", "visible": false }),
+            "obs.source.visibility_changed",
+            json!({ "scene_name": "Main", "source_name": "Cam", "is_visible": false }),
         );
         let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
         assert_eq!(
@@ -155,7 +167,7 @@ mod tests {
 
     #[test]
     fn visibility_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "source.visibility.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.source.visibility_changed", json!({}));
         let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.scene.name").is_none());
         assert!(stack.get("obs.source.name").is_none());

@@ -67,12 +67,12 @@ impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("audio.".to_owned()),
+            kind_prefix: Some("obs.audio.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "audio.source_mute_changed" {
+        if event.kind != "obs.audio.source_mute_changed" {
             return false;
         }
         source_name_matches(config, event)
@@ -149,10 +149,10 @@ mod tests {
     use serde_json::json;
 
     const ALL_AUDIO_KINDS: [&str; 4] = [
-        "audio.source_mute_changed",
-        "audio.source_volume_changed",
-        "audio.source_balance_changed",
-        "audio.source_sync_offset_changed",
+        "obs.audio.source_mute_changed",
+        "obs.audio.source_volume_changed",
+        "obs.audio.source_balance_changed",
+        "obs.audio.source_sync_offset_changed",
     ];
 
     fn audio_event(kind: &str, source: &str) -> Event {
@@ -164,19 +164,19 @@ mod tests {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
             (
-                "audio.source_mute_changed",
+                "obs.audio.source_mute_changed",
                 &AudioSourceMuteChangedDescriptor,
             ),
             (
-                "audio.source_volume_changed",
+                "obs.audio.source_volume_changed",
                 &AudioSourceVolumeChangedDescriptor,
             ),
             (
-                "audio.source_balance_changed",
+                "obs.audio.source_balance_changed",
                 &AudioSourceBalanceChangedDescriptor,
             ),
             (
-                "audio.source_sync_offset_changed",
+                "obs.audio.source_sync_offset_changed",
                 &AudioSourceSyncOffsetChangedDescriptor,
             ),
         ];
@@ -193,17 +193,17 @@ mod tests {
 
     #[test]
     fn audio_descriptor_rejects_non_audio_kind() {
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn empty_filter_matches_any_source() {
         let cfg = BTreeMap::new();
-        assert!(
-            AudioSourceMuteChangedDescriptor
-                .matches_trigger(&cfg, &audio_event("audio.source_mute_changed", "Desktop"))
-        );
+        assert!(AudioSourceMuteChangedDescriptor.matches_trigger(
+            &cfg,
+            &audio_event("obs.audio.source_mute_changed", "Desktop")
+        ));
     }
 
     #[test]
@@ -212,7 +212,7 @@ mod tests {
         cfg.insert("source_name".to_owned(), Variant::String(String::new()));
         assert!(
             AudioSourceMuteChangedDescriptor
-                .matches_trigger(&cfg, &audio_event("audio.source_mute_changed", "Mic"))
+                .matches_trigger(&cfg, &audio_event("obs.audio.source_mute_changed", "Mic"))
         );
     }
 
@@ -222,7 +222,7 @@ mod tests {
         cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
         assert!(
             AudioSourceMuteChangedDescriptor
-                .matches_trigger(&cfg, &audio_event("audio.source_mute_changed", "Mic"))
+                .matches_trigger(&cfg, &audio_event("obs.audio.source_mute_changed", "Mic"))
         );
     }
 
@@ -230,17 +230,17 @@ mod tests {
     fn configured_filter_rejects_when_source_name_differs() {
         let mut cfg = BTreeMap::new();
         cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
-        assert!(
-            !AudioSourceMuteChangedDescriptor
-                .matches_trigger(&cfg, &audio_event("audio.source_mute_changed", "Desktop"))
-        );
+        assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(
+            &cfg,
+            &audio_event("obs.audio.source_mute_changed", "Desktop")
+        ));
     }
 
     #[test]
     fn configured_filter_rejects_when_event_has_no_source_name() {
         let mut cfg = BTreeMap::new();
         cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
-        let event = Event::new(EventSource::Obs, "audio.source_mute_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.audio.source_mute_changed", json!({}));
         assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(&cfg, &event));
     }
 
@@ -248,7 +248,7 @@ mod tests {
     fn mute_arg_stack_extracts_source_name_and_muted_flag() {
         let event = Event::new(
             EventSource::Obs,
-            "audio.source_mute_changed",
+            "obs.audio.source_mute_changed",
             json!({ "source_name": "Mic", "is_muted": true }),
         );
         let stack = build_mute_arg_stack(&event);
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn mute_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "audio.source_mute_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.audio.source_mute_changed", json!({}));
         let stack = build_mute_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.is_muted").is_none());

@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for FilterRemovedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("filter.".to_owned()),
+            kind_prefix: Some("obs.filter.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "filter.removed"
+        event.kind == "obs.filter.removed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -127,16 +127,22 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
 
-    const ALL_FILTER_KINDS: [&str; 3] =
-        ["filter.created", "filter.removed", "filter.enabled_changed"];
+    const ALL_FILTER_KINDS: [&str; 3] = [
+        "obs.filter.created",
+        "obs.filter.removed",
+        "obs.filter.enabled_changed",
+    ];
 
     #[test]
     fn each_filter_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 3] = [
-            ("filter.created", &FilterCreatedDescriptor),
-            ("filter.removed", &FilterRemovedDescriptor),
-            ("filter.enabled_changed", &FilterEnabledChangedDescriptor),
+            ("obs.filter.created", &FilterCreatedDescriptor),
+            ("obs.filter.removed", &FilterRemovedDescriptor),
+            (
+                "obs.filter.enabled_changed",
+                &FilterEnabledChangedDescriptor,
+            ),
         ];
         for (own_kind, descriptor) in descriptors {
             for kind in ALL_FILTER_KINDS {
@@ -158,7 +164,7 @@ mod tests {
             &FilterRemovedDescriptor,
             &FilterEnabledChangedDescriptor,
         ];
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         for descriptor in descriptors {
             assert!(!descriptor.matches_trigger(&cfg, &event));
         }
@@ -168,7 +174,7 @@ mod tests {
     fn filter_source_arg_stack_extracts_source_and_filter_names() {
         let event = Event::new(
             EventSource::Obs,
-            "filter.removed",
+            "obs.filter.removed",
             json!({ "source_name": "Mic", "filter_name": "Noise Gate" }),
         );
         let stack = build_filter_source_arg_stack(&event);
@@ -184,7 +190,7 @@ mod tests {
 
     #[test]
     fn filter_source_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "filter.removed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.filter.removed", json!({}));
         let stack = build_filter_source_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.filter.name").is_none());

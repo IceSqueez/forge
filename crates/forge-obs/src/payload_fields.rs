@@ -1,13 +1,16 @@
 pub(crate) mod connection {
     pub(crate) const REASON: &str = "reason";
+    pub(crate) const DETAIL: &str = "detail";
     pub(crate) const ERROR_MESSAGE: &str = "error_message";
+
+    pub(crate) mod reason {
+        pub(crate) const CONNECTION_LOST: &str = "connection_lost";
+    }
 }
 
 pub(crate) mod scene {
     pub(crate) const FROM_SCENE: &str = "from_scene";
     pub(crate) const TO_SCENE: &str = "to_scene";
-    pub(crate) const NAME_OLD: &str = "name_old";
-    pub(crate) const NAME_NEW: &str = "name_new";
     pub(crate) const ALL_NAMES: &str = "all_names";
     pub(crate) const SCENE_NAME: &str = "scene_name";
     pub(crate) const SCENE_NAME_OLD: &str = "scene_name_old";
@@ -21,28 +24,20 @@ pub(crate) mod profile {
 
 pub(crate) mod collection {
     pub(crate) const ALL_NAMES: &str = "all_names";
-    pub(crate) const NAME: &str = "name";
+    pub(crate) const COLLECTION_NAME: &str = "collection_name";
 }
 
 pub(crate) mod recording {
     pub(crate) const OUTPUT_PATH: &str = "output_path";
-    pub(crate) const OUTPUT_STATE: &str = "output_state";
     pub(crate) const IS_ACTIVE: &str = "is_active";
-    pub(crate) const OUTPUT_PATH_NEW: &str = "output_path_new";
 }
 
 pub(crate) mod streaming {
-    pub(crate) const OUTPUT_STATE: &str = "output_state";
     pub(crate) const IS_ACTIVE: &str = "is_active";
 }
 
 pub(crate) mod virtualcam {
-    pub(crate) const OUTPUT_STATE: &str = "output_state";
     pub(crate) const IS_ACTIVE: &str = "is_active";
-}
-
-pub(crate) mod studio {
-    pub(crate) const ENABLED: &str = "enabled";
 }
 
 pub(crate) mod transition {
@@ -63,10 +58,9 @@ pub(crate) mod source {
     pub(crate) const SOURCE_KIND: &str = "source_kind";
     pub(crate) const SOURCE_NAME_OLD: &str = "source_name_old";
     pub(crate) const SOURCE_NAME_NEW: &str = "source_name_new";
-    pub(crate) const SCENE: &str = "scene";
-    pub(crate) const SOURCE: &str = "source";
+    pub(crate) const SCENE_NAME: &str = "scene_name";
     pub(crate) const IS_LOCKED: &str = "is_locked";
-    pub(crate) const VISIBLE: &str = "visible";
+    pub(crate) const IS_VISIBLE: &str = "is_visible";
 }
 
 pub(crate) mod filter {

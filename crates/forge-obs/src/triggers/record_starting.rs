@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for RecordStartingDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("recording.".to_owned()),
+            kind_prefix: Some("obs.recording.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "recording.starting"
+        event.kind == "obs.recording.starting"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -100,11 +100,7 @@ pub(crate) fn record_variables() -> Vec<DeclaredVariable> {
 
 pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(s) = event
-        .payload
-        .get(fields::OUTPUT_STATE)
-        .and_then(|v| v.as_str())
-    {
+    if let Some(s) = event.kind.rsplit('.').next() {
         stack = stack.set(
             "obs.record.output_state".to_owned(),
             Variant::String(s.to_owned()),
@@ -143,12 +139,12 @@ mod tests {
     use serde_json::json;
 
     const ALL_LIFECYCLE_KINDS: [&str; 6] = [
-        "recording.starting",
-        "recording.started",
-        "recording.stopping",
-        "recording.stopped",
-        "recording.paused",
-        "recording.resumed",
+        "obs.recording.starting",
+        "obs.recording.started",
+        "obs.recording.stopping",
+        "obs.recording.stopped",
+        "obs.recording.paused",
+        "obs.recording.resumed",
     ];
 
     fn record_event(kind: &str) -> Event {
@@ -162,12 +158,12 @@ mod tests {
     #[test]
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 6] = [
-            ("recording.starting", &RecordStartingDescriptor),
-            ("recording.started", &RecordStartedDescriptor),
-            ("recording.stopping", &RecordStoppingDescriptor),
-            ("recording.stopped", &RecordStoppedDescriptor),
-            ("recording.paused", &RecordPausedDescriptor),
-            ("recording.resumed", &RecordResumedDescriptor),
+            ("obs.recording.starting", &RecordStartingDescriptor),
+            ("obs.recording.started", &RecordStartedDescriptor),
+            ("obs.recording.stopping", &RecordStoppingDescriptor),
+            ("obs.recording.stopped", &RecordStoppedDescriptor),
+            ("obs.recording.paused", &RecordPausedDescriptor),
+            ("obs.recording.resumed", &RecordResumedDescriptor),
         ];
         let cfg = BTreeMap::new();
         for (own_kind, descriptor) in descriptors {
@@ -179,7 +175,7 @@ mod tests {
                 );
             }
             assert!(
-                !descriptor.matches_trigger(&cfg, &record_event("recording.file_changed")),
+                !descriptor.matches_trigger(&cfg, &record_event("obs.recording.file_changed")),
                 "descriptor for {own_kind} wrongly matched recording.file_changed",
             );
         }
@@ -198,15 +194,15 @@ mod tests {
 
     #[test]
     fn omnibus_rejects_file_changed() {
-        assert!(
-            !RecordStatusChangedDescriptor
-                .matches_trigger(&BTreeMap::new(), &record_event("recording.file_changed")),
-        );
+        assert!(!RecordStatusChangedDescriptor.matches_trigger(
+            &BTreeMap::new(),
+            &record_event("obs.recording.file_changed")
+        ),);
     }
 
     #[test]
     fn omnibus_rejects_non_recording_kind() {
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!RecordStatusChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
@@ -215,7 +211,7 @@ mod tests {
         let cfg = BTreeMap::new();
         assert!(
             RecordFileChangedDescriptor
-                .matches_trigger(&cfg, &record_event("recording.file_changed")),
+                .matches_trigger(&cfg, &record_event("obs.recording.file_changed")),
         );
         for kind in ALL_LIFECYCLE_KINDS {
             assert!(
@@ -229,7 +225,7 @@ mod tests {
     fn build_arg_stack_extracts_state_active_and_path() {
         let event = Event::new(
             EventSource::Obs,
-            "recording.started",
+            "obs.recording.started",
             json!({ "output_state": "started", "is_active": true, "output_path": "/rec/a.mkv" }),
         );
         let stack = build_record_arg_stack(&event);
@@ -248,32 +244,35 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "recording.started", json!({}));
+    fn build_arg_stack_derives_output_state_from_kind_when_payload_empty() {
+        let event = Event::new(EventSource::Obs, "obs.recording.started", json!({}));
         let stack = build_record_arg_stack(&event);
-        assert!(stack.get("obs.record.output_state").is_none());
+        assert_eq!(
+            stack.get("obs.record.output_state"),
+            Some(&Variant::String("started".to_owned())),
+        );
         assert!(stack.get("obs.record.is_active").is_none());
         assert!(stack.get("obs.record.output_path").is_none());
     }
 
     #[test]
-    fn file_changed_arg_stack_sets_new_output_path() {
+    fn file_changed_arg_stack_sets_output_path() {
         let event = Event::new(
             EventSource::Obs,
-            "recording.file_changed",
-            json!({ "output_path_new": "/rec/part2.mkv" }),
+            "obs.recording.file_changed",
+            json!({ "output_path": "/rec/part2.mkv" }),
         );
         let stack = RecordFileChangedDescriptor.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.record.output_path_new"),
+            stack.get("obs.record.output_path"),
             Some(&Variant::String("/rec/part2.mkv".to_owned())),
         );
     }
 
     #[test]
     fn file_changed_arg_stack_omits_path_when_absent() {
-        let event = Event::new(EventSource::Obs, "recording.file_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.recording.file_changed", json!({}));
         let stack = RecordFileChangedDescriptor.build_arg_stack(&event);
-        assert!(stack.get("obs.record.output_path_new").is_none());
+        assert!(stack.get("obs.record.output_path").is_none());
     }
 }

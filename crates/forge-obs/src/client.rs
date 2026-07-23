@@ -365,7 +365,10 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                 match item {
                                     None => {
                                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
-                                        publisher.publish(crate::events::make_connection_disconnected("connection_lost"));
+                                        publisher.publish(crate::events::make_connection_disconnected(
+                                            crate::payload_fields::connection::reason::CONNECTION_LOST,
+                                            None,
+                                        ));
                                         break;
                                     }
                                     Some(ev) => {

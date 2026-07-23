@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for CollectionListChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("collection.".to_owned()),
+            kind_prefix: Some("obs.collection.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "collection.list_changed"
+        event.kind == "obs.collection.list_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -109,12 +109,12 @@ mod tests {
         let cfg = BTreeMap::new();
         assert!(d.matches_trigger(
             &cfg,
-            &Event::new(EventSource::Obs, "collection.list_changed", json!({})),
+            &Event::new(EventSource::Obs, "obs.collection.list_changed", json!({})),
         ));
-        for sibling in ["collection.changing", "collection.changed"] {
+        for sibling in ["obs.collection.changing", "obs.collection.changed"] {
             assert!(
                 !d.matches_trigger(&cfg, &Event::new(EventSource::Obs, sibling, json!({}))),
-                "collection.list_changed wrongly matched sibling kind {sibling}",
+                "obs.collection.list_changed wrongly matched sibling kind {sibling}",
             );
         }
     }
@@ -123,7 +123,7 @@ mod tests {
     fn arg_stack_collects_all_names_into_string_array() {
         let event = Event::new(
             EventSource::Obs,
-            "collection.list_changed",
+            "obs.collection.list_changed",
             json!({ "all_names": ["Main", "Alt"] }),
         );
         let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
@@ -140,7 +140,7 @@ mod tests {
     fn arg_stack_skips_non_string_array_elements() {
         let event = Event::new(
             EventSource::Obs,
-            "collection.list_changed",
+            "obs.collection.list_changed",
             json!({ "all_names": ["Main", 7, null, "Alt"] }),
         );
         let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn arg_stack_omits_key_when_all_names_absent() {
-        let event = Event::new(EventSource::Obs, "collection.list_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.collection.list_changed", json!({}));
         let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.collection.all_names").is_none());
     }

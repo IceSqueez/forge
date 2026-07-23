@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for VirtualcamStatusChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("virtualcam.".to_owned()),
+            kind_prefix: Some("obs.virtualcam.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind.starts_with("virtualcam.")
+        event.kind.starts_with("obs.virtualcam.")
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -94,11 +94,7 @@ pub(crate) fn virtualcam_variables() -> Vec<DeclaredVariable> {
 
 pub(crate) fn build_virtualcam_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(s) = event
-        .payload
-        .get(fields::OUTPUT_STATE)
-        .and_then(|v| v.as_str())
-    {
+    if let Some(s) = event.kind.rsplit('.').next() {
         stack = stack.set(
             "obs.virtualcam.output_state".to_owned(),
             Variant::String(s.to_owned()),
@@ -124,10 +120,10 @@ mod tests {
     fn omnibus_matches_every_virtualcam_lifecycle_kind() {
         let d = VirtualcamStatusChangedDescriptor;
         for kind in [
-            "virtualcam.starting",
-            "virtualcam.started",
-            "virtualcam.stopping",
-            "virtualcam.stopped",
+            "obs.virtualcam.starting",
+            "obs.virtualcam.started",
+            "obs.virtualcam.stopping",
+            "obs.virtualcam.stopped",
         ] {
             let event = Event::new(EventSource::Obs, kind, json!({}));
             assert!(
@@ -140,7 +136,11 @@ mod tests {
     #[test]
     fn omnibus_rejects_non_virtualcam_kinds() {
         let d = VirtualcamStatusChangedDescriptor;
-        for kind in ["streaming.started", "recording.stopped", "scene.changed"] {
+        for kind in [
+            "obs.streaming.started",
+            "obs.recording.stopped",
+            "obs.scene.changed",
+        ] {
             let event = Event::new(EventSource::Obs, kind, json!({}));
             assert!(
                 !d.matches_trigger(&BTreeMap::new(), &event),
@@ -153,7 +153,7 @@ mod tests {
     fn build_arg_stack_extracts_output_state_and_is_active() {
         let event = Event::new(
             EventSource::Obs,
-            "virtualcam.started",
+            "obs.virtualcam.started",
             json!({ "output_state": "started", "is_active": true }),
         );
         let stack = build_virtualcam_arg_stack(&event);
@@ -171,7 +171,7 @@ mod tests {
     fn build_arg_stack_extracts_is_active_false() {
         let event = Event::new(
             EventSource::Obs,
-            "virtualcam.stopped",
+            "obs.virtualcam.stopped",
             json!({ "output_state": "stopped", "is_active": false }),
         );
         assert_eq!(
@@ -181,10 +181,13 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_omits_keys_when_payload_empty() {
-        let event = Event::new(EventSource::Obs, "virtualcam.started", json!({}));
+    fn build_arg_stack_derives_output_state_from_kind_when_payload_empty() {
+        let event = Event::new(EventSource::Obs, "obs.virtualcam.started", json!({}));
         let stack = build_virtualcam_arg_stack(&event);
-        assert_eq!(stack.get("obs.virtualcam.output_state"), None);
+        assert_eq!(
+            stack.get("obs.virtualcam.output_state"),
+            Some(&Variant::String("started".to_owned())),
+        );
         assert_eq!(stack.get("obs.virtualcam.is_active"), None);
     }
 
@@ -192,7 +195,7 @@ mod tests {
     fn build_arg_stack_omits_is_active_when_wrong_json_type() {
         let event = Event::new(
             EventSource::Obs,
-            "virtualcam.started",
+            "obs.virtualcam.started",
             json!({ "output_state": "started", "is_active": "true" }),
         );
         let stack = build_virtualcam_arg_stack(&event);

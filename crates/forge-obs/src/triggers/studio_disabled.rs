@@ -54,12 +54,12 @@ impl TriggerKindDescriptor for StudioDisabledDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("studio.".to_owned()),
+            kind_prefix: Some("obs.studio.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "studio.disabled"
+        event.kind == "obs.studio.disabled"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

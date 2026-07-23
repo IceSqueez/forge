@@ -68,12 +68,12 @@ impl TriggerKindDescriptor for AudioSourceVolumeChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("audio.".to_owned()),
+            kind_prefix: Some("obs.audio.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "audio.source_volume_changed" {
+        if event.kind != "obs.audio.source_volume_changed" {
             return false;
         }
         source_name_matches(config, event)
@@ -148,7 +148,7 @@ mod tests {
     fn volume_arg_stack_extracts_name_db_and_multiplier_as_floats() {
         let event = Event::new(
             EventSource::Obs,
-            "audio.source_volume_changed",
+            "obs.audio.source_volume_changed",
             json!({ "source_name": "Mic", "volume_db": -12.5, "volume_multiplier": 0.25 }),
         );
         let stack = AudioSourceVolumeChangedDescriptor.build_arg_stack(&event);
@@ -168,7 +168,11 @@ mod tests {
 
     #[test]
     fn volume_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "audio.source_volume_changed", json!({}));
+        let event = Event::new(
+            EventSource::Obs,
+            "obs.audio.source_volume_changed",
+            json!({}),
+        );
         let stack = AudioSourceVolumeChangedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.volume_db").is_none());

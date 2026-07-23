@@ -68,12 +68,12 @@ impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("audio.".to_owned()),
+            kind_prefix: Some("obs.audio.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "audio.source_balance_changed" {
+        if event.kind != "obs.audio.source_balance_changed" {
             return false;
         }
         source_name_matches(config, event)
@@ -128,7 +128,7 @@ mod tests {
     fn balance_arg_stack_extracts_name_and_balance_as_float() {
         let event = Event::new(
             EventSource::Obs,
-            "audio.source_balance_changed",
+            "obs.audio.source_balance_changed",
             json!({ "source_name": "Mic", "balance": 0.75 }),
         );
         let stack = AudioSourceBalanceChangedDescriptor.build_arg_stack(&event);
@@ -141,7 +141,11 @@ mod tests {
 
     #[test]
     fn balance_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "audio.source_balance_changed", json!({}));
+        let event = Event::new(
+            EventSource::Obs,
+            "obs.audio.source_balance_changed",
+            json!({}),
+        );
         let stack = AudioSourceBalanceChangedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.balance").is_none());

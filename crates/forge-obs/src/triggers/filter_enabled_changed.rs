@@ -57,12 +57,12 @@ impl TriggerKindDescriptor for FilterEnabledChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("filter.".to_owned()),
+            kind_prefix: Some("obs.filter.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "filter.enabled_changed"
+        event.kind == "obs.filter.enabled_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -100,7 +100,7 @@ mod tests {
         for flag in [true, false] {
             let event = Event::new(
                 EventSource::Obs,
-                "filter.enabled_changed",
+                "obs.filter.enabled_changed",
                 json!({ "is_enabled": flag }),
             );
             assert_eq!(
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn arg_stack_omits_is_enabled_when_payload_field_absent() {
-        let event = Event::new(EventSource::Obs, "filter.enabled_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.filter.enabled_changed", json!({}));
         assert!(
             FilterEnabledChangedDescriptor
                 .build_arg_stack(&event)

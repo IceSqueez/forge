@@ -68,12 +68,12 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("audio.".to_owned()),
+            kind_prefix: Some("obs.audio.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "audio.source_sync_offset_changed" {
+        if event.kind != "obs.audio.source_sync_offset_changed" {
             return false;
         }
         source_name_matches(config, event)
@@ -135,7 +135,7 @@ mod tests {
     fn sync_offset_arg_stack_extracts_name_and_offset_as_int() {
         let event = Event::new(
             EventSource::Obs,
-            "audio.source_sync_offset_changed",
+            "obs.audio.source_sync_offset_changed",
             json!({ "source_name": "Mic", "sync_offset_ms": -120 }),
         );
         let stack = AudioSourceSyncOffsetChangedDescriptor.build_arg_stack(&event);
@@ -153,7 +153,7 @@ mod tests {
     fn sync_offset_arg_stack_omits_keys_when_payload_fields_absent() {
         let event = Event::new(
             EventSource::Obs,
-            "audio.source_sync_offset_changed",
+            "obs.audio.source_sync_offset_changed",
             json!({}),
         );
         let stack = AudioSourceSyncOffsetChangedDescriptor.build_arg_stack(&event);

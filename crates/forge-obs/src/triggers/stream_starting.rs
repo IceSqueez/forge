@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for StreamStartingDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("streaming.".to_owned()),
+            kind_prefix: Some("obs.streaming.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "streaming.starting"
+        event.kind == "obs.streaming.starting"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -94,11 +94,7 @@ pub(crate) fn stream_variables() -> Vec<DeclaredVariable> {
 
 pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(s) = event
-        .payload
-        .get(fields::OUTPUT_STATE)
-        .and_then(|v| v.as_str())
-    {
+    if let Some(s) = event.kind.rsplit('.').next() {
         stack = stack.set(
             "obs.stream.output_state".to_owned(),
             Variant::String(s.to_owned()),
@@ -126,12 +122,12 @@ mod tests {
     use serde_json::json;
 
     const ALL_STREAMING_KINDS: [&str; 6] = [
-        "streaming.starting",
-        "streaming.started",
-        "streaming.stopping",
-        "streaming.stopped",
-        "streaming.reconnecting",
-        "streaming.reconnected",
+        "obs.streaming.starting",
+        "obs.streaming.started",
+        "obs.streaming.stopping",
+        "obs.streaming.stopped",
+        "obs.streaming.reconnecting",
+        "obs.streaming.reconnected",
     ];
 
     fn stream_event(kind: &str, state: &str, active: bool) -> Event {
@@ -145,10 +141,10 @@ mod tests {
     #[test]
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
-            ("streaming.starting", &StreamStartingDescriptor),
-            ("streaming.started", &StreamStartedDescriptor),
-            ("streaming.stopping", &StreamStoppingDescriptor),
-            ("streaming.stopped", &StreamStoppedDescriptor),
+            ("obs.streaming.starting", &StreamStartingDescriptor),
+            ("obs.streaming.started", &StreamStartedDescriptor),
+            ("obs.streaming.stopping", &StreamStoppingDescriptor),
+            ("obs.streaming.stopped", &StreamStoppedDescriptor),
         ];
         let cfg = BTreeMap::new();
         for (own_kind, descriptor) in descriptors {
@@ -176,13 +172,14 @@ mod tests {
 
     #[test]
     fn omnibus_rejects_non_streaming_kind() {
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!StreamStatusChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn build_arg_stack_extracts_output_state_and_is_active() {
-        let stack = build_stream_arg_stack(&stream_event("streaming.stopped", "stopped", false));
+        let stack =
+            build_stream_arg_stack(&stream_event("obs.streaming.stopped", "stopped", false));
         assert_eq!(
             stack.get("obs.stream.output_state"),
             Some(&Variant::String("stopped".to_owned())),
@@ -194,10 +191,13 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "streaming.started", json!({}));
+    fn build_arg_stack_derives_output_state_from_kind_when_payload_empty() {
+        let event = Event::new(EventSource::Obs, "obs.streaming.started", json!({}));
         let stack = build_stream_arg_stack(&event);
-        assert!(stack.get("obs.stream.output_state").is_none());
+        assert_eq!(
+            stack.get("obs.stream.output_state"),
+            Some(&Variant::String("started".to_owned())),
+        );
         assert!(stack.get("obs.stream.is_active").is_none());
     }
 }

@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("scene.".to_owned()),
+            kind_prefix: Some("obs.scene.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "scene.list_changed"
+        event.kind == "obs.scene.list_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -104,7 +104,7 @@ mod tests {
         let d = SceneListChangedDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "scene.list_changed",
+            "obs.scene.list_changed",
             json!({ "all_names": ["Menu", "Gameplay"] }),
         );
         assert!(d.matches_trigger(&BTreeMap::new(), &event));
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn does_not_match_other_scene_kind() {
         let d = SceneListChangedDescriptor;
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
 
@@ -122,7 +122,7 @@ mod tests {
         let d = SceneListChangedDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "scene.list_changed",
+            "obs.scene.list_changed",
             json!({ "all_names": ["Menu", "Gameplay", "BRB"] }),
         );
         let stack = d.build_arg_stack(&event);
@@ -141,7 +141,7 @@ mod tests {
         let d = SceneListChangedDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "scene.list_changed",
+            "obs.scene.list_changed",
             json!({ "all_names": ["Menu", 7, "Gameplay"] }),
         );
         let stack = d.build_arg_stack(&event);
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn build_arg_stack_omits_key_when_all_names_missing() {
         let d = SceneListChangedDescriptor;
-        let event = Event::new(EventSource::Obs, "scene.list_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.list_changed", json!({}));
         assert_eq!(d.build_arg_stack(&event).get("obs.scene_names"), None);
     }
 }

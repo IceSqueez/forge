@@ -11,25 +11,28 @@ use crate::payload_fields::{
     audio as audio_fields, collection as collection_fields, connection as connection_fields,
     filter as filter_fields, profile as profile_fields, recording as recording_fields,
     scene as scene_fields, source as source_fields, streaming as streaming_fields,
-    studio as studio_fields, transition as transition_fields, virtualcam as virtualcam_fields,
+    transition as transition_fields, virtualcam as virtualcam_fields,
 };
 
 pub(crate) fn make_connection_connected() -> Event {
-    Event::new(EventSource::Obs, "connection.connected", json!({}))
+    Event::new(EventSource::Obs, "obs.connection.connected", json!({}))
 }
 
-pub(crate) fn make_connection_disconnected(reason: &str) -> Event {
+pub(crate) fn make_connection_disconnected(reason: &str, detail: Option<&str>) -> Event {
     Event::new(
         EventSource::Obs,
-        "connection.disconnected",
-        json!({ (connection_fields::REASON): reason }),
+        "obs.connection.disconnected",
+        json!({
+            (connection_fields::REASON): reason,
+            (connection_fields::DETAIL): detail,
+        }),
     )
 }
 
 pub(crate) fn make_connection_auth_failed(message: &str) -> Event {
     Event::new(
         EventSource::Obs,
-        "connection.auth_failed",
+        "obs.connection.auth_failed",
         json!({ (connection_fields::ERROR_MESSAGE): message }),
     )
 }
@@ -44,16 +47,16 @@ pub(crate) fn make_scene_changed_event(
         (scene_fields::TO_SCENE): to_scene,
     });
     match cause {
-        Some(c) => Event::caused_by(EventSource::Obs, "scene.changed", payload, c),
-        None => Event::new(EventSource::Obs, "scene.changed", payload),
+        Some(c) => Event::caused_by(EventSource::Obs, "obs.scene.changed", payload, c),
+        None => Event::new(EventSource::Obs, "obs.scene.changed", payload),
     }
 }
 
 pub(crate) fn make_record_event(active: bool, path: Option<&str>) -> Event {
     let kind = if active {
-        "recording.started"
+        "obs.recording.started"
     } else {
-        "recording.stopped"
+        "obs.recording.stopped"
     };
     Event::new(
         EventSource::Obs,
@@ -69,32 +72,22 @@ pub(crate) fn make_record_state_event(
 ) -> Event {
     use obws::events::OutputState;
     let kind = match state {
-        OutputState::Starting => "recording.starting",
-        OutputState::Stopping => "recording.stopping",
-        OutputState::Paused => "recording.paused",
-        OutputState::Resumed => "recording.resumed",
+        OutputState::Starting => "obs.recording.starting",
+        OutputState::Stopping => "obs.recording.stopping",
+        OutputState::Paused => "obs.recording.paused",
+        OutputState::Resumed => "obs.recording.resumed",
         _ => {
             if active {
-                "recording.started"
+                "obs.recording.started"
             } else {
-                "recording.stopped"
+                "obs.recording.stopped"
             }
         }
-    };
-    let state_str = match state {
-        OutputState::Starting => "starting",
-        OutputState::Started => "started",
-        OutputState::Stopping => "stopping",
-        OutputState::Stopped => "stopped",
-        OutputState::Paused => "paused",
-        OutputState::Resumed => "resumed",
-        _ => "unknown",
     };
     Event::new(
         EventSource::Obs,
         kind,
         json!({
-            (recording_fields::OUTPUT_STATE): state_str,
             (recording_fields::IS_ACTIVE): active,
             (recording_fields::OUTPUT_PATH): path,
         }),
@@ -104,72 +97,46 @@ pub(crate) fn make_record_state_event(
 pub(crate) fn make_virtualcam_event(active: bool, state: &obws::events::OutputState) -> Event {
     use obws::events::OutputState;
     let kind = match state {
-        OutputState::Starting => "virtualcam.starting",
-        OutputState::Started => "virtualcam.started",
-        OutputState::Stopping => "virtualcam.stopping",
-        OutputState::Stopped => "virtualcam.stopped",
+        OutputState::Starting => "obs.virtualcam.starting",
+        OutputState::Started => "obs.virtualcam.started",
+        OutputState::Stopping => "obs.virtualcam.stopping",
+        OutputState::Stopped => "obs.virtualcam.stopped",
         _ => {
             if active {
-                "virtualcam.started"
+                "obs.virtualcam.started"
             } else {
-                "virtualcam.stopped"
+                "obs.virtualcam.stopped"
             }
         }
-    };
-    let state_str = match state {
-        OutputState::Starting => "starting",
-        OutputState::Started => "started",
-        OutputState::Stopping => "stopping",
-        OutputState::Stopped => "stopped",
-        OutputState::Paused => "paused",
-        OutputState::Resumed => "resumed",
-        _ => "unknown",
     };
     Event::new(
         EventSource::Obs,
         kind,
-        json!({
-            (virtualcam_fields::OUTPUT_STATE): state_str,
-            (virtualcam_fields::IS_ACTIVE): active,
-        }),
+        json!({ (virtualcam_fields::IS_ACTIVE): active }),
     )
 }
 
 pub(crate) fn make_stream_event(active: bool, state: &obws::events::OutputState) -> Event {
     use obws::events::OutputState;
     let kind = match state {
-        OutputState::Starting => "streaming.starting",
-        OutputState::Started => "streaming.started",
-        OutputState::Stopping => "streaming.stopping",
-        OutputState::Stopped => "streaming.stopped",
-        OutputState::Reconnecting => "streaming.reconnecting",
-        OutputState::Reconnected => "streaming.reconnected",
+        OutputState::Starting => "obs.streaming.starting",
+        OutputState::Started => "obs.streaming.started",
+        OutputState::Stopping => "obs.streaming.stopping",
+        OutputState::Stopped => "obs.streaming.stopped",
+        OutputState::Reconnecting => "obs.streaming.reconnecting",
+        OutputState::Reconnected => "obs.streaming.reconnected",
         _ => {
             if active {
-                "streaming.started"
+                "obs.streaming.started"
             } else {
-                "streaming.stopped"
+                "obs.streaming.stopped"
             }
         }
-    };
-    let state_str = match state {
-        OutputState::Starting => "starting",
-        OutputState::Started => "started",
-        OutputState::Stopping => "stopping",
-        OutputState::Stopped => "stopped",
-        OutputState::Reconnecting => "reconnecting",
-        OutputState::Reconnected => "reconnected",
-        OutputState::Paused => "paused",
-        OutputState::Resumed => "resumed",
-        _ => "unknown",
     };
     Event::new(
         EventSource::Obs,
         kind,
-        json!({
-            (streaming_fields::OUTPUT_STATE): state_str,
-            (streaming_fields::IS_ACTIVE): active,
-        }),
+        json!({ (streaming_fields::IS_ACTIVE): active }),
     )
 }
 
@@ -184,35 +151,35 @@ pub(crate) fn map_obs_event(
         }
         obws::events::Event::CurrentPreviewSceneChanged { id } => Some(Event::new(
             EventSource::Obs,
-            "scene.preview_changed",
+            "obs.scene.preview_changed",
             json!({
-                (scene_fields::NAME_OLD): from_scene.unwrap_or(""),
-                (scene_fields::NAME_NEW): id.name,
+                (scene_fields::SCENE_NAME_OLD): from_scene.unwrap_or(""),
+                (scene_fields::SCENE_NAME_NEW): id.name,
             }),
         )),
         obws::events::Event::SceneListChanged { scenes } => {
             let names: Vec<&str> = scenes.iter().map(|s| s.name.as_str()).collect();
             Some(Event::new(
                 EventSource::Obs,
-                "scene.list_changed",
+                "obs.scene.list_changed",
                 json!({ (scene_fields::ALL_NAMES): names }),
             ))
         }
         obws::events::Event::SceneCreated { id, .. } => Some(Event::new(
             EventSource::Obs,
-            "scene.created",
+            "obs.scene.created",
             json!({ (scene_fields::SCENE_NAME): id.name }),
         )),
         obws::events::Event::SceneRemoved { id, .. } => Some(Event::new(
             EventSource::Obs,
-            "scene.removed",
+            "obs.scene.removed",
             json!({ (scene_fields::SCENE_NAME): id.name }),
         )),
         obws::events::Event::SceneNameChanged {
             old_name, new_name, ..
         } => Some(Event::new(
             EventSource::Obs,
-            "scene.renamed",
+            "obs.scene.renamed",
             json!({
                 (scene_fields::SCENE_NAME_OLD): old_name,
                 (scene_fields::SCENE_NAME_NEW): new_name,
@@ -220,28 +187,28 @@ pub(crate) fn map_obs_event(
         )),
         obws::events::Event::CurrentProfileChanged { name } => Some(Event::new(
             EventSource::Obs,
-            "profile.current_changed",
+            "obs.profile.current_changed",
             json!({ (profile_fields::PROFILE_NAME): name }),
         )),
         obws::events::Event::ProfileListChanged { profiles } => Some(Event::new(
             EventSource::Obs,
-            "profile.list_changed",
+            "obs.profile.list_changed",
             json!({ (profile_fields::ALL_NAMES): profiles }),
         )),
         obws::events::Event::SceneCollectionListChanged { collections } => Some(Event::new(
             EventSource::Obs,
-            "collection.list_changed",
+            "obs.collection.list_changed",
             json!({ (collection_fields::ALL_NAMES): collections }),
         )),
         obws::events::Event::CurrentSceneCollectionChanging { name } => Some(Event::new(
             EventSource::Obs,
-            "collection.changing",
-            json!({ (collection_fields::NAME): name }),
+            "obs.collection.changing",
+            json!({ (collection_fields::COLLECTION_NAME): name }),
         )),
         obws::events::Event::CurrentSceneCollectionChanged { name } => Some(Event::new(
             EventSource::Obs,
-            "collection.changed",
-            json!({ (collection_fields::NAME): name }),
+            "obs.collection.changed",
+            json!({ (collection_fields::COLLECTION_NAME): name }),
         )),
         obws::events::Event::RecordStateChanged {
             active,
@@ -258,8 +225,8 @@ pub(crate) fn map_obs_event(
         }
         obws::events::Event::RecordFileChanged { path } => Some(Event::new(
             EventSource::Obs,
-            "recording.file_changed",
-            json!({ (recording_fields::OUTPUT_PATH_NEW): path }),
+            "obs.recording.file_changed",
+            json!({ (recording_fields::OUTPUT_PATH): path }),
         )),
         obws::events::Event::StreamStateChanged { active, state } => {
             Some(make_stream_event(*active, state))
@@ -269,39 +236,35 @@ pub(crate) fn map_obs_event(
         }
         obws::events::Event::StudioModeStateChanged { enabled } => {
             let kind = if *enabled {
-                "studio.enabled"
+                "obs.studio.enabled"
             } else {
-                "studio.disabled"
+                "obs.studio.disabled"
             };
-            Some(Event::new(
-                EventSource::Obs,
-                kind,
-                json!({ (studio_fields::ENABLED): enabled }),
-            ))
+            Some(Event::new(EventSource::Obs, kind, json!({})))
         }
         obws::events::Event::SceneTransitionStarted { id } => Some(Event::new(
             EventSource::Obs,
-            "transition.started",
+            "obs.transition.started",
             json!({ (transition_fields::TRANSITION_NAME): id.name }),
         )),
         obws::events::Event::SceneTransitionEnded { id } => Some(Event::new(
             EventSource::Obs,
-            "transition.ended",
+            "obs.transition.ended",
             json!({ (transition_fields::TRANSITION_NAME): id.name }),
         )),
         obws::events::Event::SceneTransitionVideoEnded { id } => Some(Event::new(
             EventSource::Obs,
-            "transition.video_ended",
+            "obs.transition.video_ended",
             json!({ (transition_fields::TRANSITION_NAME): id.name }),
         )),
         obws::events::Event::InputMuteStateChanged { id, muted } => Some(Event::new(
             EventSource::Obs,
-            "audio.source_mute_changed",
+            "obs.audio.source_mute_changed",
             json!({ (audio_fields::SOURCE_NAME): id.name, (audio_fields::IS_MUTED): muted }),
         )),
         obws::events::Event::InputVolumeChanged { id, mul, db } => Some(Event::new(
             EventSource::Obs,
-            "audio.source_volume_changed",
+            "obs.audio.source_volume_changed",
             json!({
                 (audio_fields::SOURCE_NAME): id.name,
                 (audio_fields::VOLUME_DB): db,
@@ -310,12 +273,12 @@ pub(crate) fn map_obs_event(
         )),
         obws::events::Event::InputAudioBalanceChanged { id, audio_balance } => Some(Event::new(
             EventSource::Obs,
-            "audio.source_balance_changed",
+            "obs.audio.source_balance_changed",
             json!({ (audio_fields::SOURCE_NAME): id.name, (audio_fields::BALANCE): audio_balance }),
         )),
         obws::events::Event::InputAudioSyncOffsetChanged { id, offset } => Some(Event::new(
             EventSource::Obs,
-            "audio.source_sync_offset_changed",
+            "obs.audio.source_sync_offset_changed",
             json!({
                 (audio_fields::SOURCE_NAME): id.name,
                 (audio_fields::SYNC_OFFSET_MS): offset.whole_milliseconds(),
@@ -327,7 +290,7 @@ pub(crate) fn map_obs_event(
             ..
         } => Some(Event::new(
             EventSource::Obs,
-            "source.input_created",
+            "obs.source.input_created",
             json!({
                 (source_fields::SOURCE_NAME): id.name,
                 (source_fields::SOURCE_KIND): unversioned_kind,
@@ -335,14 +298,14 @@ pub(crate) fn map_obs_event(
         )),
         obws::events::Event::InputRemoved { id } => Some(Event::new(
             EventSource::Obs,
-            "source.input_removed",
+            "obs.source.input_removed",
             json!({ (source_fields::SOURCE_NAME): id.name }),
         )),
         obws::events::Event::InputNameChanged {
             old_name, new_name, ..
         } => Some(Event::new(
             EventSource::Obs,
-            "source.input_renamed",
+            "obs.source.input_renamed",
             json!({
                 (source_fields::SOURCE_NAME_OLD): old_name,
                 (source_fields::SOURCE_NAME_NEW): new_name,
@@ -355,7 +318,7 @@ pub(crate) fn map_obs_event(
             ..
         } => Some(Event::new(
             EventSource::Obs,
-            "filter.created",
+            "obs.filter.created",
             json!({
                 (filter_fields::SOURCE_NAME): source,
                 (filter_fields::FILTER_NAME): filter,
@@ -364,7 +327,7 @@ pub(crate) fn map_obs_event(
         )),
         obws::events::Event::SourceFilterRemoved { source, filter } => Some(Event::new(
             EventSource::Obs,
-            "filter.removed",
+            "obs.filter.removed",
             json!({
                 (filter_fields::SOURCE_NAME): source,
                 (filter_fields::FILTER_NAME): filter,
@@ -376,7 +339,7 @@ pub(crate) fn map_obs_event(
             enabled,
         } => Some(Event::new(
             EventSource::Obs,
-            "filter.enabled_changed",
+            "obs.filter.enabled_changed",
             json!({
                 (filter_fields::SOURCE_NAME): source,
                 (filter_fields::FILTER_NAME): filter,
@@ -390,11 +353,11 @@ pub(crate) fn map_obs_event(
 pub(crate) fn map_scene_item_visibility(scene: &str, source: &str, enabled: bool) -> Event {
     Event::new(
         EventSource::Obs,
-        "source.visibility.changed",
+        "obs.source.visibility_changed",
         json!({
-            (source_fields::SCENE): scene,
-            (source_fields::SOURCE): source,
-            (source_fields::VISIBLE): enabled,
+            (source_fields::SCENE_NAME): scene,
+            (source_fields::SOURCE_NAME): source,
+            (source_fields::IS_VISIBLE): enabled,
         }),
     )
 }
@@ -402,10 +365,10 @@ pub(crate) fn map_scene_item_visibility(scene: &str, source: &str, enabled: bool
 pub(crate) fn map_scene_item_lock(scene: &str, source: &str, locked: bool) -> Event {
     Event::new(
         EventSource::Obs,
-        "source.scene_item_lock_changed",
+        "obs.source.lock_changed",
         json!({
-            (source_fields::SCENE): scene,
-            (source_fields::SOURCE): source,
+            (source_fields::SCENE_NAME): scene,
+            (source_fields::SOURCE_NAME): source,
             (source_fields::IS_LOCKED): locked,
         }),
     )
@@ -561,7 +524,7 @@ mod tests {
     fn make_scene_changed_event_emits_from_and_to_fields() {
         let ev = make_scene_changed_event(Some("Menu"), "Gameplay", None);
         assert_eq!(ev.source, EventSource::Obs);
-        assert_eq!(ev.kind, "scene.changed");
+        assert_eq!(ev.kind, "obs.scene.changed");
         assert_eq!(ev.payload["from_scene"], "Menu");
         assert_eq!(ev.payload["to_scene"], "Gameplay");
         assert!(ev.caused_by.is_none());
@@ -587,14 +550,14 @@ mod tests {
     fn make_record_event_started_has_null_output_path() {
         let ev = make_record_event(true, None);
         assert_eq!(ev.source, EventSource::Obs);
-        assert_eq!(ev.kind, "recording.started");
+        assert_eq!(ev.kind, "obs.recording.started");
         assert_eq!(ev.payload["output_path"], serde_json::Value::Null);
     }
 
     #[test]
     fn make_record_event_stopped_includes_output_path() {
         let ev = make_record_event(false, Some("/home/user/recording.mkv"));
-        assert_eq!(ev.kind, "recording.stopped");
+        assert_eq!(ev.kind, "obs.recording.stopped");
         assert_eq!(ev.payload["output_path"], "/home/user/recording.mkv");
     }
 
@@ -608,29 +571,40 @@ mod tests {
     fn make_connection_connected_emits_obs_kind_with_empty_payload() {
         let ev = make_connection_connected();
         assert_eq!(ev.source, EventSource::Obs);
-        assert_eq!(ev.kind, "connection.connected");
+        assert_eq!(ev.kind, "obs.connection.connected");
         assert_eq!(ev.payload, json!({}));
     }
 
     #[test]
     fn make_connection_disconnected_carries_reason() {
-        let ev = make_connection_disconnected("connection reset by peer");
+        let ev = make_connection_disconnected("connection reset by peer", None);
         assert_eq!(ev.source, EventSource::Obs);
-        assert_eq!(ev.kind, "connection.disconnected");
+        assert_eq!(ev.kind, "obs.connection.disconnected");
         assert_eq!(ev.payload["reason"], "connection reset by peer");
     }
 
     #[test]
-    fn make_connection_disconnected_payload_has_no_disconnect_code_key() {
-        let ev = make_connection_disconnected("closed");
-        assert!(ev.payload.get("disconnect_code").is_none());
+    fn make_connection_disconnected_lost_uses_stable_reason_token_and_null_detail() {
+        let ev = make_connection_disconnected(
+            crate::payload_fields::connection::reason::CONNECTION_LOST,
+            None,
+        );
+        assert_eq!(ev.payload["reason"], "connection_lost");
+        assert_eq!(ev.payload["detail"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn make_connection_disconnected_carries_detail_when_present() {
+        let ev = make_connection_disconnected("connection_lost", Some("close code 4009"));
+        assert_eq!(ev.payload["reason"], "connection_lost");
+        assert_eq!(ev.payload["detail"], "close code 4009");
     }
 
     #[test]
     fn make_connection_auth_failed_carries_error_message() {
         let ev = make_connection_auth_failed("authentication rejected");
         assert_eq!(ev.source, EventSource::Obs);
-        assert_eq!(ev.kind, "connection.auth_failed");
+        assert_eq!(ev.kind, "obs.connection.auth_failed");
         assert_eq!(ev.payload["error_message"], "authentication rejected");
     }
 
@@ -650,17 +624,17 @@ mod tests {
     fn map_scene_item_visibility_emits_obs_source_event() {
         let ev = map_scene_item_visibility("Gameplay", "Game Capture", true);
         assert_eq!(ev.source, EventSource::Obs);
-        assert_eq!(ev.kind, "source.visibility.changed");
-        assert_eq!(ev.payload["scene"], "Gameplay");
-        assert_eq!(ev.payload["source"], "Game Capture");
-        assert_eq!(ev.payload["visible"], true);
+        assert_eq!(ev.kind, "obs.source.visibility_changed");
+        assert_eq!(ev.payload["scene_name"], "Gameplay");
+        assert_eq!(ev.payload["source_name"], "Game Capture");
+        assert_eq!(ev.payload["is_visible"], true);
     }
 
     #[test]
     fn map_scene_item_visibility_hidden_source() {
         let ev = map_scene_item_visibility("BRB", "Webcam", false);
-        assert_eq!(ev.payload["visible"], false);
-        assert_eq!(ev.payload["scene"], "BRB");
+        assert_eq!(ev.payload["is_visible"], false);
+        assert_eq!(ev.payload["scene_name"], "BRB");
     }
 
     #[test]
@@ -668,9 +642,9 @@ mod tests {
         for locked in [true, false] {
             let ev = map_scene_item_lock("Gameplay", "Game Capture", locked);
             assert_eq!(ev.source, EventSource::Obs);
-            assert_eq!(ev.kind, "source.scene_item_lock_changed");
-            assert_eq!(ev.payload["scene"], "Gameplay");
-            assert_eq!(ev.payload["source"], "Game Capture");
+            assert_eq!(ev.kind, "obs.source.lock_changed");
+            assert_eq!(ev.payload["scene_name"], "Gameplay");
+            assert_eq!(ev.payload["source_name"], "Game Capture");
             assert_eq!(ev.payload["is_locked"], locked);
         }
     }
@@ -701,5 +675,65 @@ mod tests {
     fn resolve_source_name_returns_none_for_empty_cache() {
         let cache: HashMap<(String, String), i64> = HashMap::new();
         assert!(resolve_source_name(&cache, "Gameplay", 1u64).is_none());
+    }
+
+    #[test]
+    fn state_family_events_drop_redundant_output_state_field() {
+        use obws::events::OutputState;
+        let events = [
+            make_record_state_event(true, &OutputState::Starting, None),
+            make_record_state_event(false, &OutputState::Stopped, None),
+            make_stream_event(true, &OutputState::Started),
+            make_stream_event(false, &OutputState::Stopped),
+            make_virtualcam_event(true, &OutputState::Started),
+            make_virtualcam_event(false, &OutputState::Stopped),
+        ];
+        for ev in events {
+            assert!(
+                ev.payload.get("output_state").is_none(),
+                "output_state should be dropped from {}",
+                ev.kind,
+            );
+        }
+    }
+
+    #[test]
+    fn studio_mode_events_drop_redundant_enabled_field() {
+        for enabled in [true, false] {
+            let mapped = map_obs_event(
+                &obws::events::Event::StudioModeStateChanged { enabled },
+                None,
+                None,
+            );
+            assert!(mapped.is_some(), "studio mode event should map");
+            let carries_enabled = mapped
+                .as_ref()
+                .is_some_and(|ev| ev.payload.get("enabled").is_some());
+            assert!(!carries_enabled, "enabled should be dropped");
+        }
+    }
+
+    #[test]
+    fn every_emitted_kind_is_namespaced_under_obs() {
+        use obws::events::OutputState;
+        let events = [
+            make_connection_connected(),
+            make_connection_disconnected("connection_lost", None),
+            make_connection_auth_failed("bad"),
+            make_scene_changed_event(Some("A"), "B", None),
+            make_record_event(true, None),
+            make_record_state_event(true, &OutputState::Starting, None),
+            make_stream_event(true, &OutputState::Started),
+            make_virtualcam_event(true, &OutputState::Started),
+            map_scene_item_visibility("Scene", "Src", true),
+            map_scene_item_lock("Scene", "Src", true),
+        ];
+        for ev in events {
+            assert!(
+                ev.kind.starts_with("obs."),
+                "kind is not namespaced under obs: {}",
+                ev.kind,
+            );
+        }
     }
 }

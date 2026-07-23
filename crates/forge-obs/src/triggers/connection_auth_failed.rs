@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("connection.".to_owned()),
+            kind_prefix: Some("obs.connection.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "connection.auth_failed"
+        event.kind == "obs.connection.auth_failed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -101,9 +101,9 @@ mod tests {
     fn matches_only_auth_failed_among_connection_lifecycle() {
         let d = ConnectionAuthFailedDescriptor;
         for (kind, expected) in [
-            ("connection.auth_failed", true),
-            ("connection.connected", false),
-            ("connection.disconnected", false),
+            ("obs.connection.auth_failed", true),
+            ("obs.connection.connected", false),
+            ("obs.connection.disconnected", false),
         ] {
             let event = Event::new(EventSource::Obs, kind, json!({}));
             assert_eq!(
@@ -119,7 +119,7 @@ mod tests {
         let d = ConnectionAuthFailedDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "connection.auth_failed",
+            "obs.connection.auth_failed",
             json!({ "error_message": "authentication rejected" }),
         );
         assert_eq!(
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn build_arg_stack_omits_error_message_when_missing() {
         let d = ConnectionAuthFailedDescriptor;
-        let event = Event::new(EventSource::Obs, "connection.auth_failed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.connection.auth_failed", json!({}));
         assert_eq!(d.build_arg_stack(&event).get("obs.error_message"), None);
     }
 }

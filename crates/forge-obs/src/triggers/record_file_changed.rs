@@ -56,23 +56,23 @@ impl TriggerKindDescriptor for RecordFileChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("recording.".to_owned()),
+            kind_prefix: Some("obs.recording.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "recording.file_changed"
+        event.kind == "obs.recording.file_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
         if let Some(p) = event
             .payload
-            .get(fields::OUTPUT_PATH_NEW)
+            .get(fields::OUTPUT_PATH)
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "obs.record.output_path_new".to_owned(),
+                "obs.record.output_path".to_owned(),
                 Variant::String(p.to_owned()),
             );
         }
@@ -82,7 +82,7 @@ impl TriggerKindDescriptor for RecordFileChangedDescriptor {
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
             variables: vec![DeclaredVariable {
-                name: "obs.record.output_path_new".to_owned(),
+                name: "obs.record.output_path".to_owned(),
                 kind: VariantKind::String,
                 label: "New recording file path".to_owned(),
                 synthesis: None,

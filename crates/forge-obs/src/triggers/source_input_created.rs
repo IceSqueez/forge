@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("source.".to_owned()),
+            kind_prefix: Some("obs.source.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "source.input_created"
+        event.kind == "obs.source.input_created"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -121,21 +121,21 @@ mod tests {
     use serde_json::json;
 
     const ALL_SOURCE_KINDS: [&str; 4] = [
-        "source.input_created",
-        "source.input_removed",
-        "source.input_renamed",
-        "source.visibility.changed",
+        "obs.source.input_created",
+        "obs.source.input_removed",
+        "obs.source.input_renamed",
+        "obs.source.visibility_changed",
     ];
 
     #[test]
     fn each_source_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
-            ("source.input_created", &SourceInputCreatedDescriptor),
-            ("source.input_removed", &SourceInputRemovedDescriptor),
-            ("source.input_renamed", &SourceInputRenamedDescriptor),
+            ("obs.source.input_created", &SourceInputCreatedDescriptor),
+            ("obs.source.input_removed", &SourceInputRemovedDescriptor),
+            ("obs.source.input_renamed", &SourceInputRenamedDescriptor),
             (
-                "source.visibility.changed",
+                "obs.source.visibility_changed",
                 &SourceSceneItemVisibilityChangedDescriptor,
             ),
         ];
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn source_descriptor_rejects_non_source_kind() {
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!SourceInputCreatedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
@@ -161,7 +161,7 @@ mod tests {
     fn input_created_arg_stack_extracts_name_and_kind() {
         let event = Event::new(
             EventSource::Obs,
-            "source.input_created",
+            "obs.source.input_created",
             json!({ "source_name": "Mic", "source_kind": "wasapi_input_capture" }),
         );
         let stack = SourceInputCreatedDescriptor.build_arg_stack(&event);
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn input_created_arg_stack_omits_keys_when_payload_fields_absent() {
-        let event = Event::new(EventSource::Obs, "source.input_created", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.source.input_created", json!({}));
         let stack = SourceInputCreatedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.kind").is_none());

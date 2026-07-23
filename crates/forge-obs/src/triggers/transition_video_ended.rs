@@ -54,12 +54,12 @@ impl TriggerKindDescriptor for TransitionVideoEndedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("transition.".to_owned()),
+            kind_prefix: Some("obs.transition.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "transition.video_ended"
+        event.kind == "obs.transition.video_ended"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

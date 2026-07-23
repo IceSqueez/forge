@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("profile.".to_owned()),
+            kind_prefix: Some("obs.profile.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "profile.current_changed"
+        event.kind == "obs.profile.current_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -104,11 +104,11 @@ mod tests {
         let cfg = BTreeMap::new();
         assert!(d.matches_trigger(
             &cfg,
-            &Event::new(EventSource::Obs, "profile.current_changed", json!({})),
+            &Event::new(EventSource::Obs, "obs.profile.current_changed", json!({})),
         ));
         assert!(!d.matches_trigger(
             &cfg,
-            &Event::new(EventSource::Obs, "profile.list_changed", json!({})),
+            &Event::new(EventSource::Obs, "obs.profile.list_changed", json!({})),
         ));
     }
 
@@ -116,7 +116,7 @@ mod tests {
     fn arg_stack_binds_profile_name_as_string() {
         let event = Event::new(
             EventSource::Obs,
-            "profile.current_changed",
+            "obs.profile.current_changed",
             json!({ "profile_name": "Streaming" }),
         );
         let stack = ProfileCurrentChangedDescriptor.build_arg_stack(&event);
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn arg_stack_omits_name_when_payload_field_absent() {
-        let event = Event::new(EventSource::Obs, "profile.current_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.profile.current_changed", json!({}));
         let stack = ProfileCurrentChangedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.profile.name").is_none());
     }

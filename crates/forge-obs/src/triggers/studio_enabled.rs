@@ -8,8 +8,6 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
-use crate::payload_fields::studio as fields;
-
 pub struct StudioEnabledDescriptor;
 
 impl TriggerKindDescriptor for StudioEnabledDescriptor {
@@ -56,12 +54,12 @@ impl TriggerKindDescriptor for StudioEnabledDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("studio.".to_owned()),
+            kind_prefix: Some("obs.studio.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "studio.enabled"
+        event.kind == "obs.studio.enabled"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -86,9 +84,10 @@ pub(crate) fn studio_variables() -> Vec<DeclaredVariable> {
 
 pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
     let mut stack = ArgStack::new();
-    if let Some(b) = event.payload.get(fields::ENABLED).and_then(|v| v.as_bool()) {
-        stack = stack.set("obs.studio.enabled".to_owned(), Variant::Bool(b));
-    }
+    stack = stack.set(
+        "obs.studio.enabled".to_owned(),
+        Variant::Bool(event.kind == "obs.studio.enabled"),
+    );
     stack
 }
 
@@ -108,10 +107,10 @@ mod tests {
     fn each_studio_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 2] = [
-            ("studio.enabled", &StudioEnabledDescriptor),
-            ("studio.disabled", &StudioDisabledDescriptor),
+            ("obs.studio.enabled", &StudioEnabledDescriptor),
+            ("obs.studio.disabled", &StudioDisabledDescriptor),
         ];
-        let kinds = ["studio.enabled", "studio.disabled"];
+        let kinds = ["obs.studio.enabled", "obs.studio.disabled"];
         for (own_kind, descriptor) in descriptors {
             for kind in kinds {
                 assert_eq!(
@@ -125,22 +124,22 @@ mod tests {
 
     #[test]
     fn studio_descriptor_rejects_non_studio_kind() {
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         let cfg = BTreeMap::new();
         assert!(!StudioEnabledDescriptor.matches_trigger(&cfg, &event));
         assert!(!StudioDisabledDescriptor.matches_trigger(&cfg, &event));
     }
 
     #[test]
-    fn build_arg_stack_extracts_enabled_flag() {
-        let stack = build_studio_arg_stack(&studio_event("studio.enabled", true));
-        assert_eq!(stack.get("obs.studio.enabled"), Some(&Variant::Bool(true)));
-    }
-
-    #[test]
-    fn build_arg_stack_omits_key_when_enabled_field_absent() {
-        let event = Event::new(EventSource::Obs, "studio.disabled", json!({}));
-        let stack = build_studio_arg_stack(&event);
-        assert!(stack.get("obs.studio.enabled").is_none());
+    fn arg_stack_derives_enabled_flag_from_kind_with_empty_payload() {
+        for (kind, expected) in [("obs.studio.enabled", true), ("obs.studio.disabled", false)] {
+            let event = Event::new(EventSource::Obs, kind, json!({}));
+            let stack = build_studio_arg_stack(&event);
+            assert_eq!(
+                stack.get("obs.studio.enabled"),
+                Some(&Variant::Bool(expected)),
+                "kind {kind}",
+            );
+        }
     }
 }

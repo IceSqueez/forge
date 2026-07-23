@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for ProfileListChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("profile.".to_owned()),
+            kind_prefix: Some("obs.profile.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "profile.list_changed"
+        event.kind == "obs.profile.list_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -106,11 +106,11 @@ mod tests {
         let cfg = BTreeMap::new();
         assert!(d.matches_trigger(
             &cfg,
-            &Event::new(EventSource::Obs, "profile.list_changed", json!({})),
+            &Event::new(EventSource::Obs, "obs.profile.list_changed", json!({})),
         ));
         assert!(!d.matches_trigger(
             &cfg,
-            &Event::new(EventSource::Obs, "profile.current_changed", json!({})),
+            &Event::new(EventSource::Obs, "obs.profile.current_changed", json!({})),
         ));
     }
 
@@ -118,7 +118,7 @@ mod tests {
     fn arg_stack_collects_all_names_into_string_array() {
         let event = Event::new(
             EventSource::Obs,
-            "profile.list_changed",
+            "obs.profile.list_changed",
             json!({ "all_names": ["Streaming", "Recording"] }),
         );
         let stack = ProfileListChangedDescriptor.build_arg_stack(&event);
@@ -135,7 +135,7 @@ mod tests {
     fn arg_stack_skips_non_string_array_elements() {
         let event = Event::new(
             EventSource::Obs,
-            "profile.list_changed",
+            "obs.profile.list_changed",
             json!({ "all_names": ["Streaming", 42, true, "Recording"] }),
         );
         let stack = ProfileListChangedDescriptor.build_arg_stack(&event);
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn arg_stack_omits_key_when_all_names_absent() {
-        let event = Event::new(EventSource::Obs, "profile.list_changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.profile.list_changed", json!({}));
         let stack = ProfileListChangedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.profile.all_names").is_none());
     }

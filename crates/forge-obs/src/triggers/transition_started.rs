@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for TransitionStartedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("transition.".to_owned()),
+            kind_prefix: Some("obs.transition.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "transition.started"
+        event.kind == "obs.transition.started"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -110,9 +110,9 @@ mod tests {
     use serde_json::json;
 
     const ALL_TRANSITION_KINDS: [&str; 3] = [
-        "transition.started",
-        "transition.ended",
-        "transition.video_ended",
+        "obs.transition.started",
+        "obs.transition.ended",
+        "obs.transition.video_ended",
     ];
 
     fn transition_event(kind: &str, name: &str) -> Event {
@@ -123,9 +123,12 @@ mod tests {
     fn each_transition_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 3] = [
-            ("transition.started", &TransitionStartedDescriptor),
-            ("transition.ended", &TransitionEndedDescriptor),
-            ("transition.video_ended", &TransitionVideoEndedDescriptor),
+            ("obs.transition.started", &TransitionStartedDescriptor),
+            ("obs.transition.ended", &TransitionEndedDescriptor),
+            (
+                "obs.transition.video_ended",
+                &TransitionVideoEndedDescriptor,
+            ),
         ];
         for (own_kind, descriptor) in descriptors {
             for kind in ALL_TRANSITION_KINDS {
@@ -140,13 +143,14 @@ mod tests {
 
     #[test]
     fn transition_descriptor_rejects_non_transition_kind() {
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!TransitionStartedDescriptor.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn build_arg_stack_extracts_transition_name() {
-        let stack = build_transition_arg_stack(&transition_event("transition.started", "Stinger"));
+        let stack =
+            build_transition_arg_stack(&transition_event("obs.transition.started", "Stinger"));
         assert_eq!(
             stack.get("obs.transition.name"),
             Some(&Variant::String("Stinger".to_owned())),
@@ -155,7 +159,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_omits_name_when_payload_field_absent() {
-        let event = Event::new(EventSource::Obs, "transition.ended", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.transition.ended", json!({}));
         let stack = build_transition_arg_stack(&event);
         assert!(stack.get("obs.transition.name").is_none());
     }

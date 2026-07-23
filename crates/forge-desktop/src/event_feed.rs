@@ -1149,7 +1149,7 @@ fn type_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
     match kind {
         k if is_chat_message_kind(k) => palette.info,
         "command.matched" => palette.brand,
-        "action.done" | "scene.changed" => palette.success,
+        "action.done" | "obs.scene.changed" => palette.success,
         "chat.send" => palette.info,
         "action.start" | "script.exec" | "timer.tick" | "subaction.run" | "global.set"
         | "global.incr" => palette.warning,
@@ -1168,5 +1168,17 @@ fn result_color(kind: &str, is_error: bool, palette: &ForgePalette) -> Rgba {
         "action.done" | "command.matched" | "chat.send" => palette.success,
         k if is_chat_message_kind(k) => palette.success,
         _ => palette.text_muted,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scene_changed_success_color_tracks_namespaced_obs_kind() {
+        let p = forge_components::FORGE_DEFAULT;
+        assert_eq!(type_color("obs.scene.changed", false, &p), p.success);
+        assert_eq!(type_color("scene.changed", false, &p), p.text_secondary);
     }
 }

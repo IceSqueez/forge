@@ -54,12 +54,12 @@ impl TriggerKindDescriptor for StreamStoppedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("streaming.".to_owned()),
+            kind_prefix: Some("obs.streaming.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "streaming.stopped"
+        event.kind == "obs.streaming.stopped"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

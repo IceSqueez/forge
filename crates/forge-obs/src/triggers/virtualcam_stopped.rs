@@ -54,12 +54,12 @@ impl TriggerKindDescriptor for VirtualcamStoppedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("virtualcam.".to_owned()),
+            kind_prefix: Some("obs.virtualcam.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "virtualcam.stopped"
+        event.kind == "obs.virtualcam.stopped"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -83,10 +83,10 @@ mod tests {
     fn matches_only_stopped_kind_among_virtualcam_lifecycle() {
         let d = VirtualcamStoppedDescriptor;
         for (kind, expected) in [
-            ("virtualcam.stopped", true),
-            ("virtualcam.started", false),
-            ("virtualcam.starting", false),
-            ("virtualcam.stopping", false),
+            ("obs.virtualcam.stopped", true),
+            ("obs.virtualcam.started", false),
+            ("obs.virtualcam.starting", false),
+            ("obs.virtualcam.stopping", false),
         ] {
             let event = Event::new(EventSource::Obs, kind, json!({}));
             assert_eq!(
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn does_not_match_foreign_source_kind() {
         let d = VirtualcamStoppedDescriptor;
-        let event = Event::new(EventSource::Obs, "recording.stopped", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.recording.stopped", json!({}));
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
 }

@@ -54,12 +54,12 @@ impl TriggerKindDescriptor for RecordResumedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("recording.".to_owned()),
+            kind_prefix: Some("obs.recording.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "recording.resumed"
+        event.kind == "obs.recording.resumed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

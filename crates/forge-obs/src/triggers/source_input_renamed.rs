@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("source.".to_owned()),
+            kind_prefix: Some("obs.source.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "source.input_renamed"
+        event.kind == "obs.source.input_renamed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -120,7 +120,7 @@ mod tests {
     fn input_renamed_arg_stack_extracts_old_and_new_names() {
         let event = Event::new(
             EventSource::Obs,
-            "source.input_renamed",
+            "obs.source.input_renamed",
             json!({ "source_name_old": "Cam", "source_name_new": "Webcam" }),
         );
         let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
@@ -138,7 +138,7 @@ mod tests {
     fn input_renamed_arg_stack_extracts_each_name_independently() {
         let event = Event::new(
             EventSource::Obs,
-            "source.input_renamed",
+            "obs.source.input_renamed",
             json!({ "source_name_new": "Webcam" }),
         );
         let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn input_renamed_arg_stack_omits_both_keys_when_payload_empty() {
-        let event = Event::new(EventSource::Obs, "source.input_renamed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.source.input_renamed", json!({}));
         let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.source.name_old").is_none());
         assert!(stack.get("obs.source.name_new").is_none());

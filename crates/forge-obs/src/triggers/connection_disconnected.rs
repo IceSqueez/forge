@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("connection.".to_owned()),
+            kind_prefix: Some("obs.connection.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "connection.disconnected"
+        event.kind == "obs.connection.disconnected"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -69,17 +69,28 @@ impl TriggerKindDescriptor for ConnectionDisconnectedDescriptor {
         if let Some(reason) = event.payload.get(fields::REASON).and_then(|v| v.as_str()) {
             stack = stack.set("obs.reason".to_owned(), Variant::String(reason.to_owned()));
         }
+        if let Some(detail) = event.payload.get(fields::DETAIL).and_then(|v| v.as_str()) {
+            stack = stack.set("obs.detail".to_owned(), Variant::String(detail.to_owned()));
+        }
         stack
     }
 
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
-            variables: vec![DeclaredVariable {
-                name: "obs.reason".to_owned(),
-                kind: VariantKind::String,
-                label: "Disconnect reason".to_owned(),
-                synthesis: None,
-            }],
+            variables: vec![
+                DeclaredVariable {
+                    name: "obs.reason".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Disconnect reason".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "obs.detail".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Disconnect detail".to_owned(),
+                    synthesis: None,
+                },
+            ],
         })
     }
 }
@@ -94,9 +105,9 @@ mod tests {
     fn matches_only_disconnected_among_connection_lifecycle() {
         let d = ConnectionDisconnectedDescriptor;
         for (kind, expected) in [
-            ("connection.disconnected", true),
-            ("connection.connected", false),
-            ("connection.auth_failed", false),
+            ("obs.connection.disconnected", true),
+            ("obs.connection.connected", false),
+            ("obs.connection.auth_failed", false),
         ] {
             let event = Event::new(EventSource::Obs, kind, json!({}));
             assert_eq!(
@@ -112,7 +123,7 @@ mod tests {
         let d = ConnectionDisconnectedDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "connection.disconnected",
+            "obs.connection.disconnected",
             json!({ "reason": "connection reset by peer" }),
         );
         assert_eq!(
@@ -124,7 +135,7 @@ mod tests {
     #[test]
     fn build_arg_stack_omits_reason_when_missing() {
         let d = ConnectionDisconnectedDescriptor;
-        let event = Event::new(EventSource::Obs, "connection.disconnected", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.connection.disconnected", json!({}));
         assert_eq!(d.build_arg_stack(&event).get("obs.reason"), None);
     }
 }

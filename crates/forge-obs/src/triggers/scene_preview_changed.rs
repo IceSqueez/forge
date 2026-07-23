@@ -67,17 +67,21 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("scene.".to_owned()),
+            kind_prefix: Some("obs.scene.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "scene.preview_changed" {
+        if event.kind != "obs.scene.preview_changed" {
             return false;
         }
         match config.get("scene") {
             Some(Variant::String(s)) if !s.is_empty() => {
-                event.payload.get(fields::NAME_NEW).and_then(|v| v.as_str()) == Some(s.as_str())
+                event
+                    .payload
+                    .get(fields::SCENE_NAME_NEW)
+                    .and_then(|v| v.as_str())
+                    == Some(s.as_str())
             }
             _ => true,
         }
@@ -85,10 +89,18 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(new) = event.payload.get(fields::NAME_NEW).and_then(|v| v.as_str()) {
+        if let Some(new) = event
+            .payload
+            .get(fields::SCENE_NAME_NEW)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set("obs.scene".to_owned(), Variant::String(new.to_owned()));
         }
-        if let Some(old) = event.payload.get(fields::NAME_OLD).and_then(|v| v.as_str()) {
+        if let Some(old) = event
+            .payload
+            .get(fields::SCENE_NAME_OLD)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.previous_scene".to_owned(),
                 Variant::String(old.to_owned()),
@@ -126,8 +138,8 @@ mod tests {
     fn preview_event(old: &str, new: &str) -> Event {
         Event::new(
             EventSource::Obs,
-            "scene.preview_changed",
-            json!({ "name_old": old, "name_new": new }),
+            "obs.scene.preview_changed",
+            json!({ "scene_name_old": old, "scene_name_new": new }),
         )
     }
 
@@ -161,8 +173,8 @@ mod tests {
         let d = ScenePreviewChangedDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "scene.changed",
-            json!({ "name_new": "Gameplay" }),
+            "obs.scene.changed",
+            json!({ "scene_name_new": "Gameplay" }),
         );
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
@@ -186,8 +198,8 @@ mod tests {
         let d = ScenePreviewChangedDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "scene.preview_changed",
-            json!({ "name_new": "Gameplay" }),
+            "obs.scene.preview_changed",
+            json!({ "scene_name_new": "Gameplay" }),
         );
         let stack = d.build_arg_stack(&event);
         assert_eq!(

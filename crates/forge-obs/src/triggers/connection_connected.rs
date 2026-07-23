@@ -52,12 +52,12 @@ impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("connection.".to_owned()),
+            kind_prefix: Some("obs.connection.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "connection.connected"
+        event.kind == "obs.connection.connected"
     }
 
     fn build_arg_stack(&self, _event: &Event) -> ArgStack {
@@ -79,9 +79,9 @@ mod tests {
     fn matches_only_connected_among_connection_lifecycle() {
         let d = ConnectionConnectedDescriptor;
         for (kind, expected) in [
-            ("connection.connected", true),
-            ("connection.disconnected", false),
-            ("connection.auth_failed", false),
+            ("obs.connection.connected", true),
+            ("obs.connection.disconnected", false),
+            ("obs.connection.auth_failed", false),
         ] {
             let event = Event::new(EventSource::Obs, kind, json!({}));
             assert_eq!(
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn does_not_match_foreign_kind() {
         let d = ConnectionConnectedDescriptor;
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
 }

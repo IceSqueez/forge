@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for SceneCreatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("scene.".to_owned()),
+            kind_prefix: Some("obs.scene.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "scene.created"
+        event.kind == "obs.scene.created"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -104,18 +104,18 @@ mod tests {
         let cfg = BTreeMap::new();
         assert!(d.matches_trigger(
             &cfg,
-            &Event::new(EventSource::Obs, "scene.created", json!({})),
+            &Event::new(EventSource::Obs, "obs.scene.created", json!({})),
         ));
         for sibling in [
-            "scene.removed",
-            "scene.renamed",
-            "scene.changed",
-            "scene.preview_changed",
-            "scene.list_changed",
+            "obs.scene.removed",
+            "obs.scene.renamed",
+            "obs.scene.changed",
+            "obs.scene.preview_changed",
+            "obs.scene.list_changed",
         ] {
             assert!(
                 !d.matches_trigger(&cfg, &Event::new(EventSource::Obs, sibling, json!({}))),
-                "scene.created wrongly matched sibling kind {sibling}",
+                "obs.scene.created wrongly matched sibling kind {sibling}",
             );
         }
     }
@@ -124,7 +124,7 @@ mod tests {
     fn arg_stack_binds_scene_name_as_string() {
         let event = Event::new(
             EventSource::Obs,
-            "scene.created",
+            "obs.scene.created",
             json!({ "scene_name": "BRB" }),
         );
         let stack = SceneCreatedDescriptor.build_arg_stack(&event);
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn arg_stack_omits_name_when_payload_field_absent() {
-        let event = Event::new(EventSource::Obs, "scene.created", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.created", json!({}));
         let stack = SceneCreatedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.scene.name").is_none());
     }

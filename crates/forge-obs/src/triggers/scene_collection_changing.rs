@@ -56,17 +56,21 @@ impl TriggerKindDescriptor for SceneCollectionChangingDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("collection.".to_owned()),
+            kind_prefix: Some("obs.collection.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "collection.changing"
+        event.kind == "obs.collection.changing"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get(fields::NAME).and_then(|v| v.as_str()) {
+        if let Some(name) = event
+            .payload
+            .get(fields::COLLECTION_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.collection".to_owned(),
                 Variant::String(name.to_owned()),
@@ -98,8 +102,8 @@ mod tests {
         let d = SceneCollectionChangingDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "collection.changing",
-            json!({ "name": "Stream" }),
+            "obs.collection.changing",
+            json!({ "collection_name": "Stream" }),
         );
         assert!(d.matches_trigger(&BTreeMap::new(), &event));
     }
@@ -109,8 +113,8 @@ mod tests {
         let d = SceneCollectionChangingDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "collection.changed",
-            json!({ "name": "Stream" }),
+            "obs.collection.changed",
+            json!({ "collection_name": "Stream" }),
         );
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
@@ -120,8 +124,8 @@ mod tests {
         let d = SceneCollectionChangingDescriptor;
         let event = Event::new(
             EventSource::Obs,
-            "collection.changing",
-            json!({ "name": "Stream" }),
+            "obs.collection.changing",
+            json!({ "collection_name": "Stream" }),
         );
         assert_eq!(
             d.build_arg_stack(&event).get("obs.collection"),
@@ -132,7 +136,7 @@ mod tests {
     #[test]
     fn build_arg_stack_omits_collection_when_name_missing() {
         let d = SceneCollectionChangingDescriptor;
-        let event = Event::new(EventSource::Obs, "collection.changing", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.collection.changing", json!({}));
         assert_eq!(d.build_arg_stack(&event).get("obs.collection"), None);
     }
 }

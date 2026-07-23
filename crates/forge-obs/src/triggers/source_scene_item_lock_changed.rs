@@ -56,23 +56,31 @@ impl TriggerKindDescriptor for SourceSceneItemLockChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("source.".to_owned()),
+            kind_prefix: Some("obs.source.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "source.scene_item_lock_changed"
+        event.kind == "obs.source.lock_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(scene) = event.payload.get(fields::SCENE).and_then(|v| v.as_str()) {
+        if let Some(scene) = event
+            .payload
+            .get(fields::SCENE_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.scene.name".to_owned(),
                 Variant::String(scene.to_owned()),
             );
         }
-        if let Some(source) = event.payload.get(fields::SOURCE).and_then(|v| v.as_str()) {
+        if let Some(source) = event
+            .payload
+            .get(fields::SOURCE_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "obs.source.name".to_owned(),
                 Variant::String(source.to_owned()),
@@ -123,7 +131,7 @@ mod tests {
     use serde_json::json;
 
     fn lock_event(payload: serde_json::Value) -> Event {
-        Event::new(EventSource::Obs, "source.scene_item_lock_changed", payload)
+        Event::new(EventSource::Obs, "obs.source.lock_changed", payload)
     }
 
     #[test]
@@ -136,7 +144,7 @@ mod tests {
     #[test]
     fn matches_trigger_rejects_sibling_source_kinds() {
         let cfg = TriggerConfig::new();
-        for sibling in ["source.visibility.changed", "source.input_created"] {
+        for sibling in ["obs.source.visibility_changed", "obs.source.input_created"] {
             let event = Event::new(EventSource::Obs, sibling, json!({}));
             assert!(
                 !SourceSceneItemLockChangedDescriptor.matches_trigger(&cfg, &event),
@@ -148,13 +156,14 @@ mod tests {
     #[test]
     fn matches_trigger_rejects_non_source_kind() {
         let cfg = TriggerConfig::new();
-        let event = Event::new(EventSource::Obs, "scene.changed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!SourceSceneItemLockChangedDescriptor.matches_trigger(&cfg, &event));
     }
 
     #[test]
     fn build_arg_stack_extracts_scene_source_and_locked_flag() {
-        let event = lock_event(json!({ "scene": "Main", "source": "Cam", "is_locked": true }));
+        let event =
+            lock_event(json!({ "scene_name": "Main", "source_name": "Cam", "is_locked": true }));
         let stack = SourceSceneItemLockChangedDescriptor.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.scene.name"),
@@ -172,7 +181,8 @@ mod tests {
 
     #[test]
     fn build_arg_stack_preserves_false_locked_flag() {
-        let event = lock_event(json!({ "scene": "Main", "source": "Cam", "is_locked": false }));
+        let event =
+            lock_event(json!({ "scene_name": "Main", "source_name": "Cam", "is_locked": false }));
         let stack = SourceSceneItemLockChangedDescriptor.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.is_locked"),

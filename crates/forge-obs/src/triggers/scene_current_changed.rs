@@ -67,12 +67,12 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("scene.".to_owned()),
+            kind_prefix: Some("obs.scene.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != "scene.changed" {
+        if event.kind != "obs.scene.changed" {
             return false;
         }
         match config.get("scene") {
@@ -135,7 +135,7 @@ mod tests {
     fn scene_changed_event(from: &str, to: &str) -> Event {
         Event::new(
             EventSource::Obs,
-            "scene.changed",
+            "obs.scene.changed",
             json!({ "from_scene": from, "to_scene": to }),
         )
     }
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn does_not_match_non_scene_changed_event() {
         let d = SceneCurrentChangedDescriptor;
-        let event = Event::new(EventSource::Obs, "scene.created", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.scene.created", json!({}));
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
 

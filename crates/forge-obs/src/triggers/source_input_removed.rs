@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for SourceInputRemovedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("source.".to_owned()),
+            kind_prefix: Some("obs.source.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "source.input_removed"
+        event.kind == "obs.source.input_removed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -102,7 +102,7 @@ mod tests {
     fn input_removed_arg_stack_extracts_source_name() {
         let event = Event::new(
             EventSource::Obs,
-            "source.input_removed",
+            "obs.source.input_removed",
             json!({ "source_name": "Webcam" }),
         );
         let stack = SourceInputRemovedDescriptor.build_arg_stack(&event);
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn input_removed_arg_stack_omits_name_when_payload_field_absent() {
-        let event = Event::new(EventSource::Obs, "source.input_removed", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.source.input_removed", json!({}));
         let stack = SourceInputRemovedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
     }

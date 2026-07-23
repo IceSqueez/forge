@@ -54,19 +54,19 @@ impl TriggerKindDescriptor for RecordStatusChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("recording.".to_owned()),
+            kind_prefix: Some("obs.recording.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
         matches!(
             event.kind.as_str(),
-            "recording.starting"
-                | "recording.started"
-                | "recording.stopping"
-                | "recording.stopped"
-                | "recording.paused"
-                | "recording.resumed"
+            "obs.recording.starting"
+                | "obs.recording.started"
+                | "obs.recording.stopping"
+                | "obs.recording.stopped"
+                | "obs.recording.paused"
+                | "obs.recording.resumed"
         )
     }
 

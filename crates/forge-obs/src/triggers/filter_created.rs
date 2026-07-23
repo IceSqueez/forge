@@ -57,12 +57,12 @@ impl TriggerKindDescriptor for FilterCreatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Obs),
-            kind_prefix: Some("filter.".to_owned()),
+            kind_prefix: Some("obs.filter.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "filter.created"
+        event.kind == "obs.filter.created"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -102,7 +102,7 @@ mod tests {
     fn arg_stack_extracts_filter_kind() {
         let event = Event::new(
             EventSource::Obs,
-            "filter.created",
+            "obs.filter.created",
             json!({ "filter_kind": "noise_suppress_filter" }),
         );
         assert_eq!(
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn arg_stack_omits_filter_kind_when_payload_field_absent() {
-        let event = Event::new(EventSource::Obs, "filter.created", json!({}));
+        let event = Event::new(EventSource::Obs, "obs.filter.created", json!({}));
         assert!(
             FilterCreatedDescriptor
                 .build_arg_stack(&event)

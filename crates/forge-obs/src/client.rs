@@ -110,15 +110,6 @@ impl ObsClient {
         self.state.load()
     }
 
-    pub async fn shutdown(&self) {
-        let notify = self.shutdown.lock().await.clone();
-        notify.notify_one();
-        let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
-        if let Some(h) = handle {
-            let _ = h.await;
-        }
-    }
-
     #[cfg(test)]
     pub fn new_for_test(endpoint: String) -> Self {
         let (host, port) = parse_endpoint(&endpoint).unwrap_or(("localhost".to_owned(), 4455));

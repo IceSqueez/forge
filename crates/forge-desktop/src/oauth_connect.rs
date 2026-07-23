@@ -350,7 +350,8 @@ impl IntegrationDetail {
             .flow_auth_url
             .as_deref()
             .map(elide_code_challenge)
-            .map_or_else(|| SharedString::from("\u{2014}"), SharedString::from);
+            .or_else(|| self.connect_platform.map(idle_auth_url_template))
+            .map_or_else(SharedString::default, SharedString::from);
         let url_box = div()
             .w_full()
             .py(spacing(Spacing::Xs, density))
@@ -379,7 +380,10 @@ impl IntegrationDetail {
             .flow_auth_url
             .as_deref()
             .and_then(loopback_display)
-            .map_or_else(|| SharedString::from("\u{2014}"), SharedString::from);
+            .map_or_else(
+                || SharedString::from("http://127.0.0.1:\u{2026}/callback"),
+                SharedString::from,
+            );
         let approve = div()
             .flex()
             .flex_col()
@@ -914,6 +918,21 @@ fn connect_copy(platform: PlatformId) -> (&'static str, String) {
         PlatformId::Kick => ("K", tr!("kick_description")),
         PlatformId::YouTube => ("Y", tr!("youtube_description")),
     }
+}
+
+fn authorize_endpoint(platform: PlatformId) -> &'static str {
+    match platform {
+        PlatformId::Twitch => forge_platform_twitch::TWITCH_AUTHORIZE_ENDPOINT,
+        PlatformId::YouTube => forge_platform_youtube::GOOGLE_AUTHORIZE_ENDPOINT,
+        PlatformId::Kick => forge_platform_kick::auth::KICK_AUTHORIZE_ENDPOINT,
+    }
+}
+
+fn idle_auth_url_template(platform: PlatformId) -> String {
+    format!(
+        "{}?response_type=code&code_challenge=\u{2026}&redirect_uri=http%3A%2F%2F127.0.0.1%3A\u{2026}%2Fcallback",
+        authorize_endpoint(platform)
+    )
 }
 
 fn param_value<'a>(url: &'a str, key: &str) -> Option<&'a str> {

@@ -15,7 +15,7 @@ pub mod subscriptions;
 pub mod triggers;
 
 pub use auth::{
-    LoopbackCode, TWITCH_AUTHORIZE_ENDPOINT, TWITCH_BROADCASTER_SCOPES, TWITCH_TOKEN_ENDPOINT,
+    DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT,
     TwitchAuthBundle, TwitchAuthFlow, UserInfo, client_id, twitch_auth_flow,
 };
 pub use builtin::{ChatSessionConfig, TwitchIntegrationBundle};

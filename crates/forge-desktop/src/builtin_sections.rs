@@ -91,12 +91,25 @@ fn dispatch_section(
             icon,
             items,
             footer,
-        } => render_subscription_list(title, icon, items, footer.as_ref(), palette, density),
+            banner,
+        } => render_subscription_list(
+            title,
+            icon,
+            items,
+            footer.as_ref(),
+            banner.as_deref(),
+            palette,
+            density,
+        ),
         DetailSection::ScopesList {
             title,
+            icon,
             scopes,
             footer,
-        } => render_scopes_list(title, scopes, footer.as_ref(), palette, density),
+        } => render_scopes_list(title, icon, scopes, footer.as_ref(), palette, density),
+        DetailSection::TwoColumn { left, right } => {
+            render_two_column(left, right, palette, density)
+        }
         DetailSection::InfoCard {
             title,
             live,
@@ -225,11 +238,13 @@ fn render_warning_banner(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_subscription_list(
     title: &str,
     icon: &SectionIcon,
     items: &[SubscriptionRow],
     footer: Option<&ListFooter>,
+    banner: Option<&str>,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -246,16 +261,42 @@ fn render_subscription_list(
             palette,
             density,
         ))
-        .child(divider(palette))
-        .child(rows);
+        .child(divider(palette));
+    if let Some(message) = banner {
+        card = card.child(subscription_banner(message, palette, density));
+    }
+    card = card.child(rows);
     if let Some(f) = footer {
         card = card.child(list_footer_bar(f, palette, density));
     }
     card.into_any_element()
 }
 
+fn subscription_banner(message: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+    div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, density))
+        .py(spacing(Spacing::Xs, density))
+        .px(spacing(Spacing::Md, density))
+        .bg(with_alpha(palette.random, 0.10))
+        .child(icon(Icon::AlertCircle, FONT_SM, palette.random))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .font_family(mono_family())
+                .text_size(FONT_XS)
+                .text_color(palette.random)
+                .child(message.to_owned()),
+        )
+        .into_any_element()
+}
+
 fn render_scopes_list(
     title: &str,
+    icon_token: &SectionIcon,
     scopes: &[String],
     footer: Option<&ListFooter>,
     palette: &ForgePalette,
@@ -267,13 +308,35 @@ fn render_scopes_list(
         rows = rows.child(scope_row_elem(scope, palette, density));
     }
     let mut card = card_shell(palette)
-        .child(scopes_list_header(title, &count, palette, density))
+        .child(panel_header_row(
+            icon_token.as_str(),
+            title,
+            Some(&count),
+            palette,
+            density,
+        ))
         .child(divider(palette))
         .child(rows);
     if let Some(f) = footer {
         card = card.child(list_footer_bar(f, palette, density));
     }
     card.into_any_element()
+}
+
+fn render_two_column(
+    left: &DetailSection,
+    right: &DetailSection,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    div()
+        .w_full()
+        .flex()
+        .items_start()
+        .gap(spacing(Spacing::Md, density))
+        .child(grow_cell(dispatch_section(left, palette, density), 10.0))
+        .child(grow_cell(dispatch_section(right, palette, density), 13.0))
+        .into_any_element()
 }
 
 fn render_info_card(
@@ -685,27 +748,6 @@ fn panel_header_row(
         row = row.child(mono(c.to_owned(), FONT_XS, palette.text_faint));
     }
     row.into_any_element()
-}
-
-fn scopes_list_header(
-    title: &str,
-    count: &str,
-    palette: &ForgePalette,
-    density: Density,
-) -> AnyElement {
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .py(spacing(Spacing::Sm, density))
-        .px(spacing(Spacing::Md, density))
-        .child(div().flex_1().min_w(px(0.0)).child(body(
-            title.to_owned(),
-            FONT_SM,
-            palette.text_primary,
-        )))
-        .child(mono(count.to_owned(), FONT_XS, palette.text_faint))
-        .into_any_element()
 }
 
 fn info_card_header(

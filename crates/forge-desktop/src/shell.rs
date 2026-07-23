@@ -170,6 +170,7 @@ impl AppShell {
                 let connectivity = topics.platforms.clone();
                 let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
                 let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
+                let event_bus = Arc::clone(&handles.bus);
                 let detail = match handles.builtins.get(id) {
                     Some(obj) => {
                         let icon = obj.icon.clone();
@@ -195,6 +196,7 @@ impl AppShell {
                                 action_engine,
                                 credentials,
                                 bus,
+                                event_bus.clone(),
                                 live_viewers,
                                 connectivity,
                                 cx,
@@ -219,6 +221,7 @@ impl AppShell {
                                 action_engine,
                                 credentials,
                                 bus,
+                                event_bus.clone(),
                                 live_viewers,
                                 connectivity,
                                 cx,

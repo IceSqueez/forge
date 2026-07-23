@@ -18,6 +18,7 @@ mod home;
 mod home_stats;
 mod i18n;
 mod integration_detail;
+mod integration_quick_actions;
 mod integration_seed;
 mod integrations;
 mod oauth_connect;

@@ -1,18 +1,19 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette,
-    Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing,
-    ToastKind, badge, body_family, confirm_modal, fmt_uptime, icon, overlay, page_frame,
-    platform_hero, radius, spacing, tr, with_alpha,
+    Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
+    SearchState, Spacing, TextInput, ToastKind, badge, body_family, confirm_modal, fmt_uptime,
+    icon, mono_family, overlay, page_frame, platform_hero, radius, spacing, status_dot, tr,
+    with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, PickerKind, QuickAction, QuickActions,
-    SectionIcon,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone,
+    PickerKind, QuickAction, QuickActions, SectionIcon,
 };
 use forge_platform_twitch::TwitchIntegrationBundle;
-use forge_runtime::{ActionEngineHandle, LiveViewerAggregatorHandle};
+use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
 use forge_storage::CredentialsRepo;
 use forge_types::{PlatformId, Variant};
 use futures_util::StreamExt as _;
@@ -20,8 +21,10 @@ use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Window,
     div, prelude::*, px,
 };
+use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::{content_sections, health_grid};
@@ -65,11 +68,21 @@ pub struct IntegrationDetail {
     header_actions: Vec<HeaderAction>,
     health_metrics: [HealthMetric; 4],
     sections: Vec<DetailSection>,
-    quick_actions: Vec<QuickAction>,
+    pub(crate) quick_actions: Vec<QuickAction>,
+    pub(crate) qa_search: SearchState,
+    eventsub_tally: HashMap<String, u64>,
+    viewer_samples: VecDeque<(Instant, u64)>,
     pending_disconnect: Confirm<()>,
     pending_picker: Option<PendingPicker>,
     _conn_obs: Subscription,
+    _qa_search_sub: Subscription,
 }
+
+const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
+/// Below this the ring has too little history to show an honest delta.
+const VIEWER_DELTA_MIN_HISTORY: Duration = Duration::from_secs(14 * 60);
+const VIEWER_RING_CAP: usize = 256;
+const DETAIL_TICK: Duration = Duration::from_secs(30);
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
 
@@ -95,6 +108,7 @@ impl IntegrationDetail {
         action_engine: ActionEngineHandle,
         credentials: Arc<dyn CredentialsRepo>,
         bus: Arc<dyn EventPublisher>,
+        event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
@@ -102,6 +116,9 @@ impl IntegrationDetail {
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
 
         let is_twitch = status.id().as_str() == "twitch";
+        let palette = cx.palette();
+        let qa_search = SearchState::new(cx, palette, tr!("integration_qa_filter_placeholder"));
+        let qa_search_sub = cx.subscribe(qa_search.field(), Self::on_qa_search);
         let connect_platform = connect_platform_for(status.id().as_str(), control.is_some());
         let display_name = status.display_name().to_owned();
         let version = status.version().map(ToOwned::to_owned);
@@ -132,6 +149,12 @@ impl IntegrationDetail {
                 let _ = this.update(cx, |this, cx| this.begin_twitch_device(cx));
             })
             .detach();
+        }
+
+        if is_twitch {
+            Self::spawn_eventsub_tally(&event_bus, cx);
+            Self::spawn_viewer_sampler(&live_viewers, cx);
+            Self::spawn_detail_ticker(cx);
         }
 
         Self {
@@ -167,9 +190,13 @@ impl IntegrationDetail {
             health_metrics,
             sections,
             quick_actions,
+            qa_search,
+            eventsub_tally: HashMap::new(),
+            viewer_samples: VecDeque::new(),
             pending_disconnect: Confirm::default(),
             pending_picker: None,
             _conn_obs: conn_obs,
+            _qa_search_sub: qa_search_sub,
         }
     }
 
@@ -193,6 +220,116 @@ impl IntegrationDetail {
             self.health_metrics[idx].value = delta.new_value;
             cx.notify();
         }
+    }
+
+    fn spawn_eventsub_tally(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+        let mut sub = bus.subscribe();
+        cx.spawn(async move |this, cx| {
+            while let async_bridge::EventBatch::Ready(batch) =
+                async_bridge::recv_event_batch(&mut sub).await
+            {
+                let tails: Vec<String> = batch
+                    .iter()
+                    .filter_map(|e| e.kind.strip_prefix("twitch.").map(str::to_owned))
+                    .collect();
+                if tails.is_empty() {
+                    continue;
+                }
+                if this
+                    .update(cx, |this, cx| this.apply_eventsub_tally(tails, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn spawn_viewer_sampler(live_viewers: &LiveViewerAggregatorHandle, cx: &mut Context<Self>) {
+        let mut stream = live_viewers.subscribe();
+        cx.spawn(async move |this, cx| {
+            while let Some(count) = stream.next().await {
+                let n = match count {
+                    LiveViewerCount::Reporting(n) => n,
+                    LiveViewerCount::Empty => continue,
+                };
+                if this
+                    .update(cx, |this, cx| this.push_viewer_sample(n, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn spawn_detail_ticker(cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(DETAIL_TICK).await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn on_qa_search(
+        &mut self,
+        _field: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if self.qa_search.on_changed(event) {
+            cx.notify();
+        }
+    }
+
+    fn apply_eventsub_tally(&mut self, tails: Vec<String>, cx: &mut Context<Self>) {
+        for tail in tails {
+            *self.eventsub_tally.entry(tail).or_insert(0) += 1;
+        }
+        cx.notify();
+    }
+
+    fn push_viewer_sample(&mut self, count: u64, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        self.viewer_samples.push_back((now, count));
+        while self.viewer_samples.len() > VIEWER_RING_CAP {
+            self.viewer_samples.pop_front();
+        }
+        let cutoff = now.checked_sub(VIEWER_DELTA_WINDOW + Duration::from_secs(60));
+        if let Some(cutoff) = cutoff {
+            while self
+                .viewer_samples
+                .front()
+                .is_some_and(|(t, _)| *t < cutoff)
+            {
+                self.viewer_samples.pop_front();
+            }
+        }
+        cx.notify();
+    }
+
+    /// `None` until the ring holds at least `VIEWER_DELTA_MIN_HISTORY` of samples.
+    fn viewer_delta(&self) -> Option<i64> {
+        let (newest_t, newest) = self.viewer_samples.back().copied()?;
+        let oldest = self.viewer_samples.front().copied()?;
+        if newest_t.saturating_duration_since(oldest.0) < VIEWER_DELTA_MIN_HISTORY {
+            return None;
+        }
+        let target = newest_t.checked_sub(VIEWER_DELTA_WINDOW)?;
+        let baseline = self
+            .viewer_samples
+            .iter()
+            .rev()
+            .find(|(t, _)| *t <= target)
+            .copied()
+            .unwrap_or(oldest);
+        Some(newest as i64 - baseline.1 as i64)
     }
 
     pub(crate) fn navigate_to(&mut self, screen: Screen, cx: &mut Context<Self>) {
@@ -244,7 +381,12 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    fn on_quick_action(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn on_quick_action(
+        &mut self,
+        idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(action) = self.quick_actions.get(idx) else {
             return;
         };
@@ -437,6 +579,8 @@ impl IntegrationDetail {
         self.quick = bundle.clone();
         self.control = Some(bundle as Arc<dyn BuiltinControl>);
         self.connect_platform = None;
+        self.eventsub_tally.clear();
+        self.viewer_samples.clear();
         self.flow_phase = LocalCallbackFlowPhase::Idle;
         self.flow_auth_url = None;
         self.flow_error = None;
@@ -463,6 +607,105 @@ impl IntegrationDetail {
         self.begin_twitch_device(cx);
     }
 
+    fn augmented_sections(&self) -> Vec<DetailSection> {
+        let mut sections = self.sections.clone();
+        for section in &mut sections {
+            if let DetailSection::TwoColumn { right, .. } = section {
+                Self::fill_subscription_counts(right, &self.eventsub_tally);
+            } else {
+                Self::fill_subscription_counts(section, &self.eventsub_tally);
+            }
+        }
+        sections
+    }
+
+    fn fill_subscription_counts(section: &mut DetailSection, tally: &HashMap<String, u64>) {
+        if let DetailSection::SubscriptionList { items, .. } = section {
+            for row in items.iter_mut() {
+                if row.error_label.is_none() {
+                    row.event_count = Some(tally.get(&row.name).copied().unwrap_or(0));
+                }
+            }
+        }
+    }
+
+    fn augmented_health(&self) -> [HealthMetric; 4] {
+        let mut metrics = self.health_metrics.clone();
+        if let Some(delta) = self.viewer_delta()
+            && let Some(metric) = metrics.iter_mut().find(|m| m.label == "Viewers")
+            && let HealthValue::Text { secondary, .. } = &mut metric.value
+        {
+            let sign = if delta >= 0 { "+" } else { "" };
+            *secondary = Some(tr!(
+                "integration_viewers_delta",
+                delta = format!("{sign}{delta}"),
+                window = "15m"
+            ));
+        }
+        metrics
+    }
+
+    fn hero_badges(&self, palette: &ForgePalette) -> Vec<AnyElement> {
+        self.status
+            .name_badges()
+            .into_iter()
+            .map(|b| hero_badge_elem(&b, palette).into_any_element())
+            .collect()
+    }
+
+    fn token_countdown(&self) -> Option<String> {
+        let expiry = self.status.token_expiry()?;
+        let remaining = expiry.duration_since(std::time::SystemTime::now()).ok()?;
+        let total = remaining.as_secs();
+        if total == 0 {
+            return None;
+        }
+        let hours = total / 3600;
+        let minutes = (total % 3600) / 60;
+        Some(tr!(
+            "integration_token_expires_in",
+            time = format!("{hours}h {minutes}m")
+        ))
+    }
+
+    fn header_right_connected(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        let mut row = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xxs, density))
+                    .child(status_dot(palette.success, px(6.0)))
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.success)
+                            .child(tr!("integration_status_authenticated")),
+                    ),
+            );
+        if let Some(suffix) = self.token_countdown() {
+            row = row
+                .child(
+                    div()
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_faint)
+                        .child("\u{00b7}"),
+                )
+                .child(
+                    div()
+                        .font_family(mono_family())
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_muted)
+                        .child(suffix),
+                );
+        }
+        row.into_any_element()
+    }
+
     fn header_card(
         &self,
         palette: &ForgePalette,
@@ -471,6 +714,7 @@ impl IntegrationDetail {
     ) -> AnyElement {
         let (letter, brand) = hero_identity(self.icon.as_str(), &self.display_name, palette);
         let sub = sub_line(self.endpoint.as_deref(), self.uptime);
+        let name_badges = self.hero_badges(palette);
 
         let mut right = div()
             .flex_none()
@@ -494,6 +738,7 @@ impl IntegrationDetail {
 
         platform_hero(letter, brand, self.display_name.clone(), sub, palette)
             .density(density)
+            .name_badges(name_badges)
             .right(right)
             .into_any_element()
     }
@@ -534,146 +779,6 @@ impl IntegrationDetail {
                     .child(label),
             )
             .into_any_element()
-    }
-
-    fn quick_actions_card(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
-            .child(icon(Icon::Bolt, FONT_SM, palette.warning))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("widget_quick_actions_title")),
-            );
-
-        let divider = div().w_full().h(BORDER_THIN).bg(palette.border_regular);
-
-        let mut btn_row = div()
-            .w_full()
-            .flex()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density));
-        let capped = self.quick_actions.len().min(4);
-        for i in 0..capped {
-            let action = &self.quick_actions[i];
-            btn_row = btn_row.child(self.quick_action_button(
-                i,
-                action,
-                quick_action_accent(i, palette),
-                palette,
-                density,
-                cx,
-            ));
-        }
-        for _ in capped..4 {
-            btn_row = btn_row.child(div().flex_1());
-        }
-
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .overflow_hidden()
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.elevated)
-            .child(header)
-            .child(divider)
-            .child(btn_row)
-            .into_any_element()
-    }
-
-    fn quick_action_button(
-        &self,
-        idx: usize,
-        action: &QuickAction,
-        accent: Rgba,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let enabled = action.enabled;
-        let (icon_color, label_color, bg_color, border_color) = if enabled {
-            (
-                accent,
-                palette.text_primary,
-                palette.shell,
-                palette.border_regular,
-            )
-        } else {
-            (
-                with_alpha(palette.text_faint, 0.5),
-                with_alpha(palette.text_faint, 0.5),
-                with_alpha(palette.shell, 0.5),
-                with_alpha(palette.border_regular, 0.5),
-            )
-        };
-
-        let mut content = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(icon(
-                Icon::from_name(action.icon.as_str()),
-                FONT_SM,
-                icon_color,
-            ))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(label_color)
-                    .child(action.label.clone()),
-            );
-        if !enabled {
-            content = content.child(div().flex_1()).child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(with_alpha(palette.text_faint, 0.5))
-                    .child(tr!("integration_quick_action_na")),
-            );
-        }
-
-        let mut btn = div()
-            .id(("quick-action", idx))
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .items_center()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(border_color)
-            .bg(bg_color)
-            .child(content);
-        if enabled {
-            let hover_bg = with_alpha(bg_color, (bg_color.a + 0.06).min(1.0));
-            btn = btn
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover_bg))
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.on_quick_action(idx, window, cx)
-                }));
-        }
-        btn.into_any_element()
     }
 
     fn disconnect_overlay(
@@ -787,8 +892,8 @@ impl Render for IntegrationDetail {
                 let state_banner = self.state_banner(&palette, density);
                 let reauth_banner = (self.is_twitch && self.twitch_reauth_required)
                     .then(|| self.twitch_reauth_banner(&palette, density, cx));
-                let health = health_grid(&self.health_metrics, reconnecting, &palette, density);
-                let content = content_sections(&self.sections, &palette, density);
+                let health = health_grid(&self.augmented_health(), reconnecting, &palette, density);
+                let content = content_sections(&self.augmented_sections(), &palette, density);
                 let quick = self.quick_actions_card(&palette, density, cx);
 
                 div()
@@ -847,10 +952,15 @@ impl Render for IntegrationDetail {
             _ => BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
         };
 
-        let oauth_status = self.connect_platform.map(|platform| match platform {
-            PlatformId::Twitch => self.twitch_device_status(&palette, density),
-            _ => self.connect_status(platform, &palette, density),
-        });
+        let is_oauth_platform = matches!(self.status.id().as_str(), "twitch" | "youtube" | "kick");
+        let header_right = match self.connect_platform {
+            Some(PlatformId::Twitch) => Some(self.twitch_device_status(&palette, density)),
+            Some(platform) => Some(self.connect_status(platform, &palette, density)),
+            None if is_oauth_platform && self.connection == ConnectionState::Connected => {
+                Some(self.header_right_connected(&palette, density))
+            }
+            None => None,
+        };
         let mut frame = page_frame(
             vec![
                 ancestor_crumb,
@@ -858,7 +968,7 @@ impl Render for IntegrationDetail {
             ],
             &palette,
         );
-        if let Some(status) = oauth_status {
+        if let Some(status) = header_right {
             frame = frame.header_right(status);
         }
         let frame = frame.body(scroll);
@@ -991,21 +1101,30 @@ fn header_action_label(action: &HeaderAction) -> String {
     }
 }
 
-fn quick_action_accent(index: usize, palette: &ForgePalette) -> Rgba {
-    match index % 4 {
-        0 => palette.brand,
-        1 => palette.random,
-        2 => palette.warning,
-        _ => palette.info,
-    }
-}
-
 fn pill(label: String, text_color: Rgba, palette: &ForgePalette) -> impl IntoElement {
     badge(palette.surface_overlay, text_color, label, true, FONT_XS)
         .weight(FontWeight::NORMAL)
         .padding_xy(px(0.0), px(6.0))
         .radius(radius(Radius::Md))
         .flex_none()
+}
+
+fn hero_badge_elem(badge_spec: &HeroBadge, palette: &ForgePalette) -> impl IntoElement + use<> {
+    let text_color = match badge_spec.tone {
+        HeroBadgeTone::Neutral => palette.text_muted,
+        HeroBadgeTone::Positive => palette.success,
+    };
+    badge(
+        palette.surface_overlay,
+        text_color,
+        badge_spec.label.clone(),
+        badge_spec.monospace,
+        FONT_XS,
+    )
+    .weight(FontWeight::NORMAL)
+    .padding_xy(px(2.0), px(6.0))
+    .radius(radius(Radius::Sm))
+    .flex_none()
 }
 
 fn sub_line(endpoint: Option<&str>, uptime: Option<Duration>) -> String {

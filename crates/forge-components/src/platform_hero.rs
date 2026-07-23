@@ -14,6 +14,7 @@ use crate::tokens::{
 pub struct PlatformHero {
     tile: AvatarTile,
     name: SharedString,
+    name_badges: Vec<AnyElement>,
     description: SharedString,
     right: Option<AnyElement>,
     density: Density,
@@ -36,6 +37,7 @@ pub fn platform_hero(
             .corner(px(11.0))
             .font(px(24.0)),
         name: name.into(),
+        name_badges: Vec::new(),
         description: description.into(),
         right: None,
         density: Density::Cozy,
@@ -54,6 +56,12 @@ impl PlatformHero {
     }
 
     #[must_use]
+    pub fn name_badges(mut self, badges: Vec<AnyElement>) -> Self {
+        self.name_badges = badges;
+        self
+    }
+
+    #[must_use]
     pub fn density(mut self, density: Density) -> Self {
         self.density = density;
         self
@@ -64,19 +72,30 @@ impl RenderOnce for PlatformHero {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let d = self.density;
 
+        let name_el = div()
+            .font_family(body_family())
+            .text_size(FONT_LG)
+            .text_color(self.name_color)
+            .child(self.name);
+        let name_row: AnyElement = if self.name_badges.is_empty() {
+            name_el.into_any_element()
+        } else {
+            div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, d))
+                .child(name_el)
+                .children(self.name_badges)
+                .into_any_element()
+        };
+
         let info = div()
             .flex_1()
             .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, d))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_LG)
-                    .text_color(self.name_color)
-                    .child(self.name),
-            )
+            .child(name_row)
             .child(
                 div()
                     .font_family(mono_family())

@@ -122,13 +122,17 @@ fn run_playback(
                 }
                 event_sink.emit(AudioEvent::PlaybackStarted {
                     clip_id: None,
+                    clip_label: None,
                     device: started.device_name,
                     duration_secs: Some(started.duration_ms as f64 / 1000.0),
                     looped: false,
                 });
                 wait_for_completion(started.duration_ms, &stop, &paused);
                 drop(started.stream);
-                event_sink.emit(AudioEvent::PlaybackFinished { clip_id: None });
+                event_sink.emit(AudioEvent::PlaybackFinished {
+                    clip_id: None,
+                    clip_label: None,
+                });
                 return;
             }
             Err(e) => {
@@ -139,6 +143,7 @@ fn run_playback(
 
     event_sink.emit(AudioEvent::PlaybackFailed {
         clip_id: None,
+        clip_label: None,
         error: last_error,
     });
 }

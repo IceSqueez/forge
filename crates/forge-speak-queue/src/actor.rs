@@ -53,11 +53,34 @@ enum SynthOutcome {
         engine_id: EngineId,
     },
     Skipped {
-        reason: String,
+        human: String,
+        token: String,
+        detail: Option<String>,
     },
     Failed {
-        error: String,
+        reason: &'static str,
+        detail: String,
     },
+}
+
+fn pipeline_skip_token(reason: &forge_tts_pipeline::SkipReason) -> (String, Option<String>) {
+    use forge_tts_pipeline::SkipReason;
+    match reason {
+        SkipReason::MatchedSkipRule(name) => {
+            ("skip_rule_matched".to_owned(), Some((*name).to_owned()))
+        }
+        SkipReason::BlockedByWordFilter => ("blocked_by_word_filter".to_owned(), None),
+        SkipReason::EmptyAfterProcessing => ("empty_after_processing".to_owned(), None),
+    }
+}
+
+fn resolve_skip_token(reason: &'static str) -> &'static str {
+    match reason {
+        "blocked by alias" => "blocked_by_alias",
+        "no voices available" => "no_voices_available",
+        "voice override not found in catalog" => "voice_override_not_found",
+        _ => "voice_resolution_failed",
+    }
 }
 
 struct SynthTaskDeps {
@@ -90,11 +113,14 @@ async fn run_synthesis(
     let text_to_speak = match pipeline_result {
         PipelineResult::Speak(t) => t,
         PipelineResult::Skip { reason } => {
+            let (token, detail) = pipeline_skip_token(&reason);
             return SynthTaskResult {
                 request_id: req.request_id.clone(),
                 request: req,
                 outcome: SynthOutcome::Skipped {
-                    reason: format!("{reason:?}"),
+                    human: format!("{reason:?}"),
+                    token,
+                    detail,
                 },
             };
         }
@@ -117,7 +143,9 @@ async fn run_synthesis(
                 request_id: req.request_id.clone(),
                 request: req,
                 outcome: SynthOutcome::Skipped {
-                    reason: reason.to_owned(),
+                    human: reason.to_owned(),
+                    token: resolve_skip_token(reason).to_owned(),
+                    detail: None,
                 },
             };
         }
@@ -135,7 +163,8 @@ async fn run_synthesis(
                 request_id: req.request_id.clone(),
                 request: req,
                 outcome: SynthOutcome::Failed {
-                    error: format!("engine {:?} not registered", engine_id),
+                    reason: "engine_error",
+                    detail: format!("engine {:?} not registered", engine_id),
                 },
             };
         }
@@ -148,7 +177,8 @@ async fn run_synthesis(
                 request_id: req.request_id.clone(),
                 request: req,
                 outcome: SynthOutcome::Failed {
-                    error: e.to_string(),
+                    reason: "engine_error",
+                    detail: e.to_string(),
                 },
             };
         }
@@ -176,7 +206,8 @@ async fn run_synthesis(
             request_id: req.request_id.clone(),
             request: req,
             outcome: SynthOutcome::Failed {
-                error: e.to_string(),
+                reason: "engine_error",
+                detail: e.to_string(),
             },
         },
     }
@@ -222,8 +253,17 @@ fn resolve_with_overrides(
     resolver.resolve(&req.viewer_id, &req.viewer_name, catalog)
 }
 
-fn publish(bus: &dyn EventPublisher, kind: &str, payload: serde_json::Value) {
-    bus.publish(Event::new(EventSource::Audio, kind, payload));
+fn publish(
+    bus: &dyn EventPublisher,
+    kind: &str,
+    payload: serde_json::Value,
+    caused_by: Option<forge_types::EventId>,
+) {
+    let event = match caused_by {
+        Some(parent) => Event::caused_by(EventSource::Audio, kind, payload, parent),
+        None => Event::new(EventSource::Audio, kind, payload),
+    };
+    bus.publish(event);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -283,7 +323,15 @@ pub(crate) async fn run_actor(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.started",
-                serde_json::json!({ "request_id": req.request_id.0, "queue_len": queue_len }),
+                serde_json::json!({
+                    "request_id": req.request_id.0,
+                    "voice_id": null,
+                    "engine_id": null,
+                    "queue_len": queue_len,
+                    "viewer_name": req.viewer_name,
+                    "text": req.text,
+                }),
+                req.source_event_id,
             );
             active_request_id = Some(req.request_id.clone());
             let tx = synth_tx.clone();
@@ -442,31 +490,49 @@ async fn handle_synth_result(
     let queue_len = high_queue.len() + normal_queue.len();
 
     match result.outcome {
-        SynthOutcome::Skipped { reason } => {
+        SynthOutcome::Skipped {
+            human,
+            token,
+            detail,
+        } => {
             *active_request_id = None;
-            tracing::debug!(request_id = %result.request_id.0, %reason, "speak skipped");
+            tracing::debug!(request_id = %result.request_id.0, reason = %token, "speak skipped");
             let _ = event_tx.send(SpeakEvent::Skipped {
                 request_id: result.request_id.clone(),
-                reason: reason.clone(),
+                reason: human,
             });
             publish(
                 deps.event_bus.as_ref(),
                 "speak.skipped",
-                serde_json::json!({ "request_id": result.request_id.0, "reason": reason }),
+                serde_json::json!({
+                    "request_id": result.request_id.0,
+                    "reason": token,
+                    "detail": detail,
+                    "viewer_name": result.request.viewer_name,
+                    "text": result.request.text,
+                }),
+                result.request.source_event_id,
             );
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
         }
-        SynthOutcome::Failed { error } => {
+        SynthOutcome::Failed { reason, detail } => {
             *active_request_id = None;
-            tracing::warn!(request_id = %result.request_id.0, %error, "speak failed");
+            tracing::warn!(request_id = %result.request_id.0, error = %detail, "speak failed");
             let _ = event_tx.send(SpeakEvent::Failed {
                 request_id: result.request_id.clone(),
-                error: error.clone(),
+                error: detail.clone(),
             });
             publish(
                 deps.event_bus.as_ref(),
                 "speak.failed",
-                serde_json::json!({ "request_id": result.request_id.0, "error": error }),
+                serde_json::json!({
+                    "request_id": result.request_id.0,
+                    "reason": reason,
+                    "error": detail,
+                    "viewer_name": result.request.viewer_name,
+                    "text": result.request.text,
+                }),
+                result.request.source_event_id,
             );
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
         }
@@ -491,7 +557,11 @@ async fn handle_synth_result(
                     "request_id": result.request_id.0,
                     "voice_id": voice_id.0,
                     "engine_id": engine_id.0,
+                    "queue_len": queue_len,
+                    "viewer_name": result.request.viewer_name,
+                    "text": result.request.text,
                 }),
+                result.request.source_event_id,
             );
             let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
             pcm.apply_gain(config.master_volume * engine_gain);
@@ -517,7 +587,14 @@ async fn handle_synth_result(
                     publish(
                         deps.event_bus.as_ref(),
                         "speak.failed",
-                        serde_json::json!({ "request_id": result.request_id.0, "error": e.to_string() }),
+                        serde_json::json!({
+                            "request_id": result.request_id.0,
+                            "reason": "device_error",
+                            "error": e.to_string(),
+                            "viewer_name": result.request.viewer_name,
+                            "text": result.request.text,
+                        }),
+                        result.request.source_event_id,
                     );
                     let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
                 }
@@ -548,7 +625,12 @@ async fn finish_playback(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.finished",
-                serde_json::json!({ "request_id": current.request_id.0 }),
+                serde_json::json!({
+                    "request_id": current.request_id.0,
+                    "viewer_name": current.request.viewer_name,
+                    "text": current.request.text,
+                }),
+                current.request.source_event_id,
             );
             *last_successful = Some(current.request);
         }
@@ -561,7 +643,14 @@ async fn finish_playback(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.failed",
-                serde_json::json!({ "request_id": current.request_id.0, "error": e.to_string() }),
+                serde_json::json!({
+                    "request_id": current.request_id.0,
+                    "reason": "device_error",
+                    "error": e.to_string(),
+                    "viewer_name": current.request.viewer_name,
+                    "text": current.request.text,
+                }),
+                current.request.source_event_id,
             );
         }
     }
@@ -569,7 +658,8 @@ async fn finish_playback(
 }
 
 fn stop_active(
-    reason: &str,
+    human_reason: &str,
+    reason_token: &'static str,
     deps: &QueueDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
@@ -579,18 +669,33 @@ fn stop_active(
     let Some(request_id) = active_request_id.take() else {
         return;
     };
-    if let Some(current) = current_playback.take() {
-        current.playback.stop();
-    }
+    let (viewer_name, text, caused_by) = match current_playback.take() {
+        Some(current) => {
+            current.playback.stop();
+            (
+                Some(current.request.viewer_name.clone()),
+                Some(current.request.text.clone()),
+                current.request.source_event_id,
+            )
+        }
+        None => (None, None, None),
+    };
     *progress_ticker = None;
     let _ = event_tx.send(SpeakEvent::Skipped {
         request_id: request_id.clone(),
-        reason: reason.to_owned(),
+        reason: human_reason.to_owned(),
     });
     publish(
         deps.event_bus.as_ref(),
         "speak.skipped",
-        serde_json::json!({ "request_id": request_id.0, "reason": reason }),
+        serde_json::json!({
+            "request_id": request_id.0,
+            "reason": reason_token,
+            "detail": null,
+            "viewer_name": viewer_name,
+            "text": text,
+        }),
+        caused_by,
     );
 }
 
@@ -678,8 +783,13 @@ fn handle_command(
                     "speak.rejected",
                     serde_json::json!({
                         "request_id": req.request_id.0,
-                        "reason": format!("queue full (max {})", config.max_queue_len),
+                        "reason": "queue_full",
+                        "limit": config.max_queue_len,
+                        "queue_len": total,
+                        "viewer_name": req.viewer_name,
+                        "text": req.text,
                     }),
+                    req.source_event_id,
                 );
                 return;
             }
@@ -695,8 +805,13 @@ fn handle_command(
                     "speak.rejected",
                     serde_json::json!({
                         "request_id": req.request_id.0,
-                        "reason": format!("per-user limit (max {})", config.per_user_limit),
+                        "reason": "per_user_limit",
+                        "limit": config.per_user_limit,
+                        "queue_len": total,
+                        "viewer_name": req.viewer_name,
+                        "text": req.text,
                     }),
+                    req.source_event_id,
                 );
                 return;
             }
@@ -719,7 +834,13 @@ fn handle_command(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.enqueued",
-                serde_json::json!({ "request_id": req.request_id.0, "queue_len": total_after }),
+                serde_json::json!({
+                    "request_id": req.request_id.0,
+                    "queue_len": total_after,
+                    "viewer_name": req.viewer_name,
+                    "text": req.text,
+                }),
+                req.source_event_id,
             );
             let _ = event_tx.send(SpeakEvent::QueueChanged {
                 queue_len: total_after,
@@ -728,6 +849,7 @@ fn handle_command(
         SpeakCommand::Skip => {
             stop_active(
                 "skipped by user",
+                "user_skip",
                 deps,
                 event_tx,
                 active_request_id,
@@ -742,6 +864,7 @@ fn handle_command(
                 high_queue.push_front(req);
                 stop_active(
                     "promoted by user",
+                    "promoted",
                     deps,
                     event_tx,
                     active_request_id,
@@ -766,7 +889,12 @@ fn handle_command(
                 publish(
                     deps.event_bus.as_ref(),
                     "speak.removed",
-                    serde_json::json!({ "request_id": request_id.0 }),
+                    serde_json::json!({
+                        "request_id": request_id.0,
+                        "viewer_name": req.viewer_name,
+                        "text": req.text,
+                    }),
+                    req.source_event_id,
                 );
                 let total = high_queue.len() + normal_queue.len();
                 let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
@@ -775,6 +903,7 @@ fn handle_command(
         SpeakCommand::Clear => {
             stop_active(
                 "stopped by clear",
+                "cleared",
                 deps,
                 event_tx,
                 active_request_id,
@@ -788,7 +917,8 @@ fn handle_command(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.cleared",
-                serde_json::json!({}),
+                serde_json::json!({ "keep_current": false }),
+                None,
             );
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: 0 });
         }
@@ -800,6 +930,7 @@ fn handle_command(
                 deps.event_bus.as_ref(),
                 "speak.cleared",
                 serde_json::json!({ "keep_current": true }),
+                None,
             );
             let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: 0 });
         }
@@ -852,7 +983,8 @@ fn handle_command(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.paused",
-                serde_json::json!({ "reason": "user paused" }),
+                serde_json::json!({ "reason": "user" }),
+                None,
             );
         }
         SpeakCommand::Resume => {
@@ -864,7 +996,8 @@ fn handle_command(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.resumed",
-                serde_json::json!({}),
+                serde_json::json!({ "reason": "user" }),
+                None,
             );
         }
         SpeakCommand::Replay => {
@@ -884,6 +1017,17 @@ fn handle_command(
                     voice_preview,
                     estimated_secs,
                 });
+                publish(
+                    deps.event_bus.as_ref(),
+                    "speak.enqueued",
+                    serde_json::json!({
+                        "request_id": replay.request_id.0,
+                        "queue_len": total,
+                        "viewer_name": replay.viewer_name,
+                        "text": replay.text,
+                    }),
+                    replay.source_event_id,
+                );
                 let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
             }
         }
@@ -896,6 +1040,7 @@ fn handle_command(
                 deps.event_bus.as_ref(),
                 "speak.paused",
                 serde_json::json!({ "reason": "voicegate" }),
+                None,
             );
         }
         SpeakCommand::VoiceGateDeactivated => {
@@ -904,7 +1049,8 @@ fn handle_command(
             publish(
                 deps.event_bus.as_ref(),
                 "speak.resumed",
-                serde_json::json!({}),
+                serde_json::json!({ "reason": "voicegate" }),
+                None,
             );
         }
     }
@@ -972,7 +1118,7 @@ async fn build_voice_catalog(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioSink};
@@ -1056,8 +1202,97 @@ mod tests {
             alias_override: None,
             engine_override: None,
             voice_override: None,
-            source_event_id: forge_types::EventId::new(),
+            source_event_id: Some(forge_types::EventId::new()),
             is_reward: false,
+        }
+    }
+
+    struct RecordingPublisher {
+        events: Arc<std::sync::Mutex<Vec<Event>>>,
+    }
+    impl EventPublisher for RecordingPublisher {
+        fn publish(&self, event: Event) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    fn recording_deps() -> (QueueDeps, Arc<std::sync::Mutex<Vec<Event>>>) {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let deps = QueueDeps {
+            event_bus: Arc::new(RecordingPublisher {
+                events: Arc::clone(&events),
+            }),
+            ..minimal_deps()
+        };
+        (deps, events)
+    }
+
+    struct Harness {
+        config: QueueConfig,
+        deps: QueueDeps,
+        events: Arc<std::sync::Mutex<Vec<Event>>>,
+        tx: tokio::sync::broadcast::Sender<SpeakEvent>,
+        _rx: tokio::sync::broadcast::Receiver<SpeakEvent>,
+        high: VecDeque<SpeakRequest>,
+        normal: VecDeque<SpeakRequest>,
+        counts: HashMap<String, usize>,
+        paused: bool,
+        voicegate: bool,
+        active: Option<RequestId>,
+        last: Option<SpeakRequest>,
+        current_playback: Option<CurrentPlayback>,
+        progress_ticker: Option<tokio::time::Interval>,
+    }
+
+    impl Harness {
+        fn new() -> Self {
+            let (deps, events) = recording_deps();
+            let (tx, rx) = tokio::sync::broadcast::channel::<SpeakEvent>(32);
+            Self {
+                config: QueueConfig::default(),
+                deps,
+                events,
+                tx,
+                _rx: rx,
+                high: VecDeque::new(),
+                normal: VecDeque::new(),
+                counts: HashMap::new(),
+                paused: false,
+                voicegate: false,
+                active: None,
+                last: None,
+                current_playback: None,
+                progress_ticker: None,
+            }
+        }
+
+        fn run(&mut self, cmd: SpeakCommand) {
+            handle_command(
+                cmd,
+                &mut self.config,
+                &self.deps,
+                &self.tx,
+                &mut self.high,
+                &mut self.normal,
+                &mut self.counts,
+                &mut self.paused,
+                &mut self.voicegate,
+                &mut self.active,
+                &self.last,
+                &mut self.current_playback,
+                &mut self.progress_ticker,
+                &[],
+            );
+        }
+
+        fn bus(&self, kind: &str) -> Event {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|e| e.kind == kind)
+                .cloned()
+                .unwrap_or_else(|| panic!("no bus event of kind {kind}"))
         }
     }
 
@@ -1214,5 +1449,153 @@ mod tests {
                 "is_reward={is_reward} strip_reward_emotes={strip_reward_emotes}",
             );
         }
+    }
+
+    #[test]
+    fn rejected_bus_event_carries_token_limit_and_current_queue_len() {
+        for (config, first_viewer, second_viewer, token) in [
+            (
+                QueueConfig {
+                    max_queue_len: 1,
+                    per_user_limit: 50,
+                    ..QueueConfig::default()
+                },
+                "a",
+                "b",
+                "queue_full",
+            ),
+            (
+                QueueConfig {
+                    max_queue_len: 50,
+                    per_user_limit: 1,
+                    ..QueueConfig::default()
+                },
+                "same",
+                "same",
+                "per_user_limit",
+            ),
+        ] {
+            let mut h = Harness::new();
+            h.config = config;
+            h.run(SpeakCommand::Enqueue(request(
+                first_viewer,
+                "accepted",
+                Priority::Normal,
+            )));
+            let mut rejected = request(second_viewer, "over the cap", Priority::Normal);
+            let src = forge_types::EventId::new();
+            rejected.source_event_id = Some(src);
+            h.run(SpeakCommand::Enqueue(rejected));
+
+            let ev = h.bus("speak.rejected");
+            assert_eq!(ev.payload["reason"].as_str(), Some(token));
+            assert_eq!(ev.payload["limit"].as_u64(), Some(1));
+            assert_eq!(ev.payload["queue_len"].as_u64(), Some(1));
+            assert_eq!(ev.payload["viewer_name"].as_str(), Some(second_viewer));
+            assert_eq!(ev.payload["text"].as_str(), Some("over the cap"));
+            assert_eq!(ev.caused_by, Some(src));
+        }
+    }
+
+    #[test]
+    fn pause_and_resume_bus_reasons_are_symmetric_per_origin() {
+        for (cmd, kind, reason) in [
+            (SpeakCommand::Pause, "speak.paused", "user"),
+            (SpeakCommand::Resume, "speak.resumed", "user"),
+            (
+                SpeakCommand::VoiceGateActivated,
+                "speak.paused",
+                "voicegate",
+            ),
+            (
+                SpeakCommand::VoiceGateDeactivated,
+                "speak.resumed",
+                "voicegate",
+            ),
+        ] {
+            let mut h = Harness::new();
+            h.run(cmd);
+            let ev = h.bus(kind);
+            assert_eq!(ev.payload["reason"].as_str(), Some(reason));
+            assert!(ev.caused_by.is_none());
+        }
+    }
+
+    #[test]
+    fn cleared_bus_event_always_carries_keep_current_flag() {
+        for (cmd, keep_current) in [
+            (SpeakCommand::Clear, false),
+            (SpeakCommand::ClearPending, true),
+        ] {
+            let mut h = Harness::new();
+            h.run(cmd);
+            let ev = h.bus("speak.cleared");
+            assert_eq!(ev.payload["keep_current"].as_bool(), Some(keep_current));
+            assert!(ev.caused_by.is_none());
+        }
+    }
+
+    #[test]
+    fn enqueued_bus_event_links_caused_by_only_when_request_carries_source() {
+        let src = forge_types::EventId::new();
+        for (source, expected) in [(Some(src), Some(src)), (None, None)] {
+            let mut h = Harness::new();
+            let mut req = request("nova", "hi chat", Priority::Normal);
+            req.source_event_id = source;
+            h.run(SpeakCommand::Enqueue(req));
+            let ev = h.bus("speak.enqueued");
+            assert_eq!(ev.caused_by, expected);
+        }
+    }
+
+    #[test]
+    fn replay_publishes_enqueued_bus_event_carrying_original_source() {
+        let mut h = Harness::new();
+        let src = forge_types::EventId::new();
+        let mut last = request("nova", "again please", Priority::Normal);
+        last.source_event_id = Some(src);
+        h.last = Some(last);
+
+        h.run(SpeakCommand::Replay);
+
+        let ev = h.bus("speak.enqueued");
+        assert_eq!(ev.payload["viewer_name"].as_str(), Some("nova"));
+        assert_eq!(ev.payload["text"].as_str(), Some("again please"));
+        assert_eq!(ev.caused_by, Some(src));
+    }
+
+    #[test]
+    fn resolve_skip_token_maps_each_human_phrase_to_its_stable_bus_token() {
+        for (phrase, token) in [
+            ("blocked by alias", "blocked_by_alias"),
+            ("no voices available", "no_voices_available"),
+            (
+                "voice override not found in catalog",
+                "voice_override_not_found",
+            ),
+            (
+                "something the resolver has never emitted",
+                "voice_resolution_failed",
+            ),
+        ] {
+            assert_eq!(resolve_skip_token(phrase), token);
+        }
+    }
+
+    #[test]
+    fn pipeline_skip_token_carries_rule_name_only_for_matched_rule() {
+        use forge_tts_pipeline::SkipReason;
+        assert_eq!(
+            pipeline_skip_token(&SkipReason::MatchedSkipRule("no urls")),
+            ("skip_rule_matched".to_owned(), Some("no urls".to_owned())),
+        );
+        assert_eq!(
+            pipeline_skip_token(&SkipReason::BlockedByWordFilter),
+            ("blocked_by_word_filter".to_owned(), None),
+        );
+        assert_eq!(
+            pipeline_skip_token(&SkipReason::EmptyAfterProcessing),
+            ("empty_after_processing".to_owned(), None),
+        );
     }
 }

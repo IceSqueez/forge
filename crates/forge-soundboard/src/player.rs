@@ -48,7 +48,7 @@ impl StopToken {
     }
 }
 
-type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, StopToken)>>>>;
+type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, StopToken, String)>>>>;
 
 pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
@@ -103,11 +103,13 @@ impl SoundboardPlayer {
         if tokens.is_empty() {
             return;
         }
-        for (_id, token) in &tokens {
+        let clip_label = tokens.first().map(|(_, _, label)| label.clone());
+        for (_id, token, _label) in &tokens {
             token.stop();
         }
         self.event_sink.emit(AudioEvent::PlaybackFinished {
             clip_id: Some(clip_id),
+            clip_label,
         });
     }
 
@@ -117,11 +119,13 @@ impl SoundboardPlayer {
             std::mem::take(&mut *guard)
         };
         for (clip_id, tokens) in &drained {
-            for (_id, token) in tokens {
+            let clip_label = tokens.first().map(|(_, _, label)| label.clone());
+            for (_id, token, _label) in tokens {
                 token.stop();
             }
             self.event_sink.emit(AudioEvent::PlaybackFinished {
                 clip_id: Some(*clip_id),
+                clip_label,
             });
         }
     }
@@ -182,6 +186,7 @@ impl SoundboardPlayer {
             Err(e) => {
                 self.event_sink.emit(AudioEvent::PlaybackFailed {
                     clip_id: Some(clip_id),
+                    clip_label: Some(clip.name.clone()),
                     error: e.to_string(),
                 });
                 return Err(SoundboardError::Audio(e));
@@ -198,6 +203,7 @@ impl SoundboardPlayer {
             Err(e) => {
                 self.event_sink.emit(AudioEvent::PlaybackFailed {
                     clip_id: Some(clip_id),
+                    clip_label: Some(clip.name.clone()),
                     error: e.to_string(),
                 });
                 return Err(e);
@@ -215,25 +221,27 @@ impl SoundboardPlayer {
 
         self.event_sink.emit(AudioEvent::PlaybackStarted {
             clip_id: Some(clip_id),
+            clip_label: Some(clip.name.clone()),
             device: device_label,
             duration_secs: Some(duration_ms as f64 / 1000.0),
             looped: clip.loop_playback,
         });
 
         if clip.loop_playback {
-            self.play_looping(clip_id, sinks, buffer, duration_ms);
+            self.play_looping(clip_id, sinks, buffer, duration_ms, clip.name.clone());
             return Ok(());
         }
 
         match play_target(&sinks, buffer).await {
             Ok(handle) => {
-                self.register(clip_id, handle, duration_ms);
+                self.register(clip_id, handle, duration_ms, clip.name.clone());
                 Ok(())
             }
             Err(e) => {
                 let error = e.to_string();
                 self.event_sink.emit(AudioEvent::PlaybackFailed {
                     clip_id: Some(clip_id),
+                    clip_label: Some(clip.name.clone()),
                     error,
                 });
                 Err(SoundboardError::Audio(e))
@@ -261,14 +269,15 @@ impl SoundboardPlayer {
         Ok(sinks)
     }
 
-    fn register(&self, clip_id: ClipId, handle: PlaybackHandle, duration_ms: u64) {
+    fn register(&self, clip_id: ClipId, handle: PlaybackHandle, duration_ms: u64, label: String) {
         let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
         {
             let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-            guard
-                .entry(clip_id)
-                .or_default()
-                .push((play_id, StopToken::Handle(handle)));
+            guard.entry(clip_id).or_default().push((
+                play_id,
+                StopToken::Handle(handle),
+                label.clone(),
+            ));
         }
 
         let active = Arc::clone(&self.active);
@@ -280,7 +289,7 @@ impl SoundboardPlayer {
                 match guard.get_mut(&clip_id) {
                     Some(plays) => {
                         let before = plays.len();
-                        plays.retain(|(id, _)| *id != play_id);
+                        plays.retain(|(id, _, _)| *id != play_id);
                         let removed = plays.len() < before;
                         if plays.is_empty() {
                             guard.remove(&clip_id);
@@ -293,6 +302,7 @@ impl SoundboardPlayer {
             if completed_naturally {
                 event_sink.emit(AudioEvent::PlaybackFinished {
                     clip_id: Some(clip_id),
+                    clip_label: Some(label),
                 });
             }
         });
@@ -304,6 +314,7 @@ impl SoundboardPlayer {
         sinks: Vec<Arc<dyn AudioSink>>,
         buffer: PcmBuffer,
         duration_ms: u64,
+        label: String,
     ) {
         let should_stop = Arc::new(AtomicBool::new(false));
         let current = Arc::new(Mutex::new(PlaybackHandle::default()));
@@ -317,6 +328,7 @@ impl SoundboardPlayer {
                     should_stop: Arc::clone(&should_stop),
                     current: Arc::clone(&current),
                 },
+                label.clone(),
             ));
         }
 
@@ -338,6 +350,7 @@ impl SoundboardPlayer {
                     Err(e) => {
                         event_sink.emit(AudioEvent::PlaybackFailed {
                             clip_id: Some(clip_id),
+                            clip_label: Some(label.clone()),
                             error: e.to_string(),
                         });
                         break;
@@ -357,7 +370,7 @@ impl SoundboardPlayer {
 
             let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
             if let Some(plays) = guard.get_mut(&clip_id) {
-                plays.retain(|(id, _)| *id != play_id);
+                plays.retain(|(id, _, _)| *id != play_id);
                 if plays.is_empty() {
                     guard.remove(&clip_id);
                 }
@@ -689,7 +702,10 @@ mod tests {
         ));
         assert!(matches!(
             recorded[1],
-            AudioEvent::PlaybackFinished { clip_id: Some(_) }
+            AudioEvent::PlaybackFinished {
+                clip_id: Some(_),
+                ..
+            }
         ));
     }
 

@@ -50,7 +50,8 @@ pub struct SpeakRequest {
     pub engine_override: Option<EngineId>,
     /// Bypasses alias and strategy resolution entirely.
     pub voice_override: Option<VoiceId>,
-    pub source_event_id: forge_types::EventId,
+    /// None when not triggered by an event (UI-invoked preview/test speech).
+    pub source_event_id: Option<forge_types::EventId>,
     /// Gates `PipelineConfig::strip_reward_emotes`, independent of `strip_twitch_emotes`.
     pub is_reward: bool,
 }

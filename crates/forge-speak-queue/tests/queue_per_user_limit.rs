@@ -109,7 +109,7 @@ fn speak_req(viewer: &str, text: &str) -> SpeakRequest {
         alias_override: None,
         engine_override: None,
         voice_override: None,
-        source_event_id: EventId::new(),
+        source_event_id: Some(EventId::new()),
         is_reward: false,
     }
 }

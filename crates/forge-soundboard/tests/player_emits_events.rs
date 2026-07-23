@@ -1,7 +1,8 @@
 #![allow(
     clippy::unwrap_used,
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    clippy::panic
 )]
 
 use std::io::Write as _;
@@ -155,14 +156,29 @@ async fn play_emits_playback_started_then_finished_in_order() {
     let recorded = events.lock().unwrap();
     assert_eq!(recorded.len(), 2, "exactly 2 events must be emitted");
 
-    assert!(
-        matches!(recorded[0], AudioEvent::PlaybackStarted { clip_id: Some(id), .. } if id == clip_id),
-        "first event must be PlaybackStarted with correct clip_id"
-    );
-    assert!(
-        matches!(recorded[1], AudioEvent::PlaybackFinished { clip_id: Some(id) } if id == clip_id),
-        "second event must be PlaybackFinished with correct clip_id"
-    );
+    let AudioEvent::PlaybackStarted {
+        clip_id: started_id,
+        clip_label: started_label,
+        ..
+    } = &recorded[0]
+    else {
+        panic!("first event must be PlaybackStarted, got {:?}", recorded[0]);
+    };
+    assert_eq!(*started_id, Some(clip_id));
+    assert_eq!(started_label.as_deref(), Some("test clip"));
+
+    let AudioEvent::PlaybackFinished {
+        clip_id: finished_id,
+        clip_label: finished_label,
+    } = &recorded[1]
+    else {
+        panic!(
+            "second event must be PlaybackFinished, got {:?}",
+            recorded[1]
+        );
+    };
+    assert_eq!(*finished_id, Some(clip_id));
+    assert_eq!(finished_label.as_deref(), Some("test clip"));
 }
 
 #[tokio::test]

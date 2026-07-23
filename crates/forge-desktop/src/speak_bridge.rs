@@ -42,7 +42,7 @@ impl SpeakBridge {
             alias_override,
             engine_override,
             voice_override,
-            source_event_id: forge_types::EventId::new(),
+            source_event_id: None,
             is_reward,
         };
         self.handle

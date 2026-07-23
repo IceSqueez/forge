@@ -20,6 +20,7 @@ impl AudioEventSink for BusAudioEventSink {
         let bus_event = match event {
             AudioEvent::PlaybackStarted {
                 clip_id,
+                clip_label,
                 device,
                 duration_secs,
                 looped,
@@ -28,23 +29,33 @@ impl AudioEventSink for BusAudioEventSink {
                 "playback.started",
                 json!({
                     "clip_id": clip_id.map(|id| id.to_string()),
+                    "clip_label": clip_label,
                     "device": device,
                     "duration_secs": duration_secs,
                     "looped": looped,
                 }),
             ),
-            AudioEvent::PlaybackFinished { clip_id } => Event::new(
+            AudioEvent::PlaybackFinished {
+                clip_id,
+                clip_label,
+            } => Event::new(
                 EventSource::Audio,
                 "playback.finished",
                 json!({
                     "clip_id": clip_id.map(|id| id.to_string()),
+                    "clip_label": clip_label,
                 }),
             ),
-            AudioEvent::PlaybackFailed { clip_id, error } => Event::new(
+            AudioEvent::PlaybackFailed {
+                clip_id,
+                clip_label,
+                error,
+            } => Event::new(
                 EventSource::Audio,
                 "playback.failed",
                 json!({
                     "clip_id": clip_id.map(|id| id.to_string()),
+                    "clip_label": clip_label,
                     "error": error,
                 }),
             ),
@@ -72,6 +83,7 @@ mod tests {
 
         sink.emit(AudioEvent::PlaybackStarted {
             clip_id: Some(clip_id),
+            clip_label: Some("Air Horn".to_string()),
             device: "default".to_string(),
             duration_secs: Some(1.5),
             looped: false,
@@ -87,6 +99,7 @@ mod tests {
             event.payload["clip_id"].as_str(),
             Some(clip_id.to_string().as_str())
         );
+        assert_eq!(event.payload["clip_label"].as_str(), Some("Air Horn"));
         assert_eq!(event.payload["device"].as_str(), Some("default"));
     }
 
@@ -99,6 +112,7 @@ mod tests {
 
         sink.emit(AudioEvent::PlaybackFinished {
             clip_id: Some(clip_id),
+            clip_label: None,
         });
 
         let event = tokio::time::timeout(Duration::from_millis(100), sub.recv())
@@ -117,6 +131,7 @@ mod tests {
 
         sink.emit(AudioEvent::PlaybackFailed {
             clip_id: None,
+            clip_label: None,
             error: "device not found".to_string(),
         });
 

@@ -93,6 +93,15 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
+struct RecordingPublisher {
+    events: Arc<std::sync::Mutex<Vec<Event>>>,
+}
+impl EventPublisher for RecordingPublisher {
+    fn publish(&self, event: Event) {
+        self.events.lock().unwrap().push(event);
+    }
+}
+
 fn make_request(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
     SpeakRequest {
         request_id: RequestId::new(),
@@ -103,7 +112,7 @@ fn make_request(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
         alias_override: None,
         engine_override: None,
         voice_override: None,
-        source_event_id: EventId::new(),
+        source_event_id: Some(EventId::new()),
         is_reward: false,
     }
 }
@@ -128,6 +137,17 @@ fn make_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
         disabled_engines: std::collections::HashSet::new(),
         engine_gains: std::collections::HashMap::new(),
     }
+}
+
+fn make_deps_recording(sink: Arc<dyn AudioSink>) -> (QueueDeps, Arc<std::sync::Mutex<Vec<Event>>>) {
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let deps = QueueDeps {
+        event_bus: Arc::new(RecordingPublisher {
+            events: Arc::clone(&events),
+        }),
+        ..make_deps(sink)
+    };
+    (deps, events)
 }
 
 async fn drain_until<F>(stream: &mut forge_speak_queue::SpeakEventStream, predicate: F, max_ms: u64)
@@ -300,4 +320,57 @@ async fn high_priority_enqueued_first() {
     )
     .await;
     assert!(*play_count.lock().unwrap() >= 1);
+}
+
+#[tokio::test]
+async fn started_bus_event_emitted_at_dequeue_and_after_synth_with_superset_schema() {
+    let (sink, _play_count) = RecordingSink::new();
+    let (deps, bus) = make_deps_recording(Arc::new(sink));
+    let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
+
+    let src = EventId::new();
+    let mut req = make_request("nova", "hello chat", Priority::Normal);
+    req.source_event_id = Some(src);
+    handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
+
+    drain_until(
+        &mut stream,
+        |e| matches!(e, SpeakEvent::Finished { .. }),
+        2_000,
+    )
+    .await;
+
+    let started: Vec<Event> = bus
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|e| e.kind == "speak.started")
+        .cloned()
+        .collect();
+    assert_eq!(
+        started.len(),
+        2,
+        "speak.started fires once at dequeue and once after synth resolves"
+    );
+
+    assert!(
+        started[0].payload["voice_id"].is_null(),
+        "dequeue emission has no resolved voice yet"
+    );
+    assert!(started[0].payload["engine_id"].is_null());
+    assert!(
+        started[1].payload["voice_id"].is_string(),
+        "post-synth emission carries the resolved voice"
+    );
+    assert!(started[1].payload["engine_id"].is_string());
+
+    for ev in &started {
+        assert_eq!(ev.payload["viewer_name"].as_str(), Some("nova"));
+        assert_eq!(ev.payload["text"].as_str(), Some("hello chat"));
+        assert!(
+            ev.payload.get("queue_len").is_some_and(|v| v.is_number()),
+            "both emissions share the superset schema key queue_len"
+        );
+        assert_eq!(ev.caused_by, Some(src));
+    }
 }

@@ -4,15 +4,18 @@ use forge_types::ClipId;
 pub enum AudioEvent {
     PlaybackStarted {
         clip_id: Option<ClipId>,
+        clip_label: Option<String>,
         device: String,
         duration_secs: Option<f64>,
         looped: bool,
     },
     PlaybackFinished {
         clip_id: Option<ClipId>,
+        clip_label: Option<String>,
     },
     PlaybackFailed {
         clip_id: Option<ClipId>,
+        clip_label: Option<String>,
         error: String,
     },
 }

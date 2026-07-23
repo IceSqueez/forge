@@ -9,7 +9,6 @@ use forge_components::{
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo};
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
-use forge_types::EventId;
 use forge_voice::SynthesisDefaults;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
@@ -316,7 +315,7 @@ impl TtsEnginesView {
             alias_override: None,
             engine_override: Some(EngineId(engine_id)),
             voice_override: Some(VoiceId(voice_id)),
-            source_event_id: EventId::new(),
+            source_event_id: None,
             is_reward: false,
         };
         async_bridge::report_failure(

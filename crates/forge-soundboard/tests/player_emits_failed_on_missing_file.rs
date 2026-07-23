@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -115,11 +115,16 @@ async fn play_missing_file_emits_playback_failed_and_returns_err() {
 
     let recorded = events.lock().unwrap();
     assert_eq!(recorded.len(), 1, "exactly one event must be emitted");
-    assert!(
-        matches!(recorded[0], AudioEvent::PlaybackFailed { clip_id: Some(id), .. } if id == clip_id),
-        "emitted event must be PlaybackFailed with correct clip_id, got: {:?}",
-        recorded[0]
-    );
+    let AudioEvent::PlaybackFailed {
+        clip_id: failed_id,
+        clip_label,
+        ..
+    } = &recorded[0]
+    else {
+        panic!("expected PlaybackFailed, got {:?}", recorded[0]);
+    };
+    assert_eq!(*failed_id, Some(clip_id));
+    assert_eq!(clip_label.as_deref(), Some("missing clip"));
 }
 
 #[tokio::test]

@@ -671,7 +671,7 @@ impl VoiceAliasesView {
                 alias_override: None,
                 engine_override: None,
                 voice_override: None,
-                source_event_id: forge_types::EventId::new(),
+                source_event_id: None,
                 is_reward: false,
             };
             if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {

@@ -572,6 +572,67 @@ mod tests {
         );
     }
 
+    #[test]
+    fn moderator_scoped_types_send_both_broadcaster_and_moderator_ids() {
+        let moderator_types = [
+            "channel.shield_mode.begin",
+            "channel.shield_mode.end",
+            "channel.shoutout.create",
+            "channel.shoutout.receive",
+            "channel.suspicious_user.message",
+            "channel.warning.acknowledge",
+            "channel.warning.send",
+            "automod.message.hold",
+            "automod.message.update",
+            "automod.settings.update",
+            "automod.terms.update",
+            "channel.guest_star_session.begin",
+            "channel.guest_star_session.end",
+            "channel.guest_star_settings.update",
+            "channel.guest_star_guest.update",
+        ];
+        for kind in moderator_types {
+            let topic = TOPICS.iter().find(|t| t.kind == kind).unwrap();
+            let condition = (topic.condition_fn)("BROADCASTER", "SELF");
+            assert_eq!(
+                condition["broadcaster_user_id"], "BROADCASTER",
+                "{kind} must send broadcaster_user_id"
+            );
+            assert_eq!(
+                condition["moderator_user_id"], "SELF",
+                "{kind} must send moderator_user_id"
+            );
+        }
+    }
+
+    #[test]
+    fn hype_train_and_follow_types_request_version_two() {
+        let version_two_types = [
+            "channel.hype_train.begin",
+            "channel.hype_train.progress",
+            "channel.hype_train.end",
+            "channel.follow",
+        ];
+        for kind in version_two_types {
+            let topic = TOPICS.iter().find(|t| t.kind == kind).unwrap();
+            assert_eq!(topic.version, "2", "{kind} must request version 2");
+        }
+    }
+
+    #[test]
+    fn broadcaster_only_type_omits_moderator_user_id() {
+        let topic = TOPICS
+            .iter()
+            .find(|t| t.kind == "channel.subscribe")
+            .unwrap();
+        let condition = (topic.condition_fn)("BROADCASTER", "SELF");
+        assert!(
+            condition.get("moderator_user_id").is_none(),
+            "channel.subscribe must not carry moderator_user_id"
+        );
+        assert_eq!(condition["broadcaster_user_id"], "BROADCASTER");
+    }
+
     #[tokio::test]
     async fn subscribe_network_error_strips_url() {
         let client = reqwest::Client::builder()

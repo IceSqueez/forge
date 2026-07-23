@@ -14,9 +14,9 @@ use crate::rewards::{KickRewards, RedemptionRecord};
 const CHANNEL_POLL_INTERVAL: Duration = Duration::from_secs(30);
 const REDEMPTION_POLL_INTERVAL: Duration = Duration::from_secs(12);
 
-const LIVESTREAM_STATUS_KIND: &str = "kick.channel.livestream_status";
-const LIVESTREAM_METADATA_KIND: &str = "kick.channel.livestream_metadata";
-const REWARD_REDEEMED_KIND: &str = "kick.channel.reward_redeemed";
+const LIVESTREAM_STATUS_KIND: &str = "kick.livestream.status.updated";
+const LIVESTREAM_METADATA_KIND: &str = "kick.livestream.metadata.updated";
+const REWARD_REDEEMED_KIND: &str = "kick.channel.reward.redemption.updated";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 

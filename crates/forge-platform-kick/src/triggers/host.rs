@@ -7,11 +7,13 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{entity, host as fields};
+
 pub(crate) struct HostDescriptor;
 
 impl TriggerKindDescriptor for HostDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.host_received"
+        "kick.channel.hosted"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -53,7 +55,7 @@ impl TriggerKindDescriptor for HostDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.host_received".to_owned()),
+            kind_prefix: Some("kick.channel.hosted".to_owned()),
         }
     }
 
@@ -64,14 +66,15 @@ impl TriggerKindDescriptor for HostDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let host_username = event
             .payload
-            .get("host_username")
+            .get(fields::HOST)
+            .and_then(|h| h.get(entity::USERNAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let viewer_count = event
             .payload
-            .get("number_viewers")
+            .get(fields::VIEWER_COUNT)
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
 
@@ -108,10 +111,10 @@ mod tests {
     fn host_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.channel.host_received",
+            "kick.channel.hosted",
             serde_json::json!({
-                "host_username": "hosting_channel",
-                "number_viewers": 250
+                "host": { "id": null, "username": "hosting_channel" },
+                "viewer_count": 250
             }),
         )
     }

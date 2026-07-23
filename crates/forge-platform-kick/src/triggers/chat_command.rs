@@ -8,6 +8,7 @@ use forge_types::{
 };
 
 use super::chat::str_field;
+use crate::payload_fields::{chat as fields, entity};
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -79,7 +80,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.chat.message".to_owned()),
+            kind_prefix: Some("kick.chat.message.sent".to_owned()),
         }
     }
 
@@ -110,7 +111,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
             })
             .unwrap_or(false);
 
-        let content = str_field(&event.payload, "content");
+        let content = str_field(&event.payload, fields::CONTENT);
 
         if case_sensitive {
             content.starts_with(phrase)
@@ -120,38 +121,30 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let sender = event.payload.get("sender");
+        let sender = event.payload.get(fields::SENDER);
         let sender_id = sender
-            .and_then(|s| s.get("id"))
+            .and_then(|s| s.get(entity::ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
         let username = sender
-            .and_then(|p| p.get("username"))
+            .and_then(|p| p.get(entity::USERNAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let display_name = sender
-            .and_then(|p| p.get("slug"))
+            .and_then(|p| p.get(entity::DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
         let color = sender
-            .and_then(|s| s.get("identity"))
-            .and_then(|i| i.get("color"))
+            .and_then(|s| s.get(fields::COLOR))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let message_id = str_field(&event.payload, "id");
-        let content = str_field(&event.payload, "content");
-        let reply_to_id = event
-            .payload
-            .get("metadata")
-            .and_then(|m| m.get("original_message"))
-            .and_then(|o| o.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let message_id = str_field(&event.payload, fields::MESSAGE_ID);
+        let content = str_field(&event.payload, fields::CONTENT);
+        let reply_to_id = str_field(&event.payload, fields::REPLY_TO_MESSAGE_ID);
 
         let command_name = content.split_whitespace().next().unwrap_or("").to_owned();
         let args = content
@@ -241,19 +234,17 @@ mod tests {
     fn command_event(content: &str) -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.chat.message",
+            "kick.chat.message.sent",
             serde_json::json!({
-                "id": "msg-1",
-                "chatroom_id": 100,
+                "message_id": "msg-1",
                 "content": content,
-                "type": "message",
+                "reply_to_message_id": null,
                 "sender": {
                     "id": 42,
                     "username": "viewer_slug",
-                    "slug": "Viewer Display",
-                    "identity": { "color": "#00FF00", "badges": [] }
-                },
-                "metadata": null
+                    "display_name": "Viewer Display",
+                    "color": "#00FF00"
+                }
             }),
         )
     }
@@ -299,7 +290,7 @@ mod tests {
     fn matches_reads_content_field_not_message_field() {
         let event = Event::new(
             EventSource::Kick,
-            "kick.chat.message",
+            "kick.chat.message.sent",
             serde_json::json!({ "message": "!roll 1d6", "content": "" }),
         );
         assert!(!ChatCommandDescriptor.matches_trigger(&config("!roll", false), &event));
@@ -358,14 +349,14 @@ mod tests {
     }
 
     #[test]
-    fn arg_stack_reply_to_id_reads_metadata_original_message() {
+    fn arg_stack_carries_normalized_reply_to_message_id() {
         let event = Event::new(
             EventSource::Kick,
-            "kick.chat.message",
+            "kick.chat.message.sent",
             serde_json::json!({
                 "content": "!ping",
                 "sender": { "id": 42 },
-                "metadata": { "original_message": { "id": "parent-99" } }
+                "reply_to_message_id": "parent-99"
             }),
         );
         let stack = ChatCommandDescriptor.build_arg_stack(&event);

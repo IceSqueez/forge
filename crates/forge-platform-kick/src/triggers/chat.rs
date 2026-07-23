@@ -7,11 +7,13 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{chat as fields, entity};
+
 pub(crate) struct ChatDescriptor;
 
 impl TriggerKindDescriptor for ChatDescriptor {
     fn id(&self) -> &str {
-        "kick.chat.message"
+        "kick.chat.message.sent"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -53,7 +55,7 @@ impl TriggerKindDescriptor for ChatDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.chat.message".to_owned()),
+            kind_prefix: Some("kick.chat.message.sent".to_owned()),
         }
     }
 
@@ -62,36 +64,24 @@ impl TriggerKindDescriptor for ChatDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let sender = event.payload.get("sender");
+        let sender = event.payload.get(fields::SENDER);
         let sender_id = sender
-            .and_then(|s| s.get("id"))
+            .and_then(|s| s.get(entity::ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
-        let username = str_field_nested(sender, "username");
-        let slug = str_field_nested(sender, "slug");
-        let color = sender
-            .and_then(|s| s.get("identity"))
-            .and_then(|i| i.get("color"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let username = str_field_nested(sender, entity::USERNAME);
+        let display_name = str_field_nested(sender, entity::DISPLAY_NAME);
+        let color = str_field_nested(sender, fields::COLOR);
 
-        let message_id = str_field(&event.payload, "id");
-        let content = str_field(&event.payload, "content");
-        let reply_to_id = event
-            .payload
-            .get("metadata")
-            .and_then(|m| m.get("original_message"))
-            .and_then(|o| o.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let message_id = str_field(&event.payload, fields::MESSAGE_ID);
+        let content = str_field(&event.payload, fields::CONTENT);
+        let reply_to_id = str_field(&event.payload, fields::REPLY_TO_MESSAGE_ID);
 
         ArgStack::new()
             .set("message_id".to_owned(), Variant::String(message_id))
             .set("sender_id".to_owned(), Variant::String(sender_id))
             .set("username".to_owned(), Variant::String(username))
-            .set("display_name".to_owned(), Variant::String(slug))
+            .set("display_name".to_owned(), Variant::String(display_name))
             .set("content".to_owned(), Variant::String(content))
             .set("color".to_owned(), Variant::String(color))
             .set("reply_to_id".to_owned(), Variant::String(reply_to_id))
@@ -171,19 +161,17 @@ mod tests {
     fn chat_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.chat.message",
+            "kick.chat.message.sent",
             serde_json::json!({
-                "id": "msg-1",
-                "chatroom_id": 100,
+                "message_id": "msg-1",
                 "content": "hello stream",
-                "type": "message",
+                "reply_to_message_id": null,
                 "sender": {
                     "id": 42,
                     "username": "viewer_slug",
-                    "slug": "Viewer Display",
-                    "identity": { "color": "#00FF00", "badges": [] }
-                },
-                "metadata": null
+                    "display_name": "Viewer Display",
+                    "color": "#00FF00"
+                }
             }),
         )
     }

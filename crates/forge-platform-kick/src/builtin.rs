@@ -276,13 +276,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_adds_all_trigger_descriptors() {
-        let mut reg = TriggerRegistry::new();
-        register_kick_triggers(&mut reg).unwrap();
-        assert_eq!(reg.all().count(), 10);
-    }
-
-    #[test]
     fn duplicate_registration_returns_error() {
         let mut reg = TriggerRegistry::new();
         register_kick_triggers(&mut reg).unwrap();
@@ -295,16 +288,16 @@ mod tests {
         let mut reg = TriggerRegistry::new();
         register_kick_triggers(&mut reg).unwrap();
         for id in [
-            "kick.chat.message",
+            "kick.chat.message.sent",
             "kick.chat.command",
-            "kick.channel.subscriber",
-            "kick.channel.subscription_gift",
-            "kick.channel.banned",
-            "kick.chat.message_deleted",
-            "kick.channel.host_received",
-            "kick.channel.livestream_status",
-            "kick.channel.livestream_metadata",
-            "kick.channel.reward_redeemed",
+            "kick.channel.subscribed",
+            "kick.channel.subscription.gifts",
+            "kick.moderation.banned",
+            "kick.chat.message.deleted",
+            "kick.channel.hosted",
+            "kick.livestream.status.updated",
+            "kick.livestream.metadata.updated",
+            "kick.channel.reward.redemption.updated",
         ] {
             assert!(reg.get(id).is_some(), "missing kind id: {id}");
         }

@@ -41,7 +41,7 @@ mod tests {
         let mut stream = channel.subscribe();
         let event = Event::new(
             EventSource::Kick,
-            "kick.chat.message",
+            "kick.chat.message.sent",
             serde_json::Value::Null,
         );
         let sent_id = event.id;

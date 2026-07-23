@@ -13,7 +13,7 @@ pub(crate) struct RewardRedeemedDescriptor;
 
 impl TriggerKindDescriptor for RewardRedeemedDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.reward_redeemed"
+        "kick.channel.reward.redemption.updated"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.reward_redeemed".to_owned()),
+            kind_prefix: Some("kick.channel.reward.redemption.updated".to_owned()),
         }
     }
 

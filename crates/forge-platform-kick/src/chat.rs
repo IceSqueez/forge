@@ -11,6 +11,7 @@ use tracing::{debug, info, warn};
 
 use crate::channel_info::ChannelInfoFetcher;
 use crate::error::KickError;
+use crate::normalize;
 
 /// Community-observed (PLATFORMS_NOTES.md); re-verify via DevTools if events stop arriving.
 pub const PUSHER_APP_KEY: &str = "eb1d5f283081a78b932c";
@@ -323,20 +324,37 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) {
 }
 
 pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Option<Event> {
-    let kind = match event_name {
-        "App\\Events\\ChatMessageEvent" => "kick.chat.message",
-        "App\\Events\\MessageDeletedEvent" => "kick.chat.message_deleted",
-        "App\\Events\\UserBannedEvent" => "kick.channel.banned",
-        "App\\Events\\SubscriptionEvent" => "kick.channel.subscriber",
-        "App\\Events\\GiftedSubscriptionsEvent" => "kick.channel.subscription_gift",
-        "App\\Events\\StreamHostEvent" => "kick.channel.host_received",
+    let (kind, normalized) = match event_name {
+        "App\\Events\\ChatMessageEvent" => (
+            "kick.chat.message.sent",
+            normalize::chat_message_sent(&payload),
+        ),
+        "App\\Events\\MessageDeletedEvent" => (
+            "kick.chat.message.deleted",
+            normalize::chat_message_deleted(&payload),
+        ),
+        "App\\Events\\UserBannedEvent" => (
+            "kick.moderation.banned",
+            normalize::moderation_banned(&payload),
+        ),
+        "App\\Events\\SubscriptionEvent" => (
+            "kick.channel.subscribed",
+            normalize::channel_subscribed(&payload),
+        ),
+        "App\\Events\\GiftedSubscriptionsEvent" => (
+            "kick.channel.subscription.gifts",
+            normalize::channel_subscription_gifted(&payload),
+        ),
+        "App\\Events\\StreamHostEvent" => {
+            ("kick.channel.hosted", normalize::channel_hosted(&payload))
+        }
         other => {
             debug!(event = %other, "unhandled Kick Pusher event");
             return None;
         }
     };
 
-    Some(Event::new(EventSource::Kick, kind, payload))
+    Some(Event::new(EventSource::Kick, kind, normalized))
 }
 
 #[derive(Deserialize)]
@@ -374,32 +392,32 @@ mod tests {
             (
                 "App\\Events\\ChatMessageEvent",
                 chat_payload(),
-                Some("kick.chat.message"),
+                Some("kick.chat.message.sent"),
             ),
             (
                 "App\\Events\\MessageDeletedEvent",
                 serde_json::json!({"message_id": "abc", "deleted_by": 5}),
-                Some("kick.chat.message_deleted"),
+                Some("kick.chat.message.deleted"),
             ),
             (
                 "App\\Events\\UserBannedEvent",
                 serde_json::json!({"user": {"id": 1, "username": "bad_user"}, "banned_by": {"id": 2}}),
-                Some("kick.channel.banned"),
+                Some("kick.moderation.banned"),
             ),
             (
                 "App\\Events\\SubscriptionEvent",
                 serde_json::json!({"user_ids": [1], "username": "sub_user", "months": 1}),
-                Some("kick.channel.subscriber"),
+                Some("kick.channel.subscribed"),
             ),
             (
                 "App\\Events\\GiftedSubscriptionsEvent",
                 serde_json::json!({"gifted_usernames": ["a", "b"], "gifter_username": "g"}),
-                Some("kick.channel.subscription_gift"),
+                Some("kick.channel.subscription.gifts"),
             ),
             (
                 "App\\Events\\StreamHostEvent",
                 serde_json::json!({"host_username": "host_channel", "number_viewers": 150}),
-                Some("kick.channel.host_received"),
+                Some("kick.channel.hosted"),
             ),
             ("App\\Events\\Unknown", serde_json::Value::Null, None),
             ("pusher:pong", serde_json::Value::Null, None),
@@ -429,8 +447,20 @@ mod tests {
         handle_ws_text(&frame.to_string(), &tx).await;
 
         let event = rx.recv().await.unwrap();
-        assert_eq!(event.kind, "kick.chat.message");
+        assert_eq!(event.kind, "kick.chat.message.sent");
         assert_eq!(event.source, EventSource::Kick);
+    }
+
+    #[test]
+    fn build_event_publishes_normalized_payload_not_raw_wire_shape() {
+        let event =
+            build_event("App\\Events\\ChatMessageEvent", chat_payload()).expect("must build event");
+        assert_eq!(
+            event.payload["sender"]["display_name"],
+            serde_json::json!("viewer_slug")
+        );
+        assert!(event.payload.get("slug").is_none());
+        assert!(event.payload["sender"].get("identity").is_none());
     }
 
     #[tokio::test]

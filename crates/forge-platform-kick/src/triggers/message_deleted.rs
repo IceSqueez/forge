@@ -6,11 +6,13 @@ use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
 };
 
+use crate::payload_fields::{chat as fields, entity};
+
 pub(crate) struct MessageDeletedDescriptor;
 
 impl TriggerKindDescriptor for MessageDeletedDescriptor {
     fn id(&self) -> &str {
-        "kick.chat.message_deleted"
+        "kick.chat.message.deleted"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -52,7 +54,7 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.chat.message_deleted".to_owned()),
+            kind_prefix: Some("kick.chat.message.deleted".to_owned()),
         }
     }
 
@@ -63,16 +65,15 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let message_id = event
             .payload
-            .get("message")
-            .and_then(|m| m.get("id"))
+            .get(fields::MESSAGE_ID)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let deleted_by_id = event
             .payload
-            .get("deleted_by")
-            .and_then(|d| d.get("id"))
+            .get(fields::DELETED_BY)
+            .and_then(|d| d.get(entity::ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
 
@@ -109,10 +110,10 @@ mod tests {
     fn delete_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.chat.message_deleted",
+            "kick.chat.message.deleted",
             serde_json::json!({
-                "message": { "id": "msg-uuid-999" },
-                "deleted_by": { "id": 5 }
+                "message_id": "msg-uuid-999",
+                "deleted_by": { "id": 5, "username": null }
             }),
         )
     }

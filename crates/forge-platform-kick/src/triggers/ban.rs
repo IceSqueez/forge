@@ -7,11 +7,13 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{entity, moderation as fields};
+
 pub(crate) struct BanDescriptor;
 
 impl TriggerKindDescriptor for BanDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.banned"
+        "kick.moderation.banned"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -53,7 +55,7 @@ impl TriggerKindDescriptor for BanDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.banned".to_owned()),
+            kind_prefix: Some("kick.moderation.banned".to_owned()),
         }
     }
 
@@ -62,26 +64,26 @@ impl TriggerKindDescriptor for BanDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let banned_user = event.payload.get("user");
+        let banned_user = event.payload.get(fields::BANNED_USER);
         let banned_user_id = banned_user
-            .and_then(|u| u.get("id"))
+            .and_then(|u| u.get(entity::ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
         let banned_username = banned_user
-            .and_then(|u| u.get("username"))
+            .and_then(|u| u.get(entity::USERNAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let duration_secs = event
             .payload
-            .get("duration")
+            .get(fields::DURATION_SECS)
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
 
         let reason = event
             .payload
-            .get("permanent_ban_reason")
+            .get(fields::REASON)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -136,12 +138,13 @@ mod tests {
     fn ban_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.channel.banned",
+            "kick.moderation.banned",
             serde_json::json!({
-                "user": { "id": 77, "username": "bad_actor" },
-                "banned_by": { "id": 2, "username": "mod" },
-                "duration": 300,
-                "permanent_ban_reason": ""
+                "banned_user": { "id": 77, "username": "bad_actor" },
+                "moderator": { "id": 2, "username": "mod" },
+                "is_permanent": false,
+                "duration_secs": 300,
+                "reason": null
             }),
         )
     }

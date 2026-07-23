@@ -7,11 +7,13 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{entity, subscription as fields};
+
 pub(crate) struct SubDescriptor;
 
 impl TriggerKindDescriptor for SubDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.subscriber"
+        "kick.channel.subscribed"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -53,7 +55,7 @@ impl TriggerKindDescriptor for SubDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.subscriber".to_owned()),
+            kind_prefix: Some("kick.channel.subscribed".to_owned()),
         }
     }
 
@@ -62,31 +64,27 @@ impl TriggerKindDescriptor for SubDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user_id = event
-            .payload
-            .get("user_ids")
-            .and_then(|v| v.as_array())
-            .and_then(|a| a.first())
+        let subscriber = event.payload.get(fields::SUBSCRIBER);
+        let user_id = subscriber
+            .and_then(|s| s.get(entity::ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
 
-        let username = event
-            .payload
-            .get("username")
+        let username = subscriber
+            .and_then(|s| s.get(entity::USERNAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let months = event
             .payload
-            .get("months")
+            .get(fields::MONTHS)
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
 
         let tier = event
             .payload
-            .get("subscription")
-            .and_then(|s| s.get("slug"))
+            .get(fields::TIER)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -138,12 +136,11 @@ mod tests {
     fn sub_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.channel.subscriber",
+            "kick.channel.subscribed",
             serde_json::json!({
-                "user_ids": [123],
-                "username": "new_subscriber",
+                "subscriber": { "id": 123, "username": "new_subscriber" },
                 "months": 3,
-                "subscription": { "slug": "tier1" }
+                "tier": "tier1"
             }),
         )
     }

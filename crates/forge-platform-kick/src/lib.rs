@@ -11,6 +11,7 @@ pub mod credentials_manager;
 pub mod error;
 mod event_channel;
 pub mod moderation;
+mod normalize;
 mod payload_fields;
 pub mod poller;
 pub mod rewards;

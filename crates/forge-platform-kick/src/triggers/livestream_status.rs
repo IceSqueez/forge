@@ -12,7 +12,7 @@ pub(crate) struct LivestreamStatusDescriptor;
 
 impl TriggerKindDescriptor for LivestreamStatusDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.livestream_status"
+        "kick.livestream.status.updated"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +54,7 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.livestream_status".to_owned()),
+            kind_prefix: Some("kick.livestream.status.updated".to_owned()),
         }
     }
 

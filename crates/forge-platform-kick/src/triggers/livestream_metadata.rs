@@ -12,7 +12,7 @@ pub(crate) struct LivestreamMetadataDescriptor;
 
 impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.livestream_metadata"
+        "kick.livestream.metadata.updated"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -54,7 +54,7 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.livestream_metadata".to_owned()),
+            kind_prefix: Some("kick.livestream.metadata.updated".to_owned()),
         }
     }
 

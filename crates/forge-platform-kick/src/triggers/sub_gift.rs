@@ -7,11 +7,13 @@ use forge_types::{
     VariantKind,
 };
 
+use crate::payload_fields::{entity, subscription_gift as fields};
+
 pub(crate) struct SubGiftDescriptor;
 
 impl TriggerKindDescriptor for SubGiftDescriptor {
     fn id(&self) -> &str {
-        "kick.channel.subscription_gift"
+        "kick.channel.subscription.gifts"
     }
 
     fn category(&self) -> TriggerCategory {
@@ -53,7 +55,7 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Kick),
-            kind_prefix: Some("kick.channel.subscription_gift".to_owned()),
+            kind_prefix: Some("kick.channel.subscription.gifts".to_owned()),
         }
     }
 
@@ -62,30 +64,27 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let gifter_id = event
-            .payload
-            .get("gifter_user_id")
+        let gifter = event.payload.get(fields::GIFTER);
+        let gifter_id = gifter
+            .and_then(|g| g.get(entity::ID))
             .and_then(|v| v.as_u64())
             .map_or_else(String::new, |n| n.to_string());
 
-        let gifter_username = event
-            .payload
-            .get("gifter_username")
+        let gifter_username = gifter
+            .and_then(|g| g.get(entity::USERNAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         let count = event
             .payload
-            .get("gifted_usernames")
-            .and_then(|v| v.as_array())
-            .map_or(0usize, |a| a.len())
-            .to_string();
+            .get(fields::COUNT)
+            .and_then(|v| v.as_u64())
+            .map_or_else(String::new, |n| n.to_string());
 
         let tier = event
             .payload
-            .get("subscription")
-            .and_then(|s| s.get("slug"))
+            .get(fields::TIER)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -140,12 +139,16 @@ mod tests {
     fn gift_event() -> Event {
         Event::new(
             EventSource::Kick,
-            "kick.channel.subscription_gift",
+            "kick.channel.subscription.gifts",
             serde_json::json!({
-                "gifter_user_id": 200,
-                "gifter_username": "generous_viewer",
-                "gifted_usernames": ["user_a", "user_b", "user_c"],
-                "subscription": { "slug": "tier1" }
+                "gifter": { "id": 200, "username": "generous_viewer" },
+                "giftees": [
+                    { "id": null, "username": "user_a" },
+                    { "id": null, "username": "user_b" },
+                    { "id": null, "username": "user_c" }
+                ],
+                "count": 3,
+                "tier": "tier1"
             }),
         )
     }

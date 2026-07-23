@@ -1136,7 +1136,7 @@ fn is_chat_message_kind(kind: &str) -> bool {
         kind,
         "chat.message"
             | "youtube.chat.message"
-            | "kick.chat.message"
+            | "kick.chat.message.sent"
             | "youtube.chat.command"
             | "kick.chat.command"
     )

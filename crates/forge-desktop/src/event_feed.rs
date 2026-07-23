@@ -793,8 +793,52 @@ impl EventFeedView {
     }
 
     fn payload_block(&self, item: &EventItem, palette: &ForgePalette) -> impl IntoElement + use<> {
+        let brace = palette.text_muted;
         let mut lines: Vec<gpui::AnyElement> = Vec::new();
-        push_json_lines(&item.payload, 0, None, false, palette, &mut lines);
+        lines.push(json_line(0, vec![json_span("{".to_owned(), brace)]));
+        push_json_lines(
+            &serde_json::json!(item.kind.as_ref()),
+            1,
+            Some("event"),
+            true,
+            palette,
+            &mut lines,
+        );
+        push_json_lines(
+            &serde_json::json!(source_label(item.source).to_lowercase()),
+            1,
+            Some("source"),
+            true,
+            palette,
+            &mut lines,
+        );
+        push_json_lines(
+            &serde_json::json!(item.timestamp.as_ref()),
+            1,
+            Some("timestamp"),
+            true,
+            palette,
+            &mut lines,
+        );
+        if let Some(caused_by) = &item.caused_by {
+            push_json_lines(
+                &serde_json::json!(caused_by.as_ref()),
+                1,
+                Some("caused_by"),
+                true,
+                palette,
+                &mut lines,
+            );
+        }
+        push_json_lines(
+            &item.payload,
+            1,
+            Some("payload"),
+            false,
+            palette,
+            &mut lines,
+        );
+        lines.push(json_line(0, vec![json_span("}".to_owned(), brace)]));
 
         div()
             .w_full()

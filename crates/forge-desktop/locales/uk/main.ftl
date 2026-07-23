@@ -1242,6 +1242,25 @@ oauth_btn_retry = Повторити
 oauth_btn_cancel = Скасувати
 oauth_failed_title = Авторизація не вдалася
 
+## Потік Twitch device code
+
+twitch_device_explainer_prefix = Twitch використовує
+twitch_device_explainer_emphasis = { " " }OAuth 2.0 Device Code
+twitch_device_explainer_suffix = { " " }grant. Відкрийте посилання, введіть код, і Forge автоматично визначить, коли ви завершите - жоден секрет ніколи не зберігається.
+twitch_device_open_title = Відкрийте цей URL у будь-якому браузері
+twitch_device_open_btn = Відкрити
+twitch_device_enter_title = Введіть цей код на сторінці
+twitch_device_copy = Копіювати
+twitch_device_copied = Скопійовано
+twitch_device_expires_in = Спливає через
+twitch_device_get_new_code = Отримати новий код
+twitch_device_waiting = Очікування підтвердження на { $name }…
+twitch_device_polling_subline = опитування кожні { $interval }с · scopes: { $scopes }
+twitch_device_do_later = Зроблю це пізніше
+twitch_device_expired_title = Цей код сплив, перш ніж ви завершили
+twitch_device_denied_title = Авторизацію відхилено
+twitch_device_denied_detail = Ви відмовили в доступі на Twitch. Повторіть, щоб отримати новий код.
+
 ## Екран сервера
 
 server_breadcrumb_builtin = Вбудований

@@ -79,18 +79,8 @@ impl IntegrationDetail {
                 self.spawn_start(async move { start_kick_oauth(handle).await }, cx);
             }
             PlatformId::Twitch => {
-                let Some(cid) = forge_platform_twitch::client_id() else {
-                    self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error =
-                        Some(tr!("auth_error_credentials_missing_twitch").to_string());
-                    cx.notify();
-                    return;
-                };
-                let handle: crate::twitch_panel::TwitchFlowHandle = Arc::new(
-                    tokio::sync::Mutex::new(Some(forge_platform_twitch::TwitchAuthFlow::new(cid))),
-                );
-                self.twitch_flow = Some(Arc::clone(&handle));
-                self.spawn_start(crate::twitch_panel::request_code(handle), cx);
+                self.begin_twitch_device(cx);
+                return;
             }
         }
         cx.notify();
@@ -154,15 +144,7 @@ impl IntegrationDetail {
                     cx,
                 );
             }
-            Some(PlatformId::Twitch) => {
-                let Some(flow) = self.twitch_flow.clone() else {
-                    self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error = Some("no active Twitch flow handle".to_owned());
-                    cx.notify();
-                    return;
-                };
-                self.spawn_twitch_wait(flow, cx);
-            }
+            Some(PlatformId::Twitch) => {}
             None => {}
         }
         cx.notify();
@@ -268,6 +250,18 @@ impl IntegrationDetail {
 
         let hero = platform_hero(letter, accent, self.display_name.clone(), desc, palette)
             .density(density);
+
+        if matches!(platform, PlatformId::Twitch) {
+            let column = self.twitch_device_column(accent, palette, density, cx);
+            return div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Md, density))
+                .child(hero)
+                .child(div().w_full().flex().justify_center().child(column))
+                .into_any_element();
+        }
 
         let eyebrow = div()
             .font_family(mono_family())
@@ -912,6 +906,10 @@ fn platform_accent(platform: PlatformId, palette: &ForgePalette) -> Rgba {
     }
 }
 
+pub(crate) fn twitch_accent(palette: &ForgePalette) -> Rgba {
+    platform_color(PlatformKind::Twitch, palette)
+}
+
 fn connect_copy(platform: PlatformId) -> (&'static str, String) {
     match platform {
         PlatformId::Twitch => ("T", tr!("twitch_description")),
@@ -922,9 +920,9 @@ fn connect_copy(platform: PlatformId) -> (&'static str, String) {
 
 fn authorize_endpoint(platform: PlatformId) -> &'static str {
     match platform {
-        PlatformId::Twitch => forge_platform_twitch::TWITCH_AUTHORIZE_ENDPOINT,
         PlatformId::YouTube => forge_platform_youtube::GOOGLE_AUTHORIZE_ENDPOINT,
         PlatformId::Kick => forge_platform_kick::auth::KICK_AUTHORIZE_ENDPOINT,
+        PlatformId::Twitch => "",
     }
 }
 

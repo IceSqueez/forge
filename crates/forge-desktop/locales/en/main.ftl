@@ -1235,6 +1235,25 @@ oauth_btn_retry = Retry
 oauth_btn_cancel = Cancel
 oauth_failed_title = Authorization failed
 
+## Twitch device code flow
+
+twitch_device_explainer_prefix = Twitch uses the
+twitch_device_explainer_emphasis = { " " }OAuth 2.0 Device Code
+twitch_device_explainer_suffix = { " " }grant. Open the link, enter the code, and Forge auto-detects when you're done - no secret is ever stored.
+twitch_device_open_title = Open this URL in any browser
+twitch_device_open_btn = Open
+twitch_device_enter_title = Enter this code on the page
+twitch_device_copy = Copy
+twitch_device_copied = Copied
+twitch_device_expires_in = Expires in
+twitch_device_get_new_code = Get new code
+twitch_device_waiting = Waiting for you to authorize on { $name }…
+twitch_device_polling_subline = polling every { $interval }s · scopes: { $scopes }
+twitch_device_do_later = I'll do this later
+twitch_device_expired_title = This code expired before you finished
+twitch_device_denied_title = Authorization denied
+twitch_device_denied_detail = You declined access on Twitch. Retry to request a new code.
+
 ## Server screen
 
 server_breadcrumb_builtin = Builtin

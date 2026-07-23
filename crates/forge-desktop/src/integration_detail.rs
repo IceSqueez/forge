@@ -31,7 +31,7 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
-use crate::twitch_panel::TwitchFlowHandle;
+use crate::twitch_panel::{TwitchDeviceState, TwitchFlowHandle};
 
 pub struct IntegrationDetail {
     status: Arc<dyn BuiltinStatus>,
@@ -54,6 +54,7 @@ pub struct IntegrationDetail {
     is_twitch: bool,
     twitch_reauth_required: bool,
     pub(crate) twitch_flow: Option<TwitchFlowHandle>,
+    pub(crate) twitch_device: Option<TwitchDeviceState>,
     icon: SectionIcon,
     pub(crate) display_name: String,
     version: Option<String>,
@@ -71,6 +72,14 @@ pub struct IntegrationDetail {
 }
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
+
+impl Drop for IntegrationDetail {
+    fn drop(&mut self) {
+        if let Some(dev) = &self.twitch_device {
+            dev.cancel.cancel();
+        }
+    }
+}
 
 impl IntegrationDetail {
     #[allow(clippy::too_many_arguments)]
@@ -118,6 +127,13 @@ impl IntegrationDetail {
         })
         .detach();
 
+        if connect_platform == Some(PlatformId::Twitch) {
+            cx.spawn(async move |this, cx| {
+                let _ = this.update(cx, |this, cx| this.begin_twitch_device(cx));
+            })
+            .detach();
+        }
+
         Self {
             status,
             health,
@@ -139,6 +155,7 @@ impl IntegrationDetail {
             is_twitch,
             twitch_reauth_required: false,
             twitch_flow: None,
+            twitch_device: None,
             icon,
             display_name,
             version,
@@ -438,13 +455,12 @@ impl IntegrationDetail {
         self.flow_auth_url = None;
         self.flow_error = None;
         self.twitch_reauth_required = false;
-        self.twitch_flow = None;
         let credentials = Arc::clone(&self.credentials);
         self.rt_handle.spawn(async move {
             let id = forge_storage::CredentialId::new("twitch:broadcaster");
             let _ = credentials.delete(&id).await;
         });
-        cx.notify();
+        self.begin_twitch_device(cx);
     }
 
     fn header_card(
@@ -831,9 +847,10 @@ impl Render for IntegrationDetail {
             _ => BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
         };
 
-        let oauth_status = self
-            .connect_platform
-            .map(|platform| self.connect_status(platform, &palette, density));
+        let oauth_status = self.connect_platform.map(|platform| match platform {
+            PlatformId::Twitch => self.twitch_device_status(&palette, density),
+            _ => self.connect_status(platform, &palette, density),
+        });
         let mut frame = page_frame(
             vec![
                 ancestor_crumb,

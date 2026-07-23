@@ -60,6 +60,7 @@ serde_json = { workspace = true }
 sys-locale = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -45,7 +45,7 @@ fn condition_chat(broadcaster_id: &str, user_id: &str) -> serde_json::Value {
     })
 }
 
-fn condition_follow(broadcaster_id: &str, user_id: &str) -> serde_json::Value {
+fn condition_moderator(broadcaster_id: &str, user_id: &str) -> serde_json::Value {
     serde_json::json!({
         "broadcaster_user_id": broadcaster_id,
         "moderator_user_id": user_id,
@@ -93,7 +93,7 @@ const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         kind: "channel.follow",
         version: "2",
-        condition_fn: condition_follow,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.raid",
@@ -133,17 +133,17 @@ const TOPICS: &[TopicSpec] = &[
     },
     TopicSpec {
         kind: "channel.hype_train.begin",
-        version: "1",
+        version: "2",
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
         kind: "channel.hype_train.progress",
-        version: "1",
+        version: "2",
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
         kind: "channel.hype_train.end",
-        version: "1",
+        version: "2",
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
@@ -199,47 +199,47 @@ const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         kind: "channel.unban_request.create",
         version: "1",
-        condition_fn: condition_follow,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.unban_request.resolve",
         version: "1",
-        condition_fn: condition_follow,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.shield_mode.begin",
         version: "1",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.shield_mode.end",
         version: "1",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.shoutout.create",
         version: "1",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.shoutout.receive",
         version: "1",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.suspicious_user.message",
         version: "1",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.warning.acknowledge",
         version: "1",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.warning.send",
         version: "1",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.poll.begin",
@@ -314,7 +314,7 @@ const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         kind: "automod.message.hold",
         version: "1",
-        condition_fn: condition_chat,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.chat_settings.update",
@@ -324,37 +324,37 @@ const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         kind: "channel.guest_star_session.begin",
         version: "beta",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.guest_star_session.end",
         version: "beta",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.guest_star_settings.update",
         version: "beta",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.guest_star_guest.update",
         version: "beta",
-        condition_fn: condition_broadcaster,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "automod.settings.update",
         version: "1",
-        condition_fn: condition_chat,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "automod.terms.update",
         version: "1",
-        condition_fn: condition_chat,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "automod.message.update",
         version: "1",
-        condition_fn: condition_chat,
+        condition_fn: condition_moderator,
     },
     TopicSpec {
         kind: "channel.shared_chat.begin",

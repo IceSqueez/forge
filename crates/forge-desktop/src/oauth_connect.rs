@@ -39,8 +39,8 @@ enum StepState {
     Done,
 }
 
-struct LocalCallbackData {
-    auth_url: String,
+pub(crate) struct LocalCallbackData {
+    pub(crate) auth_url: String,
 }
 
 impl IntegrationDetail {
@@ -79,8 +79,18 @@ impl IntegrationDetail {
                 self.spawn_start(async move { start_kick_oauth(handle).await }, cx);
             }
             PlatformId::Twitch => {
-                self.flow_phase = LocalCallbackFlowPhase::Failed;
-                self.flow_error = Some("Twitch is not wired through this flow".to_owned());
+                let Some(cid) = forge_platform_twitch::client_id() else {
+                    self.flow_phase = LocalCallbackFlowPhase::Failed;
+                    self.flow_error =
+                        Some(tr!("auth_error_credentials_missing_twitch").to_string());
+                    cx.notify();
+                    return;
+                };
+                let handle: crate::twitch_panel::TwitchFlowHandle = Arc::new(
+                    tokio::sync::Mutex::new(Some(forge_platform_twitch::TwitchAuthFlow::new(cid))),
+                );
+                self.twitch_flow = Some(Arc::clone(&handle));
+                self.spawn_start(crate::twitch_panel::request_code(handle), cx);
             }
         }
         cx.notify();
@@ -144,7 +154,16 @@ impl IntegrationDetail {
                     cx,
                 );
             }
-            _ => {}
+            Some(PlatformId::Twitch) => {
+                let Some(flow) = self.twitch_flow.clone() else {
+                    self.flow_phase = LocalCallbackFlowPhase::Failed;
+                    self.flow_error = Some("no active Twitch flow handle".to_owned());
+                    cx.notify();
+                    return;
+                };
+                self.spawn_twitch_wait(flow, cx);
+            }
+            None => {}
         }
         cx.notify();
     }
@@ -891,8 +910,9 @@ fn platform_accent(platform: PlatformId, palette: &ForgePalette) -> Rgba {
 
 fn connect_copy(platform: PlatformId) -> (&'static str, String) {
     match platform {
+        PlatformId::Twitch => ("T", tr!("twitch_description")),
         PlatformId::Kick => ("K", tr!("kick_description")),
-        _ => ("Y", tr!("youtube_description")),
+        PlatformId::YouTube => ("Y", tr!("youtube_description")),
     }
 }
 

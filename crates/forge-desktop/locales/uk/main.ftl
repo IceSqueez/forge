@@ -1203,25 +1203,6 @@ platforms_feature_channel_events = Події каналу
 
 ## Панель Twitch
 
-twitch_header_subtitle = Підключіть, щоб увімкнути чат, підписки, біти, рейди, нагороди каналу та EventSub
-twitch_auth_title = Авторизувати Forge на Twitch
-twitch_auth_subtitle = Twitch використовує авторизацію за кодом пристрою. Ви побачите код тут - введіть його на сайті Twitch, і ми автоматично визначимо, коли ви закінчите. Ми ніколи не бачимо вашого пароля.
-twitch_btn_start = Почати авторизацію
-twitch_btn_try_again = Спробувати знову
-twitch_btn_cancel = Скасувати
-twitch_btn_restart = Перезапустити
-twitch_btn_open = Відкрити
-twitch_requesting = Запит коду авторизації від Twitch…
-twitch_authorizing = Код прийнято. Завершення авторизації…
-twitch_polling_primary = Очікування авторизації на Twitch…
-twitch_polling_secondary = перевірка кожні 5с
-twitch_step1_title = Відкрийте це посилання в будь-якому браузері
-twitch_step2_title = Підтвердьте у браузері
-twitch_step2_detail = Forge прослуховує локальний порт для зворотного виклику OAuth. Вікно оновиться після підтвердження.
-twitch_timer_prefix = Закінчується через
-twitch_scopes_header = Дозволи, які запитуватиме Forge
-twitch_scopes_count = { $count } областей
-twitch_missing_client_id = Інтеграцію Twitch не налаштовано. Встановіть FORGE_TWITCH_CLIENT_ID із client_id вашого зареєстрованого додатка та перезапустіть.
 twitch_reauth_title = Токен Twitch не має необхідних областей
 twitch_reauth_detail = EventSub відхилив підписку на чат. Виконайте повторну авторизацію, щоб оновити токен із поточними областями.
 twitch_reauth_btn = Повторна авторизація
@@ -1323,6 +1304,7 @@ common_status_not_connected = Не підключено
 
 ## Деталі платформи YouTube
 
+twitch_description = Чат, підписки, біти, рейди, нагороди каналу та EventSub.
 youtube_description = Живий чат, супер-чати, членство в каналі, підписники.
 
 ## Деталі платформи Kick
@@ -1555,6 +1537,7 @@ integration_state_disconnected_detail = Натисніть «Підключит�
 
 ## OAuth / authentication errors
 
+auth_error_credentials_missing_twitch = Інтеграцію Twitch не налаштовано. Встановіть FORGE_TWITCH_CLIENT_ID із client_id вашого зареєстрованого додатка та перезапустіть.
 auth_error_credentials_missing_youtube = Облікові дані OAuth для YouTube не налаштовані
 auth_error_credentials_missing_kick = Облікові дані OAuth для Kick не налаштовані
 

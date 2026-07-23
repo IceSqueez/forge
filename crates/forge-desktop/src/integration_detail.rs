@@ -31,7 +31,7 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
-use crate::twitch_panel::{TwitchFlowHandle, TwitchPanelState};
+use crate::twitch_panel::TwitchFlowHandle;
 
 pub struct IntegrationDetail {
     status: Arc<dyn BuiltinStatus>,
@@ -52,9 +52,7 @@ pub struct IntegrationDetail {
     pub(crate) youtube_flow: Option<YoutubeFlowHandle>,
     pub(crate) kick_flow: Option<KickFlowHandle>,
     is_twitch: bool,
-    show_twitch_connect: bool,
     twitch_reauth_required: bool,
-    pub(crate) twitch_state: TwitchPanelState,
     pub(crate) twitch_flow: Option<TwitchFlowHandle>,
     icon: SectionIcon,
     pub(crate) display_name: String,
@@ -95,7 +93,6 @@ impl IntegrationDetail {
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
 
         let is_twitch = status.id().as_str() == "twitch";
-        let show_twitch_connect = is_twitch && control.is_none();
         let connect_platform = connect_platform_for(status.id().as_str(), control.is_some());
         let display_name = status.display_name().to_owned();
         let version = status.version().map(ToOwned::to_owned);
@@ -140,9 +137,7 @@ impl IntegrationDetail {
             youtube_flow: None,
             kick_flow: None,
             is_twitch,
-            show_twitch_connect,
             twitch_reauth_required: false,
-            twitch_state: TwitchPanelState::default(),
             twitch_flow: None,
             icon,
             display_name,
@@ -425,8 +420,9 @@ impl IntegrationDetail {
         self.quick = bundle.clone();
         self.control = Some(bundle as Arc<dyn BuiltinControl>);
         self.connect_platform = None;
-        self.show_twitch_connect = false;
-        self.twitch_state = TwitchPanelState::Disconnected;
+        self.flow_phase = LocalCallbackFlowPhase::Idle;
+        self.flow_auth_url = None;
+        self.flow_error = None;
         self.twitch_flow = None;
         self.reload(cx);
     }
@@ -437,9 +433,12 @@ impl IntegrationDetail {
                 let _ = ctrl.disconnect().await;
             });
         }
-        self.show_twitch_connect = true;
+        self.connect_platform = Some(PlatformId::Twitch);
+        self.flow_phase = LocalCallbackFlowPhase::Idle;
+        self.flow_auth_url = None;
+        self.flow_error = None;
         self.twitch_reauth_required = false;
-        self.twitch_state = TwitchPanelState::Disconnected;
+        self.twitch_flow = None;
         let credentials = Arc::clone(&self.credentials);
         self.rt_handle.spawn(async move {
             let id = forge_storage::CredentialId::new("twitch:broadcaster");
@@ -761,37 +760,33 @@ impl Render for IntegrationDetail {
         let palette = cx.palette();
         let density = cx.density();
 
-        let body = if self.show_twitch_connect {
-            self.twitch_connect_view(&palette, density, cx)
-        } else {
-            match self.connect_platform {
-                Some(platform) => self.oauth_screen(platform, &palette, density, cx),
-                None => {
-                    let header_card = self.header_card(&palette, density, cx);
-                    let reconnecting = matches!(
-                        self.connection,
-                        ConnectionState::Connecting | ConnectionState::Reconnecting
-                    );
-                    let state_banner = self.state_banner(&palette, density);
-                    let reauth_banner = (self.is_twitch && self.twitch_reauth_required)
-                        .then(|| self.twitch_reauth_banner(&palette, density, cx));
-                    let health = health_grid(&self.health_metrics, reconnecting, &palette, density);
-                    let content = content_sections(&self.sections, &palette, density);
-                    let quick = self.quick_actions_card(&palette, density, cx);
+        let body = match self.connect_platform {
+            Some(platform) => self.oauth_screen(platform, &palette, density, cx),
+            None => {
+                let header_card = self.header_card(&palette, density, cx);
+                let reconnecting = matches!(
+                    self.connection,
+                    ConnectionState::Connecting | ConnectionState::Reconnecting
+                );
+                let state_banner = self.state_banner(&palette, density);
+                let reauth_banner = (self.is_twitch && self.twitch_reauth_required)
+                    .then(|| self.twitch_reauth_banner(&palette, density, cx));
+                let health = health_grid(&self.health_metrics, reconnecting, &palette, density);
+                let content = content_sections(&self.sections, &palette, density);
+                let quick = self.quick_actions_card(&palette, density, cx);
 
-                    div()
-                        .w_full()
-                        .flex()
-                        .flex_col()
-                        .gap(spacing(Spacing::Md, density))
-                        .children(reauth_banner)
-                        .children(state_banner)
-                        .child(header_card)
-                        .child(health)
-                        .child(content)
-                        .child(quick)
-                        .into_any_element()
-                }
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap(spacing(Spacing::Md, density))
+                    .children(reauth_banner)
+                    .children(state_banner)
+                    .child(header_card)
+                    .child(health)
+                    .child(content)
+                    .child(quick)
+                    .into_any_element()
             }
         };
 
@@ -838,7 +833,6 @@ impl Render for IntegrationDetail {
 
         let oauth_status = self
             .connect_platform
-            .filter(|_| !self.show_twitch_connect)
             .map(|platform| self.connect_status(platform, &palette, density));
         let mut frame = page_frame(
             vec![
@@ -1011,6 +1005,7 @@ fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {
         return None;
     }
     match id {
+        "twitch" => Some(PlatformId::Twitch),
         "youtube" => Some(PlatformId::YouTube),
         "kick" => Some(PlatformId::Kick),
         _ => None,

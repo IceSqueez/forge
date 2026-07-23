@@ -1196,25 +1196,6 @@ platforms_feature_channel_events = Channel events
 
 ## Twitch panel
 
-twitch_header_subtitle = Connect to enable chat, subs, bits, raids, channel points, and EventSub
-twitch_auth_title = Authorize Forge on Twitch
-twitch_auth_subtitle = Twitch uses device code authorization. You'll see a code here, enter it on Twitch's site, and we'll auto-detect when you're done. We never see your password.
-twitch_btn_start = Start authorization
-twitch_btn_try_again = Try again
-twitch_btn_cancel = Cancel
-twitch_btn_restart = Restart
-twitch_btn_open = Open
-twitch_requesting = Requesting authorization code from Twitch…
-twitch_authorizing = Code accepted. Finalising authorization…
-twitch_polling_primary = Waiting for you to authorize on Twitch…
-twitch_polling_secondary = polling every 5s
-twitch_step1_title = Open this URL in any browser
-twitch_step2_title = Approve in your browser
-twitch_step2_detail = forge is listening on a local port for the OAuth callback. The window will refresh once you approve.
-twitch_timer_prefix = Times out in
-twitch_scopes_header = Permissions Forge will request
-twitch_scopes_count = { $count } scopes
-twitch_missing_client_id = Twitch integration is not configured. Set FORGE_TWITCH_CLIENT_ID with your own registered application's client_id and restart the app.
 twitch_reauth_title = Twitch token is missing required scopes
 twitch_reauth_detail = EventSub rejected the chat subscription. Re-authorize to refresh the token with all current scopes.
 twitch_reauth_btn = Re-authorize
@@ -1311,6 +1292,7 @@ common_status_not_connected = Not connected
 
 ## YouTube platform detail
 
+twitch_description = Chat, subs, bits, raids, channel points, and EventSub.
 youtube_description = Live chat, super chats, channel memberships, subscribers.
 
 ## Kick platform detail
@@ -1536,6 +1518,7 @@ integration_state_disconnected_detail = Use Reconnect above to link this integra
 
 ## OAuth / authentication errors
 
+auth_error_credentials_missing_twitch = Twitch integration is not configured. Set FORGE_TWITCH_CLIENT_ID with your own registered application's client_id and restart the app.
 auth_error_credentials_missing_youtube = YouTube OAuth client credentials are not configured
 auth_error_credentials_missing_kick = Kick OAuth client credentials are not configured
 

@@ -1,6 +1,67 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-07-23
+### ⚠️ BREAKING CHANGES
+- **kick**: kick event kinds and payload keys renamed to official names
+- **youtube**: youtube chat payload keys restructured into nested objects
+- **twitch**: twitch event kinds gain twitch. prefix, payloads restructured
+- **obs**: obs event kinds gain obs. prefix, duplicate state fields dropped
+- **vtube**: vtube event kinds gain vtube. prefix, payload keys renamed
+- **discord**: discord.webhook.ratelimit.hit renamed to discord.webhook.rate_limited
+- **core**: global.incr and global.del replaced by verb-specific kinds
+- **speak**: speak.* payload keys restructured, reasons tokenized
+- **core**: action.invoked removed, quick_action.done renamed, script keys unified
+
+### 🐛 Bug Fixes
+- *(youtube)* Emit stream lifecycle events on real transitions
+- *(app)* Silence symphonia decoder info noise in default log filter
+- *(ui)* Show queue drain feedback as an auto-dismissing toast
+- *(ui)* Render the real event payload in the event inspector
+- *(ui)* Show the full event envelope in the payload inspector
+- *(youtube)* [**breaking**] Normalize chat payloads and revive dead deletion event
+- *(runtime)* Count chat activity from all platform chat kinds
+- *(vtube)* Poll expression state through the official request api
+
+### 🚀 Features
+- *(runtime)* Run bounded graceful shutdown on app quit
+- *(server)* Surface http, event and drop counters in console
+- *(settings)* Expose event log retention days control
+- *(settings)* Add live system font pickers for body and mono
+- *(ui)* Fade in popovers, menus and toasts with shared curve
+- *(app)* Close storage cleanly during graceful shutdown
+- *(storage)* Migrate kick trigger kind ids to official taxonomy
+- *(storage)* Migrate removed twitch guest star slot triggers
+
+### 🚜 Refactor
+- *(ui)* Promote three edit modals to child view entities
+- *(ui)* Delete unreachable kit chip row and status variant
+- *(storage)* Delete unreachable bundle backup subsystem
+- *(twitch)* Pair chat payload field names via shared constants
+- *(ui)* Promote filter, global and run modals to child entities
+- *(actions)* Promote test run modal to child entity
+- *(actions)* Promote sub-action edit form to child entity
+- *(twitch)* Pair non-chat payload field names via constants
+- *(twitch)* Finish payload field constant pairing
+- *(obs)* Pair event payload field names via constants
+- *(platform)* Finish payload field constant pairing
+- *(obs)* Remove unused client shutdown method
+- *(kick)* [**breaking**] Normalize event payloads to official taxonomy
+- *(twitch)* [**breaking**] Prefix event kinds and fix EventSub payload gaps
+- *(obs)* [**breaking**] Namespace event kinds and normalize payload keys
+- *(vtube)* [**breaking**] Prefix event kinds and split connection reason tokens
+- *(midi)* Unify port identity under one payload key
+- *(hotkey)* Route payloads through constants and tokenize reason
+- *(discord)* [**breaking**] Tokenize webhook failure reasons and flatten kind
+- *(core)* [**breaking**] Give each globals mutation its own event kind
+- *(speak)* [**breaking**] Normalize speak and playback event schemas and causality
+- *(core)* [**breaking**] Finish event taxonomy causality and schema cleanup
+
+### 🧪 Testing
+- *(runtime)* Cover event bus flush drain on shutdown
+- *(storage)* Cover kick kind id rename migration
+- *(storage)* Cover twitch guest star trigger consolidation
+
 ## [0.3.0-beta.7] - 2026-07-22
 ### ⚙️ Miscellaneous Tasks
 - *(toolchain)* Bump rust to 1.97.1
@@ -16,6 +77,7 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump zbus from 5.17.0 to 5.18.0 (#46)
 - *(deps)* Bump futures-core from 0.3.32 to 0.3.33 (#47)
 - *(deps)* Bump versions
+- Release
 
 ### ⚡ Performance
 - *(desktop)* Key rows on stable ids and cache filtered projections
@@ -76,6 +138,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(ui)* Disambiguate overlay intra-doc links to the function
+- *(release)* Release v0.3.0-beta.7
 
 ### 🚀 Features
 - *(actions)* Add per-step continue-on-error toggle and enable menu

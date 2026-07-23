@@ -53,7 +53,7 @@ pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u3
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
         "hotkey.registered",
-        serde_json::json!({ "combo": combo_str, "id": id_u32 }),
+        serde_json::json!({ (payload_fields::COMBO): combo_str, (payload_fields::ID): id_u32 }),
     ));
 
     let delta: HealthDelta = {
@@ -77,7 +77,7 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
         "hotkey.unregistered",
-        serde_json::json!({ "combo": combo_str, "id": id_u32 }),
+        serde_json::json!({ (payload_fields::COMBO): combo_str, (payload_fields::ID): id_u32 }),
     ));
 
     let delta = {
@@ -98,10 +98,13 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, reason: &str) {
+pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, detail: &str) {
     client.publisher.publish(Event::new(
         EventSource::Hotkey,
         "hotkey.portal.unavailable",
-        serde_json::json!({ "reason": reason }),
+        serde_json::json!({
+            (payload_fields::portal::REASON): payload_fields::portal::reason::NO_BACKEND_AVAILABLE,
+            (payload_fields::portal::DETAIL): detail,
+        }),
     ));
 }

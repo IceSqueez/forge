@@ -189,12 +189,12 @@ async fn select_and_start(
                     evdev = %e,
                     "global shortcuts unavailable: hotkeys will not fire; install forge so the desktop portal grants an app id, or add your user to the 'input' group for evdev access"
                 );
-                let reason = format!("portal: {portal_reason}; evdev: {e}");
+                let detail = format!("portal: {portal_reason}; evdev: {e}");
                 let client = {
                     let backend = Arc::new(NullBackend::new());
                     HotkeyClient::start(config, Arc::clone(&publisher), backend, None)
                 };
-                supervisor::emit_portal_unavailable(&client, &reason);
+                supervisor::emit_portal_unavailable(&client, &detail);
                 return client;
             }
         }
@@ -389,6 +389,25 @@ mod tests {
         assert!(publisher.has_kind("hotkey.global.pressed"));
         let ev = publisher.find_kind("hotkey.global.pressed").unwrap();
         assert_eq!(ev.payload["combo"], "Ctrl+F1");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn portal_unavailable_event_carries_reason_token_and_human_detail() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = HotkeyClient::start(
+            HotkeyConfig::default(),
+            Arc::clone(&publisher) as Arc<dyn EventPublisher>,
+            Arc::new(backend),
+            Some(false),
+        );
+
+        crate::supervisor::emit_portal_unavailable(&client, "portal: no session; evdev: denied");
+
+        let ev = publisher.find_kind("hotkey.portal.unavailable").unwrap();
+        assert_eq!(ev.payload["reason"], "no_hotkey_backend_available");
+        assert_eq!(ev.payload["detail"], "portal: no session; evdev: denied");
     }
 
     fn struct_noop_publisher() -> impl EventPublisher {

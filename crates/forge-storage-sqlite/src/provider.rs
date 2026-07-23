@@ -462,6 +462,7 @@ impl DataProvider for SqliteBackend {
     }
 
     async fn shutdown(&self) {
+        self.shutdown.notify_one();
         self.pool.close().await;
     }
 }

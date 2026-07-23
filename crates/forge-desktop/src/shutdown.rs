@@ -4,6 +4,7 @@ use std::time::Duration;
 use forge_runtime::{ActionEngineHandle, EventBus, QueueSchedulerHandle, TriggerEvaluatorHandle};
 use forge_server::ServerHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
+use forge_storage::DataProvider;
 
 use crate::runtime_handles::RuntimeHandles;
 
@@ -11,6 +12,7 @@ const SETTLE: Duration = Duration::from_millis(40);
 const SERVER_STOP_BUDGET: Duration = Duration::from_millis(60);
 const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(20);
 const FLUSH_BUDGET: Duration = Duration::from_millis(60);
+const STORAGE_CLOSE_BUDGET: Duration = Duration::from_millis(20);
 const GRACEFUL_BUDGET: Duration = Duration::from_millis(180);
 
 pub struct ShutdownHandles {
@@ -20,6 +22,7 @@ pub struct ShutdownHandles {
     trigger_evaluator: TriggerEvaluatorHandle,
     server: Option<ServerHandle>,
     speak: Option<SpeakQueueHandle>,
+    storage: Arc<dyn DataProvider>,
 }
 
 impl ShutdownHandles {
@@ -31,6 +34,7 @@ impl ShutdownHandles {
             trigger_evaluator: handles.trigger_evaluator.clone(),
             server: handles.server.clone(),
             speak: handles.speak.clone(),
+            storage: Arc::clone(&handles.backend),
         }
     }
 
@@ -58,5 +62,8 @@ impl ShutdownHandles {
         self.bus.shutdown();
         let _ = tokio::time::timeout(FLUSH_BUDGET, self.bus.await_flush()).await;
         tracing::info!("graceful shutdown: event log flushed");
+
+        let _ = tokio::time::timeout(STORAGE_CLOSE_BUDGET, self.storage.shutdown()).await;
+        tracing::info!("graceful shutdown: storage closed");
     }
 }

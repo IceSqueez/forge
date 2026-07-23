@@ -1,7 +1,12 @@
+pub(crate) mod entity {
+    pub(crate) const CHANNEL_ID: &str = "channel_id";
+    pub(crate) const DISPLAY_NAME: &str = "display_name";
+}
+
 pub(crate) mod chat {
     pub(crate) const MESSAGE_TEXT: &str = "message_text";
-    pub(crate) const USER_DISPLAY_NAME: &str = "user_display_name";
-    pub(crate) const CHANNEL_ID: &str = "channel_id";
+    pub(crate) const AUTHOR: &str = "author";
+    pub(crate) const BROADCASTER_CHANNEL_ID: &str = "broadcaster_channel_id";
     pub(crate) const COMMAND_NAME: &str = "command_name";
     pub(crate) const ARGS: &str = "args";
 }
@@ -18,31 +23,27 @@ pub(crate) mod member {
 }
 
 pub(crate) mod gift {
-    pub(crate) const COUNT: &str = "gift.count";
-    pub(crate) const LEVEL_NAME: &str = "gift.level_name";
-    pub(crate) const GIFTER_CHANNEL_ID: &str = "gifter.channel_id";
-    pub(crate) const GIFTER_DISPLAY_NAME: &str = "gifter.display_name";
-    pub(crate) const RECIPIENT_CHANNEL_ID: &str = "recipient.channel_id";
-    pub(crate) const RECIPIENT_DISPLAY_NAME: &str = "recipient.display_name";
+    pub(crate) const COUNT: &str = "count";
+    pub(crate) const LEVEL_NAME: &str = "level_name";
+    pub(crate) const GIFTER: &str = "gifter";
+    pub(crate) const RECIPIENT: &str = "recipient";
 }
 
 pub(crate) mod ban {
-    pub(crate) const TARGET_DISPLAY_NAME: &str = "ban.target.display_name";
-    pub(crate) const TARGET_CHANNEL_ID: &str = "ban.target.channel_id";
-    pub(crate) const MODERATOR_CHANNEL_ID: &str = "ban.moderator.channel_id";
-    pub(crate) const TYPE: &str = "ban.type";
-    pub(crate) const DURATION_SECONDS: &str = "ban.duration_seconds";
+    pub(crate) const TARGET_USER: &str = "target_user";
+    pub(crate) const MODERATOR: &str = "moderator";
+    pub(crate) const TYPE: &str = "type";
+    pub(crate) const DURATION_SECS: &str = "duration_secs";
 }
 
 pub(crate) mod chat_mod {
-    pub(crate) const MESSAGE_ID: &str = "chat.message_id";
-    pub(crate) const TARGET_USER_CHANNEL_ID: &str = "chat.target_user.channel_id";
-    pub(crate) const MODERATOR_CHANNEL_ID: &str = "chat.moderator.channel_id";
+    pub(crate) const MESSAGE_ID: &str = "message_id";
 }
 
 pub(crate) mod stream {
-    pub(crate) const TITLE_OLD: &str = "stream.title_old";
-    pub(crate) const TITLE_NEW: &str = "stream.title_new";
+    pub(crate) const TITLE: &str = "title";
+    pub(crate) const OLD: &str = "old";
+    pub(crate) const NEW: &str = "new";
     pub(crate) const BROADCAST_ID: &str = "broadcast_id";
     pub(crate) const BROADCAST_TITLE: &str = "broadcast_title";
 }

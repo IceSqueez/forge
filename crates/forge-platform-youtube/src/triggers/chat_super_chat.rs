@@ -7,7 +7,7 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::{chat as chat_fields, support as fields};
+use crate::payload_fields::{chat as chat_fields, entity, support as fields};
 
 pub(crate) struct SupportSuperChatDescriptor;
 
@@ -64,9 +64,14 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user_display_name = event
-            .payload
-            .get(chat_fields::USER_DISPLAY_NAME)
+        let author = event.payload.get(chat_fields::AUTHOR);
+        let user_display_name = author
+            .and_then(|a| a.get(entity::DISPLAY_NAME))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let channel_id = author
+            .and_then(|a| a.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -93,6 +98,7 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
                 "user_display_name".to_owned(),
                 Variant::String(user_display_name),
             )
+            .set("channel_id".to_owned(), Variant::String(channel_id))
             .set("amount_micros".to_owned(), Variant::Int(amount_micros))
             .set("currency".to_owned(), Variant::String(currency))
             .set("message_text".to_owned(), Variant::String(message_text))
@@ -106,6 +112,12 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
                     kind: VariantKind::String,
                     label: "Sender display name".to_owned(),
                     synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender channel ID".to_owned(),
+                    synthesis: None,
                 },
                 DeclaredVariable {
                     name: "amount_micros".to_owned(),
@@ -143,7 +155,7 @@ mod tests {
             EventSource::YouTube,
             "youtube.chat.super_chat",
             serde_json::json!({
-                "user_display_name": "BigFan",
+                "author": { "display_name": "BigFan", "channel_id": "UCbigfan" },
                 "amount_micros": 5000000,
                 "currency": "USD",
                 "message_text": "Great stream!"

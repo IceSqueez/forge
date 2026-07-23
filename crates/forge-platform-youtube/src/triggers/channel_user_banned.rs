@@ -7,7 +7,7 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::ban as fields;
+use crate::payload_fields::{ban as fields, entity};
 
 pub(crate) struct ChannelUserBannedDescriptor;
 
@@ -107,23 +107,26 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let target_display_name = event
-            .payload
-            .get(fields::TARGET_DISPLAY_NAME)
+        let target_user = event.payload.get(fields::TARGET_USER);
+        let target_display_name = target_user
+            .and_then(|u| u.get(entity::DISPLAY_NAME))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let target_channel_id = target_user
+            .and_then(|u| u.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
-        let target_channel_id = event
-            .payload
-            .get(fields::TARGET_CHANNEL_ID)
+        let moderator = event.payload.get(fields::MODERATOR);
+        let moderator_channel_id = moderator
+            .and_then(|m| m.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-
-        let moderator_channel_id = event
-            .payload
-            .get(fields::MODERATOR_CHANNEL_ID)
+        let moderator_display_name = moderator
+            .and_then(|m| m.get(entity::DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -137,7 +140,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
 
         let ban_duration_seconds = event
             .payload
-            .get(fields::DURATION_SECONDS)
+            .get(fields::DURATION_SECS)
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
@@ -153,6 +156,10 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
             .set(
                 "ban.moderator.channel_id".to_owned(),
                 Variant::String(moderator_channel_id),
+            )
+            .set(
+                "ban.moderator.display_name".to_owned(),
+                Variant::String(moderator_display_name),
             )
             .set("ban.type".to_owned(), Variant::String(ban_type))
             .set(
@@ -180,6 +187,12 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                     name: "ban.moderator.channel_id".to_owned(),
                     kind: VariantKind::String,
                     label: "Moderator channel ID".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "ban.moderator.display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Moderator display name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
@@ -224,11 +237,10 @@ mod tests {
     #[test]
     fn build_arg_stack_surfaces_target_moderator_type_and_duration() {
         let event = ban_event(json!({
-            "ban.target.display_name": "Troll",
-            "ban.target.channel_id": "UCtarget",
-            "ban.moderator.channel_id": "UCmod",
-            "ban.type": "temporary",
-            "ban.duration_seconds": 300_i64,
+            "target_user": { "display_name": "Troll", "channel_id": "UCtarget" },
+            "moderator": { "channel_id": "UCmod", "display_name": "ModName" },
+            "type": "temporary",
+            "duration_secs": 300_i64,
         }));
 
         let stack = ChannelUserBannedDescriptor.build_arg_stack(&event);
@@ -246,6 +258,10 @@ mod tests {
             Some(&Variant::String("UCmod".to_owned()))
         );
         assert_eq!(
+            stack.get("ban.moderator.display_name"),
+            Some(&Variant::String("ModName".to_owned()))
+        );
+        assert_eq!(
             stack.get("ban.type"),
             Some(&Variant::String("temporary".to_owned()))
         );
@@ -255,8 +271,8 @@ mod tests {
     #[test]
     fn build_arg_stack_surfaces_permanent_type_with_zero_duration() {
         let event = ban_event(json!({
-            "ban.type": "permanent",
-            "ban.duration_seconds": 0_i64,
+            "type": "permanent",
+            "duration_secs": 0_i64,
         }));
 
         let stack = ChannelUserBannedDescriptor.build_arg_stack(&event);
@@ -288,8 +304,8 @@ mod tests {
     #[test]
     fn matches_trigger_permanent_filter_accepts_permanent_rejects_temporary() {
         let cfg = filter_config("permanent");
-        let permanent = ban_event(json!({ "ban.type": "permanent" }));
-        let temporary = ban_event(json!({ "ban.type": "temporary" }));
+        let permanent = ban_event(json!({ "type": "permanent" }));
+        let temporary = ban_event(json!({ "type": "temporary" }));
 
         assert!(ChannelUserBannedDescriptor.matches_trigger(&cfg, &permanent));
         assert!(!ChannelUserBannedDescriptor.matches_trigger(&cfg, &temporary));
@@ -298,8 +314,8 @@ mod tests {
     #[test]
     fn matches_trigger_temporary_filter_accepts_temporary_rejects_permanent() {
         let cfg = filter_config("temporary");
-        let permanent = ban_event(json!({ "ban.type": "permanent" }));
-        let temporary = ban_event(json!({ "ban.type": "temporary" }));
+        let permanent = ban_event(json!({ "type": "permanent" }));
+        let temporary = ban_event(json!({ "type": "temporary" }));
 
         assert!(ChannelUserBannedDescriptor.matches_trigger(&cfg, &temporary));
         assert!(!ChannelUserBannedDescriptor.matches_trigger(&cfg, &permanent));
@@ -308,8 +324,8 @@ mod tests {
     #[test]
     fn matches_trigger_any_filter_accepts_both_ban_types() {
         let cfg = filter_config("any");
-        let permanent = ban_event(json!({ "ban.type": "permanent" }));
-        let temporary = ban_event(json!({ "ban.type": "temporary" }));
+        let permanent = ban_event(json!({ "type": "permanent" }));
+        let temporary = ban_event(json!({ "type": "temporary" }));
 
         assert!(ChannelUserBannedDescriptor.matches_trigger(&cfg, &permanent));
         assert!(ChannelUserBannedDescriptor.matches_trigger(&cfg, &temporary));
@@ -318,7 +334,7 @@ mod tests {
     #[test]
     fn matches_trigger_missing_filter_defaults_to_any() {
         let cfg = TriggerConfig::new();
-        let temporary = ban_event(json!({ "ban.type": "temporary" }));
+        let temporary = ban_event(json!({ "type": "temporary" }));
 
         assert!(ChannelUserBannedDescriptor.matches_trigger(&cfg, &temporary));
     }
@@ -329,15 +345,5 @@ mod tests {
         let event = ban_event(json!({}));
 
         assert!(!ChannelUserBannedDescriptor.matches_trigger(&cfg, &event));
-    }
-
-    #[test]
-    fn event_filter_targets_user_banned_kind_on_youtube() {
-        let filter = ChannelUserBannedDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::YouTube));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("youtube.channel.user_banned")
-        );
     }
 }

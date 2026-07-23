@@ -7,7 +7,7 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::chat as fields;
+use crate::payload_fields::{chat as fields, entity};
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -139,18 +139,23 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         let args = event
             .payload
             .get(fields::ARGS)
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| Variant::String(s.to_owned()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let author = event.payload.get(fields::AUTHOR);
+        let user_display_name = author
+            .and_then(|a| a.get(entity::DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let user_display_name = event
-            .payload
-            .get(fields::USER_DISPLAY_NAME)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let channel_id = event
-            .payload
-            .get(fields::CHANNEL_ID)
+        let channel_id = author
+            .and_then(|a| a.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -158,7 +163,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         ArgStack::new()
             .set("message_text".to_owned(), Variant::String(message_text))
             .set("command_name".to_owned(), Variant::String(command_name))
-            .set("args".to_owned(), Variant::String(args))
+            .set("args".to_owned(), Variant::Array(args))
             .set(
                 "user_display_name".to_owned(),
                 Variant::String(user_display_name),
@@ -183,7 +188,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 },
                 DeclaredVariable {
                     name: "args".to_owned(),
-                    kind: VariantKind::String,
+                    kind: VariantKind::Array,
                     label: "Command arguments".to_owned(),
                     synthesis: None,
                 },
@@ -222,10 +227,9 @@ mod tests {
             "youtube.chat.command",
             serde_json::json!({
                 "message_text": message,
-                "command_name": "!roll",
-                "args": "1d6",
-                "user_display_name": "Viewer",
-                "channel_id": "UCabc"
+                "command_name": "roll",
+                "args": ["1d6"],
+                "author": { "display_name": "Viewer", "channel_id": "UCabc" }
             }),
         )
     }
@@ -251,9 +255,12 @@ mod tests {
         );
         assert_eq!(
             stack.get("command_name"),
-            Some(&Variant::String("!roll".to_owned()))
+            Some(&Variant::String("roll".to_owned()))
         );
-        assert_eq!(stack.get("args"), Some(&Variant::String("1d6".to_owned())));
+        assert_eq!(
+            stack.get("args"),
+            Some(&Variant::Array(vec![Variant::String("1d6".to_owned())]))
+        );
         assert_eq!(
             stack.get("user_display_name"),
             Some(&Variant::String("Viewer".to_owned()))

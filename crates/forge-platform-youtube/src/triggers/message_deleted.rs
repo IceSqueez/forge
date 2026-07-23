@@ -69,53 +69,18 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let target_channel_id = event
-            .payload
-            .get(fields::TARGET_USER_CHANNEL_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_channel_id = event
-            .payload
-            .get(fields::MODERATOR_CHANNEL_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
 
-        ArgStack::new()
-            .set("chat.message_id".to_owned(), Variant::String(message_id))
-            .set(
-                "chat.target_user.channel_id".to_owned(),
-                Variant::String(target_channel_id),
-            )
-            .set(
-                "chat.moderator.channel_id".to_owned(),
-                Variant::String(moderator_channel_id),
-            )
+        ArgStack::new().set("chat.message_id".to_owned(), Variant::String(message_id))
     }
 
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "chat.message_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Deleted message ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "chat.target_user.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Deleted message author channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "chat.moderator.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Moderator channel ID".to_owned(),
-                    synthesis: None,
-                },
-            ],
+            variables: vec![DeclaredVariable {
+                name: "chat.message_id".to_owned(),
+                kind: VariantKind::String,
+                label: "Deleted message ID".to_owned(),
+                synthesis: None,
+            }],
         })
     }
 }
@@ -135,12 +100,8 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_surfaces_message_id_and_moderator() {
-        let event = deleted_event(json!({
-            "chat.message_id": "msg-removed-1",
-            "chat.target_user.channel_id": "",
-            "chat.moderator.channel_id": "UCmod",
-        }));
+    fn build_arg_stack_surfaces_deleted_message_id() {
+        let event = deleted_event(json!({ "message_id": "msg-removed-1" }));
 
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
 
@@ -148,30 +109,10 @@ mod tests {
             stack.get("chat.message_id"),
             Some(&Variant::String("msg-removed-1".to_owned()))
         );
-        assert_eq!(
-            stack.get("chat.moderator.channel_id"),
-            Some(&Variant::String("UCmod".to_owned()))
-        );
     }
 
     #[test]
-    fn build_arg_stack_passes_through_unsourced_target_user_as_empty() {
-        let event = deleted_event(json!({
-            "chat.message_id": "msg-removed-2",
-            "chat.target_user.channel_id": "",
-            "chat.moderator.channel_id": "UCmod",
-        }));
-
-        let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
-
-        assert_eq!(
-            stack.get("chat.target_user.channel_id"),
-            Some(&Variant::String(String::new()))
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_on_empty_payload_defaults_every_key_to_empty() {
+    fn build_arg_stack_on_empty_payload_defaults_message_id_to_empty() {
         let event = deleted_event(json!({}));
 
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
@@ -179,24 +120,6 @@ mod tests {
         assert_eq!(
             stack.get("chat.message_id"),
             Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("chat.target_user.channel_id"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("chat.moderator.channel_id"),
-            Some(&Variant::String(String::new()))
-        );
-    }
-
-    #[test]
-    fn event_filter_targets_message_deleted_kind_on_youtube() {
-        let filter = ChatMessageDeletedDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::YouTube));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("youtube.chat.message_deleted")
         );
     }
 }

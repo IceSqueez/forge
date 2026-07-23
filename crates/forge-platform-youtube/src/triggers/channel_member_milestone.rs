@@ -7,7 +7,7 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::{chat as chat_fields, member as fields};
+use crate::payload_fields::{chat as chat_fields, entity, member as fields};
 
 pub(crate) struct SupportMemberMilestoneDescriptor;
 
@@ -64,9 +64,14 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user_display_name = event
-            .payload
-            .get(chat_fields::USER_DISPLAY_NAME)
+        let author = event.payload.get(chat_fields::AUTHOR);
+        let user_display_name = author
+            .and_then(|a| a.get(entity::DISPLAY_NAME))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let channel_id = author
+            .and_then(|a| a.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -87,6 +92,7 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
                 "user_display_name".to_owned(),
                 Variant::String(user_display_name),
             )
+            .set("channel_id".to_owned(), Variant::String(channel_id))
             .set("member_month".to_owned(), Variant::Int(member_month))
             .set("message_text".to_owned(), Variant::String(message_text))
     }
@@ -99,6 +105,12 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
                     kind: VariantKind::String,
                     label: "Member display name".to_owned(),
                     synthesis: Some(SynthesisHint::DisplayName),
+                },
+                DeclaredVariable {
+                    name: "channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Member channel ID".to_owned(),
+                    synthesis: None,
                 },
                 DeclaredVariable {
                     name: "member_month".to_owned(),
@@ -127,7 +139,7 @@ mod tests {
             EventSource::YouTube,
             "youtube.channel.member_milestone",
             serde_json::json!({
-                "user_display_name": "LongTimeFan",
+                "author": { "display_name": "LongTimeFan", "channel_id": "UCfan" },
                 "member_month": 12,
                 "message_text": "One year!"
             }),

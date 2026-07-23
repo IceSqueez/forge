@@ -7,7 +7,7 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::chat as fields;
+use crate::payload_fields::{chat as fields, entity};
 
 pub(crate) struct ChatMessageDescriptor;
 
@@ -70,15 +70,14 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let user_display_name = event
-            .payload
-            .get(fields::USER_DISPLAY_NAME)
+        let author = event.payload.get(fields::AUTHOR);
+        let user_display_name = author
+            .and_then(|a| a.get(entity::DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let channel_id = event
-            .payload
-            .get(fields::CHANNEL_ID)
+        let channel_id = author
+            .and_then(|a| a.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -129,8 +128,7 @@ mod tests {
             "youtube.chat.message",
             serde_json::json!({
                 "message_text": "hello world",
-                "user_display_name": "Viewer One",
-                "channel_id": "UCxyz"
+                "author": { "display_name": "Viewer One", "channel_id": "UCxyz" }
             }),
         )
     }

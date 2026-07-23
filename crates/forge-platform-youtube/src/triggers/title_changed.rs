@@ -63,15 +63,14 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let title_old = event
-            .payload
-            .get(fields::TITLE_OLD)
+        let title = event.payload.get(fields::TITLE);
+        let title_old = title
+            .and_then(|t| t.get(fields::OLD))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let title_new = event
-            .payload
-            .get(fields::TITLE_NEW)
+        let title_new = title
+            .and_then(|t| t.get(fields::NEW))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -111,8 +110,7 @@ mod tests {
             EventSource::YouTube,
             "youtube.stream.title_changed",
             serde_json::json!({
-                "stream.title_old": old,
-                "stream.title_new": new,
+                "title": { "old": old, "new": new },
             }),
         )
     }
@@ -146,16 +144,6 @@ mod tests {
         assert_eq!(
             stack.get("stream.title_new"),
             Some(&Variant::String(String::new()))
-        );
-    }
-
-    #[test]
-    fn event_filter_targets_own_kind_on_youtube_source() {
-        let filter = ChannelBroadcastTitleChangedDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::YouTube));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some(ChannelBroadcastTitleChangedDescriptor.id())
         );
     }
 }

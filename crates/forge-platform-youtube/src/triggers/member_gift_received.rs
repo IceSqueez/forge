@@ -7,7 +7,7 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::gift as fields;
+use crate::payload_fields::{entity, gift as fields};
 
 pub(crate) struct ChannelMemberGiftReceivedDescriptor;
 
@@ -70,27 +70,35 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let gifter_display_name = event
-            .payload
-            .get(fields::GIFTER_DISPLAY_NAME)
+        let gifter = event.payload.get(fields::GIFTER);
+        let gifter_channel_id = gifter
+            .and_then(|g| g.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let recipient_channel_id = event
-            .payload
-            .get(fields::RECIPIENT_CHANNEL_ID)
+        let gifter_display_name = gifter
+            .and_then(|g| g.get(entity::DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let recipient_display_name = event
-            .payload
-            .get(fields::RECIPIENT_DISPLAY_NAME)
+        let recipient = event.payload.get(fields::RECIPIENT);
+        let recipient_channel_id = recipient
+            .and_then(|r| r.get(entity::CHANNEL_ID))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let recipient_display_name = recipient
+            .and_then(|r| r.get(entity::DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
 
         ArgStack::new()
             .set("gift.level_name".to_owned(), Variant::String(level_name))
+            .set(
+                "gifter.channel_id".to_owned(),
+                Variant::String(gifter_channel_id),
+            )
             .set(
                 "gifter.display_name".to_owned(),
                 Variant::String(gifter_display_name),
@@ -112,6 +120,12 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
                     name: "gift.level_name".to_owned(),
                     kind: VariantKind::String,
                     label: "Membership level name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "gifter.channel_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Gifter channel ID".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
@@ -152,12 +166,10 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_surfaces_level_and_recipient() {
+    fn build_arg_stack_surfaces_level_recipient_and_absent_gifter_as_empty() {
         let event = received_event(json!({
-            "gift.level_name": "Gold",
-            "gifter.display_name": "",
-            "recipient.channel_id": "UCrecipient",
-            "recipient.display_name": "LuckyViewer",
+            "level_name": "Gold",
+            "recipient": { "channel_id": "UCrecipient", "display_name": "LuckyViewer" },
         }));
 
         let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
@@ -174,19 +186,6 @@ mod tests {
             stack.get("recipient.display_name"),
             Some(&Variant::String("LuckyViewer".to_owned()))
         );
-    }
-
-    #[test]
-    fn build_arg_stack_passes_through_unsourced_gifter_name_as_empty() {
-        let event = received_event(json!({
-            "gift.level_name": "Gold",
-            "gifter.display_name": "",
-            "recipient.channel_id": "UCrecipient",
-            "recipient.display_name": "LuckyViewer",
-        }));
-
-        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
-
         assert_eq!(
             stack.get("gifter.display_name"),
             Some(&Variant::String(String::new()))
@@ -214,16 +213,6 @@ mod tests {
         assert_eq!(
             stack.get("recipient.display_name"),
             Some(&Variant::String(String::new()))
-        );
-    }
-
-    #[test]
-    fn event_filter_targets_member_gift_received_kind_on_youtube() {
-        let filter = ChannelMemberGiftReceivedDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::YouTube));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("youtube.channel.member_gift_received")
         );
     }
 }

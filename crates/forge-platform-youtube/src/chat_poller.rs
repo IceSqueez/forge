@@ -12,8 +12,9 @@ use tokio_util::sync::CancellationToken;
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::payload_fields::{
-    ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, gift as gift_fields,
-    member as member_fields, stream as stream_fields, support as support_fields,
+    ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
+    gift as gift_fields, member as member_fields, stream as stream_fields,
+    support as support_fields,
 };
 use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, QuotaState, today_pacific};
 
@@ -174,8 +175,10 @@ impl YoutubeChatPoller {
                         EventSource::YouTube,
                         "youtube.stream.title_changed",
                         serde_json::json!({
-                            (stream_fields::TITLE_OLD): prev,
-                            (stream_fields::TITLE_NEW): current_title,
+                            (stream_fields::TITLE): {
+                                (stream_fields::OLD): prev,
+                                (stream_fields::NEW): current_title,
+                            },
                         }),
                     ))
                     .is_err()
@@ -456,14 +459,15 @@ impl YoutubeChatPoller {
 
                 let mut payload = serde_json::json!({
                     (chat_fields::MESSAGE_TEXT): text,
-                    (chat_fields::USER_DISPLAY_NAME): author,
-                    (chat_fields::CHANNEL_ID): self.channel_id,
+                    (chat_fields::AUTHOR): author_json(author_details),
+                    (chat_fields::BROADCASTER_CHANNEL_ID): self.channel_id,
                 });
 
                 if is_command {
                     let (cmd_name, args) = parse_command(&text);
                     payload[chat_fields::COMMAND_NAME] = serde_json::Value::String(cmd_name);
-                    payload[chat_fields::ARGS] = serde_json::Value::String(args);
+                    payload[chat_fields::ARGS] =
+                        serde_json::Value::Array(args.into_iter().map(Into::into).collect());
                 }
 
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
@@ -516,13 +520,11 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (chat_fields::AUTHOR): author_json(author_details),
                     (support_fields::AMOUNT_MICROS): amount_micros,
                     (support_fields::CURRENCY): currency,
+                    (chat_fields::MESSAGE_TEXT): message,
                 });
-                if let Some(msg) = message {
-                    payload[chat_fields::MESSAGE_TEXT] = serde_json::Value::String(msg);
-                }
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
@@ -557,7 +559,7 @@ impl YoutubeChatPoller {
                 let event_detail = ChatEventDetail::SuperChat {
                     amount_micros,
                     currency: currency.clone(),
-                    message: Some(sticker_id.clone()),
+                    message: None,
                 };
 
                 let chat_payload = ChatPayload {
@@ -572,7 +574,7 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (chat_fields::AUTHOR): author_json(author_details),
                     (support_fields::STICKER_ID): sticker_id,
                     (support_fields::AMOUNT_MICROS): amount_micros,
                     (support_fields::CURRENCY): currency,
@@ -611,7 +613,7 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (chat_fields::AUTHOR): author_json(author_details),
                     (member_fields::MEMBER_LEVEL_NAME): level,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
@@ -662,12 +664,10 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    (chat_fields::USER_DISPLAY_NAME): author,
+                    (chat_fields::AUTHOR): author_json(author_details),
                     (member_fields::MEMBER_MONTH): months,
+                    (chat_fields::MESSAGE_TEXT): message,
                 });
-                if let Some(msg) = message {
-                    payload[chat_fields::MESSAGE_TEXT] = serde_json::Value::String(msg);
-                }
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
                     EventSource::YouTube,
@@ -678,36 +678,41 @@ impl YoutubeChatPoller {
 
             "userBannedEvent" => {
                 let banned_details = snippet.get("userBannedDetails");
-                let display_name = banned_details
-                    .and_then(|d| d.get("bannedUserDetails"))
-                    .and_then(|u| u.get("displayName"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-                let channel_id = banned_details
-                    .and_then(|d| d.get("bannedUserDetails"))
+                let banned_user = banned_details.and_then(|d| d.get("bannedUserDetails"));
+                let target_display_name = non_empty(
+                    banned_user
+                        .and_then(|u| u.get("displayName"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_owned(),
+                );
+                let target_channel_id = banned_user
                     .and_then(|u| u.get("channelId"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-                let ban_duration_secs: u64 = banned_details
-                    .and_then(|d| d.get("banDurationSeconds"))
-                    .and_then(|v| {
-                        v.as_u64()
-                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-                    })
-                    .unwrap_or(0);
+                    .map(str::to_owned)
+                    .filter(|s| !s.is_empty());
 
-                let is_temporary = ban_duration_secs > 0;
-                let ban_type = if is_temporary {
-                    "temporary"
+                let ban_type = banned_details
+                    .and_then(|d| d.get("banType"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("permanent")
+                    .to_owned();
+                let is_temporary = ban_type.eq_ignore_ascii_case("temporary");
+                let ban_duration_secs: Option<i64> = if is_temporary {
+                    banned_details
+                        .and_then(|d| d.get("banDurationSeconds"))
+                        .and_then(|v| {
+                            v.as_u64()
+                                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                        })
+                        .map(|v| v as i64)
                 } else {
-                    "permanent"
+                    None
                 };
 
                 let chat_payload = ChatPayload {
                     platform_msg_id: id.clone(),
-                    author: display_name.clone(),
+                    author: target_display_name.clone().unwrap_or_default(),
                     author_color: None,
                     segments: vec![],
                     badges: vec![],
@@ -721,10 +726,10 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    (ban_fields::TARGET_DISPLAY_NAME): display_name,
-                    (ban_fields::TARGET_CHANNEL_ID): channel_id,
+                    (ban_fields::TARGET_USER): entity_json(target_channel_id, target_display_name),
+                    (ban_fields::MODERATOR): author_json(author_details),
                     (ban_fields::TYPE): ban_type,
-                    (ban_fields::DURATION_SECONDS): ban_duration_secs as i64,
+                    (ban_fields::DURATION_SECS): ban_duration_secs,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -734,26 +739,13 @@ impl YoutubeChatPoller {
                 ))
             }
 
-            "messageDeletedEvent" => {
-                let deleted_message_id = snippet
-                    .get("messageDeletedDetails")
-                    .and_then(|d| d.get("deletedMessageId"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-
-                let moderator_channel_id = author_details
-                    .and_then(|ad| ad.get("channelId"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-
+            "tombstone" => {
                 let chat_payload = ChatPayload {
                     platform_msg_id: id.clone(),
-                    author: extract_author(author_details),
+                    author: String::new(),
                     author_color: None,
                     segments: vec![],
-                    badges: extract_badges(author_details),
+                    badges: vec![],
                     is_event: true,
                     event_detail: None,
                     moderation: ModerationMarks {
@@ -764,9 +756,7 @@ impl YoutubeChatPoller {
                 };
 
                 let mut payload = serde_json::json!({
-                    (chat_mod_fields::MESSAGE_ID): deleted_message_id,
-                    (chat_mod_fields::TARGET_USER_CHANNEL_ID): "",
-                    (chat_mod_fields::MODERATOR_CHANNEL_ID): moderator_channel_id,
+                    (chat_mod_fields::MESSAGE_ID): id,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -791,11 +781,6 @@ impl YoutubeChatPoller {
                     .unwrap_or("")
                     .to_owned();
 
-                let gifter_channel_id = author_details
-                    .and_then(|ad| ad.get("channelId"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
                 let gifter_display_name = extract_author(author_details);
 
                 let chat_payload = ChatPayload {
@@ -812,8 +797,7 @@ impl YoutubeChatPoller {
                 let mut payload = serde_json::json!({
                     (gift_fields::COUNT): count,
                     (gift_fields::LEVEL_NAME): level_name,
-                    (gift_fields::GIFTER_CHANNEL_ID): gifter_channel_id,
-                    (gift_fields::GIFTER_DISPLAY_NAME): gifter_display_name,
+                    (gift_fields::GIFTER): author_json(author_details),
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -824,18 +808,18 @@ impl YoutubeChatPoller {
             }
 
             "giftMembershipReceivedEvent" => {
-                let level_name = snippet
-                    .get("giftMembershipReceivedDetails")
+                let details = snippet.get("giftMembershipReceivedDetails");
+                let level_name = details
                     .and_then(|d| d.get("memberLevelName"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_owned();
-
-                let recipient_channel_id = author_details
-                    .and_then(|ad| ad.get("channelId"))
+                let gifter_channel_id = details
+                    .and_then(|d| d.get("gifterChannelId"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
+                    .map(str::to_owned)
+                    .filter(|s| !s.is_empty());
+
                 let recipient_display_name = extract_author(author_details);
 
                 let chat_payload = ChatPayload {
@@ -851,9 +835,8 @@ impl YoutubeChatPoller {
 
                 let mut payload = serde_json::json!({
                     (gift_fields::LEVEL_NAME): level_name,
-                    (gift_fields::GIFTER_DISPLAY_NAME): "",
-                    (gift_fields::RECIPIENT_CHANNEL_ID): recipient_channel_id,
-                    (gift_fields::RECIPIENT_DISPLAY_NAME): recipient_display_name,
+                    (gift_fields::GIFTER): entity_json(gifter_channel_id, None),
+                    (gift_fields::RECIPIENT): author_json(author_details),
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -872,11 +855,11 @@ fn sleep_duration(polling_interval_millis: u64, floor_ms: u64) -> Duration {
     Duration::from_millis(polling_interval_millis).max(Duration::from_millis(floor_ms))
 }
 
-fn parse_command(text: &str) -> (String, String) {
+fn parse_command(text: &str) -> (String, Vec<String>) {
     let stripped = text.strip_prefix('!').unwrap_or(text);
-    let mut parts = stripped.splitn(2, ' ');
+    let mut parts = stripped.split_whitespace();
     let cmd = parts.next().unwrap_or("").to_owned();
-    let args = parts.next().unwrap_or("").to_owned();
+    let args = parts.map(ToOwned::to_owned).collect();
     (cmd, args)
 }
 
@@ -886,6 +869,32 @@ fn extract_author(author_details: Option<&serde_json::Value>) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned()
+}
+
+fn extract_author_channel_id(author_details: Option<&serde_json::Value>) -> Option<String> {
+    author_details
+        .and_then(|ad| ad.get("channelId"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn non_empty(s: String) -> Option<String> {
+    if s.is_empty() { None } else { Some(s) }
+}
+
+fn entity_json(channel_id: Option<String>, display_name: Option<String>) -> serde_json::Value {
+    serde_json::json!({
+        (entity::CHANNEL_ID): channel_id,
+        (entity::DISPLAY_NAME): display_name,
+    })
+}
+
+fn author_json(author_details: Option<&serde_json::Value>) -> serde_json::Value {
+    entity_json(
+        extract_author_channel_id(author_details),
+        non_empty(extract_author(author_details)),
+    )
 }
 
 fn extract_badges(author_details: Option<&serde_json::Value>) -> Vec<UserBadge> {
@@ -981,6 +990,7 @@ mod tests {
             },
             "authorDetails": {
                 "displayName": display_name,
+                "channelId": "UCviewer",
                 "isChatOwner": false,
                 "isChatModerator": false,
                 "isChatSponsor": false
@@ -1120,6 +1130,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn chat_message_payload_carries_author_entity_from_author_details() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-author")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(json!([text_item("msg-a", "hi", "StreamFan")]), 3000),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(
+            event.payload["author"]["display_name"].as_str().unwrap(),
+            "StreamFan"
+        );
+        assert_eq!(
+            event.payload["author"]["channel_id"].as_str().unwrap(),
+            "UCviewer"
+        );
+    }
+
+    #[tokio::test]
     async fn text_message_command_emits_youtube_chat_command() {
         let server = MockServer::start().await;
         mount_broadcast_mock(&server, broadcast_response("chat-cmd")).await;
@@ -1136,7 +1168,11 @@ mod tests {
 
         assert_eq!(event.kind, "youtube.chat.command");
         assert_eq!(event.payload["command_name"].as_str().unwrap(), "shoutout");
-        assert_eq!(event.payload["args"].as_str().unwrap(), "user123");
+        let args = event.payload["args"].as_array().unwrap();
+        assert_eq!(
+            args.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+            vec!["user123"]
+        );
     }
 
     #[tokio::test]
@@ -1189,6 +1225,7 @@ mod tests {
     fn banned_item(
         id: &str,
         display_name: &str,
+        ban_type: &str,
         duration_secs: serde_json::Value,
     ) -> serde_json::Value {
         json!({
@@ -1200,8 +1237,13 @@ mod tests {
                         "displayName": display_name,
                         "channelId": "UCbanned"
                     },
+                    "banType": ban_type,
                     "banDurationSeconds": duration_secs
                 }
+            },
+            "authorDetails": {
+                "displayName": "ModAlice",
+                "channelId": "UCmodalice"
             }
         })
     }
@@ -1212,36 +1254,69 @@ mod tests {
         mount_broadcast_mock(&server, broadcast_response("chat-ban-temp")).await;
         mount_chat_mock(
             &server,
-            chat_response(json!([banned_item("ban-1", "Troll", json!(600))]), 3000),
+            chat_response(
+                json!([banned_item("ban-1", "Troll", "temporary", json!(600))]),
+                3000,
+            ),
         )
         .await;
 
         let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.channel.user_banned");
-        assert_eq!(event.payload["ban.type"].as_str().unwrap(), "temporary");
-        assert_eq!(event.payload["ban.duration_seconds"].as_i64().unwrap(), 600);
+        assert_eq!(event.payload["type"].as_str().unwrap(), "temporary");
+        assert_eq!(event.payload["duration_secs"].as_i64().unwrap(), 600);
         assert_eq!(
-            event.payload["ban.target.display_name"].as_str().unwrap(),
+            event.payload["target_user"]["display_name"]
+                .as_str()
+                .unwrap(),
             "Troll"
         );
     }
 
     #[tokio::test]
-    async fn user_banned_without_duration_emits_permanent_ban() {
+    async fn permanent_ban_carries_null_duration_not_zero_placeholder() {
         let server = MockServer::start().await;
         mount_broadcast_mock(&server, broadcast_response("chat-ban-perm")).await;
         mount_chat_mock(
             &server,
-            chat_response(json!([banned_item("ban-2", "Spammer", json!(0))]), 3000),
+            chat_response(
+                json!([banned_item("ban-2", "Spammer", "permanent", json!(null))]),
+                3000,
+            ),
         )
         .await;
 
         let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.channel.user_banned");
-        assert_eq!(event.payload["ban.type"].as_str().unwrap(), "permanent");
-        assert_eq!(event.payload["ban.duration_seconds"].as_i64().unwrap(), 0);
+        assert_eq!(event.payload["type"].as_str().unwrap(), "permanent");
+        assert!(event.payload["duration_secs"].is_null());
+    }
+
+    #[tokio::test]
+    async fn user_banned_populates_moderator_from_author_details() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-mod")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([banned_item("ban-3", "Troll", "permanent", json!(null))]),
+                3000,
+            ),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(
+            event.payload["moderator"]["channel_id"].as_str().unwrap(),
+            "UCmodalice"
+        );
+        assert_eq!(
+            event.payload["moderator"]["display_name"].as_str().unwrap(),
+            "ModAlice"
+        );
     }
 
     #[test]
@@ -1490,22 +1565,25 @@ mod tests {
         );
     }
 
-    fn message_deleted_item(
-        id: &str,
-        deleted_message_id: &str,
-        moderator_channel_id: &str,
-    ) -> serde_json::Value {
+    fn tombstone_item(id: &str) -> serde_json::Value {
+        json!({
+            "id": id,
+            "snippet": { "type": "tombstone" }
+        })
+    }
+
+    fn legacy_message_deleted_item(id: &str) -> serde_json::Value {
         json!({
             "id": id,
             "snippet": {
                 "type": "messageDeletedEvent",
                 "messageDeletedDetails": {
-                    "deletedMessageId": deleted_message_id
+                    "deletedMessageId": "removed-msg"
                 }
             },
             "authorDetails": {
                 "displayName": "ModName",
-                "channelId": moderator_channel_id,
+                "channelId": "UCmod",
                 "isChatOwner": false,
                 "isChatModerator": true,
                 "isChatSponsor": false
@@ -1544,13 +1622,15 @@ mod tests {
         level_name: &str,
         recipient_display_name: &str,
         recipient_channel_id: &str,
+        gifter_channel_id: serde_json::Value,
     ) -> serde_json::Value {
         json!({
             "id": id,
             "snippet": {
                 "type": "giftMembershipReceivedEvent",
                 "giftMembershipReceivedDetails": {
-                    "memberLevelName": level_name
+                    "memberLevelName": level_name,
+                    "gifterChannelId": gifter_channel_id
                 }
             },
             "authorDetails": {
@@ -1581,46 +1661,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn message_deleted_event_emits_with_moderator_and_empty_target_user() {
+    async fn tombstone_emits_message_deleted_with_message_id_and_deleted_mark() {
         let server = MockServer::start().await;
         mount_broadcast_mock(&server, broadcast_response("chat-del")).await;
         mount_chat_mock(
             &server,
-            chat_response(
-                json!([message_deleted_item("del-1", "removed-msg-99", "UCmod")]),
-                3000,
-            ),
+            chat_response(json!([tombstone_item("del-1")]), 3000),
         )
         .await;
 
         let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.chat.message_deleted");
-        assert_eq!(event.source, EventSource::YouTube);
-        assert_eq!(
-            event.payload["chat.message_id"].as_str().unwrap(),
-            "removed-msg-99"
-        );
-        assert_eq!(
-            event.payload["chat.moderator.channel_id"].as_str().unwrap(),
-            "UCmod"
-        );
-        assert_eq!(
-            event.payload["chat.target_user.channel_id"]
-                .as_str()
-                .unwrap(),
-            ""
-        );
+        assert_eq!(event.payload["message_id"].as_str().unwrap(), "del-1");
+
+        let chat: ChatPayload =
+            serde_json::from_value(event.payload[ChatPayload::KEY].clone()).unwrap();
+        assert!(chat.moderation.deleted);
+        assert!(!chat.moderation.banned);
+        assert!(!chat.moderation.timed_out);
     }
 
     #[tokio::test]
-    async fn message_deleted_event_sets_chat_payload_deleted_moderation_mark() {
+    async fn legacy_message_deleted_wire_type_produces_no_event() {
         let server = MockServer::start().await;
-        mount_broadcast_mock(&server, broadcast_response("chat-del-mark")).await;
+        mount_broadcast_mock(&server, broadcast_response("chat-del-legacy")).await;
         mount_chat_mock(
             &server,
             chat_response(
-                json!([message_deleted_item("del-2", "removed-msg-1", "UCmod")]),
+                json!([
+                    legacy_message_deleted_item("ignored-1"),
+                    text_item("keep-1", "still here", "Bystander")
+                ]),
                 3000,
             ),
         )
@@ -1628,11 +1700,10 @@ mod tests {
 
         let event = first_event_from(&server).await;
 
+        assert_eq!(event.kind, "youtube.chat.message");
         let chat: ChatPayload =
             serde_json::from_value(event.payload[ChatPayload::KEY].clone()).unwrap();
-        assert!(chat.moderation.deleted);
-        assert!(!chat.moderation.banned);
-        assert!(!chat.moderation.timed_out);
+        assert_eq!(chat.platform_msg_id, "keep-1");
     }
 
     #[tokio::test]
@@ -1657,17 +1728,14 @@ mod tests {
         let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.channel.member_gift");
-        assert_eq!(event.payload["gift.count"].as_i64().unwrap(), 5);
+        assert_eq!(event.payload["count"].as_i64().unwrap(), 5);
+        assert_eq!(event.payload["level_name"].as_str().unwrap(), "Diamond");
         assert_eq!(
-            event.payload["gift.level_name"].as_str().unwrap(),
-            "Diamond"
-        );
-        assert_eq!(
-            event.payload["gifter.channel_id"].as_str().unwrap(),
+            event.payload["gifter"]["channel_id"].as_str().unwrap(),
             "UCgifter"
         );
         assert_eq!(
-            event.payload["gifter.display_name"].as_str().unwrap(),
+            event.payload["gifter"]["display_name"].as_str().unwrap(),
             "Generous"
         );
     }
@@ -1693,11 +1761,11 @@ mod tests {
 
         let event = first_event_from(&server).await;
 
-        assert_eq!(event.payload["gift.count"].as_i64().unwrap(), 12);
+        assert_eq!(event.payload["count"].as_i64().unwrap(), 12);
     }
 
     #[tokio::test]
-    async fn gift_membership_received_event_emits_recipient_with_empty_gifter() {
+    async fn gift_membership_received_yields_null_gifter_when_wire_absent() {
         let server = MockServer::start().await;
         mount_broadcast_mock(&server, broadcast_response("chat-gift-recv")).await;
         mount_chat_mock(
@@ -1707,7 +1775,8 @@ mod tests {
                     "recv-1",
                     "Gold",
                     "LuckyViewer",
-                    "UCrecipient"
+                    "UCrecipient",
+                    json!(null)
                 )]),
                 3000,
             ),
@@ -1717,16 +1786,44 @@ mod tests {
         let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.channel.member_gift_received");
-        assert_eq!(event.payload["gift.level_name"].as_str().unwrap(), "Gold");
+        assert_eq!(event.payload["level_name"].as_str().unwrap(), "Gold");
         assert_eq!(
-            event.payload["recipient.channel_id"].as_str().unwrap(),
+            event.payload["recipient"]["channel_id"].as_str().unwrap(),
             "UCrecipient"
         );
         assert_eq!(
-            event.payload["recipient.display_name"].as_str().unwrap(),
+            event.payload["recipient"]["display_name"].as_str().unwrap(),
             "LuckyViewer"
         );
-        assert_eq!(event.payload["gifter.display_name"].as_str().unwrap(), "");
+        assert!(event.payload["gifter"]["channel_id"].is_null());
+        assert!(event.payload["gifter"]["display_name"].is_null());
+    }
+
+    #[tokio::test]
+    async fn gift_membership_received_reads_wire_gifter_channel_id() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-gift-recv-src")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([gift_received_item(
+                    "recv-2",
+                    "Gold",
+                    "LuckyViewer",
+                    "UCrecipient",
+                    json!("UCbenefactor")
+                )]),
+                3000,
+            ),
+        )
+        .await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(
+            event.payload["gifter"]["channel_id"].as_str().unwrap(),
+            "UCbenefactor"
+        );
     }
 
     fn broadcast_response_titled(live_chat_id: &str, title: &str) -> serde_json::Value {
@@ -1874,8 +1971,8 @@ mod tests {
         );
         let payload = &events[0].payload;
         assert_eq!(events[0].source, EventSource::YouTube);
-        assert_eq!(payload["stream.title_old"].as_str().unwrap(), "Old Title");
-        assert_eq!(payload["stream.title_new"].as_str().unwrap(), "New Title");
+        assert_eq!(payload["title"]["old"].as_str().unwrap(), "Old Title");
+        assert_eq!(payload["title"]["new"].as_str().unwrap(), "New Title");
     }
 
     #[tokio::test(start_paused = true)]

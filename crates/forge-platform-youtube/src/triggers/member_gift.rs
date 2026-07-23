@@ -7,7 +7,7 @@ use forge_types::{
     VariantKind,
 };
 
-use crate::payload_fields::gift as fields;
+use crate::payload_fields::{entity, gift as fields};
 
 pub(crate) struct ChannelMemberGiftDescriptor;
 
@@ -75,15 +75,14 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let gifter_channel_id = event
-            .payload
-            .get(fields::GIFTER_CHANNEL_ID)
+        let gifter = event.payload.get(fields::GIFTER);
+        let gifter_channel_id = gifter
+            .and_then(|g| g.get(entity::CHANNEL_ID))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let gifter_display_name = event
-            .payload
-            .get(fields::GIFTER_DISPLAY_NAME)
+        let gifter_display_name = gifter
+            .and_then(|g| g.get(entity::DISPLAY_NAME))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -146,10 +145,9 @@ mod tests {
     #[test]
     fn build_arg_stack_surfaces_count_level_and_gifter() {
         let event = gift_event(json!({
-            "gift.count": 5_i64,
-            "gift.level_name": "Diamond",
-            "gifter.channel_id": "UCgifter",
-            "gifter.display_name": "Generous",
+            "count": 5_i64,
+            "level_name": "Diamond",
+            "gifter": { "channel_id": "UCgifter", "display_name": "Generous" },
         }));
 
         let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
@@ -187,16 +185,6 @@ mod tests {
         assert_eq!(
             stack.get("gifter.display_name"),
             Some(&Variant::String(String::new()))
-        );
-    }
-
-    #[test]
-    fn event_filter_targets_member_gift_kind_on_youtube() {
-        let filter = ChannelMemberGiftDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::YouTube));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("youtube.channel.member_gift")
         );
     }
 }

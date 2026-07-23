@@ -142,7 +142,11 @@ impl TriggerKindDescriptor for MidiCcDescriptor {
         if let Some(c) = event.payload.get(fields::CHANNEL).and_then(|v| v.as_u64()) {
             stack = stack.set("midi.channel".to_owned(), Variant::Int(c as i64));
         }
-        if let Some(p) = event.payload.get(fields::PORT).and_then(|v| v.as_str()) {
+        if let Some(p) = event
+            .payload
+            .get(fields::PORT_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set("midi.port".to_owned(), Variant::String(p.to_owned()));
         }
         stack

@@ -91,7 +91,11 @@ impl TriggerKindDescriptor for MidiDeviceConnectedDescriptor {
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event.payload.get(fields::NAME).and_then(|v| v.as_str()) {
+        if let Some(name) = event
+            .payload
+            .get(fields::PORT_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set(
                 "midi.device.name".to_owned(),
                 Variant::String(name.to_owned()),
@@ -140,7 +144,7 @@ mod tests {
         Event::new(
             EventSource::Midi,
             kind,
-            json!({ "name": name, "direction": direction }),
+            json!({ "port_name": name, "direction": direction }),
         )
     }
 

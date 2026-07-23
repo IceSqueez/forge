@@ -138,7 +138,11 @@ impl TriggerKindDescriptor for MidiNoteOnDescriptor {
         if let Some(c) = event.payload.get(fields::CHANNEL).and_then(|v| v.as_u64()) {
             stack = stack.set("midi.channel".to_owned(), Variant::Int(c as i64));
         }
-        if let Some(p) = event.payload.get(fields::PORT).and_then(|v| v.as_str()) {
+        if let Some(p) = event
+            .payload
+            .get(fields::PORT_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set("midi.port".to_owned(), Variant::String(p.to_owned()));
         }
         stack
@@ -187,7 +191,7 @@ mod tests {
         Event::new(
             EventSource::Midi,
             "midi.input.note_on",
-            json!({ "note": note, "velocity": velocity, "channel": channel, "port": "Piano" }),
+            json!({ "note": note, "velocity": velocity, "channel": channel, "port_name": "Piano" }),
         )
     }
 
@@ -236,7 +240,7 @@ mod tests {
         let ev = Event::new(
             EventSource::Midi,
             "midi.input.note_off",
-            json!({ "note": 60, "velocity": 0, "channel": 0, "port": "Piano" }),
+            json!({ "note": 60, "velocity": 0, "channel": 0, "port_name": "Piano" }),
         );
         assert!(!d.matches_trigger(&BTreeMap::new(), &ev));
     }

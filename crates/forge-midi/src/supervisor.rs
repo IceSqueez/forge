@@ -196,7 +196,7 @@ fn emit_port_event(client: &Arc<MidiClient>, name: &str, direction: PortDirectio
     let event = Event::new(
         EventSource::Midi,
         kind,
-        serde_json::json!({ (port_fields::NAME): name, (port_fields::DIRECTION): dir_str }),
+        serde_json::json!({ (port_fields::PORT_NAME): name, (port_fields::DIRECTION): dir_str }),
     );
     client.publisher.publish(event);
 }
@@ -223,7 +223,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
                 (input_fields::NOTE): note,
                 (input_fields::VELOCITY): velocity,
                 (input_fields::CHANNEL): channel,
-                (input_fields::PORT): port_name,
+                (input_fields::PORT_NAME): port_name,
             }),
         ),
         MidiEvent::NoteOff {
@@ -236,7 +236,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
                 (input_fields::NOTE): note,
                 (input_fields::VELOCITY): velocity,
                 (input_fields::CHANNEL): channel,
-                (input_fields::PORT): port_name,
+                (input_fields::PORT_NAME): port_name,
             }),
         ),
         MidiEvent::ControlChange {
@@ -249,7 +249,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
                 (input_fields::CONTROLLER): controller,
                 (input_fields::VALUE): value,
                 (input_fields::CHANNEL): channel,
-                (input_fields::PORT): port_name,
+                (input_fields::PORT_NAME): port_name,
             }),
         ),
         MidiEvent::PitchBend { value, channel } => (
@@ -257,7 +257,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             serde_json::json!({
                 (input_fields::VALUE): value,
                 (input_fields::CHANNEL): channel,
-                (input_fields::PORT): port_name,
+                (input_fields::PORT_NAME): port_name,
             }),
         ),
         MidiEvent::ProgramChange { program, channel } => (
@@ -265,7 +265,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             serde_json::json!({
                 (input_fields::PROGRAM): program,
                 (input_fields::CHANNEL): channel,
-                (input_fields::PORT): port_name,
+                (input_fields::PORT_NAME): port_name,
             }),
         ),
     };
@@ -459,10 +459,13 @@ mod tests {
 
         let added = publisher.find_all_kind("midi.port.added");
         assert!(
-            added.iter().any(|e| e.payload["name"] == "B"),
+            added.iter().any(|e| e.payload["port_name"] == "B"),
             "expected midi.port.added for port B"
         );
-        let b_ev = added.iter().find(|e| e.payload["name"] == "B").unwrap();
+        let b_ev = added
+            .iter()
+            .find(|e| e.payload["port_name"] == "B")
+            .unwrap();
         assert_eq!(b_ev.payload["direction"], "input");
     }
 
@@ -483,7 +486,7 @@ mod tests {
 
         let removed = publisher.find_all_kind("midi.port.removed");
         assert!(
-            removed.iter().any(|e| e.payload["name"] == "B"),
+            removed.iter().any(|e| e.payload["port_name"] == "B"),
             "expected midi.port.removed for port B"
         );
     }
@@ -504,7 +507,7 @@ mod tests {
         assert_eq!(ev.payload["note"], 60);
         assert_eq!(ev.payload["velocity"], 127);
         assert_eq!(ev.payload["channel"], 0);
-        assert_eq!(ev.payload["port"], "Piano");
+        assert_eq!(ev.payload["port_name"], "Piano");
     }
 
     #[tokio::test]
@@ -521,7 +524,7 @@ mod tests {
         assert!(publisher.has_kind("midi.input.note_off"));
         let ev = publisher.find_kind("midi.input.note_off").unwrap();
         assert_eq!(ev.payload["note"], 48);
-        assert_eq!(ev.payload["port"], "Piano");
+        assert_eq!(ev.payload["port_name"], "Piano");
     }
 
     #[tokio::test]
@@ -540,7 +543,7 @@ mod tests {
         assert_eq!(ev.payload["controller"], 7);
         assert_eq!(ev.payload["value"], 100);
         assert_eq!(ev.payload["channel"], 1);
-        assert_eq!(ev.payload["port"], "Pad");
+        assert_eq!(ev.payload["port_name"], "Pad");
     }
 
     #[tokio::test]
@@ -577,6 +580,50 @@ mod tests {
         assert!(publisher.has_kind("midi.input.note_off"));
         let ev = publisher.find_kind("midi.input.note_off").unwrap();
         assert_eq!(ev.payload["note"], 60);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_port_bearing_event_uses_unified_port_name_key() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("Deck")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        backend.inject_all(0, vec![0x90, 60, 100]).await;
+        backend.inject_all(0, vec![0xB0, 7, 64]).await;
+        backend.inject_all(0, vec![0xE0, 0, 64]).await;
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+
+        backend.set_input_ports(vec![input_port("Deck"), input_port("New")]);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+
+        for kind in [
+            "midi.input.note_on",
+            "midi.input.control_change",
+            "midi.input.pitch_bend",
+            "midi.port.added",
+        ] {
+            let ev = publisher.find_kind(kind).unwrap();
+            assert!(
+                ev.payload
+                    .get("port_name")
+                    .and_then(|v| v.as_str())
+                    .is_some(),
+                "{kind} must carry port_name"
+            );
+            assert!(
+                ev.payload.get("port").is_none(),
+                "{kind} still carries legacy `port` key"
+            );
+            assert!(
+                ev.payload.get("name").is_none(),
+                "{kind} still carries legacy `name` key"
+            );
+        }
     }
 
     #[tokio::test(start_paused = true)]

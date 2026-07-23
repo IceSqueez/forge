@@ -135,7 +135,11 @@ impl TriggerKindDescriptor for MidiProgramChangeDescriptor {
         if let Some(c) = event.payload.get(fields::CHANNEL).and_then(|v| v.as_u64()) {
             stack = stack.set("midi.channel".to_owned(), Variant::Int(c as i64));
         }
-        if let Some(p) = event.payload.get(fields::PORT).and_then(|v| v.as_str()) {
+        if let Some(p) = event
+            .payload
+            .get(fields::PORT_NAME)
+            .and_then(|v| v.as_str())
+        {
             stack = stack.set("midi.port".to_owned(), Variant::String(p.to_owned()));
         }
         stack
@@ -177,7 +181,7 @@ mod tests {
         Event::new(
             EventSource::Midi,
             "midi.input.program_change",
-            json!({ "program": program, "channel": channel, "port": "Synth" }),
+            json!({ "program": program, "channel": channel, "port_name": "Synth" }),
         )
     }
 
@@ -194,7 +198,7 @@ mod tests {
         let ev = Event::new(
             EventSource::Midi,
             "midi.input.note_on",
-            json!({ "note": 60, "velocity": 100, "channel": 0, "port": "Synth" }),
+            json!({ "note": 60, "velocity": 100, "channel": 0, "port_name": "Synth" }),
         );
         assert!(!d.matches_trigger(&BTreeMap::new(), &ev));
     }
@@ -257,7 +261,7 @@ mod tests {
         let ev = Event::new(
             EventSource::Midi,
             "midi.input.program_change",
-            json!({ "channel": 0, "port": "Synth" }),
+            json!({ "channel": 0, "port_name": "Synth" }),
         );
         let stack = d.build_arg_stack(&ev);
         assert_eq!(stack.get("midi.program"), None);

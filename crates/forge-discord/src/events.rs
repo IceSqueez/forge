@@ -1,6 +1,8 @@
 use forge_events::{Event, EventPublisher, EventSource};
 use serde_json::json;
 
+use crate::error::DiscordError;
+
 #[allow(dead_code)]
 pub(crate) fn publish_posted(
     publisher: &dyn EventPublisher,
@@ -20,26 +22,32 @@ pub(crate) fn publish_posted(
 }
 
 #[allow(dead_code)]
-pub(crate) fn publish_failed(publisher: &dyn EventPublisher, webhook_name: &str, reason: &str) {
+pub(crate) fn publish_failed(
+    publisher: &dyn EventPublisher,
+    webhook_name: &str,
+    err: &DiscordError,
+) {
     publisher.publish(Event::new(
         EventSource::Discord,
         "discord.webhook.failed",
         json!({
             "webhook_name": webhook_name,
-            "reason":        reason,
+            "reason":       err.reason_token(),
+            "detail":       err.detail(),
+            "status_code":  err.status_code(),
         }),
     ));
 }
 
 #[allow(dead_code)]
-pub(crate) fn publish_ratelimit_hit(
+pub(crate) fn publish_rate_limited(
     publisher: &dyn EventPublisher,
     webhook_name: &str,
     retry_after_secs: f64,
 ) {
     publisher.publish(Event::new(
         EventSource::Discord,
-        "discord.webhook.ratelimit.hit",
+        "discord.webhook.rate_limited",
         json!({
             "webhook_name":      webhook_name,
             "retry_after_secs":  retry_after_secs,

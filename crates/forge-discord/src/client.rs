@@ -11,7 +11,7 @@ use crate::content::{DiscordContentSnapshot, make_content_state, record_send};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
 use crate::embed::DiscordEmbed;
 use crate::error::DiscordError;
-use crate::events::{publish_failed, publish_posted, publish_ratelimit_hit};
+use crate::events::{publish_failed, publish_posted, publish_rate_limited};
 use crate::health::{DiscordHealthSnapshot, make_health_state, update_on_send};
 use crate::ratelimit::{DiscordRateLimiter, RateLimitOutcome};
 use crate::sink::DiscordSink;
@@ -196,7 +196,7 @@ impl DiscordClient {
             let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
 
             self.record_429(webhook_name, wait, is_global);
-            publish_ratelimit_hit(
+            publish_rate_limited(
                 self.publisher.as_ref(),
                 webhook_name,
                 retry_after.unwrap_or(1.0),
@@ -225,7 +225,7 @@ impl DiscordClient {
                     None,
                     0,
                 );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+                publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
             }
 
@@ -267,7 +267,7 @@ impl DiscordClient {
             let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
 
             self.record_429(webhook_name, wait, is_global);
-            publish_ratelimit_hit(
+            publish_rate_limited(
                 self.publisher.as_ref(),
                 webhook_name,
                 retry_after.unwrap_or(1.0),
@@ -294,7 +294,7 @@ impl DiscordClient {
                     None,
                     0,
                 );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+                publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
             }
 
@@ -333,7 +333,7 @@ impl DiscordClient {
                 body: body_text,
             };
             self.apply_send_result(webhook_name, latency_ms, false, None, 0);
-            publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+            publish_failed(self.publisher.as_ref(), webhook_name, &err);
             Err(err)
         }
     }
@@ -363,7 +363,7 @@ impl DiscordClient {
             let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
 
             self.record_429(webhook_name, wait, is_global);
-            publish_ratelimit_hit(
+            publish_rate_limited(
                 self.publisher.as_ref(),
                 webhook_name,
                 retry_after.unwrap_or(1.0),
@@ -392,7 +392,7 @@ impl DiscordClient {
                     None,
                     embed_count,
                 );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+                publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
             }
 
@@ -443,7 +443,7 @@ impl DiscordClient {
                 body: body_text.clone(),
             };
             self.apply_send_result(webhook_name, latency_ms, false, None, embed_count);
-            publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+            publish_failed(self.publisher.as_ref(), webhook_name, &err);
             Err(err)
         }
     }
@@ -471,7 +471,7 @@ impl DiscordClient {
             let wait = Duration::from_secs_f64(retry_after.unwrap_or(1.0));
 
             self.record_429(webhook_name, wait, is_global);
-            publish_ratelimit_hit(
+            publish_rate_limited(
                 self.publisher.as_ref(),
                 webhook_name,
                 retry_after.unwrap_or(1.0),
@@ -499,7 +499,7 @@ impl DiscordClient {
                     None,
                     0,
                 );
-                publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+                publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
             }
 
@@ -534,7 +534,7 @@ impl DiscordClient {
                 body: body_text,
             };
             self.apply_send_result(webhook_name, latency_ms, false, None, 0);
-            publish_failed(self.publisher.as_ref(), webhook_name, &err.to_string());
+            publish_failed(self.publisher.as_ref(), webhook_name, &err);
             Err(err)
         }
     }
@@ -549,7 +549,7 @@ impl DiscordClient {
         }
         if let RateLimitOutcome::Throttled { wait_for } = rl.acquire(webhook_name) {
             let ra = wait_for.as_secs_f64();
-            publish_ratelimit_hit(self.publisher.as_ref(), webhook_name, ra);
+            publish_rate_limited(self.publisher.as_ref(), webhook_name, ra);
             return Err(DiscordError::RateLimited {
                 retry_after_secs: ra,
             });
@@ -1017,7 +1017,7 @@ pub(crate) mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "msg_retry");
 
-        assert!(publisher.has_kind("discord.webhook.ratelimit.hit"));
+        assert!(publisher.has_kind("discord.webhook.rate_limited"));
         assert!(publisher.has_kind("discord.webhook.posted"));
     }
 
@@ -1037,7 +1037,7 @@ pub(crate) mod tests {
         let result = client.post_text("alerts", "double retry").await;
         assert!(matches!(result, Err(DiscordError::RateLimited { .. })));
 
-        assert!(publisher.has_kind("discord.webhook.ratelimit.hit"));
+        assert!(publisher.has_kind("discord.webhook.rate_limited"));
         assert!(publisher.has_kind("discord.webhook.failed"));
     }
 
@@ -1063,6 +1063,55 @@ pub(crate) mod tests {
             Err(DiscordError::BadResponse { status: 404, .. })
         ));
         assert!(publisher.has_kind("discord.webhook.failed"));
+    }
+
+    #[tokio::test]
+    async fn failed_event_payload_carries_reason_status_and_detail() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Unknown Webhook"))
+            .mount(&server)
+            .await;
+
+        client.post_text("alerts", "test").await.unwrap_err();
+
+        let ev = publisher.find_kind("discord.webhook.failed").unwrap();
+        assert_eq!(ev.payload["reason"], "http_status");
+        assert_eq!(ev.payload["status_code"], 404);
+        assert_eq!(ev.payload["detail"], "Unknown Webhook");
+    }
+
+    #[tokio::test]
+    async fn rate_limited_event_payload_carries_webhook_name_and_retry_after() {
+        let server = MockServer::start().await;
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(make_429_response(0.05))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhooks/test-id/test-token"))
+            .respond_with(make_standard_response("msg_rl"))
+            .mount(&server)
+            .await;
+
+        client.post_text("alerts", "rl test").await.unwrap();
+
+        let ev = publisher.find_kind("discord.webhook.rate_limited").unwrap();
+        assert_eq!(ev.payload["webhook_name"], "alerts");
+        let ra = ev.payload["retry_after_secs"].as_f64().unwrap();
+        assert!((ra - 0.05).abs() < 1e-9);
     }
 
     #[tokio::test]

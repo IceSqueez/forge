@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("hotkey.".to_owned()),
+            kind_prefix: Some("vtube.hotkey.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "hotkey.triggered"
+        event.kind == "vtube.hotkey.triggered"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -119,15 +119,15 @@ mod tests {
     fn matches_only_the_exact_triggered_kind() {
         let d = HotkeyTriggeredDescriptor;
         let cfg = TriggerConfig::new();
-        assert!(d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
+        assert!(d.matches_trigger(&cfg, &event("vtube.hotkey.triggered", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.model.loaded", json!({}))));
     }
 
     #[test]
     fn build_arg_stack_maps_present_payload_keys() {
         let d = HotkeyTriggeredDescriptor;
         let stack = d.build_arg_stack(&event(
-            "hotkey.triggered",
+            "vtube.hotkey.triggered",
             json!({ "hotkey_name": "Wave", "hotkey_id": "hk-7" }),
         ));
         assert_eq!(
@@ -143,7 +143,10 @@ mod tests {
     #[test]
     fn build_arg_stack_omits_missing_payload_keys() {
         let d = HotkeyTriggeredDescriptor;
-        let stack = d.build_arg_stack(&event("hotkey.triggered", json!({ "hotkey_id": "hk-7" })));
+        let stack = d.build_arg_stack(&event(
+            "vtube.hotkey.triggered",
+            json!({ "hotkey_id": "hk-7" }),
+        ));
         assert!(stack.get("vtube.hotkey.name").is_none());
         assert_eq!(
             stack.get("vtube.hotkey.id"),

@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for ModelConfigChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("model.".to_owned()),
+            kind_prefix: Some("vtube.model.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "model.config_changed"
+        event.kind == "vtube.model.config_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -76,17 +76,28 @@ impl TriggerKindDescriptor for ModelConfigChangedDescriptor {
                 Variant::String(name.to_owned()),
             );
         }
+        if let Some(id) = event.payload.get(fields::MODEL_ID).and_then(|v| v.as_str()) {
+            stack = stack.set("vtube.model.id".to_owned(), Variant::String(id.to_owned()));
+        }
         stack
     }
 
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(VariableSchema {
-            variables: vec![DeclaredVariable {
-                name: "vtube.model.name".to_owned(),
-                kind: VariantKind::String,
-                label: "Model name".to_owned(),
-                synthesis: None,
-            }],
+            variables: vec![
+                DeclaredVariable {
+                    name: "vtube.model.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Model name".to_owned(),
+                    synthesis: None,
+                },
+                DeclaredVariable {
+                    name: "vtube.model.id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Model ID".to_owned(),
+                    synthesis: None,
+                },
+            ],
         })
     }
 }
@@ -104,28 +115,32 @@ mod tests {
     fn matches_only_the_exact_config_changed_kind() {
         let d = ModelConfigChangedDescriptor;
         let cfg = TriggerConfig::new();
-        assert!(d.matches_trigger(&cfg, &event("model.config_changed", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
+        assert!(d.matches_trigger(&cfg, &event("vtube.model.config_changed", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.model.loaded", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.hotkey.triggered", json!({}))));
     }
 
     #[test]
-    fn build_arg_stack_maps_present_model_name() {
+    fn build_arg_stack_maps_model_id_and_name() {
         let d = ModelConfigChangedDescriptor;
-        let stack = d.build_arg_stack(&event(
-            "model.config_changed",
-            json!({ "model_name": "Aria" }),
-        ));
-        assert_eq!(
-            stack.get("vtube.model.name"),
-            Some(&Variant::String("Aria".to_owned()))
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_omits_missing_model_name() {
-        let d = ModelConfigChangedDescriptor;
-        let stack = d.build_arg_stack(&event("model.config_changed", json!({})));
-        assert!(stack.get("vtube.model.name").is_none());
+        for (payload, name, id) in [
+            (
+                json!({ "model_name": "Aria", "model_id": "m-42" }),
+                Some("Aria"),
+                Some("m-42"),
+            ),
+            (json!({ "model_name": "Aria" }), Some("Aria"), None),
+            (json!({}), None, None),
+        ] {
+            let stack = d.build_arg_stack(&event("vtube.model.config_changed", payload));
+            assert_eq!(
+                stack.get("vtube.model.name"),
+                name.map(|s| Variant::String(s.to_owned())).as_ref()
+            );
+            assert_eq!(
+                stack.get("vtube.model.id"),
+                id.map(|s| Variant::String(s.to_owned())).as_ref()
+            );
+        }
     }
 }

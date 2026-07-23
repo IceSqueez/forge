@@ -56,28 +56,35 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("expression.".to_owned()),
+            kind_prefix: Some("vtube.expression.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "expression.state_changed"
+        event.kind == "vtube.expression.state_changed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
-        if let Some(name) = event
+        if let Some(file) = event
             .payload
-            .get(fields::EXPRESSION_NAME)
+            .get(fields::EXPRESSION_FILE)
             .and_then(|v| v.as_str())
         {
             stack = stack.set(
-                "vtube.expression.name".to_owned(),
-                Variant::String(name.to_owned()),
+                "vtube.expression.file".to_owned(),
+                Variant::String(file.to_owned()),
             );
         }
-        if let Some(active) = event.payload.get(fields::ACTIVE).and_then(|v| v.as_bool()) {
-            stack = stack.set("vtube.expression.active".to_owned(), Variant::Bool(active));
+        if let Some(is_active) = event
+            .payload
+            .get(fields::IS_ACTIVE)
+            .and_then(|v| v.as_bool())
+        {
+            stack = stack.set(
+                "vtube.expression.is_active".to_owned(),
+                Variant::Bool(is_active),
+            );
         }
         stack
     }
@@ -86,13 +93,13 @@ impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "vtube.expression.name".to_owned(),
+                    name: "vtube.expression.file".to_owned(),
                     kind: VariantKind::String,
-                    label: "Expression name".to_owned(),
+                    label: "Expression file".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "vtube.expression.active".to_owned(),
+                    name: "vtube.expression.is_active".to_owned(),
                     kind: VariantKind::Bool,
                     label: "Expression active".to_owned(),
                     synthesis: None,
@@ -115,46 +122,32 @@ mod tests {
     fn matches_only_the_exact_state_changed_kind() {
         let d = ExpressionStateChangedDescriptor;
         let cfg = TriggerConfig::new();
-        assert!(d.matches_trigger(&cfg, &event("expression.state_changed", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("expression.other", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
+        assert!(d.matches_trigger(&cfg, &event("vtube.expression.state_changed", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.expression.other", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.hotkey.triggered", json!({}))));
     }
 
     #[test]
-    fn build_arg_stack_maps_name_and_bool_active() {
+    fn build_arg_stack_maps_file_and_is_active_distinguishing_false_from_absent() {
         let d = ExpressionStateChangedDescriptor;
-        let stack = d.build_arg_stack(&event(
-            "expression.state_changed",
-            json!({ "expression_name": "Smile", "active": true }),
-        ));
-        assert_eq!(
-            stack.get("vtube.expression.name"),
-            Some(&Variant::String("Smile".to_owned()))
-        );
-        assert_eq!(
-            stack.get("vtube.expression.active"),
-            Some(&Variant::Bool(true))
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_preserves_active_false() {
-        let d = ExpressionStateChangedDescriptor;
-        let stack = d.build_arg_stack(&event(
-            "expression.state_changed",
-            json!({ "active": false }),
-        ));
-        assert_eq!(
-            stack.get("vtube.expression.active"),
-            Some(&Variant::Bool(false))
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_omits_missing_keys() {
-        let d = ExpressionStateChangedDescriptor;
-        let stack = d.build_arg_stack(&event("expression.state_changed", json!({})));
-        assert!(stack.get("vtube.expression.name").is_none());
-        assert!(stack.get("vtube.expression.active").is_none());
+        for (payload, file, active) in [
+            (
+                json!({ "expression_file": "Smile.exp3.json", "is_active": true }),
+                Some("Smile.exp3.json"),
+                Some(true),
+            ),
+            (json!({ "is_active": false }), None, Some(false)),
+            (json!({}), None, None),
+        ] {
+            let stack = d.build_arg_stack(&event("vtube.expression.state_changed", payload));
+            assert_eq!(
+                stack.get("vtube.expression.file"),
+                file.map(|f| Variant::String(f.to_owned())).as_ref()
+            );
+            assert_eq!(
+                stack.get("vtube.expression.is_active"),
+                active.map(Variant::Bool).as_ref()
+            );
+        }
     }
 }

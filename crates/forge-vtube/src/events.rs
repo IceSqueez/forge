@@ -49,23 +49,24 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
             if loaded {
                 publisher.publish(Event::new(
                     EventSource::VTube,
-                    "model.loaded",
+                    "vtube.model.loaded",
                     json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
                 ));
             } else {
                 publisher.publish(Event::new(
                     EventSource::VTube,
-                    "model.unloaded",
+                    "vtube.model.unloaded",
                     json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
                 ));
             }
         }
         "ModelConfigChangedEvent" => {
+            let model_id = env.data["modelID"].as_str().unwrap_or("").to_owned();
             let model_name = env.data["modelName"].as_str().unwrap_or("").to_owned();
             publisher.publish(Event::new(
                 EventSource::VTube,
-                "model.config_changed",
-                json!({ (model_fields::MODEL_NAME): model_name }),
+                "vtube.model.config_changed",
+                json!({ (model_fields::MODEL_ID): model_id, (model_fields::MODEL_NAME): model_name }),
             ));
         }
         "HotkeyTriggeredEvent" => {
@@ -73,42 +74,42 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
             let hotkey_name = env.data["hotkeyName"].as_str().unwrap_or("").to_owned();
             publisher.publish(Event::new(
                 EventSource::VTube,
-                "hotkey.triggered",
+                "vtube.hotkey.triggered",
                 json!({ (hotkey_fields::HOTKEY_ID): hotkey_id, (hotkey_fields::HOTKEY_NAME): hotkey_name }),
             ));
         }
         "ExpressionActivationEvent" => {
-            let expression_name = env.data["expressionFile"].as_str().unwrap_or("").to_owned();
-            let active = env.data["active"].as_bool().unwrap_or(false);
+            let expression_file = env.data["expressionFile"].as_str().unwrap_or("").to_owned();
+            let is_active = env.data["active"].as_bool().unwrap_or(false);
             publisher.publish(Event::new(
                 EventSource::VTube,
-                "expression.state_changed",
-                json!({ (expression_fields::EXPRESSION_NAME): expression_name, (expression_fields::ACTIVE): active }),
+                "vtube.expression.state_changed",
+                json!({ (expression_fields::EXPRESSION_FILE): expression_file, (expression_fields::IS_ACTIVE): is_active }),
             ));
         }
         "TrackingStatusChangedEvent" => {
             let face_found = env.data["faceFound"].as_bool().unwrap_or(false);
-            let left_hand_found = env.data["leftHandFound"].as_bool().unwrap_or(false);
-            let right_hand_found = env.data["rightHandFound"].as_bool().unwrap_or(false);
+            let is_left_hand_found = env.data["leftHandFound"].as_bool().unwrap_or(false);
+            let is_right_hand_found = env.data["rightHandFound"].as_bool().unwrap_or(false);
             let kind = if face_found {
-                "tracking.face_found"
+                "vtube.tracking.face_found"
             } else {
-                "tracking.face_lost"
+                "vtube.tracking.face_lost"
             };
             publisher.publish(Event::new(
                 EventSource::VTube,
                 kind,
                 json!({
-                    (tracking_fields::LEFT_HAND_FOUND): left_hand_found,
-                    (tracking_fields::RIGHT_HAND_FOUND): right_hand_found,
+                    (tracking_fields::IS_LEFT_HAND_FOUND): is_left_hand_found,
+                    (tracking_fields::IS_RIGHT_HAND_FOUND): is_right_hand_found,
                 }),
             ));
         }
         "ItemEvent" => {
             let item_event_type = env.data["itemEventType"].as_str().unwrap_or("");
             let kind = match item_event_type {
-                "Added" => Some("item.added"),
-                "Removed" => Some("item.removed"),
+                "Added" => Some("vtube.item.added"),
+                "Removed" => Some("vtube.item.removed"),
                 _ => None,
             };
             if let Some(kind) = kind {
@@ -160,7 +161,10 @@ mod tests {
         dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
 
         let events = publisher.events.lock().unwrap();
-        let ev = events.iter().find(|e| e.kind == "model.loaded").unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "vtube.model.loaded")
+            .unwrap();
         assert_eq!(ev.source, EventSource::VTube);
         assert_eq!(ev.payload["model_id"], "model-abc");
         assert_eq!(ev.payload["model_name"], "MyAvatar");
@@ -181,7 +185,10 @@ mod tests {
         dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
 
         let events = publisher.events.lock().unwrap();
-        let ev = events.iter().find(|e| e.kind == "model.unloaded").unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "vtube.model.unloaded")
+            .unwrap();
         assert_eq!(ev.source, EventSource::VTube);
         assert_eq!(ev.payload["model_id"], "model-xyz");
         assert_eq!(ev.payload["model_name"], "OldAvatar");
@@ -203,7 +210,7 @@ mod tests {
         let events = publisher.events.lock().unwrap();
         let ev = events
             .iter()
-            .find(|e| e.kind == "hotkey.triggered")
+            .find(|e| e.kind == "vtube.hotkey.triggered")
             .unwrap();
         assert_eq!(ev.source, EventSource::VTube);
         assert_eq!(ev.payload["hotkey_id"], "hk-001");
@@ -240,11 +247,11 @@ mod tests {
         let events = publisher.events.lock().unwrap();
         let ev = events
             .iter()
-            .find(|e| e.kind == "tracking.face_found")
+            .find(|e| e.kind == "vtube.tracking.face_found")
             .unwrap();
         assert_eq!(ev.source, EventSource::VTube);
-        assert_eq!(ev.payload["left_hand_found"], true);
-        assert_eq!(ev.payload["right_hand_found"], false);
+        assert_eq!(ev.payload["is_left_hand_found"], true);
+        assert_eq!(ev.payload["is_right_hand_found"], false);
     }
 
     #[test]
@@ -264,10 +271,10 @@ mod tests {
         let events = publisher.events.lock().unwrap();
         let ev = events
             .iter()
-            .find(|e| e.kind == "tracking.face_lost")
+            .find(|e| e.kind == "vtube.tracking.face_lost")
             .unwrap();
-        assert_eq!(ev.payload["left_hand_found"], false);
-        assert_eq!(ev.payload["right_hand_found"], true);
+        assert_eq!(ev.payload["is_left_hand_found"], false);
+        assert_eq!(ev.payload["is_right_hand_found"], true);
     }
 
     #[test]
@@ -285,7 +292,10 @@ mod tests {
         dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
 
         let events = publisher.events.lock().unwrap();
-        let ev = events.iter().find(|e| e.kind == "item.added").unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "vtube.item.added")
+            .unwrap();
         assert_eq!(ev.payload["item_instance_id"], "inst-1");
         assert_eq!(ev.payload["item_file_name"], "crown.png");
     }
@@ -305,7 +315,10 @@ mod tests {
         dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
 
         let events = publisher.events.lock().unwrap();
-        let ev = events.iter().find(|e| e.kind == "item.removed").unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "vtube.item.removed")
+            .unwrap();
         assert_eq!(ev.payload["item_instance_id"], "inst-1");
         assert_eq!(ev.payload["item_file_name"], "crown.png");
     }
@@ -343,5 +356,73 @@ mod tests {
         assert_eq!(env.message_type, "HotkeyTriggeredEvent");
         assert_eq!(env.data["hotkeyID"], "hk-abc");
         assert_eq!(env.data["hotkeyName"], "Wave");
+    }
+
+    #[test]
+    fn config_changed_event_carries_model_id_and_name() {
+        let publisher = MockPublisher::new();
+        let env = make_envelope(
+            "ModelConfigChangedEvent",
+            serde_json::json!({ "modelID": "m-99", "modelName": "Nova" }),
+        );
+
+        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+
+        let events = publisher.events.lock().unwrap();
+        let ev = events
+            .iter()
+            .find(|e| e.kind == "vtube.model.config_changed")
+            .unwrap();
+        assert_eq!(ev.payload["model_id"], "m-99");
+        assert_eq!(ev.payload["model_name"], "Nova");
+    }
+
+    #[test]
+    fn every_dispatched_event_kind_is_vtube_prefixed() {
+        let publisher = MockPublisher::new();
+        let envelopes = [
+            make_envelope(
+                "ModelLoadedEvent",
+                serde_json::json!({ "modelLoaded": true }),
+            ),
+            make_envelope(
+                "ModelLoadedEvent",
+                serde_json::json!({ "modelLoaded": false }),
+            ),
+            make_envelope("ModelConfigChangedEvent", serde_json::json!({})),
+            make_envelope("HotkeyTriggeredEvent", serde_json::json!({})),
+            make_envelope("ExpressionActivationEvent", serde_json::json!({})),
+            make_envelope(
+                "TrackingStatusChangedEvent",
+                serde_json::json!({ "faceFound": true }),
+            ),
+            make_envelope(
+                "TrackingStatusChangedEvent",
+                serde_json::json!({ "faceFound": false }),
+            ),
+            make_envelope("ItemEvent", serde_json::json!({ "itemEventType": "Added" })),
+            make_envelope(
+                "ItemEvent",
+                serde_json::json!({ "itemEventType": "Removed" }),
+            ),
+        ];
+
+        for env in envelopes {
+            dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+        }
+
+        let events = publisher.events.lock().unwrap();
+        assert_eq!(
+            events.len(),
+            9,
+            "each envelope must emit exactly one bus event"
+        );
+        for ev in events.iter() {
+            assert!(
+                ev.kind.starts_with("vtube."),
+                "emitted kind is not vtube-prefixed: {}",
+                ev.kind
+            );
+        }
     }
 }

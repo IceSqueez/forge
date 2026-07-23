@@ -15,6 +15,7 @@ use crate::auth::AuthState;
 use crate::client::VtsWs;
 use crate::error::VTubeError;
 use crate::health::{HealthSnapshot, update_from_event};
+use crate::payload_fields::connection as connection_fields;
 use crate::protocol::new_request;
 use crate::request::PendingRequest;
 
@@ -23,16 +24,15 @@ const VTS_BACKOFF_CAP: Duration = Duration::from_secs(30);
 fn emit_connection_changed(
     publisher: &dyn EventPublisher,
     endpoint: &str,
-    connected: bool,
-    reason: Option<String>,
+    is_connected: bool,
+    reason: Option<&str>,
+    detail: Option<String>,
 ) {
-    let reason_val = reason
-        .map(serde_json::Value::String)
-        .unwrap_or(serde_json::Value::Null);
     let payload = serde_json::json!({
-        "connected": connected,
-        "endpoint": endpoint,
-        "reason": reason_val,
+        (connection_fields::IS_CONNECTED): is_connected,
+        (connection_fields::ENDPOINT): endpoint,
+        (connection_fields::REASON): reason,
+        (connection_fields::DETAIL): detail,
     });
     publisher.publish(Event::new(
         EventSource::VTube,
@@ -198,7 +198,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 () = tokio::time::sleep(delay) => {}
                 () = shutdown.notified() => {
                     state.store(ConnectionState::Disconnected);
-                    emit_connection_changed(&*publisher, &endpoint, false, None);
+                    emit_connection_changed(&*publisher, &endpoint, false, None, None);
                     return;
                 }
             }
@@ -219,7 +219,13 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     error = %e,
                     "VTube Studio connection attempt failed"
                 );
-                emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some("connect_failed"),
+                    Some(e.to_string()),
+                );
                 reconnecting = true;
                 continue;
             }
@@ -231,25 +237,23 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
-                    false,
-                    Some("auth_required".to_owned()),
-                );
+                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_required"), None);
                 state.store(ConnectionState::Disconnected);
                 return;
             }
-            Err(VTubeError::TokenDenied | VTubeError::TokenTimeout) => {
+            Err(VTubeError::TokenDenied) => {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
-                    false,
-                    Some("auth_denied".to_owned()),
-                );
+                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_denied"), None);
+                state.store(ConnectionState::Disconnected);
+                return;
+            }
+            Err(VTubeError::TokenTimeout) => {
+                if let Ok(mut g) = auth_state.write() {
+                    *g = AuthState::AuthRequired;
+                }
+                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_timeout"), None);
                 state.store(ConnectionState::Disconnected);
                 return;
             }
@@ -259,7 +263,13 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     error = %e,
                     "auth failed, will retry"
                 );
-                emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
+                emit_connection_changed(
+                    &*publisher,
+                    &endpoint,
+                    false,
+                    Some("auth_failed"),
+                    Some(e.to_string()),
+                );
                 reconnecting = true;
                 continue;
             }
@@ -267,7 +277,13 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 
         if let Err(e) = crate::events::subscribe_all(&mut ws).await {
             tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
-            emit_connection_changed(&*publisher, &endpoint, false, Some(e.to_string()));
+            emit_connection_changed(
+                &*publisher,
+                &endpoint,
+                false,
+                Some("subscribe_failed"),
+                Some(e.to_string()),
+            );
             reconnecting = true;
             continue;
         }
@@ -279,7 +295,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             *g = AuthState::Connected;
         }
         state.store(ConnectionState::Connected);
-        emit_connection_changed(&*publisher, &endpoint, true, None);
+        emit_connection_changed(&*publisher, &endpoint, true, None, None);
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
 
         let mut pending: HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>> =
@@ -292,7 +308,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     if let Ok(mut g) = auth_state.write() {
                         *g = AuthState::Cold;
                     }
-                    emit_connection_changed(&*publisher, &endpoint, false, None);
+                    emit_connection_changed(&*publisher, &endpoint, false, None, None);
                     return;
                 }
                 Some(req) = req_rx.recv() => {
@@ -346,8 +362,51 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::Cold;
         }
-        emit_connection_changed(&*publisher, &endpoint, false, None);
+        emit_connection_changed(&*publisher, &endpoint, false, Some("socket_closed"), None);
         backoff.reset();
         reconnecting = true;
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::emit_connection_changed;
+    use crate::client::tests::MockPublisher;
+
+    #[test]
+    fn connection_changed_uses_is_connected_key_not_legacy_connected() {
+        let publisher = MockPublisher::new();
+        emit_connection_changed(&*publisher.publisher(), "ws://x:1", true, None, None);
+
+        let events = publisher.events.lock().unwrap();
+        let ev = events.first().unwrap();
+        assert_eq!(ev.payload["is_connected"], true);
+        assert!(
+            ev.payload.get("connected").is_none(),
+            "legacy 'connected' key must be gone after the is_ rename"
+        );
+    }
+
+    #[test]
+    fn connection_changed_detail_is_null_when_absent_and_string_when_present() {
+        let publisher = MockPublisher::new();
+        let p = publisher.publisher();
+        emit_connection_changed(&*p, "ws://x:1", false, Some("auth_required"), None);
+        emit_connection_changed(
+            &*p,
+            "ws://x:1",
+            false,
+            Some("connect_failed"),
+            Some("dns failure".to_owned()),
+        );
+
+        let events = publisher.events.lock().unwrap();
+        assert!(
+            events[0].payload["detail"].is_null(),
+            "absent detail must serialize as JSON null, not an empty string"
+        );
+        assert_eq!(events[0].payload["reason"], "auth_required");
+        assert_eq!(events[1].payload["detail"], "dns failure");
     }
 }

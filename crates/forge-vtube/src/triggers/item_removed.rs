@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for ItemRemovedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("item.".to_owned()),
+            kind_prefix: Some("vtube.item.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "item.removed"
+        event.kind == "vtube.item.removed"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -122,16 +122,16 @@ mod tests {
     fn matches_only_the_exact_removed_kind() {
         let d = ItemRemovedDescriptor;
         let cfg = TriggerConfig::new();
-        assert!(d.matches_trigger(&cfg, &event("item.removed", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("item.added", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
+        assert!(d.matches_trigger(&cfg, &event("vtube.item.removed", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.item.added", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.model.loaded", json!({}))));
     }
 
     #[test]
     fn build_arg_stack_maps_present_payload_keys() {
         let d = ItemRemovedDescriptor;
         let stack = d.build_arg_stack(&event(
-            "item.removed",
+            "vtube.item.removed",
             json!({ "item_instance_id": "inst-7", "item_file_name": "hat.png" }),
         ));
         assert_eq!(
@@ -148,7 +148,7 @@ mod tests {
     fn build_arg_stack_omits_missing_payload_keys() {
         let d = ItemRemovedDescriptor;
         let stack = d.build_arg_stack(&event(
-            "item.removed",
+            "vtube.item.removed",
             json!({ "item_file_name": "hat.png" }),
         ));
         assert!(stack.get("vtube.item.instance_id").is_none());

@@ -56,12 +56,12 @@ impl TriggerKindDescriptor for ModelLoadedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("model.".to_owned()),
+            kind_prefix: Some("vtube.model.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "model.loaded"
+        event.kind == "vtube.model.loaded"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
@@ -115,16 +115,16 @@ mod tests {
     fn matches_only_the_exact_loaded_kind() {
         let d = ModelLoadedDescriptor;
         let cfg = TriggerConfig::new();
-        assert!(d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("model.unloaded", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("hotkey.triggered", json!({}))));
+        assert!(d.matches_trigger(&cfg, &event("vtube.model.loaded", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.model.unloaded", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.hotkey.triggered", json!({}))));
     }
 
     #[test]
     fn build_arg_stack_maps_present_payload_keys() {
         let d = ModelLoadedDescriptor;
         let stack = d.build_arg_stack(&event(
-            "model.loaded",
+            "vtube.model.loaded",
             json!({ "model_name": "Aria", "model_id": "m-42" }),
         ));
         assert_eq!(
@@ -140,7 +140,10 @@ mod tests {
     #[test]
     fn build_arg_stack_omits_missing_payload_keys() {
         let d = ModelLoadedDescriptor;
-        let stack = d.build_arg_stack(&event("model.loaded", json!({ "model_name": "Aria" })));
+        let stack = d.build_arg_stack(&event(
+            "vtube.model.loaded",
+            json!({ "model_name": "Aria" }),
+        ));
         assert_eq!(
             stack.get("vtube.model.name"),
             Some(&Variant::String("Aria".to_owned()))

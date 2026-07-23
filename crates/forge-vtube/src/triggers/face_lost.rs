@@ -56,33 +56,33 @@ impl TriggerKindDescriptor for FaceLostDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::VTube),
-            kind_prefix: Some("tracking.".to_owned()),
+            kind_prefix: Some("vtube.tracking.".to_owned()),
         }
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == "tracking.face_lost"
+        event.kind == "vtube.tracking.face_lost"
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let mut stack = ArgStack::new();
         if let Some(left) = event
             .payload
-            .get(fields::LEFT_HAND_FOUND)
+            .get(fields::IS_LEFT_HAND_FOUND)
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(
-                "vtube.tracking.left_hand_found".to_owned(),
+                "vtube.tracking.is_left_hand_found".to_owned(),
                 Variant::Bool(left),
             );
         }
         if let Some(right) = event
             .payload
-            .get(fields::RIGHT_HAND_FOUND)
+            .get(fields::IS_RIGHT_HAND_FOUND)
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(
-                "vtube.tracking.right_hand_found".to_owned(),
+                "vtube.tracking.is_right_hand_found".to_owned(),
                 Variant::Bool(right),
             );
         }
@@ -93,13 +93,13 @@ impl TriggerKindDescriptor for FaceLostDescriptor {
         Some(VariableSchema {
             variables: vec![
                 DeclaredVariable {
-                    name: "vtube.tracking.left_hand_found".to_owned(),
+                    name: "vtube.tracking.is_left_hand_found".to_owned(),
                     kind: VariantKind::Bool,
                     label: "Left hand tracked".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: "vtube.tracking.right_hand_found".to_owned(),
+                    name: "vtube.tracking.is_right_hand_found".to_owned(),
                     kind: VariantKind::Bool,
                     label: "Right hand tracked".to_owned(),
                     synthesis: None,
@@ -122,56 +122,36 @@ mod tests {
     fn matches_only_the_exact_face_lost_kind() {
         let d = FaceLostDescriptor;
         let cfg = TriggerConfig::new();
-        assert!(d.matches_trigger(&cfg, &event("tracking.face_lost", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("tracking.face_found", json!({}))));
-        assert!(!d.matches_trigger(&cfg, &event("model.loaded", json!({}))));
+        assert!(d.matches_trigger(&cfg, &event("vtube.tracking.face_lost", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.tracking.face_found", json!({}))));
+        assert!(!d.matches_trigger(&cfg, &event("vtube.model.loaded", json!({}))));
     }
 
     #[test]
-    fn build_arg_stack_maps_present_hand_bools() {
+    fn build_arg_stack_maps_hand_bools_distinguishing_false_from_absent() {
         let d = FaceLostDescriptor;
-        let stack = d.build_arg_stack(&event(
-            "tracking.face_lost",
-            json!({ "left_hand_found": true, "right_hand_found": false }),
-        ));
-        assert_eq!(
-            stack.get("vtube.tracking.left_hand_found"),
-            Some(&Variant::Bool(true))
-        );
-        assert_eq!(
-            stack.get("vtube.tracking.right_hand_found"),
-            Some(&Variant::Bool(false))
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_treats_false_hand_bool_as_present_not_absent() {
-        let d = FaceLostDescriptor;
-        let stack = d.build_arg_stack(&event(
-            "tracking.face_lost",
-            json!({ "left_hand_found": false, "right_hand_found": false }),
-        ));
-        assert_eq!(
-            stack.get("vtube.tracking.left_hand_found"),
-            Some(&Variant::Bool(false))
-        );
-        assert_eq!(
-            stack.get("vtube.tracking.right_hand_found"),
-            Some(&Variant::Bool(false))
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_omits_missing_hand_bools() {
-        let d = FaceLostDescriptor;
-        let stack = d.build_arg_stack(&event(
-            "tracking.face_lost",
-            json!({ "right_hand_found": true }),
-        ));
-        assert!(stack.get("vtube.tracking.left_hand_found").is_none());
-        assert_eq!(
-            stack.get("vtube.tracking.right_hand_found"),
-            Some(&Variant::Bool(true))
-        );
+        for (payload, left, right) in [
+            (
+                json!({ "is_left_hand_found": true, "is_right_hand_found": false }),
+                Some(true),
+                Some(false),
+            ),
+            (
+                json!({ "is_left_hand_found": false, "is_right_hand_found": false }),
+                Some(false),
+                Some(false),
+            ),
+            (json!({ "is_right_hand_found": true }), None, Some(true)),
+        ] {
+            let stack = d.build_arg_stack(&event("vtube.tracking.face_lost", payload));
+            assert_eq!(
+                stack.get("vtube.tracking.is_left_hand_found"),
+                left.map(Variant::Bool).as_ref()
+            );
+            assert_eq!(
+                stack.get("vtube.tracking.is_right_hand_found"),
+                right.map(Variant::Bool).as_ref()
+            );
+        }
     }
 }

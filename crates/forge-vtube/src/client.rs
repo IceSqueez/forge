@@ -250,7 +250,7 @@ pub(crate) mod tests {
                 .iter()
                 .find(|e| {
                     e.kind == "vtube.connection.changed"
-                        && e.payload["connected"].as_bool() == Some(true)
+                        && e.payload["is_connected"].as_bool() == Some(true)
                 })
                 .cloned()
         }
@@ -262,7 +262,7 @@ pub(crate) mod tests {
                 .iter()
                 .find(|e| {
                     e.kind == "vtube.connection.changed"
-                        && e.payload["connected"].as_bool() == Some(false)
+                        && e.payload["is_connected"].as_bool() == Some(false)
                 })
                 .cloned()
         }
@@ -270,7 +270,7 @@ pub(crate) mod tests {
         pub(crate) fn disconnected_with_reason(&self, reason: &str) -> bool {
             self.events.lock().unwrap().iter().any(|e| {
                 e.kind == "vtube.connection.changed"
-                    && e.payload["connected"].as_bool() == Some(false)
+                    && e.payload["is_connected"].as_bool() == Some(false)
                     && e.payload["reason"].as_str() == Some(reason)
             })
         }
@@ -618,6 +618,89 @@ pub(crate) mod tests {
         assert!(
             !creds.has_key("vtube:default"),
             "stale token should have been cleared from creds"
+        );
+    }
+
+    #[tokio::test]
+    async fn denied_popup_emits_auth_denied_reason_distinct_from_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            use tokio_tungstenite::tungstenite::Message;
+            let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
+                Duration::from_secs(3),
+                futures_util::StreamExt::next(&mut ws),
+            )
+            .await
+            else {
+                return;
+            };
+            let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            let request_id = req["requestID"].as_str().unwrap_or("unknown");
+            let resp = serde_json::json!({
+                "apiName": "VTubeStudioPublicAPI",
+                "apiVersion": "1.0",
+                "requestID": request_id,
+                "messageType": "AuthenticationTokenResponse",
+                "data": { "authenticationToken": "", "granted": false }
+            });
+            ws.send(Message::Text(resp.to_string().into())).await.ok();
+        });
+
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let cfg = VTubeConfig {
+            endpoint: format!("ws://{addr}"),
+        };
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        assert!(
+            publisher.disconnected_with_reason("auth_denied"),
+            "denied popup must map to the auth_denied reason token"
+        );
+        assert!(
+            !publisher.disconnected_with_reason("auth_timeout"),
+            "TokenDenied must not collapse into the auth_timeout token"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_failure_emits_connect_failed_reason_with_detail() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let cfg = VTubeConfig {
+            endpoint: format!("ws://{addr}"),
+        };
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert!(
+            publisher.disconnected_with_reason("connect_failed"),
+            "a refused connection must emit the connect_failed reason token"
+        );
+        let ev = publisher
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|e| e.payload["reason"].as_str() == Some("connect_failed"))
+            .cloned()
+            .unwrap();
+        assert!(
+            ev.payload["detail"].as_str().is_some_and(|d| !d.is_empty()),
+            "connect_failed must carry a non-empty human detail string"
         );
     }
 }

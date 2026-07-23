@@ -672,6 +672,47 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn connected_client_polls_expression_state() {
+        let (seen_tx, mut seen_rx) = tokio::sync::mpsc::channel::<()>(1);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            serve_full_auth(&mut ws).await;
+            use tokio_tungstenite::tungstenite::Message;
+            while let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
+                Duration::from_secs(5),
+                futures_util::StreamExt::next(&mut ws),
+            )
+            .await
+            {
+                let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                if req["messageType"] == "ExpressionStateRequest" {
+                    let _ = seen_tx.send(()).await;
+                    break;
+                }
+            }
+        });
+
+        let publisher = MockPublisher::new();
+        let creds = MockCreds::new();
+        let cfg = VTubeConfig {
+            endpoint: format!("ws://{addr}"),
+        };
+        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+
+        let seen = tokio::time::timeout(Duration::from_secs(5), seen_rx.recv()).await;
+        assert!(
+            matches!(seen, Ok(Some(()))),
+            "a connected client must poll ExpressionStateRequest"
+        );
+    }
+
+    #[tokio::test]
     async fn connect_failure_emits_connect_failed_reason_with_detail() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

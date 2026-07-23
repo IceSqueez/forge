@@ -16,10 +16,13 @@ use crate::client::VtsWs;
 use crate::error::VTubeError;
 use crate::health::{HealthSnapshot, update_from_event};
 use crate::payload_fields::connection as connection_fields;
+use crate::payload_fields::expression as expression_fields;
 use crate::protocol::new_request;
 use crate::request::PendingRequest;
 
 const VTS_BACKOFF_CAP: Duration = Duration::from_secs(30);
+const EXPRESSION_POLL_INTERVAL: Duration = Duration::from_secs(3);
+const EXPRESSION_POLL_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn emit_connection_changed(
     publisher: &dyn EventPublisher,
@@ -39,6 +42,59 @@ fn emit_connection_changed(
         "vtube.connection.changed",
         payload,
     ));
+}
+
+fn snapshot_expressions(data: &serde_json::Value) -> HashMap<String, bool> {
+    data["expressions"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| {
+                    let file = e["file"].as_str()?.to_owned();
+                    let active = e["active"].as_bool().unwrap_or(false);
+                    Some((file, active))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn diff_and_emit_expressions(
+    data: &serde_json::Value,
+    baseline: &mut Option<HashMap<String, bool>>,
+    publisher: &dyn EventPublisher,
+) {
+    let current = snapshot_expressions(data);
+    if let Some(prev) = baseline {
+        for (file, is_active) in &current {
+            if prev
+                .get(file)
+                .is_some_and(|prev_active| prev_active != is_active)
+            {
+                publisher.publish(Event::new(
+                    EventSource::VTube,
+                    "vtube.expression.state_changed",
+                    serde_json::json!({
+                        (expression_fields::EXPRESSION_FILE): file,
+                        (expression_fields::IS_ACTIVE): is_active,
+                    }),
+                ));
+            }
+        }
+    }
+    *baseline = Some(current);
+}
+
+async fn await_expression_response(
+    pending: &mut Option<tokio::sync::oneshot::Receiver<serde_json::Value>>,
+) -> Option<serde_json::Value> {
+    match pending.as_mut() {
+        Some(rx) => match tokio::time::timeout(EXPRESSION_POLL_TIMEOUT, rx).await {
+            Ok(Ok(data)) => Some(data),
+            _ => None,
+        },
+        None => std::future::pending().await,
+    }
 }
 
 async fn send_ws_msg<T: serde::Serialize>(ws: &mut VtsWs, msg: &T) -> Result<(), VTubeError> {
@@ -300,6 +356,9 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 
         let mut pending: HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>> =
             HashMap::new();
+        let mut expr_tick = tokio::time::interval(EXPRESSION_POLL_INTERVAL);
+        let mut expr_baseline: Option<HashMap<String, bool>> = None;
+        let mut expr_pending: Option<tokio::sync::oneshot::Receiver<serde_json::Value>> = None;
 
         loop {
             tokio::select! {
@@ -344,6 +403,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                                 {
                                     if env.message_type == "ModelLoadedEvent" {
                                         content_notifier.notify_model_changed();
+                                        expr_baseline = None;
                                     }
                                     crate::events::dispatch_vts_event(&env, &*publisher);
                                     update_from_event(&env, &health_state, &health_tx);
@@ -351,6 +411,23 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                             }
                         }
                         Some(Ok(_)) => {}
+                    }
+                }
+                _ = expr_tick.tick(), if expr_pending.is_none() => {
+                    let req = new_request("ExpressionStateRequest", serde_json::json!({ "details": false }));
+                    let request_id = req.request_id.clone();
+                    if let Ok(text) = serde_json::to_string(&req) {
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        if ws.send(Message::Text(text.into())).await.is_ok() {
+                            pending.insert(request_id, tx);
+                            expr_pending = Some(rx);
+                        }
+                    }
+                }
+                result = await_expression_response(&mut expr_pending) => {
+                    expr_pending = None;
+                    if let Some(data) = result {
+                        diff_and_emit_expressions(&data, &mut expr_baseline, &*publisher);
                     }
                 }
             }
@@ -371,8 +448,140 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::emit_connection_changed;
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
+    use super::{diff_and_emit_expressions, emit_connection_changed};
     use crate::client::tests::MockPublisher;
+
+    #[test]
+    fn diff_emits_state_changed_only_when_active_value_flips() {
+        for (prev, curr, expected) in [
+            (true, false, Some(false)),
+            (false, true, Some(true)),
+            (true, true, None),
+            (false, false, None),
+        ] {
+            let publisher = MockPublisher::new();
+            let mut baseline = Some(HashMap::from([("smile.exp3.json".to_owned(), prev)]));
+            let data = json!({ "expressions": [{ "file": "smile.exp3.json", "active": curr }] });
+
+            diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+
+            let events = publisher.events.lock().unwrap();
+            match expected {
+                Some(is_active) => {
+                    assert_eq!(events.len(), 1, "flip {prev} to {curr} must emit once");
+                    assert_eq!(events[0].kind, "vtube.expression.state_changed");
+                    assert_eq!(events[0].payload["expression_file"], "smile.exp3.json");
+                    assert_eq!(events[0].payload["is_active"], is_active);
+                }
+                None => assert!(
+                    events.is_empty(),
+                    "unchanged {prev} to {curr} must not emit"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn first_snapshot_seeds_baseline_without_emitting() {
+        let publisher = MockPublisher::new();
+        let mut baseline: Option<HashMap<String, bool>> = None;
+        let data = json!({ "expressions": [
+            { "file": "a.exp3.json", "active": true },
+            { "file": "b.exp3.json", "active": false },
+        ]});
+
+        diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+
+        assert!(
+            publisher.events.lock().unwrap().is_empty(),
+            "first sighting must seed silently"
+        );
+        let seeded = baseline.unwrap();
+        assert_eq!(seeded.get("a.exp3.json"), Some(&true));
+        assert_eq!(seeded.get("b.exp3.json"), Some(&false));
+    }
+
+    #[test]
+    fn newly_appearing_file_seeds_silently_then_later_flip_emits() {
+        let publisher = MockPublisher::new();
+        let mut baseline = Some(HashMap::from([("known.exp3.json".to_owned(), true)]));
+
+        let first = json!({ "expressions": [
+            { "file": "known.exp3.json", "active": true },
+            { "file": "fresh.exp3.json", "active": true },
+        ]});
+        diff_and_emit_expressions(&first, &mut baseline, &*publisher.publisher());
+        assert!(
+            publisher.events.lock().unwrap().is_empty(),
+            "a file absent from the previous snapshot must seed silently"
+        );
+
+        let second = json!({ "expressions": [
+            { "file": "known.exp3.json", "active": true },
+            { "file": "fresh.exp3.json", "active": false },
+        ]});
+        diff_and_emit_expressions(&second, &mut baseline, &*publisher.publisher());
+
+        let events = publisher.events.lock().unwrap();
+        assert_eq!(
+            events.len(),
+            1,
+            "the newly-known file's flip must emit once"
+        );
+        assert_eq!(events[0].payload["expression_file"], "fresh.exp3.json");
+        assert_eq!(events[0].payload["is_active"], false);
+    }
+
+    #[test]
+    fn baseline_reset_reseeds_next_snapshot_silently_even_for_known_files() {
+        let publisher = MockPublisher::new();
+        let mut baseline: Option<HashMap<String, bool>> = None;
+
+        let seed = json!({ "expressions": [{ "file": "wave.exp3.json", "active": true }] });
+        diff_and_emit_expressions(&seed, &mut baseline, &*publisher.publisher());
+
+        baseline = None;
+
+        let after_switch =
+            json!({ "expressions": [{ "file": "wave.exp3.json", "active": false }] });
+        diff_and_emit_expressions(&after_switch, &mut baseline, &*publisher.publisher());
+
+        assert!(
+            publisher.events.lock().unwrap().is_empty(),
+            "after a reset the flipped known file must reseed silently, not emit"
+        );
+        assert_eq!(baseline.unwrap().get("wave.exp3.json"), Some(&false));
+    }
+
+    #[test]
+    fn malformed_expression_items_are_skipped_without_panicking() {
+        for data in [
+            json!({}),
+            json!({ "expressions": "not-an-array" }),
+            json!({ "expressions": [{ "active": true }] }),
+            json!({ "expressions": [{ "file": "x.exp3.json" }] }),
+            json!({ "expressions": [{ "file": 42, "active": "yes" }] }),
+            json!({ "expressions": [null, 7, "str"] }),
+        ] {
+            let publisher = MockPublisher::new();
+            let mut baseline: Option<HashMap<String, bool>> = None;
+
+            diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+
+            assert!(
+                baseline.is_some(),
+                "helper must run to completion and seed even on malformed input: {data}"
+            );
+            assert!(
+                publisher.events.lock().unwrap().is_empty(),
+                "malformed first snapshot must not emit: {data}"
+            );
+        }
+    }
 
     #[test]
     fn connection_changed_uses_is_connected_key_not_legacy_connected() {

@@ -5,8 +5,8 @@ use serde_json::json;
 use crate::client::VtsWs;
 use crate::error::VTubeError;
 use crate::payload_fields::{
-    expression as expression_fields, hotkey as hotkey_fields, item as item_fields,
-    model as model_fields, tracking as tracking_fields,
+    hotkey as hotkey_fields, item as item_fields, model as model_fields,
+    tracking as tracking_fields,
 };
 use crate::protocol::new_request;
 
@@ -22,7 +22,6 @@ pub(crate) async fn subscribe_all(ws: &mut VtsWs) -> Result<(), VTubeError> {
         "ModelLoadedEvent",
         "ModelConfigChangedEvent",
         "HotkeyTriggeredEvent",
-        "ExpressionActivationEvent",
         "TrackingStatusChangedEvent",
         "ItemEvent",
     ] {
@@ -76,15 +75,6 @@ pub(crate) fn dispatch_vts_event(env: &RawEnvelope, publisher: &dyn EventPublish
                 EventSource::VTube,
                 "vtube.hotkey.triggered",
                 json!({ (hotkey_fields::HOTKEY_ID): hotkey_id, (hotkey_fields::HOTKEY_NAME): hotkey_name }),
-            ));
-        }
-        "ExpressionActivationEvent" => {
-            let expression_file = env.data["expressionFile"].as_str().unwrap_or("").to_owned();
-            let is_active = env.data["active"].as_bool().unwrap_or(false);
-            publisher.publish(Event::new(
-                EventSource::VTube,
-                "vtube.expression.state_changed",
-                json!({ (expression_fields::EXPRESSION_FILE): expression_file, (expression_fields::IS_ACTIVE): is_active }),
             ));
         }
         "TrackingStatusChangedEvent" => {
@@ -391,7 +381,6 @@ mod tests {
             ),
             make_envelope("ModelConfigChangedEvent", serde_json::json!({})),
             make_envelope("HotkeyTriggeredEvent", serde_json::json!({})),
-            make_envelope("ExpressionActivationEvent", serde_json::json!({})),
             make_envelope(
                 "TrackingStatusChangedEvent",
                 serde_json::json!({ "faceFound": true }),
@@ -414,7 +403,7 @@ mod tests {
         let events = publisher.events.lock().unwrap();
         assert_eq!(
             events.len(),
-            9,
+            8,
             "each envelope must emit exactly one bus event"
         );
         for ev in events.iter() {
@@ -424,5 +413,21 @@ mod tests {
                 ev.kind
             );
         }
+    }
+
+    #[test]
+    fn expression_activation_event_is_not_dispatched() {
+        let publisher = MockPublisher::new();
+        let env = make_envelope(
+            "ExpressionActivationEvent",
+            serde_json::json!({ "expressionFile": "smile.exp3.json", "active": true }),
+        );
+
+        dispatch_vts_event(&env, &*Arc::clone(&publisher) as &dyn EventPublisher);
+
+        assert!(
+            publisher.events.lock().unwrap().is_empty(),
+            "ExpressionActivationEvent has no VTS wire event and must not dispatch"
+        );
     }
 }

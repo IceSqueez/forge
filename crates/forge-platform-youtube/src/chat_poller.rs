@@ -73,6 +73,8 @@ impl YoutubeChatPoller {
     pub async fn run(self, cancel: CancellationToken) -> Result<(), PlatformError> {
         let mut dedup = DedupSet::bounded(DEDUP_WINDOW_SIZE);
         let mut last_seen_title: Option<String> = None;
+        let mut last_broadcast_id: Option<String> = None;
+        let mut is_live = false;
 
         'outer: loop {
             if cancel.is_cancelled() {
@@ -116,13 +118,18 @@ impl YoutubeChatPoller {
                     // Resetting here means a later go-live with a different title is a fresh
                     // session, not an edit.
                     last_seen_title = None;
-                    let event = Event::new(
-                        EventSource::YouTube,
-                        "youtube.channel.no_active_broadcast",
-                        serde_json::Value::Object(Default::default()),
-                    );
-                    if self.bus_sender.send(event).is_err() {
-                        return Ok(());
+                    if is_live {
+                        is_live = false;
+                        let event = Event::new(
+                            EventSource::YouTube,
+                            "youtube.stream.offline",
+                            serde_json::json!({
+                                (stream_fields::BROADCAST_ID): last_broadcast_id.clone().unwrap_or_default(),
+                            }),
+                        );
+                        if self.bus_sender.send(event).is_err() {
+                            return Ok(());
+                        }
                     }
                     tokio::select! {
                         () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
@@ -142,6 +149,22 @@ impl YoutubeChatPoller {
                     continue 'outer;
                 }
             };
+
+            if !is_live {
+                is_live = true;
+                let event = Event::new(
+                    EventSource::YouTube,
+                    "youtube.stream.online",
+                    serde_json::json!({
+                        (stream_fields::BROADCAST_TITLE): current_title,
+                        (stream_fields::BROADCAST_ID): broadcast_id,
+                    }),
+                );
+                if self.bus_sender.send(event).is_err() {
+                    return Ok(());
+                }
+            }
+            last_broadcast_id = Some(broadcast_id.clone());
 
             if let Some(prev) = last_seen_title.as_deref()
                 && prev != current_title
@@ -227,10 +250,13 @@ impl YoutubeChatPoller {
                 };
 
                 for item in &response.items {
-                    if let Some(event) = self.build_event(item, &mut dedup)
-                        && self.bus_sender.send(event).is_err()
-                    {
-                        return Ok(());
+                    if let Some(event) = self.build_event(item, &mut dedup) {
+                        if event.kind == "youtube.stream.offline" {
+                            is_live = false;
+                        }
+                        if self.bus_sender.send(event).is_err() {
+                            return Ok(());
+                        }
                     }
                 }
 
@@ -1015,61 +1041,51 @@ mod tests {
         (poller, rx)
     }
 
-    fn make_poller_with_handle(
-        server: &MockServer,
-    ) -> (
-        YoutubeChatPoller,
-        LiveChatIdHandle,
-        tokio::sync::mpsc::UnboundedReceiver<Event>,
-    ) {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let handle = LiveChatIdHandle::new();
-        let poller = YoutubeChatPoller::new(
-            token_source(),
-            tx,
-            "UCtest".to_owned(),
-            handle.clone(),
-            ActiveBroadcastIdHandle::new(),
-            make_quota(),
-        )
-        .with_api_base(server.uri());
-        (poller, handle, rx)
+    async fn assert_leading_online(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>) {
+        let online = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(online.kind, "youtube.stream.online");
     }
 
-    #[tokio::test]
-    async fn broadcast_list_empty_emits_no_chat_events() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, empty_broadcast_response()).await;
+    async fn broadcast_poll_count(server: &MockServer) -> usize {
+        server
+            .received_requests()
+            .await
+            .map(|reqs| {
+                reqs.iter()
+                    .filter(|r| r.url.path() == "/liveBroadcasts")
+                    .count()
+            })
+            .unwrap_or(0)
+    }
 
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(
-            token_source(),
-            tx,
-            "UCtest".to_owned(),
-            LiveChatIdHandle::new(),
-            ActiveBroadcastIdHandle::new(),
-            make_quota(),
-        )
-        .with_api_base(server.uri());
-
+    async fn drain_events_over_broadcast_cycles(
+        poller: YoutubeChatPoller,
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+        server: &MockServer,
+        min_broadcast_polls: usize,
+    ) -> Vec<Event> {
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
-        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
+        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        cancel.cancel();
-        handle.await.unwrap().unwrap();
-
-        let mut chat_events = 0u32;
-        while let Ok(event) = rx.try_recv() {
-            if event.kind.contains(".chat.") {
-                chat_events += 1;
+        for _ in 0..5_000 {
+            if broadcast_poll_count(server).await >= min_broadcast_polls {
+                break;
             }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        assert_eq!(
-            chat_events, 0,
-            "expected zero chat events when no broadcast"
-        );
+
+        cancel.cancel();
+        join.await.unwrap().unwrap();
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        events
     }
 
     #[tokio::test]
@@ -1085,18 +1101,7 @@ mod tests {
         )
         .await;
 
-        let (poller, mut rx) = make_poller_with_receiver(&server);
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
-
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        cancel.cancel();
-        handle.await.unwrap().unwrap();
+        let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.chat.message");
         assert_eq!(event.source, EventSource::YouTube);
@@ -1127,18 +1132,7 @@ mod tests {
         )
         .await;
 
-        let (poller, mut rx) = make_poller_with_receiver(&server);
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
-
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        cancel.cancel();
-        handle.await.unwrap().unwrap();
+        let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.chat.command");
         assert_eq!(event.payload["command_name"].as_str().unwrap(), "shoutout");
@@ -1169,18 +1163,7 @@ mod tests {
         });
         mount_chat_mock(&server, chat_response(json!([item]), 3000)).await;
 
-        let (poller, mut rx) = make_poller_with_receiver(&server);
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
-
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        cancel.cancel();
-        handle.await.unwrap().unwrap();
+        let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.chat.super_chat");
 
@@ -1223,22 +1206,6 @@ mod tests {
         })
     }
 
-    async fn first_banned_event(server: &MockServer) -> Event {
-        let (poller, mut rx) = make_poller_with_receiver(server);
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
-
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        cancel.cancel();
-        handle.await.unwrap().unwrap();
-        event
-    }
-
     #[tokio::test]
     async fn user_banned_with_duration_emits_temporary_ban() {
         let server = MockServer::start().await;
@@ -1249,7 +1216,7 @@ mod tests {
         )
         .await;
 
-        let event = first_banned_event(&server).await;
+        let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.channel.user_banned");
         assert_eq!(event.payload["ban.type"].as_str().unwrap(), "temporary");
@@ -1270,7 +1237,7 @@ mod tests {
         )
         .await;
 
-        let event = first_banned_event(&server).await;
+        let event = first_event_from(&server).await;
 
         assert_eq!(event.kind, "youtube.channel.user_banned");
         assert_eq!(event.payload["ban.type"].as_str().unwrap(), "permanent");
@@ -1359,6 +1326,8 @@ mod tests {
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
         let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+        assert_leading_online(&mut rx).await;
 
         let mut events = Vec::new();
         let timeout_result = tokio::time::timeout(Duration::from_secs(10), async {
@@ -1477,11 +1446,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_active_broadcast_clears_both_live_chat_and_broadcast_handles() {
+    async fn absent_broadcast_clears_both_handles_and_emits_nothing_when_never_live() {
         let server = MockServer::start().await;
         mount_broadcast_mock(&server, empty_broadcast_response()).await;
 
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let live = LiveChatIdHandle::new();
         live.set(Some("stale-lc".to_owned()));
         let broadcast = ActiveBroadcastIdHandle::new();
@@ -1501,10 +1470,10 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        let cleared = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if live.get().is_none() && broadcast.get().is_none() {
-                    return true;
+                    return;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -1515,75 +1484,10 @@ mod tests {
         cancel.cancel();
         join.await.unwrap().unwrap();
 
-        assert!(cleared);
-    }
-
-    #[tokio::test]
-    async fn poller_updates_live_chat_id_handle_when_broadcast_active() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, broadcast_response("lc-active-123")).await;
-        mount_chat_mock(&server, chat_response(json!([]), 3000)).await;
-
-        let (poller, handle, _rx) = make_poller_with_handle(&server);
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
-
-        let found = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if let Some(id) = handle.get() {
-                    return id;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("handle was not set within timeout");
-
-        cancel.cancel();
-        join.await.unwrap().unwrap();
-
-        assert_eq!(found, "lc-active-123");
-    }
-
-    #[tokio::test]
-    async fn poller_clears_live_chat_id_handle_when_no_broadcast() {
-        let server = MockServer::start().await;
-        mount_broadcast_mock(&server, empty_broadcast_response()).await;
-
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let handle = LiveChatIdHandle::new();
-        handle.set(Some("stale-id".to_owned()));
-
-        let poller = YoutubeChatPoller::new(
-            token_source(),
-            tx,
-            "UCtest".to_owned(),
-            handle.clone(),
-            ActiveBroadcastIdHandle::new(),
-            make_quota(),
-        )
-        .with_api_base(server.uri());
-
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let join = tokio::spawn(async move { poller.run(cancel_clone).await });
-
-        let cleared = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if handle.get().is_none() {
-                    return true;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("handle was not cleared within timeout");
-
-        cancel.cancel();
-        join.await.unwrap().unwrap();
-
-        assert!(cleared);
+        assert!(
+            rx.try_recv().is_err(),
+            "a poller that was never live must emit no lifecycle event"
+        );
     }
 
     fn message_deleted_item(
@@ -1665,6 +1569,7 @@ mod tests {
         let cancel_clone = cancel.clone();
         let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
 
+        assert_leading_online(&mut rx).await;
         let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
             .unwrap()
@@ -2035,6 +1940,129 @@ mod tests {
             "an offline clear between two live titles must reset last-seen; \
              go-live with a new title must not fire, got {} event(s)",
             events.len()
+        );
+    }
+
+    fn chat_ended_item(id: &str) -> serde_json::Value {
+        json!({
+            "id": id,
+            "snippet": { "type": "chatEndedEvent" }
+        })
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn repeated_offline_resolutions_emit_no_events() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, empty_broadcast_response()).await;
+
+        let (poller, _live, rx) = poller_with_quota(&server, make_quota());
+        let events = drain_events_over_broadcast_cycles(poller, rx, &server, 3).await;
+
+        assert!(
+            events.is_empty(),
+            "repeated offline resolutions must stay silent, got {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn going_live_emits_single_online_with_title_and_broadcast_id() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
+        mount_chat_mock(&server, chat_response(json!([]), 3000)).await;
+
+        let (poller, rx) = make_poller_with_receiver(&server);
+        let events = drain_events_over_broadcast_cycles(poller, rx, &server, 1).await;
+
+        let online: Vec<&Event> = events
+            .iter()
+            .filter(|e| e.kind == "youtube.stream.online")
+            .collect();
+        assert_eq!(online.len(), 1, "exactly one online, got {events:?}");
+        let payload = &online[0].payload;
+        assert_eq!(
+            payload[stream_fields::BROADCAST_TITLE].as_str().unwrap(),
+            "Test Stream"
+        );
+        assert_eq!(
+            payload[stream_fields::BROADCAST_ID].as_str().unwrap(),
+            "broadcast-1"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn going_offline_emits_single_offline_with_last_broadcast_id() {
+        let server = MockServer::start().await;
+        mount_sequenced_broadcasts(
+            &server,
+            broadcast_response("lc-live"),
+            empty_broadcast_response(),
+        )
+        .await;
+
+        let (poller, _live, rx) = poller_with_quota(&server, quota_for_two_resolutions());
+        let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
+
+        let offline: Vec<&Event> = events
+            .iter()
+            .filter(|e| e.kind == "youtube.stream.offline")
+            .collect();
+        assert_eq!(offline.len(), 1, "exactly one offline, got {events:?}");
+        assert_eq!(
+            offline[0].payload[stream_fields::BROADCAST_ID]
+                .as_str()
+                .unwrap(),
+            "broadcast-1"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn chat_ended_then_absent_broadcast_emits_single_offline_total() {
+        let server = MockServer::start().await;
+        mount_sequenced_broadcasts(
+            &server,
+            broadcast_response("lc-live"),
+            empty_broadcast_response(),
+        )
+        .await;
+        mount_chat_mock(
+            &server,
+            chat_response(json!([chat_ended_item("ended-1")]), 0),
+        )
+        .await;
+
+        let (poller, rx) = make_poller_with_receiver(&server);
+        let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
+
+        let offline = events
+            .iter()
+            .filter(|e| e.kind == "youtube.stream.offline")
+            .count();
+        assert_eq!(
+            offline, 1,
+            "chatEndedEvent then absent broadcast must not double-emit offline, got {events:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn same_live_session_resolved_twice_emits_single_online() {
+        let server = MockServer::start().await;
+        mount_sequenced_broadcasts(
+            &server,
+            broadcast_response("lc-1"),
+            broadcast_response("lc-2"),
+        )
+        .await;
+
+        let (poller, _live, rx) = poller_with_quota(&server, quota_for_two_resolutions());
+        let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
+
+        let online = events
+            .iter()
+            .filter(|e| e.kind == "youtube.stream.online")
+            .count();
+        assert_eq!(
+            online, 1,
+            "an uninterrupted live session must emit online once, got {events:?}"
         );
     }
 }

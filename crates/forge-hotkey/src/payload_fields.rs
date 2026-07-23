@@ -2,6 +2,7 @@ pub(crate) const COMBO: &str = "combo";
 pub(crate) const ID: &str = "id";
 pub(crate) const TIMESTAMP_US: &str = "timestamp_us";
 
+#[cfg(target_os = "linux")]
 pub(crate) mod portal {
     pub(crate) const REASON: &str = "reason";
     pub(crate) const DETAIL: &str = "detail";

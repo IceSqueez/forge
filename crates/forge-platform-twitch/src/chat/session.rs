@@ -2671,13 +2671,13 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        let automod = event_data.get("automod");
         // Forwarded so approve_message/deny_message sub-actions can reference it via %automod.message_id%.
-        let message_id = automod
-            .and_then(|a| a.get("message_id"))
+        let message_id = event_data
+            .get("message_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let automod = event_data.get("automod");
         let category = automod
             .and_then(|a| a.get("category"))
             .and_then(|v| v.as_str())
@@ -2687,8 +2687,8 @@ impl ChatSession {
             .and_then(|a| a.get("level"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        let held_at = automod
-            .and_then(|a| a.get("held_at"))
+        let held_at = event_data
+            .get("held_at")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
@@ -3097,13 +3097,14 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        let category = event_data
-            .get("category")
+        let automod = event_data.get("automod");
+        let category = automod
+            .and_then(|a| a.get("category"))
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        let level = event_data
-            .get("level")
+        let level = automod
+            .and_then(|a| a.get("level"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
@@ -5295,12 +5296,15 @@ mod tests {
             "user_id": "777",
             "user_login": "viewer_one",
             "user_name": "ViewerOne",
-            "message": {"text": "borderline message"},
+            "message_id": "hold-abc-123",
+            "held_at": "2026-06-13T20:00:00Z",
+            "message": {
+                "text": "borderline message",
+                "fragments": [{"type": "text", "text": "borderline message"}]
+            },
             "automod": {
-                "message_id": "hold-abc-123",
                 "category": "harassment",
-                "level": 3,
-                "held_at": "2026-06-13T20:00:00Z"
+                "level": 3
             }
         });
         session.publish_automod_hold_event(&event_data, "meta-automod-001");
@@ -5320,8 +5324,41 @@ mod tests {
             ev.payload["automod"]["message_id"].as_str(),
             Some("hold-abc-123")
         );
+        assert_eq!(
+            ev.payload["automod"]["held_at"].as_str(),
+            Some("2026-06-13T20:00:00Z")
+        );
         assert_eq!(ev.payload["automod"]["level"].as_i64(), Some(3));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+    }
+
+    #[tokio::test]
+    async fn automod_hold_message_text_reads_object_form_and_ignores_plain_string() {
+        // Why: v2 wire delivers message as {text, fragments}. A bare-string
+        // message is the v1 shape and must not be honored as the text source.
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        for (message, expected) in [
+            (serde_json::json!({"text": "held words"}), "held words"),
+            (serde_json::json!("held words"), ""),
+        ] {
+            let event_data = serde_json::json!({
+                "user_login": "viewer_one",
+                "message_id": "hold-1",
+                "message": message,
+                "automod": {"category": "harassment", "level": 1}
+            });
+            session.publish_automod_hold_event(&event_data, "meta");
+
+            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(ev.payload["message_text"].as_str(), Some(expected));
+        }
     }
 
     #[tokio::test]
@@ -5561,7 +5598,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_automod_message_update_event_passes_status_through_and_flattens_text() {
+    async fn publish_automod_message_update_event_reads_nested_automod_and_flattens_text() {
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
@@ -5575,8 +5612,7 @@ mod tests {
             "message_id": "msg-77",
             "message": {"text": "borderline message"},
             "status": "Approved",
-            "category": "harassment",
-            "level": 4
+            "automod": {"category": "harassment", "level": 4}
         });
         session.publish_automod_message_update_event(&event_data, "meta-automod-msg");
 
@@ -5588,6 +5624,11 @@ mod tests {
         assert_eq!(ev.kind, "twitch.automod.message.update");
         assert_eq!(ev.payload["automod"]["status"].as_str(), Some("Approved"));
         assert_eq!(ev.payload["automod"]["message_id"].as_str(), Some("msg-77"));
+        assert_eq!(
+            ev.payload["automod"]["category"].as_str(),
+            Some("harassment")
+        );
+        assert_eq!(ev.payload["automod"]["level"].as_i64(), Some(4));
         assert_eq!(
             ev.payload["message_text"].as_str(),
             Some("borderline message")

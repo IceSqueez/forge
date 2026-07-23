@@ -313,7 +313,7 @@ const TOPICS: &[TopicSpec] = &[
     },
     TopicSpec {
         kind: "automod.message.hold",
-        version: "1",
+        version: "2",
         condition_fn: condition_moderator,
     },
     TopicSpec {
@@ -353,7 +353,7 @@ const TOPICS: &[TopicSpec] = &[
     },
     TopicSpec {
         kind: "automod.message.update",
-        version: "1",
+        version: "2",
         condition_fn: condition_moderator,
     },
     TopicSpec {
@@ -606,12 +606,14 @@ mod tests {
     }
 
     #[test]
-    fn hype_train_and_follow_types_request_version_two() {
+    fn version_pinned_types_request_version_two() {
         let version_two_types = [
             "channel.hype_train.begin",
             "channel.hype_train.progress",
             "channel.hype_train.end",
             "channel.follow",
+            "automod.message.hold",
+            "automod.message.update",
         ];
         for kind in version_two_types {
             let topic = TOPICS.iter().find(|t| t.kind == kind).unwrap();

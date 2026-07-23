@@ -40,7 +40,6 @@ impl CreateMarkerRunner {
             body.insert("description".to_owned(), description.into());
         }
 
-        // Requires user:manage:broadcast scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/streams/markers")
             .query("broadcaster_id", user_id)
             .body(serde_json::Value::Object(body));

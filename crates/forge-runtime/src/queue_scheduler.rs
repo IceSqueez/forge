@@ -369,7 +369,7 @@ impl QueueScheduler {
             Some(s) => s,
             None => {
                 warn!("enqueue: queue {} not found, dropping", req.queue_id);
-                bus.publish(Event::new(
+                bus.publish(Event::caused_by(
                     EventSource::Core,
                     "action.skipped",
                     json!({
@@ -377,6 +377,7 @@ impl QueueScheduler {
                         "reason": "queue_not_found",
                         "queue_id": req.queue_id.to_string(),
                     }),
+                    req.trigger_event_id,
                 ));
                 return;
             }
@@ -385,7 +386,7 @@ impl QueueScheduler {
         if !req.bypass_pause {
             let paused = slot.state.read().await.paused;
             if paused {
-                bus.publish(Event::new(
+                bus.publish(Event::caused_by(
                     EventSource::Core,
                     "action.skipped",
                     json!({
@@ -393,6 +394,7 @@ impl QueueScheduler {
                         "reason": "queue_paused",
                         "queue_id": req.queue_id.to_string(),
                     }),
+                    req.trigger_event_id,
                 ));
                 return;
             }
@@ -490,7 +492,7 @@ impl QueueScheduler {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;
@@ -565,14 +567,25 @@ mod tests {
         max_attempts: usize,
         timeout_ms: u64,
     ) -> bool {
+        collect_event(sub, target_kind, max_attempts, timeout_ms)
+            .await
+            .is_some()
+    }
+
+    async fn collect_event(
+        sub: &mut EventSubscription,
+        target_kind: &str,
+        max_attempts: usize,
+        timeout_ms: u64,
+    ) -> Option<Event> {
         for _ in 0..max_attempts {
             match tokio::time::timeout(Duration::from_millis(timeout_ms), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == target_kind => return true,
+                Ok(Ok(ev)) if ev.kind == target_kind => return Some(ev),
                 Ok(Ok(_)) => {}
                 _ => break,
             }
         }
-        false
+        None
     }
 
     #[tokio::test]
@@ -694,11 +707,12 @@ mod tests {
 
         sched.pause(q_id).await.unwrap();
 
+        let trigger = EventId::new();
         sched
             .dispatch(SchedulerRequest {
                 queue_id: q_id,
                 action_id: a_id,
-                trigger_event_id: EventId::new(),
+                trigger_event_id: trigger,
                 trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
@@ -706,22 +720,20 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(120)).await;
+        let skipped = collect_event(&mut sub, "action.skipped", 20, 60)
+            .await
+            .expect("paused queue must emit action.skipped");
+        assert_eq!(skipped.payload["reason"].as_str(), Some("queue_paused"));
+        assert_eq!(
+            skipped.caused_by,
+            Some(trigger),
+            "action.skipped must link caused_by to the triggering event"
+        );
 
-        let mut saw_skipped = false;
-        let mut saw_done = false;
-
-        for _ in 0..20 {
-            match tokio::time::timeout(Duration::from_millis(30), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == "action.skipped" => saw_skipped = true,
-                Ok(Ok(ev)) if ev.kind == "action.done" => saw_done = true,
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
-
-        assert!(saw_skipped, "paused queue must emit action.skipped");
-        assert!(!saw_done, "paused queue must not execute action");
+        assert!(
+            !collect_events(&mut sub, "action.done", 6, 30).await,
+            "paused queue must not execute action"
+        );
         sched.shutdown();
     }
 
@@ -884,11 +896,12 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
 
+        let trigger = EventId::new();
         sched
             .dispatch(SchedulerRequest {
                 queue_id: unknown_q,
                 action_id: a_id,
-                trigger_event_id: EventId::new(),
+                trigger_event_id: trigger,
                 trigger_kind: None,
                 initial_args: ArgStack::new(),
                 bypass_pause: false,
@@ -896,9 +909,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(
-            collect_events(&mut sub, "action.skipped", 10, 200).await,
-            "unknown queue must emit action.skipped"
+        let skipped = collect_event(&mut sub, "action.skipped", 10, 200)
+            .await
+            .expect("unknown queue must emit action.skipped");
+        assert_eq!(skipped.payload["reason"].as_str(), Some("queue_not_found"));
+        assert_eq!(
+            skipped.caused_by,
+            Some(trigger),
+            "action.skipped must link caused_by to the triggering event"
         );
         sched.shutdown();
     }

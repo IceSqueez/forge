@@ -175,7 +175,7 @@ fn spawn_chat_send_bridge(
                 Err(e) => bus.publish(Event::caused_by(
                     source,
                     "chat.send.failed",
-                    serde_json::json!({ "target": target, "error": e.to_string() }),
+                    serde_json::json!({ "channel": target, "error": e.to_string() }),
                     caused_by,
                 )),
             }

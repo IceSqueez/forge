@@ -107,7 +107,9 @@ impl SubActionRunner for ScriptRunInlineRunner {
             EventSource::Rhai,
             "script.exec",
             json!({
-                "script_name": "<inline>",
+                "script_id": serde_json::Value::Null,
+                "script_name": serde_json::Value::Null,
+                "is_inline": true,
             }),
             parent_event_id,
         );
@@ -150,7 +152,9 @@ impl SubActionRunner for ScriptRunInlineRunner {
                     EventSource::Rhai,
                     "script.error",
                     json!({
-                        "script_name": "<inline>",
+                        "script_id": serde_json::Value::Null,
+                        "script_name": serde_json::Value::Null,
+                        "is_inline": true,
                         "error_type": error_kind(&script_err),
                         "message": script_err.to_string(),
                     }),
@@ -163,7 +167,9 @@ impl SubActionRunner for ScriptRunInlineRunner {
                     EventSource::Rhai,
                     "script.error",
                     json!({
-                        "script_name": "<inline>",
+                        "script_id": serde_json::Value::Null,
+                        "script_name": serde_json::Value::Null,
+                        "is_inline": true,
                         "error_type": "panic",
                         "message": format!("script task panicked: {join_err}"),
                     }),
@@ -198,7 +204,7 @@ fn error_kind(err: &ScriptError) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::{EventBus, NullEventLogRepo, ScriptRegistry};
@@ -249,5 +255,71 @@ mod tests {
             msg.contains("domain not allowed"),
             "expected domain-not-allowed error from wired http module, got: {msg}"
         );
+    }
+
+    #[tokio::test]
+    async fn inline_script_exec_and_error_carry_null_identity_and_inline_flag() {
+        let backend = make_backend().await;
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
+        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+
+        let runner = ScriptRunInlineRunner::new(
+            Arc::new(ScriptRegistry::new()),
+            globals,
+            publisher,
+            settings,
+        );
+
+        let mut config = runner.default_config();
+        config.insert(
+            "body".to_owned(),
+            Variant::String("throw \"boom\";".to_owned()),
+        );
+
+        let mut sub = bus.subscribe();
+        let arg_stack = ArgStack::default();
+        let dummy_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+        let ctx =
+            forge_registry::RunContext::leaf(&arg_stack, 0, EventId::new(), dummy_pub.as_ref());
+
+        let _ = runner.execute(&config, &ctx).await;
+
+        let mut exec = None;
+        let mut error = None;
+        for _ in 0..40 {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "script.exec" => exec = Some(ev),
+                Ok(Ok(ev)) if ev.kind == "script.error" => error = Some(ev),
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+            if exec.is_some() && error.is_some() {
+                break;
+            }
+        }
+
+        for ev in [
+            exec.expect("inline run must emit script.exec"),
+            error.expect("failing inline run must emit script.error"),
+        ] {
+            assert!(
+                ev.payload["script_id"].is_null(),
+                "inline {} must carry a null script_id",
+                ev.kind
+            );
+            assert!(
+                ev.payload["script_name"].is_null(),
+                "inline {} must carry a null script_name",
+                ev.kind
+            );
+            assert_eq!(
+                ev.payload["is_inline"].as_bool(),
+                Some(true),
+                "inline {} must flag is_inline=true",
+                ev.kind
+            );
+        }
     }
 }

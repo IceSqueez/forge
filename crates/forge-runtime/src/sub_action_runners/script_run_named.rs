@@ -145,6 +145,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
             json!({
                 "script_id": script_id.to_string(),
                 "script_name": name.as_str(),
+                "is_inline": false,
             }),
             parent_event_id,
         );
@@ -195,6 +196,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     json!({
                         "script_id": script_id.to_string(),
                         "script_name": name.as_str(),
+                        "is_inline": false,
                         "error_type": error_kind(&script_err),
                         "message": message.as_str(),
                     }),
@@ -209,6 +211,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     json!({
                         "script_id": script_id.to_string(),
                         "script_name": name.as_str(),
+                        "is_inline": false,
                         "error_type": "panic",
                         "message": format!("script task panicked: {join_err}"),
                     }),
@@ -275,10 +278,103 @@ fn body_free_message(err: &ScriptError) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::{EventBus, NullEventLogRepo};
+    use forge_storage::ScriptRecord;
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::{EventId, ScriptContract, ScriptId};
+    use time::OffsetDateTime;
 
     const BODY: &str = "let secret_token = 42; print(secret_token);";
+
+    #[tokio::test]
+    async fn named_script_exec_and_error_carry_script_identity_and_clear_inline_flag() {
+        let backend = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0xab; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+
+        let script_id = ScriptId::new();
+        let ts = OffsetDateTime::now_utc();
+        let record = ScriptRecord {
+            id: script_id,
+            name: "greet".to_owned(),
+            body: "throw \"boom\";".to_owned(),
+            contract: ScriptContract::default(),
+            body_hash: "h".to_owned(),
+            enabled: true,
+            created_at: ts,
+            last_modified: ts,
+        };
+        let registry = Arc::new(ScriptRegistry::new());
+        registry.reload(record, &bus).await.unwrap();
+
+        let runner = ScriptRunNamedRunner::new(
+            registry,
+            Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            publisher,
+            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+        );
+
+        let mut config = runner.default_config();
+        config.insert(
+            "script_name".to_owned(),
+            Variant::String("greet".to_owned()),
+        );
+
+        let mut sub = bus.subscribe();
+        let arg_stack = ArgStack::default();
+        let dummy_pub: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+        let ctx =
+            forge_registry::RunContext::leaf(&arg_stack, 0, EventId::new(), dummy_pub.as_ref());
+
+        let _ = runner.execute(&config, &ctx).await;
+
+        let mut exec = None;
+        let mut error = None;
+        for _ in 0..40 {
+            match tokio::time::timeout(Duration::from_millis(50), sub.recv()).await {
+                Ok(Ok(ev)) if ev.kind == "script.exec" => exec = Some(ev),
+                Ok(Ok(ev)) if ev.kind == "script.error" => error = Some(ev),
+                Ok(Ok(_)) => {}
+                _ => break,
+            }
+            if exec.is_some() && error.is_some() {
+                break;
+            }
+        }
+
+        let expected_id = script_id.to_string();
+        for ev in [
+            exec.expect("named run must emit script.exec"),
+            error.expect("failing named run must emit script.error"),
+        ] {
+            assert_eq!(
+                ev.payload["script_id"].as_str(),
+                Some(expected_id.as_str()),
+                "named {} must carry the resolved script_id",
+                ev.kind
+            );
+            assert_eq!(
+                ev.payload["script_name"].as_str(),
+                Some("greet"),
+                "named {} must carry the resolved script_name",
+                ev.kind
+            );
+            assert_eq!(
+                ev.payload["is_inline"].as_bool(),
+                Some(false),
+                "named {} must flag is_inline=false",
+                ev.kind
+            );
+        }
+    }
 
     #[test]
     fn body_free_message_reports_the_reason_without_leaking_the_script_body() {

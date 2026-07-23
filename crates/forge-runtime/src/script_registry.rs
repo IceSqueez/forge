@@ -79,7 +79,7 @@ impl ScriptRegistry {
             .map_err(|e| ScriptRegistryError::Compile(e.to_string()))?;
 
         let script_id = record.id;
-        let name = record.name.clone();
+        let script_name = record.name.clone();
 
         {
             let mut guard = self.inner.write().await;
@@ -89,7 +89,7 @@ impl ScriptRegistry {
         bus.publish(Event::new(
             EventSource::Core,
             "script.reloaded",
-            serde_json::json!({"script_id": script_id.to_string(), "name": name}),
+            serde_json::json!({"script_id": script_id.to_string(), "script_name": script_name}),
         ));
 
         Ok(())
@@ -218,7 +218,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(event.kind, "script.reloaded");
-        assert_eq!(event.payload["name"].as_str(), Some(expected_name.as_str()));
+        assert_eq!(
+            event.payload["script_name"].as_str(),
+            Some(expected_name.as_str())
+        );
     }
 
     #[tokio::test]

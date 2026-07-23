@@ -20,6 +20,7 @@ struct QuickActionRequest {
     step: SubActionStep,
     builtin_id: String,
     label: String,
+    caused_by: Option<EventId>,
 }
 
 #[derive(Clone)]
@@ -82,12 +83,14 @@ impl ActionEngineHandle {
         step: SubActionStep,
         builtin_id: String,
         label: String,
+        caused_by: Option<EventId>,
     ) -> Result<(), DispatchError> {
         self.quick_sender
             .send(QuickActionRequest {
                 step,
                 builtin_id,
                 label,
+                caused_by,
             })
             .await
             .map_err(|_| DispatchError::ChannelClosed)
@@ -321,11 +324,13 @@ async fn run_quick_action_loop(
     let publisher: Arc<dyn forge_events::EventPublisher> =
         Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
     while let Some(req) = rx.recv().await {
-        let run_event = Event::new(
-            EventSource::Core,
-            "subaction.run",
-            json!({ "step_index": 0, "kind": req.step.kind_id }),
-        );
+        let run_payload = json!({ "step_index": 0, "kind": req.step.kind_id });
+        let run_event = match req.caused_by {
+            Some(parent) => {
+                Event::caused_by(EventSource::Core, "subaction.run", run_payload, parent)
+            }
+            None => Event::new(EventSource::Core, "subaction.run", run_payload),
+        };
         let run_event_id = run_event.id;
         bus.publish(run_event);
 
@@ -356,7 +361,7 @@ async fn run_quick_action_loop(
 
         bus.publish(Event::caused_by(
             EventSource::Core,
-            "quick_action.done",
+            "action.quick.done",
             json!({
                 "kind": telemetry.kind,
                 "outcome": outcome,
@@ -689,7 +694,7 @@ mod tests {
         };
 
         engine
-            .execute_quick_action(step, "test.record".to_owned(), "Test".to_owned())
+            .execute_quick_action(step, "test.record".to_owned(), "Test".to_owned(), None)
             .await
             .unwrap();
 
@@ -703,5 +708,72 @@ mod tests {
         let captured = last.lock().unwrap().clone().expect("runner not called");
         assert_eq!(captured.get("a"), Some(&Variant::Int(99)));
         assert_eq!(captured.get("b"), Some(&Variant::Int(2)));
+    }
+
+    #[tokio::test]
+    async fn quick_path_emits_action_quick_done_and_links_subaction_run_causation() {
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0x3c; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+
+        let parent = EventId::new();
+        for expected_parent in [Some(parent), None] {
+            let mut sub = bus.subscribe();
+            let step = SubActionStep {
+                kind_id: "quick.probe".to_owned(),
+                config: BTreeMap::new(),
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            };
+
+            engine
+                .execute_quick_action(
+                    step,
+                    "twitch".to_owned(),
+                    "Probe".to_owned(),
+                    expected_parent,
+                )
+                .await
+                .unwrap();
+
+            let mut run_event = None;
+            let mut done_event = None;
+            for _ in 0..40 {
+                match tokio::time::timeout(Duration::from_millis(50), sub.recv()).await {
+                    Ok(Ok(ev)) if ev.kind == "subaction.run" => run_event = Some(ev),
+                    Ok(Ok(ev)) if ev.kind == "action.quick.done" => done_event = Some(ev),
+                    Ok(Ok(_)) => {}
+                    _ => break,
+                }
+                if run_event.is_some() && done_event.is_some() {
+                    break;
+                }
+            }
+
+            let run_event = run_event.expect("quick path must emit subaction.run");
+            let done_event = done_event.expect("quick path must emit action.quick.done");
+
+            assert_eq!(
+                run_event.caused_by, expected_parent,
+                "subaction.run must link caused_by to the quick-action parent"
+            );
+            assert_eq!(
+                done_event.caused_by,
+                Some(run_event.id),
+                "action.quick.done must chain from its subaction.run"
+            );
+        }
     }
 }

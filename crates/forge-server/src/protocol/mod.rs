@@ -534,6 +534,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn do_action_emits_no_action_invoked_but_engine_still_emits_action_start() {
+        let action = sample_action();
+        let action_id_str = action.id.to_string();
+        let action_clone = action.clone();
+        let mut tdp = TestDataProvider::new();
+        tdp.action()
+            .expect_get()
+            .returning(move |_| Ok(Some(action_clone.clone())));
+        tdp.history().expect_save().returning(|_| Ok(()));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
+        let ctx = make_ctx_with_dp(true, dp);
+        let mut sub = ctx.bus.subscribe();
+
+        let req = WsEnvelope {
+            id: Some("9".to_owned()),
+            inner: WsRequest::DoAction {
+                action_id: action_id_str,
+                args: serde_json::Value::Null,
+            },
+        };
+        let resp = dispatch(req, &ctx).await;
+        assert_eq!(serialize_response_frame(&resp)["status"], "ok");
+
+        let mut kinds = Vec::new();
+        for _ in 0..40 {
+            match tokio::time::timeout(std::time::Duration::from_millis(50), sub.recv()).await {
+                Ok(Ok(ev)) => {
+                    let kind = ev.kind.clone();
+                    kinds.push(kind);
+                    if ev.kind == "action.start" {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        assert!(
+            kinds.iter().any(|k| k == "action.start"),
+            "engine must still emit action.start for the WS-dispatched execution"
+        );
+        assert!(
+            !kinds.iter().any(|k| k == "action.invoked"),
+            "WS do_action must not emit the removed action.invoked event"
+        );
+    }
+
+    #[tokio::test]
     async fn get_info_succeeds_without_auth_by_default() {
         let ctx = make_ctx(false, false);
         let req = WsEnvelope {

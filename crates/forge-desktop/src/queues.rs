@@ -572,14 +572,14 @@ impl QueuesView {
         });
     }
 
-    fn dispatch_drain(&self, id: QueueId) {
+    fn dispatch_drain(&self, id: QueueId, queue_name: String) {
         let scheduler = self.scheduler.clone();
         let bus = Arc::clone(&self.bus);
         self.rt_handle.spawn(async move {
             bus.publish(Event::new(
                 EventSource::Core,
                 "queue.drain_requested",
-                serde_json::json!({ "queue_id": id.to_string() }),
+                serde_json::json!({ "queue_id": id.to_string(), "queue_name": queue_name }),
             ));
             if let Err(err) = scheduler.pause(id).await {
                 eprintln!("forge-desktop: queue drain pause failed: {err}");
@@ -639,13 +639,15 @@ impl QueuesView {
     }
 
     fn drain(&mut self, id: QueueId, cx: &mut Context<Self>) {
+        let mut queue_name = String::new();
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.paused = true;
             q.paused_since_min = Some(0);
+            queue_name = q.name.clone();
             let message = tr!("queues_drain_feedback", name = q.name.as_str());
             cx.push_toast(ToastKind::Info, message);
         }
-        self.dispatch_drain(id);
+        self.dispatch_drain(id, queue_name);
         self.persist_paused(id, true);
         cx.notify();
     }

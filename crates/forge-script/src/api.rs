@@ -198,6 +198,7 @@ fn build_http_module(
                         EventSource::Rhai,
                         "script.http_call",
                         serde_json::json!({
+                            "method": "get",
                             "url_normalized": resp.url_normalized,
                             "status": resp.status,
                             "duration_ms": resp.duration_ms,
@@ -226,6 +227,7 @@ fn build_http_module(
                         EventSource::Rhai,
                         "script.http_call",
                         serde_json::json!({
+                            "method": "post",
                             "url_normalized": resp.url_normalized,
                             "status": resp.status,
                             "duration_ms": resp.duration_ms,
@@ -354,7 +356,7 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
             pub_reply.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
-                serde_json::json!({"message": text.as_str(), "reply_to": to.as_str()}),
+                serde_json::json!({"message": text.as_str(), "reply_to_message_id": to.as_str()}),
                 caused_by,
             ));
             Ok(())
@@ -368,7 +370,7 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
             pub_whisper.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
-                serde_json::json!({"message": text.as_str(), "whisper_to": user.as_str()}),
+                serde_json::json!({"message": text.as_str(), "whisper_to_login": user.as_str()}),
                 caused_by,
             ));
             Ok(())
@@ -478,7 +480,7 @@ fn build_globals_module(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::engine::{Engine, EngineConfig};
@@ -824,5 +826,101 @@ mod tests {
             ev.payload["script_id"].is_null(),
             "a run with no owning script must emit a null script_id",
         );
+    }
+
+    #[tokio::test]
+    async fn http_call_event_tags_the_request_method() {
+        use wiremock::matchers::any;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+            .mount(&server)
+            .await;
+        let server_url = server.uri();
+        let host = reqwest::Url::parse(&server_url)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string();
+
+        for (script, expected_method) in [
+            (format!(r#"forge::http::get("{server_url}/p")"#), "get"),
+            (
+                format!(r#"forge::http::post("{server_url}/p", "payload")"#),
+                "post",
+            ),
+        ] {
+            let dp = open_dp().await;
+            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let config = Arc::new(ScriptHttpConfig {
+                allowed_domains: vec![host.clone()],
+                allow_local: true,
+                ..ScriptHttpConfig::default()
+            });
+            let cap = Arc::clone(&captured);
+            tokio::task::spawn_blocking(move || {
+                let engine = build_engine_with_http_in_blocking(dp, cap, config);
+                let _ = engine.eval_script(&script);
+            })
+            .await
+            .unwrap();
+
+            let events = captured.lock().unwrap();
+            let ev = events
+                .iter()
+                .find(|e| e.kind == "script.http_call")
+                .unwrap_or_else(|| {
+                    panic!("script.http_call must be emitted for {expected_method}")
+                });
+            assert_eq!(
+                ev.payload["method"].as_str(),
+                Some(expected_method),
+                "http_call must tag method for {expected_method}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_reply_and_whisper_emit_canonical_recipient_keys() {
+        for (call, recipient_key, recipient, message) in [
+            (
+                r#"forge::chat::reply("msg-1", "hi there")"#,
+                "reply_to_message_id",
+                "msg-1",
+                "hi there",
+            ),
+            (
+                r#"forge::chat::whisper("viewer", "psst")"#,
+                "whisper_to_login",
+                "viewer",
+                "psst",
+            ),
+        ] {
+            let dp = open_dp().await;
+            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
+            let engine = Engine::with_api(EngineConfig::default(), api);
+
+            tokio::task::spawn_blocking(move || {
+                let _ = engine.eval_script(call).unwrap();
+            })
+            .await
+            .unwrap();
+
+            let events = captured.lock().unwrap();
+            let ev = events
+                .iter()
+                .find(|e| e.kind == "chat.send.request")
+                .unwrap_or_else(|| panic!("chat.send.request must be emitted for {call}"));
+            assert_eq!(
+                ev.payload[recipient_key].as_str(),
+                Some(recipient),
+                "{call} must carry canonical recipient key"
+            );
+            assert_eq!(ev.payload["message"].as_str(), Some(message));
+            assert_eq!(ev.caused_by, Some(caused_by));
+        }
     }
 }

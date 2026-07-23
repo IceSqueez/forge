@@ -251,15 +251,6 @@ pub(crate) async fn handle_do_action(
 
     let trigger_event_id = EventId::new();
 
-    ctx.bus.publish(Event::new(
-        EventSource::Server,
-        "action.invoked",
-        serde_json::json!({
-            "action_id": action_id,
-            "user_via": "ws_api",
-        }),
-    ));
-
     let initial_args = build_arg_stack(args);
 
     match ctx

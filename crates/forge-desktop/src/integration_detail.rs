@@ -249,7 +249,11 @@ impl IntegrationDetail {
         let engine = self.action_engine.clone();
         async_bridge::report_failure(
             &self.rt_handle,
-            async move { engine.execute_quick_action(step, builtin_id, label).await },
+            async move {
+                engine
+                    .execute_quick_action(step, builtin_id, label, None)
+                    .await
+            },
             ErrorSink::Toast,
             tr!("integration_quick_action_failed"),
             cx,
@@ -388,7 +392,11 @@ impl IntegrationDetail {
         let engine = self.action_engine.clone();
         async_bridge::report_failure(
             &self.rt_handle,
-            async move { engine.execute_quick_action(step, builtin_id, label).await },
+            async move {
+                engine
+                    .execute_quick_action(step, builtin_id, label, None)
+                    .await
+            },
             ErrorSink::Toast,
             tr!("integration_quick_action_failed"),
             cx,

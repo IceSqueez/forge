@@ -553,7 +553,7 @@ impl ChatView {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let outcome = engine
-                .execute_quick_action(step, "twitch".to_owned(), label)
+                .execute_quick_action(step, "twitch".to_owned(), label, None)
                 .await
                 .map_err(|e| e.to_string());
             let _ = tx.send(outcome);

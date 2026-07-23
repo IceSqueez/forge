@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for AdBreakStartedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.ad_break.begin".to_owned()),
+            kind_prefix: Some("twitch.channel.ad_break.begin".to_owned()),
         }
     }
 
@@ -151,7 +151,11 @@ mod tests {
             },
             "requester": { "login": "broadcaster_one" },
         });
-        Event::new(EventSource::Twitch, "channel.ad_break.begin", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.ad_break.begin",
+            payload,
+        )
     }
 
     #[test]
@@ -160,7 +164,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.ad_break.begin")
+            Some("twitch.channel.ad_break.begin")
         );
     }
 

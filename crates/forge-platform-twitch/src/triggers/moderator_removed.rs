@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ModeratorRemovedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.moderator.remove".to_owned()),
+            kind_prefix: Some("twitch.channel.moderator.remove".to_owned()),
         }
     }
 
@@ -123,7 +123,11 @@ mod tests {
         let payload = serde_json::json!({
             "user": { "id": "888", "login": "ex_mod", "display_name": "ExMod" },
         });
-        Event::new(EventSource::Twitch, "channel.moderator.remove", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.moderator.remove",
+            payload,
+        )
     }
 
     #[test]
@@ -132,7 +136,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.moderator.remove")
+            Some("twitch.channel.moderator.remove")
         );
     }
 

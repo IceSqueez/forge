@@ -78,7 +78,9 @@ impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.channel_points_redemption_update".to_owned()),
+            kind_prefix: Some(
+                "twitch.channel.channel_points_custom_reward_redemption.update".to_owned(),
+            ),
         }
     }
 
@@ -253,7 +255,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.channel_points_redemption_update")
+            Some("twitch.channel.channel_points_custom_reward_redemption.update")
         );
     }
 

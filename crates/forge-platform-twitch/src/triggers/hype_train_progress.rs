@@ -72,7 +72,7 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.hype_train.progress".to_owned()),
+            kind_prefix: Some("twitch.channel.hype_train.progress".to_owned()),
         }
     }
 
@@ -193,7 +193,11 @@ mod tests {
                 "total": 600,
             }
         });
-        Event::new(EventSource::Twitch, "channel.hype_train.progress", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.hype_train.progress",
+            payload,
+        )
     }
 
     fn config_with_min_level(min: i64) -> TriggerConfig {
@@ -208,7 +212,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.hype_train.progress")
+            Some("twitch.channel.hype_train.progress")
         );
     }
 

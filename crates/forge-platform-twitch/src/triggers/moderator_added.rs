@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ModeratorAddedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.moderator.add".to_owned()),
+            kind_prefix: Some("twitch.channel.moderator.add".to_owned()),
         }
     }
 
@@ -123,14 +123,17 @@ mod tests {
         let payload = serde_json::json!({
             "user": { "id": "777", "login": "viewer_one", "display_name": "ViewerOne" },
         });
-        Event::new(EventSource::Twitch, "channel.moderator.add", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.moderator.add", payload)
     }
 
     #[test]
     fn event_filter_targets_moderator_add_topic_from_twitch() {
         let filter = ModeratorAddedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.moderator.add"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.moderator.add")
+        );
     }
 
     #[test]

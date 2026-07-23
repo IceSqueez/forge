@@ -78,7 +78,7 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.automod.message.update".to_owned()),
+            kind_prefix: Some("twitch.automod.message.update".to_owned()),
         }
     }
 
@@ -135,6 +135,11 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let moderator_id = moderator
+            .and_then(|m| m.get(automod_fields::MODERATOR_ID))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
         let moderator_login = moderator
             .and_then(|m| m.get(automod_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
@@ -146,6 +151,7 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
             .set("automod.status".to_owned(), Variant::String(status))
             .set("user_login".to_owned(), Variant::String(user_login))
             .set("message_text".to_owned(), Variant::String(message_text))
+            .set("moderator_id".to_owned(), Variant::String(moderator_id))
             .set(
                 "moderator_login".to_owned(),
                 Variant::String(moderator_login),
@@ -178,6 +184,12 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
                         kind: VariantKind::String,
                         label: "Message text".to_owned(),
                         synthesis: Some(SynthesisHint::Message),
+                    },
+                    DeclaredVariable {
+                        name: "moderator_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator ID".to_owned(),
+                        synthesis: None,
                     },
                     DeclaredVariable {
                         name: "moderator_login".to_owned(),
@@ -232,7 +244,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.automod.message.update")
+            Some("twitch.automod.message.update")
         );
     }
 

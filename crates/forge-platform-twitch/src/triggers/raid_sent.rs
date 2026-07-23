@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for RaidSentDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.raid".to_owned()),
+            kind_prefix: Some("twitch.channel.raid".to_owned()),
         }
     }
 
@@ -130,7 +130,7 @@ mod tests {
     fn event_filter_targets_channel_raid_topic_from_twitch() {
         let filter = RaidSentDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.raid"));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.raid"));
     }
 
     #[test]

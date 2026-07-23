@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for UserUpdateDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("user.update".to_owned()),
+            kind_prefix: Some("twitch.user.update".to_owned()),
         }
     }
 
@@ -141,7 +141,7 @@ mod tests {
     use serde_json::json;
 
     fn event_with(payload: serde_json::Value) -> Event {
-        Event::new(EventSource::Twitch, "user.update", payload)
+        Event::new(EventSource::Twitch, "twitch.user.update", payload)
     }
 
     fn expect_string(stack: &ArgStack, key: &str, expected: &str) {
@@ -216,6 +216,6 @@ mod tests {
     fn event_filter_targets_twitch_user_update_kind() {
         let filter = UserUpdateDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("user.update"));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.user.update"));
     }
 }

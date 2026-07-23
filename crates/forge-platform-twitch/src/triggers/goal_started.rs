@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for GoalStartedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.goal.begin".to_owned()),
+            kind_prefix: Some("twitch.channel.goal.begin".to_owned()),
         }
     }
 
@@ -173,14 +173,17 @@ mod tests {
                 "started_at": "2026-06-13T18:00:00Z",
             },
         });
-        Event::new(EventSource::Twitch, "channel.goal.begin", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.goal.begin", payload)
     }
 
     #[test]
     fn event_filter_targets_goal_begin_topic_from_twitch() {
         let filter = GoalStartedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.goal.begin"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.goal.begin")
+        );
     }
 
     #[test]

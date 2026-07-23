@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.raid".to_owned()),
+            kind_prefix: Some("twitch.channel.raid".to_owned()),
         }
     }
 

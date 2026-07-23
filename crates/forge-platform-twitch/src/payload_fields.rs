@@ -20,6 +20,7 @@ pub(crate) mod moderation {
     pub(crate) const USER_ID: &str = "id";
     pub(crate) const USER_DISPLAY_NAME: &str = "display_name";
     pub(crate) const MODERATOR: &str = "moderator";
+    pub(crate) const MODERATOR_ID: &str = "id";
     pub(crate) const MODERATOR_LOGIN: &str = "login";
     pub(crate) const MODERATOR_DISPLAY_NAME: &str = "display_name";
     pub(crate) const REASON: &str = "reason";
@@ -111,6 +112,10 @@ pub(crate) mod poll {
     pub(crate) const ENDS_AT: &str = "ends_at";
     pub(crate) const STATUS: &str = "status";
     pub(crate) const ENDED_AT: &str = "ended_at";
+    pub(crate) const CHOICES: &str = "choices";
+    pub(crate) const CHOICE_ID: &str = "id";
+    pub(crate) const CHOICE_TITLE: &str = "title";
+    pub(crate) const CHOICE_VOTES: &str = "votes";
 }
 
 pub(crate) mod prediction {
@@ -123,6 +128,12 @@ pub(crate) mod prediction {
     pub(crate) const WINNING_OUTCOME_ID: &str = "winning_outcome_id";
     pub(crate) const STATUS: &str = "status";
     pub(crate) const ENDED_AT: &str = "ended_at";
+    pub(crate) const OUTCOMES: &str = "outcomes";
+    pub(crate) const OUTCOME_ID: &str = "id";
+    pub(crate) const OUTCOME_TITLE: &str = "title";
+    pub(crate) const OUTCOME_COLOR: &str = "color";
+    pub(crate) const OUTCOME_USERS: &str = "users";
+    pub(crate) const OUTCOME_CHANNEL_POINTS: &str = "channel_points";
 }
 
 pub(crate) mod hype_train {
@@ -160,7 +171,6 @@ pub(crate) mod guest_star {
     pub(crate) const GROUP_LAYOUT: &str = "group_layout";
     pub(crate) const IS_MODERATOR_SEND_LIVE_ENABLED: &str = "is_moderator_send_live_enabled";
     pub(crate) const IS_BROWSER_SOURCE_AUDIO_ENABLED: &str = "is_browser_source_audio_enabled";
-    pub(crate) const GUEST_STAR: &str = "guest_star";
     pub(crate) const SESSION_ID_FIELD: &str = "session_id";
     pub(crate) const SLOT_ID_FIELD: &str = "slot_id";
     pub(crate) const STATE: &str = "state";
@@ -172,10 +182,6 @@ pub(crate) mod guest_star {
     pub(crate) const HOST_VIDEO_ENABLED: &str = "video_enabled";
     pub(crate) const HOST_AUDIO_ENABLED: &str = "audio_enabled";
     pub(crate) const HOST_VOLUME: &str = "volume";
-    pub(crate) const SLOT: &str = "slot";
-    pub(crate) const SLOT_HOST_VIDEO_ENABLED: &str = "host_video_enabled";
-    pub(crate) const SLOT_HOST_AUDIO_ENABLED: &str = "host_audio_enabled";
-    pub(crate) const SLOT_VOLUME: &str = "volume";
 }
 
 pub(crate) mod shared_chat {
@@ -230,7 +236,9 @@ pub(crate) mod warning {
     pub(crate) const USER_LOGIN: &str = "login";
     pub(crate) const USER_DISPLAY_NAME: &str = "display_name";
     pub(crate) const MODERATOR: &str = "moderator";
+    pub(crate) const MODERATOR_ID: &str = "id";
     pub(crate) const MODERATOR_LOGIN: &str = "login";
+    pub(crate) const MODERATOR_DISPLAY_NAME: &str = "display_name";
     pub(crate) const REASON: &str = "reason";
     pub(crate) const CHAT_RULES_CITED: &str = "chat_rules_cited";
 }

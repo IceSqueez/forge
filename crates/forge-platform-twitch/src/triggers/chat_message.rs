@@ -52,7 +52,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("chat.message".to_owned()),
+            kind_prefix: Some("twitch.channel.chat.message".to_owned()),
         }
     }
 

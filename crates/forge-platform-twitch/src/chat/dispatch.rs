@@ -157,7 +157,7 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         ChatSession::publish_redemption_update_event,
     ),
     (
-        "channel.automod.message.hold",
+        "automod.message.hold",
         ChatSession::publish_automod_hold_event,
     ),
     (
@@ -181,19 +181,15 @@ const NOTIFICATION_ROUTES: &[(&str, NotificationRoute)] = &[
         ChatSession::publish_guest_star_guest_update_event,
     ),
     (
-        "channel.guest_star_slot.update",
-        ChatSession::publish_guest_star_slot_update_event,
-    ),
-    (
-        "channel.automod.settings.update",
+        "automod.settings.update",
         ChatSession::publish_automod_settings_update_event,
     ),
     (
-        "channel.automod.terms.update",
+        "automod.terms.update",
         ChatSession::publish_automod_terms_update_event,
     ),
     (
-        "channel.automod.message.update",
+        "automod.message.update",
         ChatSession::publish_automod_message_update_event,
     ),
     (
@@ -276,16 +272,15 @@ mod tests {
             "channel.channel_points_custom_reward.update",
             "channel.channel_points_custom_reward.remove",
             "channel.channel_points_custom_reward_redemption.update",
-            "channel.automod.message.hold",
+            "automod.message.hold",
             "channel.chat_settings.update",
             "channel.guest_star_session.begin",
             "channel.guest_star_session.end",
             "channel.guest_star_settings.update",
-            "channel.guest_star_slot.update",
             "channel.guest_star_guest.update",
-            "channel.automod.settings.update",
-            "channel.automod.terms.update",
-            "channel.automod.message.update",
+            "automod.settings.update",
+            "automod.terms.update",
+            "automod.message.update",
             "channel.shared_chat.begin",
             "channel.shared_chat.update",
             "channel.shared_chat.end",
@@ -303,5 +298,36 @@ mod tests {
                 "unexpected route for {unknown}"
             );
         }
+    }
+
+    #[test]
+    fn automod_wire_types_route_without_the_channel_prefix() {
+        for prefixed in [
+            "channel.automod.message.hold",
+            "channel.automod.message.update",
+            "channel.automod.settings.update",
+            "channel.automod.terms.update",
+        ] {
+            assert!(
+                route_for(prefixed).is_none(),
+                "{prefixed} must not route; Twitch's automod subscription types carry no channel. prefix"
+            );
+        }
+        for official in [
+            "automod.message.hold",
+            "automod.message.update",
+            "automod.settings.update",
+            "automod.terms.update",
+        ] {
+            assert!(
+                route_for(official).is_some(),
+                "missing route for {official}"
+            );
+        }
+    }
+
+    #[test]
+    fn removed_guest_star_slot_wire_type_no_longer_routes() {
+        assert!(route_for("channel.guest_star_slot.update").is_none());
     }
 }

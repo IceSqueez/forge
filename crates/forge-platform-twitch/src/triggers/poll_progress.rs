@@ -7,6 +7,7 @@ use forge_types::{
 };
 
 use crate::payload_fields::poll as fields;
+use crate::triggers::poll_started::build_choices_variant;
 
 pub(crate) struct PollProgressDescriptor;
 
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for PollProgressDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.poll.progress".to_owned()),
+            kind_prefix: Some("twitch.channel.poll.progress".to_owned()),
         }
     }
 
@@ -76,9 +77,12 @@ impl TriggerKindDescriptor for PollProgressDescriptor {
             .unwrap_or("")
             .to_owned();
 
+        let choices = build_choices_variant(event);
+
         ArgStack::new()
             .set("poll.id".to_owned(), Variant::String(poll_id))
             .set("poll.title".to_owned(), Variant::String(title))
+            .set("poll.choices".to_owned(), choices)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -94,6 +98,12 @@ impl TriggerKindDescriptor for PollProgressDescriptor {
                         name: "poll.title".to_owned(),
                         kind: VariantKind::String,
                         label: "Poll title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "poll.choices".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Poll choices".to_owned(),
                         synthesis: None,
                     },
                 ],
@@ -113,14 +123,17 @@ mod tests {
                 "title": "Next game?",
             },
         });
-        Event::new(EventSource::Twitch, "channel.poll.progress", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.poll.progress", payload)
     }
 
     #[test]
     fn event_filter_targets_poll_progress_topic_from_twitch() {
         let filter = PollProgressDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.poll.progress"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.poll.progress")
+        );
     }
 
     #[test]

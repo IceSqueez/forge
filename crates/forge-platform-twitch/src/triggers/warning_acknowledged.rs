@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for WarningAcknowledgedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.warning.acknowledge".to_owned()),
+            kind_prefix: Some("twitch.channel.warning.acknowledge".to_owned()),
         }
     }
 
@@ -123,7 +123,11 @@ mod tests {
         let payload = serde_json::json!({
             "user": { "id": "654", "login": "warned_user", "display_name": "WarnedUser" },
         });
-        Event::new(EventSource::Twitch, "channel.warning.acknowledge", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.warning.acknowledge",
+            payload,
+        )
     }
 
     #[test]
@@ -132,7 +136,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.warning.acknowledge")
+            Some("twitch.channel.warning.acknowledge")
         );
     }
 

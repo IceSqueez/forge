@@ -54,7 +54,7 @@ impl TriggerKindDescriptor for PredictionLockedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.prediction.lock".to_owned()),
+            kind_prefix: Some("twitch.channel.prediction.lock".to_owned()),
         }
     }
 
@@ -129,7 +129,11 @@ mod tests {
                 "locked_at": "2026-06-13T18:05:00Z",
             },
         });
-        Event::new(EventSource::Twitch, "channel.prediction.lock", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.prediction.lock",
+            payload,
+        )
     }
 
     #[test]
@@ -138,7 +142,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.prediction.lock")
+            Some("twitch.channel.prediction.lock")
         );
     }
 

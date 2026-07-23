@@ -120,7 +120,11 @@ mod tests {
 
     #[test]
     fn base_chat_args_defaults_missing_fields_to_empty_strings() {
-        let event = Event::new(EventSource::Twitch, "chat.message", serde_json::json!({}));
+        let event = Event::new(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            serde_json::json!({}),
+        );
         let stack = base_chat_args(&event);
         for key in [
             "message_text",

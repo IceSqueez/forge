@@ -72,7 +72,7 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.cheer".to_owned()),
+            kind_prefix: Some("twitch.channel.cheer".to_owned()),
         }
     }
 

@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for StreamOnlineDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("stream.online".to_owned()),
+            kind_prefix: Some("twitch.stream.online".to_owned()),
         }
     }
 
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn event_filter_gates_on_stream_online_kind_prefix() {
         let filter = StreamOnlineDescriptor.event_filter();
-        assert_eq!(filter.kind_prefix.as_deref(), Some("stream.online"));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.stream.online"));
         assert_eq!(filter.source, Some(EventSource::Twitch));
     }
 

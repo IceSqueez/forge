@@ -1134,7 +1134,7 @@ fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {
 fn is_chat_message_kind(kind: &str) -> bool {
     matches!(
         kind,
-        "chat.message"
+        "twitch.channel.chat.message"
             | "youtube.chat.message"
             | "kick.chat.message.sent"
             | "youtube.chat.command"

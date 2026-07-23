@@ -29,7 +29,6 @@ mod guest_star_guest_updated;
 mod guest_star_session_began;
 mod guest_star_session_ended;
 mod guest_star_settings_updated;
-mod guest_star_slot_updated;
 mod hype_train_ended;
 mod hype_train_progress;
 mod hype_train_started;
@@ -103,7 +102,6 @@ use guest_star_guest_updated::GuestStarGuestUpdatedDescriptor;
 use guest_star_session_began::GuestStarSessionBeganDescriptor;
 use guest_star_session_ended::GuestStarSessionEndedDescriptor;
 use guest_star_settings_updated::GuestStarSettingsUpdatedDescriptor;
-use guest_star_slot_updated::GuestStarSlotUpdatedDescriptor;
 use hype_train_ended::HypeTrainEndedDescriptor;
 use hype_train_progress::HypeTrainProgressDescriptor;
 use hype_train_started::HypeTrainStartedDescriptor;
@@ -208,7 +206,6 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     reg.register(Box::new(GuestStarSessionBeganDescriptor))?;
     reg.register(Box::new(GuestStarSessionEndedDescriptor))?;
     reg.register(Box::new(GuestStarSettingsUpdatedDescriptor))?;
-    reg.register(Box::new(GuestStarSlotUpdatedDescriptor))?;
     reg.register(Box::new(GuestStarGuestUpdatedDescriptor))?;
     reg.register(Box::new(SharedChatSessionBeganDescriptor))?;
     reg.register(Box::new(SharedChatSessionUpdatedDescriptor))?;
@@ -298,7 +295,6 @@ mod tests {
             "twitch.guest_star.session_began",
             "twitch.guest_star.session_ended",
             "twitch.guest_star.settings_updated",
-            "twitch.guest_star.slot_updated",
             "twitch.guest_star.guest_updated",
             "twitch.shared_chat.session_began",
             "twitch.shared_chat.session_updated",

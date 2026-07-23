@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for SharedChatSessionBeganDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.shared_chat.begin".to_owned()),
+            kind_prefix: Some("twitch.channel.shared_chat.begin".to_owned()),
         }
     }
 

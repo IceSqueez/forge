@@ -7,6 +7,7 @@ use forge_types::{
 };
 
 use crate::payload_fields::poll as fields;
+use crate::triggers::poll_started::build_choices_variant;
 
 pub(crate) struct PollEndedDescriptor;
 
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.poll.end".to_owned()),
+            kind_prefix: Some("twitch.channel.poll.end".to_owned()),
         }
     }
 
@@ -86,11 +87,14 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
             .unwrap_or("")
             .to_owned();
 
+        let choices = build_choices_variant(event);
+
         ArgStack::new()
             .set("poll.id".to_owned(), Variant::String(poll_id))
             .set("poll.title".to_owned(), Variant::String(title))
             .set("poll.status".to_owned(), Variant::String(status))
             .set("poll.ended_at".to_owned(), Variant::String(ended_at))
+            .set("poll.choices".to_owned(), choices)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -120,6 +124,12 @@ impl TriggerKindDescriptor for PollEndedDescriptor {
                         label: "Ended at".to_owned(),
                         synthesis: None,
                     },
+                    DeclaredVariable {
+                        name: "poll.choices".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Poll choices".to_owned(),
+                        synthesis: None,
+                    },
                 ],
             }
         })
@@ -139,14 +149,17 @@ mod tests {
                 "ended_at": "2026-06-13T18:10:00Z",
             },
         });
-        Event::new(EventSource::Twitch, "channel.poll.end", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.poll.end", payload)
     }
 
     #[test]
     fn event_filter_targets_poll_end_topic_from_twitch() {
         let filter = PollEndedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.poll.end"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.poll.end")
+        );
     }
 
     #[test]

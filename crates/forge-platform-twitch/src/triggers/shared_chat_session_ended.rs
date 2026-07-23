@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for SharedChatSessionEndedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.shared_chat.end".to_owned()),
+            kind_prefix: Some("twitch.channel.shared_chat.end".to_owned()),
         }
     }
 

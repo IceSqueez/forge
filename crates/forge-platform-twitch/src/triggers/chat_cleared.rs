@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ChatClearedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.chat.clear".to_owned()),
+            kind_prefix: Some("twitch.channel.chat.clear".to_owned()),
         }
     }
 
@@ -126,7 +126,10 @@ mod tests {
     #[test]
     fn event_filter_gates_on_chat_clear_kind_prefix() {
         let filter = ChatClearedDescriptor.event_filter();
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.chat.clear"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.chat.clear")
+        );
         assert_eq!(filter.source, Some(EventSource::Twitch));
     }
 

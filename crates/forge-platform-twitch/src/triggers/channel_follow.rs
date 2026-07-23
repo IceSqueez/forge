@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ChannelFollowDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.follow".to_owned()),
+            kind_prefix: Some("twitch.channel.follow".to_owned()),
         }
     }
 
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn event_filter_gates_on_follow_kind_prefix() {
         let filter = ChannelFollowDescriptor.event_filter();
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.follow"));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.follow"));
         assert_eq!(filter.source, Some(EventSource::Twitch));
     }
 

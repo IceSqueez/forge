@@ -54,7 +54,7 @@ impl TriggerKindDescriptor for PollStartedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.poll.begin".to_owned()),
+            kind_prefix: Some("twitch.channel.poll.begin".to_owned()),
         }
     }
 
@@ -85,12 +85,14 @@ impl TriggerKindDescriptor for PollStartedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let choices = build_choices_variant(event);
 
         ArgStack::new()
             .set("poll.id".to_owned(), Variant::String(poll_id))
             .set("poll.title".to_owned(), Variant::String(title))
             .set("poll.started_at".to_owned(), Variant::String(started_at))
             .set("poll.ends_at".to_owned(), Variant::String(ends_at))
+            .set("poll.choices".to_owned(), choices)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -120,10 +122,64 @@ impl TriggerKindDescriptor for PollStartedDescriptor {
                         label: "Ends at".to_owned(),
                         synthesis: None,
                     },
+                    DeclaredVariable {
+                        name: "poll.choices".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Poll choices".to_owned(),
+                        synthesis: None,
+                    },
                 ],
             }
         })
     }
+}
+
+pub(crate) fn build_choices_variant(event: &Event) -> Variant {
+    let choices = event
+        .payload
+        .get(fields::CHOICES)
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Variant::Array(
+        choices
+            .iter()
+            .map(|choice| {
+                let mut obj = std::collections::BTreeMap::new();
+                obj.insert(
+                    "id".to_owned(),
+                    Variant::String(
+                        choice
+                            .get(fields::CHOICE_ID)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_owned(),
+                    ),
+                );
+                obj.insert(
+                    "title".to_owned(),
+                    Variant::String(
+                        choice
+                            .get(fields::CHOICE_TITLE)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_owned(),
+                    ),
+                );
+                obj.insert(
+                    "votes".to_owned(),
+                    Variant::Int(
+                        choice
+                            .get(fields::CHOICE_VOTES)
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0),
+                    ),
+                );
+                Variant::Object(obj)
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -139,14 +195,17 @@ mod tests {
                 "ends_at": "2026-06-13T18:05:00Z",
             },
         });
-        Event::new(EventSource::Twitch, "channel.poll.begin", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.poll.begin", payload)
     }
 
     #[test]
     fn event_filter_targets_poll_begin_topic_from_twitch() {
         let filter = PollStartedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.poll.begin"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.poll.begin")
+        );
     }
 
     #[test]

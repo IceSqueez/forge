@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for VipRemovedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.vip.remove".to_owned()),
+            kind_prefix: Some("twitch.channel.vip.remove".to_owned()),
         }
     }
 
@@ -123,7 +123,10 @@ mod tests {
     fn event_filter_targets_vip_remove_topic_from_twitch() {
         let filter = VipRemovedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.vip.remove"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.vip.remove")
+        );
     }
 
     #[test]
@@ -131,7 +134,7 @@ mod tests {
         let payload = serde_json::json!({
             "user": { "id": "555", "login": "former_vip", "display_name": "FormerVip" },
         });
-        let event = Event::new(EventSource::Twitch, "channel.vip.remove", payload);
+        let event = Event::new(EventSource::Twitch, "twitch.channel.vip.remove", payload);
         let stack = VipRemovedDescriptor.build_arg_stack(&event);
         assert_eq!(
             stack.get("user_id"),

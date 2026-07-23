@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for SuspiciousUserMessageDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.suspicious_user.message".to_owned()),
+            kind_prefix: Some("twitch.channel.suspicious_user.message".to_owned()),
         }
     }
 
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.suspicious_user.message")
+            Some("twitch.channel.suspicious_user.message")
         );
     }
 

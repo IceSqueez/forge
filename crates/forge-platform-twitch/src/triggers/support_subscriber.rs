@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for SupportSubscriberDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.subscribe".to_owned()),
+            kind_prefix: Some("twitch.channel.subscribe".to_owned()),
         }
     }
 

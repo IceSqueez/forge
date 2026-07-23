@@ -87,7 +87,7 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("user.whisper.message".to_owned()),
+            kind_prefix: Some("twitch.user.whisper.message".to_owned()),
         }
     }
 
@@ -408,6 +408,9 @@ mod tests {
     fn event_filter_targets_twitch_whisper_topic() {
         let filter = WhisperReceivedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("user.whisper.message"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.user.whisper.message")
+        );
     }
 }

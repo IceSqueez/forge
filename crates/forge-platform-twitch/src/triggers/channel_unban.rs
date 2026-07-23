@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.unban".to_owned()),
+            kind_prefix: Some("twitch.channel.unban".to_owned()),
         }
     }
 
@@ -82,6 +82,11 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let moderator_id = moderator
+            .and_then(|m| m.get(fields::MODERATOR_ID))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
         let moderator_login = moderator
             .and_then(|m| m.get(fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
@@ -92,6 +97,7 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
             .set("user_login".to_owned(), Variant::String(user_login))
             .set("user_id".to_owned(), Variant::String(user_id))
             .set("user_name".to_owned(), Variant::String(user_name))
+            .set("moderator_id".to_owned(), Variant::String(moderator_id))
             .set(
                 "moderator_login".to_owned(),
                 Variant::String(moderator_login),
@@ -120,6 +126,12 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
                         synthesis: Some(SynthesisHint::DisplayName),
                     },
                     DeclaredVariable {
+                        name: "moderator_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator ID".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
                         name: "moderator_login".to_owned(),
                         kind: VariantKind::String,
                         label: "Moderator login".to_owned(),
@@ -140,14 +152,14 @@ mod tests {
             "user": { "id": "777", "login": "viewer_one", "display_name": "ViewerOne" },
             "moderator": { "login": "mod_jane", "display_name": "ModJane" },
         });
-        Event::new(EventSource::Twitch, "channel.unban", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.unban", payload)
     }
 
     #[test]
     fn event_filter_targets_channel_unban_topic_from_twitch() {
         let filter = ChannelUnbanDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.unban"));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.unban"));
     }
 
     #[test]

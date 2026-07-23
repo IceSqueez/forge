@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ShoutoutReceivedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.shoutout.receive".to_owned()),
+            kind_prefix: Some("twitch.channel.shoutout.receive".to_owned()),
         }
     }
 
@@ -144,7 +144,11 @@ mod tests {
             "viewer_count": 7,
             "started_at": "2026-06-13T19:30:00Z",
         });
-        Event::new(EventSource::Twitch, "channel.shoutout.receive", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.shoutout.receive",
+            payload,
+        )
     }
 
     #[test]
@@ -153,7 +157,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.shoutout.receive")
+            Some("twitch.channel.shoutout.receive")
         );
     }
 

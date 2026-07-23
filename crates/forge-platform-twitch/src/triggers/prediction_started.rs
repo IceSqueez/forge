@@ -54,7 +54,7 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.prediction.begin".to_owned()),
+            kind_prefix: Some("twitch.channel.prediction.begin".to_owned()),
         }
     }
 
@@ -85,6 +85,7 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let outcomes = build_outcomes_variant(event);
 
         ArgStack::new()
             .set("prediction.id".to_owned(), Variant::String(prediction_id))
@@ -94,6 +95,7 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
                 Variant::String(started_at),
             )
             .set("prediction.locks_at".to_owned(), Variant::String(locks_at))
+            .set("prediction.outcomes".to_owned(), outcomes)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -123,10 +125,83 @@ impl TriggerKindDescriptor for PredictionStartedDescriptor {
                         label: "Locks at".to_owned(),
                         synthesis: None,
                     },
+                    DeclaredVariable {
+                        name: "prediction.outcomes".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Prediction outcomes".to_owned(),
+                        synthesis: None,
+                    },
                 ],
             }
         })
     }
+}
+
+pub(crate) fn build_outcomes_variant(event: &Event) -> Variant {
+    let outcomes = event
+        .payload
+        .get(fields::OUTCOMES)
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Variant::Array(
+        outcomes
+            .iter()
+            .map(|outcome| {
+                let mut obj = std::collections::BTreeMap::new();
+                obj.insert(
+                    "id".to_owned(),
+                    Variant::String(
+                        outcome
+                            .get(fields::OUTCOME_ID)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_owned(),
+                    ),
+                );
+                obj.insert(
+                    "title".to_owned(),
+                    Variant::String(
+                        outcome
+                            .get(fields::OUTCOME_TITLE)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_owned(),
+                    ),
+                );
+                obj.insert(
+                    "color".to_owned(),
+                    Variant::String(
+                        outcome
+                            .get(fields::OUTCOME_COLOR)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_owned(),
+                    ),
+                );
+                obj.insert(
+                    "users".to_owned(),
+                    Variant::Int(
+                        outcome
+                            .get(fields::OUTCOME_USERS)
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0),
+                    ),
+                );
+                obj.insert(
+                    "channel_points".to_owned(),
+                    Variant::Int(
+                        outcome
+                            .get(fields::OUTCOME_CHANNEL_POINTS)
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0),
+                    ),
+                );
+                Variant::Object(obj)
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -142,7 +217,11 @@ mod tests {
                 "locks_at": "2026-06-13T18:02:00Z",
             },
         });
-        Event::new(EventSource::Twitch, "channel.prediction.begin", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.prediction.begin",
+            payload,
+        )
     }
 
     #[test]
@@ -151,7 +230,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.prediction.begin")
+            Some("twitch.channel.prediction.begin")
         );
     }
 

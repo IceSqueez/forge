@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for HypeTrainStartedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.hype_train.begin".to_owned()),
+            kind_prefix: Some("twitch.channel.hype_train.begin".to_owned()),
         }
     }
 
@@ -184,7 +184,11 @@ mod tests {
                 "expires_at": "2026-06-13T18:05:00Z",
             }
         });
-        Event::new(EventSource::Twitch, "channel.hype_train.begin", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.hype_train.begin",
+            payload,
+        )
     }
 
     #[test]
@@ -193,7 +197,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.hype_train.begin")
+            Some("twitch.channel.hype_train.begin")
         );
     }
 

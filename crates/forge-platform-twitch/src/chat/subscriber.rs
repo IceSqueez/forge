@@ -312,7 +312,7 @@ const TOPICS: &[TopicSpec] = &[
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
-        kind: "channel.automod.message.hold",
+        kind: "automod.message.hold",
         version: "1",
         condition_fn: condition_chat,
     },
@@ -342,22 +342,17 @@ const TOPICS: &[TopicSpec] = &[
         condition_fn: condition_broadcaster,
     },
     TopicSpec {
-        kind: "channel.guest_star_slot.update",
-        version: "beta",
-        condition_fn: condition_broadcaster,
-    },
-    TopicSpec {
-        kind: "channel.automod.settings.update",
+        kind: "automod.settings.update",
         version: "1",
         condition_fn: condition_chat,
     },
     TopicSpec {
-        kind: "channel.automod.terms.update",
+        kind: "automod.terms.update",
         version: "1",
         condition_fn: condition_chat,
     },
     TopicSpec {
-        kind: "channel.automod.message.update",
+        kind: "automod.message.update",
         version: "1",
         condition_fn: condition_chat,
     },
@@ -502,7 +497,7 @@ pub(crate) async fn subscribe_all(
                 {
                     bus.publish(Event::new(
                         EventSource::Twitch,
-                        "eventsub.subscription.created",
+                        "twitch.eventsub.subscription.created",
                         serde_json::json!({
                             "type": sub.subscription_type,
                             "subscription_id": sub.id,
@@ -546,6 +541,36 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use super::TOPICS;
+
+    #[test]
+    fn automod_subscription_types_omit_the_channel_prefix() {
+        let automod: Vec<&str> = TOPICS
+            .iter()
+            .map(|t| t.kind)
+            .filter(|k| k.contains("automod"))
+            .collect();
+        assert!(
+            !automod.is_empty(),
+            "expected automod subscriptions to be present"
+        );
+        for kind in automod {
+            assert!(
+                kind.starts_with("automod."),
+                "automod subscription type {kind} must omit the channel. prefix Twitch rejects"
+            );
+        }
+    }
+
+    #[test]
+    fn guest_star_slot_subscription_is_not_requested() {
+        assert!(
+            !TOPICS
+                .iter()
+                .any(|t| t.kind == "channel.guest_star_slot.update"),
+            "channel.guest_star_slot.update is no longer a valid Twitch subscription type"
+        );
+    }
 
     #[tokio::test]
     async fn subscribe_network_error_strips_url() {

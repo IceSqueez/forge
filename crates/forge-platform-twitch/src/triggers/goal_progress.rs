@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for GoalProgressDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.goal.progress".to_owned()),
+            kind_prefix: Some("twitch.channel.goal.progress".to_owned()),
         }
     }
 
@@ -147,14 +147,17 @@ mod tests {
                 "target_amount": 100,
             },
         });
-        Event::new(EventSource::Twitch, "channel.goal.progress", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.goal.progress", payload)
     }
 
     #[test]
     fn event_filter_targets_goal_progress_topic_from_twitch() {
         let filter = GoalProgressDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.goal.progress"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.goal.progress")
+        );
     }
 
     #[test]

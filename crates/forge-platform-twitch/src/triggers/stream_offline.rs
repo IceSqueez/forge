@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for StreamOfflineDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("stream.offline".to_owned()),
+            kind_prefix: Some("twitch.stream.offline".to_owned()),
         }
     }
 
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn event_filter_gates_on_stream_offline_kind_prefix() {
         let filter = StreamOfflineDescriptor.event_filter();
-        assert_eq!(filter.kind_prefix.as_deref(), Some("stream.offline"));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.stream.offline"));
         assert_eq!(filter.source, Some(EventSource::Twitch));
     }
 

@@ -25,11 +25,11 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     }
 
     fn summary(&self) -> &str {
-        "Fires when a Guest Star guest changes state in the session"
+        "Fires when a Guest Star guest or slot changes state in the session"
     }
 
     fn search_text(&self) -> &str {
-        "twitch guest star guest update state slot invited accepted ready backstage live removed"
+        "twitch guest star guest update state slot invited accepted ready backstage live removed host video audio volume"
     }
 
     fn icon_name(&self) -> &str {
@@ -74,7 +74,7 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.guest_star_guest.update".to_owned()),
+            kind_prefix: Some("twitch.channel.guest_star_guest.update".to_owned()),
         }
     }
 
@@ -96,8 +96,7 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
 
         let event_state = event
             .payload
-            .get(guest_star_fields::GUEST_STAR)
-            .and_then(|gs| gs.get(guest_star_fields::STATE))
+            .get(guest_star_fields::STATE)
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -105,21 +104,24 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let guest_star = event.payload.get(guest_star_fields::GUEST_STAR);
         let guest = event.payload.get(guest_star_fields::GUEST);
+        let host = event.payload.get(guest_star_fields::HOST);
 
-        let session_id = guest_star
-            .and_then(|gs| gs.get(guest_star_fields::SESSION_ID_FIELD))
+        let session_id = event
+            .payload
+            .get(guest_star_fields::SESSION_ID_FIELD)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let slot_id = guest_star
-            .and_then(|gs| gs.get(guest_star_fields::SLOT_ID_FIELD))
+        let slot_id = event
+            .payload
+            .get(guest_star_fields::SLOT_ID_FIELD)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
-        let state = guest_star
-            .and_then(|gs| gs.get(guest_star_fields::STATE))
+        let state = event
+            .payload
+            .get(guest_star_fields::STATE)
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -133,6 +135,18 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let host_video_enabled = host
+            .and_then(|h| h.get(guest_star_fields::HOST_VIDEO_ENABLED))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let host_audio_enabled = host
+            .and_then(|h| h.get(guest_star_fields::HOST_AUDIO_ENABLED))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let host_volume = host
+            .and_then(|h| h.get(guest_star_fields::HOST_VOLUME))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         ArgStack::new()
             .set(
@@ -143,6 +157,15 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
             .set("guest_star.state".to_owned(), Variant::String(state))
             .set("guest.login".to_owned(), Variant::String(guest_login))
             .set("guest.id".to_owned(), Variant::String(guest_id))
+            .set(
+                "host.video_enabled".to_owned(),
+                Variant::Bool(host_video_enabled),
+            )
+            .set(
+                "host.audio_enabled".to_owned(),
+                Variant::Bool(host_audio_enabled),
+            )
+            .set("host.volume".to_owned(), Variant::Int(host_volume))
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -178,6 +201,24 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
                         label: "Guest ID".to_owned(),
                         synthesis: None,
                     },
+                    DeclaredVariable {
+                        name: "host.video_enabled".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Host video enabled".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "host.audio_enabled".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Host audio enabled".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "host.volume".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Host volume".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
+                    },
                 ],
             }
         })
@@ -191,17 +232,20 @@ mod tests {
     fn update_event(state: &str) -> Event {
         Event::new(
             EventSource::Twitch,
-            "channel.guest_star_guest.update",
+            "twitch.channel.guest_star_guest.update",
             serde_json::json!({
-                "guest_star": {
-                    "session_id": "sess-7",
-                    "slot_id": "3",
-                    "state": state,
-                },
+                "session_id": "sess-7",
+                "slot_id": "3",
+                "state": state,
                 "guest": {
                     "id": "guest-42",
                     "login": "guest_login",
                     "display_name": "GuestName",
+                },
+                "host": {
+                    "video_enabled": true,
+                    "audio_enabled": false,
+                    "volume": 80,
                 },
             }),
         )
@@ -222,7 +266,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.guest_star_guest.update")
+            Some("twitch.channel.guest_star_guest.update")
         );
     }
 

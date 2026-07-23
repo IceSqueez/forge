@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for GoalEndedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.goal.end".to_owned()),
+            kind_prefix: Some("twitch.channel.goal.end".to_owned()),
         }
     }
 
@@ -172,14 +172,17 @@ mod tests {
                 "ended_at": "2026-06-13T19:00:00Z",
             },
         });
-        Event::new(EventSource::Twitch, "channel.goal.end", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.goal.end", payload)
     }
 
     #[test]
     fn event_filter_targets_goal_end_topic_from_twitch() {
         let filter = GoalEndedDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.goal.end"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.goal.end")
+        );
     }
 
     #[test]

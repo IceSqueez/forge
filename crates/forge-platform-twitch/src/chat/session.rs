@@ -250,7 +250,7 @@ impl ChatSession {
                         self.config.bus.publish(Event::new(
                             EventSource::Twitch,
                             "platform.reauth_required",
-                            serde_json::json!({ "platform": "twitch" }),
+                            serde_json::json!({ "platform_id": "twitch" }),
                         ));
                         return FrameAction::ReauthRequired;
                     }
@@ -408,7 +408,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "chat.message",
+            "twitch.channel.chat.message",
             forge_payload,
         ));
     }
@@ -459,7 +459,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.subscribe",
+            "twitch.channel.subscribe",
             forge_payload,
         ));
     }
@@ -527,7 +527,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.subscription.message",
+            "twitch.channel.subscription.message",
             forge_payload,
         ));
     }
@@ -574,16 +574,16 @@ impl ChatSession {
                 (support_fields::GIFTER_DISPLAY_NAME): gifter_display,
             },
             (support_fields::RECIPIENT): {
-                (support_fields::RECIPIENT_ID): "",
-                (support_fields::RECIPIENT_LOGIN): "",
-                (support_fields::RECIPIENT_DISPLAY_NAME): "",
+                (support_fields::RECIPIENT_ID): null,
+                (support_fields::RECIPIENT_LOGIN): null,
+                (support_fields::RECIPIENT_DISPLAY_NAME): null,
             },
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.subscription.gift",
+            "twitch.channel.subscription.gift",
             forge_payload,
         ));
     }
@@ -632,7 +632,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.cheer",
+            "twitch.channel.cheer",
             forge_payload,
         ));
     }
@@ -701,7 +701,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.raid",
+            "twitch.channel.raid",
             forge_payload,
         ));
     }
@@ -794,7 +794,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.channel_points_redemption",
+            "twitch.channel.channel_points_custom_reward_redemption.add",
             forge_payload,
         ));
     }
@@ -843,7 +843,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.chat.message_delete",
+            "twitch.channel.chat.message_delete",
             forge_payload,
         ));
     }
@@ -877,7 +877,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.chat.clear",
+            "twitch.channel.chat.clear",
             forge_payload,
         ));
     }
@@ -917,7 +917,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.follow",
+            "twitch.channel.follow",
             forge_payload,
         ));
     }
@@ -969,7 +969,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "stream.online",
+            "twitch.stream.online",
             forge_payload,
         ));
     }
@@ -1001,7 +1001,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "stream.offline",
+            "twitch.stream.offline",
             forge_payload,
         ));
     }
@@ -1056,7 +1056,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.hype_train.begin",
+            "twitch.channel.hype_train.begin",
             forge_payload,
         ));
     }
@@ -1099,7 +1099,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.hype_train.progress",
+            "twitch.channel.hype_train.progress",
             forge_payload,
         ));
     }
@@ -1147,7 +1147,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.hype_train.end",
+            "twitch.channel.hype_train.end",
             forge_payload,
         ));
     }
@@ -1224,7 +1224,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.charity_campaign.donate",
+            "twitch.channel.charity_campaign.donate",
             forge_payload,
         ));
     }
@@ -1238,7 +1238,7 @@ impl ChatSession {
         info!("charity campaign started");
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.charity_campaign.start",
+            "twitch.channel.charity_campaign.start",
             forge_payload,
         ));
     }
@@ -1252,7 +1252,7 @@ impl ChatSession {
         info!("charity campaign progress update received");
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.charity_campaign.progress",
+            "twitch.channel.charity_campaign.progress",
             forge_payload,
         ));
     }
@@ -1266,7 +1266,7 @@ impl ChatSession {
         info!("charity campaign stopped");
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.charity_campaign.stop",
+            "twitch.channel.charity_campaign.stop",
             forge_payload,
         ));
     }
@@ -1285,6 +1285,11 @@ impl ChatSession {
             .to_owned();
         let user_display_name = event_data
             .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_id = event_data
+            .get("moderator_user_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
@@ -1330,6 +1335,7 @@ impl ChatSession {
                 (moderation_fields::USER_DISPLAY_NAME): user_display_name,
             },
             (moderation_fields::MODERATOR): {
+                (moderation_fields::MODERATOR_ID): moderator_id,
                 (moderation_fields::MODERATOR_LOGIN): moderator_login,
                 (moderation_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
             },
@@ -1348,7 +1354,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.ban",
+            "twitch.channel.ban",
             forge_payload,
         ));
     }
@@ -1366,6 +1372,11 @@ impl ChatSession {
             .to_owned();
         let user_display_name = event_data
             .get("user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_id = event_data
+            .get("moderator_user_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
@@ -1389,6 +1400,7 @@ impl ChatSession {
                 (moderation_fields::USER_DISPLAY_NAME): user_display_name,
             },
             (moderation_fields::MODERATOR): {
+                (moderation_fields::MODERATOR_ID): moderator_id,
                 (moderation_fields::MODERATOR_LOGIN): moderator_login,
                 (moderation_fields::MODERATOR_DISPLAY_NAME): moderator_display_name,
             },
@@ -1396,7 +1408,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.unban",
+            "twitch.channel.unban",
             forge_payload,
         ));
     }
@@ -1426,7 +1438,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.moderator.add",
+            "twitch.channel.moderator.add",
             serde_json::json!({
                 (moderator_fields::USER): {
                     (moderator_fields::USER_ID): user_id,
@@ -1462,7 +1474,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.moderator.remove",
+            "twitch.channel.moderator.remove",
             serde_json::json!({
                 (moderator_fields::USER): {
                     (moderator_fields::USER_ID): user_id,
@@ -1498,7 +1510,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.vip.add",
+            "twitch.channel.vip.add",
             serde_json::json!({
                 (vip_fields::USER): {
                     (vip_fields::USER_ID): user_id,
@@ -1534,7 +1546,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.vip.remove",
+            "twitch.channel.vip.remove",
             serde_json::json!({
                 (vip_fields::USER): {
                     (vip_fields::USER_ID): user_id,
@@ -1580,7 +1592,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.unban_request.create",
+            "twitch.channel.unban_request.create",
             serde_json::json!({
                 (unban_request_fields::REQUEST_ID): request_id,
                 (unban_request_fields::USER): {
@@ -1648,7 +1660,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.unban_request.resolve",
+            "twitch.channel.unban_request.resolve",
             serde_json::json!({
                 (unban_request_fields::REQUEST_ID): request_id,
                 (unban_request_fields::USER): {
@@ -1697,7 +1709,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.shield_mode.begin",
+            "twitch.channel.shield_mode.begin",
             serde_json::json!({
                 (shield_fields::MODERATOR): {
                     (shield_fields::MODERATOR_ID): moderator_id,
@@ -1739,7 +1751,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.shield_mode.end",
+            "twitch.channel.shield_mode.end",
             serde_json::json!({
                 (shield_fields::MODERATOR): {
                     (shield_fields::MODERATOR_ID): moderator_id,
@@ -1785,7 +1797,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.shoutout.create",
+            "twitch.channel.shoutout.create",
             serde_json::json!({
                 (shoutout_fields::TO_BROADCASTER): {
                     (shoutout_fields::BROADCASTER_ID): to_id,
@@ -1832,7 +1844,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.shoutout.receive",
+            "twitch.channel.shoutout.receive",
             serde_json::json!({
                 (shoutout_fields::FROM_BROADCASTER): {
                     (shoutout_fields::BROADCASTER_ID): from_id,
@@ -1881,7 +1893,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.suspicious_user.message",
+            "twitch.channel.suspicious_user.message",
             serde_json::json!({
                 (suspicious_fields::USER): {
                     (suspicious_fields::USER_ID): user_id,
@@ -1919,7 +1931,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.warning.acknowledge",
+            "twitch.channel.warning.acknowledge",
             serde_json::json!({
                 (warning_fields::USER): {
                     (warning_fields::USER_ID): user_id,
@@ -1950,8 +1962,18 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let moderator_id = event_data
+            .get("moderator_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
         let moderator_login = event_data
             .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_name = event_data
+            .get("moderator_user_name")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
@@ -1970,7 +1992,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.warning.send",
+            "twitch.channel.warning.send",
             serde_json::json!({
                 (warning_fields::USER): {
                     (warning_fields::USER_ID): user_id,
@@ -1978,7 +2000,9 @@ impl ChatSession {
                     (warning_fields::USER_DISPLAY_NAME): user_display_name,
                 },
                 (warning_fields::MODERATOR): {
+                    (warning_fields::MODERATOR_ID): moderator_id,
                     (warning_fields::MODERATOR_LOGIN): moderator_login,
+                    (warning_fields::MODERATOR_DISPLAY_NAME): moderator_name,
                 },
                 (warning_fields::REASON): reason,
                 (warning_fields::CHAT_RULES_CITED): chat_rules_cited,
@@ -2012,11 +2036,13 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
+        let choices = extract_poll_choices(event_data);
+
         info!(poll_id = %poll_id, title = %title, "poll began");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.poll.begin",
+            "twitch.channel.poll.begin",
             serde_json::json!({
                 (poll_fields::POLL): {
                     (poll_fields::POLL_ID): poll_id,
@@ -2024,6 +2050,7 @@ impl ChatSession {
                     (poll_fields::STARTED_AT): started_at,
                     (poll_fields::ENDS_AT): ends_at,
                 },
+                (poll_fields::CHOICES): choices,
             }),
         ));
     }
@@ -2044,16 +2071,19 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
+        let choices = extract_poll_choices(event_data);
+
         info!(poll_id = %poll_id, title = %title, "poll progress");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.poll.progress",
+            "twitch.channel.poll.progress",
             serde_json::json!({
                 (poll_fields::POLL): {
                     (poll_fields::POLL_ID): poll_id,
                     (poll_fields::POLL_TITLE): title,
                 },
+                (poll_fields::CHOICES): choices,
             }),
         ));
     }
@@ -2084,11 +2114,13 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
+        let choices = extract_poll_choices(event_data);
+
         info!(poll_id = %poll_id, status = %status, "poll ended");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.poll.end",
+            "twitch.channel.poll.end",
             serde_json::json!({
                 (poll_fields::POLL): {
                     (poll_fields::POLL_ID): poll_id,
@@ -2096,6 +2128,7 @@ impl ChatSession {
                     (poll_fields::STATUS): status,
                     (poll_fields::ENDED_AT): ended_at,
                 },
+                (poll_fields::CHOICES): choices,
             }),
         ));
     }
@@ -2126,11 +2159,13 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
+        let outcomes = extract_prediction_outcomes(event_data);
+
         info!(prediction_id = %prediction_id, title = %title, "prediction began");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.prediction.begin",
+            "twitch.channel.prediction.begin",
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
@@ -2138,6 +2173,7 @@ impl ChatSession {
                     (prediction_fields::STARTED_AT): started_at,
                     (prediction_fields::LOCKS_AT): locks_at,
                 },
+                (prediction_fields::OUTCOMES): outcomes,
             }),
         ));
     }
@@ -2158,16 +2194,19 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
+        let outcomes = extract_prediction_outcomes(event_data);
+
         info!(prediction_id = %prediction_id, title = %title, "prediction progress");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.prediction.progress",
+            "twitch.channel.prediction.progress",
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
                     (prediction_fields::PREDICTION_TITLE): title,
                 },
+                (prediction_fields::OUTCOMES): outcomes,
             }),
         ));
     }
@@ -2197,7 +2236,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.prediction.lock",
+            "twitch.channel.prediction.lock",
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
@@ -2243,7 +2282,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.prediction.end",
+            "twitch.channel.prediction.end",
             serde_json::json!({
                 (prediction_fields::PREDICTION): {
                     (prediction_fields::PREDICTION_ID): prediction_id,
@@ -2294,7 +2333,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.goal.begin",
+            "twitch.channel.goal.begin",
             serde_json::json!({
                 (goal_fields::GOAL): {
                     (goal_fields::GOAL_ID): goal_id,
@@ -2336,7 +2375,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.goal.progress",
+            "twitch.channel.goal.progress",
             serde_json::json!({
                 (goal_fields::GOAL): {
                     (goal_fields::GOAL_ID): goal_id,
@@ -2385,7 +2424,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.goal.end",
+            "twitch.channel.goal.end",
             serde_json::json!({
                 (goal_fields::GOAL): {
                     (goal_fields::GOAL_ID): goal_id,
@@ -2429,7 +2468,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.channel_points_custom_reward.add",
+            "twitch.channel.channel_points_custom_reward.add",
             serde_json::json!({
                 (reward_fields::REWARD): {
                     (reward_fields::REWARD_ID): reward_id,
@@ -2472,7 +2511,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.channel_points_custom_reward.update",
+            "twitch.channel.channel_points_custom_reward.update",
             serde_json::json!({
                 (reward_fields::REWARD): {
                     (reward_fields::REWARD_ID): reward_id,
@@ -2515,7 +2554,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.channel_points_custom_reward.remove",
+            "twitch.channel.channel_points_custom_reward.remove",
             serde_json::json!({
                 (reward_fields::REWARD): {
                     (reward_fields::REWARD_ID): reward_id,
@@ -2590,7 +2629,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.channel_points_redemption_update",
+            "twitch.channel.channel_points_custom_reward_redemption.update",
             serde_json::json!({
                 (channel_points_fields::REDEMPTION): {
                     (channel_points_fields::REDEMPTION_ID): redemption_id,
@@ -2664,7 +2703,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.automod.message.hold",
+            "twitch.automod.message.hold",
             serde_json::json!({
                 (automod_fields::AUTOMOD): {
                     (automod_fields::MESSAGE_ID): message_id,
@@ -2721,7 +2760,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.chat_settings.update",
+            "twitch.channel.chat_settings.update",
             serde_json::json!({
                 (chat_mod_fields::SETTINGS): {
                     (chat_mod_fields::EMOTE_MODE): emote_mode,
@@ -2756,7 +2795,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.guest_star_session.begin",
+            "twitch.channel.guest_star_session.begin",
             serde_json::json!({
                 (guest_star_fields::SESSION): {
                     (guest_star_fields::SESSION_ID): session_id,
@@ -2791,7 +2830,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.guest_star_session.end",
+            "twitch.channel.guest_star_session.end",
             serde_json::json!({
                 (guest_star_fields::SESSION): {
                     (guest_star_fields::SESSION_ID): session_id,
@@ -2829,7 +2868,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.guest_star_settings.update",
+            "twitch.channel.guest_star_settings.update",
             serde_json::json!({
                 (guest_star_fields::SETTINGS): {
                     (guest_star_fields::SLOT_COUNT): slot_count,
@@ -2896,15 +2935,17 @@ impl ChatSession {
             "guest star guest update"
         );
 
+        let guest_user_id = (!guest_user_id.is_empty()).then_some(guest_user_id);
+        let guest_user_login = (!guest_user_login.is_empty()).then_some(guest_user_login);
+        let guest_user_name = (!guest_user_name.is_empty()).then_some(guest_user_name);
+
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.guest_star_guest.update",
+            "twitch.channel.guest_star_guest.update",
             serde_json::json!({
-                (guest_star_fields::GUEST_STAR): {
-                    (guest_star_fields::SESSION_ID_FIELD): session_id,
-                    (guest_star_fields::SLOT_ID_FIELD): slot_id,
-                    (guest_star_fields::STATE): state,
-                },
+                (guest_star_fields::SESSION_ID_FIELD): session_id,
+                (guest_star_fields::SLOT_ID_FIELD): slot_id,
+                (guest_star_fields::STATE): state,
                 (guest_star_fields::GUEST): {
                     (guest_star_fields::GUEST_ID): guest_user_id,
                     (guest_star_fields::GUEST_LOGIN): guest_user_login,
@@ -2914,58 +2955,6 @@ impl ChatSession {
                     (guest_star_fields::HOST_VIDEO_ENABLED): host_video_enabled,
                     (guest_star_fields::HOST_AUDIO_ENABLED): host_audio_enabled,
                     (guest_star_fields::HOST_VOLUME): host_volume,
-                },
-            }),
-        ));
-    }
-
-    pub(super) fn publish_guest_star_slot_update_event(
-        &self,
-        event_data: &serde_json::Value,
-        _frame_msg_id: &str,
-    ) {
-        let session_id = event_data
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let slot_id = event_data
-            .get("slot_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let host_video_enabled = event_data
-            .get("host_video_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let host_audio_enabled = event_data
-            .get("host_audio_enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let volume = event_data
-            .get("volume")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        info!(
-            session_id = %session_id,
-            slot_id = %slot_id,
-            host_video_enabled,
-            host_audio_enabled,
-            volume,
-            "guest star slot update"
-        );
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            "channel.guest_star_slot.update",
-            serde_json::json!({
-                (guest_star_fields::SESSION_ID_FIELD): session_id,
-                (guest_star_fields::SLOT): {
-                    (guest_star_fields::SLOT_ID_FIELD): slot_id,
-                    (guest_star_fields::SLOT_HOST_VIDEO_ENABLED): host_video_enabled,
-                    (guest_star_fields::SLOT_HOST_AUDIO_ENABLED): host_audio_enabled,
-                    (guest_star_fields::SLOT_VOLUME): volume,
                 },
             }),
         ));
@@ -2997,7 +2986,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.automod.settings.update",
+            "twitch.automod.settings.update",
             serde_json::json!({
                 (automod_fields::MODERATOR): {
                     (automod_fields::MODERATOR_ID): moderator_id,
@@ -3044,7 +3033,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.automod.terms.update",
+            "twitch.automod.terms.update",
             serde_json::json!({
                 (automod_fields::MODERATOR): {
                     (automod_fields::MODERATOR_ID): moderator_id,
@@ -3077,8 +3066,18 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let moderator_id = event_data
+            .get("moderator_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
         let moderator_login = event_data
             .get("moderator_user_login")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let moderator_name = event_data
+            .get("moderator_user_name")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
@@ -3112,7 +3111,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.automod.message.update",
+            "twitch.automod.message.update",
             serde_json::json!({
                 (automod_fields::AUTOMOD): {
                     (automod_fields::MESSAGE_ID): message_id,
@@ -3126,7 +3125,9 @@ impl ChatSession {
                     (automod_fields::USER_DISPLAY_NAME): user_name,
                 },
                 (automod_fields::MODERATOR): {
+                    (automod_fields::MODERATOR_ID): moderator_id,
                     (automod_fields::MODERATOR_LOGIN): moderator_login,
+                    (automod_fields::MODERATOR_DISPLAY_NAME): moderator_name,
                 },
                 (automod_fields::MESSAGE_TEXT): message_text,
             }),
@@ -3163,7 +3164,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.shared_chat.begin",
+            "twitch.channel.shared_chat.begin",
             serde_json::json!({
                 (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
                 (shared_chat_fields::HOST): {
@@ -3205,7 +3206,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.shared_chat.update",
+            "twitch.channel.shared_chat.update",
             serde_json::json!({
                 (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
                 (shared_chat_fields::HOST): {
@@ -3247,7 +3248,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.shared_chat.end",
+            "twitch.channel.shared_chat.end",
             serde_json::json!({
                 (shared_chat_fields::SHARED_CHAT): { (shared_chat_fields::SESSION_ID): session_id },
                 (shared_chat_fields::HOST): {
@@ -3289,7 +3290,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.update",
+            "twitch.channel.update",
             serde_json::json!({
                 (channel_update_fields::CHANNEL): {
                     (channel_update_fields::TITLE): title,
@@ -3329,7 +3330,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.ad_break.begin",
+            "twitch.channel.ad_break.begin",
             serde_json::json!({
                 (ad_break_fields::AD_BREAK): {
                     (ad_break_fields::DURATION_SECONDS): duration_seconds,
@@ -3389,7 +3390,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "channel.channel_points_automatic_reward_redemption",
+            "twitch.channel.channel_points_automatic_reward_redemption.add",
             serde_json::json!({
                 (automatic_reward_fields::REDEMPTION): {
                     (automatic_reward_fields::REDEMPTION_ID): redemption_id,
@@ -3444,13 +3445,13 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "user.whisper.message",
+            "twitch.user.whisper.message",
             serde_json::json!({
                 (whisper_fields::USER): {
                     (whisper_fields::USER_ID): from_user_id,
                     (whisper_fields::USER_LOGIN): from_user_login,
                     (whisper_fields::USER_DISPLAY_NAME): from_user_name,
-                    (whisper_fields::USER_COLOR): "",
+                    (whisper_fields::USER_COLOR): null,
                 },
                 (whisper_fields::WHISPER): {
                     (whisper_fields::WHISPER_TEXT): whisper_text,
@@ -3490,7 +3491,7 @@ impl ChatSession {
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
-            "user.update",
+            "twitch.user.update",
             serde_json::json!({
                 (user_fields::USER): {
                     (user_fields::USER_ID): user_id,
@@ -3558,6 +3559,46 @@ fn build_charity_lifecycle_payload(event_data: &serde_json::Value) -> serde_json
             (charity_fields::CURRENCY_CODE): currency_code,
         },
     })
+}
+
+fn extract_poll_choices(event_data: &serde_json::Value) -> Vec<serde_json::Value> {
+    event_data
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .map(|choices| {
+            choices
+                .iter()
+                .map(|choice| {
+                    serde_json::json!({
+                        (poll_fields::CHOICE_ID): choice.get("id").and_then(|v| v.as_str()).unwrap_or_default(),
+                        (poll_fields::CHOICE_TITLE): choice.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
+                        (poll_fields::CHOICE_VOTES): choice.get("votes").and_then(|v| v.as_i64()),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_prediction_outcomes(event_data: &serde_json::Value) -> Vec<serde_json::Value> {
+    event_data
+        .get("outcomes")
+        .and_then(|v| v.as_array())
+        .map(|outcomes| {
+            outcomes
+                .iter()
+                .map(|outcome| {
+                    serde_json::json!({
+                        (prediction_fields::OUTCOME_ID): outcome.get("id").and_then(|v| v.as_str()).unwrap_or_default(),
+                        (prediction_fields::OUTCOME_TITLE): outcome.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
+                        (prediction_fields::OUTCOME_COLOR): outcome.get("color").and_then(|v| v.as_str()).unwrap_or_default(),
+                        (prediction_fields::OUTCOME_USERS): outcome.get("users").and_then(|v| v.as_i64()),
+                        (prediction_fields::OUTCOME_CHANNEL_POINTS): outcome.get("channel_points").and_then(|v| v.as_i64()),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn attach_chat_payload(forge_payload: &mut serde_json::Value, chat: ChatPayload) {
@@ -3778,7 +3819,7 @@ mod tests {
             .expect("timeout")
             .expect("recv error");
 
-        assert_eq!(ev.kind, "chat.message");
+        assert_eq!(ev.kind, "twitch.channel.chat.message");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["channel"].as_str(), Some("streamer_channel"));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
@@ -4021,7 +4062,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.subscribe");
+        assert_eq!(ev.kind, "twitch.channel.subscribe");
         let chat_val = ev.payload.get(ChatPayload::KEY).expect("_chat key missing");
         let chat: ChatPayload = serde_json::from_value(chat_val.clone()).unwrap();
         assert!(chat.is_event);
@@ -4059,7 +4100,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.raid");
+        assert_eq!(ev.kind, "twitch.channel.raid");
         assert_eq!(ev.payload["viewer_count"].as_i64(), Some(500));
         assert_eq!(
             ev.payload["from_broadcaster"]["login"].as_str(),
@@ -4150,7 +4191,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.follow");
+        assert_eq!(ev.kind, "twitch.channel.follow");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("new_follower"));
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("42"));
@@ -4184,7 +4225,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "stream.online");
+        assert_eq!(ev.kind, "twitch.stream.online");
         assert_eq!(ev.payload["stream"]["id"].as_str(), Some("stream-1"));
         assert_eq!(ev.payload["stream"]["type"].as_str(), Some("live"));
         assert_eq!(
@@ -4226,7 +4267,10 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.channel_points_redemption");
+        assert_eq!(
+            ev.kind,
+            "twitch.channel.channel_points_custom_reward_redemption.add"
+        );
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(
             ev.payload["redemption"]["id"].as_str(),
@@ -4257,7 +4301,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.channel_points_custom_reward.add");
+        assert_eq!(ev.kind, "twitch.channel.channel_points_custom_reward.add");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["reward"]["id"].as_str(), Some("reward-7"));
         assert_eq!(ev.payload["reward"]["title"].as_str(), Some("Hydrate"));
@@ -4292,7 +4336,10 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.channel_points_redemption_update");
+        assert_eq!(
+            ev.kind,
+            "twitch.channel.channel_points_custom_reward_redemption.update"
+        );
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(
             ev.payload["redemption"]["status"].as_str(),
@@ -4323,7 +4370,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.chat.message_delete");
+        assert_eq!(ev.kind, "twitch.channel.chat.message_delete");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["message_id"].as_str(), Some("msg-abc-123"));
         assert_eq!(ev.payload["target_user"]["id"].as_str(), Some("9001"));
@@ -4354,7 +4401,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.chat.clear");
+        assert_eq!(ev.kind, "twitch.channel.chat.clear");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["broadcaster"]["id"].as_str(), Some("100"));
         assert_eq!(
@@ -4380,7 +4427,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "stream.offline");
+        assert_eq!(ev.kind, "twitch.stream.offline");
         assert_eq!(
             ev.payload["broadcaster"]["login"].as_str(),
             Some("host_chan")
@@ -4410,7 +4457,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.hype_train.begin");
+        assert_eq!(ev.kind, "twitch.channel.hype_train.begin");
         assert_eq!(ev.payload["hype"]["id"].as_str(), Some("ht-1"));
         assert_eq!(ev.payload["hype"]["level"].as_i64(), Some(2));
         assert_eq!(ev.payload["hype"]["goal"].as_i64(), Some(1000));
@@ -4442,7 +4489,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.hype_train.progress");
+        assert_eq!(ev.kind, "twitch.channel.hype_train.progress");
         assert_eq!(ev.payload["hype"]["id"].as_str(), Some("ht-2"));
         assert_eq!(ev.payload["hype"]["level"].as_i64(), Some(4));
         assert_eq!(ev.payload["hype"]["progress"].as_i64(), Some(800));
@@ -4469,7 +4516,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.hype_train.end");
+        assert_eq!(ev.kind, "twitch.channel.hype_train.end");
         assert_eq!(ev.payload["hype"]["level"].as_i64(), Some(5));
         assert_eq!(ev.payload["hype"]["total"].as_i64(), Some(9001));
         assert_eq!(
@@ -4502,7 +4549,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.charity_campaign.donate");
+        assert_eq!(ev.kind, "twitch.channel.charity_campaign.donate");
         assert_eq!(ev.payload["charity"]["amount_cents"].as_i64(), Some(2500));
         assert_eq!(ev.payload["charity"]["currency_code"].as_str(), Some("USD"));
         assert_eq!(
@@ -4531,7 +4578,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.charity_campaign.start");
+        assert_eq!(ev.kind, "twitch.channel.charity_campaign.start");
         assert_eq!(
             ev.payload["charity"]["current_amount_cents"].as_i64(),
             Some(12000)
@@ -4553,6 +4600,7 @@ mod tests {
             "user_id": "777",
             "user_login": "viewer_one",
             "user_name": "ViewerOne",
+            "moderator_user_id": "mod-99",
             "moderator_user_login": "mod_jane",
             "moderator_user_name": "ModJane",
             "reason": "spamming",
@@ -4567,7 +4615,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.ban");
+        assert_eq!(ev.kind, "twitch.channel.ban");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["is_permanent"].as_bool(), Some(true));
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("777"));
@@ -4576,6 +4624,7 @@ mod tests {
             ev.payload["user"]["display_name"].as_str(),
             Some("ViewerOne")
         );
+        assert_eq!(ev.payload["moderator"]["id"].as_str(), Some("mod-99"));
         assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_jane"));
         assert_eq!(ev.payload["reason"].as_str(), Some("spamming"));
     }
@@ -4625,7 +4674,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.unban");
+        assert_eq!(ev.kind, "twitch.channel.unban");
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
         assert_eq!(
             ev.payload["moderator"]["display_name"].as_str(),
@@ -4633,6 +4682,37 @@ mod tests {
         );
         assert!(ev.payload.get("reason").is_none());
         assert!(ev.payload.get("is_permanent").is_none());
+    }
+
+    #[tokio::test]
+    async fn gift_sub_event_reports_recipient_identity_as_null() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_id": "gifter-1",
+            "user_login": "santa",
+            "user_name": "Santa",
+            "tier": "1000",
+            "total": 5,
+            "is_anonymous": false
+        });
+        session.publish_gift_sub_event(&event_data, "meta-gift-001");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ev.kind, "twitch.channel.subscription.gift");
+        assert_eq!(ev.payload["gifter"]["login"].as_str(), Some("santa"));
+        assert!(
+            ev.payload["recipient"]["id"].is_null(),
+            "gift-sub events carry no per-recipient identity; must be null, not empty string"
+        );
+        assert!(ev.payload["recipient"]["login"].is_null());
+        assert!(ev.payload["recipient"]["display_name"].is_null());
     }
 
     #[tokio::test]
@@ -4653,7 +4733,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.moderator.add");
+        assert_eq!(ev.kind, "twitch.channel.moderator.add");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("777"));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
@@ -4681,7 +4761,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.moderator.remove");
+        assert_eq!(ev.kind, "twitch.channel.moderator.remove");
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("888"));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("ex_mod"));
         assert_eq!(ev.payload["user"]["display_name"].as_str(), Some("ExMod"));
@@ -4706,7 +4786,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.shield_mode.begin");
+        assert_eq!(ev.kind, "twitch.channel.shield_mode.begin");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["moderator"]["id"].as_str(), Some("42"));
         assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_jane"));
@@ -4739,7 +4819,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.shield_mode.end");
+        assert_eq!(ev.kind, "twitch.channel.shield_mode.end");
         assert_eq!(ev.payload["moderator"]["id"].as_str(), Some("42"));
         assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_jane"));
         assert_eq!(
@@ -4768,7 +4848,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.shoutout.create");
+        assert_eq!(ev.kind, "twitch.channel.shoutout.create");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["to_broadcaster"]["id"].as_str(), Some("555"));
         assert_eq!(
@@ -4806,7 +4886,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.shoutout.receive");
+        assert_eq!(ev.kind, "twitch.channel.shoutout.receive");
         assert_eq!(ev.payload["from_broadcaster"]["id"].as_str(), Some("999"));
         assert_eq!(
             ev.payload["from_broadcaster"]["login"].as_str(),
@@ -4843,7 +4923,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.suspicious_user.message");
+        assert_eq!(ev.kind, "twitch.channel.suspicious_user.message");
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("321"));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("shady_one"));
         assert_eq!(
@@ -4878,7 +4958,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.warning.acknowledge");
+        assert_eq!(ev.kind, "twitch.channel.warning.acknowledge");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("654"));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("warned_user"));
@@ -4898,7 +4978,11 @@ mod tests {
             "id": "poll-1",
             "title": "Best emote?",
             "started_at": "2026-06-13T18:00:00Z",
-            "ends_at": "2026-06-13T18:05:00Z"
+            "ends_at": "2026-06-13T18:05:00Z",
+            "choices": [
+                { "id": "c1", "title": "Kappa", "votes": 12 },
+                { "id": "c2", "title": "PogChamp", "votes": 7 },
+            ]
         });
         session.publish_poll_begin_event(&event_data, "meta-poll-begin-001");
 
@@ -4907,7 +4991,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.poll.begin");
+        assert_eq!(ev.kind, "twitch.channel.poll.begin");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["poll"]["id"].as_str(), Some("poll-1"));
         assert_eq!(ev.payload["poll"]["title"].as_str(), Some("Best emote?"));
@@ -4919,6 +5003,10 @@ mod tests {
             ev.payload["poll"]["ends_at"].as_str(),
             Some("2026-06-13T18:05:00Z")
         );
+        assert_eq!(ev.payload["choices"][0]["id"].as_str(), Some("c1"));
+        assert_eq!(ev.payload["choices"][0]["title"].as_str(), Some("Kappa"));
+        assert_eq!(ev.payload["choices"][0]["votes"].as_i64(), Some(12));
+        assert_eq!(ev.payload["choices"][1]["votes"].as_i64(), Some(7));
     }
 
     #[tokio::test]
@@ -4938,7 +5026,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.poll.progress");
+        assert_eq!(ev.kind, "twitch.channel.poll.progress");
         assert_eq!(ev.payload["poll"]["id"].as_str(), Some("poll-2"));
         assert_eq!(ev.payload["poll"]["title"].as_str(), Some("Next game?"));
     }
@@ -4962,7 +5050,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.poll.end");
+        assert_eq!(ev.kind, "twitch.channel.poll.end");
         assert_eq!(ev.payload["poll"]["id"].as_str(), Some("poll-3"));
         assert_eq!(ev.payload["poll"]["title"].as_str(), Some("Map vote"));
         assert_eq!(ev.payload["poll"]["status"].as_str(), Some("completed"));
@@ -4982,7 +5070,11 @@ mod tests {
             "id": "pred-1",
             "title": "Will we win?",
             "started_at": "2026-06-13T18:00:00Z",
-            "locks_at": "2026-06-13T18:02:00Z"
+            "locks_at": "2026-06-13T18:02:00Z",
+            "outcomes": [
+                { "id": "o1", "title": "Yes", "color": "blue", "users": 30, "channel_points": 4500 },
+                { "id": "o2", "title": "No", "color": "pink", "users": 12, "channel_points": 900 },
+            ]
         });
         session.publish_prediction_begin_event(&event_data, "meta-pred-begin-001");
 
@@ -4991,7 +5083,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.prediction.begin");
+        assert_eq!(ev.kind, "twitch.channel.prediction.begin");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["prediction"]["id"].as_str(), Some("pred-1"));
         assert_eq!(
@@ -5005,6 +5097,14 @@ mod tests {
         assert_eq!(
             ev.payload["prediction"]["locks_at"].as_str(),
             Some("2026-06-13T18:02:00Z")
+        );
+        assert_eq!(ev.payload["outcomes"][0]["id"].as_str(), Some("o1"));
+        assert_eq!(ev.payload["outcomes"][0]["title"].as_str(), Some("Yes"));
+        assert_eq!(ev.payload["outcomes"][0]["color"].as_str(), Some("blue"));
+        assert_eq!(ev.payload["outcomes"][0]["users"].as_i64(), Some(30));
+        assert_eq!(
+            ev.payload["outcomes"][0]["channel_points"].as_i64(),
+            Some(4500)
         );
     }
 
@@ -5025,7 +5125,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.prediction.progress");
+        assert_eq!(ev.kind, "twitch.channel.prediction.progress");
         assert_eq!(ev.payload["prediction"]["id"].as_str(), Some("pred-2"));
         assert_eq!(
             ev.payload["prediction"]["title"].as_str(),
@@ -5051,7 +5151,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.prediction.lock");
+        assert_eq!(ev.kind, "twitch.channel.prediction.lock");
         assert_eq!(ev.payload["prediction"]["id"].as_str(), Some("pred-3"));
         assert_eq!(
             ev.payload["prediction"]["title"].as_str(),
@@ -5083,7 +5183,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.prediction.end");
+        assert_eq!(ev.kind, "twitch.channel.prediction.end");
         assert_eq!(
             ev.payload["prediction"]["winning_outcome_id"].as_str(),
             Some("outcome-42")
@@ -5119,7 +5219,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.goal.begin");
+        assert_eq!(ev.kind, "twitch.channel.goal.begin");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["goal"]["id"].as_str(), Some("goal-1"));
         assert_eq!(
@@ -5149,7 +5249,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.goal.progress");
+        assert_eq!(ev.kind, "twitch.channel.goal.progress");
         assert_eq!(ev.payload["goal"]["id"].as_str(), Some("goal-2"));
         assert_eq!(ev.payload["goal"]["current_amount"].as_i64(), Some(42));
         assert_eq!(ev.payload["goal"]["target_amount"].as_i64(), Some(100));
@@ -5176,7 +5276,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.goal.end");
+        assert_eq!(ev.kind, "twitch.channel.goal.end");
         assert_eq!(ev.payload["goal"]["id"].as_str(), Some("goal-3"));
         assert_eq!(ev.payload["goal"]["is_achieved"].as_bool(), Some(true));
         assert_eq!(
@@ -5210,7 +5310,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.automod.message.hold");
+        assert_eq!(ev.kind, "twitch.automod.message.hold");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(
             ev.payload["message_text"].as_str(),
@@ -5246,7 +5346,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.chat_settings.update");
+        assert_eq!(ev.kind, "twitch.channel.chat_settings.update");
         let settings = &ev.payload["settings"];
         assert_eq!(settings["emote_mode"].as_bool(), Some(true));
         assert_eq!(settings["slow_mode"].as_bool(), Some(true));
@@ -5275,7 +5375,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.guest_star_session.begin");
+        assert_eq!(ev.kind, "twitch.channel.guest_star_session.begin");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["session"]["id"].as_str(), Some("sess-99"));
         assert_eq!(
@@ -5302,7 +5402,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.guest_star_session.end");
+        assert_eq!(ev.kind, "twitch.channel.guest_star_session.end");
         assert_eq!(ev.payload["session"]["id"].as_str(), Some("sess-99"));
         assert_eq!(
             ev.payload["session"]["ended_at"].as_str(),
@@ -5329,7 +5429,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.guest_star_settings.update");
+        assert_eq!(ev.kind, "twitch.channel.guest_star_settings.update");
         let settings = &ev.payload["settings"];
         assert_eq!(settings["slot_count"].as_i64(), Some(6));
         assert_eq!(
@@ -5343,7 +5443,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_guest_star_guest_update_event_nests_guest_star_and_guest_with_state() {
+    async fn publish_guest_star_guest_update_event_flattens_state_and_carries_guest_and_host() {
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
@@ -5355,6 +5455,9 @@ mod tests {
             "guest_user_id": "guest-42",
             "guest_user_login": "guest_login",
             "guest_user_name": "GuestName",
+            "host_video_enabled": true,
+            "host_audio_enabled": false,
+            "host_volume": 80,
         });
         session.publish_guest_star_guest_update_event(&event_data, "meta-gs-guest");
 
@@ -5363,20 +5466,50 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.guest_star_guest.update");
+        assert_eq!(ev.kind, "twitch.channel.guest_star_guest.update");
         assert_eq!(ev.source, EventSource::Twitch);
-        assert_eq!(
-            ev.payload["guest_star"]["session_id"].as_str(),
-            Some("sess-7")
+        assert_eq!(ev.payload["session_id"].as_str(), Some("sess-7"));
+        assert_eq!(ev.payload["slot_id"].as_str(), Some("3"));
+        assert_eq!(ev.payload["state"].as_str(), Some("live"));
+        assert!(
+            ev.payload.get("guest_star").is_none(),
+            "session_id/slot_id/state must be top-level, not nested under guest_star"
         );
-        assert_eq!(ev.payload["guest_star"]["slot_id"].as_str(), Some("3"));
-        assert_eq!(ev.payload["guest_star"]["state"].as_str(), Some("live"));
         assert_eq!(ev.payload["guest"]["id"].as_str(), Some("guest-42"));
         assert_eq!(ev.payload["guest"]["login"].as_str(), Some("guest_login"));
         assert_eq!(
             ev.payload["guest"]["display_name"].as_str(),
             Some("GuestName")
         );
+        assert_eq!(ev.payload["host"]["video_enabled"].as_bool(), Some(true));
+        assert_eq!(ev.payload["host"]["audio_enabled"].as_bool(), Some(false));
+        assert_eq!(ev.payload["host"]["volume"].as_i64(), Some(80));
+    }
+
+    #[tokio::test]
+    async fn publish_guest_star_guest_update_event_nulls_absent_guest_identity() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "session_id": "sess-7",
+            "slot_id": "3",
+            "state": "removed",
+        });
+        session.publish_guest_star_guest_update_event(&event_data, "meta-gs-slot-only");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            ev.payload["guest"]["id"].is_null(),
+            "omitted guest identity must be null, not empty string"
+        );
+        assert!(ev.payload["guest"]["login"].is_null());
+        assert!(ev.payload["guest"]["display_name"].is_null());
     }
 
     #[tokio::test]
@@ -5398,7 +5531,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.automod.settings.update");
+        assert_eq!(ev.kind, "twitch.automod.settings.update");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_login"));
         assert_eq!(ev.payload["overall_level"].as_i64(), Some(3));
@@ -5422,7 +5555,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.automod.terms.update");
+        assert_eq!(ev.kind, "twitch.automod.terms.update");
         assert_eq!(ev.payload["action"].as_str(), Some("add_blocked"));
         assert_eq!(ev.payload["terms"][0].as_str(), Some("badword"));
     }
@@ -5437,6 +5570,7 @@ mod tests {
             "user_id": "777",
             "user_login": "viewer_one",
             "user_name": "ViewerOne",
+            "moderator_user_id": "mod-55",
             "moderator_user_login": "mod_login",
             "message_id": "msg-77",
             "message": {"text": "borderline message"},
@@ -5451,13 +5585,14 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.automod.message.update");
+        assert_eq!(ev.kind, "twitch.automod.message.update");
         assert_eq!(ev.payload["automod"]["status"].as_str(), Some("Approved"));
         assert_eq!(ev.payload["automod"]["message_id"].as_str(), Some("msg-77"));
         assert_eq!(
             ev.payload["message_text"].as_str(),
             Some("borderline message")
         );
+        assert_eq!(ev.payload["moderator"]["id"].as_str(), Some("mod-55"));
         assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_login"));
     }
 
@@ -5480,7 +5615,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.shared_chat.begin");
+        assert_eq!(ev.kind, "twitch.channel.shared_chat.begin");
         assert_eq!(
             ev.payload["shared_chat"]["session_id"].as_str(),
             Some("sess-begin")
@@ -5512,7 +5647,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.shared_chat.update");
+        assert_eq!(ev.kind, "twitch.channel.shared_chat.update");
         assert_eq!(
             ev.payload["shared_chat"]["session_id"].as_str(),
             Some("sess-update")
@@ -5539,7 +5674,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.shared_chat.end");
+        assert_eq!(ev.kind, "twitch.channel.shared_chat.end");
         assert_eq!(
             ev.payload["shared_chat"]["session_id"].as_str(),
             Some("sess-end")
@@ -5567,7 +5702,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.update");
+        assert_eq!(ev.kind, "twitch.channel.update");
         assert_eq!(ev.source, EventSource::Twitch);
         assert_eq!(ev.payload["channel"]["title"].as_str(), Some("New title"));
         assert_eq!(ev.payload["channel"]["language"].as_str(), Some("en"));
@@ -5600,7 +5735,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(ev.kind, "channel.ad_break.begin");
+        assert_eq!(ev.kind, "twitch.channel.ad_break.begin");
         assert_eq!(
             ev.payload["ad_break"]["duration_seconds"].as_i64(),
             Some(90)
@@ -5639,7 +5774,7 @@ mod tests {
 
         assert_eq!(
             ev.kind,
-            "channel.channel_points_automatic_reward_redemption"
+            "twitch.channel.channel_points_automatic_reward_redemption.add"
         );
         assert_eq!(ev.payload["reward"]["cost"].as_i64(), Some(300));
         assert_eq!(

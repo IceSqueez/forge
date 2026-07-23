@@ -7,6 +7,7 @@ use forge_types::{
 };
 
 use crate::payload_fields::prediction as fields;
+use crate::triggers::prediction_started::build_outcomes_variant;
 
 pub(crate) struct PredictionProgressDescriptor;
 
@@ -54,7 +55,7 @@ impl TriggerKindDescriptor for PredictionProgressDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.prediction.progress".to_owned()),
+            kind_prefix: Some("twitch.channel.prediction.progress".to_owned()),
         }
     }
 
@@ -76,9 +77,12 @@ impl TriggerKindDescriptor for PredictionProgressDescriptor {
             .unwrap_or("")
             .to_owned();
 
+        let outcomes = build_outcomes_variant(event);
+
         ArgStack::new()
             .set("prediction.id".to_owned(), Variant::String(prediction_id))
             .set("prediction.title".to_owned(), Variant::String(title))
+            .set("prediction.outcomes".to_owned(), outcomes)
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -94,6 +98,12 @@ impl TriggerKindDescriptor for PredictionProgressDescriptor {
                         name: "prediction.title".to_owned(),
                         kind: VariantKind::String,
                         label: "Prediction title".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "prediction.outcomes".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Prediction outcomes".to_owned(),
                         synthesis: None,
                     },
                 ],
@@ -113,7 +123,11 @@ mod tests {
                 "title": "Next round outcome",
             },
         });
-        Event::new(EventSource::Twitch, "channel.prediction.progress", payload)
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.prediction.progress",
+            payload,
+        )
     }
 
     #[test]
@@ -122,7 +136,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.prediction.progress")
+            Some("twitch.channel.prediction.progress")
         );
     }
 

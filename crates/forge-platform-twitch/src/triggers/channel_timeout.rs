@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.ban".to_owned()),
+            kind_prefix: Some("twitch.channel.ban".to_owned()),
         }
     }
 
@@ -87,6 +87,11 @@ impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let moderator_id = moderator
+            .and_then(|m| m.get(fields::MODERATOR_ID))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
         let moderator_login = moderator
             .and_then(|m| m.get(fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
@@ -115,6 +120,7 @@ impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
             .set("user_login".to_owned(), Variant::String(user_login))
             .set("user_id".to_owned(), Variant::String(user_id))
             .set("user_name".to_owned(), Variant::String(user_name))
+            .set("moderator_id".to_owned(), Variant::String(moderator_id))
             .set(
                 "moderator_login".to_owned(),
                 Variant::String(moderator_login),
@@ -144,6 +150,12 @@ impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
                         kind: VariantKind::String,
                         label: "Timed-out user display name".to_owned(),
                         synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    DeclaredVariable {
+                        name: "moderator_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator ID".to_owned(),
+                        synthesis: None,
                     },
                     DeclaredVariable {
                         name: "moderator_login".to_owned(),
@@ -188,14 +200,14 @@ mod tests {
             "ends_at": "2026-06-13T10:10:00Z",
             "is_permanent": false,
         });
-        Event::new(EventSource::Twitch, "channel.ban", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.ban", payload)
     }
 
     #[test]
     fn event_filter_targets_shared_channel_ban_topic_from_twitch() {
         let filter = ChannelTimeoutDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.ban"));
+        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.ban"));
     }
 
     #[test]

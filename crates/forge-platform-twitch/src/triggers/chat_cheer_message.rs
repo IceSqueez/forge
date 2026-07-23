@@ -96,7 +96,7 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("chat.message".to_owned()),
+            kind_prefix: Some("twitch.channel.chat.message".to_owned()),
         }
     }
 
@@ -187,7 +187,7 @@ mod tests {
         if let Some(bits) = cheer_bits {
             payload["cheer"] = serde_json::json!({ "bits": bits });
         }
-        Event::new(EventSource::Twitch, "chat.message", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.chat.message", payload)
     }
 
     #[test]

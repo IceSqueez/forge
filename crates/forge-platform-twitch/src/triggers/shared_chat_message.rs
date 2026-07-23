@@ -56,7 +56,7 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("chat.message".to_owned()),
+            kind_prefix: Some("twitch.channel.chat.message".to_owned()),
         }
     }
 
@@ -129,7 +129,7 @@ mod tests {
         if let Some(fc) = from_channel {
             payload["from_channel"] = fc;
         }
-        Event::new(EventSource::Twitch, "chat.message", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.chat.message", payload)
     }
 
     #[test]

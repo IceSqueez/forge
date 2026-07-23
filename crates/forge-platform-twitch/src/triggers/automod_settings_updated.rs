@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for AutomodSettingsUpdatedDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.automod.settings.update".to_owned()),
+            kind_prefix: Some("twitch.automod.settings.update".to_owned()),
         }
     }
 
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
-            Some("channel.automod.settings.update")
+            Some("twitch.automod.settings.update")
         );
     }
 

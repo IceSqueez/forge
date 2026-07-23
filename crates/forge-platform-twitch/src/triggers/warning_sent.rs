@@ -55,7 +55,7 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
-            kind_prefix: Some("channel.warning.send".to_owned()),
+            kind_prefix: Some("twitch.channel.warning.send".to_owned()),
         }
     }
 
@@ -83,6 +83,11 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
             .unwrap_or("")
             .to_owned();
 
+        let moderator_id = moderator
+            .and_then(|v| v.get(warning_fields::MODERATOR_ID))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
         let moderator_login = moderator
             .and_then(|v| v.get(warning_fields::MODERATOR_LOGIN))
             .and_then(|v| v.as_str())
@@ -121,6 +126,10 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
                 Variant::String(user_name),
             )
             .set(
+                "warning.moderator.id".to_owned(),
+                Variant::String(moderator_id),
+            )
+            .set(
                 "warning.moderator.login".to_owned(),
                 Variant::String(moderator_login),
             )
@@ -148,6 +157,12 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
                         kind: VariantKind::String,
                         label: "Warned user display name".to_owned(),
                         synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    DeclaredVariable {
+                        name: "warning.moderator.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator ID".to_owned(),
+                        synthesis: None,
                     },
                     DeclaredVariable {
                         name: "warning.moderator.login".to_owned(),
@@ -178,7 +193,7 @@ mod tests {
     use super::*;
 
     fn warning_send_event(payload: serde_json::Value) -> Event {
-        Event::new(EventSource::Twitch, "channel.warning.send", payload)
+        Event::new(EventSource::Twitch, "twitch.channel.warning.send", payload)
     }
 
     fn full_payload() -> serde_json::Value {
@@ -194,7 +209,10 @@ mod tests {
     fn event_filter_targets_warning_send_topic_from_twitch() {
         let filter = WarningSentDescriptor.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("channel.warning.send"));
+        assert_eq!(
+            filter.kind_prefix.as_deref(),
+            Some("twitch.channel.warning.send")
+        );
     }
 
     #[test]

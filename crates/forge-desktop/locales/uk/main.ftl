@@ -1255,6 +1255,7 @@ twitch_device_copied = Скопійовано
 twitch_device_expires_in = Спливає через
 twitch_device_get_new_code = Отримати новий код
 twitch_device_waiting = Очікування підтвердження на { $name }…
+twitch_device_requesting = Запитуємо код у { $name }…
 twitch_device_polling_subline = опитування кожні { $interval }с · scopes: { $scopes }
 twitch_device_do_later = Зроблю це пізніше
 twitch_device_expired_title = Цей код сплив, перш ніж ви завершили

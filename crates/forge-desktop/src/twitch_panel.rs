@@ -148,6 +148,11 @@ impl IntegrationDetail {
         if let Some(dev) = &self.twitch_device {
             dev.cancel.cancel();
         }
+        let id_source = if std::env::var("FORGE_TWITCH_CLIENT_ID").is_ok() {
+            "runtime env"
+        } else {
+            "compiled default"
+        };
         let Some(cid) = forge_platform_twitch::client_id() else {
             self.twitch_device = Some(TwitchDeviceState::failed(
                 TwitchDevicePhase::Failed,
@@ -156,6 +161,11 @@ impl IntegrationDetail {
             cx.notify();
             return;
         };
+        tracing::info!(
+            source = id_source,
+            id_prefix = &cid[..cid.len().min(6)],
+            "starting twitch device flow"
+        );
         let handle: TwitchFlowHandle =
             Arc::new(tokio::sync::Mutex::new(Some(TwitchAuthFlow::new(cid))));
         self.twitch_flow = Some(Arc::clone(&handle));
@@ -410,9 +420,8 @@ impl IntegrationDetail {
             .as_ref()
             .map_or(TwitchDevicePhase::Starting, |d| d.phase);
         let status_card = match phase {
-            TwitchDevicePhase::Starting | TwitchDevicePhase::Waiting => {
-                self.twitch_progress_card(accent, palette)
-            }
+            TwitchDevicePhase::Starting => self.twitch_progress_card(true, accent, palette),
+            TwitchDevicePhase::Waiting => self.twitch_progress_card(false, accent, palette),
             TwitchDevicePhase::Authorized => self.twitch_done_card(palette),
             TwitchDevicePhase::Expired => self.twitch_expired_card(palette, density),
             TwitchDevicePhase::Denied => self.twitch_error_card(
@@ -431,15 +440,23 @@ impl IntegrationDetail {
             ),
         };
 
-        div()
+        let has_code = self
+            .twitch_device
+            .as_ref()
+            .is_some_and(|d| d.code.is_some());
+        let mut column = div()
             .w_full()
             .max_w(px(640.0))
             .flex()
             .flex_col()
             .child(eyebrow)
-            .child(self.twitch_explainer(palette))
-            .child(self.twitch_url_card(accent, palette, cx))
-            .child(self.twitch_code_card(accent, palette, cx))
+            .child(self.twitch_explainer(palette));
+        if has_code {
+            column = column
+                .child(self.twitch_url_card(accent, palette, cx))
+                .child(self.twitch_code_card(accent, palette, cx));
+        }
+        column
             .child(status_card)
             .child(self.twitch_device_footer(palette, density, cx))
             .into_any_element()
@@ -704,9 +721,19 @@ impl IntegrationDetail {
             .into_any_element()
     }
 
-    fn twitch_progress_card(&self, accent: Rgba, palette: &ForgePalette) -> AnyElement {
+    fn twitch_progress_card(
+        &self,
+        requesting: bool,
+        accent: Rgba,
+        palette: &ForgePalette,
+    ) -> AnyElement {
         let name = self.display_name.clone();
         let scopes = scopes_preview();
+        let headline = if requesting {
+            tr!("twitch_device_requesting", name = name.as_str())
+        } else {
+            tr!("twitch_device_waiting", name = name.as_str())
+        };
         let subline = tr!(
             "twitch_device_polling_subline",
             interval = TWITCH_DEVICE_POLL_SECS,
@@ -748,15 +775,15 @@ impl IntegrationDetail {
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
-                            .child(tr!("twitch_device_waiting", name = name.as_str())),
+                            .child(headline),
                     )
-                    .child(
+                    .children((!requesting).then(|| {
                         div()
                             .font_family(mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
-                            .child(subline),
-                    ),
+                            .child(subline)
+                    })),
             )
             .into_any_element()
     }

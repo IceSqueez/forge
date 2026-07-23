@@ -69,10 +69,37 @@ use crate::actions::{bind_list_keys, register_shell_key_bindings};
 use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 
+fn default_env_filter(
+    _: tracing_subscriber::filter::FromEnvError,
+) -> tracing_subscriber::EnvFilter {
+    const SYMPHONIA_TARGETS: &[&str] = &[
+        "symphonia_core",
+        "symphonia_common",
+        "symphonia_metadata",
+        "symphonia_bundle_flac",
+        "symphonia_bundle_mp3",
+        "symphonia_codec_aac",
+        "symphonia_codec_adpcm",
+        "symphonia_codec_alac",
+        "symphonia_codec_pcm",
+        "symphonia_codec_vorbis",
+        "symphonia_format_caf",
+        "symphonia_format_isomp4",
+        "symphonia_format_mkv",
+        "symphonia_format_ogg",
+        "symphonia_format_riff",
+    ];
+    let mut directives = String::from("info");
+    for target in SYMPHONIA_TARGETS {
+        directives.push_str(&format!(",{target}=warn"));
+    }
+    tracing_subscriber::EnvFilter::new(directives)
+}
+
 fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(default_env_filter);
     let console_layer = fmt::layer().with_target(false);
 
     let log_dir = paths::data_dir().join("logs");

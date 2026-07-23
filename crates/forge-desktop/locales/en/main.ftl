@@ -1252,6 +1252,7 @@ twitch_device_polling_subline = polling every { $interval }s · scopes: { $scope
 twitch_device_do_later = I'll do this later
 twitch_device_expired_title = This code expired before you finished
 twitch_device_denied_title = Authorization denied
+twitch_device_failed_title = Could not start authorization
 twitch_device_denied_detail = You declined access on Twitch. Retry to request a new code.
 
 ## Server screen

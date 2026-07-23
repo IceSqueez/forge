@@ -1259,6 +1259,7 @@ twitch_device_polling_subline = опитування кожні { $interval }с 
 twitch_device_do_later = Зроблю це пізніше
 twitch_device_expired_title = Цей код сплив, перш ніж ви завершили
 twitch_device_denied_title = Авторизацію відхилено
+twitch_device_failed_title = Не вдалося почати авторизацію
 twitch_device_denied_detail = Ви відмовили в доступі на Twitch. Повторіть, щоб отримати новий код.
 
 ## Екран сервера

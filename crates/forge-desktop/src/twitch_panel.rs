@@ -35,6 +35,7 @@ pub(crate) enum TwitchDevicePhase {
     Waiting,
     Expired,
     Denied,
+    Failed,
     Authorized,
 }
 
@@ -149,7 +150,7 @@ impl IntegrationDetail {
         }
         let Some(cid) = forge_platform_twitch::client_id() else {
             self.twitch_device = Some(TwitchDeviceState::failed(
-                TwitchDevicePhase::Expired,
+                TwitchDevicePhase::Failed,
                 tr!("auth_error_credentials_missing_twitch").to_string(),
             ));
             cx.notify();
@@ -177,7 +178,7 @@ impl IntegrationDetail {
             Ok(info) => info,
             Err(e) => {
                 tracing::warn!(error = %e, "twitch device code request failed");
-                self.twitch_device = Some(TwitchDeviceState::failed(TwitchDevicePhase::Expired, e));
+                self.twitch_device = Some(TwitchDeviceState::failed(TwitchDevicePhase::Failed, e));
                 cx.notify();
                 return;
             }
@@ -196,7 +197,7 @@ impl IntegrationDetail {
         }
         let Some(handle) = self.twitch_flow.clone() else {
             self.twitch_device = Some(TwitchDeviceState::failed(
-                TwitchDevicePhase::Expired,
+                TwitchDevicePhase::Failed,
                 "no active Twitch flow handle".to_owned(),
             ));
             cx.notify();
@@ -243,7 +244,7 @@ impl IntegrationDetail {
             Err(TwitchWaitError::Other(msg)) => {
                 tracing::warn!(error = %msg, "twitch authorization failed");
                 if let Some(dev) = &mut self.twitch_device {
-                    dev.phase = TwitchDevicePhase::Expired;
+                    dev.phase = TwitchDevicePhase::Failed;
                     dev.error = Some(msg);
                 }
                 cx.notify();
@@ -364,7 +365,7 @@ impl IntegrationDetail {
                 tr!("oauth_status_authorized"),
                 palette.success,
             ),
-            TwitchDevicePhase::Denied => (
+            TwitchDevicePhase::Denied | TwitchDevicePhase::Failed => (
                 status_dot(palette.random).into_any_element(),
                 tr!("common_status_not_connected"),
                 palette.random,
@@ -413,8 +414,21 @@ impl IntegrationDetail {
                 self.twitch_progress_card(accent, palette)
             }
             TwitchDevicePhase::Authorized => self.twitch_done_card(palette),
-            TwitchDevicePhase::Expired => self.twitch_expired_card(accent, palette, density, cx),
-            TwitchDevicePhase::Denied => self.twitch_denied_card(accent, palette, density, cx),
+            TwitchDevicePhase::Expired => self.twitch_expired_card(palette, density),
+            TwitchDevicePhase::Denied => self.twitch_error_card(
+                tr!("twitch_device_denied_title"),
+                accent,
+                palette,
+                density,
+                cx,
+            ),
+            TwitchDevicePhase::Failed => self.twitch_error_card(
+                tr!("twitch_device_failed_title"),
+                accent,
+                palette,
+                density,
+                cx,
+            ),
         };
 
         div()
@@ -772,34 +786,7 @@ impl IntegrationDetail {
             .into_any_element()
     }
 
-    fn twitch_expired_card(
-        &self,
-        accent: Rgba,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let action = div()
-            .id("twitch-expired-new-code")
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .rounded(radius(Radius::Sm))
-            .bg(accent)
-            .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(accent, 0.85)))
-            .on_click(cx.listener(|this, _, _, cx| this.begin_twitch_device(cx)))
-            .child(icon(Icon::Refresh, px(12.0), palette.shell))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.shell)
-                    .child(tr!("twitch_device_get_new_code")),
-            );
+    fn twitch_expired_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .w_full()
             .flex()
@@ -823,12 +810,12 @@ impl IntegrationDetail {
                     .text_color(palette.text_primary)
                     .child(tr!("twitch_device_expired_title")),
             )
-            .child(action)
             .into_any_element()
     }
 
-    fn twitch_denied_card(
+    fn twitch_error_card(
         &self,
+        title: String,
         accent: Rgba,
         palette: &ForgePalette,
         density: Density,
@@ -886,7 +873,7 @@ impl IntegrationDetail {
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
-                            .child(tr!("twitch_device_denied_title")),
+                            .child(title),
                     )
                     .child(retry),
             )

@@ -19,6 +19,9 @@ impl QuickActions for ObsClient {
                 label: "Switch Scene".to_owned(),
                 icon: SectionIcon::new("arrows-shuffle"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "obs.scenes.switch_current".to_owned(),
                     config: BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))]),
@@ -33,6 +36,9 @@ impl QuickActions for ObsClient {
                 label: "Toggle Source".to_owned(),
                 icon: SectionIcon::new("eye"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "obs.sources.set_visible".to_owned(),
                     config: BTreeMap::from([
@@ -51,6 +57,9 @@ impl QuickActions for ObsClient {
                 label: "Set Mute".to_owned(),
                 icon: SectionIcon::new("volume"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "obs.audio.set_mute".to_owned(),
                     config: BTreeMap::from([
@@ -68,6 +77,9 @@ impl QuickActions for ObsClient {
                 label: "Start Recording".to_owned(),
                 icon: SectionIcon::new("record"),
                 enabled: connected && !recording,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "obs.record.start".to_owned(),
                     config: BTreeMap::new(),

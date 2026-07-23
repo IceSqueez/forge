@@ -14,6 +14,9 @@ impl QuickActions for VTubeClient {
                 label: "Trigger Hotkey".to_owned(),
                 icon: SectionIcon::new("bolt"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.hotkey.trigger".to_owned(),
                     config: BTreeMap::from([(
@@ -31,6 +34,9 @@ impl QuickActions for VTubeClient {
                 label: "Activate Expression".to_owned(),
                 icon: SectionIcon::new("mood-smile"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.expression.set".to_owned(),
                     config: BTreeMap::from([
@@ -48,6 +54,9 @@ impl QuickActions for VTubeClient {
                 label: "Load Model".to_owned(),
                 icon: SectionIcon::new("user"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.model.load".to_owned(),
                     config: BTreeMap::from([(
@@ -65,6 +74,9 @@ impl QuickActions for VTubeClient {
                 label: "Move Model".to_owned(),
                 icon: SectionIcon::new("arrows-move"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.model.move".to_owned(),
                     config: BTreeMap::from([

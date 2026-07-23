@@ -7,6 +7,8 @@ use tokio_util::sync::CancellationToken;
 use twitch_api::HelixClient;
 use twitch_api::twitch_oauth2::{AccessToken, ClientId, TwitchToken, UserToken};
 
+use crate::sub_actions::identity::BroadcasterTier;
+
 pub const TWITCH_DEVICE_ENDPOINT: &str = "https://id.twitch.tv/oauth2/device";
 pub const TWITCH_TOKEN_ENDPOINT: &str = "https://id.twitch.tv/oauth2/token";
 
@@ -72,6 +74,7 @@ pub struct UserInfo {
     pub id: String,
     pub login: String,
     pub display_name: String,
+    pub broadcaster_type: BroadcasterTier,
 }
 
 #[derive(Debug, Clone)]
@@ -350,7 +353,17 @@ async fn fetch_user_info_from_token(
         id: user.id.to_string(),
         login: user.login.to_string(),
         display_name: user.display_name.to_string(),
+        broadcaster_type: map_broadcaster_type(user.broadcaster_type),
     })
+}
+
+fn map_broadcaster_type(bt: Option<twitch_api::types::BroadcasterType>) -> BroadcasterTier {
+    use twitch_api::types::BroadcasterType as TwitchApiTier;
+    match bt {
+        Some(TwitchApiTier::Partner) => BroadcasterTier::Partner,
+        Some(TwitchApiTier::Affiliate) => BroadcasterTier::Affiliate,
+        Some(TwitchApiTier::None) | None => BroadcasterTier::Standard,
+    }
 }
 
 /// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` -> compile-time `option_env!` -> `None`.

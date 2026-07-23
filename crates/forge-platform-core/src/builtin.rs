@@ -1,6 +1,6 @@
 use std::fmt;
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -166,6 +166,20 @@ pub struct SubscriptionRow {
     pub error_label: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeroBadgeTone {
+    Neutral,
+    Positive,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeroBadge {
+    pub label: String,
+    pub tone: HeroBadgeTone,
+    pub monospace: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListFooter {
     pub cta_label: Option<String>,
@@ -230,9 +244,12 @@ pub enum DetailSection {
         icon: SectionIcon,
         items: Vec<SubscriptionRow>,
         footer: Option<ListFooter>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        banner: Option<String>,
     },
     ScopesList {
         title: String,
+        icon: SectionIcon,
         scopes: Vec<String>,
         footer: Option<ListFooter>,
     },
@@ -246,6 +263,10 @@ pub enum DetailSection {
         title: String,
         icon: SectionIcon,
         columns: Vec<StatColumn>,
+    },
+    TwoColumn {
+        left: Box<DetailSection>,
+        right: Box<DetailSection>,
     },
 }
 
@@ -265,6 +286,17 @@ pub struct QuickAction {
     pub label: String,
     pub icon: SectionIcon,
     pub enabled: bool,
+    /// Set when `enabled` is false because the broadcaster's tier/plan doesn't unlock this
+    /// action (e.g. "Requires Twitch Affiliate or Partner"), distinct from being merely
+    /// disconnected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locked_reason: Option<String>,
+    /// Category header the generic renderer groups this action under; `None` falls into a
+    /// single untitled section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub destructive: bool,
     pub subaction_template: SubActionStep,
     pub picker: Option<PickerKind>,
 }
@@ -293,6 +325,15 @@ pub trait BuiltinStatus: Send + Sync {
     fn endpoint(&self) -> Option<&str>;
     fn capability_flags(&self) -> CapabilityFlags;
     fn header_actions(&self) -> Vec<HeaderAction>;
+    /// Absolute expiry of the active access token, when the integration authenticates with an
+    /// expiring OAuth token; `None` for integrations without one (the UI omits the countdown).
+    fn token_expiry(&self) -> Option<SystemTime> {
+        None
+    }
+    /// Small pills rendered inline after the hero name (e.g. account id, broadcaster tier).
+    fn name_badges(&self) -> Vec<HeroBadge> {
+        Vec::new()
+    }
 }
 
 pub trait BuiltinHealth: Send + Sync {
@@ -576,7 +617,10 @@ mod tests {
         let action = QuickAction {
             label: "Switch to Main".to_owned(),
             icon: SectionIcon::new("play"),
-            enabled: true,
+            enabled: false,
+            locked_reason: Some("Requires Twitch Affiliate or Partner".to_owned()),
+            group: Some("Raids & ads".to_owned()),
+            destructive: true,
             subaction_template: SubActionStep {
                 kind_id: "obs.scenes.switch_current".to_owned(),
                 config: BTreeMap::from([(
@@ -593,6 +637,29 @@ mod tests {
         let json = serde_json::to_string(&action).unwrap();
         let back: QuickAction = serde_json::from_str(&json).unwrap();
         assert_eq!(back, action);
+    }
+
+    #[test]
+    fn quick_action_deserializes_legacy_json_missing_new_fields_as_defaults() {
+        let template = SubActionStep {
+            kind_id: "obs.scenes.switch_current".to_owned(),
+            config: BTreeMap::new(),
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        };
+        let legacy = serde_json::json!({
+            "label": "Switch to Main",
+            "icon": "play",
+            "enabled": true,
+            "subaction_template": serde_json::to_value(&template).unwrap(),
+            "picker": serde_json::Value::Null,
+        });
+        let action: QuickAction = serde_json::from_value(legacy).unwrap();
+        assert!(action.locked_reason.is_none());
+        assert!(action.group.is_none());
+        assert!(!action.destructive);
     }
 
     #[test]

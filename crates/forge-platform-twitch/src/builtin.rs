@@ -1,6 +1,7 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use time::OffsetDateTime;
 use tokio::sync::broadcast;
 use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
@@ -8,9 +9,9 @@ use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
-    ContentList, ContentListItem, DetailSection, HeaderAction, HealthDelta, HealthMetric,
-    HealthStream, HealthValue, ListFooter, LiveViewerSource, QuickAction, QuickActions,
-    RateLimiter, SectionIcon, TokenBucketRateLimiter, TrailingToken, ViewerReport,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
+    HeroBadgeTone, InfoField, LiveViewerSource, QuickAction, QuickActions, RateLimiter,
+    SectionIcon, SubscriptionRow, SubscriptionStatus, TokenBucketRateLimiter, ViewerReport,
     ViewerReportStream,
 };
 use std::collections::BTreeMap;
@@ -21,11 +22,13 @@ use forge_types::{SubActionStep, Variant};
 
 use crate::TWITCH_BROADCASTER_SCOPES;
 use crate::chat::{ChatConnectionState, TwitchChat, TwitchChatHandle};
+use crate::credentials;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{
     HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher, HelixTokenSource,
     HelixTransport,
 };
+use crate::sub_actions::identity::{BroadcasterTier, resolve_broadcaster_tier};
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -83,6 +86,10 @@ pub struct TwitchIntegrationBundle {
     handle: Mutex<Option<TwitchChatHandle>>,
     viewer_state: std::sync::RwLock<ViewerPollState>,
     viewer_report_tx: watch::Sender<ViewerReport>,
+    transport: Arc<dyn HelixTransport>,
+    tier: std::sync::RwLock<BroadcasterTier>,
+    token_expires_at: std::sync::RwLock<Option<SystemTime>>,
+    connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
 }
 
 impl TwitchIntegrationBundle {
@@ -97,7 +104,7 @@ impl TwitchIntegrationBundle {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let state_rx = handle.state_receiver();
-        let viewer_transport = Self::build_viewer_transport(&config, &bus, &creds);
+        let transport = Self::build_helix_transport(&config, &bus, &creds);
         let bundle = Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
@@ -110,13 +117,18 @@ impl TwitchIntegrationBundle {
             handle: Mutex::new(Some(handle)),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
+            transport: Arc::clone(&transport),
+            tier: std::sync::RwLock::new(BroadcasterTier::default()),
+            token_expires_at: std::sync::RwLock::new(None),
+            connected_at: std::sync::RwLock::new(None),
         });
         Self::spawn_health_bridge(&bundle);
-        Self::spawn_viewer_poll(&bundle, viewer_transport);
+        Self::spawn_viewer_poll(&bundle, transport);
+        Self::spawn_identity_refresh(&bundle);
         bundle
     }
 
-    fn build_viewer_transport(
+    fn build_helix_transport(
         config: &ChatSessionConfig,
         bus: &Arc<dyn EventPublisher>,
         creds: &Arc<dyn CredentialsRepo>,
@@ -145,6 +157,9 @@ impl TwitchIntegrationBundle {
         let mut state_rx = bundle.state_rx.clone();
         tokio::spawn(async move {
             while state_rx.changed().await.is_ok() {
+                let state = *state_rx.borrow();
+                bundle.on_chat_state_changed(state);
+
                 let chat_delta = HealthDelta {
                     index: 0,
                     new_value: bundle.chat_health_value(),
@@ -158,6 +173,53 @@ impl TwitchIntegrationBundle {
                 let _ = bundle.health_tx.send(eventsub_delta);
             }
         });
+    }
+
+    /// Fires an identity refresh only on the transition into `Connected`, not on every
+    /// broadcast while already connected.
+    fn on_chat_state_changed(self: &Arc<Self>, state: ChatConnectionState) {
+        if state == ChatConnectionState::Connected {
+            let already_connected = self
+                .connected_at
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some();
+            if let Ok(mut guard) = self.connected_at.write() {
+                guard.get_or_insert_with(OffsetDateTime::now_utc);
+            }
+            if !already_connected {
+                Self::spawn_identity_refresh(self);
+            }
+        } else if let Ok(mut guard) = self.connected_at.write() {
+            *guard = None;
+        }
+    }
+
+    fn spawn_identity_refresh(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        tokio::spawn(async move {
+            bundle.refresh_identity().await;
+        });
+    }
+
+    /// Missing/unloadable credentials leave the previously cached tier and expiry in
+    /// place rather than resetting them to unlocked/unknown.
+    async fn refresh_identity(&self) {
+        let Ok(Some(stored)) = credentials::load(self.creds.as_ref()).await else {
+            return;
+        };
+        if let Ok(mut guard) = self.token_expires_at.write() {
+            *guard = stored.expires_at;
+        }
+        if let Ok(tier) = resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await
+            && let Ok(mut guard) = self.tier.write()
+        {
+            *guard = tier;
+        }
+    }
+
+    pub fn tier(&self) -> BroadcasterTier {
+        *self.tier.read().unwrap_or_else(|p| p.into_inner())
     }
 
     /// A failed poll is skipped silently and retried next tick; last known value stays on screen.
@@ -227,6 +289,7 @@ impl TwitchIntegrationBundle {
         state_rx: watch::Receiver<ChatConnectionState>,
         tracker: SubscriptionTracker,
         creds: Arc<dyn CredentialsRepo>,
+        tier: BroadcasterTier,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
@@ -246,6 +309,12 @@ impl TwitchIntegrationBundle {
             handle: Mutex::new(None),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
+            transport: Arc::new(crate::sub_actions::test_support::MockTransport::returning(
+                Ok(serde_json::Value::Null),
+            )),
+            tier: std::sync::RwLock::new(tier),
+            token_expires_at: std::sync::RwLock::new(None),
+            connected_at: std::sync::RwLock::new(None),
         })
     }
 
@@ -259,10 +328,8 @@ impl TwitchIntegrationBundle {
 
     fn chat_label(&self) -> String {
         let state = self.chat_connection_state();
-        if state == ChatConnectionState::Connected
-            && let Some(login) = &self.login
-        {
-            return format!("Joined #{login}");
+        if state == ChatConnectionState::Connected {
+            return "Joined".to_owned();
         }
         state.to_connection_state().label().to_owned()
     }
@@ -294,7 +361,7 @@ impl TwitchIntegrationBundle {
         let state = *self.viewer_state.read().unwrap_or_else(|p| p.into_inner());
         match state {
             ViewerPollState::Unknown => HealthValue::Text {
-                primary: "\u{2014}".to_owned(),
+                primary: "-".to_owned(),
                 secondary: None,
             },
             ViewerPollState::Offline => HealthValue::Text {
@@ -307,6 +374,71 @@ impl TwitchIntegrationBundle {
             },
         }
     }
+
+    fn identity_fields(&self) -> Vec<InfoField> {
+        let uptime_value = BuiltinStatus::uptime(self)
+            .map(format_uptime)
+            .unwrap_or_else(|| "not connected".to_owned());
+        let expires_value = (*self
+            .token_expires_at
+            .read()
+            .unwrap_or_else(|p| p.into_inner()))
+        .map(format_expires_at)
+        .unwrap_or_else(|| "unknown".to_owned());
+
+        vec![
+            InfoField {
+                label: "Login".to_owned(),
+                value: self.login.clone().unwrap_or_else(|| "-".to_owned()),
+                monospace_value: true,
+            },
+            InfoField {
+                label: "Tier".to_owned(),
+                value: self.tier().label().to_owned(),
+                monospace_value: false,
+            },
+            InfoField {
+                label: "User ID".to_owned(),
+                value: self.config.user_id.clone(),
+                monospace_value: true,
+            },
+            InfoField {
+                label: "Session started".to_owned(),
+                value: uptime_value,
+                monospace_value: false,
+            },
+            InfoField {
+                label: "Token expires".to_owned(),
+                value: expires_value,
+                monospace_value: true,
+            },
+        ]
+    }
+}
+
+fn format_uptime(elapsed: Duration) -> String {
+    let total_secs = elapsed.as_secs();
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else {
+        format!("{minutes}m")
+    }
+}
+
+fn format_expires_at(at: SystemTime) -> String {
+    let secs = at
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    OffsetDateTime::from_unix_timestamp(secs)
+        .ok()
+        .and_then(|dt| {
+            dt.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 /// Empty `data` array means the broadcaster is not currently live.
@@ -336,7 +468,13 @@ impl BuiltinStatus for TwitchIntegrationBundle {
     }
 
     fn uptime(&self) -> Option<Duration> {
-        None
+        let at = (*self.connected_at.read().unwrap_or_else(|p| p.into_inner()))?;
+        let elapsed = OffsetDateTime::now_utc() - at;
+        if elapsed.is_positive() {
+            Some(elapsed.unsigned_abs())
+        } else {
+            None
+        }
     }
 
     fn endpoint(&self) -> Option<&str> {
@@ -352,6 +490,30 @@ impl BuiltinStatus for TwitchIntegrationBundle {
 
     fn header_actions(&self) -> Vec<HeaderAction> {
         vec![HeaderAction::RefreshToken, HeaderAction::Disconnect]
+    }
+
+    fn token_expiry(&self) -> Option<SystemTime> {
+        *self
+            .token_expires_at
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn name_badges(&self) -> Vec<HeroBadge> {
+        let mut badges = vec![HeroBadge {
+            label: format!("user_id {}", self.config.user_id),
+            tone: HeroBadgeTone::Neutral,
+            monospace: true,
+        }];
+        let tier = self.tier();
+        if tier != BroadcasterTier::Standard {
+            badges.push(HeroBadge {
+                label: tier.label().to_owned(),
+                tone: HeroBadgeTone::Positive,
+                monospace: false,
+            });
+        }
+        badges
     }
 }
 
@@ -372,9 +534,8 @@ impl BuiltinHealth for TwitchIntegrationBundle {
             },
             HealthMetric {
                 label: "API Calls".to_owned(),
-                // Placeholder: this bucket is local to the viewer poll, not the shared budget.
                 value: HealthValue::Text {
-                    primary: "\u{2014}".to_owned(),
+                    primary: "-".to_owned(),
                     secondary: None,
                 },
             },
@@ -389,86 +550,83 @@ impl BuiltinHealth for TwitchIntegrationBundle {
 
 impl BuiltinContent for TwitchIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
-        let scope_items: Vec<ContentListItem> = TWITCH_BROADCASTER_SCOPES
-            .iter()
-            .map(|s| ContentListItem {
-                icon: SectionIcon::new("check"),
-                name: (*s).to_owned(),
-                monospace_name: true,
-                active: true,
-                active_label: None,
-                trailing: vec![],
-                enabled: true,
-            })
-            .collect();
-
-        let scopes_count = format!("{}", scope_items.len());
-        let scopes_list = ContentList {
+        let scopes_list = DetailSection::ScopesList {
             title: "OAuth scopes".to_owned(),
             icon: SectionIcon::new("key"),
-            count_label: Some(scopes_count),
-            items: scope_items,
-            footer: Some(ListFooter {
-                cta_label: Some("Request more scopes".to_owned()),
-                trailing_label: None,
-            }),
+            scopes: TWITCH_BROADCASTER_SCOPES
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+            footer: None,
         };
 
         let records = self.tracker.read().unwrap_or_else(|p| p.into_inner());
-        let active_count = records
+        let dropped_kind = records
             .iter()
-            .filter(|r| matches!(r.status, SubStatus::Active))
-            .count();
+            .find(|r| matches!(r.status, SubStatus::Failed(_)))
+            .map(|r| r.kind.clone());
 
-        let sub_items: Vec<ContentListItem> = records
+        let sub_items: Vec<SubscriptionRow> = records
             .iter()
             .map(|r| {
-                let (active, status_label) = match &r.status {
-                    SubStatus::Active => (true, "active".to_owned()),
-                    SubStatus::Pending => (false, "pending".to_owned()),
-                    SubStatus::Failed(_) => (false, "failed".to_owned()),
+                let (status, error_label) = match &r.status {
+                    SubStatus::Active => (SubscriptionStatus::Active, None),
+                    SubStatus::Pending => (SubscriptionStatus::Degraded, None),
+                    SubStatus::Failed(_) => {
+                        (SubscriptionStatus::Error, Some("retry pending".to_owned()))
+                    }
                 };
-                ContentListItem {
-                    icon: SectionIcon::new("circle"),
+                SubscriptionRow {
                     name: r.kind.clone(),
-                    monospace_name: true,
-                    active,
-                    active_label: None,
-                    trailing: vec![
-                        TrailingToken::Label(format!("v{}", r.version)),
-                        TrailingToken::Label(status_label),
-                    ],
-                    enabled: true,
+                    status,
+                    version: Some(format!("v{}", r.version)),
+                    event_count: None,
+                    error_label,
                 }
             })
             .collect();
 
-        let eventsub_list = ContentList {
+        let eventsub_list = DetailSection::SubscriptionList {
             title: "EventSub subscriptions".to_owned(),
             icon: SectionIcon::new("rss"),
-            count_label: Some(format!("{active_count} active")),
             items: sub_items,
-            footer: Some(ListFooter {
-                cta_label: Some("Subscribe to event".to_owned()),
-                trailing_label: Some("subscribing on session start".to_owned()),
-            }),
+            footer: None,
+            banner: dropped_kind.map(|kind| format!("{kind} subscription dropped")),
         };
 
-        vec![DetailSection::TwoColumnLists {
-            left: scopes_list,
-            right: eventsub_list,
-        }]
+        let identity_card = DetailSection::InfoCard {
+            title: "Broadcaster".to_owned(),
+            live: false,
+            fields: self.identity_fields(),
+            health_bar: None,
+        };
+
+        vec![
+            identity_card,
+            DetailSection::TwoColumn {
+                left: Box::new(scopes_list),
+                right: Box::new(eventsub_list),
+            },
+        ]
     }
 }
+
+/// Only Affiliate and Partner broadcasters may run commercials; the other quick actions
+/// carry no tier restriction.
+const COMMERCIAL_LOCKED_REASON: &str = "Requires Twitch Affiliate or Partner";
 
 impl QuickActions for TwitchIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
         let connected = self.is_chat_connected();
+        let commercial_locked = self.tier() == BroadcasterTier::Standard;
         vec![
             QuickAction {
                 label: "Send chat message".to_owned(),
                 icon: SectionIcon::new("send"),
                 enabled: connected,
+                locked_reason: None,
+                group: Some("Chat".to_owned()),
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "twitch.chat.send_message".to_owned(),
                     config: BTreeMap::from([
@@ -486,6 +644,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 label: "Run shoutout".to_owned(),
                 icon: SectionIcon::new("flag"),
                 enabled: connected,
+                locked_reason: None,
+                group: Some("Raids & ads".to_owned()),
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "twitch.channel.send_shoutout".to_owned(),
                     config: BTreeMap::from([(
@@ -502,7 +663,10 @@ impl QuickActions for TwitchIntegrationBundle {
             QuickAction {
                 label: "Run commercial".to_owned(),
                 icon: SectionIcon::new("clock"),
-                enabled: connected,
+                enabled: connected && !commercial_locked,
+                locked_reason: commercial_locked.then(|| COMMERCIAL_LOCKED_REASON.to_owned()),
+                group: Some("Raids & ads".to_owned()),
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "twitch.channel.run_ad".to_owned(),
                     config: BTreeMap::from([(
@@ -520,6 +684,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 label: "Update title".to_owned(),
                 icon: SectionIcon::new("edit"),
                 enabled: connected,
+                locked_reason: None,
+                group: Some("Stream info".to_owned()),
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "twitch.channel.update_title".to_owned(),
                     config: BTreeMap::from([("title".to_owned(), Variant::String(String::new()))]),
@@ -581,6 +748,21 @@ mod tests {
         state: ChatConnectionState,
         tracker: SubscriptionTracker,
     ) -> Arc<TwitchIntegrationBundle> {
+        make_bundle_full(state, tracker, BroadcasterTier::Standard)
+    }
+
+    fn make_bundle_with_tier(
+        state: ChatConnectionState,
+        tier: BroadcasterTier,
+    ) -> Arc<TwitchIntegrationBundle> {
+        make_bundle_full(state, SubscriptionTracker::default(), tier)
+    }
+
+    fn make_bundle_full(
+        state: ChatConnectionState,
+        tracker: SubscriptionTracker,
+        tier: BroadcasterTier,
+    ) -> Arc<TwitchIntegrationBundle> {
         let (tx, rx) = watch::channel(state);
         let _ = tx;
         TwitchIntegrationBundle::for_test(
@@ -588,6 +770,7 @@ mod tests {
             rx,
             tracker,
             Arc::new(NullCreds),
+            tier,
         )
     }
 
@@ -622,27 +805,21 @@ mod tests {
     }
 
     #[test]
-    fn health_metrics_returns_four_with_correct_labels() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let health: &dyn BuiltinHealth = b.as_ref();
-        let metrics = health.metrics();
-        assert_eq!(metrics.len(), 4);
-        assert_eq!(metrics[0].label, "Chat IRC");
-        assert_eq!(metrics[1].label, "EventSub");
-        assert_eq!(metrics[2].label, "Viewers");
-        assert_eq!(metrics[3].label, "API Calls");
-    }
-
-    #[test]
     fn chat_irc_metric_active_when_connected() {
         let b = make_bundle(ChatConnectionState::Connected);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
-        let HealthValue::Status { active, label, .. } = &metrics[0].value else {
+        let HealthValue::Status {
+            active,
+            label,
+            detail,
+        } = &metrics[0].value
+        else {
             panic!("expected Status variant");
         };
         assert!(*active);
-        assert_eq!(label, "Joined #streamer");
+        assert_eq!(label, "Joined");
+        assert_eq!(detail.as_deref(), Some("#streamer"));
     }
 
     #[test]
@@ -693,57 +870,65 @@ mod tests {
     }
 
     #[test]
-    fn content_sections_returns_one_two_column() {
-        let b = make_bundle(ChatConnectionState::Connected);
+    fn broadcaster_info_card_lists_login_tier_and_user_id() {
+        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Partner);
         let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
-        assert_eq!(sections.len(), 1);
-        assert!(matches!(&sections[0], DetailSection::TwoColumnLists { .. }));
-    }
-
-    #[test]
-    fn content_scopes_section_has_all_broadcaster_scopes() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let content: &dyn BuiltinContent = b.as_ref();
-        let sections = content.sections();
-        let DetailSection::TwoColumnLists { left, .. } = &sections[0] else {
-            panic!("expected TwoColumnLists in first section");
+        let DetailSection::InfoCard { title, fields, .. } = &sections[0] else {
+            panic!("expected InfoCard as the first section");
         };
-        assert_eq!(left.items.len(), TWITCH_BROADCASTER_SCOPES.len());
-        for (item, scope) in left.items.iter().zip(TWITCH_BROADCASTER_SCOPES.iter()) {
-            assert_eq!(item.name, *scope);
-            assert!(item.active);
-        }
+        assert_eq!(title, "Broadcaster");
+        let field = |label: &str| {
+            fields
+                .iter()
+                .find(|f| f.label == label)
+                .unwrap_or_else(|| panic!("missing field {label}"))
+        };
+        assert_eq!(field("Login").value, "streamer");
+        assert_eq!(field("Tier").value, "Partner");
+        assert_eq!(field("User ID").value, "1");
     }
 
     #[test]
-    fn content_sections_two_column_scopes_and_eventsub() {
+    fn sections_expose_two_column_scopes_and_subscriptions() {
         let b = make_bundle(ChatConnectionState::Connected);
         let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
-        assert_eq!(sections.len(), 1);
-        let DetailSection::TwoColumnLists { left, right } = &sections[0] else {
-            panic!("expected TwoColumnLists");
+        let DetailSection::TwoColumn { left, right } = &sections[1] else {
+            panic!("expected TwoColumn as the second section");
         };
-        assert_eq!(left.title, "OAuth scopes");
-        assert_eq!(left.items.len(), TWITCH_BROADCASTER_SCOPES.len());
-        assert_eq!(right.title, "EventSub subscriptions");
+        let DetailSection::ScopesList { title, scopes, .. } = left.as_ref() else {
+            panic!("expected ScopesList on the left");
+        };
+        assert_eq!(title, "OAuth scopes");
+        assert!(
+            scopes
+                .iter()
+                .map(String::as_str)
+                .eq(TWITCH_BROADCASTER_SCOPES.iter().copied())
+        );
+        let DetailSection::SubscriptionList { title, .. } = right.as_ref() else {
+            panic!("expected SubscriptionList on the right");
+        };
+        assert_eq!(title, "EventSub subscriptions");
     }
 
-    #[test]
-    fn content_eventsub_empty_tracker_shows_zero_active() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let content: &dyn BuiltinContent = b.as_ref();
+    fn subscription_list(
+        bundle: &TwitchIntegrationBundle,
+    ) -> (Vec<SubscriptionRow>, Option<String>) {
+        let content: &dyn BuiltinContent = bundle;
         let sections = content.sections();
-        let DetailSection::TwoColumnLists { right, .. } = &sections[0] else {
-            panic!("expected TwoColumnLists");
+        let DetailSection::TwoColumn { right, .. } = sections.into_iter().nth(1).unwrap() else {
+            panic!("expected TwoColumn as the second section");
         };
-        assert_eq!(right.count_label.as_deref(), Some("0 active"));
-        assert!(right.items.is_empty());
+        let DetailSection::SubscriptionList { items, banner, .. } = *right else {
+            panic!("expected SubscriptionList on the right");
+        };
+        (items, banner)
     }
 
     #[test]
-    fn content_eventsub_populated_tracker_renders_items() {
+    fn subscription_rows_map_tracker_status_and_banner_flags_dropped() {
         let tracker = SubscriptionTracker::default();
         {
             let mut records = tracker.write().unwrap();
@@ -767,52 +952,89 @@ mod tests {
             });
         }
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
-        let content: &dyn BuiltinContent = b.as_ref();
-        let sections = content.sections();
-        let DetailSection::TwoColumnLists { right, .. } = &sections[0] else {
-            panic!("expected TwoColumnLists");
-        };
-        assert_eq!(right.count_label.as_deref(), Some("1 active"));
-        assert_eq!(right.items.len(), 3);
+        let (items, banner) = subscription_list(&b);
 
-        let active_item = &right.items[0];
-        assert_eq!(active_item.name, "channel.chat.message");
-        assert!(active_item.active);
-        assert!(active_item.monospace_name);
+        for (row, name, expected_status, expected_error) in [
+            (
+                &items[0],
+                "channel.chat.message",
+                SubscriptionStatus::Active,
+                None,
+            ),
+            (
+                &items[1],
+                "channel.subscribe",
+                SubscriptionStatus::Degraded,
+                None,
+            ),
+            (
+                &items[2],
+                "channel.cheer",
+                SubscriptionStatus::Error,
+                Some("retry pending"),
+            ),
+        ] {
+            assert_eq!(row.name, name);
+            assert_eq!(row.status, expected_status);
+            assert_eq!(row.error_label.as_deref(), expected_error);
+        }
         assert_eq!(
-            active_item.trailing,
-            vec![
-                TrailingToken::Label("v1".to_owned()),
-                TrailingToken::Label("active".to_owned()),
-            ]
-        );
-
-        let pending_item = &right.items[1];
-        assert_eq!(pending_item.name, "channel.subscribe");
-        assert!(!pending_item.active);
-        assert_eq!(
-            pending_item.trailing,
-            vec![
-                TrailingToken::Label("v1".to_owned()),
-                TrailingToken::Label("pending".to_owned()),
-            ]
-        );
-
-        let failed_item = &right.items[2];
-        assert_eq!(failed_item.name, "channel.cheer");
-        assert!(!failed_item.active);
-        assert_eq!(
-            failed_item.trailing,
-            vec![
-                TrailingToken::Label("v1".to_owned()),
-                TrailingToken::Label("failed".to_owned()),
-            ]
+            banner.as_deref(),
+            Some("channel.cheer subscription dropped")
         );
     }
 
     #[test]
-    fn quick_actions_enabled_when_chat_connected() {
+    fn subscription_list_empty_without_records_and_carries_no_banner() {
         let b = make_bundle(ChatConnectionState::Connected);
+        let (items, banner) = subscription_list(&b);
+        assert!(items.is_empty());
+        assert!(banner.is_none());
+    }
+
+    #[test]
+    fn commercial_action_locks_for_standard_tier_and_unlocks_for_affiliate() {
+        let standard =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard);
+        let affiliate =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+
+        let gated_under_standard: Vec<String> = standard
+            .actions()
+            .into_iter()
+            .filter(|a| a.locked_reason.is_some())
+            .map(|a| a.subaction_template.kind_id)
+            .collect();
+        assert_eq!(
+            gated_under_standard,
+            vec!["twitch.channel.run_ad".to_owned()]
+        );
+
+        for kind in &gated_under_standard {
+            let unlocked = affiliate
+                .actions()
+                .into_iter()
+                .find(|a| &a.subaction_template.kind_id == kind)
+                .unwrap();
+            assert!(
+                unlocked.locked_reason.is_none(),
+                "{kind} must unlock at affiliate tier"
+            );
+        }
+
+        for bundle in [&standard, &affiliate] {
+            let open = bundle
+                .actions()
+                .into_iter()
+                .find(|a| a.subaction_template.kind_id == "twitch.chat.send_message")
+                .unwrap();
+            assert!(open.locked_reason.is_none());
+        }
+    }
+
+    #[test]
+    fn quick_actions_enabled_when_chat_connected() {
+        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
         let actions = b.actions();
         assert!(actions.iter().all(|a| a.enabled));
     }

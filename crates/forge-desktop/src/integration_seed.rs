@@ -156,6 +156,9 @@ fn quick(
         label: label.into(),
         icon: SectionIcon::new(icon),
         enabled,
+        locked_reason: None,
+        group: None,
+        destructive: false,
         subaction_template: SubActionStep {
             kind_id: kind_id.to_owned(),
             config: std::collections::BTreeMap::new(),
@@ -264,9 +267,11 @@ fn twitch() -> IntegrationSeed {
             cta_label: Some(tr!("iseed_cta_manage_subscriptions")),
             trailing_label: Some("4 topics".to_owned()),
         }),
+        banner: None,
     };
     let scopes = DetailSection::ScopesList {
         title: tr!("iseed_section_oauth_scopes"),
+        icon: SectionIcon::new("key"),
         scopes: vec![
             "chat:read".to_owned(),
             "chat:edit".to_owned(),

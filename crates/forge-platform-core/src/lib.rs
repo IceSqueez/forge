@@ -17,9 +17,9 @@ pub use builtin::{
     ActiveRow, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId,
     BuiltinStatus, CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome,
     DetailSection, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream,
-    HealthValue, InfoField, KeyValueRow, ListFooter, PickerKind, QuickAction, QuickActions,
-    RowAction, SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor,
-    TrailingToken,
+    HealthValue, HeroBadge, HeroBadgeTone, InfoField, KeyValueRow, ListFooter, PickerKind,
+    QuickAction, QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow,
+    SubscriptionStatus, TokenColor, TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{

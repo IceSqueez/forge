@@ -23,7 +23,7 @@ mod guest_star_end_session;
 mod guest_star_invite;
 mod guest_star_remove_guest;
 mod guest_star_update_slot;
-mod identity;
+pub(crate) mod identity;
 mod lock_prediction;
 mod pause_reward;
 mod remove_blocked_term;

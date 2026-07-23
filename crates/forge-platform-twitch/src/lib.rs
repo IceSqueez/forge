@@ -29,6 +29,7 @@ pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,
     HelixTokenSource, HelixTransport,
 };
+pub use sub_actions::identity::BroadcasterTier;
 pub use sub_actions::register_twitch_sub_actions;
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 pub use triggers::register_twitch_triggers;

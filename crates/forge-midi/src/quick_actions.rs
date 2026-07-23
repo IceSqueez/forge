@@ -23,6 +23,9 @@ impl QuickActions for MidiClient {
                 label: "Send Note On".to_owned(),
                 icon: SectionIcon::new("music"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([
@@ -46,6 +49,9 @@ impl QuickActions for MidiClient {
                 label: "Send Note Off".to_owned(),
                 icon: SectionIcon::new("music-off"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([
@@ -69,6 +75,9 @@ impl QuickActions for MidiClient {
                 label: "Send CC".to_owned(),
                 icon: SectionIcon::new("sliders"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([
@@ -89,6 +98,9 @@ impl QuickActions for MidiClient {
                 label: "Send Raw".to_owned(),
                 icon: SectionIcon::new("code"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([

@@ -19,6 +19,9 @@ impl QuickActions for DiscordClient {
                 label: "Post Text".to_owned(),
                 icon: SectionIcon::new("message"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.send_message".to_owned(),
                     config: BTreeMap::from([
@@ -39,6 +42,9 @@ impl QuickActions for DiscordClient {
                 label: "Post Embed".to_owned(),
                 icon: SectionIcon::new("layout-cards"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.send_embed".to_owned(),
                     config: BTreeMap::from([
@@ -63,6 +69,9 @@ impl QuickActions for DiscordClient {
                 label: "Edit Message".to_owned(),
                 icon: SectionIcon::new("pencil"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.update_message".to_owned(),
                     config: BTreeMap::from([
@@ -84,6 +93,9 @@ impl QuickActions for DiscordClient {
                 label: "Test Webhook".to_owned(),
                 icon: SectionIcon::new("send"),
                 enabled,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.send_message".to_owned(),
                     config: BTreeMap::from([

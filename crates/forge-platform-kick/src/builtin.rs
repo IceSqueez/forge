@@ -207,6 +207,9 @@ impl QuickActions for KickIntegrationBundle {
                 label: "Resync chatroom".to_owned(),
                 icon: SectionIcon::new("refresh-cw"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([
@@ -227,6 +230,9 @@ impl QuickActions for KickIntegrationBundle {
                 label: "Refresh channel info".to_owned(),
                 icon: SectionIcon::new("database"),
                 enabled: true,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([
@@ -247,6 +253,9 @@ impl QuickActions for KickIntegrationBundle {
                 label: "Send message".to_owned(),
                 icon: SectionIcon::new("send"),
                 enabled: connected,
+                locked_reason: None,
+                group: None,
+                destructive: false,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([

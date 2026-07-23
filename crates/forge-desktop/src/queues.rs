@@ -5,10 +5,10 @@ use forge_components::confirm::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition, Radius,
-    SearchState, Spacing, TextInput, badge, body_family, card, chip, confirm_modal, empty_state,
-    ghost_button_with_icon, header_stat, header_stats, icon, menu_button, menu_divider, menu_item,
-    modal, mono_family, overlay, page_frame, primary_button, primary_button_with_icon, radius,
-    secondary_button, slider, spacing, spinner, tr, with_alpha,
+    SearchState, Spacing, TextInput, ToastKind, badge, body_family, card, chip, confirm_modal,
+    empty_state, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
+    menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
+    primary_button_with_icon, radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
@@ -22,6 +22,7 @@ use gpui::{
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::queue_health::QueueHealth;
+use crate::toasts::PushToast;
 
 const BADGE_RADIUS: Pixels = px(8.0);
 const PILL_RADIUS: Pixels = px(5.0);
@@ -416,7 +417,6 @@ impl Render for EditQueueModal {
 pub struct QueuesView {
     queues: Vec<QueueRow>,
     loading: bool,
-    feedback: Option<SharedString>,
     modal: Option<Entity<EditQueueModal>>,
     _modal_sub: Option<Subscription>,
     pending_delete: Confirm<QueueId>,
@@ -453,7 +453,6 @@ impl QueuesView {
         let view = Self {
             queues: vec![],
             loading: true,
-            feedback: None,
             modal: None,
             _modal_sub: None,
             pending_delete: Confirm::default(),
@@ -643,7 +642,8 @@ impl QueuesView {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.paused = true;
             q.paused_since_min = Some(0);
-            self.feedback = Some(tr!("queues_drain_feedback", name = q.name.as_str()).into());
+            let message = tr!("queues_drain_feedback", name = q.name.as_str());
+            cx.push_toast(ToastKind::Info, message);
         }
         self.dispatch_drain(id);
         self.persist_paused(id, true);
@@ -1180,32 +1180,6 @@ impl QueuesView {
                 view.update(cx, |this, cx| this.cancel_delete(cx));
             })
     }
-
-    fn feedback_banner(
-        &self,
-        message: SharedString,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> impl IntoElement {
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
-            .bg(with_alpha(palette.success, 0.10))
-            .border_b(BORDER_THIN)
-            .border_color(with_alpha(palette.success, 0.25))
-            .child(icon(Icon::Notebook, FONT_XS, palette.success))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_secondary)
-                    .child(message),
-            )
-    }
 }
 
 impl QueuesView {
@@ -1324,11 +1298,6 @@ impl Render for QueuesView {
             .text_color(palette.text_muted)
             .child(tr!("queues_subtitle"));
 
-        let feedback = self
-            .feedback
-            .clone()
-            .map(|message| self.feedback_banner(message, &palette, density));
-
         let visible_count = self.visible_indices(cx).len();
         let body = if self.queues.is_empty() {
             let caption = if self.loading {
@@ -1366,13 +1335,7 @@ impl Render for QueuesView {
                     .child(body),
             );
 
-        let body_col = div()
-            .flex_1()
-            .h_full()
-            .flex()
-            .flex_col()
-            .children(feedback)
-            .child(scroll);
+        let body_col = div().flex_1().h_full().flex().flex_col().child(scroll);
 
         let frame = page_frame(
             vec![

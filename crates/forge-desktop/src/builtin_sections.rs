@@ -7,7 +7,10 @@ use forge_platform_core::{
     HealthMetric, HealthValue, InfoField, KeyValueRow, ListFooter, RowAction, SectionIcon,
     StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
-use gpui::{AnyElement, Div, Rgba, SharedString, div, prelude::*, px, relative};
+use gpui::{
+    AnyElement, Div, ListSizingBehavior, Rgba, SharedString, div, prelude::*, px, relative,
+    uniform_list,
+};
 
 /// Keeps the scopes and subscription panels within one calm viewport; their row lists scroll
 /// internally past this so Quick actions stay reachable below.
@@ -264,18 +267,38 @@ fn render_subscription_list(
     density: Density,
 ) -> AnyElement {
     let count = tr!("widget_builtin_active_count", count = items.len() as i64);
-    let mut rows = div()
-        .id("eventsub-scroll")
+    let list_region: AnyElement = if panel_overflows(items.len()) {
+        let owned: Vec<SubscriptionRow> = items.to_vec();
+        let pal = *palette;
+        uniform_list(
+            "eventsub-scroll",
+            owned.len(),
+            move |range, _window, _cx| {
+                range
+                    .map(|i| subscription_row_elem(&owned[i], &pal, density))
+                    .collect::<Vec<_>>()
+            },
+        )
         .w_full()
         .flex_1()
         .min_h(px(0.0))
-        .when(panel_overflows(items.len()), |d| d.occlude())
-        .overflow_y_scroll()
-        .flex()
-        .flex_col();
-    for item in items {
-        rows = rows.child(subscription_row_elem(item, palette, density));
-    }
+        .with_sizing_behavior(ListSizingBehavior::Infer)
+        .occlude()
+        .into_any_element()
+    } else {
+        let mut rows = div()
+            .id("eventsub-scroll")
+            .w_full()
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col();
+        for item in items {
+            rows = rows.child(subscription_row_elem(item, palette, density));
+        }
+        rows.into_any_element()
+    };
     let mut card = card_shell(palette)
         .max_h(px(SCROLL_PANEL_MAX_H))
         .child(panel_header_row(
@@ -289,7 +312,7 @@ fn render_subscription_list(
     if let Some(message) = banner {
         card = card.child(subscription_banner(message, palette, density));
     }
-    card = card.child(rows);
+    card = card.child(list_region);
     if let Some(f) = footer {
         card = card.child(list_footer_bar(f, palette, density));
     }
@@ -328,18 +351,34 @@ fn render_scopes_list(
     density: Density,
 ) -> AnyElement {
     let count = scopes.len().to_string();
-    let mut rows = div()
-        .id("scopes-scroll")
+    let list_region: AnyElement = if panel_overflows(scopes.len()) {
+        let owned: Vec<String> = scopes.to_vec();
+        let pal = *palette;
+        uniform_list("scopes-scroll", owned.len(), move |range, _window, _cx| {
+            range
+                .map(|i| scope_row_elem(&owned[i], &pal, density))
+                .collect::<Vec<_>>()
+        })
         .w_full()
         .flex_1()
         .min_h(px(0.0))
+        .with_sizing_behavior(ListSizingBehavior::Infer)
         .occlude()
-        .overflow_y_scroll()
-        .flex()
-        .flex_col();
-    for scope in scopes {
-        rows = rows.child(scope_row_elem(scope, palette, density));
-    }
+        .into_any_element()
+    } else {
+        let mut rows = div()
+            .id("scopes-scroll")
+            .w_full()
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col();
+        for scope in scopes {
+            rows = rows.child(scope_row_elem(scope, palette, density));
+        }
+        rows.into_any_element()
+    };
     let mut card = card_shell(palette)
         .max_h(px(SCROLL_PANEL_MAX_H))
         .child(panel_header_row(
@@ -350,7 +389,7 @@ fn render_scopes_list(
             density,
         ))
         .child(divider(palette))
-        .child(rows);
+        .child(list_region);
     if let Some(f) = footer {
         card = card.child(list_footer_bar(f, palette, density));
     }

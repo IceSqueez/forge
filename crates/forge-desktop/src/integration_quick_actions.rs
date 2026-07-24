@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, HAIRLINE, Icon, Radius,
-    Spacing, body_family, icon, mono_family, radius, spacing, tooltip_builder, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
+    body_family, icon, mono_family, radius, spacing, tooltip_builder, tr, with_alpha,
 };
 use forge_platform_core::{QuickAction, QuickActionAccent};
 use gpui::{AnyElement, ClickEvent, Context, Rgba, div, prelude::*, px};
@@ -46,7 +46,7 @@ impl IntegrationDetail {
                     .child(self.qa_search.field().clone()),
             );
 
-        let divider = div().w_full().h(HAIRLINE).bg(palette.border_regular);
+        let divider = div().w_full().h(BORDER_THIN).bg(palette.border_regular);
 
         let matches: Vec<(usize, &QuickAction)> = self
             .quick_actions

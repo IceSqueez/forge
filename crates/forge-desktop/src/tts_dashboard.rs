@@ -1,8 +1,8 @@
 use forge_components::{
-    BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, HAIRLINE, Icon,
-    InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextInput, badge,
-    body_family, confirm_modal, empty_state, fmt_clock, hash_accent, icon, install_resize,
-    mono_family, overlay, radius, slider, spacing, status_dot, tooltip_builder, tr,
+    BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
+    OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextInput, badge, body_family,
+    confirm_modal, empty_state, fmt_clock, hash_accent, icon, install_resize, mono_family, overlay,
+    radius, slider, spacing, status_dot, tooltip_builder, tr,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -306,7 +306,7 @@ impl TtsDashboardView {
         );
 
         let divider = div()
-            .w(HAIRLINE)
+            .w(BORDER_THIN)
             .h(px(16.0))
             .mx(px(4.0))
             .bg(palette.border_regular);

@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_XXS, HAIRLINE, Spacing, mono_family, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XXS, Spacing, mono_family, spacing};
 
 /// `Flex(n)` claims a share of leftover row width proportional to `n` (`Flex(8)` beside `Flex(7)` splits 8:7), ignoring cell content's intrinsic width.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -241,7 +241,7 @@ impl RenderOnce for DataTable {
             .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
 
         let separator = colors.separator;
-        let rule = move || div().flex_none().h(HAIRLINE).w_full().bg(separator);
+        let rule = move || div().flex_none().h(BORDER_THIN).w_full().bg(separator);
 
         let widths: Vec<ColumnWidth> = self.columns.iter().map(|c| c.width).collect();
 
@@ -445,7 +445,7 @@ impl<'a> VirtualTable<'a> {
                         .hover(move |s| s.bg(hover))
                         .children(cells);
                     if trailing_rule || !last {
-                        row_el = row_el.border_b(px(1.0)).border_color(separator);
+                        row_el = row_el.border_b(BORDER_THIN).border_color(separator);
                     }
                     if let Some(group) = row.reveal_group {
                         row_el = row_el.group(group);
@@ -459,7 +459,7 @@ impl<'a> VirtualTable<'a> {
         .flex_1()
         .min_h(px(0.0));
 
-        let rule = div().flex_none().h(HAIRLINE).w_full().bg(separator);
+        let rule = div().flex_none().h(BORDER_THIN).w_full().bg(separator);
 
         div()
             .flex()

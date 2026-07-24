@@ -253,7 +253,7 @@ fn username_el(
         Some((id, handler)) => base
             .id(id)
             .cursor_pointer()
-            .border_b(px(1.0))
+            .border_b(BORDER_THIN)
             .border_color(with_alpha(color, 0.0))
             .hover(move |s| s.border_color(color))
             .on_click(handler)

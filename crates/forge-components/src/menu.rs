@@ -12,8 +12,8 @@ use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, HAIRLINE, Radius, Spacing, body_family, mono_family,
-    radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius,
+    spacing,
 };
 
 const PANEL_WIDTH: Pixels = px(200.0);
@@ -209,7 +209,7 @@ impl MenuInk {
     fn render_divider(&self) -> AnyElement {
         div()
             .py(pad(Spacing::Xs) * 0.5)
-            .child(div().w_full().h(HAIRLINE).bg(self.divider_ink))
+            .child(div().w_full().h(BORDER_THIN).bg(self.divider_ink))
             .into_any_element()
     }
 

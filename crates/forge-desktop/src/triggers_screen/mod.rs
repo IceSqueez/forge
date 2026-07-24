@@ -1,6 +1,6 @@
 use forge_components::{
-    BreadcrumbCrumb, Confirm, Density, ForgePalette, InlineEdit, PlatformKind, SearchState,
-    TextInput, ToastKind, page_frame, platform_color, tr,
+    BORDER_THIN, BreadcrumbCrumb, Confirm, Density, ForgePalette, InlineEdit, PlatformKind,
+    SearchState, TextInput, ToastKind, page_frame, platform_color, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
@@ -49,7 +49,7 @@ const NAME_FS: Pixels = px(11.0);
 const KIND_FS: Pixels = px(11.0);
 const USED_FS: Pixels = px(11.0);
 const BADGE_FS: Pixels = px(9.0);
-const FILTER_DIV_W: Pixels = px(1.0);
+const FILTER_DIV_W: Pixels = BORDER_THIN;
 const FILTER_DIV_H: Pixels = px(16.0);
 const SEARCH_W: Pixels = px(240.0);
 const USED_CELL_GAP: Pixels = px(10.0);

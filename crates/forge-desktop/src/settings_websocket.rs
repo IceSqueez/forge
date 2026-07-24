@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_LG, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, HAIRLINE, Icon, InputEvent, OverlayPosition, Radius, SaveState,
-    Spacing, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
+    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
+    TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
     ghost_button_with_icon, icon, mono_family, overlay, radio_row, radius, save_indicator,
     setting_row, spacing, toggle, tr, type_to_confirm,
 };
@@ -1018,7 +1018,7 @@ fn lan_bind_bullets() -> Vec<BulletItem> {
 }
 
 fn hline(color: Rgba) -> Div {
-    div().w_full().h(HAIRLINE).bg(color)
+    div().w_full().h(BORDER_THIN).bg(color)
 }
 
 fn weighted(grow: f32, child: impl IntoElement) -> Div {

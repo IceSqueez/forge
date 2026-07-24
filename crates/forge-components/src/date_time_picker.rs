@@ -8,8 +8,8 @@ use crate::buttons::{ghost_button_with_icon, primary_button, secondary_button};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, HAIRLINE, Radius, Spacing, body_family,
-    mono_family, radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
+    radius, spacing,
 };
 
 const PANEL_W: Pixels = px(284.0);
@@ -340,7 +340,7 @@ impl Render for DateTimePicker {
             .child(self.render_month_nav(cx))
             .child(self.render_weekday_header())
             .child(self.render_day_grid(cx))
-            .child(div().w_full().h(HAIRLINE).bg(p.border_regular))
+            .child(div().w_full().h(BORDER_THIN).bg(p.border_regular))
             .child(self.render_time(cx))
             .child(self.render_footer(cx))
     }

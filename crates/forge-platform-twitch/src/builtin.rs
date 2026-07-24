@@ -1486,12 +1486,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disconnect_with_no_live_session_reports_not_connected() {
+    async fn disconnect_without_live_session_is_idempotent() {
         let b = make_bundle(ChatConnectionState::Disconnected);
         let outcome = forge_platform_core::BuiltinControl::disconnect(b.as_ref()).await;
-        assert_eq!(
-            outcome,
-            Err(forge_platform_core::ControlFailure::NotConnected)
-        );
+        assert_eq!(outcome, Ok(()));
     }
 }

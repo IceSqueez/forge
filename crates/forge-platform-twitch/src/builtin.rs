@@ -1198,18 +1198,22 @@ mod tests {
     }
 
     #[test]
-    fn name_badges_pin_user_id_and_gate_tier_above_standard() {
-        for (tier, tier_badge_shown) in [
-            (BroadcasterTier::Standard, false),
-            (BroadcasterTier::Partner, true),
+    fn name_badges_pin_user_id_and_tone_tier_by_level() {
+        for (tier, tone) in [
+            (BroadcasterTier::Standard, HeroBadgeTone::Neutral),
+            (BroadcasterTier::Affiliate, HeroBadgeTone::Positive),
+            (BroadcasterTier::Partner, HeroBadgeTone::Positive),
         ] {
             let b = make_bundle_with_tier(ChatConnectionState::Connected, tier);
             let status: &dyn BuiltinStatus = b.as_ref();
             let badges = status.name_badges();
             assert_eq!(badges[0].label, "user_id 1");
             assert!(badges[0].monospace);
-            let has_tier_badge = badges.iter().any(|badge| badge.label == tier.label());
-            assert_eq!(has_tier_badge, tier_badge_shown, "tier {tier:?}");
+            let tier_badge = badges
+                .iter()
+                .find(|badge| badge.label == tier.label())
+                .unwrap_or_else(|| panic!("tier {tier:?} badge missing"));
+            assert_eq!(tier_badge.tone, tone, "tier {tier:?}");
         }
     }
 

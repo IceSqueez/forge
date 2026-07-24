@@ -21,6 +21,8 @@ impl QuickActions for ObsClient {
                 enabled: connected,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
@@ -39,6 +41,8 @@ impl QuickActions for ObsClient {
                 enabled: connected,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
@@ -61,6 +65,8 @@ impl QuickActions for ObsClient {
                 enabled: connected,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
@@ -82,6 +88,8 @@ impl QuickActions for ObsClient {
                 enabled: connected && !recording,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {

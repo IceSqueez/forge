@@ -16,6 +16,8 @@ impl QuickActions for VTubeClient {
                 enabled: connected,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
@@ -37,6 +39,8 @@ impl QuickActions for VTubeClient {
                 enabled: connected,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
@@ -58,6 +62,8 @@ impl QuickActions for VTubeClient {
                 enabled: connected,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
@@ -79,6 +85,8 @@ impl QuickActions for VTubeClient {
                 enabled: connected,
                 locked_reason: None,
                 group: None,
+                group_icon: None,
+                group_accent: None,
                 destructive: false,
                 accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {

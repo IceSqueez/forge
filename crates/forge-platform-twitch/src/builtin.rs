@@ -563,6 +563,25 @@ fn config(pairs: impl IntoIterator<Item = (&'static str, Variant)>) -> BTreeMap<
     pairs.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
 }
 
+fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
+    match group {
+        "Stream info" => (SectionIcon::new("edit"), QuickActionAccent::Info),
+        "Polls" => (SectionIcon::new("chart-bar"), QuickActionAccent::Brand),
+        "Predictions" => (
+            SectionIcon::new("crystal-ball"),
+            QuickActionAccent::AccentPinkLight,
+        ),
+        "Chat" => (SectionIcon::new("message-2"), QuickActionAccent::Brand),
+        "Moderation" => (SectionIcon::new("shield"), QuickActionAccent::Danger),
+        "Raids & ads" => (SectionIcon::new("businessplan"), QuickActionAccent::Bits),
+        "Channel Points" => (
+            SectionIcon::new("diamond"),
+            QuickActionAccent::AccentPinkLight,
+        ),
+        _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn quick_action(
     label: &str,
@@ -575,12 +594,15 @@ fn quick_action(
     kind_id: &str,
     config: BTreeMap<String, Variant>,
 ) -> QuickAction {
+    let (group_icon, group_accent) = group_badge(group);
     QuickAction {
         label: label.to_owned(),
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason,
         group: Some(group.to_owned()),
+        group_icon: Some(group_icon),
+        group_accent: Some(group_accent),
         destructive,
         accent,
         subaction_template: SubActionStep {

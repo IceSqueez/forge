@@ -310,6 +310,10 @@ pub struct QuickAction {
     /// single untitled section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_icon: Option<SectionIcon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_accent: Option<QuickActionAccent>,
     #[serde(default)]
     pub destructive: bool,
     #[serde(default)]
@@ -642,6 +646,8 @@ mod tests {
             enabled: false,
             locked_reason: Some("Requires Twitch Affiliate or Partner".to_owned()),
             group: Some("Raids & ads".to_owned()),
+            group_icon: None,
+            group_accent: None,
             destructive: true,
             accent: QuickActionAccent::Danger,
             subaction_template: SubActionStep {

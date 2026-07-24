@@ -116,21 +116,38 @@ impl IntegrationDetail {
 
         let mut section = div().w_full().flex().flex_col().gap(px(7.0));
         if let Some(label) = group {
+            let group_badge = members.first().and_then(|(_, a)| {
+                a.group_icon
+                    .as_ref()
+                    .map(|icon| (icon.clone(), a.group_accent.unwrap_or_default()))
+            });
+            let mut label_row = div()
+                .flex_1()
+                .min_w(px(0.0))
+                .flex()
+                .items_center()
+                .gap(px(6.0));
+            if let Some((group_icon, group_accent)) = group_badge {
+                label_row = label_row.child(icon(
+                    Icon::from_name(group_icon.as_str()),
+                    FONT_XXS,
+                    accent_color(group_accent, palette),
+                ));
+            }
+            label_row = label_row.child(
+                div()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(label.to_uppercase()),
+            );
             section = section.child(
                 div()
                     .w_full()
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .font_family(mono_family())
-                            .text_size(FONT_XXS)
-                            .text_color(palette.text_muted)
-                            .child(label.to_uppercase()),
-                    )
+                    .child(label_row)
                     .child(
                         div()
                             .font_family(mono_family())

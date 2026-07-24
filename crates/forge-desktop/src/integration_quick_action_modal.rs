@@ -660,7 +660,13 @@ impl Render for QuickActionModal {
                 .into_any_element()
         });
 
-        div().child(modal_overlay).children(choice_overlay)
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .child(modal_overlay)
+            .children(choice_overlay)
     }
 }
 

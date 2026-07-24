@@ -679,6 +679,11 @@ mod tests {
                     .await
                     .unwrap();
                 if let Some(ctx) = recent.into_iter().next() {
+                    assert!(
+                        matches!(ctx.metadata, ExecutionMetadata::Trigger { .. }),
+                        "trigger-dispatched runs must record Trigger metadata, got {:?}",
+                        ctx.metadata
+                    );
                     recorded = Some(ctx.outcome);
                     break;
                 }
@@ -809,5 +814,214 @@ mod tests {
                 "action.quick.done must chain from its subaction.run"
             );
         }
+    }
+
+    fn capturing_history() -> (
+        Arc<dyn HistoryRepo>,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionContext>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut mock = forge_storage::history::MockHistoryRepo::new();
+        mock.expect_save().times(1..).returning(move |ctx| {
+            let _ = tx.send(ctx.clone());
+            Ok(())
+        });
+        (Arc::new(mock), rx)
+    }
+
+    async fn recv_ctx(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionContext>,
+    ) -> ExecutionContext {
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("history save did not arrive in time")
+            .expect("history channel closed")
+    }
+
+    fn quick_step(kind_id: &str, config: BTreeMap<String, Variant>) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config,
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn quick_action_run_maps_subaction_outcome_to_execution_outcome() {
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0x51; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let (history, mut rx) = capturing_history();
+
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(FixedOutcomeRunner {
+            id: "quick.ok".to_owned(),
+            outcome: SubActionOutcome::Success,
+        }))
+        .unwrap();
+        reg.register(Box::new(FixedOutcomeRunner {
+            id: "quick.fail".to_owned(),
+            outcome: SubActionOutcome::Failed("boom".to_owned()),
+        }))
+        .unwrap();
+        reg.register(Box::new(FixedOutcomeRunner {
+            id: "quick.skip".to_owned(),
+            outcome: SubActionOutcome::Skipped("nope".to_owned()),
+        }))
+        .unwrap();
+
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            history,
+            Arc::new(reg),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+
+        let cases = [
+            ("quick.ok", ExecutionOutcome::Success),
+            ("quick.fail", ExecutionOutcome::Failed("boom".to_owned())),
+            ("quick.skip", ExecutionOutcome::Success),
+        ];
+        for (kind, expected) in cases {
+            engine
+                .execute_quick_action(
+                    quick_step(kind, BTreeMap::new()),
+                    "obs".to_owned(),
+                    kind.to_owned(),
+                    None,
+                )
+                .await
+                .unwrap();
+            let ctx = recv_ctx(&mut rx).await;
+            assert_eq!(ctx.outcome, expected, "kind={kind}");
+        }
+    }
+
+    #[tokio::test]
+    async fn quick_action_run_records_quick_action_metadata() {
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0x52; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let (history, mut rx) = capturing_history();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            history,
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+
+        engine
+            .execute_quick_action(
+                quick_step("quick.probe", BTreeMap::new()),
+                "twitch".to_owned(),
+                "Set title".to_owned(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let ctx = recv_ctx(&mut rx).await;
+        assert!(
+            matches!(
+                &ctx.metadata,
+                ExecutionMetadata::QuickAction { builtin_id, label }
+                    if builtin_id == "twitch" && label == "Set title"
+            ),
+            "expected QuickAction(twitch, 'Set title') metadata, got {:?}",
+            ctx.metadata
+        );
+    }
+
+    #[tokio::test]
+    async fn quick_action_runs_receive_distinct_action_ids() {
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0x53; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let (history, mut rx) = capturing_history();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            history,
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+
+        engine
+            .execute_quick_action(
+                quick_step("quick.probe", BTreeMap::new()),
+                "obs".to_owned(),
+                "Run".to_owned(),
+                None,
+            )
+            .await
+            .unwrap();
+        let first = recv_ctx(&mut rx).await;
+        engine
+            .execute_quick_action(
+                quick_step("quick.probe", BTreeMap::new()),
+                "obs".to_owned(),
+                "Run".to_owned(),
+                None,
+            )
+            .await
+            .unwrap();
+        let second = recv_ctx(&mut rx).await;
+
+        assert_ne!(first.action_id, second.action_id);
+    }
+
+    #[tokio::test]
+    async fn quick_action_history_captures_merged_config_as_args_in() {
+        let dp: Arc<dyn DataProvider> = Arc::new(
+            SqliteBackend::open_with_key(":memory:", [0x54; 32])
+                .await
+                .unwrap(),
+        );
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let (history, mut rx) = capturing_history();
+
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(RecordingRunner {
+            last_config: Arc::new(Mutex::new(None)),
+        }))
+        .unwrap();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            history,
+            Arc::new(reg),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert("a".to_owned(), Variant::Int(99));
+        engine
+            .execute_quick_action(
+                quick_step("test.record", overrides),
+                "obs".to_owned(),
+                "Rec".to_owned(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let ctx = recv_ctx(&mut rx).await;
+        let args_in = &ctx.telemetry[0].args_in;
+        assert_eq!(args_in.get("a"), Some(&"99".to_owned()));
+        assert_eq!(args_in.get("b"), Some(&"2".to_owned()));
     }
 }

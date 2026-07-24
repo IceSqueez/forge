@@ -21,15 +21,15 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
+            .gap(px(12.0))
             .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
+            .px(px(14.0))
             .child(
                 div()
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xs, density))
+                    .gap(px(7.0))
                     .child(icon(Icon::Bolt, FONT_SM, palette.warning))
                     .child(
                         div()
@@ -60,9 +60,10 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density));
+            .gap(px(12.0))
+            .pt(px(4.0))
+            .pb(px(12.0))
+            .px(px(14.0));
 
         if matches.is_empty() {
             body = body.child(
@@ -114,11 +115,7 @@ impl IntegrationDetail {
             .map(|(i, a)| (*i, *a))
             .collect();
 
-        let mut section = div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density));
+        let mut section = div().w_full().flex().flex_col().gap(px(7.0));
         if let Some(label) = group {
             section = section.child(
                 div()
@@ -200,10 +197,10 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, density))
+            .gap(px(7.0))
             .child(icon(
                 Icon::from_name(action.icon.as_str()),
-                FONT_SM,
+                FONT_XS,
                 icon_color,
             ))
             .child(
@@ -220,7 +217,7 @@ impl IntegrationDetail {
             .id(("quick-action", idx))
             .flex_1()
             .min_w(px(0.0))
-            .py(spacing(Spacing::Xs, density))
+            .py(px(7.0))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)

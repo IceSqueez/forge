@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, HAIRLINE, Icon, Radius, Spacing,
-    body_family, icon, mono_family, radius, spacing, status_dot, tr, with_alpha,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, HAIRLINE, Icon,
+    Radius, Spacing, body_family, icon, mono_family, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_platform_core::{
     ActiveRow, BannerLevel, ContentList, ContentListItem, DetailSection, HealthBar, HealthLevel,
@@ -358,7 +358,7 @@ fn render_two_column(
         .w_full()
         .flex()
         .items_stretch()
-        .gap(spacing(Spacing::Md, density))
+        .gap(px(12.0))
         .child(grow_cell(dispatch_section(left, palette, density), 10.0))
         .child(grow_cell(dispatch_section(right, palette, density), 13.0))
         .into_any_element()
@@ -599,6 +599,8 @@ fn subscription_row_elem(
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
+        .overflow_hidden()
+        .truncate()
         .font_family(mono_family())
         .text_size(FONT_XS)
         .text_color(palette.text_primary)
@@ -615,14 +617,14 @@ fn subscription_row_elem(
         ))
         .child(name_el);
     if let Some(ver) = &item.version {
-        row = row.child(mono(ver.clone(), FONT_XS, palette.text_faint));
+        row = row.child(mono(ver.clone(), FONT_XXS, palette.text_faint));
     }
     let trailing: AnyElement = if let Some(err) = &item.error_label {
-        body(err.clone(), FONT_XS, palette.random).into_any_element()
+        body(err.clone(), FONT_XXS, palette.random).into_any_element()
     } else if let Some(count) = item.event_count {
         body(
             tr!("widget_builtin_event_count", count = count as i64),
-            FONT_XS,
+            FONT_XXS,
             palette.text_muted,
         )
         .into_any_element()
@@ -639,7 +641,7 @@ fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyE
         .flex()
         .items_center()
         .gap(spacing(Spacing::Sm, density))
-        .child(icon(Icon::CircleCheck, FONT_SM, palette.success))
+        .child(icon(Icon::CircleCheck, FONT_XS, palette.success))
         .child(
             div()
                 .flex_1()
@@ -753,7 +755,7 @@ fn panel_header_row(
         .min_w(px(0.0))
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, density))
+        .gap(px(7.0))
         .child(icon(
             Icon::from_name(icon_str),
             FONT_SM,
@@ -767,10 +769,10 @@ fn panel_header_row(
         .flex()
         .items_center()
         .py(spacing(Spacing::Sm, density))
-        .px(spacing(Spacing::Md, density))
+        .px(px(14.0))
         .child(left);
     if let Some(c) = count {
-        row = row.child(mono(c.to_owned(), FONT_XS, palette.text_faint));
+        row = row.child(mono(c.to_owned(), FONT_XXS, palette.text_faint));
     }
     row.into_any_element()
 }
@@ -819,8 +821,8 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
         .flex()
         .items_center()
         .gap(spacing(Spacing::Sm, density))
-        .py(spacing(Spacing::Xs, density))
-        .px(spacing(Spacing::Md, density))
+        .py(px(8.0))
+        .px(px(14.0))
         .border_t(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.shell);
@@ -837,12 +839,16 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
     row.into_any_element()
 }
 
-fn active_row_wrapper(content: AnyElement, palette: &ForgePalette, density: Density) -> AnyElement {
+fn active_row_wrapper(
+    content: AnyElement,
+    palette: &ForgePalette,
+    _density: Density,
+) -> AnyElement {
     let padded = div()
         .flex_1()
         .min_w(px(0.0))
-        .py(spacing(Spacing::Xs, density))
-        .px(spacing(Spacing::Md, density))
+        .py(px(7.0))
+        .px(px(14.0))
         .child(content);
     div()
         .w_full()
@@ -853,11 +859,11 @@ fn active_row_wrapper(content: AnyElement, palette: &ForgePalette, density: Dens
         .into_any_element()
 }
 
-fn plain_row_wrapper(content: AnyElement, palette: &ForgePalette, density: Density) -> AnyElement {
+fn plain_row_wrapper(content: AnyElement, palette: &ForgePalette, _density: Density) -> AnyElement {
     div()
         .w_full()
-        .py(spacing(Spacing::Xs, density))
-        .px(spacing(Spacing::Md, density))
+        .py(px(7.0))
+        .px(px(14.0))
         .bg(palette.elevated)
         .child(content)
         .into_any_element()
@@ -970,16 +976,16 @@ fn health_metric_card(
         .w_full()
         .flex()
         .flex_col()
-        .gap(spacing(Spacing::Xs, density))
+        .gap(px(4.0))
         .py(spacing(Spacing::Sm, density))
-        .px(spacing(Spacing::Md, density))
+        .px(px(12.0))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.elevated)
         .child(mono(
             metric.label.to_uppercase(),
-            FONT_XS,
+            FONT_XXS,
             palette.text_muted,
         ))
         .child(value_col)
@@ -1008,9 +1014,9 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(spacing(Spacing::Xs, density))
+                    .gap(px(2.0))
                     .child(value_row)
-                    .child(mono(d.clone(), FONT_XS, palette.text_faint))
+                    .child(mono(d.clone(), FONT_XXS, palette.text_faint))
                     .into_any_element()
             } else {
                 value_row.into_any_element()
@@ -1022,9 +1028,9 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(spacing(Spacing::Xs, density))
+                    .gap(px(2.0))
                     .child(primary_el)
-                    .child(mono(sec.clone(), FONT_XS, palette.text_faint))
+                    .child(mono(sec.clone(), FONT_XXS, palette.text_faint))
                     .into_any_element()
             } else {
                 primary_el.into_any_element()
@@ -1046,9 +1052,9 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(spacing(Spacing::Xs, density))
+                    .gap(px(2.0))
                     .child(ratio_el)
-                    .child(mono(hint.clone(), FONT_XS, palette.text_faint))
+                    .child(mono(hint.clone(), FONT_XXS, palette.text_faint))
                     .into_any_element()
             } else {
                 ratio_el.into_any_element()

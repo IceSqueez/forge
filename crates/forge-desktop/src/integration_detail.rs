@@ -668,25 +668,21 @@ impl IntegrationDetail {
         ))
     }
 
-    fn header_right_connected(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let mut row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xxs, density))
-                    .child(status_dot(palette.success, px(6.0)))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.success)
-                            .child(tr!("integration_status_authenticated")),
-                    ),
-            );
+    fn header_right_connected(&self, palette: &ForgePalette, _density: Density) -> AnyElement {
+        let mut row = div().flex().items_center().gap(px(8.0)).child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(5.0))
+                .child(status_dot(palette.success, px(7.0)))
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XS)
+                        .text_color(palette.success)
+                        .child(tr!("integration_status_authenticated")),
+                ),
+        );
         if let Some(suffix) = self.token_countdown() {
             row = row
                 .child(
@@ -923,7 +919,7 @@ impl Render for IntegrationDetail {
                     .w_full()
                     .flex()
                     .flex_col()
-                    .gap(spacing(Spacing::Md, density))
+                    .gap(px(14.0))
                     .children(reauth_banner)
                     .children(state_banner)
                     .child(header_card)
@@ -939,13 +935,7 @@ impl Render for IntegrationDetail {
             .flex_1()
             .overflow_y_scroll()
             .bg(palette.base)
-            .child(
-                div()
-                    .w_full()
-                    .py(spacing(Spacing::Md, density))
-                    .px(spacing(Spacing::Lg, density))
-                    .child(body),
-            );
+            .child(div().w_full().py(px(18.0)).px(px(22.0)).child(body));
 
         let disconnect_overlay = self
             .pending_disconnect

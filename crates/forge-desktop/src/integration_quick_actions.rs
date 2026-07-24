@@ -7,8 +7,7 @@ use gpui::{AnyElement, ClickEvent, Context, Rgba, div, prelude::*, px};
 
 use crate::integration_detail::IntegrationDetail;
 
-/// One rendered row of the grouped quick-actions grid.
-const GRID_COLUMNS: usize = 3;
+const GRID_COLUMNS: u16 = 3;
 
 impl IntegrationDetail {
     pub(crate) fn quick_actions_card(
@@ -144,18 +143,11 @@ impl IntegrationDetail {
 
         let mut grid = div()
             .w_full()
-            .flex()
-            .flex_col()
+            .grid()
+            .grid_cols(GRID_COLUMNS)
             .gap(spacing(Spacing::Xs, density));
-        for chunk in members.chunks(GRID_COLUMNS) {
-            let mut row = div().w_full().flex().gap(spacing(Spacing::Xs, density));
-            for (idx, action) in chunk {
-                row = row.child(self.qa_button(*idx, action, palette, density, cx));
-            }
-            for _ in chunk.len()..GRID_COLUMNS {
-                row = row.child(div().flex_1().min_w(px(0.0)));
-            }
-            grid = grid.child(row);
+        for (idx, action) in &members {
+            grid = grid.child(self.qa_button(*idx, action, palette, density, cx));
         }
 
         section.child(grid).into_any_element()
@@ -208,14 +200,14 @@ impl IntegrationDetail {
                     .flex_1()
                     .min_w(px(0.0))
                     .font_family(body_family())
-                    .text_size(FONT_XS)
+                    .text_size(px(11.5))
+                    .line_height(px(14.0))
                     .text_color(label_color)
                     .child(action.label.clone()),
             );
 
         let mut btn = div()
             .id(("quick-action", idx))
-            .flex_1()
             .min_w(px(0.0))
             .py(px(7.0))
             .px(spacing(Spacing::Sm, density))

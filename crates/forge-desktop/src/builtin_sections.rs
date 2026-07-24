@@ -9,6 +9,10 @@ use forge_platform_core::{
 };
 use gpui::{AnyElement, Div, Rgba, SharedString, div, prelude::*, px, relative};
 
+/// Keeps the scopes and subscription panels within one calm viewport; their row lists scroll
+/// internally past this so Quick actions stay reachable below.
+const SCROLL_PANEL_MAX_H: f32 = 320.0;
+
 fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
     div()
         .font_family(mono_family())
@@ -26,7 +30,11 @@ fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
 }
 
 fn divider(palette: &ForgePalette) -> Div {
-    div().w_full().h(BORDER_THIN).bg(palette.border_regular)
+    div()
+        .w_full()
+        .flex_none()
+        .h(BORDER_THIN)
+        .bg(palette.border_regular)
 }
 
 fn card_shell(palette: &ForgePalette) -> Div {
@@ -249,11 +257,19 @@ fn render_subscription_list(
     density: Density,
 ) -> AnyElement {
     let count = tr!("widget_builtin_active_count", count = items.len() as i64);
-    let mut rows = div().w_full().flex().flex_col();
+    let mut rows = div()
+        .id("eventsub-scroll")
+        .w_full()
+        .flex_1()
+        .min_h(px(0.0))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col();
     for item in items {
         rows = rows.child(subscription_row_elem(item, palette, density));
     }
     let mut card = card_shell(palette)
+        .max_h(px(SCROLL_PANEL_MAX_H))
         .child(panel_header_row(
             icon.as_str(),
             title,
@@ -275,6 +291,7 @@ fn render_subscription_list(
 fn subscription_banner(message: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .w_full()
+        .flex_none()
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
@@ -303,11 +320,19 @@ fn render_scopes_list(
     density: Density,
 ) -> AnyElement {
     let count = scopes.len().to_string();
-    let mut rows = div().w_full().flex().flex_col();
+    let mut rows = div()
+        .id("scopes-scroll")
+        .w_full()
+        .flex_1()
+        .min_h(px(0.0))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col();
     for scope in scopes {
         rows = rows.child(scope_row_elem(scope, palette, density));
     }
     let mut card = card_shell(palette)
+        .max_h(px(SCROLL_PANEL_MAX_H))
         .child(panel_header_row(
             icon_token.as_str(),
             title,
@@ -332,7 +357,7 @@ fn render_two_column(
     div()
         .w_full()
         .flex()
-        .items_start()
+        .items_stretch()
         .gap(spacing(Spacing::Md, density))
         .child(grow_cell(dispatch_section(left, palette, density), 10.0))
         .child(grow_cell(dispatch_section(right, palette, density), 13.0))
@@ -739,6 +764,7 @@ fn panel_header_row(
 
     let mut row = div()
         .w_full()
+        .flex_none()
         .flex()
         .items_center()
         .py(spacing(Spacing::Sm, density))
@@ -790,6 +816,7 @@ fn info_card_header(
 fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density) -> AnyElement {
     let mut row = div()
         .w_full()
+        .flex_none()
         .flex()
         .items_center()
         .gap(spacing(Spacing::Sm, density))

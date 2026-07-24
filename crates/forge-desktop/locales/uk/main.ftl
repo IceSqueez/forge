@@ -1551,6 +1551,7 @@ integration_quick_action_failed = Швидка дія не виконалася
 integration_open_url_failed = Не вдалося відкрити посилання в браузері
 integration_quick_action_na = Н/Д
 integration_status_authenticated = Автентифіковано
+integration_hero_session = { $prefix } · сеанс { $uptime }
 integration_token_expires_in = термін токена спливає через { $time }
 integration_viewers_delta = { $delta } за останні { $window }
 integration_qa_filter_placeholder = Фільтрувати дії...

@@ -706,6 +706,24 @@ impl IntegrationDetail {
         row.into_any_element()
     }
 
+    fn is_oauth_platform(&self) -> bool {
+        matches!(self.status.id().as_str(), "twitch" | "youtube" | "kick")
+    }
+
+    fn hero_subtitle(&self) -> String {
+        if self.is_oauth_platform()
+            && let Some(prefix) = self.status.endpoint()
+            && let Some(uptime) = self.status.uptime()
+        {
+            return tr!(
+                "integration_hero_session",
+                prefix = prefix.to_owned(),
+                uptime = fmt_uptime(uptime.as_secs())
+            );
+        }
+        sub_line(self.endpoint.as_deref(), self.uptime)
+    }
+
     fn header_card(
         &self,
         palette: &ForgePalette,
@@ -713,7 +731,12 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (letter, brand) = hero_identity(self.icon.as_str(), &self.display_name, palette);
-        let sub = sub_line(self.endpoint.as_deref(), self.uptime);
+        let hero_name = self
+            .status
+            .hero_name()
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| self.display_name.clone());
+        let sub = self.hero_subtitle();
         let name_badges = self.hero_badges(palette);
 
         let mut right = div()
@@ -736,7 +759,7 @@ impl IntegrationDetail {
             right = right.child(self.action_button(i, action.clone(), palette, density, cx));
         }
 
-        platform_hero(letter, brand, self.display_name.clone(), sub, palette)
+        platform_hero(letter, brand, hero_name, sub, palette)
             .density(density)
             .name_badges(name_badges)
             .right(right)
@@ -952,7 +975,7 @@ impl Render for IntegrationDetail {
             _ => BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
         };
 
-        let is_oauth_platform = matches!(self.status.id().as_str(), "twitch" | "youtube" | "kick");
+        let is_oauth_platform = self.is_oauth_platform();
         let header_right = match self.connect_platform {
             Some(PlatformId::Twitch) => Some(self.twitch_device_status(&palette, density)),
             Some(platform) => Some(self.connect_status(platform, &palette, density)),

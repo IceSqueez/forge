@@ -334,6 +334,11 @@ pub trait BuiltinStatus: Send + Sync {
     fn name_badges(&self) -> Vec<HeroBadge> {
         Vec::new()
     }
+    /// Account login shown as the hero title for account-scoped integrations; `None` falls back
+    /// to `display_name`, which continues to label the breadcrumb either way.
+    fn hero_name(&self) -> Option<&str> {
+        None
+    }
 }
 
 pub trait BuiltinHealth: Send + Sync {

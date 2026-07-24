@@ -10,9 +10,8 @@ use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
-    HeroBadgeTone, InfoField, LiveViewerSource, QuickAction, QuickActions, RateLimiter,
-    SectionIcon, SubscriptionRow, SubscriptionStatus, TokenBucketRateLimiter, ViewerReport,
-    ViewerReportStream,
+    HeroBadgeTone, LiveViewerSource, QuickAction, QuickActions, RateLimiter, SectionIcon,
+    SubscriptionRow, SubscriptionStatus, TokenBucketRateLimiter, ViewerReport, ViewerReportStream,
 };
 use std::collections::BTreeMap;
 
@@ -374,71 +373,6 @@ impl TwitchIntegrationBundle {
             },
         }
     }
-
-    fn identity_fields(&self) -> Vec<InfoField> {
-        let uptime_value = BuiltinStatus::uptime(self)
-            .map(format_uptime)
-            .unwrap_or_else(|| "not connected".to_owned());
-        let expires_value = (*self
-            .token_expires_at
-            .read()
-            .unwrap_or_else(|p| p.into_inner()))
-        .map(format_expires_at)
-        .unwrap_or_else(|| "unknown".to_owned());
-
-        vec![
-            InfoField {
-                label: "Login".to_owned(),
-                value: self.login.clone().unwrap_or_else(|| "-".to_owned()),
-                monospace_value: true,
-            },
-            InfoField {
-                label: "Tier".to_owned(),
-                value: self.tier().label().to_owned(),
-                monospace_value: false,
-            },
-            InfoField {
-                label: "User ID".to_owned(),
-                value: self.config.user_id.clone(),
-                monospace_value: true,
-            },
-            InfoField {
-                label: "Session started".to_owned(),
-                value: uptime_value,
-                monospace_value: false,
-            },
-            InfoField {
-                label: "Token expires".to_owned(),
-                value: expires_value,
-                monospace_value: true,
-            },
-        ]
-    }
-}
-
-fn format_uptime(elapsed: Duration) -> String {
-    let total_secs = elapsed.as_secs();
-    let hours = total_secs / 3600;
-    let minutes = (total_secs % 3600) / 60;
-    if hours > 0 {
-        format!("{hours}h {minutes}m")
-    } else {
-        format!("{minutes}m")
-    }
-}
-
-fn format_expires_at(at: SystemTime) -> String {
-    let secs = at
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    OffsetDateTime::from_unix_timestamp(secs)
-        .ok()
-        .and_then(|dt| {
-            dt.format(&time::format_description::well_known::Rfc3339)
-                .ok()
-        })
-        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 /// Empty `data` array means the broadcaster is not currently live.
@@ -457,6 +391,10 @@ impl BuiltinStatus for TwitchIntegrationBundle {
 
     fn display_name(&self) -> &str {
         "Twitch"
+    }
+
+    fn hero_name(&self) -> Option<&str> {
+        self.login.as_deref()
     }
 
     fn version(&self) -> Option<&str> {
@@ -594,20 +532,10 @@ impl BuiltinContent for TwitchIntegrationBundle {
             banner: dropped_kind.map(|kind| format!("{kind} subscription dropped")),
         };
 
-        let identity_card = DetailSection::InfoCard {
-            title: "Broadcaster".to_owned(),
-            live: false,
-            fields: self.identity_fields(),
-            health_bar: None,
-        };
-
-        vec![
-            identity_card,
-            DetailSection::TwoColumn {
-                left: Box::new(scopes_list),
-                right: Box::new(eventsub_list),
-            },
-        ]
+        vec![DetailSection::TwoColumn {
+            left: Box::new(scopes_list),
+            right: Box::new(eventsub_list),
+        }]
     }
 }
 
@@ -870,23 +798,40 @@ mod tests {
     }
 
     #[test]
-    fn broadcaster_info_card_lists_login_tier_and_user_id() {
+    fn hero_name_is_the_login_not_the_display_name() {
+        let b = make_bundle(ChatConnectionState::Connected);
+        let status: &dyn BuiltinStatus = b.as_ref();
+        assert_eq!(status.hero_name(), Some("streamer"));
+        assert_ne!(status.hero_name(), Some(status.display_name()));
+    }
+
+    #[test]
+    fn name_badges_pin_user_id_and_gate_tier_above_standard() {
+        for (tier, tier_badge_shown) in [
+            (BroadcasterTier::Standard, false),
+            (BroadcasterTier::Partner, true),
+        ] {
+            let b = make_bundle_with_tier(ChatConnectionState::Connected, tier);
+            let status: &dyn BuiltinStatus = b.as_ref();
+            let badges = status.name_badges();
+            assert_eq!(badges[0].label, "user_id 1");
+            assert!(badges[0].monospace);
+            let has_tier_badge = badges.iter().any(|badge| badge.label == tier.label());
+            assert_eq!(has_tier_badge, tier_badge_shown, "tier {tier:?}");
+        }
+    }
+
+    #[test]
+    fn sections_omit_the_broadcaster_info_card() {
         let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Partner);
         let content: &dyn BuiltinContent = b.as_ref();
-        let sections = content.sections();
-        let DetailSection::InfoCard { title, fields, .. } = &sections[0] else {
-            panic!("expected InfoCard as the first section");
-        };
-        assert_eq!(title, "Broadcaster");
-        let field = |label: &str| {
-            fields
+        assert!(
+            !content
+                .sections()
                 .iter()
-                .find(|f| f.label == label)
-                .unwrap_or_else(|| panic!("missing field {label}"))
-        };
-        assert_eq!(field("Login").value, "streamer");
-        assert_eq!(field("Tier").value, "Partner");
-        assert_eq!(field("User ID").value, "1");
+                .any(|s| matches!(s, DetailSection::InfoCard { .. })),
+            "broadcaster InfoCard must not resurface"
+        );
     }
 
     #[test]
@@ -894,8 +839,8 @@ mod tests {
         let b = make_bundle(ChatConnectionState::Connected);
         let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
-        let DetailSection::TwoColumn { left, right } = &sections[1] else {
-            panic!("expected TwoColumn as the second section");
+        let DetailSection::TwoColumn { left, right } = &sections[0] else {
+            panic!("expected TwoColumn as the first section");
         };
         let DetailSection::ScopesList { title, scopes, .. } = left.as_ref() else {
             panic!("expected ScopesList on the left");
@@ -918,8 +863,8 @@ mod tests {
     ) -> (Vec<SubscriptionRow>, Option<String>) {
         let content: &dyn BuiltinContent = bundle;
         let sections = content.sections();
-        let DetailSection::TwoColumn { right, .. } = sections.into_iter().nth(1).unwrap() else {
-            panic!("expected TwoColumn as the second section");
+        let DetailSection::TwoColumn { right, .. } = sections.into_iter().next().unwrap() else {
+            panic!("expected TwoColumn as the first section");
         };
         let DetailSection::SubscriptionList { items, banner, .. } = *right else {
             panic!("expected SubscriptionList on the right");

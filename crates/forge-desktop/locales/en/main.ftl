@@ -1532,6 +1532,7 @@ integration_quick_action_failed = Quick action failed
 integration_open_url_failed = Could not open the link in your browser
 integration_quick_action_na = N/A
 integration_status_authenticated = Authenticated
+integration_hero_session = { $prefix } · session { $uptime }
 integration_token_expires_in = token expires in { $time }
 integration_viewers_delta = { $delta } last { $window }
 integration_qa_filter_placeholder = Filter actions...

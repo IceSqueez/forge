@@ -154,16 +154,19 @@ impl ChatPlatform for TwitchPlatform {
                 feature: "chat.send".to_owned(),
             });
         }
+        let cred = load(self.creds.as_ref())
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.to_string(),
+            })?
+            .ok_or_else(|| PlatformError::ReauthRequired {
+                platform: PLATFORM_ID.to_owned(),
+            })?;
         let transport = self.helix_transport().await?;
-        send_chat(
-            transport.as_ref(),
-            &self.config.user_id,
-            &self.config.user_id,
-            text,
-        )
-        .await
-        .map(|_| ())
-        .map_err(map_send_error)
+        send_chat(transport.as_ref(), &cred.user_id, &cred.user_id, text)
+            .await
+            .map(|_| ())
+            .map_err(map_send_error)
     }
 
     fn events(&self) -> EventStream {

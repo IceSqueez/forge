@@ -227,6 +227,24 @@ async fn build_twitch(
         eprintln!("forge-desktop: twitch sub-action registration failed: {e}");
     }
 
+    let send_platform: Arc<dyn ChatPlatform> =
+        Arc::new(forge_platform_twitch::TwitchPlatform::new(
+            forge_platform_twitch::ChatSessionConfig {
+                client_id: client_id.clone(),
+                broadcaster_id: String::new(),
+                user_id: String::new(),
+            },
+            Arc::clone(&creds),
+            forge_platform_twitch::SubscriptionTracker::default(),
+            Arc::clone(&rate_limiter),
+        ));
+    spawn_chat_send_bridge(
+        Arc::clone(bus),
+        send_platform,
+        "twitch",
+        EventSource::Twitch,
+    );
+
     let stored = forge_platform_twitch::credentials::load(&*creds)
         .await
         .ok()

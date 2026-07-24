@@ -270,7 +270,7 @@ fn group_order<'a>(matches: &[(usize, &'a QuickAction)]) -> Vec<Option<&'a str>>
     order
 }
 
-fn accent_color(accent: QuickActionAccent, palette: &ForgePalette) -> Rgba {
+pub(crate) fn accent_color(accent: QuickActionAccent, palette: &ForgePalette) -> Rgba {
     match accent {
         QuickActionAccent::Brand => palette.brand,
         QuickActionAccent::Success => palette.success,

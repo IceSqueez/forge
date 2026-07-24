@@ -1,20 +1,20 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette,
-    Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
-    SearchState, Spacing, TextInput, ToastKind, badge, body_family, confirm_modal, icon,
-    mono_family, overlay, page_frame, platform_hero, radius, spacing, status_dot, tr,
+    Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput, ToastKind, badge,
+    body_family, confirm_modal, icon, mono_family, overlay, page_frame, platform_hero, radius,
+    spacing, status_dot, tr,
 };
 use forge_events::{EventPublisher, EventSource};
-use forge_obs::{ObsClient, ObsSource};
+use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
     ControlFailure, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge,
-    HeroBadgeTone, PickerKind, QuickAction, QuickActions, SectionIcon,
+    HeroBadgeTone, QuickAction, QuickActions, SectionIcon,
 };
 use forge_platform_twitch::TwitchIntegrationBundle;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
 use forge_storage::CredentialsRepo;
-use forge_types::{PlatformId, Variant};
+use forge_types::{PlatformId, SubActionStep};
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Window,
@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::{content_sections, health_grid};
+use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
@@ -71,7 +72,8 @@ pub struct IntegrationDetail {
     eventsub_tally: HashMap<String, u64>,
     viewer_samples: VecDeque<(Instant, u64)>,
     pending_disconnect: Confirm<()>,
-    pending_picker: Option<PendingPicker>,
+    quick_action_modal: Option<Entity<QuickActionModal>>,
+    _qa_modal_sub: Option<Subscription>,
     _conn_obs: Subscription,
     _qa_search_sub: Subscription,
 }
@@ -194,7 +196,8 @@ impl IntegrationDetail {
             eventsub_tally: HashMap::new(),
             viewer_samples: VecDeque::new(),
             pending_disconnect: Confirm::default(),
-            pending_picker: None,
+            quick_action_modal: None,
+            _qa_modal_sub: None,
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
         }
@@ -431,168 +434,55 @@ impl IntegrationDetail {
         if !action.enabled {
             return;
         }
-        if let Some(kind) = action.picker {
-            self.open_picker(idx, kind, window, cx);
-            return;
-        }
-        let step = action.subaction_template.clone();
-        let builtin_id = self.status.id().as_str().to_owned();
-        let label = action.label.clone();
-        let engine = self.action_engine.clone();
-        async_bridge::report_failure(
-            &self.rt_handle,
-            async move {
-                engine
-                    .execute_quick_action(step, builtin_id, label, None)
-                    .await
-            },
-            ErrorSink::Toast,
-            tr!("integration_quick_action_failed"),
-            cx,
-        );
-    }
-
-    fn open_picker(
-        &mut self,
-        action_index: usize,
-        kind: PickerKind,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let palette = cx.palette();
-        let picker = cx.new(|cx| {
-            let mut picker = Picker::new(picker_labels(kind), Vec::new(), palette, cx);
-            picker.set_loading(true, cx);
-            picker
-        });
-        let sub = cx.subscribe(&picker, Self::on_picker_event);
-        picker.update(cx, |f, cx| f.focus(window, cx));
-
-        match self.obs_source.clone() {
-            Some(client) => self.spawn_picker_fetch(picker.clone(), client, kind, cx),
-            None => picker.update(cx, |picker, cx| picker.set_loading(false, cx)),
-        }
-
-        self.pending_picker = Some(PendingPicker {
-            picker,
-            action_index,
-            kind,
-            current_scene: None,
-            _sub: sub,
-        });
+        let action = action.clone();
+        let obs_source = self.obs_source.clone();
+        let rt_handle = self.rt_handle.clone();
+        let modal = cx.new(|cx| QuickActionModal::new(action, obs_source, rt_handle, cx));
+        modal.update(cx, |m, cx| m.focus(window, cx));
+        self._qa_modal_sub = Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
+        self.quick_action_modal = Some(modal);
         cx.notify();
     }
 
-    fn spawn_picker_fetch(
-        &self,
-        picker: Entity<Picker>,
-        client: Arc<ObsClient>,
-        kind: PickerKind,
-        cx: &mut Context<Self>,
-    ) {
-        async_bridge::run_async(
-            &self.rt_handle,
-            fetch_picker_items(client, kind),
-            move |detail, result, cx| detail.apply_picker_items(&picker, result, cx),
-            cx,
-        );
-    }
-
-    fn apply_picker_items(
+    fn on_quick_action_modal_event(
         &mut self,
-        picker: &Entity<Picker>,
-        result: Result<(Vec<PickerItem>, Option<String>), String>,
-        cx: &mut Context<Self>,
-    ) {
-        if self
-            .pending_picker
-            .as_ref()
-            .is_none_or(|pending| pending.picker != *picker)
-        {
-            return;
-        }
-        match result {
-            Ok((items, current_scene)) => {
-                if let Some(pending) = self.pending_picker.as_mut() {
-                    pending.current_scene = current_scene;
-                }
-                picker.update(cx, |picker, cx| {
-                    picker.set_items(items, cx);
-                    picker.set_loading(false, cx);
-                });
-            }
-            Err(reason) => {
-                ErrorSink::Toast.report(reason, cx);
-                picker.update(cx, |picker, cx| picker.set_loading(false, cx));
-            }
-        }
-        cx.notify();
-    }
-
-    fn on_picker_event(
-        &mut self,
-        _picker: Entity<Picker>,
-        event: &PickerEvent,
+        _modal: Entity<QuickActionModal>,
+        event: &QuickActionModalEvent,
         cx: &mut Context<Self>,
     ) {
         match event {
-            PickerEvent::Selected(id) => self.pick_target(id.to_string(), cx),
-            PickerEvent::Cancelled => self.cancel_picker(cx),
+            QuickActionModalEvent::Run { step, label } => {
+                self.run_quick_action(step.clone(), label.clone(), cx);
+                self.close_quick_action_modal(cx);
+            }
+            QuickActionModalEvent::Cancel => self.close_quick_action_modal(cx),
         }
     }
 
-    fn cancel_picker(&mut self, cx: &mut Context<Self>) {
-        self.pending_picker = None;
-        cx.notify();
-    }
-
-    fn pick_target(&mut self, selected_id: String, cx: &mut Context<Self>) {
-        let Some(pending) = self.pending_picker.take() else {
-            return;
-        };
-        let Some(action) = self.quick_actions.get(pending.action_index) else {
-            cx.notify();
-            return;
-        };
-        let mut step = action.subaction_template.clone();
-        let label = action.label.clone();
+    fn run_quick_action(&mut self, step: SubActionStep, label: String, cx: &mut Context<Self>) {
         let builtin_id = self.status.id().as_str().to_owned();
-
-        match pending.kind {
-            PickerKind::Scene => {
-                step.config
-                    .insert("scene".to_owned(), Variant::String(selected_id));
-            }
-            PickerKind::Source => {
-                if let Some(scene) = pending.current_scene {
-                    step.config
-                        .insert("scene".to_owned(), Variant::String(scene));
-                }
-                step.config
-                    .insert("source".to_owned(), Variant::String(selected_id));
-            }
-            PickerKind::Input => {
-                step.config
-                    .insert("source".to_owned(), Variant::String(selected_id));
-            }
-            PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
-                cx.notify();
-                return;
-            }
-        }
-
         let engine = self.action_engine.clone();
-        async_bridge::report_failure(
+        async_bridge::run_async(
             &self.rt_handle,
             async move {
                 engine
                     .execute_quick_action(step, builtin_id, label, None)
                     .await
             },
-            ErrorSink::Toast,
-            tr!("integration_quick_action_failed"),
+            |_detail, result, cx| match result {
+                Ok(()) => cx.push_toast(ToastKind::Success, tr!("integration_quick_action_ran")),
+                Err(err) => {
+                    tracing::warn!(error = %err, "quick action failed");
+                    cx.push_toast(ToastKind::Error, tr!("integration_quick_action_failed"));
+                }
+            },
             cx,
         );
+    }
+
+    fn close_quick_action_modal(&mut self, cx: &mut Context<Self>) {
+        self.quick_action_modal = None;
+        self._qa_modal_sub = None;
         cx.notify();
     }
 
@@ -981,15 +871,6 @@ impl Render for IntegrationDetail {
             .pending_disconnect
             .is_pending()
             .then(|| self.disconnect_overlay(&palette, cx));
-        let picker_overlay = self.pending_picker.as_ref().map(|pending| {
-            let view = cx.entity();
-            overlay(pending.picker.clone(), &palette)
-                .position(OverlayPosition::Center)
-                .on_dismiss("integration-picker-scrim", move |_window, cx| {
-                    view.update(cx, |this, cx| this.cancel_picker(cx));
-                })
-                .into_any_element()
-        });
 
         let ancestor_crumb = match self.status.id().as_str() {
             "twitch" | "youtube" | "kick" => BreadcrumbCrumb::link(
@@ -1033,7 +914,7 @@ impl Render for IntegrationDetail {
             .bg(palette.base)
             .child(frame)
             .children(disconnect_overlay)
-            .children(picker_overlay)
+            .children(self.quick_action_modal.clone())
     }
 }
 
@@ -1062,87 +943,6 @@ enum ControlVerb {
     Reconnect,
     Disconnect,
     RefreshToken,
-}
-
-struct PendingPicker {
-    picker: Entity<Picker>,
-    action_index: usize,
-    kind: PickerKind,
-    current_scene: Option<String>,
-    _sub: Subscription,
-}
-
-fn picker_labels(kind: PickerKind) -> PickerLabels {
-    let title = match kind {
-        PickerKind::Scene => tr!("builtin_picker_scene"),
-        PickerKind::Source => tr!("builtin_picker_source"),
-        PickerKind::Input => tr!("builtin_picker_audio_input"),
-        PickerKind::Hotkey => tr!("builtin_picker_hotkey"),
-        PickerKind::Expression => tr!("builtin_picker_expression"),
-        PickerKind::MidiPort => tr!("builtin_picker_midi_port"),
-    };
-    PickerLabels {
-        title: title.into(),
-        placeholder: tr!("widget_picker_search_placeholder").into(),
-        empty: tr!("widget_picker_no_results").into(),
-        loading: tr!("widget_picker_loading").into(),
-        cancel: tr!("common_cancel").into(),
-    }
-}
-
-async fn fetch_picker_items(
-    client: Arc<ObsClient>,
-    kind: PickerKind,
-) -> Result<(Vec<PickerItem>, Option<String>), String> {
-    match kind {
-        PickerKind::Scene => {
-            let scenes = client.scenes().await.map_err(|e| e.to_string())?;
-            let items = scenes
-                .into_iter()
-                .map(|name| PickerItem {
-                    id: name.clone().into(),
-                    label: name.into(),
-                    sublabel: None,
-                    icon: Icon::from_name("layout"),
-                })
-                .collect();
-            Ok((items, None))
-        }
-        PickerKind::Source => {
-            let scene = client
-                .current_scene()
-                .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "no active scene".to_owned())?;
-            let sources = client.sources(&scene).await.map_err(|e| e.to_string())?;
-            let items = sources
-                .into_iter()
-                .map(|source| PickerItem {
-                    id: source.name.clone().into(),
-                    label: source.name.into(),
-                    sublabel: Some(if source.visible { "visible" } else { "hidden" }.into()),
-                    icon: Icon::from_name("device-desktop"),
-                })
-                .collect();
-            Ok((items, Some(scene)))
-        }
-        PickerKind::Input => {
-            let inputs = client.audio_inputs().await.map_err(|e| e.to_string())?;
-            let items = inputs
-                .into_iter()
-                .map(|name| PickerItem {
-                    id: name.clone().into(),
-                    label: name.into(),
-                    sublabel: None,
-                    icon: Icon::from_name("volume"),
-                })
-                .collect();
-            Ok((items, None))
-        }
-        PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
-            Err("unsupported picker kind".to_owned())
-        }
-    }
 }
 
 fn header_action_label(action: &HeaderAction) -> String {

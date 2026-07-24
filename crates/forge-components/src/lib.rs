@@ -44,8 +44,8 @@ pub mod type_to_confirm;
 pub use avatar::{AvatarTile, avatar_tile, hash_accent};
 pub use breadcrumb::{Breadcrumb, BreadcrumbCrumb, breadcrumb};
 pub use buttons::{
-    Button, destructive_button, ghost_button, ghost_button_with_icon, icon_button, primary_button,
-    primary_button_with_icon, secondary_button,
+    Button, destructive_button, destructive_button_with_icon, ghost_button, ghost_button_with_icon,
+    icon_button, primary_button, primary_button_with_icon, secondary_button,
 };
 pub use cards::{
     Card, EmptyState, PadTile, RowCard, ToolbarRow, card, empty_state, field_hint, field_label,

@@ -320,6 +320,21 @@ pub fn destructive_button(label: impl Into<SharedString>, palette: &ForgePalette
     )
 }
 
+pub fn destructive_button_with_icon(
+    icon: Icon,
+    label: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> Button {
+    Button::new(
+        ButtonVariant::Destructive,
+        Some(label.into()),
+        Some(icon),
+        None,
+        FontWeight::SEMIBOLD,
+        palette,
+    )
+}
+
 pub fn secondary_button(label: impl Into<SharedString>, palette: &ForgePalette) -> Button {
     Button::new(
         ButtonVariant::Secondary,

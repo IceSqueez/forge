@@ -117,6 +117,7 @@ pub struct TextInput {
     static_chrome: Option<(Rgba, Radius)>,
     plain: bool,
     mono: bool,
+    compact: bool,
     invalid: bool,
     blink_visible: bool,
     focused_cached: bool,
@@ -150,6 +151,7 @@ impl TextInput {
             static_chrome: None,
             plain: false,
             mono: false,
+            compact: false,
             invalid: false,
             blink_visible: true,
             focused_cached: false,
@@ -175,6 +177,12 @@ impl TextInput {
 
     pub fn with_font_size(mut self, size: Pixels) -> Self {
         self.font_size = size;
+        self
+    }
+
+    #[must_use]
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
         self
     }
 
@@ -912,9 +920,14 @@ impl Render for TextInput {
             .items_center()
             .overflow_hidden();
         if !self.plain {
+            let py = if self.compact {
+                px(4.0)
+            } else {
+                spacing(Spacing::Xs, self.density)
+            };
             field = field
                 .px(spacing(Spacing::Sm, self.density))
-                .py(spacing(Spacing::Xs, self.density))
+                .py(py)
                 .bg(surface)
                 .border(BORDER_THIN)
                 .border_color(border_color)
@@ -929,7 +942,7 @@ impl Render for TextInput {
             .font_family(font_family)
             .text_size(self.font_size)
             .text_color(text_color)
-            .line_height(self.font_size * 1.5);
+            .line_height(self.font_size * if self.compact { 1.2 } else { 1.5 });
 
         let content = div()
             .flex_1()

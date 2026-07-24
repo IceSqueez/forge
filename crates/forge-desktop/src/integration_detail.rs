@@ -115,7 +115,11 @@ impl IntegrationDetail {
 
         let is_twitch = status.id().as_str() == "twitch";
         let palette = cx.palette();
-        let qa_search = SearchState::new(cx, palette, tr!("integration_qa_filter_placeholder"));
+        let qa_search = SearchState::from_field(cx.new(|cx| {
+            forge_components::search_input(tr!("integration_qa_filter_placeholder"), palette, cx)
+                .compact()
+                .with_font_size(px(11.5))
+        }));
         let qa_search_sub = cx.subscribe(qa_search.field(), Self::on_qa_search);
         let connect_platform = connect_platform_for(status.id().as_str(), control.is_some());
         let display_name = status.display_name().to_owned();

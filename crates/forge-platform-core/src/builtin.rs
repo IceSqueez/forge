@@ -800,6 +800,182 @@ mod tests {
         }
     }
 
+    fn qa_template(config: BTreeMap<String, Variant>) -> SubActionStep {
+        SubActionStep {
+            kind_id: "test.kind".to_owned(),
+            config,
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    fn qa_field(
+        key: &str,
+        kind: QuickActionFieldKind,
+        default: Option<QuickActionFieldValue>,
+    ) -> QuickActionField {
+        QuickActionField {
+            key: key.to_owned(),
+            label: key.to_owned(),
+            kind,
+            default,
+            placeholder: None,
+            hint: None,
+        }
+    }
+
+    fn qa_with(template: SubActionStep, fields: Vec<QuickActionField>) -> QuickAction {
+        QuickAction {
+            label: "A".to_owned(),
+            icon: SectionIcon::new("x"),
+            enabled: true,
+            locked_reason: None,
+            group: None,
+            group_icon: None,
+            group_accent: None,
+            destructive: false,
+            accent: QuickActionAccent::default(),
+            subaction_template: template,
+            picker: None,
+            fields,
+        }
+    }
+
+    #[test]
+    fn merge_config_prefers_supplied_value_over_field_default() {
+        let action = qa_with(
+            qa_template(BTreeMap::new()),
+            vec![qa_field(
+                "title",
+                QuickActionFieldKind::Text,
+                Some(QuickActionFieldValue::Text("default title".to_owned())),
+            )],
+        );
+        let mut values = BTreeMap::new();
+        values.insert(
+            "title".to_owned(),
+            QuickActionFieldValue::Text("user title".to_owned()),
+        );
+
+        let merged = action.merge_config(&values);
+
+        assert_eq!(
+            merged.config.get("title"),
+            Some(&Variant::String("user title".to_owned()))
+        );
+    }
+
+    #[test]
+    fn merge_config_falls_back_to_field_default_when_value_absent() {
+        let action = qa_with(
+            qa_template(BTreeMap::new()),
+            vec![qa_field(
+                "title",
+                QuickActionFieldKind::Text,
+                Some(QuickActionFieldValue::Text("default title".to_owned())),
+            )],
+        );
+
+        let merged = action.merge_config(&BTreeMap::new());
+
+        assert_eq!(
+            merged.config.get("title"),
+            Some(&Variant::String("default title".to_owned()))
+        );
+    }
+
+    #[test]
+    fn merge_config_leaves_key_untouched_when_no_value_and_no_default() {
+        let template = qa_template(BTreeMap::from([(
+            "reason".to_owned(),
+            Variant::String("template value".to_owned()),
+        )]));
+        let action = qa_with(
+            template,
+            vec![
+                qa_field("reason", QuickActionFieldKind::Text, None),
+                qa_field("ghost", QuickActionFieldKind::Text, None),
+            ],
+        );
+
+        let merged = action.merge_config(&BTreeMap::new());
+
+        assert_eq!(
+            merged.config.get("reason"),
+            Some(&Variant::String("template value".to_owned())),
+            "a field with neither supplied value nor default must not overwrite the template"
+        );
+        assert_eq!(
+            merged.config.get("ghost"),
+            None,
+            "a valueless, defaultless field must not introduce a key"
+        );
+    }
+
+    #[test]
+    fn marshal_scalar_kinds_produce_string_or_bool_variants() {
+        let choice = QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(vec![
+            QuickActionChoiceOption {
+                value: "primary".to_owned(),
+                label: "Primary".to_owned(),
+            },
+        ]));
+        let cases = [
+            (
+                QuickActionFieldKind::Text,
+                QuickActionFieldValue::Text("hi".to_owned()),
+                Variant::String("hi".to_owned()),
+            ),
+            (
+                QuickActionFieldKind::Multiline,
+                QuickActionFieldValue::Text("a\nb".to_owned()),
+                Variant::String("a\nb".to_owned()),
+            ),
+            (
+                QuickActionFieldKind::Toggle,
+                QuickActionFieldValue::Toggle(true),
+                Variant::Bool(true),
+            ),
+            (
+                QuickActionFieldKind::Toggle,
+                QuickActionFieldValue::Toggle(false),
+                Variant::Bool(false),
+            ),
+            (
+                choice,
+                QuickActionFieldValue::Text("primary".to_owned()),
+                Variant::String("primary".to_owned()),
+            ),
+        ];
+        for (kind, value, expected) in cases {
+            assert_eq!(kind.marshal(&value), expected, "kind {kind:?}");
+        }
+    }
+
+    #[test]
+    fn marshal_multiline_list_splits_text_into_array_per_line() {
+        let cases: [(&str, Vec<&str>); 5] = [
+            ("one", vec!["one"]),
+            ("a\nb\nc", vec!["a", "b", "c"]),
+            ("a\n\nb", vec!["a", "", "b"]),
+            ("a\nb\n", vec!["a", "b"]),
+            ("", vec![]),
+        ];
+        for (input, lines) in cases {
+            let got = QuickActionFieldKind::MultilineList
+                .marshal(&QuickActionFieldValue::Text(input.to_owned()));
+            let expected = Variant::Array(
+                lines
+                    .into_iter()
+                    .map(|s| Variant::String(s.to_owned()))
+                    .collect(),
+            );
+            assert_eq!(got, expected, "input {input:?}");
+        }
+    }
+
     #[allow(dead_code)]
     fn dyn_all(
         _: &dyn BuiltinStatus,

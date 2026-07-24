@@ -683,6 +683,7 @@ mod tests {
         assert!(action.locked_reason.is_none());
         assert!(action.group.is_none());
         assert!(!action.destructive);
+        assert_eq!(action.accent, QuickActionAccent::Brand);
     }
 
     #[test]

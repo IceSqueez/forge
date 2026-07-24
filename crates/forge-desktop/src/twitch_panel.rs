@@ -7,7 +7,6 @@ use forge_components::{
 };
 use forge_platform_twitch::{DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
 use forge_storage::CredentialsRepo;
-use forge_types::OAuthToken;
 use gpui::{
     Animation, AnimationExt, AnyElement, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla,
     Rgba, SharedString, StyledText, div, prelude::*, px,
@@ -24,7 +23,6 @@ const TWITCH_DEVICE_POLL_SECS: &str = "5";
 const COPY_FLIP: Duration = Duration::from_millis(1400);
 
 pub(crate) struct TwitchAuthOutcome {
-    token: OAuthToken,
     user_info: UserInfo,
     client_id: String,
 }
@@ -128,7 +126,6 @@ async fn wait_for_auth(
         .await
         .map_err(|e| TwitchWaitError::Other(e.to_string()))?;
     Ok(TwitchAuthOutcome {
-        token: bundle.access_token,
         user_info: bundle.user_info,
         client_id: bundle.client_id,
     })
@@ -281,8 +278,12 @@ impl IntegrationDetail {
                     broadcaster_id: outcome.user_info.id.clone(),
                     user_id: outcome.user_info.id,
                 };
+                let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+                    Arc::clone(&credentials),
+                    config.client_id.clone(),
+                ));
                 let chat = forge_platform_twitch::TwitchChat::new(
-                    outcome.token,
+                    manager,
                     config.client_id.clone(),
                     config.broadcaster_id.clone(),
                     config.user_id.clone(),

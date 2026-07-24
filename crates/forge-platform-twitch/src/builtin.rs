@@ -82,6 +82,7 @@ pub struct TwitchIntegrationBundle {
     config: ChatSessionConfig,
     bus: Arc<dyn EventPublisher>,
     creds: Arc<dyn CredentialsRepo>,
+    credentials_manager: Arc<TwitchCredentialsManager>,
     // Mutex lets &self-async control verbs take() the handle without racing a concurrent disconnect/reconnect.
     handle: Mutex<Option<TwitchChatHandle>>,
     viewer_state: std::sync::RwLock<ViewerPollState>,
@@ -104,7 +105,11 @@ impl TwitchIntegrationBundle {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let state_rx = handle.state_receiver();
-        let transport = Self::build_helix_transport(&config, &bus, &creds);
+        let credentials_manager = Arc::new(TwitchCredentialsManager::new(
+            Arc::clone(&creds),
+            config.client_id.clone(),
+        ));
+        let transport = Self::build_helix_transport(&config, &bus, &credentials_manager);
         let bundle = Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
@@ -114,6 +119,7 @@ impl TwitchIntegrationBundle {
             config,
             bus,
             creds,
+            credentials_manager,
             handle: Mutex::new(Some(handle)),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
@@ -131,12 +137,8 @@ impl TwitchIntegrationBundle {
     fn build_helix_transport(
         config: &ChatSessionConfig,
         bus: &Arc<dyn EventPublisher>,
-        creds: &Arc<dyn CredentialsRepo>,
+        manager: &Arc<TwitchCredentialsManager>,
     ) -> Arc<dyn HelixTransport> {
-        let manager = Arc::new(TwitchCredentialsManager::new(
-            Arc::clone(creds),
-            config.client_id.clone(),
-        ));
         let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
             HELIX_BUDGET_CAPACITY,
             HELIX_BUDGET_WINDOW,
@@ -146,9 +148,9 @@ impl TwitchIntegrationBundle {
                 rate_limiter,
                 Arc::clone(bus),
                 config.client_id.clone(),
-                Arc::clone(&manager) as Arc<dyn HelixTokenSource>,
+                Arc::clone(manager) as Arc<dyn HelixTokenSource>,
             )
-            .with_refresher(Arc::clone(&manager) as Arc<dyn HelixTokenRefresher>),
+            .with_refresher(Arc::clone(manager) as Arc<dyn HelixTokenRefresher>),
         )
     }
 
@@ -253,9 +255,9 @@ impl TwitchIntegrationBundle {
         });
     }
 
-    pub(crate) fn spawn_chat(&self, token: forge_types::OAuthToken) -> TwitchChatHandle {
+    pub(crate) fn spawn_chat(&self) -> TwitchChatHandle {
         TwitchChat::new(
-            token,
+            Arc::clone(&self.credentials_manager),
             self.config.client_id.clone(),
             self.config.broadcaster_id.clone(),
             self.config.user_id.clone(),
@@ -293,6 +295,10 @@ impl TwitchIntegrationBundle {
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
+        let credentials_manager = Arc::new(TwitchCredentialsManager::new(
+            Arc::clone(&creds),
+            "test-client".to_owned(),
+        ));
         Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
@@ -306,6 +312,7 @@ impl TwitchIntegrationBundle {
             },
             bus: Arc::new(crate::event_channel::PlatformEventChannel::new()),
             creds,
+            credentials_manager,
             handle: Mutex::new(None),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,

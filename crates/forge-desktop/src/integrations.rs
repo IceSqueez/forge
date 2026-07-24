@@ -238,7 +238,7 @@ async fn build_twitch(
         user_id: stored.user_id,
     };
     let chat = forge_platform_twitch::TwitchChat::new(
-        stored.access_token,
+        Arc::clone(&manager),
         config.client_id.clone(),
         config.broadcaster_id.clone(),
         config.user_id.clone(),

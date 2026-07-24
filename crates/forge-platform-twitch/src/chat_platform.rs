@@ -12,6 +12,7 @@ use crate::auth::twitch_auth_flow;
 use crate::builtin::ChatSessionConfig;
 use crate::chat::{ChatSendError, TwitchChat, TwitchChatHandle, send_chat};
 use crate::credentials::{CredentialsTokenSource, load};
+use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
 use crate::helix::{HelixHttpTransport, HelixTransport};
 use crate::subscriptions::SubscriptionTracker;
@@ -24,6 +25,7 @@ pub struct TwitchPlatform {
     config: ChatSessionConfig,
     events: Arc<PlatformEventChannel>,
     creds: Arc<dyn CredentialsRepo>,
+    credentials_manager: Arc<TwitchCredentialsManager>,
     tracker: SubscriptionTracker,
     rate_limiter: Arc<dyn RateLimiter>,
     // std::sync::Mutex, not tokio: never held across an `.await`.
@@ -38,6 +40,10 @@ impl TwitchPlatform {
         tracker: SubscriptionTracker,
         rate_limiter: Arc<dyn RateLimiter>,
     ) -> Self {
+        let credentials_manager = Arc::new(TwitchCredentialsManager::new(
+            Arc::clone(&creds),
+            config.client_id.clone(),
+        ));
         Self {
             auth_flow: twitch_auth_flow(),
             capabilities: PlatformCapabilities {
@@ -53,6 +59,7 @@ impl TwitchPlatform {
             config,
             events: Arc::new(PlatformEventChannel::new()),
             creds,
+            credentials_manager,
             tracker,
             rate_limiter,
             handle: Mutex::new(None),
@@ -105,7 +112,7 @@ impl ChatPlatform for TwitchPlatform {
     }
 
     async fn connect(&self) -> Result<(), PlatformError> {
-        let stored = load(self.creds.as_ref())
+        load(self.creds.as_ref())
             .await
             .map_err(|e| PlatformError::Network {
                 reason: e.to_string(),
@@ -121,7 +128,7 @@ impl ChatPlatform for TwitchPlatform {
 
         let publisher: Arc<dyn EventPublisher> = self.events.clone();
         let handle = TwitchChat::new(
-            stored.access_token,
+            Arc::clone(&self.credentials_manager),
             self.config.client_id.clone(),
             self.config.broadcaster_id.clone(),
             self.config.user_id.clone(),

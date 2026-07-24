@@ -1,10 +1,11 @@
 use crate::chat::subscriber::{SubscribeError, subscribe_all};
+use crate::credentials_manager::TwitchCredentialsManager;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{Backoff, ConnectionState, connection_state_changed_event};
-use forge_types::{
-    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, OAuthToken,
+use forge_platform_core::{
+    Backoff, ConnectionState, PlatformError, connection_state_changed_event,
 };
+use forge_types::{ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -68,7 +69,7 @@ impl ChatConnectionState {
 }
 
 struct SessionConfig {
-    token: OAuthToken,
+    manager: Arc<TwitchCredentialsManager>,
     client_id: String,
     broadcaster_id: String,
     user_id: String,
@@ -84,7 +85,7 @@ pub(crate) struct ChatSession {
 
 impl ChatSession {
     pub(crate) fn new(
-        token: OAuthToken,
+        manager: Arc<TwitchCredentialsManager>,
         client_id: String,
         broadcaster_id: String,
         user_id: String,
@@ -99,7 +100,7 @@ impl ChatSession {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let session = Self {
             config: SessionConfig {
-                token,
+                manager,
                 client_id,
                 broadcaster_id,
                 user_id,
@@ -229,8 +230,25 @@ impl ChatSession {
                 debug!("session_welcome received, subscribing topics");
                 *session_id = Some(id.clone());
 
+                let token = match self.config.manager.get_valid_access_token().await {
+                    Ok(token) => token,
+                    Err(PlatformError::ReauthRequired { .. }) => {
+                        warn!("chat token refresh rejected: reauth required");
+                        self.config.bus.publish(Event::new(
+                            EventSource::Twitch,
+                            "platform.reauth_required",
+                            serde_json::json!({ "platform_id": "twitch" }),
+                        ));
+                        return FrameAction::ReauthRequired;
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "chat token fetch failed; treating as disconnect");
+                        return FrameAction::Disconnect;
+                    }
+                };
+
                 match subscribe_all(
-                    &self.config.token,
+                    &token,
                     &self.config.client_id,
                     &id,
                     &self.config.broadcaster_id,
@@ -3698,17 +3716,21 @@ mod tests {
     use std::time::Duration;
 
     use crate::event_channel::PlatformEventChannel;
+    use crate::sub_actions::test_support::MockCreds;
     use forge_events::EventSource;
-    use forge_types::{ChatEventDetail, ChatPayload, ChatSegment, OAuthToken};
+    use forge_types::{ChatEventDetail, ChatPayload, ChatSegment};
 
     use super::*;
 
     fn make_session(bus: &Arc<PlatformEventChannel>) -> ChatSession {
-        let token = OAuthToken::new("dummy".to_string());
+        let manager = Arc::new(TwitchCredentialsManager::new(
+            Arc::new(MockCreds::with_identity()),
+            "client".to_string(),
+        ));
         let tracker = crate::subscriptions::SubscriptionTracker::default();
         let publisher: Arc<dyn EventPublisher> = bus.clone();
         let (session, _, _) = ChatSession::new(
-            token,
+            manager,
             "client".to_string(),
             "bcast".to_string(),
             "user".to_string(),

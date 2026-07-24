@@ -7,14 +7,14 @@ mod subscriber;
 pub use send::{ChatSendError, SentMessageId, send_chat};
 pub use session::ChatConnectionState;
 
+use crate::credentials_manager::TwitchCredentialsManager;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::EventPublisher;
-use forge_types::OAuthToken;
 use std::sync::Arc;
 use tokio::sync::{oneshot, watch};
 
 pub struct TwitchChat {
-    token: OAuthToken,
+    manager: Arc<TwitchCredentialsManager>,
     client_id: String,
     broadcaster_id: String,
     user_id: String,
@@ -29,7 +29,7 @@ pub struct TwitchChatHandle {
 
 impl TwitchChat {
     pub fn new(
-        token: OAuthToken,
+        manager: Arc<TwitchCredentialsManager>,
         client_id: String,
         broadcaster_id: String,
         user_id: String,
@@ -37,7 +37,7 @@ impl TwitchChat {
         tracker: SubscriptionTracker,
     ) -> Self {
         Self {
-            token,
+            manager,
             client_id,
             broadcaster_id,
             user_id,
@@ -48,7 +48,7 @@ impl TwitchChat {
 
     pub fn start(self) -> TwitchChatHandle {
         let (sess, state_rx, shutdown_tx) = session::ChatSession::new(
-            self.token,
+            self.manager,
             self.client_id,
             self.broadcaster_id,
             self.user_id,

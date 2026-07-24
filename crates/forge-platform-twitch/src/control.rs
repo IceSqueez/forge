@@ -10,7 +10,7 @@ use crate::credentials_manager::TwitchCredentialsManager;
 #[async_trait]
 impl BuiltinControl for TwitchIntegrationBundle {
     async fn reconnect(&self) -> ControlOutcome {
-        let stored = load(self.credentials().as_ref())
+        load(self.credentials().as_ref())
             .await
             .map_err(|_| ControlFailure::Transport)?
             .ok_or(ControlFailure::NotConnected)?;
@@ -21,7 +21,7 @@ impl BuiltinControl for TwitchIntegrationBundle {
             old.shutdown();
         }
 
-        let handle = self.spawn_chat(stored.access_token);
+        let handle = self.spawn_chat();
         *self.handle_slot().lock().await = Some(handle);
         Ok(())
     }

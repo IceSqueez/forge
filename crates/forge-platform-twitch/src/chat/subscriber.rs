@@ -778,4 +778,141 @@ mod tests {
             .unwrap_err();
         assert!(!err.without_url().to_string().contains("192.0.2.1"));
     }
+
+    use super::{
+        EVENTSUB_PATH, SubStatus, SubscribeError, SubscriptionTracker, subscribe_all_with_base_url,
+    };
+    use forge_events::EventPublisher;
+    use forge_types::OAuthToken;
+    use std::sync::Arc;
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn mount_success(server: &MockServer, kind: &str, id: &str) {
+        Mock::given(method("POST"))
+            .and(path(EVENTSUB_PATH))
+            .and(body_string_contains(format!(r#""type":"{kind}""#)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{ "id": id, "type": kind, "condition": {} }]
+            })))
+            .with_priority(1)
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_status(server: &MockServer, kind: &str, status: u16) {
+        Mock::given(method("POST"))
+            .and(path(EVENTSUB_PATH))
+            .and(body_string_contains(format!(r#""type":"{kind}""#)))
+            .respond_with(ResponseTemplate::new(status).set_body_string("rejected"))
+            .with_priority(1)
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_catch_all_success(server: &MockServer) {
+        Mock::given(method("POST"))
+            .and(path(EVENTSUB_PATH))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{ "id": "sub-generic", "type": "generic", "condition": {} }]
+            })))
+            .mount(server)
+            .await;
+    }
+
+    async fn run_subscribe(
+        server: &MockServer,
+        tracker: &SubscriptionTracker,
+    ) -> Result<(), SubscribeError> {
+        let bus: Arc<dyn EventPublisher> =
+            Arc::new(crate::event_channel::PlatformEventChannel::new());
+        subscribe_all_with_base_url(
+            &server.uri(),
+            &OAuthToken::new("test_token"),
+            "client_id",
+            "session_id",
+            "broadcaster_id",
+            "user_id",
+            &bus,
+            tracker,
+        )
+        .await
+    }
+
+    fn record_status(tracker: &SubscriptionTracker, kind: &str) -> (SubStatus, Option<String>) {
+        let records = tracker.read().unwrap_or_else(|p| p.into_inner());
+        let rec = records.iter().find(|r| r.kind == kind).unwrap();
+        (rec.status.clone(), rec.subscription_id.clone())
+    }
+
+    #[tokio::test]
+    async fn mixed_outcomes_surface_scope_missing_yet_map_each_result_to_its_own_record() {
+        let server = MockServer::start().await;
+        mount_success(&server, "channel.chat.message", "sub-chat").await;
+        mount_success(&server, "channel.follow", "sub-follow").await;
+        mount_success(&server, "channel.cheer", "sub-cheer").await;
+        mount_status(&server, "channel.ban", 401).await;
+        mount_status(&server, "stream.online", 500).await;
+        mount_catch_all_success(&server).await;
+
+        let tracker = crate::subscriptions::SubscriptionTracker::default();
+        let result = run_subscribe(&server, &tracker).await;
+
+        assert!(
+            matches!(result, Err(SubscribeError::ScopeMissing)),
+            "a scope rejection among the topics must surface as ScopeMissing after all futures finish"
+        );
+
+        for (kind, expected_id) in [
+            ("channel.chat.message", "sub-chat"),
+            ("channel.follow", "sub-follow"),
+            ("channel.cheer", "sub-cheer"),
+        ] {
+            let (status, id) = record_status(&tracker, kind);
+            assert_eq!(status, SubStatus::Active, "{kind} must be recorded Active");
+            assert_eq!(
+                id.as_deref(),
+                Some(expected_id),
+                "{kind} must keep the subscription_id from its own response, not a neighbour's"
+            );
+        }
+
+        assert_eq!(
+            record_status(&tracker, "channel.ban").0,
+            SubStatus::Failed("unauthorized".to_owned())
+        );
+        assert_eq!(
+            record_status(&tracker, "stream.online").0,
+            SubStatus::Failed("HTTP 500".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn non_scope_failures_stay_non_fatal_with_correct_per_record_status() {
+        let server = MockServer::start().await;
+        mount_success(&server, "channel.chat.message", "sub-chat").await;
+        mount_status(&server, "stream.online", 500).await;
+        mount_status(&server, "channel.cheer", 500).await;
+        mount_catch_all_success(&server).await;
+
+        let tracker = crate::subscriptions::SubscriptionTracker::default();
+        let result = run_subscribe(&server, &tracker).await;
+
+        assert!(
+            matches!(result, Ok(())),
+            "500s without any scope rejection must not fail the whole subscribe pass"
+        );
+
+        let (chat_status, chat_id) = record_status(&tracker, "channel.chat.message");
+        assert_eq!(chat_status, SubStatus::Active);
+        assert_eq!(chat_id.as_deref(), Some("sub-chat"));
+
+        for kind in ["stream.online", "channel.cheer"] {
+            assert_eq!(
+                record_status(&tracker, kind).0,
+                SubStatus::Failed("HTTP 500".to_owned()),
+                "{kind} must record HTTP 500 without aborting the pass"
+            );
+        }
+    }
 }

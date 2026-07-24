@@ -6,8 +6,7 @@ use gpui::{
 use crate::avatar::{AvatarTile, avatar_tile};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, Radius, Spacing, body_family, mono_family, radius,
-    spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
 };
 
 #[derive(IntoElement)]
@@ -74,7 +73,7 @@ impl RenderOnce for PlatformHero {
 
         let name_el = div()
             .font_family(body_family())
-            .text_size(FONT_LG)
+            .text_size(FONT_MD)
             .text_color(self.name_color)
             .child(self.name);
         let name_row: AnyElement = if self.name_badges.is_empty() {
@@ -83,7 +82,7 @@ impl RenderOnce for PlatformHero {
             div()
                 .flex()
                 .items_center()
-                .gap(spacing(Spacing::Xs, d))
+                .gap(px(8.0))
                 .child(name_el)
                 .children(self.name_badges)
                 .into_any_element()
@@ -94,12 +93,12 @@ impl RenderOnce for PlatformHero {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xs, d))
+            .gap(px(2.0))
             .child(name_row)
             .child(
                 div()
-                    .font_family(mono_family())
-                    .text_size(FONT_SM)
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
                     .text_color(self.description_color)
                     .child(self.description),
             );
@@ -110,7 +109,7 @@ impl RenderOnce for PlatformHero {
             .items_center()
             .gap(spacing(Spacing::Md, d))
             .py(spacing(Spacing::Md, d))
-            .px(spacing(Spacing::Md, d))
+            .px(px(18.0))
             .rounded(radius(Radius::Lg))
             .border(BORDER_THIN)
             .border_color(self.border)

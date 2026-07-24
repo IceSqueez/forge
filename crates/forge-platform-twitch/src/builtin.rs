@@ -393,7 +393,7 @@ impl TwitchIntegrationBundle {
         let state = *self.viewer_state.read().unwrap_or_else(|p| p.into_inner());
         match state {
             ViewerPollState::Unknown => HealthValue::Text {
-                primary: "-".to_owned(),
+                primary: "0".to_owned(),
                 secondary: None,
             },
             ViewerPollState::Offline => HealthValue::Text {

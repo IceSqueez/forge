@@ -79,8 +79,6 @@ pub struct IntegrationDetail {
 }
 
 const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
-/// Below this the ring has too little history to show an honest delta.
-const VIEWER_DELTA_MIN_HISTORY: Duration = Duration::from_secs(14 * 60);
 const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 
@@ -156,6 +154,8 @@ impl IntegrationDetail {
 
         if is_twitch {
             Self::spawn_eventsub_tally(&event_bus, cx);
+        }
+        if is_twitch || status.id().as_str() == "youtube" {
             Self::spawn_viewer_sampler(&live_viewers, cx);
             Self::spawn_detail_ticker(cx);
         }
@@ -324,13 +324,9 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    /// `None` until the ring holds at least `VIEWER_DELTA_MIN_HISTORY` of samples.
     fn viewer_delta(&self) -> Option<i64> {
         let (newest_t, newest) = self.viewer_samples.back().copied()?;
         let oldest = self.viewer_samples.front().copied()?;
-        if newest_t.saturating_duration_since(oldest.0) < VIEWER_DELTA_MIN_HISTORY {
-            return None;
-        }
         let target = newest_t.checked_sub(VIEWER_DELTA_WINDOW)?;
         let baseline = self
             .viewer_samples
@@ -563,10 +559,10 @@ impl IntegrationDetail {
 
     fn augmented_health(&self) -> [HealthMetric; 4] {
         let mut metrics = self.health_metrics.clone();
-        if let Some(delta) = self.viewer_delta()
-            && let Some(metric) = metrics.iter_mut().find(|m| m.label == "Viewers")
+        if let Some(metric) = metrics.iter_mut().find(|m| m.label == "Viewers")
             && let HealthValue::Text { secondary, .. } = &mut metric.value
         {
+            let delta = self.viewer_delta().unwrap_or(0);
             let sign = if delta >= 0 { "+" } else { "" };
             *secondary = Some(tr!(
                 "integration_viewers_delta",

@@ -249,7 +249,7 @@ fn viewers_health_value(report: ViewerReport) -> HealthValue {
             secondary: Some("live".to_owned()),
         },
         ViewerReport::Absent => HealthValue::Text {
-            primary: "-".to_owned(),
+            primary: "0".to_owned(),
             secondary: None,
         },
     }

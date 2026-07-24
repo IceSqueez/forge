@@ -160,6 +160,7 @@ tabler_icons! {
     Logout => "logout.svg",
     ArrowLeft => "arrow-left.svg",
     Server2 => "server-2.svg",
+    Category => "category.svg",
 }
 
 impl Icon {
@@ -296,6 +297,7 @@ impl Icon {
             "message-2" => Icon::Message2,
             "businessplan" => Icon::Businessplan,
             "logout" | "sign-out" => Icon::Logout,
+            "category" => Icon::Category,
             _ => Icon::InfoCircle,
         }
     }

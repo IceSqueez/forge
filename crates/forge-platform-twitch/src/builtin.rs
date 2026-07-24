@@ -1755,4 +1755,101 @@ mod tests {
         let outcome = forge_platform_core::BuiltinControl::disconnect(b.as_ref()).await;
         assert_eq!(outcome, Ok(()));
     }
+
+    fn form_field_keys(
+        field: &forge_registry::FormField,
+        out: &mut std::collections::BTreeSet<String>,
+    ) {
+        use forge_registry::FormField::*;
+        let key = match field {
+            Text { key, .. }
+            | TextArea { key, .. }
+            | Code { key, .. }
+            | Integer { key, .. }
+            | Toggle { key, .. }
+            | FilePicker { key, .. }
+            | DateTime { key, .. }
+            | Select { key, .. }
+            | DynamicSelect { key, .. }
+            | Optional { key, .. }
+            | SubChain { key, .. }
+            | CaseList { key, .. } => *key,
+        };
+        out.insert(key.to_owned());
+        if let Optional { inner, .. } = field {
+            form_field_keys(inner, out);
+        }
+    }
+
+    #[test]
+    fn every_quick_action_field_key_is_consumed_by_its_runner() {
+        use crate::sub_actions::register_twitch_sub_actions;
+        use crate::sub_actions::test_support::{MockCreds, MockTransport};
+        use forge_registry::SubActionRegistry;
+
+        let mut reg = SubActionRegistry::new();
+        register_twitch_sub_actions(
+            &mut reg,
+            Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
+            Arc::new(MockCreds::empty()),
+        )
+        .unwrap();
+
+        let bundle =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+
+        for action in bundle.actions() {
+            if action.fields.is_empty() {
+                continue;
+            }
+            let kind = &action.subaction_template.kind_id;
+            let mut known: std::collections::BTreeSet<String> =
+                action.subaction_template.config.keys().cloned().collect();
+            if let Some(runner) = reg.get(kind) {
+                known.extend(runner.default_config().into_keys());
+                for f in runner.config_fields() {
+                    form_field_keys(&f, &mut known);
+                }
+            }
+            for field in &action.fields {
+                assert!(
+                    known.contains(&field.key),
+                    "quick action {:?}: field key {:?} is not a config key of runner {kind}",
+                    action.label,
+                    field.key
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_static_choice_field_default_is_one_of_its_listed_options() {
+        let bundle =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+
+        let mut checked = 0;
+        for action in bundle.actions() {
+            for field in &action.fields {
+                let QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(options)) =
+                    &field.kind
+                else {
+                    continue;
+                };
+                let Some(QuickActionFieldValue::Text(default)) = &field.default else {
+                    continue;
+                };
+                assert!(
+                    options.iter().any(|opt| &opt.value == default),
+                    "quick action {:?}: choice field {:?} default {default:?} is not among its options",
+                    action.label,
+                    field.key
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked >= 2,
+            "expected at least the announcement-color and ad-duration static choices, got {checked}"
+        );
+    }
 }

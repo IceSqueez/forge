@@ -34,6 +34,7 @@ impl QuickActions for ObsClient {
                     label: None,
                 },
                 picker: Some(PickerKind::Scene),
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Toggle Source".to_owned(),
@@ -58,6 +59,7 @@ impl QuickActions for ObsClient {
                     label: None,
                 },
                 picker: Some(PickerKind::Source),
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Set Mute".to_owned(),
@@ -81,6 +83,7 @@ impl QuickActions for ObsClient {
                     label: None,
                 },
                 picker: Some(PickerKind::Input),
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Start Recording".to_owned(),
@@ -101,6 +104,7 @@ impl QuickActions for ObsClient {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
         ]
     }

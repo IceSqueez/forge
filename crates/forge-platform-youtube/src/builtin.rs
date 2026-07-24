@@ -276,6 +276,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Send message".to_owned(),
@@ -302,6 +303,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
         ]
     }

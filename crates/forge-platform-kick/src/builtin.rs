@@ -228,6 +228,7 @@ impl QuickActions for KickIntegrationBundle {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Refresh channel info".to_owned(),
@@ -254,6 +255,7 @@ impl QuickActions for KickIntegrationBundle {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Send message".to_owned(),
@@ -280,6 +282,7 @@ impl QuickActions for KickIntegrationBundle {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
         ]
     }

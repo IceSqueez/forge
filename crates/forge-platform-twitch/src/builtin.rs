@@ -649,6 +649,7 @@ fn quick_action(
             label: None,
         },
         picker: None,
+        fields: Vec::new(),
     }
 }
 

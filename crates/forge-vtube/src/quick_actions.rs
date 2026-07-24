@@ -32,6 +32,7 @@ impl QuickActions for VTubeClient {
                     label: None,
                 },
                 picker: Some(PickerKind::Hotkey),
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Activate Expression".to_owned(),
@@ -55,6 +56,7 @@ impl QuickActions for VTubeClient {
                     label: None,
                 },
                 picker: Some(PickerKind::Expression),
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Load Model".to_owned(),
@@ -78,6 +80,7 @@ impl QuickActions for VTubeClient {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
             QuickAction {
                 label: "Move Model".to_owned(),
@@ -103,6 +106,7 @@ impl QuickActions for VTubeClient {
                     label: None,
                 },
                 picker: None,
+                fields: Vec::new(),
             },
         ]
     }

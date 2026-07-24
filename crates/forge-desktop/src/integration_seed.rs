@@ -171,6 +171,7 @@ fn quick(
             label: None,
         },
         picker,
+        fields: Vec::new(),
     }
 }
 

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
@@ -5,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use forge_types::SubActionStep;
+use forge_types::{SubActionStep, Variant};
 
 use crate::ConnectionState;
 
@@ -296,6 +297,68 @@ pub enum QuickActionAccent {
     Danger,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuickActionChoiceOption {
+    pub value: String,
+    pub label: String,
+}
+
+/// Static options are self-contained in the descriptor; dynamic options name a
+/// `PickerKind` resolved asynchronously by the runtime->UI bridge when the modal opens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickActionChoiceSource {
+    Static(Vec<QuickActionChoiceOption>),
+    Dynamic(PickerKind),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickActionFieldKind {
+    Text,
+    Multiline,
+    /// One option per line, collected as `Variant::Array` rather than a single string.
+    MultilineList,
+    Toggle,
+    Choice(QuickActionChoiceSource),
+}
+
+impl QuickActionFieldKind {
+    /// Splits into one array element per line only for `MultilineList`; every other kind
+    /// marshals a collected `Text` value straight to `Variant::String`.
+    pub fn marshal(&self, value: &QuickActionFieldValue) -> Variant {
+        match (self, value) {
+            (Self::MultilineList, QuickActionFieldValue::Text(text)) => Variant::Array(
+                text.lines()
+                    .map(|line| Variant::String(line.to_owned()))
+                    .collect(),
+            ),
+            (_, QuickActionFieldValue::Text(text)) => Variant::String(text.clone()),
+            (_, QuickActionFieldValue::Toggle(toggle)) => Variant::Bool(*toggle),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickActionFieldValue {
+    Text(String),
+    Toggle(bool),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuickActionField {
+    pub key: String,
+    pub label: String,
+    pub kind: QuickActionFieldKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<QuickActionFieldValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuickAction {
     pub label: String,
@@ -320,6 +383,23 @@ pub struct QuickAction {
     pub accent: QuickActionAccent,
     pub subaction_template: SubActionStep,
     pub picker: Option<PickerKind>,
+    /// Empty means the generic renderer degrades the collection modal to a plain run
+    /// confirmation instead of a field form.
+    #[serde(default)]
+    pub fields: Vec<QuickActionField>,
+}
+
+impl QuickAction {
+    pub fn merge_config(&self, values: &BTreeMap<String, QuickActionFieldValue>) -> SubActionStep {
+        let mut step = self.subaction_template.clone();
+        for field in &self.fields {
+            if let Some(value) = values.get(&field.key).or(field.default.as_ref()) {
+                step.config
+                    .insert(field.key.clone(), field.kind.marshal(value));
+            }
+        }
+        step
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -662,6 +742,16 @@ mod tests {
                 label: None,
             },
             picker: Some(PickerKind::Scene),
+            fields: vec![QuickActionField {
+                key: "scene".to_owned(),
+                label: "Scene".to_owned(),
+                kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(
+                    PickerKind::Scene,
+                )),
+                default: None,
+                placeholder: None,
+                hint: None,
+            }],
         };
         let json = serde_json::to_string(&action).unwrap();
         let back: QuickAction = serde_json::from_str(&json).unwrap();

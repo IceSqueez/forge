@@ -248,10 +248,9 @@ impl IntegrationDetail {
         let accent = platform_accent(platform, palette);
         let (letter, desc) = connect_copy(platform);
 
-        let hero = platform_hero(letter, accent, self.display_name.clone(), desc, palette)
-            .density(density);
-
         if matches!(platform, PlatformId::Twitch) {
+            let hero = platform_hero(letter, accent, self.display_name.clone(), desc, palette)
+                .density(density);
             let column = self.twitch_device_column(accent, palette, density, cx);
             return div()
                 .w_full()
@@ -262,12 +261,13 @@ impl IntegrationDetail {
                 .child(div().w_full().flex().justify_center().child(column))
                 .into_any_element();
         }
+        let _ = desc;
 
         let eyebrow = div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
-            .mb(spacing(Spacing::Xs, density))
+            .mb(px(6.0))
             .child(tr!("oauth_connect_eyebrow"));
 
         let disclaimer = matches!(platform, PlatformId::Kick)
@@ -276,9 +276,9 @@ impl IntegrationDetail {
             self.flow_phase,
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting
         )
-        .then(|| self.oauth_progress_card(accent, palette, density));
+        .then(|| self.oauth_progress_card(accent, palette));
         let done = matches!(self.flow_phase, LocalCallbackFlowPhase::Authorized)
-            .then(|| self.oauth_done_card(palette, density));
+            .then(|| self.oauth_done_card(palette));
         let error = matches!(self.flow_phase, LocalCallbackFlowPhase::Failed)
             .then(|| self.oauth_error_card(palette, density, cx));
 
@@ -288,25 +288,65 @@ impl IntegrationDetail {
             .flex()
             .flex_col()
             .child(eyebrow)
-            .child(self.oauth_explainer(palette, density))
+            .child(self.oauth_title(letter, accent, palette))
+            .child(self.oauth_explainer(palette))
             .children(disclaimer)
-            .child(self.oauth_steps_card(accent, palette, density))
+            .child(self.oauth_steps_card(accent, palette))
             .children(progress)
             .children(done)
             .children(error)
-            .child(self.oauth_footer(palette, density, cx));
+            .child(self.oauth_footer(palette, cx));
 
         div()
             .w_full()
             .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(hero)
-            .child(div().w_full().flex().justify_center().child(column))
+            .justify_center()
+            .pt(px(14.0))
+            .child(column)
             .into_any_element()
     }
 
-    fn oauth_explainer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn oauth_title(
+        &self,
+        letter: &'static str,
+        accent: Rgba,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let tile = div()
+            .flex_none()
+            .size(px(30.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(7.0))
+            .bg(accent)
+            .font_family(body_family())
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_size(px(16.0))
+            .text_color(palette.shell)
+            .child(letter);
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(px(12.0))
+            .mb(px(4.0))
+            .child(tile)
+            .child(
+                div()
+                    .font_family(body_family())
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(px(22.0))
+                    .text_color(palette.text_primary)
+                    .child(tr!(
+                        "oauth_footer_signin",
+                        name = self.display_name.as_str()
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn oauth_explainer(&self, palette: &ForgePalette) -> AnyElement {
         let prefix = tr!("oauth_connect_explainer_prefix");
         let emphasis = tr!("oauth_connect_explainer_emphasis");
         let suffix = tr!(
@@ -323,20 +363,15 @@ impl IntegrationDetail {
         div()
             .w_full()
             .font_family(body_family())
-            .text_size(FONT_XS)
+            .text_size(px(13.0))
             .text_color(palette.text_muted)
             .line_height(px(20.0))
-            .mb(spacing(Spacing::Lg, density))
+            .mb(px(22.0))
             .child(styled)
             .into_any_element()
     }
 
-    fn oauth_steps_card(
-        &self,
-        accent: Rgba,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
+    fn oauth_steps_card(&self, accent: Rgba, palette: &ForgePalette) -> AnyElement {
         let phase = self.flow_phase;
         let platform_name = self.display_name.clone();
 
@@ -348,14 +383,14 @@ impl IntegrationDetail {
             .map_or_else(SharedString::default, SharedString::from);
         let url_box = div()
             .w_full()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Sm))
+            .py(px(7.0))
+            .px(px(11.0))
+            .rounded(px(7.0))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
             .font_family(mono_family())
-            .text_size(FONT_XXS)
+            .text_size(px(11.0))
             .text_color(palette.info)
             .child(url_text);
         let s1 = self.oauth_step_row(
@@ -366,7 +401,6 @@ impl IntegrationDetail {
             false,
             accent,
             palette,
-            density,
         );
 
         let s2_active = matches!(step_state(phase, 1), StepState::Active);
@@ -384,7 +418,7 @@ impl IntegrationDetail {
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(FONT_XS)
+                    .text_size(px(11.5))
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_step_approve_caption")),
             )
@@ -392,10 +426,10 @@ impl IntegrationDetail {
                 div()
                     .flex()
                     .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .mt(spacing(Spacing::Xs, density))
+                    .gap(px(7.0))
+                    .mt(px(6.0))
                     .child(icon(
-                        Icon::Server,
+                        Icon::Server2,
                         px(12.0),
                         if s2_active {
                             accent
@@ -406,7 +440,7 @@ impl IntegrationDetail {
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_size(FONT_XXS)
+                            .text_size(px(10.5))
                             .text_color(palette.text_faint)
                             .child(loopback),
                     ),
@@ -419,7 +453,6 @@ impl IntegrationDetail {
             false,
             accent,
             palette,
-            density,
         );
 
         let s3 = self.oauth_step_row(
@@ -429,7 +462,7 @@ impl IntegrationDetail {
             Some(
                 div()
                     .font_family(body_family())
-                    .text_size(FONT_XS)
+                    .text_size(px(11.5))
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_step_exchange_caption"))
                     .into_any_element(),
@@ -437,7 +470,6 @@ impl IntegrationDetail {
             false,
             accent,
             palette,
-            density,
         );
 
         let s4 = self.oauth_step_row(
@@ -448,7 +480,6 @@ impl IntegrationDetail {
             true,
             accent,
             palette,
-            density,
         );
 
         div()
@@ -459,9 +490,9 @@ impl IntegrationDetail {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Md, density))
-            .mb(spacing(Spacing::Md, density))
+            .py(px(4.0))
+            .px(px(16.0))
+            .mb(px(14.0))
             .child(s1)
             .child(s2)
             .child(s3)
@@ -479,7 +510,6 @@ impl IntegrationDetail {
         is_last: bool,
         accent: Rgba,
         palette: &ForgePalette,
-        density: Density,
     ) -> AnyElement {
         let circle_bg = match state {
             StepState::Active => accent,
@@ -497,7 +527,7 @@ impl IntegrationDetail {
             StepState::Pending => div()
                 .font_family(body_family())
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(FONT_XXS)
+                .text_size(px(11.0))
                 .text_color(palette.text_faint)
                 .child(n)
                 .into_any_element(),
@@ -524,20 +554,20 @@ impl IntegrationDetail {
             div()
                 .font_family(body_family())
                 .font_weight(FontWeight::MEDIUM)
-                .text_size(FONT_XS)
+                .text_size(px(13.0))
                 .text_color(title_color)
                 .child(title),
         );
         if let Some(children) = children {
-            content = content.gap(spacing(Spacing::Xs, density)).child(children);
+            content = content.gap(px(6.0)).child(children);
         }
 
         let mut row = div()
             .w_full()
             .flex()
             .items_start()
-            .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Sm, density))
+            .gap(px(13.0))
+            .py(px(11.0))
             .child(circle)
             .child(content);
         if !is_last {
@@ -551,16 +581,11 @@ impl IntegrationDetail {
         row.into_any_element()
     }
 
-    fn oauth_progress_card(
-        &self,
-        accent: Rgba,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
+    fn oauth_progress_card(&self, accent: Rgba, palette: &ForgePalette) -> AnyElement {
         let name = self.display_name.clone();
-        let (line, pct): (String, &'static str) = match self.flow_phase {
-            LocalCallbackFlowPhase::Starting => (tr!("oauth_progress_launching"), "22%"),
-            _ => (tr!("oauth_progress_waiting", name = name.as_str()), "68%"),
+        let line: String = match self.flow_phase {
+            LocalCallbackFlowPhase::Starting => tr!("oauth_progress_launching"),
+            _ => tr!("oauth_progress_waiting", name = name.as_str()),
         };
         let port = self
             .flow_auth_url
@@ -593,14 +618,14 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Sm, density))
+            .gap(px(10.0))
+            .py(px(11.0))
+            .px(px(14.0))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .mb(spacing(Spacing::Md, density))
+            .mb(px(14.0))
             .child(pulse)
             .child(
                 div()
@@ -608,53 +633,45 @@ impl IntegrationDetail {
                     .min_w(px(0.0))
                     .flex()
                     .flex_col()
-                    .gap(spacing(Spacing::Xxs, density))
+                    .gap(px(1.0))
                     .child(
                         div()
                             .font_family(body_family())
                             .font_weight(FontWeight::MEDIUM)
-                            .text_size(FONT_XS)
+                            .text_size(px(12.0))
                             .text_color(palette.text_primary)
                             .child(line),
                     )
                     .child(
                         div()
                             .font_family(mono_family())
-                            .text_size(FONT_XXS)
+                            .text_size(px(10.5))
                             .text_color(palette.text_faint)
                             .child(subline),
                     ),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(accent)
-                    .child(pct),
-            )
             .into_any_element()
     }
 
-    fn oauth_done_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn oauth_done_card(&self, palette: &ForgePalette) -> AnyElement {
         div()
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Sm, density))
+            .gap(px(10.0))
+            .py(px(11.0))
+            .px(px(14.0))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.success)
             .bg(palette.elevated)
-            .mb(spacing(Spacing::Md, density))
+            .mb(px(14.0))
             .child(icon(Icon::CircleCheckFilled, px(16.0), palette.success))
             .child(
                 div()
                     .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_XS)
+                    .text_size(px(12.5))
                     .text_color(palette.text_primary)
                     .child(tr!("oauth_done_authorized")),
             )
@@ -751,26 +768,21 @@ impl IntegrationDetail {
             .into_any_element()
     }
 
-    fn oauth_footer(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn oauth_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let back = div()
             .id("oauth-choose-different")
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xxs, density))
+            .gap(px(5.0))
             .cursor_pointer()
             .on_click(
                 cx.listener(|this, _: &ClickEvent, _, cx| this.navigate_to(Screen::Platforms, cx)),
             )
-            .child(icon(Icon::ChevronLeft, px(13.0), palette.text_muted))
+            .child(icon(Icon::ArrowLeft, px(13.0), palette.text_muted))
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(FONT_XS)
+                    .text_size(px(12.5))
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_footer_choose_different")),
             );
@@ -783,9 +795,9 @@ impl IntegrationDetail {
                         .id("oauth-signin")
                         .flex()
                         .items_center()
-                        .gap(spacing(Spacing::Xs, density))
-                        .py(spacing(Spacing::Xs, density))
-                        .px(spacing(Spacing::Md, density))
+                        .gap(px(6.0))
+                        .py(px(9.0))
+                        .px(px(20.0))
                         .rounded(radius(Radius::Sm))
                         .bg(palette.brand)
                         .cursor_pointer()
@@ -795,7 +807,7 @@ impl IntegrationDetail {
                         .child(
                             div()
                                 .font_family(body_family())
-                                .text_size(FONT_XS)
+                                .text_size(px(12.5))
                                 .text_color(palette.shell)
                                 .child(tr!("oauth_footer_signin", name = name.as_str())),
                         )
@@ -806,8 +818,8 @@ impl IntegrationDetail {
                 div()
                     .id("oauth-footer-cancel")
                     .flex_none()
-                    .py(spacing(Spacing::Xxs, density))
-                    .px(spacing(Spacing::Xs, density))
+                    .py(px(9.0))
+                    .px(px(14.0))
                     .rounded(radius(Radius::Sm))
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)
@@ -817,7 +829,7 @@ impl IntegrationDetail {
                     .child(
                         div()
                             .font_family(body_family())
-                            .text_size(FONT_XS)
+                            .text_size(px(12.5))
                             .text_color(palette.text_secondary)
                             .child(tr!("oauth_btn_cancel")),
                     )
@@ -831,7 +843,7 @@ impl IntegrationDetail {
             .flex()
             .items_center()
             .justify_between()
-            .pt(spacing(Spacing::Xxs, density))
+            .pt(px(4.0))
             .child(back)
             .children(right)
             .into_any_element()

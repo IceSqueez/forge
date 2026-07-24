@@ -158,6 +158,8 @@ tabler_icons! {
     Key => "key.svg",
     Rss => "rss.svg",
     Logout => "logout.svg",
+    ArrowLeft => "arrow-left.svg",
+    Server2 => "server-2.svg",
 }
 
 impl Icon {
@@ -190,6 +192,8 @@ impl Icon {
             "file-code" => Icon::FileCode,
             "file-text" => Icon::FileText,
             "server" => Icon::Server,
+            "server-2" => Icon::Server2,
+            "arrow-left" => Icon::ArrowLeft,
             "notebook" | "journal" | "logs" => Icon::Notebook,
             "settings" | "gear" => Icon::Settings,
             "users" | "people" => Icon::Users,

@@ -523,11 +523,50 @@ async fn build_youtube(
         active_broadcast.clone(),
         Arc::clone(&quota),
     ));
+    let stats_manager = Arc::clone(&manager);
+    let stream_stats = Arc::new(forge_platform_youtube::YoutubeStreamStats::new(
+        Arc::new(move || {
+            let manager = Arc::clone(&stats_manager);
+            Box::pin(async move { manager.get_valid_access_token().await })
+        }),
+        active_broadcast.clone(),
+        Arc::clone(&quota),
+    ));
+    let ad_break_manager = Arc::clone(&manager);
+    let ad_break = Arc::new(forge_platform_youtube::YoutubeAdBreak::new(
+        Arc::new(move || {
+            let manager = Arc::clone(&ad_break_manager);
+            Box::pin(async move { manager.get_valid_access_token().await })
+        }),
+        active_broadcast.clone(),
+        Arc::clone(&quota),
+    ));
+    let thumbnail_manager = Arc::clone(&manager);
+    let thumbnail = Arc::new(forge_platform_youtube::YoutubeThumbnail::new(
+        Arc::new(move || {
+            let manager = Arc::clone(&thumbnail_manager);
+            Box::pin(async move { manager.get_valid_access_token().await })
+        }),
+        active_broadcast.clone(),
+        Arc::clone(&quota),
+    ));
+    let lookup_manager = Arc::clone(&manager);
+    let channel_lookup = Arc::new(forge_platform_youtube::YoutubeChannelLookup::new(
+        Arc::new(move || {
+            let manager = Arc::clone(&lookup_manager);
+            Box::pin(async move { manager.get_valid_access_token().await })
+        }),
+        Arc::clone(&quota),
+    ));
     if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
         sub_actions,
         send,
         moderation,
         metadata,
+        stream_stats,
+        ad_break,
+        thumbnail,
+        channel_lookup,
     ) {
         eprintln!("forge-desktop: youtube sub-action registration failed: {e}");
     }

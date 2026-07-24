@@ -689,10 +689,39 @@ mod tests {
         let metadata = Arc::new(YoutubeStreamMetadata::new(
             token_source(),
             ActiveBroadcastIdHandle::new(),
+            Arc::clone(&quota),
+        ));
+        let stream_stats = Arc::new(crate::stream_stats::YoutubeStreamStats::new(
+            token_source(),
+            ActiveBroadcastIdHandle::new(),
+            Arc::clone(&quota),
+        ));
+        let ad_break = Arc::new(crate::ad_break::YoutubeAdBreak::new(
+            token_source(),
+            ActiveBroadcastIdHandle::new(),
+            Arc::clone(&quota),
+        ));
+        let thumbnail = Arc::new(crate::thumbnail::YoutubeThumbnail::new(
+            token_source(),
+            ActiveBroadcastIdHandle::new(),
+            Arc::clone(&quota),
+        ));
+        let channel_lookup = Arc::new(crate::channel_lookup::YoutubeChannelLookup::new(
+            token_source(),
             quota,
         ));
         let mut reg = SubActionRegistry::new();
-        register_youtube_sub_actions(&mut reg, sender, moderation, metadata).unwrap();
+        register_youtube_sub_actions(
+            &mut reg,
+            sender,
+            moderation,
+            metadata,
+            stream_stats,
+            ad_break,
+            thumbnail,
+            channel_lookup,
+        )
+        .unwrap();
         reg
     }
 

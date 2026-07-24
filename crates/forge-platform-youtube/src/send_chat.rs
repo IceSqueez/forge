@@ -10,6 +10,7 @@ use crate::quota_state::{QuotaState, today_pacific};
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const SEND_COST: u32 = 50;
 const DELETE_COST: u32 = 50;
+const POLL_COST: u32 = 50;
 
 pub struct YoutubeSendChat {
     client: reqwest::Client,
@@ -130,7 +131,7 @@ impl YoutubeSendChat {
             .send()
             .await
             .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
+                reason: e.without_url().to_string(),
             })?;
 
         let status = resp.status().as_u16();
@@ -152,6 +153,89 @@ impl YoutubeSendChat {
             403 if body_text.contains("operationNotSupported") => Err(PlatformError::Auth {
                 reason: "chat write scope missing".to_owned(),
             }),
+            _ => Err(PlatformError::Http {
+                status,
+                body: body_text,
+            }),
+        }
+    }
+
+    /// YouTube documents `pollEvent` as an insertable `liveChatMessages.insert` type alongside
+    /// `textMessageEvent`; the vote tally and closing the poll are not exposed via the API.
+    pub async fn create_poll(
+        &self,
+        question: &str,
+        options: &[String],
+    ) -> Result<(), PlatformError> {
+        let live_chat_id = self
+            .live_chat_id
+            .get()
+            .ok_or_else(|| PlatformError::Unsupported {
+                feature: "create poll - no active YouTube broadcast".to_owned(),
+            })?;
+
+        {
+            let today = today_pacific();
+            let mut qt = self.quota.lock().await;
+            qt.charge(POLL_COST, today)?;
+        }
+
+        let token = (self.access_token_source)().await?;
+
+        let url = format!("{}/liveChat/messages", self.api_base);
+        let option_objects: Vec<serde_json::Value> = options
+            .iter()
+            .map(|o| serde_json::json!({ "optionText": o }))
+            .collect();
+        let payload = serde_json::json!({
+            "snippet": {
+                "liveChatId": live_chat_id,
+                "type": "pollEvent",
+                "pollDetails": {
+                    "metadata": {
+                        "questionText": question,
+                        "options": option_objects,
+                    }
+                }
+            }
+        });
+
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&token)
+            .query(&[("part", "snippet")])
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
+        let status = resp.status().as_u16();
+        if status == 200 || status == 201 {
+            return Ok(());
+        }
+
+        let retry_after_secs = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(30);
+
+        let body_text = resp.text().await.unwrap_or_default();
+
+        match status {
+            429 => Err(PlatformError::RateLimited { retry_after_secs }),
+            403 if body_text.contains("quotaExceeded") => Err(PlatformError::QuotaExhausted),
+            403 if body_text.contains("operationNotSupported")
+                || body_text.contains("insufficientPermissions") =>
+            {
+                Err(PlatformError::Auth {
+                    reason: "chat write scope missing".to_owned(),
+                })
+            }
             _ => Err(PlatformError::Http {
                 status,
                 body: body_text,

@@ -5848,4 +5848,113 @@ mod tests {
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
         assert_eq!(ev.payload["user"]["id"].as_str(), Some("42"));
     }
+
+    const SESSION_WELCOME_FRAME: &str = r#"{"metadata":{"message_type":"session_welcome","message_id":"abc"},"payload":{"session":{"id":"sess-123","reconnect_url":null}}}"#;
+
+    fn session_over_creds(
+        bus: &Arc<PlatformEventChannel>,
+        repo: Arc<dyn forge_storage::CredentialsRepo>,
+    ) -> ChatSession {
+        let manager = Arc::new(TwitchCredentialsManager::new(repo, "client".to_string()));
+        let tracker = crate::subscriptions::SubscriptionTracker::default();
+        let publisher: Arc<dyn EventPublisher> = bus.clone();
+        let (session, _state_rx, _shutdown_tx) = ChatSession::new(
+            manager,
+            "client".to_string(),
+            "bcast".to_string(),
+            "user".to_string(),
+            publisher,
+            tracker,
+        );
+        session
+    }
+
+    struct FailingCreds;
+
+    #[async_trait::async_trait]
+    impl forge_storage::CredentialsRepo for FailingCreds {
+        async fn store(
+            &self,
+            _: &forge_storage::CredentialId,
+            _: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            Ok(())
+        }
+
+        async fn load(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<Option<String>, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::Connection {
+                reason: "backend offline".to_owned(),
+            })
+        }
+
+        async fn delete(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Ok(false)
+        }
+
+        async fn list_ids(
+            &self,
+        ) -> Result<Vec<forge_storage::CredentialId>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<Option<time::OffsetDateTime>, forge_storage::StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<(), forge_storage::StorageError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn session_welcome_routes_to_reauth_when_token_refresh_reports_reauth_required() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let mut session = session_over_creds(&bus, Arc::new(MockCreds::empty()));
+        let mut sub = bus.subscribe();
+
+        let mut session_id = None;
+        let action = session
+            .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
+            .await;
+
+        assert!(
+            matches!(action, FrameAction::ReauthRequired),
+            "missing credential at session_welcome must route to reauth, not disconnect"
+        );
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .expect("a reauth event must be published")
+            .expect("recv error");
+        assert_eq!(ev.kind, "platform.reauth_required");
+        assert_eq!(ev.payload["platform_id"].as_str(), Some("twitch"));
+    }
+
+    #[tokio::test]
+    async fn session_welcome_disconnects_when_token_fetch_fails_without_reauth() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let mut session = session_over_creds(&bus, Arc::new(FailingCreds));
+
+        let mut session_id = None;
+        let action = session
+            .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
+            .await;
+
+        assert!(
+            matches!(action, FrameAction::Disconnect),
+            "a non-reauth token error must disconnect for backoff retry, not route to reauth"
+        );
+    }
 }

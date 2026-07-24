@@ -12,6 +12,13 @@ use gpui::{AnyElement, Div, Rgba, SharedString, div, prelude::*, px, relative};
 /// Keeps the scopes and subscription panels within one calm viewport; their row lists scroll
 /// internally past this so Quick actions stay reachable below.
 const SCROLL_PANEL_MAX_H: f32 = 320.0;
+/// Estimated row height for deciding whether a list overflows its panel; short lists must not
+/// occlude, or they trap the page scroll under a panel that cannot scroll itself.
+const SCROLL_ROW_EST_H: f32 = 30.0;
+
+fn panel_overflows(count: usize) -> bool {
+    count as f32 * SCROLL_ROW_EST_H > SCROLL_PANEL_MAX_H
+}
 
 fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
     div()
@@ -262,6 +269,7 @@ fn render_subscription_list(
         .w_full()
         .flex_1()
         .min_h(px(0.0))
+        .when(panel_overflows(items.len()), |d| d.occlude())
         .overflow_y_scroll()
         .flex()
         .flex_col();
@@ -325,6 +333,7 @@ fn render_scopes_list(
         .w_full()
         .flex_1()
         .min_h(px(0.0))
+        .occlude()
         .overflow_y_scroll()
         .flex()
         .flex_col();

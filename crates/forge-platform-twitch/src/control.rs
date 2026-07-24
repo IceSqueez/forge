@@ -27,14 +27,10 @@ impl BuiltinControl for TwitchIntegrationBundle {
     }
 
     async fn disconnect(&self) -> ControlOutcome {
-        let handle = self.handle_slot().lock().await.take();
-        match handle {
-            Some(h) => {
-                h.shutdown();
-                Ok(())
-            }
-            None => Err(ControlFailure::NotConnected),
+        if let Some(handle) = self.handle_slot().lock().await.take() {
+            handle.shutdown();
         }
+        Ok(())
     }
 
     async fn refresh_token(&self) -> ControlOutcome {

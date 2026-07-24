@@ -814,11 +814,11 @@ mod tests {
     }
 
     #[test]
-    fn viewers_health_value_shows_count_when_live_and_dash_when_absent() {
+    fn viewers_health_value_shows_count_when_live_and_zero_when_absent() {
         for (report, primary, secondary) in [
             (ViewerReport::Live { count: 0 }, "0", Some("live")),
             (ViewerReport::Live { count: 1234 }, "1234", Some("live")),
-            (ViewerReport::Absent, "-", None),
+            (ViewerReport::Absent, "0", None),
         ] {
             assert_eq!(
                 viewers_health_value(report),

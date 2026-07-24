@@ -31,6 +31,6 @@ pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::is_private_or_special;
 pub use poll::DedupSet;
 pub use rate_limit::{
-    MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome, RateLimiter, TokenBucketRateLimiter,
-    acquire_or_wait,
+    MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome, RateLimitUsage, RateLimiter,
+    TokenBucketRateLimiter, acquire_or_wait,
 };

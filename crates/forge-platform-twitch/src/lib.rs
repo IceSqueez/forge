@@ -18,7 +18,9 @@ pub use auth::{
     DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT,
     TwitchAuthBundle, TwitchAuthFlow, UserInfo, client_id, twitch_auth_flow,
 };
-pub use builtin::{ChatSessionConfig, TwitchIntegrationBundle};
+pub use builtin::{
+    ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TwitchIntegrationBundle,
+};
 pub use chat::{
     ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
 };

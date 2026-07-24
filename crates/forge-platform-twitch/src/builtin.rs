@@ -7,12 +7,13 @@ use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 
+#[cfg(test)]
+use forge_platform_core::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
     HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent, QuickActions, RateLimiter,
-    SectionIcon, SubscriptionRow, SubscriptionStatus, TokenBucketRateLimiter, ViewerReport,
-    ViewerReportStream,
+    SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
 use std::collections::BTreeMap;
 
@@ -33,11 +34,9 @@ use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Dedicated bucket sized to Twitch's 800/60s Helix budget for this poll only -
-/// NOT the shared bucket the sub-action/chat-send transports draw on (wired up
-/// separately in the app crate), so it cannot report true cross-transport usage.
-const HELIX_BUDGET_CAPACITY: u32 = 800;
-const HELIX_BUDGET_WINDOW: Duration = Duration::from_secs(60);
+/// Twitch's documented Helix budget: 800 requests per 60s window per client_id.
+pub const HELIX_BUDGET_CAPACITY: u32 = 800;
+pub const HELIX_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, Default)]
 enum ViewerPollState {
@@ -88,6 +87,7 @@ pub struct TwitchIntegrationBundle {
     viewer_state: std::sync::RwLock<ViewerPollState>,
     viewer_report_tx: watch::Sender<ViewerReport>,
     transport: Arc<dyn HelixTransport>,
+    rate_limiter: Arc<dyn RateLimiter>,
     tier: std::sync::RwLock<BroadcasterTier>,
     token_expires_at: std::sync::RwLock<Option<SystemTime>>,
     connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
@@ -101,6 +101,7 @@ impl TwitchIntegrationBundle {
         creds: Arc<dyn CredentialsRepo>,
         tracker: SubscriptionTracker,
         handle: TwitchChatHandle,
+        rate_limiter: Arc<dyn RateLimiter>,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
@@ -109,7 +110,12 @@ impl TwitchIntegrationBundle {
             Arc::clone(&creds),
             config.client_id.clone(),
         ));
-        let transport = Self::build_helix_transport(&config, &bus, &credentials_manager);
+        let transport = Self::build_helix_transport(
+            &config,
+            &bus,
+            &credentials_manager,
+            Arc::clone(&rate_limiter),
+        );
         let bundle = Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
@@ -124,6 +130,7 @@ impl TwitchIntegrationBundle {
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
             transport: Arc::clone(&transport),
+            rate_limiter,
             tier: std::sync::RwLock::new(BroadcasterTier::default()),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
@@ -138,11 +145,8 @@ impl TwitchIntegrationBundle {
         config: &ChatSessionConfig,
         bus: &Arc<dyn EventPublisher>,
         manager: &Arc<TwitchCredentialsManager>,
+        rate_limiter: Arc<dyn RateLimiter>,
     ) -> Arc<dyn HelixTransport> {
-        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-            HELIX_BUDGET_CAPACITY,
-            HELIX_BUDGET_WINDOW,
-        ));
         Arc::new(
             HelixHttpTransport::new(
                 rate_limiter,
@@ -173,6 +177,12 @@ impl TwitchIntegrationBundle {
                     new_value: bundle.eventsub_health_value(),
                 };
                 let _ = bundle.health_tx.send(eventsub_delta);
+
+                let api_calls_delta = HealthDelta {
+                    index: 3,
+                    new_value: bundle.api_calls_health_value(),
+                };
+                let _ = bundle.health_tx.send(api_calls_delta);
             }
         });
     }
@@ -233,6 +243,13 @@ impl TwitchIntegrationBundle {
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 ticker.tick().await;
+
+                let api_calls_delta = HealthDelta {
+                    index: 3,
+                    new_value: bundle.api_calls_health_value(),
+                };
+                let _ = bundle.health_tx.send(api_calls_delta);
+
                 let request = HelixRequest::new(HelixMethod::Get, "/helix/streams")
                     .query("user_id", broadcaster_id.clone());
                 let Ok(body) = transport.execute(request).await else {
@@ -319,6 +336,10 @@ impl TwitchIntegrationBundle {
             transport: Arc::new(crate::sub_actions::test_support::MockTransport::returning(
                 Ok(serde_json::Value::Null),
             )),
+            rate_limiter: Arc::new(TokenBucketRateLimiter::new(
+                HELIX_BUDGET_CAPACITY,
+                HELIX_BUDGET_WINDOW,
+            )),
             tier: std::sync::RwLock::new(tier),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
@@ -380,6 +401,23 @@ impl TwitchIntegrationBundle {
             ViewerPollState::Live(count) => HealthValue::Text {
                 primary: count.to_string(),
                 secondary: Some("live".to_owned()),
+            },
+        }
+    }
+
+    fn api_calls_health_value(&self) -> HealthValue {
+        let usage = self.rate_limiter.usage();
+        match (usage.used, usage.capacity) {
+            (Some(used), Some(capacity)) => HealthValue::Ratio {
+                used: u64::from(used),
+                total: u64::from(capacity),
+                reset_hint: usage
+                    .resets_in
+                    .map(|d| format!("resets in {}s", d.as_secs())),
+            },
+            _ => HealthValue::Text {
+                primary: "-".to_owned(),
+                secondary: None,
             },
         }
     }
@@ -484,10 +522,7 @@ impl BuiltinHealth for TwitchIntegrationBundle {
             },
             HealthMetric {
                 label: "API Calls".to_owned(),
-                value: HealthValue::Text {
-                    primary: "-".to_owned(),
-                    secondary: None,
-                },
+                value: self.api_calls_health_value(),
             },
         ]
     }

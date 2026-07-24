@@ -199,8 +199,10 @@ async fn build_twitch(
     let client_id = forge_platform_twitch::client_id()?;
     let creds = creds_of(backend);
 
-    let rate_limiter: Arc<dyn RateLimiter> =
-        Arc::new(TokenBucketRateLimiter::new(800, Duration::from_secs(60)));
+    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+        forge_platform_twitch::HELIX_BUDGET_CAPACITY,
+        forge_platform_twitch::HELIX_BUDGET_WINDOW,
+    ));
     let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
         Arc::clone(&creds),
         client_id.clone(),
@@ -208,7 +210,7 @@ async fn build_twitch(
     let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
         Arc::new(
             forge_platform_twitch::HelixHttpTransport::new(
-                rate_limiter,
+                Arc::clone(&rate_limiter),
                 publisher(bus),
                 client_id.clone(),
                 Arc::clone(&manager) as Arc<dyn forge_platform_twitch::HelixTokenSource>,
@@ -253,6 +255,7 @@ async fn build_twitch(
         creds,
         tracker,
         handle,
+        rate_limiter,
     );
 
     Some(BuiltinObject {

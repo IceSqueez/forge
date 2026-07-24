@@ -5,7 +5,11 @@ use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
     body_family, icon, mono_family, radius, spacing, spinner, tr, with_alpha,
 };
-use forge_platform_twitch::{DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
+use forge_platform_core::{RateLimiter, TokenBucketRateLimiter};
+use forge_platform_twitch::{
+    DeviceCodeInfo, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TWITCH_BROADCASTER_SCOPES,
+    TwitchAuthFlow, UserInfo,
+};
 use forge_storage::CredentialsRepo;
 use gpui::{
     Animation, AnimationExt, AnyElement, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla,
@@ -291,6 +295,10 @@ impl IntegrationDetail {
                     Arc::clone(&tracker),
                 );
                 let handle = chat.start();
+                let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
+                    HELIX_BUDGET_CAPACITY,
+                    HELIX_BUDGET_WINDOW,
+                ));
                 let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
                     login,
                     config,
@@ -298,6 +306,7 @@ impl IntegrationDetail {
                     credentials,
                     tracker,
                     handle,
+                    rate_limiter,
                 );
                 live_viewers.register(bundle.viewer_source());
                 bundle

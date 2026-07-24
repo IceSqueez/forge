@@ -10,11 +10,23 @@ pub enum RateLimitOutcome {
     Exhausted,
 }
 
+/// All fields `None` mean the implementation has no introspection to offer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RateLimitUsage {
+    pub used: Option<u32>,
+    pub capacity: Option<u32>,
+    pub resets_in: Option<Duration>,
+}
+
 #[async_trait]
 pub trait RateLimiter: Send + Sync {
     async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, PlatformError>;
     fn remaining(&self) -> u32;
     async fn observe_remote_throttle(&self, retry_after: Duration);
+
+    fn usage(&self) -> RateLimitUsage {
+        RateLimitUsage::default()
+    }
 }
 
 pub const MAX_THROTTLE_WAIT: Duration = Duration::from_secs(10);
@@ -92,6 +104,12 @@ impl TokenBucketRateLimiter {
         }
         Duration::from_secs_f64(deficit / rate)
     }
+
+    fn current_tokens(&self, state: &BucketState, now: Instant) -> f64 {
+        let elapsed = now.saturating_duration_since(state.last_refill);
+        let gained = elapsed.as_secs_f64() * self.tokens_per_sec();
+        (state.tokens + gained).min(self.capacity as f64)
+    }
 }
 
 #[async_trait]
@@ -133,9 +151,7 @@ impl RateLimiter for TokenBucketRateLimiter {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let elapsed = now.saturating_duration_since(state.last_refill);
-        let gained = elapsed.as_secs_f64() * self.tokens_per_sec();
-        (state.tokens + gained).min(self.capacity as f64) as u32
+        self.current_tokens(&state, now) as u32
     }
 
     async fn observe_remote_throttle(&self, retry_after: Duration) {
@@ -147,6 +163,27 @@ impl RateLimiter for TokenBucketRateLimiter {
         state.cooldown_until = Some(now + retry_after);
         state.tokens = 0.0;
         state.last_refill = now;
+    }
+
+    fn usage(&self) -> RateLimitUsage {
+        let now = Instant::now();
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let current = self.current_tokens(&state, now);
+        let used = (self.capacity as f64 - current).round().max(0.0) as u32;
+        let rate = self.tokens_per_sec();
+        let resets_in = if used == 0 || rate <= 0.0 {
+            Duration::ZERO
+        } else {
+            Duration::from_secs_f64(used as f64 / rate)
+        };
+        RateLimitUsage {
+            used: Some(used),
+            capacity: Some(self.capacity),
+            resets_in: Some(resets_in),
+        }
     }
 }
 

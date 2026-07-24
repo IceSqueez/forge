@@ -4,12 +4,12 @@ use forge_components::{
     SearchState, Spacing, TextInput, ToastKind, badge, body_family, confirm_modal, fmt_uptime,
     icon, mono_family, overlay, page_frame, platform_hero, radius, spacing, status_dot, tr,
 };
-use forge_events::EventPublisher;
+use forge_events::{EventPublisher, EventSource};
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone,
-    PickerKind, QuickAction, QuickActions, SectionIcon,
+    ControlFailure, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge,
+    HeroBadgeTone, PickerKind, QuickAction, QuickActions, SectionIcon,
 };
 use forge_platform_twitch::TwitchIntegrationBundle;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
@@ -227,15 +227,23 @@ impl IntegrationDetail {
             while let async_bridge::EventBatch::Ready(batch) =
                 async_bridge::recv_event_batch(&mut sub).await
             {
+                let reauth = batch.iter().any(|e| {
+                    e.kind == "platform.reauth_required" && e.source == EventSource::Twitch
+                });
                 let tails: Vec<String> = batch
                     .iter()
                     .filter_map(|e| e.kind.strip_prefix("twitch.").map(str::to_owned))
                     .collect();
-                if tails.is_empty() {
+                if tails.is_empty() && !reauth {
                     continue;
                 }
                 if this
-                    .update(cx, |this, cx| this.apply_eventsub_tally(tails, cx))
+                    .update(cx, |this, cx| {
+                        if reauth {
+                            this.twitch_reauth_required = true;
+                        }
+                        this.apply_eventsub_tally(tails, cx);
+                    })
                     .is_err()
                 {
                     break;
@@ -353,6 +361,30 @@ impl IntegrationDetail {
         let Some(ctrl) = self.control.clone() else {
             return;
         };
+        if self.is_twitch && matches!(verb, ControlVerb::RefreshToken) {
+            let task = self
+                .rt_handle
+                .spawn(async move { ctrl.refresh_token().await });
+            cx.spawn(async move |this, cx| {
+                let Ok(result) = task.await else {
+                    return;
+                };
+                this.update(cx, |this, cx| match result {
+                    Ok(()) => {}
+                    Err(ControlFailure::Unauthorized) => {
+                        this.twitch_reauth_required = true;
+                        cx.notify();
+                    }
+                    Err(err) => {
+                        tracing::warn!(error = %err, "twitch token refresh failed");
+                        cx.push_toast(ToastKind::Error, tr!("integration_control_failed"));
+                    }
+                })
+                .ok();
+            })
+            .detach();
+            return;
+        }
         async_bridge::report_failure(
             &self.rt_handle,
             async move {
@@ -375,7 +407,11 @@ impl IntegrationDetail {
 
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
         if self.pending_disconnect.take().is_some() {
-            self.dispatch_control(ControlVerb::Disconnect, cx);
+            if self.is_twitch {
+                self.reset_twitch_to_connect(cx);
+            } else {
+                self.dispatch_control(ControlVerb::Disconnect, cx);
+            }
         }
         cx.notify();
     }

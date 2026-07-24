@@ -1238,6 +1238,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn api_calls_metric_reports_helix_budget_ratio() {
+        let b = make_bundle(ChatConnectionState::Connected);
+        let health: &dyn BuiltinHealth = b.as_ref();
+        let metrics = health.metrics();
+        let HealthValue::Ratio { used, total, .. } = &metrics[3].value else {
+            panic!("expected Ratio variant for the API Calls metric");
+        };
+        assert_eq!(*used, 0, "a fresh Helix budget has zero consumed calls");
+        assert_eq!(*total, u64::from(HELIX_BUDGET_CAPACITY));
+    }
+
     #[tokio::test]
     async fn health_stream_is_subscribable() {
         let b = make_bundle(ChatConnectionState::Connected);

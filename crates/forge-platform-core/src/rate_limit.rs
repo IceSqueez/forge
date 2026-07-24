@@ -271,4 +271,61 @@ mod tests {
             other => panic!("expected Throttled with no ETA on a dead bucket, got {other:?}"),
         }
     }
+
+    #[test]
+    fn usage_on_fresh_bucket_reports_zero_used_and_no_reset() {
+        let rl = limiter(10, Duration::from_secs(60));
+        let usage = rl.usage();
+        assert_eq!(usage.used, Some(0));
+        assert_eq!(usage.resets_in, Some(Duration::ZERO));
+    }
+
+    #[tokio::test]
+    async fn usage_after_acquires_counts_consumed_against_capacity() {
+        let rl = limiter(10, Duration::from_secs(60));
+        for _ in 0..3 {
+            rl.acquire(1).await.unwrap();
+        }
+        let usage = rl.usage();
+        assert_eq!(usage.used, Some(3));
+        assert_eq!(usage.capacity, Some(10));
+        let resets_in = usage.resets_in.unwrap();
+        assert!(resets_in > Duration::ZERO);
+        assert!(
+            resets_in <= Duration::from_secs(60),
+            "reset ETA {resets_in:?} must not exceed the refill window"
+        );
+    }
+
+    #[tokio::test]
+    async fn usage_on_exhausted_bucket_reports_full_capacity_and_window_reset() {
+        let rl = limiter(4, Duration::from_secs(8));
+        for _ in 0..4 {
+            rl.acquire(1).await.unwrap();
+        }
+        let usage = rl.usage();
+        assert_eq!(usage.used, Some(4));
+        assert_eq!(usage.resets_in, Some(Duration::from_secs(8)));
+    }
+
+    struct NoIntrospectionLimiter;
+
+    #[async_trait]
+    impl RateLimiter for NoIntrospectionLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            u32::MAX
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    #[test]
+    fn default_usage_offers_no_introspection() {
+        let usage = NoIntrospectionLimiter.usage();
+        assert!(usage.used.is_none());
+        assert!(usage.capacity.is_none());
+        assert!(usage.resets_in.is_none());
+    }
 }

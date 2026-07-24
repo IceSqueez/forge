@@ -853,6 +853,7 @@ mod tests {
         mount_success(&server, "channel.follow", "sub-follow").await;
         mount_success(&server, "channel.cheer", "sub-cheer").await;
         mount_status(&server, "channel.ban", 401).await;
+        mount_status(&server, "channel.subscribe", 403).await;
         mount_status(&server, "stream.online", 500).await;
         mount_catch_all_success(&server).await;
 
@@ -881,6 +882,10 @@ mod tests {
         assert_eq!(
             record_status(&tracker, "channel.ban").0,
             SubStatus::Failed("unauthorized".to_owned())
+        );
+        assert_eq!(
+            record_status(&tracker, "channel.subscribe").0,
+            SubStatus::Failed("missing scope".to_owned())
         );
         assert_eq!(
             record_status(&tracker, "stream.online").0,

@@ -20,7 +20,7 @@ use crate::action_engine::{
 };
 use crate::condition::ConditionGate;
 
-fn capture_args_in(
+pub(crate) fn capture_args_in(
     registry: &SubActionRegistry,
     step: &SubActionStep,
     scope: &ArgStack,
@@ -58,7 +58,7 @@ fn capture_args_in(
     captured
 }
 
-fn capture_produced(before: &ArgStack, after: &ArgStack) -> BTreeMap<String, String> {
+pub(crate) fn capture_produced(before: &ArgStack, after: &ArgStack) -> BTreeMap<String, String> {
     let mut produced = BTreeMap::new();
     for (name, value) in after.snapshot() {
         if before.get(&name) != Some(&value) {

@@ -140,7 +140,12 @@ impl ActionEngine {
             input: rx,
         };
         tokio::spawn(async move { engine.run(cancel_clone).await });
-        tokio::spawn(run_quick_action_loop(quick_rx, bus, sub_action_registry));
+        tokio::spawn(run_quick_action_loop(
+            quick_rx,
+            bus,
+            history,
+            sub_action_registry,
+        ));
         ActionEngineHandle {
             sender: tx,
             quick_sender: quick_tx,
@@ -319,6 +324,7 @@ impl Drop for CancelGuard {
 async fn run_quick_action_loop(
     mut rx: mpsc::Receiver<QuickActionRequest>,
     bus: Arc<EventBus>,
+    history: Arc<dyn HistoryRepo>,
     sub_action_registry: Arc<SubActionRegistry>,
 ) {
     let publisher: Arc<dyn forge_events::EventPublisher> =
@@ -337,7 +343,8 @@ async fn run_quick_action_loop(
         let stack = ArgStack::new();
         let run_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
 
-        let (telemetry, _) = match sub_action_registry.get(&req.step.kind_id) {
+        let started_at = OffsetDateTime::now_utc();
+        let (mut telemetry, produced_stack) = match sub_action_registry.get(&req.step.kind_id) {
             Some(runner) => {
                 let resolved = effective_config(&runner.default_config(), &req.step.config);
                 runner.execute(&resolved, &run_ctx).await
@@ -349,6 +356,13 @@ async fn run_quick_action_loop(
                 );
                 (skipped_telemetry(0, &req.step.kind_id), None)
             }
+        };
+        let completed_at = OffsetDateTime::now_utc();
+
+        telemetry.args_in = crate::chain::capture_args_in(&sub_action_registry, &req.step, &stack);
+        telemetry.produced = match &produced_stack {
+            Some(after) => crate::chain::capture_produced(&stack, after),
+            None => ::std::collections::BTreeMap::new(),
         };
 
         crate::chain::publish_subaction_done(publisher.as_ref(), run_event_id, &telemetry);
@@ -370,6 +384,26 @@ async fn run_quick_action_loop(
             }),
             run_event_id,
         ));
+
+        let run_outcome = match &telemetry.outcome {
+            SubActionOutcome::Success | SubActionOutcome::Skipped(_) => ExecutionOutcome::Success,
+            SubActionOutcome::Failed(message) => ExecutionOutcome::Failed(message.clone()),
+        };
+        let ctx = ExecutionContext {
+            action_id: ActionId::new(),
+            metadata: ExecutionMetadata::QuickAction {
+                builtin_id: req.builtin_id.clone(),
+                label: req.label.clone(),
+            },
+            arg_stack_snapshot: stack.snapshot(),
+            started_at,
+            completed_at: Some(completed_at),
+            telemetry: vec![telemetry],
+            outcome: run_outcome,
+        };
+        if let Err(e) = history.save(&ctx).await {
+            warn!("history_repo.save failed: {e}");
+        }
     }
 }
 

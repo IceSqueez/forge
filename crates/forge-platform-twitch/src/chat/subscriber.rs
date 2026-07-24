@@ -551,22 +551,23 @@ async fn subscribe_one(
         Ok(resp) => {
             let status = resp.status().as_u16();
 
-            if status == 401 {
+            if status == 401 || status == 403 {
+                let reason = if status == 401 {
+                    "unauthorized"
+                } else {
+                    "missing scope"
+                };
                 ctx.bus.publish(Event::new(
                     EventSource::Twitch,
                     "request.fail",
                     serde_json::json!({
                         "endpoint": EVENTSUB_PATH,
                         "status_code": status,
-                        "body_snippet": "unauthorized",
+                        "body_snippet": reason,
                         "retry_after_secs": null,
                     }),
                 ));
-                set_tracker_status(
-                    &tracker,
-                    index,
-                    SubStatus::Failed("unauthorized".to_owned()),
-                );
+                set_tracker_status(&tracker, index, SubStatus::Failed(reason.to_owned()));
                 return Err(SubscribeError::ScopeMissing);
             }
 

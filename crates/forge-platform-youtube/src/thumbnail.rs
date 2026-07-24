@@ -126,3 +126,222 @@ fn content_type_for(path: &str) -> &'static str {
         "application/octet-stream"
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use serde_json::json;
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::quota_state::QuotaState;
+
+    const TOKEN_SENTINEL: &str = "yt-thumb-secret-token";
+
+    struct TempImage(std::path::PathBuf);
+
+    impl TempImage {
+        fn new(name: &str, bytes: &[u8]) -> Self {
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let uniq = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let mut p = std::env::temp_dir();
+            p.push(format!(
+                "forge_yt_thumb_{}_{uniq}_{name}",
+                std::process::id()
+            ));
+            std::fs::write(&p, bytes).unwrap();
+            Self(p)
+        }
+
+        fn as_str(&self) -> &str {
+            self.0.to_str().unwrap()
+        }
+    }
+
+    impl Drop for TempImage {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    fn token_source() -> TokenSource {
+        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+    }
+
+    fn thumbnail_on(
+        server: &MockServer,
+        broadcast: Option<&str>,
+    ) -> (YoutubeThumbnail, Arc<Mutex<QuotaState>>) {
+        let handle = ActiveBroadcastIdHandle::new();
+        handle.set(broadcast.map(|s| s.to_owned()));
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let thumb = YoutubeThumbnail::new(token_source(), handle, Arc::clone(&quota))
+            .with_api_base(server.uri());
+        (thumb, quota)
+    }
+
+    #[test]
+    fn content_type_maps_by_extension() {
+        for (input, expected) in [
+            ("photo.png", "image/png"),
+            ("PHOTO.PNG", "image/png"),
+            ("shot.jpg", "image/jpeg"),
+            ("shot.jpeg", "image/jpeg"),
+            ("shot.JPG", "image/jpeg"),
+            ("noext", "application/octet-stream"),
+            ("anim.gif", "application/octet-stream"),
+        ] {
+            assert_eq!(content_type_for(input), expected, "path: {input}");
+        }
+    }
+
+    #[tokio::test]
+    async fn set_returns_unsupported_when_no_active_broadcast() {
+        let server = MockServer::start().await;
+        let (thumb, _quota) = thumbnail_on(&server, None);
+        let img = TempImage::new("t.png", b"\x89PNG\r\n");
+
+        let err = thumb.set(img.as_str()).await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "expected Unsupported without a broadcast, got: {err}"
+        );
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "no broadcast must short-circuit before any upload"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_uploads_with_media_type_content_type_and_charges_quota() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/thumbnails/set"))
+            .and(query_param("videoId", "vid-123"))
+            .and(query_param("uploadType", "media"))
+            .and(header("Content-Type", "image/png"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"kind": "youtube#thumbnailSetResponse"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let (thumb, quota) = thumbnail_on(&server, Some("vid-123"));
+        let img = TempImage::new("up.png", b"png-bytes-here");
+
+        thumb.set(img.as_str()).await.unwrap();
+
+        assert_eq!(
+            quota.lock().await.used_today,
+            THUMBNAIL_SET_COST,
+            "successful upload must charge {THUMBNAIL_SET_COST} units"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_rejects_file_one_byte_over_cap_without_uploading() {
+        let server = MockServer::start().await;
+        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
+        let img = TempImage::new("big.png", &vec![0u8; (MAX_THUMBNAIL_BYTES + 1) as usize]);
+
+        let err = thumb.set(img.as_str()).await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "over-cap file must be rejected as Unsupported, got: {err}"
+        );
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "over-cap file must not reach the upload endpoint"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_accepts_file_exactly_at_cap() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/thumbnails/set"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
+        let img = TempImage::new("cap.png", &vec![0u8; MAX_THUMBNAIL_BYTES as usize]);
+
+        thumb.set(img.as_str()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn set_returns_io_error_for_missing_file_before_any_upload() {
+        let server = MockServer::start().await;
+        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
+        let missing = format!(
+            "{}/forge_yt_thumb_definitely_absent_{}.png",
+            std::env::temp_dir().display(),
+            std::process::id()
+        );
+
+        let err = thumb.set(&missing).await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Io(_)),
+            "missing file must surface as Io, got: {err}"
+        );
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "unreadable file must short-circuit before upload"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_maps_403_quota_exceeded_to_quota_exhausted() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/thumbnails/set"))
+            .respond_with(
+                ResponseTemplate::new(403)
+                    .set_body_string(r#"{"error":{"errors":[{"reason":"quotaExceeded"}]}}"#),
+            )
+            .mount(&server)
+            .await;
+
+        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
+        let img = TempImage::new("q.png", b"x");
+
+        let err = thumb.set(img.as_str()).await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::QuotaExhausted),
+            "403 quotaExceeded must map to QuotaExhausted, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_error_does_not_leak_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/thumbnails/set"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
+            .mount(&server)
+            .await;
+
+        let (thumb, _quota) = thumbnail_on(&server, Some("vid"));
+        let img = TempImage::new("e.png", b"x");
+
+        let err = thumb.set(img.as_str()).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains(TOKEN_SENTINEL),
+            "error must not leak the bearer token: {msg}"
+        );
+        assert!(
+            !msg.contains(&server.uri()),
+            "error must not leak the request URL: {msg}"
+        );
+    }
+}

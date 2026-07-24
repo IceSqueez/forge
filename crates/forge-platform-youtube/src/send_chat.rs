@@ -532,4 +532,114 @@ mod tests {
             "expected RateLimited with default retry_after_secs=30, got: {err}"
         );
     }
+
+    #[tokio::test]
+    async fn send_error_does_not_leak_bearer_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
+            .mount(&server)
+            .await;
+
+        let (sender, handle) = make_sender(&server);
+        handle.set(Some("lc-leak".to_owned()));
+
+        let err = sender.send("hi").await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("test-token"),
+            "send error must not leak the bearer token: {msg}"
+        );
+        assert!(
+            !msg.contains(&server.uri()),
+            "send error must not leak the full request URL: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_poll_returns_unsupported_when_no_live_chat_id() {
+        let server = MockServer::start().await;
+        let (sender, _handle) = make_sender(&server);
+
+        let err = sender
+            .create_poll("Q?", &["A".to_owned(), "B".to_owned()])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "expected Unsupported without an active broadcast, got: {err}"
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_poll_posts_poll_event_body_and_charges_quota() {
+        let server = MockServer::start().await;
+        let expected_body = json!({
+            "snippet": {
+                "liveChatId": "lc-poll",
+                "type": "pollEvent",
+                "pollDetails": {
+                    "metadata": {
+                        "questionText": "Best pick?",
+                        "options": [
+                            { "optionText": "Red" },
+                            { "optionText": "Blue" }
+                        ]
+                    }
+                }
+            }
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .and(body_json(expected_body))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let (sender, handle) = make_sender_with_quota(&server, Arc::clone(&quota));
+        handle.set(Some("lc-poll".to_owned()));
+
+        sender
+            .create_poll("Best pick?", &["Red".to_owned(), "Blue".to_owned()])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            quota.lock().await.used_today,
+            POLL_COST,
+            "poll must charge {POLL_COST} units"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_poll_error_does_not_leak_bearer_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
+            .mount(&server)
+            .await;
+
+        let (sender, handle) = make_sender(&server);
+        handle.set(Some("lc-poll-leak".to_owned()));
+
+        let err = sender
+            .create_poll("Q?", &["A".to_owned(), "B".to_owned()])
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("test-token"),
+            "poll error must not leak the bearer token: {msg}"
+        );
+        assert!(
+            !msg.contains(&server.uri()),
+            "poll error must not leak the full request URL: {msg}"
+        );
+    }
 }

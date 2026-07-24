@@ -178,3 +178,134 @@ impl SubActionRunner for CreatePollRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use futures::future::BoxFuture;
+    use serde_json::json;
+    use tokio::sync::Mutex;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::quota_state::QuotaState;
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+    }
+
+    fn token_source() -> Arc<
+        dyn Fn() -> BoxFuture<'static, Result<String, forge_platform_core::PlatformError>>
+            + Send
+            + Sync,
+    > {
+        Arc::new(|| Box::pin(async { Ok("poll-token".to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer, live: bool) -> CreatePollRunner {
+        let handle = LiveChatIdHandle::new();
+        if live {
+            handle.set(Some("lc".to_owned()));
+        }
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let sender =
+            YoutubeSendChat::new(token_source(), handle, quota).with_api_base(server.uri());
+        CreatePollRunner::new(Arc::new(sender))
+    }
+
+    fn config(question: &str, options: &str) -> SubActionConfig {
+        BTreeMap::from([
+            ("question".to_owned(), Variant::String(question.to_owned())),
+            ("options".to_owned(), Variant::String(options.to_owned())),
+        ])
+    }
+
+    #[test]
+    fn parse_options_splits_trims_filters_and_enforces_count() {
+        assert_eq!(parse_options("Red,Blue").unwrap(), vec!["Red", "Blue"]);
+        assert_eq!(
+            parse_options("A\nB\nC\nD").unwrap(),
+            vec!["A", "B", "C", "D"]
+        );
+        assert_eq!(parse_options("  a , b ").unwrap(), vec!["a", "b"]);
+        assert_eq!(parse_options("a\n\n,b").unwrap(), vec!["a", "b"]);
+        assert_eq!(parse_options("a,b\nc").unwrap(), vec!["a", "b", "c"]);
+
+        assert!(parse_options("only-one").is_err(), "1 option below min");
+        assert!(parse_options("").is_err(), "empty is below min");
+        assert!(parse_options("a,b,c,d,e").is_err(), "5 options above max");
+    }
+
+    #[test]
+    fn validate_config_requires_question_and_valid_option_count() {
+        let runner = {
+            let handle = LiveChatIdHandle::new();
+            let quota = Arc::new(Mutex::new(QuotaState::default()));
+            let sender = YoutubeSendChat::new(token_source(), handle, quota)
+                .with_api_base("http://127.0.0.1:0".to_owned());
+            CreatePollRunner::new(Arc::new(sender))
+        };
+
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            ("valid", config("Q?", "A,B"), true),
+            ("empty question", config("", "A,B"), false),
+            ("one option", config("Q?", "A"), false),
+            ("five options", config("Q?", "A,B,C,D,E"), false),
+            ("missing question", BTreeMap::new(), false),
+        ];
+        for (label, cfg, ok) in cases {
+            assert_eq!(runner.validate_config(&cfg).is_ok(), ok, "case: {label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_question_after_interpolation_fails_without_send() {
+        let server = MockServer::start().await;
+        let runner = runner_on(&server, true);
+        let stack = ArgStack::new().set("q".to_owned(), Variant::String(String::new()));
+
+        let (telemetry, _) = runner
+            .execute(&config("%q%", "A,B"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_interpolates_question_and_posts_poll() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server, true);
+        let stack = ArgStack::new().set("topic".to_owned(), Variant::String("dinner".to_owned()));
+
+        let (telemetry, _) = runner
+            .execute(&config("Pick %topic%?", "Pizza,Sushi"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let req = &server.received_requests().await.unwrap()[0];
+        let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+        assert_eq!(
+            body["snippet"]["pollDetails"]["metadata"]["questionText"],
+            "Pick dinner?"
+        );
+    }
+}

@@ -158,3 +158,156 @@ impl YoutubeStreamStats {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use serde_json::json;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::quota_state::QuotaState;
+
+    const TOKEN_SENTINEL: &str = "yt-stats-secret-token";
+
+    fn token_source() -> TokenSource {
+        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+    }
+
+    fn stats_on(server: &MockServer, broadcast: Option<&str>) -> YoutubeStreamStats {
+        let handle = ActiveBroadcastIdHandle::new();
+        handle.set(broadcast.map(|s| s.to_owned()));
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        YoutubeStreamStats::new(token_source(), handle, quota).with_api_base(server.uri())
+    }
+
+    fn details_body(extra: serde_json::Value) -> serde_json::Value {
+        json!({ "items": [{ "liveStreamingDetails": extra }] })
+    }
+
+    #[tokio::test]
+    async fn fetch_returns_unsupported_when_no_active_broadcast() {
+        let server = MockServer::start().await;
+        let err = stats_on(&server, None).fetch().await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "expected Unsupported without a broadcast, got: {err}"
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn fetch_returns_live_details_variant_with_query_contract() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .and(query_param("part", "liveStreamingDetails"))
+            .and(query_param("id", "bc-live"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(details_body(json!({
+                    "concurrentViewers": "1234",
+                    "actualStartTime": "2026-07-24T10:00:00Z",
+                    "scheduledStartTime": "2026-07-24T09:30:00Z",
+                    "activeLiveChatId": "lc-abc"
+                }))),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = stats_on(&server, Some("bc-live")).fetch().await.unwrap();
+        let Variant::Object(map) = result else {
+            panic!("expected Object, got {result:?}");
+        };
+        assert_eq!(map.get("concurrent_viewers"), Some(&Variant::Int(1234)));
+        assert_eq!(
+            map.get("actual_start_time"),
+            Some(&Variant::String("2026-07-24T10:00:00Z".to_owned()))
+        );
+        assert_eq!(
+            map.get("scheduled_start_time"),
+            Some(&Variant::String("2026-07-24T09:30:00Z".to_owned()))
+        );
+        assert_eq!(
+            map.get("live_chat_id"),
+            Some(&Variant::String("lc-abc".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_defaults_concurrent_viewers_to_zero_when_absent() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(details_body(json!({
+                    "actualStartTime": "2026-07-24T10:00:00Z"
+                }))),
+            )
+            .mount(&server)
+            .await;
+
+        let result = stats_on(&server, Some("bc")).fetch().await.unwrap();
+        let Variant::Object(map) = result else {
+            panic!("expected Object, got {result:?}");
+        };
+        assert_eq!(map.get("concurrent_viewers"), Some(&Variant::Int(0)));
+    }
+
+    #[tokio::test]
+    async fn fetch_returns_unsupported_when_details_missing() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+            .mount(&server)
+            .await;
+
+        let err = stats_on(&server, Some("bc")).fetch().await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Unsupported { .. }),
+            "missing liveStreamingDetails must map to Unsupported, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_maps_500_to_http() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("upstream failure"))
+            .mount(&server)
+            .await;
+
+        let err = stats_on(&server, Some("bc")).fetch().await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Http { status: 500, .. }),
+            "500 must map to Http 500, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_error_does_not_leak_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
+            .mount(&server)
+            .await;
+
+        let err = stats_on(&server, Some("bc")).fetch().await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains(TOKEN_SENTINEL),
+            "error must not leak the bearer token: {msg}"
+        );
+        assert!(
+            !msg.contains(&server.uri()),
+            "error must not leak the request URL: {msg}"
+        );
+    }
+}

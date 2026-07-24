@@ -126,3 +126,126 @@ impl SubActionRunner for LookupStreamStatsRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use futures::future::BoxFuture;
+    use serde_json::json;
+    use tokio::sync::Mutex;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::quota_state::QuotaState;
+
+    const TOKEN_SENTINEL: &str = "yt-stats-runner-token";
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+    }
+
+    fn token_source() -> Arc<
+        dyn Fn() -> BoxFuture<'static, Result<String, forge_platform_core::PlatformError>>
+            + Send
+            + Sync,
+    > {
+        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+    }
+
+    fn runner_on(server: &MockServer, broadcast: Option<&str>) -> LookupStreamStatsRunner {
+        let handle = ActiveBroadcastIdHandle::new();
+        handle.set(broadcast.map(|s| s.to_owned()));
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        let stats =
+            YoutubeStreamStats::new(token_source(), handle, quota).with_api_base(server.uri());
+        LookupStreamStatsRunner::new(Arc::new(stats))
+    }
+
+    #[tokio::test]
+    async fn execute_publishes_stream_fields_into_arg_stack() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [{
+                    "liveStreamingDetails": {
+                        "concurrentViewers": "1234",
+                        "actualStartTime": "2026-07-24T10:00:00Z",
+                        "scheduledStartTime": "2026-07-24T09:30:00Z",
+                        "activeLiveChatId": "lc-abc"
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server, Some("bc"));
+        let (telemetry, produced) = runner
+            .execute(&BTreeMap::new(), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let stack = produced.expect("stats lookup must produce an arg stack");
+        assert_eq!(
+            stack.get("youtube.stream.concurrent_viewers"),
+            Some(&Variant::Int(1234))
+        );
+        assert_eq!(
+            stack.get("youtube.stream.actual_start_time"),
+            Some(&Variant::String("2026-07-24T10:00:00Z".to_owned()))
+        );
+        assert_eq!(
+            stack.get("youtube.stream.scheduled_start_time"),
+            Some(&Variant::String("2026-07-24T09:30:00Z".to_owned()))
+        );
+        assert_eq!(
+            stack.get("youtube.stream.live_chat_id"),
+            Some(&Variant::String("lc-abc".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_fails_when_no_active_broadcast() {
+        let server = MockServer::start().await;
+        let runner = runner_on(&server, None);
+        let (telemetry, produced) = runner
+            .execute(&BTreeMap::new(), &make_ctx(&ArgStack::new()))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(produced.is_none());
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn fetch_error_maps_to_failed_without_leaking_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .mount(&server)
+            .await;
+
+        let runner = runner_on(&server, Some("bc"));
+        let (telemetry, _) = runner
+            .execute(&BTreeMap::new(), &make_ctx(&ArgStack::new()))
+            .await;
+
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            panic!("expected Failed, got {:?}", telemetry.outcome);
+        };
+        assert!(!msg.contains(TOKEN_SENTINEL), "leaked token: {msg}");
+        assert!(!msg.contains(&server.uri()), "leaked url: {msg}");
+    }
+}

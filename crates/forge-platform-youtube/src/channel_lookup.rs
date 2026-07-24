@@ -138,3 +138,152 @@ impl YoutubeChannelLookup {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::quota_state::QuotaState;
+
+    const TOKEN_SENTINEL: &str = "yt-lookup-secret-token";
+
+    fn token_source() -> TokenSource {
+        Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
+    }
+
+    fn lookup_on(server: &MockServer) -> YoutubeChannelLookup {
+        let quota = Arc::new(Mutex::new(QuotaState::default()));
+        YoutubeChannelLookup::new(token_source(), quota).with_api_base(server.uri())
+    }
+
+    fn one_channel() -> serde_json::Value {
+        json!({
+            "items": [{
+                "id": "UCxyzchannelid",
+                "snippet": { "title": "Creator Name" },
+                "statistics": { "subscriberCount": "500", "viewCount": "12000" }
+            }]
+        })
+    }
+
+    #[tokio::test]
+    async fn lookup_selects_id_filter_for_uc_prefixed_24char_else_handle() {
+        let id24 = format!("UC{}", "a".repeat(22));
+        assert_eq!(id24.len(), CHANNEL_ID_LEN);
+
+        let cases: Vec<(String, &str)> = vec![
+            (id24.clone(), "id"),
+            ("@creator".to_owned(), "forHandle"),
+            ("UCshort".to_owned(), "forHandle"),
+        ];
+
+        for (identifier, expected_key) in cases {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/channels"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(one_channel()))
+                .mount(&server)
+                .await;
+
+            let lookup = lookup_on(&server);
+            lookup.lookup(&identifier).await.unwrap();
+
+            let req = &server.received_requests().await.unwrap()[0];
+            let pairs: std::collections::HashMap<String, String> =
+                req.url.query_pairs().into_owned().collect();
+            assert_eq!(
+                pairs.get(expected_key).map(String::as_str),
+                Some(identifier.as_str()),
+                "identifier {identifier} must query by {expected_key}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn lookup_parses_channel_into_variant_object() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(one_channel()))
+            .mount(&server)
+            .await;
+
+        let result = lookup_on(&server).lookup("@creator").await.unwrap();
+        let Variant::Object(map) = result else {
+            panic!("expected Object, got {result:?}");
+        };
+        assert_eq!(
+            map.get("channel_id"),
+            Some(&Variant::String("UCxyzchannelid".to_owned()))
+        );
+        assert_eq!(
+            map.get("title"),
+            Some(&Variant::String("Creator Name".to_owned()))
+        );
+        assert_eq!(map.get("subscriber_count"), Some(&Variant::Int(500)));
+        assert_eq!(map.get("view_count"), Some(&Variant::Int(12000)));
+    }
+
+    #[tokio::test]
+    async fn lookup_returns_http_404_when_no_items() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+            .mount(&server)
+            .await;
+
+        let err = lookup_on(&server).lookup("@ghost").await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Http { status: 404, .. }),
+            "empty items must map to Http 404, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn lookup_maps_403_operation_not_supported_to_auth() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(
+                ResponseTemplate::new(403).set_body_string(
+                    r#"{"error":{"errors":[{"reason":"operationNotSupported"}]}}"#,
+                ),
+            )
+            .mount(&server)
+            .await;
+
+        let err = lookup_on(&server).lookup("@creator").await.unwrap_err();
+        assert!(
+            matches!(err, PlatformError::Auth { .. }),
+            "403 operationNotSupported must map to Auth, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn lookup_error_does_not_leak_token_or_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .mount(&server)
+            .await;
+
+        let err = lookup_on(&server).lookup("@creator").await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains(TOKEN_SENTINEL),
+            "error must not leak the bearer token: {msg}"
+        );
+        assert!(
+            !msg.contains(&server.uri()),
+            "error must not leak the request URL: {msg}"
+        );
+    }
+}

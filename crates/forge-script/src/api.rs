@@ -931,19 +931,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chat_reply_and_whisper_emit_canonical_recipient_keys() {
+    async fn chat_broadcast_arities_omit_target_and_tag_rhai_source() {
         for (call, recipient_key, recipient, message) in [
+            (r#"forge::chat::send("hello")"#, None, None, "hello"),
             (
-                r#"forge::chat::reply("msg-1", "hi there")"#,
-                "reply_to_message_id",
-                "msg-1",
-                "hi there",
+                r#"forge::chat::reply("msg-1", "hello")"#,
+                Some("reply_to_message_id"),
+                Some("msg-1"),
+                "hello",
             ),
             (
-                r#"forge::chat::whisper("viewer", "psst")"#,
-                "whisper_to_login",
-                "viewer",
-                "psst",
+                r#"forge::chat::whisper("viewer", "hello")"#,
+                Some("whisper_to_login"),
+                Some("viewer"),
+                "hello",
             ),
         ] {
             let dp = open_dp().await;
@@ -962,12 +963,86 @@ mod tests {
                 .iter()
                 .find(|e| e.kind == "chat.send.request")
                 .unwrap_or_else(|| panic!("chat.send.request must be emitted for {call}"));
-            assert_eq!(
-                ev.payload[recipient_key].as_str(),
-                Some(recipient),
-                "{call} must carry canonical recipient key"
+            assert_eq!(ev.source, EventSource::Rhai, "source for {call}");
+            assert!(
+                ev.payload.get("target").is_none(),
+                "broadcast arity must omit the target key entirely for {call}"
             );
-            assert_eq!(ev.payload["message"].as_str(), Some(message));
+            assert_eq!(
+                ev.payload["message"].as_str(),
+                Some(message),
+                "message for {call}"
+            );
+            if let Some(key) = recipient_key {
+                assert_eq!(
+                    ev.payload[key].as_str(),
+                    recipient,
+                    "{call} must carry canonical recipient key"
+                );
+            }
+            assert_eq!(ev.caused_by, Some(caused_by));
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_targeted_arities_include_target_and_recipient_keys() {
+        for (call, target, recipient_key, recipient, message) in [
+            (
+                r#"forge::chat::send("twitch", "hello")"#,
+                "twitch",
+                None,
+                None,
+                "hello",
+            ),
+            (
+                r#"forge::chat::reply("kick", "msg-1", "hello")"#,
+                "kick",
+                Some("reply_to_message_id"),
+                Some("msg-1"),
+                "hello",
+            ),
+            (
+                r#"forge::chat::whisper("youtube", "viewer", "hello")"#,
+                "youtube",
+                Some("whisper_to_login"),
+                Some("viewer"),
+                "hello",
+            ),
+        ] {
+            let dp = open_dp().await;
+            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
+            let engine = Engine::with_api(EngineConfig::default(), api);
+
+            tokio::task::spawn_blocking(move || {
+                let _ = engine.eval_script(call).unwrap();
+            })
+            .await
+            .unwrap();
+
+            let events = captured.lock().unwrap();
+            let ev = events
+                .iter()
+                .find(|e| e.kind == "chat.send.request")
+                .unwrap_or_else(|| panic!("chat.send.request must be emitted for {call}"));
+            assert_eq!(ev.source, EventSource::Rhai, "source for {call}");
+            assert_eq!(
+                ev.payload["target"].as_str(),
+                Some(target),
+                "targeted arity must carry the target for {call}"
+            );
+            assert_eq!(
+                ev.payload["message"].as_str(),
+                Some(message),
+                "message for {call}"
+            );
+            if let Some(key) = recipient_key {
+                assert_eq!(
+                    ev.payload[key].as_str(),
+                    recipient,
+                    "{call} must carry canonical recipient key"
+                );
+            }
             assert_eq!(ev.caused_by, Some(caused_by));
         }
     }

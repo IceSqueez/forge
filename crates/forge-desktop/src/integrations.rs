@@ -675,3 +675,181 @@ async fn build_kick(
     };
     (Some(object), Some(Box::new(viewer_source)))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use forge_events::EventStream;
+    use forge_platform_core::{AuthFlow, ConnectionState, PlatformCapabilities};
+    use forge_runtime::NullEventLogRepo;
+    use std::time::Duration;
+    use tokio::sync::{broadcast, mpsc};
+
+    struct RecordingPlatform {
+        sends: mpsc::UnboundedSender<(String, String)>,
+        auth: AuthFlow,
+        caps: PlatformCapabilities,
+    }
+
+    impl RecordingPlatform {
+        fn spawn() -> (Arc<Self>, mpsc::UnboundedReceiver<(String, String)>) {
+            let (tx, rx) = mpsc::unbounded_channel();
+            let platform = Arc::new(Self {
+                sends: tx,
+                auth: AuthFlow::None {
+                    reason: String::new(),
+                },
+                caps: PlatformCapabilities {
+                    can_send_chat: true,
+                    can_moderate: false,
+                    can_subscribe_events: false,
+                    can_polls: false,
+                    can_predictions: false,
+                    can_channel_points: false,
+                    limited: false,
+                    limited_reason: None,
+                },
+            });
+            (platform, rx)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ChatPlatform for RecordingPlatform {
+        fn platform_id(&self) -> &'static str {
+            "mock"
+        }
+        fn auth_flow(&self) -> &AuthFlow {
+            &self.auth
+        }
+        fn capabilities(&self) -> &PlatformCapabilities {
+            &self.caps
+        }
+        fn connection_state(&self) -> ConnectionState {
+            ConnectionState::Connected
+        }
+        async fn connect(&self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+        async fn disconnect(&self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+        async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError> {
+            let _ = self.sends.send((channel.to_string(), text.to_string()));
+            Ok(())
+        }
+        fn events(&self) -> EventStream {
+            EventStream::new(broadcast::channel(1).1)
+        }
+    }
+
+    fn test_bus() -> Arc<EventBus> {
+        EventBus::new(Arc::new(NullEventLogRepo))
+    }
+
+    fn request(source: EventSource, payload: serde_json::Value) -> Event {
+        Event::new(source, "chat.send.request", payload)
+    }
+
+    async fn expect_send(rx: &mut mpsc::UnboundedReceiver<(String, String)>) -> (String, String) {
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("a send_message call was expected but never arrived")
+            .expect("mock send channel closed")
+    }
+
+    #[tokio::test]
+    async fn rhai_broadcast_request_reaches_every_platform_bridge() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        let (kick, mut kick_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        spawn_chat_send_bridge(Arc::clone(&bus), kick, "kick", EventSource::Kick);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "hello" }),
+        ));
+
+        assert_eq!(
+            expect_send(&mut twitch_rx).await,
+            ("twitch".to_string(), "hello".to_string())
+        );
+        assert_eq!(
+            expect_send(&mut kick_rx).await,
+            ("kick".to_string(), "hello".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn rhai_targeted_request_routes_only_to_named_platform() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        let (kick, mut kick_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        spawn_chat_send_bridge(Arc::clone(&bus), kick, "kick", EventSource::Kick);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "target": "twitch", "message": "for-twitch" }),
+        ));
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "sentinel" }),
+        ));
+
+        assert_eq!(
+            expect_send(&mut twitch_rx).await,
+            ("twitch".to_string(), "for-twitch".to_string())
+        );
+        assert_eq!(
+            expect_send(&mut kick_rx).await,
+            ("kick".to_string(), "sentinel".to_string()),
+            "kick must skip the twitch-targeted request and only deliver the broadcast sentinel"
+        );
+    }
+
+    #[tokio::test]
+    async fn core_sourced_targeted_request_is_still_delivered() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Core,
+            serde_json::json!({ "target": "twitch", "message": "from-core" }),
+        ));
+
+        assert_eq!(
+            expect_send(&mut twitch_rx).await,
+            ("twitch".to_string(), "from-core".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn non_core_or_rhai_source_request_is_ignored() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Twitch,
+            serde_json::json!({ "message": "loop-risk" }),
+        ));
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "sentinel" }),
+        ));
+
+        assert_eq!(
+            expect_send(&mut twitch_rx).await,
+            ("twitch".to_string(), "sentinel".to_string()),
+            "a platform-sourced request must be ignored so bridges cannot re-enter"
+        );
+    }
+}

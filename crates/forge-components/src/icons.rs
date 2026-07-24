@@ -157,6 +157,7 @@ tabler_icons! {
     Businessplan => "businessplan.svg",
     Key => "key.svg",
     Rss => "rss.svg",
+    Logout => "logout.svg",
 }
 
 impl Icon {
@@ -290,6 +291,7 @@ impl Icon {
             "toggle-right" | "toggle" => Icon::ToggleRight,
             "message-2" => Icon::Message2,
             "businessplan" => Icon::Businessplan,
+            "logout" | "sign-out" => Icon::Logout,
             _ => Icon::InfoCircle,
         }
     }

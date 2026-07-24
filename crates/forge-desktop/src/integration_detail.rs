@@ -3,7 +3,6 @@ use forge_components::{
     Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
     SearchState, Spacing, TextInput, ToastKind, badge, body_family, confirm_modal, fmt_uptime,
     icon, mono_family, overlay, page_frame, platform_hero, radius, spacing, status_dot, tr,
-    with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_obs::{ObsClient, ObsSource};
@@ -767,7 +766,7 @@ impl IntegrationDetail {
         idx: usize,
         action: HeaderAction,
         palette: &ForgePalette,
-        density: Density,
+        _density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let label = header_action_label(&action);
@@ -775,25 +774,32 @@ impl IntegrationDetail {
             HeaderAction::Disconnect => palette.random,
             _ => palette.text_secondary,
         };
-        let hover_bg = with_alpha(palette.border_regular, 0.06);
+        let glyph = match action {
+            HeaderAction::Reconnect | HeaderAction::RefreshToken => Icon::Refresh,
+            HeaderAction::Disconnect => Icon::Logout,
+            HeaderAction::Settings => Icon::Settings,
+        };
+        let hover_border = palette.border_input;
         div()
             .id(("header-action", idx))
             .flex()
             .items_center()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
+            .gap(px(5.0))
+            .py(px(5.0))
+            .px(px(11.0))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .cursor_pointer()
-            .hover(move |s| s.bg(hover_bg))
+            .hover(move |s| s.border_color(hover_border))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.on_header_action(action.clone(), cx)
             }))
+            .child(icon(glyph, FONT_XS, text_color))
             .child(
                 div()
                     .font_family(body_family())
-                    .text_size(FONT_SM)
+                    .text_size(FONT_XS)
                     .text_color(text_color)
                     .child(label),
             )

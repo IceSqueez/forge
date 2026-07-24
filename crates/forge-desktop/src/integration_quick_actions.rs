@@ -232,7 +232,7 @@ impl IntegrationDetail {
             let hover_border = if destructive {
                 palette.random
             } else {
-                palette.border_active
+                palette.border_input
             };
             btn = btn
                 .cursor_pointer()

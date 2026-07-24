@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_platform_core::{PickerKind, QuickAction, QuickActions, SectionIcon};
+use forge_platform_core::{PickerKind, QuickAction, QuickActionAccent, QuickActions, SectionIcon};
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::ObsClient;
@@ -22,6 +22,7 @@ impl QuickActions for ObsClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "obs.scenes.switch_current".to_owned(),
                     config: BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))]),
@@ -39,6 +40,7 @@ impl QuickActions for ObsClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "obs.sources.set_visible".to_owned(),
                     config: BTreeMap::from([
@@ -60,6 +62,7 @@ impl QuickActions for ObsClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "obs.audio.set_mute".to_owned(),
                     config: BTreeMap::from([
@@ -80,6 +83,7 @@ impl QuickActions for ObsClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "obs.record.start".to_owned(),
                     config: BTreeMap::new(),

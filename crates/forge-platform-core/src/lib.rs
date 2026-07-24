@@ -18,8 +18,8 @@ pub use builtin::{
     BuiltinStatus, CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome,
     DetailSection, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream,
     HealthValue, HeroBadge, HeroBadgeTone, InfoField, KeyValueRow, ListFooter, PickerKind,
-    QuickAction, QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow,
-    SubscriptionStatus, TokenColor, TrailingToken,
+    QuickAction, QuickActionAccent, QuickActions, RowAction, SectionIcon, StatColumn,
+    SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{

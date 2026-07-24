@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use forge_platform_core::{ConnectionState, QuickAction, QuickActions, SectionIcon};
+use forge_platform_core::{
+    ConnectionState, QuickAction, QuickActionAccent, QuickActions, SectionIcon,
+};
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::DiscordClient;
@@ -22,6 +24,7 @@ impl QuickActions for DiscordClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.send_message".to_owned(),
                     config: BTreeMap::from([
@@ -45,6 +48,7 @@ impl QuickActions for DiscordClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.send_embed".to_owned(),
                     config: BTreeMap::from([
@@ -72,6 +76,7 @@ impl QuickActions for DiscordClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.update_message".to_owned(),
                     config: BTreeMap::from([
@@ -96,6 +101,7 @@ impl QuickActions for DiscordClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "discord.webhook.send_message".to_owned(),
                     config: BTreeMap::from([

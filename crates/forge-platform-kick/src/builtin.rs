@@ -5,7 +5,7 @@ use std::time::Duration;
 use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
     ChatPlatform, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
-    HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
+    HealthStream, HealthValue, QuickAction, QuickActionAccent, QuickActions, SectionIcon,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{SubActionStep, Variant};
@@ -210,6 +210,7 @@ impl QuickActions for KickIntegrationBundle {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([
@@ -233,6 +234,7 @@ impl QuickActions for KickIntegrationBundle {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([
@@ -256,6 +258,7 @@ impl QuickActions for KickIntegrationBundle {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([

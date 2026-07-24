@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_platform_core::{PickerKind, QuickAction, QuickActions, SectionIcon};
+use forge_platform_core::{PickerKind, QuickAction, QuickActionAccent, QuickActions, SectionIcon};
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::VTubeClient;
@@ -17,6 +17,7 @@ impl QuickActions for VTubeClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.hotkey.trigger".to_owned(),
                     config: BTreeMap::from([(
@@ -37,6 +38,7 @@ impl QuickActions for VTubeClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.expression.set".to_owned(),
                     config: BTreeMap::from([
@@ -57,6 +59,7 @@ impl QuickActions for VTubeClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.model.load".to_owned(),
                     config: BTreeMap::from([(
@@ -77,6 +80,7 @@ impl QuickActions for VTubeClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "vtube.model.move".to_owned(),
                     config: BTreeMap::from([

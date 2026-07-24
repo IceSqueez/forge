@@ -64,6 +64,24 @@ fn condition_user(_broadcaster_id: &str, user_id: &str) -> serde_json::Value {
     serde_json::json!({ "user_id": user_id })
 }
 
+/// `channel.raid` is subscribed twice under different condition keys (incoming vs sent);
+/// this disambiguates the two tracker rows since both otherwise share the same kind string.
+fn display_kind(topic: &TopicSpec) -> String {
+    if std::ptr::fn_addr_eq(
+        topic.condition_fn,
+        condition_raid as fn(&str, &str) -> serde_json::Value,
+    ) {
+        format!("{} (incoming)", topic.kind)
+    } else if std::ptr::fn_addr_eq(
+        topic.condition_fn,
+        condition_raid_sent as fn(&str, &str) -> serde_json::Value,
+    ) {
+        format!("{} (outgoing)", topic.kind)
+    } else {
+        topic.kind.to_owned()
+    }
+}
+
 const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         kind: "channel.chat.message",
@@ -412,7 +430,7 @@ pub(crate) async fn subscribe_all(
         records.clear();
         for topic in TOPICS {
             records.push(SubscriptionRecord {
-                kind: topic.kind.to_owned(),
+                kind: display_kind(topic),
                 version: topic.version.to_owned(),
                 status: SubStatus::Pending,
                 subscription_id: None,

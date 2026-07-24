@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_platform_core::{QuickAction, QuickActions, SectionIcon};
+use forge_platform_core::{QuickAction, QuickActionAccent, QuickActions, SectionIcon};
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::MidiClient;
@@ -26,6 +26,7 @@ impl QuickActions for MidiClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([
@@ -52,6 +53,7 @@ impl QuickActions for MidiClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([
@@ -78,6 +80,7 @@ impl QuickActions for MidiClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([
@@ -101,6 +104,7 @@ impl QuickActions for MidiClient {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "midi.send".to_owned(),
                     config: BTreeMap::from([

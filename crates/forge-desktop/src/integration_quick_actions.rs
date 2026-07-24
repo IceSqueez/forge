@@ -1,8 +1,8 @@
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, icon, mono_family, radius, spacing, tooltip_builder, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, HAIRLINE, Icon, Radius,
+    Spacing, body_family, icon, mono_family, radius, spacing, tooltip_builder, tr, with_alpha,
 };
-use forge_platform_core::QuickAction;
+use forge_platform_core::{QuickAction, QuickActionAccent};
 use gpui::{AnyElement, ClickEvent, Context, Rgba, div, prelude::*, px};
 
 use crate::integration_detail::IntegrationDetail;
@@ -47,7 +47,7 @@ impl IntegrationDetail {
                     .child(self.qa_search.field().clone()),
             );
 
-        let divider = div().w_full().h(BORDER_THIN).bg(palette.border_regular);
+        let divider = div().w_full().h(HAIRLINE).bg(palette.border_regular);
 
         let matches: Vec<(usize, &QuickAction)> = self
             .quick_actions
@@ -190,7 +190,7 @@ impl IntegrationDetail {
             )
         } else {
             (
-                qa_accent(idx, palette),
+                accent_color(action.accent, palette),
                 palette.text_primary,
                 palette.border_regular,
             )
@@ -264,11 +264,14 @@ fn group_order<'a>(matches: &[(usize, &'a QuickAction)]) -> Vec<Option<&'a str>>
     order
 }
 
-fn qa_accent(index: usize, palette: &ForgePalette) -> Rgba {
-    match index % 4 {
-        0 => palette.brand,
-        1 => palette.random,
-        2 => palette.warning,
-        _ => palette.info,
+fn accent_color(accent: QuickActionAccent, palette: &ForgePalette) -> Rgba {
+    match accent {
+        QuickActionAccent::Brand => palette.brand,
+        QuickActionAccent::Success => palette.success,
+        QuickActionAccent::Warning => palette.warning,
+        QuickActionAccent::Info => palette.info,
+        QuickActionAccent::Bits => palette.bits,
+        QuickActionAccent::AccentPinkLight => palette.accent_pink_light,
+        QuickActionAccent::Danger => palette.random,
     }
 }

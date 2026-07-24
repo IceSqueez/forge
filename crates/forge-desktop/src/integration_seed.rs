@@ -5,8 +5,8 @@ use forge_platform_core::{
     ActiveRow, BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus,
     CapabilityFlags, ConnectionState, ContentList, ContentListItem, DetailSection, HeaderAction,
     HealthBar, HealthLevel, HealthMetric, HealthStream, HealthValue, InfoField, KeyValueRow,
-    ListFooter, PickerKind, QuickAction, QuickActions, SectionIcon, StatColumn, SubscriptionRow,
-    SubscriptionStatus,
+    ListFooter, PickerKind, QuickAction, QuickActionAccent, QuickActions, SectionIcon, StatColumn,
+    SubscriptionRow, SubscriptionStatus,
 };
 use forge_types::SubActionStep;
 
@@ -159,6 +159,7 @@ fn quick(
         locked_reason: None,
         group: None,
         destructive: false,
+        accent: QuickActionAccent::Brand,
         subaction_template: SubActionStep {
             kind_id: kind_id.to_owned(),
             config: std::collections::BTreeMap::new(),

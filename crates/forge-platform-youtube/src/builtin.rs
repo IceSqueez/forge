@@ -5,7 +5,8 @@ use std::time::Duration;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ChatPlatform,
     ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-    HealthValue, LiveViewerSource, QuickAction, QuickActions, SectionIcon, ViewerReport,
+    HealthValue, LiveViewerSource, QuickAction, QuickActionAccent, QuickActions, SectionIcon,
+    ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{SubActionStep, Variant};
@@ -257,6 +258,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([
@@ -280,6 +282,7 @@ impl QuickActions for YoutubeIntegrationBundle {
                 locked_reason: None,
                 group: None,
                 destructive: false,
+                accent: QuickActionAccent::Brand,
                 subaction_template: SubActionStep {
                     kind_id: "core.log.write".to_owned(),
                     config: BTreeMap::from([

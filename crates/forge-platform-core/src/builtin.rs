@@ -281,6 +281,21 @@ pub enum PickerKind {
     MidiPort,
 }
 
+/// Maps to a fixed `ForgePalette` field so a quick action's icon renders in the same
+/// semantic hue across every theme.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickActionAccent {
+    #[default]
+    Brand,
+    Success,
+    Warning,
+    Info,
+    Bits,
+    AccentPinkLight,
+    Danger,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuickAction {
     pub label: String,
@@ -297,6 +312,8 @@ pub struct QuickAction {
     pub group: Option<String>,
     #[serde(default)]
     pub destructive: bool,
+    #[serde(default)]
+    pub accent: QuickActionAccent,
     pub subaction_template: SubActionStep,
     pub picker: Option<PickerKind>,
 }
@@ -626,6 +643,7 @@ mod tests {
             locked_reason: Some("Requires Twitch Affiliate or Partner".to_owned()),
             group: Some("Raids & ads".to_owned()),
             destructive: true,
+            accent: QuickActionAccent::Danger,
             subaction_template: SubActionStep {
                 kind_id: "obs.scenes.switch_current".to_owned(),
                 config: BTreeMap::from([(

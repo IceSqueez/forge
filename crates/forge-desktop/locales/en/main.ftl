@@ -1574,7 +1574,7 @@ chat_event_member_milestone = member milestone
 ## Widget - builtin header actions
 
 widget_header_action_reconnect = Reconnect
-widget_header_action_refresh_token = Refresh Token
+widget_header_action_refresh_token = Refresh token
 widget_header_action_disconnect = Disconnect
 widget_header_action_settings = Settings
 widget_header_capability_limited = Limited

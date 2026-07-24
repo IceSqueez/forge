@@ -48,7 +48,7 @@ jobs:
       - name: Resolve previous tag
         id: prev_tag
         run: |
-          PREV=$(git tag -l "v*" --sort=-version:refname | sed -n '2p')
+          PREV=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           if [ -n "$PREV" ]; then
             echo "range=$PREV.." >> $GITHUB_OUTPUT
           else

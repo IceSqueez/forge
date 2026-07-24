@@ -1134,10 +1134,42 @@ mod tests {
         let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
-        let HealthValue::Text { primary, .. } = &metrics[1].value else {
-            panic!("expected Text variant for EventSub metric");
+        let HealthValue::Status {
+            label,
+            active,
+            detail,
+        } = &metrics[1].value
+        else {
+            panic!("expected Status variant for EventSub metric");
         };
-        assert_eq!(primary, "1 subs");
+        assert_eq!(label, "1 subs");
+        assert!(*active, "one active subscription must light EventSub green");
+        assert_eq!(detail.as_deref(), Some("WebSocket"));
+    }
+
+    #[test]
+    fn eventsub_metric_inactive_when_no_subscriptions_are_active() {
+        let tracker = SubscriptionTracker::default();
+        {
+            let mut records = tracker.write().unwrap();
+            records.push(SubscriptionRecord {
+                kind: "channel.subscribe".to_owned(),
+                version: "1".to_owned(),
+                status: SubStatus::Pending,
+                subscription_id: None,
+            });
+        }
+        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let health: &dyn BuiltinHealth = b.as_ref();
+        let metrics = health.metrics();
+        let HealthValue::Status { label, active, .. } = &metrics[1].value else {
+            panic!("expected Status variant for EventSub metric");
+        };
+        assert_eq!(label, "0 subs");
+        assert!(
+            !*active,
+            "no active subscription must leave EventSub inactive"
+        );
     }
 
     #[tokio::test]
@@ -1295,28 +1327,24 @@ mod tests {
         let affiliate =
             make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
 
-        let gated_under_standard: Vec<String> = standard
-            .actions()
-            .into_iter()
-            .filter(|a| a.locked_reason.is_some())
-            .map(|a| a.subaction_template.kind_id)
-            .collect();
-        assert_eq!(
-            gated_under_standard,
-            vec!["twitch.channel.run_ad".to_owned()]
-        );
-
-        for kind in &gated_under_standard {
-            let unlocked = affiliate
+        let find_commercial = |bundle: &TwitchIntegrationBundle| {
+            bundle
                 .actions()
                 .into_iter()
-                .find(|a| &a.subaction_template.kind_id == kind)
-                .unwrap();
-            assert!(
-                unlocked.locked_reason.is_none(),
-                "{kind} must unlock at affiliate tier"
-            );
-        }
+                .find(|a| a.subaction_template.kind_id == "twitch.channel.run_ad")
+                .unwrap()
+        };
+
+        let locked = find_commercial(&standard);
+        assert_eq!(locked.locked_reason.as_deref(), Some(TIER_LOCKED_REASON));
+        assert!(
+            !locked.enabled,
+            "commercial must be disabled under standard"
+        );
+
+        let unlocked = find_commercial(&affiliate);
+        assert!(unlocked.locked_reason.is_none());
+        assert!(unlocked.enabled, "commercial must be enabled at affiliate");
 
         for bundle in [&standard, &affiliate] {
             let open = bundle
@@ -1326,6 +1354,94 @@ mod tests {
                 .unwrap();
             assert!(open.locked_reason.is_none());
         }
+    }
+
+    #[test]
+    fn every_poll_and_prediction_action_locks_for_standard_and_unlocks_for_affiliate() {
+        let standard =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard);
+        let affiliate =
+            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let is_gated =
+            |a: &QuickAction| matches!(a.group.as_deref(), Some("Polls" | "Predictions"));
+
+        let standard_actions = standard.actions();
+        let gated: Vec<&QuickAction> = standard_actions.iter().filter(|a| is_gated(a)).collect();
+        assert!(
+            gated.len() >= 6,
+            "expected every Polls and Predictions action, got {}",
+            gated.len()
+        );
+        for a in gated {
+            assert_eq!(
+                a.locked_reason.as_deref(),
+                Some(TIER_LOCKED_REASON),
+                "{} must lock under standard tier",
+                a.label
+            );
+            assert!(
+                !a.enabled,
+                "{} must be disabled under standard tier",
+                a.label
+            );
+        }
+
+        for a in affiliate.actions().iter().filter(|a| is_gated(a)) {
+            assert!(
+                a.locked_reason.is_none(),
+                "{} must unlock at affiliate tier",
+                a.label
+            );
+            assert!(a.enabled, "{} must be enabled at affiliate tier", a.label);
+        }
+    }
+
+    #[test]
+    fn exactly_six_actions_are_marked_destructive() {
+        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let mut destructive: Vec<String> = b
+            .actions()
+            .into_iter()
+            .filter(|a| a.destructive)
+            .map(|a| a.label)
+            .collect();
+        destructive.sort();
+        let mut expected = vec![
+            "Ban user".to_owned(),
+            "Cancel & refund".to_owned(),
+            "Cancel poll".to_owned(),
+            "Cancel raid".to_owned(),
+            "Clear chat".to_owned(),
+            "Reject & refund".to_owned(),
+        ];
+        expected.sort();
+        assert_eq!(destructive, expected);
+    }
+
+    #[test]
+    fn action_groups_appear_in_the_expected_order() {
+        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let mut groups: Vec<String> = Vec::new();
+        for a in b.actions() {
+            if let Some(group) = a.group
+                && !groups.contains(&group)
+            {
+                groups.push(group);
+            }
+        }
+        assert_eq!(
+            groups,
+            [
+                "Stream info",
+                "Polls",
+                "Predictions",
+                "Chat",
+                "Moderation",
+                "Raids & ads",
+                "Channel Points",
+            ]
+            .map(str::to_owned)
+        );
     }
 
     #[test]

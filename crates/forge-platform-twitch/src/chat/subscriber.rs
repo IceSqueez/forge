@@ -559,7 +559,36 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::TOPICS;
+    use super::{TOPICS, display_kind};
+
+    #[test]
+    fn display_kind_labels_raid_direction_and_passes_other_topics_through() {
+        let mut incoming = 0;
+        let mut outgoing = 0;
+        for topic in TOPICS {
+            let label = display_kind(topic);
+            let condition = (topic.condition_fn)("B", "U");
+            let is_raid = topic.kind == "channel.raid";
+            if is_raid && condition.get("to_broadcaster_user_id").is_some() {
+                assert_eq!(label, "channel.raid (incoming)");
+                incoming += 1;
+            } else if is_raid && condition.get("from_broadcaster_user_id").is_some() {
+                assert_eq!(label, "channel.raid (outgoing)");
+                outgoing += 1;
+            } else {
+                assert_eq!(
+                    label, topic.kind,
+                    "{} must pass through unchanged",
+                    topic.kind
+                );
+            }
+        }
+        assert_eq!(
+            (incoming, outgoing),
+            (1, 1),
+            "expected exactly one incoming and one outgoing raid topic"
+        );
+    }
 
     #[test]
     fn automod_subscription_types_omit_the_channel_prefix() {

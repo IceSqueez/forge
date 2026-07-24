@@ -454,13 +454,15 @@ impl BuiltinStatus for TwitchIntegrationBundle {
             monospace: true,
         }];
         let tier = self.tier();
-        if tier != BroadcasterTier::Standard {
-            badges.push(HeroBadge {
-                label: tier.label().to_owned(),
-                tone: HeroBadgeTone::Positive,
-                monospace: false,
-            });
-        }
+        badges.push(HeroBadge {
+            label: tier.label().to_owned(),
+            tone: if tier == BroadcasterTier::Standard {
+                HeroBadgeTone::Neutral
+            } else {
+                HeroBadgeTone::Positive
+            },
+            monospace: false,
+        });
         badges
     }
 }

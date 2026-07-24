@@ -48,7 +48,10 @@ impl BuiltinControl for TwitchIntegrationBundle {
             self.config().client_id.clone(),
         );
         match manager.refresh(&refresh_token).await {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.refresh_identity().await;
+                Ok(())
+            }
             Err(PlatformError::ReauthRequired { .. }) => Err(ControlFailure::Unauthorized),
             Err(_) => Err(ControlFailure::Transport),
         }

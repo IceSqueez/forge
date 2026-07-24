@@ -366,7 +366,10 @@ impl IntegrationDetail {
                     return;
                 };
                 this.update(cx, |this, cx| match result {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        this.twitch_reauth_required = false;
+                        cx.notify();
+                    }
                     Err(ControlFailure::Unauthorized) => {
                         this.twitch_reauth_required = true;
                         cx.notify();

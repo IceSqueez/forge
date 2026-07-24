@@ -206,7 +206,7 @@ impl TwitchIntegrationBundle {
 
     /// Missing/unloadable credentials leave the previously cached tier and expiry in
     /// place rather than resetting them to unlocked/unknown.
-    async fn refresh_identity(&self) {
+    pub(crate) async fn refresh_identity(&self) {
         let Ok(Some(stored)) = credentials::load(self.creds.as_ref()).await else {
             return;
         };

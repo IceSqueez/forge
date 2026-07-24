@@ -57,7 +57,7 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
 pub struct YoutubeIntegrationBundle {
     id: BuiltinId,
     channel_id: String,
-    channel_title: OnceLock<String>,
+    display_name: OnceLock<String>,
     token_expires_at: RwLock<Option<SystemTime>>,
     health_tx: broadcast::Sender<HealthDelta>,
     platform: Arc<YoutubePlatform>,
@@ -101,7 +101,7 @@ impl YoutubeIntegrationBundle {
         let bundle = Arc::new(Self {
             id: BuiltinId::new("youtube"),
             channel_id,
-            channel_title: OnceLock::new(),
+            display_name: OnceLock::new(),
             token_expires_at: RwLock::new(None),
             health_tx: health_tx.clone(),
             platform,
@@ -183,14 +183,26 @@ impl YoutubeIntegrationBundle {
         });
     }
 
-    /// Missing/unloadable credentials leave the previously cached title and expiry in place
-    /// rather than resetting them; `channel_title` is set once, since the same bundle instance
-    /// never outlives a channel switch (a new OAuth connect recreates the bundle).
+    /// Missing/unloadable credentials leave the previously cached name and expiry in place
+    /// rather than resetting them; `display_name` is set once, since the same bundle instance
+    /// never outlives a channel switch (a new OAuth connect recreates the bundle). Credentials
+    /// stored before handle tracking existed are backfilled here via `ensure_channel_handle`.
     pub(crate) async fn refresh_identity(&self) {
         let Ok(Some(stored)) = self.credentials_manager.load().await else {
             return;
         };
-        let _ = self.channel_title.set(stored.channel_title);
+        let stored = if stored.channel_handle.is_some() {
+            stored
+        } else {
+            self.credentials_manager
+                .ensure_channel_handle()
+                .await
+                .unwrap_or(stored)
+        };
+        let _ = self.display_name.set(preferred_hero_name(
+            &stored.channel_title,
+            stored.channel_handle.as_deref(),
+        ));
         if let Ok(mut guard) = self.token_expires_at.write() {
             *guard = Some(SystemTime::from(stored.expires_at));
         }
@@ -238,7 +250,7 @@ fn events_health_value(state: ConnectionState) -> HealthValue {
     HealthValue::Status {
         label: state.label().to_owned(),
         active: state.is_connected(),
-        detail: Some("same liveChatMessages.list feed".to_owned()),
+        detail: Some("shared chat feed".to_owned()),
     }
 }
 
@@ -252,6 +264,15 @@ fn viewers_health_value(report: ViewerReport) -> HealthValue {
             primary: "0".to_owned(),
             secondary: None,
         },
+    }
+}
+
+/// A handle displays as `@handle` (normalized to exactly one leading `@`); credentials stored
+/// before handle tracking existed fall back to the channel title.
+fn preferred_hero_name(channel_title: &str, channel_handle: Option<&str>) -> String {
+    match channel_handle.map(str::trim).filter(|h| !h.is_empty()) {
+        Some(handle) => format!("@{}", handle.trim_start_matches('@')),
+        None => channel_title.to_owned(),
     }
 }
 
@@ -299,7 +320,7 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
     }
 
     fn hero_name(&self) -> Option<&str> {
-        self.channel_title.get().map(String::as_str)
+        self.display_name.get().map(String::as_str)
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {
@@ -354,7 +375,9 @@ fn config(pairs: impl IntoIterator<Item = (&'static str, Variant)>) -> BTreeMap<
 fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
     match group {
         "Broadcast" => (SectionIcon::new("broadcast"), QuickActionAccent::Danger),
+        "Polls" => (SectionIcon::new("chart-bar"), QuickActionAccent::Brand),
         "Chat" => (SectionIcon::new("message-2"), QuickActionAccent::Brand),
+        "Content" => (SectionIcon::new("video"), QuickActionAccent::Bits),
         _ => (SectionIcon::new("dot"), QuickActionAccent::Brand),
     }
 }
@@ -512,6 +535,46 @@ impl QuickActions for YoutubeIntegrationBundle {
                 )],
             ),
             quick_action(
+                "Set thumbnail",
+                "photo",
+                QuickActionAccent::Bits,
+                connected,
+                "Broadcast",
+                false,
+                "youtube.stream.set_thumbnail",
+                config([("image_path", blank())]),
+                vec![text_field("image_path", "Image path", "~/thumb.png")],
+            ),
+            quick_action(
+                "Insert ad break (cuepoint)",
+                "player-skip-forward",
+                QuickActionAccent::Info,
+                connected,
+                "Broadcast",
+                false,
+                "youtube.stream.insert_ad_break",
+                config([("duration_secs", Variant::Int(30))]),
+                Vec::new(),
+            ),
+            quick_action(
+                "Create live poll",
+                "chart-bar",
+                QuickActionAccent::Brand,
+                connected,
+                "Polls",
+                false,
+                "youtube.chat.create_poll",
+                config([("question", blank()), ("options", blank())]),
+                vec![
+                    text_field("question", "Question", "What next?"),
+                    multiline_field(
+                        "options",
+                        "Choices (one per line)",
+                        "Keep grinding\nBoss fight",
+                    ),
+                ],
+            ),
+            quick_action(
                 "Send message",
                 "send",
                 QuickActionAccent::Brand,
@@ -566,6 +629,28 @@ impl QuickActions for YoutubeIntegrationBundle {
                 "youtube.moderation.ban_user",
                 config([("channel_id", blank())]),
                 vec![text_field("channel_id", "User", "@baduser")],
+            ),
+            quick_action(
+                "Lookup viewer",
+                "user",
+                QuickActionAccent::Success,
+                connected,
+                "Content",
+                false,
+                "youtube.lookup.viewer",
+                config([("identifier", blank())]),
+                vec![text_field("identifier", "Username", "koval_dev")],
+            ),
+            quick_action(
+                "Stream stats",
+                "chart-line",
+                QuickActionAccent::Info,
+                connected,
+                "Content",
+                false,
+                "youtube.lookup.stream_stats",
+                BTreeMap::new(),
+                Vec::new(),
             ),
         ]
     }

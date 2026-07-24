@@ -40,6 +40,7 @@ pub struct YoutubeAuthBundle {
     pub refresh_token: OAuthToken,
     pub channel_id: String,
     pub channel_title: String,
+    pub channel_handle: Option<String>,
     pub client_id: String,
     pub expires_at: SystemTime,
 }
@@ -108,6 +109,10 @@ impl GoogleAuthFlow {
     /// forcing Google's consent screen and guaranteeing a fresh `refresh_token`.
     pub fn set_force_consent(&mut self, force: bool) {
         self.force_consent = force;
+    }
+
+    pub(crate) fn channels_endpoint(&self) -> &str {
+        &self.channels_endpoint
     }
 
     pub(crate) fn refresh_config(&self) -> PkceRefreshConfig {
@@ -195,6 +200,7 @@ impl GoogleAuthFlow {
             refresh_token: OAuthToken::new(refresh_token),
             channel_id: channel.id,
             channel_title: channel.snippet.title,
+            channel_handle: channel.snippet.custom_url,
             client_id: self.client_id.clone(),
             expires_at: SystemTime::now() + Duration::from_secs(expires_in),
         })
@@ -202,19 +208,21 @@ impl GoogleAuthFlow {
 }
 
 #[derive(Deserialize)]
-struct ChannelsListResponse {
-    items: Vec<ChannelItem>,
+pub(crate) struct ChannelsListResponse {
+    pub(crate) items: Vec<ChannelItem>,
 }
 
 #[derive(Deserialize)]
-struct ChannelItem {
-    id: String,
-    snippet: ChannelSnippet,
+pub(crate) struct ChannelItem {
+    pub(crate) id: String,
+    pub(crate) snippet: ChannelSnippet,
 }
 
 #[derive(Deserialize)]
-struct ChannelSnippet {
-    title: String,
+pub(crate) struct ChannelSnippet {
+    pub(crate) title: String,
+    #[serde(default, rename = "customUrl")]
+    pub(crate) custom_url: Option<String>,
 }
 
 #[cfg(test)]

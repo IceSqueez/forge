@@ -6,21 +6,30 @@ use forge_platform_core::auth::{PkceRefresher, REFRESH_BUFFER_SECS};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use time::{Duration, OffsetDateTime};
 
-use crate::auth::{GoogleAuthFlow, YoutubeAuthBundle};
+use crate::auth::{ChannelsListResponse, GoogleAuthFlow, YoutubeAuthBundle};
 use crate::credentials::{CREDENTIAL_KEY, YoutubeCredentials};
 
 const PLATFORM: &str = "youtube";
 const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
+const CHANNELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub struct YoutubeCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
     refresher: PkceRefresher,
+    http: reqwest::Client,
+    channels_endpoint: String,
 }
 
 impl YoutubeCredentialsManager {
     pub fn new(repo: Arc<dyn CredentialsRepo>, google: GoogleAuthFlow) -> Self {
+        let channels_endpoint = google.channels_endpoint().to_owned();
         let refresher = PkceRefresher::new(google.refresh_config());
-        Self { repo, refresher }
+        Self {
+            repo,
+            refresher,
+            http: reqwest::Client::new(),
+            channels_endpoint,
+        }
     }
 
     /// Returns `None` if no credentials row exists for this account.
@@ -52,6 +61,7 @@ impl YoutubeCredentialsManager {
             client_id: bundle.client_id,
             channel_id: bundle.channel_id,
             channel_title: bundle.channel_title,
+            channel_handle: bundle.channel_handle,
             expires_at,
         };
         self.persist(&creds).await
@@ -81,8 +91,53 @@ impl YoutubeCredentialsManager {
             client_id: existing.client_id,
             channel_id: existing.channel_id,
             channel_title: existing.channel_title,
+            channel_handle: existing.channel_handle,
             expires_at: OffsetDateTime::now_utc() + Duration::seconds(expires_in as i64),
         };
+        self.persist(&updated).await?;
+        Ok(updated)
+    }
+
+    /// Backfills `channel_handle` on credentials stored before handle tracking existed, via a
+    /// `channels.list(mine=true)` call; a no-op (fails soft) if the handle is already known,
+    /// the call errors, or the response carries no handle for this channel.
+    pub async fn ensure_channel_handle(&self) -> Result<YoutubeCredentials, PlatformError> {
+        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        if creds.channel_handle.is_some() {
+            return Ok(creds);
+        }
+
+        let Ok(token) = self.get_valid_access_token().await else {
+            return Ok(creds);
+        };
+
+        let request = self
+            .http
+            .get(&self.channels_endpoint)
+            .query(&[("part", "snippet"), ("mine", "true")])
+            .bearer_auth(&token)
+            .send();
+
+        let Ok(Ok(resp)) = tokio::time::timeout(CHANNELS_FETCH_TIMEOUT, request).await else {
+            return Ok(creds);
+        };
+        if resp.status().as_u16() != 200 {
+            return Ok(creds);
+        }
+        let Ok(parsed) = resp.json::<ChannelsListResponse>().await else {
+            return Ok(creds);
+        };
+        let Some(handle) = parsed
+            .items
+            .into_iter()
+            .next()
+            .and_then(|c| c.snippet.custom_url)
+        else {
+            return Ok(creds);
+        };
+
+        let mut updated = creds;
+        updated.channel_handle = Some(handle);
         self.persist(&updated).await?;
         Ok(updated)
     }

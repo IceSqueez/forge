@@ -13,6 +13,8 @@ pub struct YoutubeCredentials {
     pub client_id: String,
     pub channel_id: String,
     pub channel_title: String,
+    #[serde(default)]
+    pub channel_handle: Option<String>,
     pub expires_at: OffsetDateTime,
 }
 

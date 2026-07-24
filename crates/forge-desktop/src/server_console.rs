@@ -1,10 +1,10 @@
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, badge, body_family, card,
-    column, confirm_modal, data_table, empty_state, fmt_bytes, fmt_uptime, fmt_uptime_short, icon,
-    metric_card, mono_family, overlay, page_frame, platform_color, radius, spacing, sparkline,
-    status_dot, tr, virtual_table, with_alpha,
+    ForgePalette, HAIRLINE, Icon, OverlayPosition, PlatformKind, Radius, Spacing, badge,
+    body_family, card, column, confirm_modal, data_table, empty_state, fmt_bytes, fmt_uptime,
+    fmt_uptime_short, icon, metric_card, mono_family, overlay, page_frame, platform_color, radius,
+    spacing, sparkline, status_dot, tr, virtual_table, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -1309,7 +1309,7 @@ impl ServerConsoleView {
             .flex()
             .flex_col()
             .child(header)
-            .child(div().w_full().h(px(1.0)).bg(palette.border_regular))
+            .child(div().w_full().h(HAIRLINE).bg(palette.border_regular))
             .child(table);
 
         card(inner, palette)
@@ -1574,7 +1574,7 @@ fn weighted(grow: f32, child: impl IntoElement) -> Div {
 }
 
 fn hline(color: Rgba) -> Div {
-    div().w_full().h(px(1.0)).bg(color)
+    div().w_full().h(HAIRLINE).bg(color)
 }
 
 fn caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {

@@ -9,8 +9,8 @@ use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XXS, Radius, Spacing, body_family, mono_family, radius,
-    spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XXS, HAIRLINE, Radius, Spacing, body_family, mono_family,
+    radius, spacing,
 };
 
 /// Bit order is a persistence contract: a stored bitset must decode to the same platforms across restarts.
@@ -371,7 +371,7 @@ impl Render for InputBar {
         let p = self.palette;
         let d = self.density;
 
-        let top_border = div().w_full().h(BORDER_THIN).bg(p.border_regular);
+        let top_border = div().w_full().h(HAIRLINE).bg(p.border_regular);
 
         let divider = div()
             .flex_none()

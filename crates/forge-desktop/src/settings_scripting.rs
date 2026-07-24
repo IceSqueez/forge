@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, Radius,
-    SaveState, Spacing, TextInput, body_family, icon, primary_button, radius, save_indicator,
-    setting_row, spacing, toggle, tr, with_alpha,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, HAIRLINE, Icon, InputEvent,
+    Radius, SaveState, Spacing, TextInput, body_family, icon, primary_button, radius,
+    save_indicator, setting_row, spacing, toggle, tr, with_alpha,
 };
 use forge_script::{
     EngineConfig, ScriptHttpConfig, load_script_engine_config, load_script_http_config,
@@ -550,7 +550,7 @@ fn section_header(label: impl Into<SharedString>, palette: &ForgePalette) -> imp
 }
 
 fn section_rule(palette: &ForgePalette) -> impl IntoElement {
-    div().h(px(1.0)).w_full().bg(palette.border_regular)
+    div().h(HAIRLINE).w_full().bg(palette.border_regular)
 }
 
 fn labeled_row(

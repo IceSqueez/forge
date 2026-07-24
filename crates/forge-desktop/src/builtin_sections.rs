@@ -1,5 +1,5 @@
 use forge_components::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, HAIRLINE, Icon, Radius, Spacing,
     body_family, icon, mono_family, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_platform_core::{
@@ -33,7 +33,7 @@ fn divider(palette: &ForgePalette) -> Div {
     div()
         .w_full()
         .flex_none()
-        .h(BORDER_THIN)
+        .h(HAIRLINE)
         .bg(palette.border_regular)
 }
 
@@ -413,8 +413,7 @@ fn render_stats_grid(
     let mut stats_row = div().w_full().flex();
     for (i, col) in columns.iter().enumerate() {
         if i > 0 {
-            stats_row =
-                stats_row.child(div().flex_none().w(BORDER_THIN).bg(palette.border_regular));
+            stats_row = stats_row.child(div().flex_none().w(HAIRLINE).bg(palette.border_regular));
         }
         stats_row = stats_row.child(stat_column_cell(col, palette, density));
     }

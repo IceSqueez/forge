@@ -161,6 +161,8 @@ tabler_icons! {
     ArrowLeft => "arrow-left.svg",
     Server2 => "server-2.svg",
     Category => "category.svg",
+    User => "user.svg",
+    Video => "video.svg",
 }
 
 impl Icon {
@@ -298,6 +300,8 @@ impl Icon {
             "businessplan" => Icon::Businessplan,
             "logout" | "sign-out" => Icon::Logout,
             "category" => Icon::Category,
+            "user" => Icon::User,
+            "video" | "clip" => Icon::Video,
             _ => Icon::InfoCircle,
         }
     }

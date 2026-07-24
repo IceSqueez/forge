@@ -574,21 +574,160 @@ impl QuickActions for YoutubeIntegrationBundle {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::*;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    #[test]
-    fn register_does_not_drop_descriptors_to_collisions() {
-        let mut reg = TriggerRegistry::new();
-        register_youtube_triggers(&mut reg).unwrap();
-        let registered = reg.all().count();
-        let unique_ids: std::collections::HashSet<_> =
-            reg.all().map(|d| d.id().to_owned()).collect();
-        assert_eq!(
-            registered,
-            unique_ids.len(),
-            "duplicate kind ids registered: {registered} descriptors but {} unique ids",
-            unique_ids.len()
+    use async_trait::async_trait;
+    use forge_registry::{FormField, SubActionRegistry};
+    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use futures::future::BoxFuture;
+    use time::OffsetDateTime;
+    use tokio_stream::StreamExt;
+
+    use super::*;
+    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::auth::GoogleAuthFlow;
+    use crate::credentials::YoutubeCredentials;
+    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::moderation::YoutubeModeration;
+    use crate::send_chat::YoutubeSendChat;
+    use crate::stream_metadata::YoutubeStreamMetadata;
+    use crate::sub_actions::register_youtube_sub_actions;
+    use forge_platform_core::PlatformError;
+
+    struct EmptyRepo;
+    #[async_trait]
+    impl CredentialsRepo for EmptyRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    struct StoredRepo(String);
+    #[async_trait]
+    impl CredentialsRepo for StoredRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(Some(self.0.clone()))
+        }
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    fn token_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        Arc::new(|| Box::pin(async { Ok("test-token".to_owned()) }))
+    }
+
+    fn make_bundle(
+        repo: Arc<dyn CredentialsRepo>,
+    ) -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
+        let manager = Arc::new(YoutubeCredentialsManager::new(
+            repo,
+            GoogleAuthFlow::new("test_cid".to_owned(), "test_secret".to_owned()),
+        ));
+        let platform = Arc::new(YoutubePlatform::new(
+            "UCabc123".to_owned(),
+            Arc::clone(&manager),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+        ));
+        let (bundle, _health_tx) = YoutubeIntegrationBundle::new(
+            "UCabc123".to_owned(),
+            Arc::clone(&platform),
+            manager,
+            Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
         );
+        (bundle, platform)
+    }
+
+    fn sub_action_registry() -> SubActionRegistry {
+        let quota = Arc::new(tokio::sync::Mutex::new(QuotaState::default()));
+        let sender = Arc::new(YoutubeSendChat::new(
+            token_source(),
+            LiveChatIdHandle::new(),
+            Arc::clone(&quota),
+        ));
+        let moderation = Arc::new(YoutubeModeration::new(
+            token_source(),
+            LiveChatIdHandle::new(),
+            Arc::clone(&quota),
+        ));
+        let metadata = Arc::new(YoutubeStreamMetadata::new(
+            token_source(),
+            ActiveBroadcastIdHandle::new(),
+            quota,
+        ));
+        let mut reg = SubActionRegistry::new();
+        register_youtube_sub_actions(&mut reg, sender, moderation, metadata).unwrap();
+        reg
+    }
+
+    fn form_field_keys(field: &FormField, out: &mut BTreeSet<String>) {
+        use FormField::*;
+        let key = match field {
+            Text { key, .. }
+            | TextArea { key, .. }
+            | Code { key, .. }
+            | Integer { key, .. }
+            | Toggle { key, .. }
+            | FilePicker { key, .. }
+            | DateTime { key, .. }
+            | Select { key, .. }
+            | DynamicSelect { key, .. }
+            | Optional { key, .. }
+            | SubChain { key, .. }
+            | CaseList { key, .. } => *key,
+        };
+        out.insert(key.to_owned());
+        if let Optional { inner, .. } = field {
+            form_field_keys(inner, out);
+        }
+    }
+
+    fn stored_credential_json(channel_title: &str, expires_at: OffsetDateTime) -> String {
+        serde_json::to_string(&YoutubeCredentials {
+            access_token: "access".to_owned(),
+            refresh_token: "refresh".to_owned(),
+            client_id: "client".to_owned(),
+            channel_id: "UCabc123".to_owned(),
+            channel_title: channel_title.to_owned(),
+            expires_at,
+        })
+        .unwrap()
     }
 
     #[test]
@@ -645,87 +784,252 @@ mod tests {
         }
     }
 
-    mod health_bridge {
-        use std::time::Duration;
-
-        use async_trait::async_trait;
-        use forge_platform_core::BuiltinHealth;
-        use forge_storage::{CredentialId, CredentialsRepo, StorageError};
-        use time::OffsetDateTime;
-        use tokio_stream::StreamExt;
-
-        use super::super::*;
-        use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-        use crate::auth::GoogleAuthFlow;
-        use crate::live_chat_id::LiveChatIdHandle;
-        use crate::quota_state::QuotaState;
-
-        struct EmptyRepo;
-        #[async_trait]
-        impl CredentialsRepo for EmptyRepo {
-            async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-                Ok(())
-            }
-            async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-                Ok(None)
-            }
-            async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-                Ok(false)
-            }
-            async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-                Ok(Vec::new())
-            }
-            async fn last_refresh(
-                &self,
-                _: &CredentialId,
-            ) -> Result<Option<OffsetDateTime>, StorageError> {
-                Ok(None)
-            }
-            async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-                Ok(())
-            }
-        }
-
-        fn bundle_and_platform() -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
-            let manager = Arc::new(YoutubeCredentialsManager::new(
-                Arc::new(EmptyRepo),
-                GoogleAuthFlow::new("test_cid".to_owned(), "test_secret".to_owned()),
-            ));
-            let platform = Arc::new(YoutubePlatform::new(
-                "UCtest".to_owned(),
-                Arc::clone(&manager),
-                LiveChatIdHandle::new(),
-                ActiveBroadcastIdHandle::new(),
-                Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
-            ));
-            let (bundle, _health_tx) = YoutubeIntegrationBundle::new(
-                "UCtest".to_owned(),
-                Arc::clone(&platform),
-                manager,
-                Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+    #[test]
+    fn viewers_health_value_shows_count_when_live_and_dash_when_absent() {
+        for (report, primary, secondary) in [
+            (ViewerReport::Live { count: 0 }, "0", Some("live")),
+            (ViewerReport::Live { count: 1234 }, "1234", Some("live")),
+            (ViewerReport::Absent, "-", None),
+        ] {
+            assert_eq!(
+                viewers_health_value(report),
+                HealthValue::Text {
+                    primary: primary.to_owned(),
+                    secondary: secondary.map(str::to_owned),
+                },
+                "unexpected viewers value for {report:?}"
             );
-            (bundle, platform)
         }
+    }
 
-        #[tokio::test]
-        async fn health_stream_emits_connected_delta_when_platform_connects() {
-            let (bundle, platform) = bundle_and_platform();
-            let mut health = BuiltinHealth::stream(bundle.as_ref());
+    #[tokio::test]
+    async fn every_quick_action_key_is_backed_by_its_runner_config() {
+        let reg = sub_action_registry();
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
 
-            platform.connect().await.unwrap();
+        for action in QuickActions::actions(bundle.as_ref()) {
+            let kind = &action.subaction_template.kind_id;
+            assert!(
+                reg.get(kind).is_some(),
+                "quick action {:?} targets unregistered runner {kind}",
+                action.label
+            );
+            let runner = reg.get(kind).unwrap();
 
-            let expected = chat_poller_health_value(ConnectionState::Connected);
-            let delta = tokio::time::timeout(Duration::from_secs(2), async {
-                loop {
-                    let delta = health.next().await.unwrap();
-                    if delta.new_value == expected {
-                        return delta;
-                    }
+            let mut runner_keys: BTreeSet<String> = runner.default_config().into_keys().collect();
+            for field in runner.config_fields() {
+                form_field_keys(&field, &mut runner_keys);
+            }
+
+            for config_key in action.subaction_template.config.keys() {
+                assert!(
+                    runner_keys.contains(config_key),
+                    "quick action {:?}: config key {config_key:?} is not consumed by runner {kind}",
+                    action.label
+                );
+            }
+            for field in &action.fields {
+                assert!(
+                    runner_keys.contains(&field.key),
+                    "quick action {:?}: field key {:?} is not consumed by runner {kind}",
+                    action.label,
+                    field.key
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn static_choice_options_equal_runner_enum_and_include_default() {
+        let reg = sub_action_registry();
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+
+        let mut checked = 0;
+        for action in QuickActions::actions(bundle.as_ref()) {
+            let runner = reg.get(&action.subaction_template.kind_id).unwrap();
+            let runner_selects: BTreeMap<String, BTreeSet<String>> = runner
+                .config_fields()
+                .into_iter()
+                .filter_map(|f| match f {
+                    FormField::Select { key, options, .. } => Some((
+                        key.to_owned(),
+                        options.iter().map(|o| (*o).to_owned()).collect(),
+                    )),
+                    _ => None,
+                })
+                .collect();
+
+            for field in &action.fields {
+                let QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(options)) =
+                    &field.kind
+                else {
+                    continue;
+                };
+                let option_values: BTreeSet<String> =
+                    options.iter().map(|o| o.value.clone()).collect();
+
+                if let Some(runner_options) = runner_selects.get(&field.key) {
+                    assert_eq!(
+                        &option_values, runner_options,
+                        "quick action {:?}: choice {:?} options diverge from runner enum",
+                        action.label, field.key
+                    );
                 }
-            })
-            .await
-            .unwrap();
-            assert_eq!(delta.index, 0);
+                if let Some(QuickActionFieldValue::Text(default)) = &field.default {
+                    assert!(
+                        option_values.contains(default),
+                        "quick action {:?}: default {default:?} is not among choice {:?} options",
+                        action.label,
+                        field.key
+                    );
+                }
+                checked += 1;
+            }
         }
+        assert!(checked >= 1, "expected at least the privacy static choice");
+    }
+
+    #[tokio::test]
+    async fn quick_action_groups_are_contiguous_broadcast_before_chat() {
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let groups: Vec<String> = QuickActions::actions(bundle.as_ref())
+            .into_iter()
+            .filter_map(|a| a.group)
+            .collect();
+
+        let mut order = Vec::new();
+        for group in &groups {
+            if !order.contains(group) {
+                order.push(group.clone());
+            }
+        }
+        assert_eq!(order, vec!["Broadcast".to_owned(), "Chat".to_owned()]);
+
+        if let Some(first_chat) = groups.iter().position(|g| g == "Chat") {
+            assert!(
+                groups[first_chat..].iter().all(|g| g == "Chat"),
+                "a Broadcast action appears after the Chat section starts: {groups:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn only_delete_message_and_ban_user_are_destructive() {
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let destructive: BTreeSet<String> = QuickActions::actions(bundle.as_ref())
+            .into_iter()
+            .filter(|a| a.destructive)
+            .map(|a| a.label)
+            .collect();
+
+        assert_eq!(
+            destructive,
+            BTreeSet::from(["Delete message".to_owned(), "Ban user".to_owned()])
+        );
+    }
+
+    #[tokio::test]
+    async fn metrics_are_ordered_livechat_events_viewers_apicalls() {
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let metrics = BuiltinHealth::metrics(bundle.as_ref());
+
+        let labels: Vec<&str> = metrics.iter().map(|m| m.label.as_str()).collect();
+        // Why: spawn_health_bridge/spawn_viewer_health_bridge push HealthDelta{index:0/1/2}
+        // for chat/events/viewers; these slots must stay aligned or a delta updates the wrong tile.
+        assert_eq!(labels, ["Live Chat", "Events", "Viewers", "API Calls"]);
+        assert!(matches!(metrics[0].value, HealthValue::Status { .. }));
+        assert!(matches!(metrics[1].value, HealthValue::Status { .. }));
+        assert!(matches!(metrics[2].value, HealthValue::Text { .. }));
+        assert!(matches!(metrics[3].value, HealthValue::Ratio { .. }));
+    }
+
+    #[tokio::test]
+    async fn header_actions_offer_refresh_token_and_disconnect_only() {
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        assert_eq!(
+            BuiltinStatus::header_actions(bundle.as_ref()),
+            vec![HeaderAction::RefreshToken, HeaderAction::Disconnect]
+        );
+    }
+
+    #[tokio::test]
+    async fn name_badges_is_single_neutral_monospace_channel_id() {
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        assert_eq!(
+            BuiltinStatus::name_badges(bundle.as_ref()),
+            vec![HeroBadge {
+                label: "channel_id UCabc123".to_owned(),
+                tone: HeroBadgeTone::Neutral,
+                monospace: true,
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn identity_fields_are_absent_before_credential_loads() {
+        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        assert_eq!(BuiltinStatus::hero_name(bundle.as_ref()), None);
+        assert_eq!(BuiltinStatus::token_expiry(bundle.as_ref()), None);
+    }
+
+    #[tokio::test]
+    async fn refresh_identity_populates_hero_name_and_token_expiry() {
+        let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
+        let repo = Arc::new(StoredRepo(stored_credential_json("GTNH Live", expires_at)));
+        let (bundle, _platform) = make_bundle(repo);
+
+        bundle.refresh_identity().await;
+
+        assert_eq!(BuiltinStatus::hero_name(bundle.as_ref()), Some("GTNH Live"));
+        assert_eq!(
+            BuiltinStatus::token_expiry(bundle.as_ref()),
+            Some(SystemTime::from(expires_at))
+        );
+    }
+
+    #[tokio::test]
+    async fn health_stream_emits_chat_delta_active_when_platform_connects() {
+        let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
+        let mut health = BuiltinHealth::stream(bundle.as_ref());
+
+        platform.connect().await.unwrap();
+
+        let delta = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let delta = health.next().await.unwrap();
+                if delta.index == 0 {
+                    return delta;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(matches!(
+            delta.new_value,
+            HealthValue::Status { active: true, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn health_stream_emits_events_delta_mirroring_chat_state_on_connect() {
+        let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
+        let mut health = BuiltinHealth::stream(bundle.as_ref());
+
+        platform.connect().await.unwrap();
+
+        let delta = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let delta = health.next().await.unwrap();
+                if delta.index == 1 {
+                    return delta;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(matches!(
+            delta.new_value,
+            HealthValue::Status { active: true, .. }
+        ));
     }
 }

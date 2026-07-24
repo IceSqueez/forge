@@ -1,8 +1,8 @@
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette,
     Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
-    SearchState, Spacing, TextInput, ToastKind, badge, body_family, confirm_modal, fmt_uptime,
-    icon, mono_family, overlay, page_frame, platform_hero, radius, spacing, status_dot, tr,
+    SearchState, Spacing, TextInput, ToastKind, badge, body_family, confirm_modal, icon,
+    mono_family, overlay, page_frame, platform_hero, radius, spacing, status_dot, tr,
 };
 use forge_events::{EventPublisher, EventSource};
 use forge_obs::{ObsClient, ObsSource};
@@ -61,7 +61,6 @@ pub struct IntegrationDetail {
     pub(crate) display_name: String,
     version: Option<String>,
     endpoint: Option<String>,
-    uptime: Option<Duration>,
     connection: ConnectionState,
     capability_flags: CapabilityFlags,
     header_actions: Vec<HeaderAction>,
@@ -122,7 +121,6 @@ impl IntegrationDetail {
         let display_name = status.display_name().to_owned();
         let version = status.version().map(ToOwned::to_owned);
         let endpoint = status.endpoint().map(ToOwned::to_owned);
-        let uptime = status.uptime();
         let connection = status.connection();
         let capability_flags = status.capability_flags();
         let header_actions = status.header_actions();
@@ -182,7 +180,6 @@ impl IntegrationDetail {
             display_name,
             version,
             endpoint,
-            uptime,
             connection,
             capability_flags,
             header_actions,
@@ -203,7 +200,6 @@ impl IntegrationDetail {
         self.display_name = self.status.display_name().to_owned();
         self.version = self.status.version().map(ToOwned::to_owned);
         self.endpoint = self.status.endpoint().map(ToOwned::to_owned);
-        self.uptime = self.status.uptime();
         self.connection = self.status.connection();
         self.capability_flags = self.status.capability_flags();
         self.header_actions = self.status.header_actions();
@@ -744,15 +740,10 @@ impl IntegrationDetail {
     fn hero_subtitle(&self) -> String {
         if self.is_oauth_platform()
             && let Some(prefix) = self.status.endpoint()
-            && let Some(uptime) = self.status.uptime()
         {
-            return tr!(
-                "integration_hero_session",
-                prefix = prefix.to_owned(),
-                uptime = fmt_uptime(uptime.as_secs())
-            );
+            return prefix.to_owned();
         }
-        sub_line(self.endpoint.as_deref(), self.uptime)
+        self.endpoint.clone().unwrap_or_default()
     }
 
     fn header_card(
@@ -1180,15 +1171,6 @@ fn hero_badge_elem(badge_spec: &HeroBadge, palette: &ForgePalette) -> impl IntoE
     .padding_xy(px(2.0), px(6.0))
     .radius(radius(Radius::Sm))
     .flex_none()
-}
-
-fn sub_line(endpoint: Option<&str>, uptime: Option<Duration>) -> String {
-    match (endpoint, uptime) {
-        (Some(ep), Some(d)) => format!("{ep} \u{00b7} up {}", fmt_uptime(d.as_secs())),
-        (Some(ep), None) => ep.to_owned(),
-        (None, Some(d)) => format!("up {}", fmt_uptime(d.as_secs())),
-        (None, None) => String::new(),
-    }
 }
 
 fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {

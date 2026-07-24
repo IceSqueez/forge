@@ -150,10 +150,15 @@ fn spawn_chat_send_bridge(
                 Err(EventsError::LaggingReceiver) => continue,
                 Err(_) => continue,
             };
-            if event.source != EventSource::Core || event.kind != "chat.send.request" {
+            if event.kind != "chat.send.request" {
                 continue;
             }
-            if event.payload.get("target").and_then(|v| v.as_str()) != Some(target) {
+            if !matches!(event.source, EventSource::Core | EventSource::Rhai) {
+                continue;
+            }
+            if let Some(requested) = event.payload.get("target").and_then(|v| v.as_str())
+                && requested != target
+            {
                 continue;
             }
             let Some(message) = event

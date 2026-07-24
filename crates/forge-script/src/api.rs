@@ -349,6 +349,20 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
         },
     );
 
+    let pub_send_targeted = Arc::clone(&publisher);
+    m.set_native_fn(
+        "send",
+        move |target: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            pub_send_targeted.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                serde_json::json!({"target": target.as_str(), "message": text.as_str()}),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
     let pub_reply = Arc::clone(&publisher);
     m.set_native_fn(
         "reply",
@@ -363,7 +377,24 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
         },
     );
 
-    let pub_whisper = publisher;
+    let pub_reply_targeted = Arc::clone(&publisher);
+    m.set_native_fn(
+        "reply",
+        move |target: ImmutableString,
+              to: ImmutableString,
+              text: ImmutableString|
+              -> Result<(), Box<EvalAltResult>> {
+            pub_reply_targeted.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                serde_json::json!({"target": target.as_str(), "message": text.as_str(), "reply_to_message_id": to.as_str()}),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
+    let pub_whisper = Arc::clone(&publisher);
     m.set_native_fn(
         "whisper",
         move |user: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
@@ -371,6 +402,23 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
                 EventSource::Rhai,
                 "chat.send.request",
                 serde_json::json!({"message": text.as_str(), "whisper_to_login": user.as_str()}),
+                caused_by,
+            ));
+            Ok(())
+        },
+    );
+
+    let pub_whisper_targeted = publisher;
+    m.set_native_fn(
+        "whisper",
+        move |target: ImmutableString,
+              user: ImmutableString,
+              text: ImmutableString|
+              -> Result<(), Box<EvalAltResult>> {
+            pub_whisper_targeted.publish(Event::caused_by(
+                EventSource::Rhai,
+                "chat.send.request",
+                serde_json::json!({"target": target.as_str(), "message": text.as_str(), "whisper_to_login": user.as_str()}),
                 caused_by,
             ));
             Ok(())

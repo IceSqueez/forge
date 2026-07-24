@@ -7,7 +7,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::warn;
 
-const EVENTSUB_URL: &str = "https://api.twitch.tv/helix/eventsub/subscriptions";
+const EVENTSUB_BASE_URL: &str = "https://api.twitch.tv";
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 const SUBSCRIBE_CONCURRENCY: usize = 10;
 
@@ -427,9 +427,34 @@ struct SubscribeCtx {
     broadcaster_id: String,
     user_id: String,
     bus: Arc<dyn EventPublisher>,
+    base_url: String,
 }
 
 pub(crate) async fn subscribe_all(
+    token: &OAuthToken,
+    client_id: &str,
+    session_id: &str,
+    broadcaster_id: &str,
+    user_id: &str,
+    bus: &Arc<dyn EventPublisher>,
+    tracker: &SubscriptionTracker,
+) -> Result<(), SubscribeError> {
+    subscribe_all_with_base_url(
+        EVENTSUB_BASE_URL,
+        token,
+        client_id,
+        session_id,
+        broadcaster_id,
+        user_id,
+        bus,
+        tracker,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn subscribe_all_with_base_url(
+    base_url: &str,
     token: &OAuthToken,
     client_id: &str,
     session_id: &str,
@@ -459,6 +484,7 @@ pub(crate) async fn subscribe_all(
         broadcaster_id: broadcaster_id.to_owned(),
         user_id: user_id.to_owned(),
         bus: Arc::clone(bus),
+        base_url: base_url.to_owned(),
     };
 
     let pending: Vec<_> = TOPICS
@@ -504,9 +530,10 @@ async fn subscribe_one(
         }
     });
 
+    let url = format!("{}{EVENTSUB_PATH}", ctx.base_url);
     let result = ctx
         .http
-        .post(EVENTSUB_URL)
+        .post(url)
         .header("Authorization", format!("Bearer {}", ctx.token.expose()))
         .header("Client-Id", &ctx.client_id)
         .header("Content-Type", "application/json")

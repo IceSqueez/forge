@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_components::{
@@ -8,7 +9,7 @@ use forge_components::{
 };
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
-    PickerKind, QuickAction, QuickActionChoiceOption, QuickActionChoiceSource,
+    PickerKind, QuickAction, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
     QuickActionFieldKind, QuickActionFieldValue,
 };
 use forge_types::{SubActionStep, Variant};
@@ -55,7 +56,6 @@ struct ModalField {
     key: String,
     label: String,
     hint: Option<String>,
-    kind: QuickActionFieldKind,
     control: FieldControl,
 }
 
@@ -69,7 +69,7 @@ pub struct QuickActionModal {
     glyph: Icon,
     accent: Rgba,
     destructive: bool,
-    template: SubActionStep,
+    action: QuickAction,
     fields: Vec<ModalField>,
     obs_source: Option<Arc<ObsClient>>,
     rt_handle: Handle,
@@ -89,11 +89,12 @@ impl QuickActionModal {
         let palette = cx.palette();
         let accent = accent_color(action.accent, &palette);
         let glyph = Icon::from_name(action.icon.as_str());
-        let template = action.subaction_template.clone();
         let label = action.label.clone();
         let destructive = action.destructive;
 
         let specs = build_specs(&action);
+        let mut merge_action = action.clone();
+        merge_action.fields = specs.iter().map(spec_to_field).collect();
         let mut fields = Vec::with_capacity(specs.len());
         let mut subs = Vec::new();
         let mut pending_dynamic: Vec<(usize, PickerKind)> = Vec::new();
@@ -162,7 +163,6 @@ impl QuickActionModal {
                 key: spec.key,
                 label: spec.label,
                 hint: spec.hint,
-                kind: spec.kind,
                 control,
             });
         }
@@ -184,7 +184,7 @@ impl QuickActionModal {
             glyph,
             accent,
             destructive,
-            template,
+            action: merge_action,
             fields,
             obs_source,
             rt_handle,
@@ -341,11 +341,13 @@ impl QuickActionModal {
     }
 
     fn build_step(&self, cx: &Context<Self>) -> SubActionStep {
-        let mut step = self.template.clone();
+        let values: BTreeMap<String, QuickActionFieldValue> = self
+            .fields
+            .iter()
+            .map(|field| (field.key.clone(), field.current_value(cx)))
+            .collect();
+        let mut step = self.action.merge_config(&values);
         for field in &self.fields {
-            let value = field.current_value(cx);
-            step.config
-                .insert(field.key.clone(), field.kind.marshal(&value));
             if let FieldControl::Choice(choice) = &field.control
                 && matches!(choice.dynamic, Some(PickerKind::Source))
                 && let Some(scene) = &choice.scene
@@ -717,6 +719,17 @@ fn build_specs(action: &QuickAction) -> Vec<FieldSpec> {
             placeholder: None,
         }],
         None => Vec::new(),
+    }
+}
+
+fn spec_to_field(spec: &FieldSpec) -> QuickActionField {
+    QuickActionField {
+        key: spec.key.clone(),
+        label: spec.label.clone(),
+        kind: spec.kind.clone(),
+        default: spec.default.clone(),
+        placeholder: spec.placeholder.clone(),
+        hint: spec.hint.clone(),
     }
 }
 

@@ -462,6 +462,7 @@ impl IntegrationDetail {
     fn run_quick_action(&mut self, step: SubActionStep, label: String, cx: &mut Context<Self>) {
         let builtin_id = self.status.id().as_str().to_owned();
         let engine = self.action_engine.clone();
+        let toast_label = label.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -469,8 +470,11 @@ impl IntegrationDetail {
                     .execute_quick_action(step, builtin_id, label, None)
                     .await
             },
-            |_detail, result, cx| match result {
-                Ok(()) => cx.push_toast(ToastKind::Success, tr!("integration_quick_action_ran")),
+            move |_detail, result, cx| match result {
+                Ok(()) => cx.push_toast(
+                    ToastKind::Success,
+                    tr!("integration_quick_action_ran", label = toast_label),
+                ),
                 Err(err) => {
                     tracing::warn!(error = %err, "quick action failed");
                     cx.push_toast(ToastKind::Error, tr!("integration_quick_action_failed"));

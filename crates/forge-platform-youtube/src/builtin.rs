@@ -832,13 +832,18 @@ mod tests {
         }
     }
 
-    fn stored_credential_json(channel_title: &str, expires_at: OffsetDateTime) -> String {
+    fn stored_credential_json(
+        channel_title: &str,
+        channel_handle: Option<&str>,
+        expires_at: OffsetDateTime,
+    ) -> String {
         serde_json::to_string(&YoutubeCredentials {
             access_token: "access".to_owned(),
             refresh_token: "refresh".to_owned(),
             client_id: "client".to_owned(),
             channel_id: "UCabc123".to_owned(),
             channel_title: channel_title.to_owned(),
+            channel_handle: channel_handle.map(str::to_owned),
             expires_at,
         })
         .unwrap()
@@ -1004,7 +1009,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn quick_action_groups_are_contiguous_broadcast_before_chat() {
+    async fn quick_action_groups_are_contiguous_in_design_order() {
         let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
         let groups: Vec<String> = QuickActions::actions(bundle.as_ref())
             .into_iter()
@@ -1017,13 +1022,26 @@ mod tests {
                 order.push(group.clone());
             }
         }
-        assert_eq!(order, vec!["Broadcast".to_owned(), "Chat".to_owned()]);
+        assert_eq!(
+            order,
+            vec![
+                "Broadcast".to_owned(),
+                "Polls".to_owned(),
+                "Chat".to_owned(),
+                "Content".to_owned(),
+            ]
+        );
 
-        if let Some(first_chat) = groups.iter().position(|g| g == "Chat") {
-            assert!(
-                groups[first_chat..].iter().all(|g| g == "Chat"),
-                "a Broadcast action appears after the Chat section starts: {groups:?}"
-            );
+        let mut seen = BTreeSet::new();
+        let mut previous: Option<&String> = None;
+        for group in &groups {
+            if previous != Some(group) {
+                assert!(
+                    seen.insert(group.clone()),
+                    "group {group:?} reappears after another group started: {groups:?}"
+                );
+            }
+            previous = Some(group);
         }
     }
 
@@ -1089,12 +1107,16 @@ mod tests {
     #[tokio::test]
     async fn refresh_identity_populates_hero_name_and_token_expiry() {
         let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
-        let repo = Arc::new(StoredRepo(stored_credential_json("GTNH Live", expires_at)));
+        let repo = Arc::new(StoredRepo(stored_credential_json(
+            "GTNH Live",
+            Some("@gtnhlive"),
+            expires_at,
+        )));
         let (bundle, _platform) = make_bundle(repo);
 
         bundle.refresh_identity().await;
 
-        assert_eq!(BuiltinStatus::hero_name(bundle.as_ref()), Some("GTNH Live"));
+        assert_eq!(BuiltinStatus::hero_name(bundle.as_ref()), Some("@gtnhlive"));
         assert_eq!(
             BuiltinStatus::token_expiry(bundle.as_ref()),
             Some(SystemTime::from(expires_at))

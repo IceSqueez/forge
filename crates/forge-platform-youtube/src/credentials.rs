@@ -50,6 +50,7 @@ mod tests {
             client_id: "cid".to_owned(),
             channel_id: "chan".to_owned(),
             channel_title: "My Channel".to_owned(),
+            channel_handle: Some("@my_channel".to_owned()),
             expires_at: OffsetDateTime::UNIX_EPOCH,
         };
         let json = serde_json::to_string(&cred).unwrap();

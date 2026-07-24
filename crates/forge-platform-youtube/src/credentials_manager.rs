@@ -257,6 +257,7 @@ mod tests {
             client_id: "test_client_id".to_owned(),
             channel_id: "UCtest123".to_owned(),
             channel_title: "Test Channel".to_owned(),
+            channel_handle: None,
             expires_at,
         }
     }
@@ -304,6 +305,7 @@ mod tests {
             refresh_token: OAuthToken::new("1//bundle_refresh"),
             channel_id: "UCbundle".to_owned(),
             channel_title: "Bundle Channel".to_owned(),
+            channel_handle: Some("@bundle_channel".to_owned()),
             client_id: "bundle_cid".to_owned(),
             expires_at: SystemTime::now() + StdDuration::from_secs(3600),
         };

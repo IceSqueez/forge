@@ -12,8 +12,10 @@ use forge_platform_core::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
-    HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent, QuickActions, RateLimiter,
-    SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
+    HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent, QuickActionChoiceOption,
+    QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
+    QuickActions, RateLimiter, SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport,
+    ViewerReportStream,
 };
 use std::collections::BTreeMap;
 
@@ -617,6 +619,79 @@ fn group_badge(group: &str) -> (SectionIcon, QuickActionAccent) {
     }
 }
 
+fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
+    QuickActionField {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        kind: QuickActionFieldKind::Text,
+        default: Some(QuickActionFieldValue::Text(default.to_owned())),
+        placeholder: None,
+        hint: None,
+    }
+}
+
+fn text_field_placeholder(
+    key: &str,
+    label: &str,
+    default: &str,
+    placeholder: &str,
+) -> QuickActionField {
+    QuickActionField {
+        placeholder: Some(placeholder.to_owned()),
+        ..text_field(key, label, default)
+    }
+}
+
+fn multiline_field(key: &str, label: &str, default: &str) -> QuickActionField {
+    QuickActionField {
+        kind: QuickActionFieldKind::Multiline,
+        ..text_field(key, label, default)
+    }
+}
+
+fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
+    QuickActionField {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        kind: QuickActionFieldKind::Toggle,
+        default: Some(QuickActionFieldValue::Toggle(default)),
+        placeholder: None,
+        hint: None,
+    }
+}
+
+fn choice_field(
+    key: &str,
+    label: &str,
+    default: &str,
+    options: &[(&str, &str)],
+) -> QuickActionField {
+    let options = options
+        .iter()
+        .map(|(value, label)| QuickActionChoiceOption {
+            value: (*value).to_owned(),
+            label: (*label).to_owned(),
+        })
+        .collect();
+    QuickActionField {
+        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(options)),
+        ..text_field(key, label, default)
+    }
+}
+
+fn choice_field_hint(
+    key: &str,
+    label: &str,
+    default: &str,
+    options: &[(&str, &str)],
+    hint: &str,
+) -> QuickActionField {
+    QuickActionField {
+        hint: Some(hint.to_owned()),
+        ..choice_field(key, label, default, options)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn quick_action(
     label: &str,
@@ -628,6 +703,7 @@ fn quick_action(
     destructive: bool,
     kind_id: &str,
     config: BTreeMap<String, Variant>,
+    fields: Vec<QuickActionField>,
 ) -> QuickAction {
     let (group_icon, group_accent) = group_badge(group);
     QuickAction {
@@ -649,7 +725,7 @@ fn quick_action(
             label: None,
         },
         picker: None,
-        fields: Vec::new(),
+        fields,
     }
 }
 
@@ -671,6 +747,11 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.update_title",
                 config([("title", blank())]),
+                vec![text_field(
+                    "title",
+                    "Stream title",
+                    "GTNH: Aluminium grind continues",
+                )],
             ),
             quick_action(
                 "Set category / game",
@@ -682,6 +763,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.update_category",
                 config([("category_id", blank())]),
+                vec![text_field("category_id", "Category", "Minecraft")],
             ),
             quick_action(
                 "Update tags",
@@ -693,6 +775,11 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.update_tags",
                 config([("tags", blank())]),
+                vec![text_field(
+                    "tags",
+                    "Tags (comma-sep)",
+                    "Modded, Chill, English",
+                )],
             ),
             quick_action(
                 "Create stream marker",
@@ -704,6 +791,12 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.create_marker",
                 config([("description", blank())]),
+                vec![text_field_placeholder(
+                    "description",
+                    "Marker note",
+                    "Nice moment",
+                    "optional",
+                )],
             ),
             quick_action(
                 "Start poll",
@@ -719,6 +812,19 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("choices", blank()),
                     ("duration_seconds", Variant::Int(60)),
                 ]),
+                vec![
+                    text_field("title", "Question", "Next game?"),
+                    multiline_field(
+                        "choices",
+                        "Choices (one per line)",
+                        "Factorio\nMinecraft\nSatisfactory",
+                    ),
+                    toggle_field(
+                        "channel_points_voting_enabled",
+                        "Channel Points voting",
+                        false,
+                    ),
+                ],
             ),
             quick_action(
                 "End poll (finish now)",
@@ -733,6 +839,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("poll_id", blank()),
                     ("status", Variant::String("terminated".to_owned())),
                 ]),
+                Vec::new(),
             ),
             quick_action(
                 "Cancel poll",
@@ -747,6 +854,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("poll_id", blank()),
                     ("status", Variant::String("archived".to_owned())),
                 ]),
+                Vec::new(),
             ),
             quick_action(
                 "Start prediction",
@@ -762,6 +870,14 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("outcomes", blank()),
                     ("prediction_window_seconds", Variant::Int(120)),
                 ]),
+                vec![
+                    text_field("title", "Title", "Will we beat the boss?"),
+                    multiline_field(
+                        "outcomes",
+                        "Outcomes (one per line)",
+                        "Yes, easy\nNo, we die",
+                    ),
+                ],
             ),
             quick_action(
                 "Lock prediction",
@@ -773,6 +889,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.prediction.lock",
                 config([("prediction_id", blank())]),
+                Vec::new(),
             ),
             quick_action(
                 "Resolve / pay out",
@@ -784,6 +901,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.prediction.resolve",
                 config([("prediction_id", blank()), ("winning_outcome_id", blank())]),
+                Vec::new(),
             ),
             quick_action(
                 "Cancel & refund",
@@ -795,6 +913,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 true,
                 "twitch.prediction.cancel",
                 config([("prediction_id", blank())]),
+                Vec::new(),
             ),
             quick_action(
                 "Send message",
@@ -809,6 +928,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("message", blank()),
                     ("target", Variant::String("twitch".to_owned())),
                 ]),
+                vec![multiline_field("message", "Message", "Hey chat \u{1f44b}")],
             ),
             quick_action(
                 "Announcement",
@@ -823,6 +943,21 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("message", blank()),
                     ("color", Variant::String("primary".to_owned())),
                 ]),
+                vec![
+                    multiline_field("message", "Announcement", "Big news!"),
+                    choice_field(
+                        "color",
+                        "Color",
+                        "primary",
+                        &[
+                            ("primary", "Primary"),
+                            ("blue", "Blue"),
+                            ("green", "Green"),
+                            ("orange", "Orange"),
+                            ("purple", "Purple"),
+                        ],
+                    ),
+                ],
             ),
             quick_action(
                 "Clear chat",
@@ -834,6 +969,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 true,
                 "twitch.chat.clear",
                 BTreeMap::new(),
+                Vec::new(),
             ),
             quick_action(
                 "Slow mode",
@@ -848,6 +984,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("slow_mode", Variant::String("on".to_owned())),
                     ("slow_mode_wait_seconds", Variant::Int(10)),
                 ]),
+                Vec::new(),
             ),
             quick_action(
                 "Followers-only mode",
@@ -862,6 +999,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("follower_mode", Variant::String("on".to_owned())),
                     ("follower_mode_min_minutes", Variant::Int(10)),
                 ]),
+                Vec::new(),
             ),
             quick_action(
                 "Emote-only mode",
@@ -873,6 +1011,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.chat.set_mode",
                 config([("emote_only", Variant::String("on".to_owned()))]),
+                Vec::new(),
             ),
             quick_action(
                 "Timeout user",
@@ -888,6 +1027,10 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("duration_seconds", Variant::Int(600)),
                     ("reason", blank()),
                 ]),
+                vec![
+                    text_field("target_user_login", "Username", "@spammer"),
+                    text_field_placeholder("reason", "Reason", "", "optional"),
+                ],
             ),
             quick_action(
                 "Ban user",
@@ -899,6 +1042,10 @@ impl QuickActions for TwitchIntegrationBundle {
                 true,
                 "twitch.moderation.ban_user",
                 config([("target_user_login", blank()), ("reason", blank())]),
+                vec![
+                    text_field("target_user_login", "Username", "@baduser"),
+                    text_field("reason", "Reason", ""),
+                ],
             ),
             quick_action(
                 "Unban user",
@@ -910,6 +1057,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.unban_user",
                 config([("target_user_login", blank())]),
+                vec![text_field("target_user_login", "Username", "@user")],
             ),
             quick_action(
                 "Shield mode",
@@ -921,6 +1069,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.shield_mode_on",
                 BTreeMap::new(),
+                Vec::new(),
             ),
             quick_action(
                 "Add / remove VIP",
@@ -932,6 +1081,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.add_vip",
                 config([("target_user_login", blank())]),
+                vec![text_field("target_user_login", "Username", "@loyalfan")],
             ),
             quick_action(
                 "Add / remove Mod",
@@ -943,6 +1093,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.add_moderator",
                 config([("target_user_login", blank())]),
+                vec![text_field("target_user_login", "Username", "@trustedmod")],
             ),
             quick_action(
                 "Start raid",
@@ -954,6 +1105,11 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.start_raid",
                 config([("to_broadcaster_login", blank())]),
+                vec![text_field(
+                    "to_broadcaster_login",
+                    "Raid target",
+                    "@factorio_streamer",
+                )],
             ),
             quick_action(
                 "Cancel raid",
@@ -965,6 +1121,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 true,
                 "twitch.channel.cancel_raid",
                 BTreeMap::new(),
+                Vec::new(),
             ),
             quick_action(
                 "Send shoutout",
@@ -976,6 +1133,11 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.send_shoutout",
                 config([("to_broadcaster_login", blank())]),
+                vec![text_field(
+                    "to_broadcaster_login",
+                    "Channel",
+                    "@factorio_streamer",
+                )],
             ),
             quick_action(
                 "Run commercial",
@@ -987,6 +1149,20 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.run_ad",
                 config([("duration_seconds", Variant::String("90".to_owned()))]),
+                vec![choice_field_hint(
+                    "duration_seconds",
+                    "Duration",
+                    "90",
+                    &[
+                        ("30", "30 seconds"),
+                        ("60", "60 seconds"),
+                        ("90", "90 seconds"),
+                        ("120", "120 seconds"),
+                        ("150", "150 seconds"),
+                        ("180", "180 seconds"),
+                    ],
+                    "8+ min cooldown between ads",
+                )],
             ),
             quick_action(
                 "Snooze next ad",
@@ -998,6 +1174,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.snooze_ad",
                 BTreeMap::new(),
+                Vec::new(),
             ),
             quick_action(
                 "Enable / pause reward",
@@ -1009,6 +1186,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel_points.enable_reward",
                 config([("reward_id", blank())]),
+                Vec::new(),
             ),
             quick_action(
                 "Update reward cost",
@@ -1020,6 +1198,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel_points.update_reward",
                 config([("reward_id", blank()), ("cost", Variant::Int(500))]),
+                Vec::new(),
             ),
             quick_action(
                 "Fulfill redemption",
@@ -1031,6 +1210,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel_points.fulfill_redemption",
                 config([("redemption_id", blank()), ("reward_id", blank())]),
+                Vec::new(),
             ),
             quick_action(
                 "Reject & refund",
@@ -1042,6 +1222,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 true,
                 "twitch.channel_points.cancel_redemption",
                 config([("redemption_id", blank()), ("reward_id", blank())]),
+                Vec::new(),
             ),
         ]
     }

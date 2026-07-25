@@ -14,7 +14,7 @@ use crate::error::KickError;
 use crate::normalize;
 
 /// Community-observed (PLATFORMS_NOTES.md); re-verify via DevTools if events stop arriving.
-pub const PUSHER_APP_KEY: &str = "eb1d5f283081a78b932c";
+pub const PUSHER_APP_KEY: &str = "32cbd69e4b950bf97679";
 
 const PUSHER_WS_BASE: &str = "wss://ws-us2.pusher.com/app";
 const PUSHER_PROTOCOL_PARAMS: &str = "protocol=7&client=js&version=7.6.0&flash=false";
@@ -197,8 +197,15 @@ async fn run_loop(
                     Some(Ok(Message::Text(text))) => {
                         handle_ws_text(&text, &event_tx).await;
                     }
-                    Some(Ok(Message::Close(_))) => {
-                        info!("kick chat server sent close frame; reconnecting");
+                    Some(Ok(Message::Close(frame))) => {
+                        match frame {
+                            Some(frame) => warn!(
+                                code = %frame.code,
+                                reason = %frame.reason,
+                                "kick chat server sent close frame; reconnecting",
+                            ),
+                            None => warn!("kick chat server sent close frame; reconnecting"),
+                        }
                         break 'session;
                     }
                     Some(Ok(_)) => {}
@@ -243,8 +250,8 @@ async fn run_loop(
 
         let _ = state_tx.send(ConnectionState::Connected);
         ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
-        backoff.reset();
 
+        let mut session_healthy = false;
         'session: loop {
             tokio::select! {
                 _ = &mut close_rx => {
@@ -268,7 +275,12 @@ async fn run_loop(
                             break 'session;
                         }
                         Some(Ok(Message::Text(text))) => {
-                            handle_ws_text(&text, &event_tx).await;
+                            if handle_ws_text(&text, &event_tx).await == WsFrameHealth::Healthy
+                                && !session_healthy
+                            {
+                                session_healthy = true;
+                                backoff.reset();
+                            }
                         }
                         Some(Ok(Message::Close(_))) => {
                             info!("kick chat server sent close frame; reconnecting");
@@ -285,26 +297,31 @@ async fn run_loop(
     }
 }
 
-async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) {
+async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHealth {
     let frame: PusherFrame = match serde_json::from_str(raw) {
         Ok(f) => f,
         Err(e) => {
             debug!(error = %e, "unparseable Pusher frame; skipping");
-            return;
+            return WsFrameHealth::Healthy;
         }
     };
 
     let event_name = frame.event.as_str();
 
+    if event_name == "pusher:error" {
+        warn!(frame = %raw, "kick chat pusher error frame");
+        return WsFrameHealth::Error;
+    }
+
     if event_name == "pusher:pong" || event_name.starts_with("pusher_internal:") {
-        return;
+        return WsFrameHealth::Healthy;
     }
 
     let payload_str = match frame.data.as_str() {
         Some(s) => s.to_owned(),
         None => {
             debug!(event = %event_name, "Pusher frame data is not a string; skipping");
-            return;
+            return WsFrameHealth::Healthy;
         }
     };
 
@@ -312,7 +329,7 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) {
         Ok(v) => v,
         Err(e) => {
             debug!(error = %e, event = %event_name, "failed to parse event data; skipping");
-            return;
+            return WsFrameHealth::Healthy;
         }
     };
 
@@ -321,6 +338,13 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) {
     {
         debug!("kick chat event receiver dropped");
     }
+    WsFrameHealth::Healthy
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WsFrameHealth {
+    Healthy,
+    Error,
 }
 
 pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Option<Event> {

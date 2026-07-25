@@ -96,7 +96,7 @@ pub enum TokenColor {
 #[serde(rename_all = "snake_case")]
 pub enum TrailingToken {
     Badge(String, TokenColor),
-    Icon(SectionIcon),
+    Icon(SectionIcon, TokenColor),
     Label(String),
 }
 
@@ -280,6 +280,9 @@ pub enum PickerKind {
     Hotkey,
     Expression,
     MidiPort,
+    Transition,
+    Profile,
+    SceneCollection,
 }
 
 /// Maps to a fixed `ForgePalette` field so a quick action's icon renders in the same

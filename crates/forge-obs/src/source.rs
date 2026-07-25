@@ -18,4 +18,10 @@ pub trait ObsSource: Send + Sync {
     async fn sources(&self, scene: &str) -> Result<Vec<SourceInfo>, ObsError>;
 
     async fn audio_inputs(&self) -> Result<Vec<String>, ObsError>;
+
+    async fn transitions(&self) -> Result<Vec<String>, ObsError>;
+
+    async fn profiles(&self) -> Result<Vec<String>, ObsError>;
+
+    async fn scene_collections(&self) -> Result<Vec<String>, ObsError>;
 }

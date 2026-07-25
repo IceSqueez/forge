@@ -505,9 +505,11 @@ fn content_list_item_row(
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    let dim = if item.enabled { 1.0 } else { 0.4 };
+    let dim = if item.enabled { 1.0 } else { 0.5 };
     let text_color = with_alpha(
-        if item.active {
+        if !item.enabled {
+            palette.text_faint
+        } else if item.active {
             palette.text_primary
         } else {
             palette.text_secondary
@@ -546,9 +548,7 @@ fn content_list_item_row(
         trailing = trailing.child(active_badge(label, palette, density));
     }
     for token in &item.trailing {
-        trailing = trailing.child(trailing_token_elem(
-            token, icon_color, dim, palette, density,
-        ));
+        trailing = trailing.child(trailing_token_elem(token, dim, palette, density));
     }
 
     let content = div()
@@ -931,7 +931,6 @@ fn active_badge(label: &str, palette: &ForgePalette, density: Density) -> AnyEle
 
 fn trailing_token_elem(
     token: &TrailingToken,
-    icon_color: Rgba,
     dim: f32,
     palette: &ForgePalette,
     density: Density,
@@ -948,8 +947,9 @@ fn trailing_token_elem(
                 .child(body(label.clone(), FONT_XS, tc))
                 .into_any_element()
         }
-        TrailingToken::Icon(ic) => {
-            icon(Icon::from_name(ic.as_str()), FONT_SM, icon_color).into_any_element()
+        TrailingToken::Icon(ic, color) => {
+            let tc = with_alpha(token_color_value(color, palette), dim);
+            icon(Icon::from_name(ic.as_str()), FONT_SM, tc).into_any_element()
         }
         TrailingToken::Label(label) => {
             mono(label.clone(), FONT_XS, with_alpha(palette.text_faint, dim)).into_any_element()

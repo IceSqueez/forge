@@ -11,7 +11,7 @@ use obws::requests::scenes::SceneId;
 use obws::requests::sources::{SaveScreenshot, SourceId};
 
 use crate::client::ObsClient;
-use crate::error::ObsError;
+use crate::error::{ObsError, map_request_error};
 use crate::sink::ObsSink;
 
 #[async_trait]
@@ -557,17 +557,6 @@ impl ObsSink for ObsClient {
             .set_current(name)
             .await
             .map_err(|e| map_request_error("SetCurrentSceneCollection", e))
-    }
-}
-
-fn map_request_error(request_type: &str, e: obws::error::Error) -> ObsError {
-    match e {
-        obws::error::Error::Timeout => ObsError::Timeout,
-        obws::error::Error::Disconnected => ObsError::Disconnected,
-        _ => ObsError::Request {
-            request_type: request_type.to_owned(),
-            message: e.to_string(),
-        },
     }
 }
 

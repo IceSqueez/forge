@@ -24,3 +24,14 @@ pub enum ObsError {
         message: String,
     },
 }
+
+pub(crate) fn map_request_error(request_type: &str, e: obws::error::Error) -> ObsError {
+    match e {
+        obws::error::Error::Timeout => ObsError::Timeout,
+        obws::error::Error::Disconnected => ObsError::Disconnected,
+        _ => ObsError::Request {
+            request_type: request_type.to_owned(),
+            message: e.to_string(),
+        },
+    }
+}

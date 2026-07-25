@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
+    TrailingToken,
 };
 
 use crate::client::ObsClient;
@@ -39,16 +40,22 @@ fn scene_to_item(name: &str, current_scene: Option<&str>) -> ContentListItem {
 
 fn source_to_item(info: &SourceInfo) -> ContentListItem {
     let mut trailing = Vec::new();
-    trailing.push(TrailingToken::Icon(SectionIcon::new(if info.visible {
-        "eye"
-    } else {
-        "eye-off"
-    })));
-    trailing.push(TrailingToken::Icon(SectionIcon::new(if info.locked {
-        "lock"
-    } else {
-        "lock-open"
-    })));
+    trailing.push(TrailingToken::Icon(
+        SectionIcon::new(if info.visible { "eye" } else { "eye-off" }),
+        if info.visible {
+            TokenColor::Green
+        } else {
+            TokenColor::Muted
+        },
+    ));
+    trailing.push(TrailingToken::Icon(
+        SectionIcon::new(if info.locked { "lock" } else { "lock-open" }),
+        if info.locked {
+            TokenColor::Yellow
+        } else {
+            TokenColor::Muted
+        },
+    ));
     if let Some(db) = info.audio_db {
         trailing.push(TrailingToken::Label(format!("{db:.1} dB")));
     }

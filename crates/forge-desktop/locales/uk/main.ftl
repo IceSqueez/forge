@@ -1217,6 +1217,9 @@ builtin_picker_audio_input = Оберіть аудіовхід
 builtin_picker_hotkey = Оберіть гарячу клавішу
 builtin_picker_expression = Оберіть вираз
 builtin_picker_midi_port = Оберіть порт MIDI
+builtin_picker_transition = Оберіть перехід
+builtin_picker_profile = Оберіть профіль
+builtin_picker_scene_collection = Оберіть колекцію сцен
 
 ## OAuth / локальний callback-потік
 

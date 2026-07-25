@@ -1210,6 +1210,9 @@ builtin_picker_audio_input = Choose an Audio Input
 builtin_picker_hotkey = Choose a Hotkey
 builtin_picker_expression = Choose an Expression
 builtin_picker_midi_port = Choose a MIDI Port
+builtin_picker_transition = Choose a Transition
+builtin_picker_profile = Choose a Profile
+builtin_picker_scene_collection = Choose a Scene Collection
 
 ## OAuth / local callback flow
 

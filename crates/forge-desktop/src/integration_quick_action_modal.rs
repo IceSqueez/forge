@@ -746,6 +746,9 @@ fn picker_key(pk: PickerKind) -> &'static str {
         PickerKind::Hotkey => "hotkey",
         PickerKind::Expression => "expression",
         PickerKind::MidiPort => "port",
+        PickerKind::Transition => "transition",
+        PickerKind::Profile => "profile",
+        PickerKind::SceneCollection => "collection",
     }
 }
 
@@ -757,6 +760,9 @@ fn picker_title(pk: PickerKind) -> String {
         PickerKind::Hotkey => tr!("builtin_picker_hotkey"),
         PickerKind::Expression => tr!("builtin_picker_expression"),
         PickerKind::MidiPort => tr!("builtin_picker_midi_port"),
+        PickerKind::Transition => tr!("builtin_picker_transition"),
+        PickerKind::Profile => tr!("builtin_picker_profile"),
+        PickerKind::SceneCollection => tr!("builtin_picker_scene_collection"),
     }
 }
 
@@ -862,6 +868,48 @@ async fn fetch_picker_items(
                     label: name.into(),
                     sublabel: None,
                     icon: Icon::from_name("volume"),
+                })
+                .collect();
+            Ok((items, None))
+        }
+        PickerKind::Transition => {
+            let transitions = client.transitions().await.map_err(|e| e.to_string())?;
+            let items = transitions
+                .into_iter()
+                .map(|name| PickerItem {
+                    id: name.clone().into(),
+                    label: name.into(),
+                    sublabel: None,
+                    icon: Icon::from_name("transition-right"),
+                })
+                .collect();
+            Ok((items, None))
+        }
+        PickerKind::Profile => {
+            let profiles = client.profiles().await.map_err(|e| e.to_string())?;
+            let items = profiles
+                .into_iter()
+                .map(|name| PickerItem {
+                    id: name.clone().into(),
+                    label: name.into(),
+                    sublabel: None,
+                    icon: Icon::from_name("user-cog"),
+                })
+                .collect();
+            Ok((items, None))
+        }
+        PickerKind::SceneCollection => {
+            let collections = client
+                .scene_collections()
+                .await
+                .map_err(|e| e.to_string())?;
+            let items = collections
+                .into_iter()
+                .map(|name| PickerItem {
+                    id: name.clone().into(),
+                    label: name.into(),
+                    sublabel: None,
+                    icon: Icon::from_name("layout-2"),
                 })
                 .collect();
             Ok((items, None))

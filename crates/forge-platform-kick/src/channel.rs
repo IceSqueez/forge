@@ -12,11 +12,14 @@ pub struct KickChannel {
 }
 
 pub struct ChannelSnapshot {
+    pub broadcaster_user_id: u64,
+    pub slug: String,
     pub is_live: bool,
     pub stream_title: String,
     pub category_id: u64,
     pub category_name: String,
     pub viewer_count: u64,
+    pub started_at: String,
 }
 
 #[derive(Serialize)]
@@ -38,7 +41,9 @@ struct ChannelsEnvelope {
 #[derive(Deserialize, Default)]
 struct ChannelData {
     #[serde(default)]
-    is_live: bool,
+    broadcaster_user_id: u64,
+    #[serde(default)]
+    slug: String,
     #[serde(default)]
     stream_title: String,
     #[serde(default)]
@@ -58,7 +63,11 @@ struct CategoryData {
 #[derive(Deserialize, Default)]
 struct StreamData {
     #[serde(default)]
+    is_live: bool,
+    #[serde(default)]
     viewer_count: u64,
+    #[serde(default)]
+    start_time: String,
 }
 
 impl KickChannel {
@@ -106,17 +115,35 @@ impl KickChannel {
     }
 
     pub async fn get_channel(&self, token: &str) -> Result<ChannelSnapshot, PlatformError> {
+        self.fetch(token, None).await
+    }
+
+    pub async fn get_channel_by_slug(
+        &self,
+        token: &str,
+        slug: &str,
+    ) -> Result<ChannelSnapshot, PlatformError> {
+        self.fetch(token, Some(slug)).await
+    }
+
+    async fn fetch(
+        &self,
+        token: &str,
+        slug: Option<&str>,
+    ) -> Result<ChannelSnapshot, PlatformError> {
         self.acquire_slot().await?;
 
-        let response = self
+        let mut request = self
             .client
             .get(&self.channels_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"));
+        if let Some(slug) = slug {
+            request = request.query(&[("slug", slug)]);
+        }
+
+        let response = request.send().await.map_err(|e| PlatformError::Network {
+            reason: e.without_url().to_string(),
+        })?;
 
         let status = response.status().as_u16();
         if !(200..300).contains(&status) {
@@ -138,11 +165,14 @@ impl KickChannel {
             })?;
 
         Ok(ChannelSnapshot {
-            is_live: channel.is_live,
+            broadcaster_user_id: channel.broadcaster_user_id,
+            slug: channel.slug,
+            is_live: channel.stream.is_live,
             stream_title: channel.stream_title,
             category_id: channel.category.id,
             category_name: channel.category.name,
             viewer_count: channel.stream.viewer_count,
+            started_at: channel.stream.start_time,
         })
     }
 
@@ -365,17 +395,21 @@ mod tests {
             .and(path("/channels"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": [{
-                    "is_live": true,
+                    "broadcaster_user_id": 42,
+                    "slug": "a-streamer",
                     "stream_title": "Speedrun Night",
                     "category": { "id": 77, "name": "Just Chatting" },
-                    "stream": { "viewer_count": 1234 }
+                    "stream": { "is_live": true, "viewer_count": 1234, "start_time": "2026-07-24T10:00:00Z" }
                 }]
             })))
             .mount(&server)
             .await;
 
         let snapshot = channel_on(&server).get_channel("tok").await.unwrap();
+        assert_eq!(snapshot.broadcaster_user_id, 42);
+        assert_eq!(snapshot.slug, "a-streamer");
         assert!(snapshot.is_live);
+        assert_eq!(snapshot.started_at, "2026-07-24T10:00:00Z");
         assert_eq!(snapshot.stream_title, "Speedrun Night");
         assert_eq!(snapshot.category_id, 77);
         assert_eq!(snapshot.category_name, "Just Chatting");
@@ -404,7 +438,6 @@ mod tests {
             .and(path("/channels"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "data": [{
-                    "is_live": false,
                     "stream_title": "Offline"
                 }]
             })))

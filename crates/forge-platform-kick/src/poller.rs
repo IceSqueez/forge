@@ -281,11 +281,14 @@ mod tests {
         category_name: &str,
     ) -> ChannelSnapshot {
         ChannelSnapshot {
+            broadcaster_user_id: 0,
+            slug: String::new(),
             is_live,
             stream_title: title.to_owned(),
             category_id,
             category_name: category_name.to_owned(),
             viewer_count: 0,
+            started_at: String::new(),
         }
     }
 
@@ -316,9 +319,9 @@ mod tests {
     ) -> serde_json::Value {
         serde_json::json!({
             "data": [{
-                "is_live": is_live,
                 "stream_title": title,
-                "category": { "id": category_id, "name": category_name }
+                "category": { "id": category_id, "name": category_name },
+                "stream": { "is_live": is_live }
             }]
         })
     }

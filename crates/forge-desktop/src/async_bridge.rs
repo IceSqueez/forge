@@ -52,11 +52,17 @@ pub enum BridgeFlow {
 }
 
 /// Drains `bus` batches into `apply` until the bus closes or `apply` returns `Stop`; a lagging receiver warns and keeps receiving (broadcast semantics).
-pub async fn drain_events<F>(bus: &EventBus, cx: &mut AsyncApp, mut apply: F)
+pub async fn drain_events<F>(bus: &EventBus, cx: &mut AsyncApp, apply: F)
 where
     F: FnMut(&[Event], &mut AsyncApp) -> BridgeFlow,
 {
-    let mut sub = bus.subscribe();
+    drain_subscription(bus.subscribe(), cx, apply).await;
+}
+
+pub async fn drain_subscription<F>(mut sub: EventSubscription, cx: &mut AsyncApp, mut apply: F)
+where
+    F: FnMut(&[Event], &mut AsyncApp) -> BridgeFlow,
+{
     while let EventBatch::Ready(batch) = recv_event_batch(&mut sub).await {
         if apply(&batch, cx) == BridgeFlow::Stop {
             break;

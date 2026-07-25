@@ -6,14 +6,14 @@ use forge_components::{
     mono_family, primary_button, radius, spacing, tr,
 };
 use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
-use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
+use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle};
 use forge_types::{ChatModerationAction, ChatModerationPayload};
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
 };
 
-use crate::async_bridge::{BridgeFlow, drain_events};
+use crate::async_bridge::{BridgeFlow, drain_subscription};
 use crate::boot::{BootFailure, build_runtime};
 use crate::chat_feed::{ChatFeed, ChatMessage, chat_source, platform_of};
 use crate::event_log::EventLog;
@@ -108,7 +108,9 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                 // Not `Clone` - take the sole subscription out so the bridge below owns the only drain.
                 let speak_events = handles.speak_events.take();
                 let handles = Arc::new(handles);
-                let bus = Arc::clone(&handles.bus);
+                // Subscribe BEFORE seeding: a platform that flips to Connected between
+                // the seed snapshot and the bridge starting would otherwise be lost.
+                let bridge_sub = handles.bus.subscribe();
                 let handles_for_shell = Arc::clone(&handles);
                 let status_for_clock = status.clone();
                 let chat_feed_for_bridge = chat_feed.clone();
@@ -174,7 +176,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
                         event_log_for_bridge,
                         platforms_for_bridge,
                         queue_health_for_bridge,
-                        bus,
+                        bridge_sub,
                     );
                     start_uptime_clock(cx, status_for_clock);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
@@ -235,10 +237,10 @@ fn start_bridge(
     event_log: Entity<EventLog>,
     platforms: Entity<PlatformConnectivity>,
     queue_health: Entity<QueueHealth>,
-    bus: Arc<EventBus>,
+    sub: EventSubscription,
 ) {
     cx.spawn(async move |cx| {
-        drain_events(&bus, cx, move |batch, cx| {
+        drain_subscription(sub, cx, move |batch, cx| {
             platforms.update(cx, |connectivity, cx| {
                 let mut changed = false;
                 for event in batch {

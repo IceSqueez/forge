@@ -404,15 +404,19 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) async fn wait_for_connected(publisher: &MockPublisher) -> bool {
+    pub(crate) async fn wait_for(cond: impl Fn() -> bool) -> bool {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while tokio::time::Instant::now() < deadline {
-            if publisher.connected_event().is_some() {
+            if cond() {
                 return true;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(25)).await;
         }
         false
+    }
+
+    pub(crate) async fn wait_for_connected(publisher: &MockPublisher) -> bool {
+        wait_for(|| publisher.connected_event().is_some()).await
     }
 
     #[tokio::test]
@@ -462,9 +466,8 @@ pub(crate) mod tests {
         };
         let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
         assert!(
-            publisher.disconnected_event().is_some(),
+            wait_for(|| publisher.disconnected_event().is_some()).await,
             "expected vtube.connection.changed {{connected: false}}"
         );
     }
@@ -609,14 +612,12 @@ pub(crate) mod tests {
         };
         let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
         assert!(
-            publisher.disconnected_with_reason("auth_required"),
+            wait_for(|| publisher.disconnected_with_reason("auth_required")).await,
             "expected disconnected event with auth_required reason"
         );
         assert!(
-            !creds.has_key("vtube:default"),
+            wait_for(|| !creds.has_key("vtube:default")).await,
             "stale token should have been cleared from creds"
         );
     }
@@ -659,10 +660,8 @@ pub(crate) mod tests {
         };
         let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
         assert!(
-            publisher.disconnected_with_reason("auth_denied"),
+            wait_for(|| publisher.disconnected_with_reason("auth_denied")).await,
             "denied popup must map to the auth_denied reason token"
         );
         assert!(
@@ -725,10 +724,8 @@ pub(crate) mod tests {
         };
         let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
 
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
         assert!(
-            publisher.disconnected_with_reason("connect_failed"),
+            wait_for(|| publisher.disconnected_with_reason("connect_failed")).await,
             "a refused connection must emit the connect_failed reason token"
         );
         let ev = publisher

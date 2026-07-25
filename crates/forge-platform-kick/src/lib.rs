@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod builtin;
 pub mod capabilities;
+pub mod categories;
 pub mod channel;
 pub mod channel_info;
 pub mod chat;
@@ -22,6 +23,7 @@ pub mod triggers;
 pub use auth::{KickAuthBundle, KickAuthFlow, LoopbackCode, client_credentials, kick_auth_flow};
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
 pub use capabilities::kick_capabilities;
+pub use categories::{CategoryMatch, KickCategories};
 pub use channel::{ChannelSnapshot, KickChannel};
 pub use channel_info::{ChannelInfoFetcher, KickChannelInfo};
 pub use chat::{KickChat, KickChatHandle};
@@ -34,7 +36,7 @@ pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewar
 pub use send::KickSendChat;
 pub use sub_actions::{
     AcceptRedemptionRunner, BanUserRunner, CreateRewardRunner, DeleteMessageRunner,
-    DeleteRewardRunner, KickSubActionDeps, RejectRedemptionRunner, SendMessageRunner,
-    TimeoutUserRunner, UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner,
-    register_kick_sub_actions,
+    DeleteRewardRunner, KickSubActionDeps, LookupCategoryRunner, LookupStreamStatsRunner,
+    LookupUserRunner, RejectRedemptionRunner, SendMessageRunner, TimeoutUserRunner,
+    UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner, register_kick_sub_actions,
 };

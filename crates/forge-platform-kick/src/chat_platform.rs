@@ -142,7 +142,7 @@ impl ChatPlatform for KickPlatform {
             }
         })?;
         let token = self.credentials_manager.get_valid_access_token().await?;
-        self.sender.send(text, &token, creds.user_id).await
+        self.sender.send(text, &token, creds.user_id, false).await
     }
 
     fn events(&self) -> EventStream {

@@ -39,18 +39,23 @@ impl KickSendChat {
         content: &str,
         token: &str,
         broadcaster_user_id: u64,
+        as_bot: bool,
     ) -> Result<(), PlatformError> {
         acquire_or_wait(self.limiter.as_ref(), 1).await?;
+
+        let mut body = serde_json::json!({
+            "content": content,
+            "type": if as_bot { "bot" } else { "user" },
+        });
+        if !as_bot {
+            body["broadcaster_user_id"] = serde_json::json!(broadcaster_user_id);
+        }
 
         let response = self
             .client
             .post(&self.send_endpoint)
             .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&serde_json::json!({
-                "content": content,
-                "type": "user",
-                "broadcaster_user_id": broadcaster_user_id,
-            }))
+            .json(&body)
             .send()
             .await
             .map_err(|e| PlatformError::Network {
@@ -178,7 +183,7 @@ mod tests {
             .await;
 
         let err = grant_sender(&server)
-            .send("hi", "bad", 42)
+            .send("hi", "bad", 42, false)
             .await
             .unwrap_err();
         assert!(matches!(err, PlatformError::Auth { .. }));
@@ -198,7 +203,7 @@ mod tests {
             .await;
 
         let err = grant_sender(&server)
-            .send("hi", "tok", 42)
+            .send("hi", "tok", 42, false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -219,7 +224,7 @@ mod tests {
             .await;
 
         let err = grant_sender(&server)
-            .send("hi", "tok", 42)
+            .send("hi", "tok", 42, false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -236,7 +241,7 @@ mod tests {
         let sender = KickSendChat::new(Arc::new(ExhaustedLimiter))
             .with_send_endpoint(format!("{}/chat", server.uri()));
 
-        let err = sender.send("hi", "tok", 42).await.unwrap_err();
+        let err = sender.send("hi", "tok", 42, false).await.unwrap_err();
         assert!(matches!(err, PlatformError::RateLimitExhausted));
         assert!(server.received_requests().await.unwrap().is_empty());
     }
@@ -251,7 +256,7 @@ mod tests {
             .await;
 
         let err = grant_sender(&server)
-            .send("hi", "tok", 42)
+            .send("hi", "tok", 42, false)
             .await
             .unwrap_err();
         assert!(matches!(err, PlatformError::Http { status: 500, .. }));

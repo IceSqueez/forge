@@ -643,6 +643,9 @@ async fn build_kick(
     let rewards = Arc::new(forge_platform_kick::KickRewards::new(Arc::clone(
         &rate_limiter,
     )));
+    let categories = Arc::new(forge_platform_kick::KickCategories::new(Arc::clone(
+        &rate_limiter,
+    )));
 
     let manager_for_sub_actions = Arc::clone(&manager);
     let manager_for_broadcaster = Arc::clone(&manager);
@@ -661,6 +664,7 @@ async fn build_kick(
             moderation,
             channel: Arc::clone(&channel),
             rewards: Arc::clone(&rewards),
+            categories,
         },
     ) {
         eprintln!("forge-desktop: kick sub-action registration failed: {e}");

@@ -68,14 +68,23 @@ impl SubActionRunner for SendMessageRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("message".to_owned(), Variant::String(String::new()))])
+        BTreeMap::from([
+            ("message".to_owned(), Variant::String(String::new())),
+            ("as_bot".to_owned(), Variant::Bool(false)),
+        ])
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::TextArea {
-            key: "message",
-            label: "Message",
-        }]
+        vec![
+            FormField::TextArea {
+                key: "message",
+                label: "Message",
+            },
+            FormField::Toggle {
+                key: "as_bot",
+                label: "Send as bot",
+            },
+        ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
@@ -97,17 +106,22 @@ impl SubActionRunner for SendMessageRunner {
 
         let template = config.str("message").unwrap_or_default();
         let message = ctx.arg_stack.interpolate(template);
+        let as_bot = config.bool("as_bot").unwrap_or(false);
 
         let outcome = if message.is_empty() {
             SubActionOutcome::Failed("message is empty after interpolation".to_owned())
         } else {
             match (self.token_source)().await {
                 Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
+                Ok(token) if as_bot => match self.client.send(&message, &token, 0, true).await {
+                    Ok(()) => SubActionOutcome::Success,
+                    Err(e) => SubActionOutcome::Failed(e.to_string()),
+                },
                 Ok(token) => match (self.broadcaster_id_source)().await {
                     Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
                     Ok(broadcaster_user_id) => match self
                         .client
-                        .send(&message, &token, broadcaster_user_id)
+                        .send(&message, &token, broadcaster_user_id, false)
                         .await
                     {
                         Ok(()) => SubActionOutcome::Success,

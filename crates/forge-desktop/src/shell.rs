@@ -183,6 +183,7 @@ impl AppShell {
                         let rt_handle = handles.rt_handle.clone();
                         let action_engine = handles.action_engine.clone();
                         let live_viewers = handles.live_viewers.clone();
+                        let kick_install_seed = handles.kick_install_seed.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 icon,
@@ -198,6 +199,7 @@ impl AppShell {
                                 bus,
                                 event_bus.clone(),
                                 live_viewers,
+                                kick_install_seed,
                                 connectivity,
                                 cx,
                             )
@@ -208,6 +210,7 @@ impl AppShell {
                         let rt_handle = handles.rt_handle.clone();
                         let action_engine = handles.action_engine.clone();
                         let live_viewers = handles.live_viewers.clone();
+                        let kick_install_seed = handles.kick_install_seed.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 seed.icon,
@@ -223,6 +226,7 @@ impl AppShell {
                                 bus,
                                 event_bus.clone(),
                                 live_viewers,
+                                kick_install_seed,
                                 connectivity,
                                 cx,
                             )

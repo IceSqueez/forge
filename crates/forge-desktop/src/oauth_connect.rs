@@ -18,6 +18,7 @@ use gpui::{
 };
 
 use crate::integration_detail::IntegrationDetail;
+use crate::integrations::KickInstallSeed;
 
 pub(crate) type YoutubeFlowHandle =
     Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
@@ -192,12 +193,15 @@ impl IntegrationDetail {
     }
 
     fn install_kick(&mut self, cx: &mut Context<Self>) {
-        let credentials = Arc::clone(&self.credentials);
+        if self.control.is_some() {
+            return;
+        }
+        let seed = self.kick_install_seed.clone();
         let bus = Arc::clone(&self.bus);
         let live_viewers = self.live_viewers.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move { assemble_kick_install(credentials, bus, live_viewers).await },
+            async move { assemble_kick_install(seed, bus, live_viewers).await },
             |this, result, cx| this.apply_kick_install(result, cx),
             cx,
         );
@@ -1177,43 +1181,24 @@ async fn connect_youtube_after_oauth(
 }
 
 async fn assemble_kick_install(
-    credentials_repo: Arc<dyn CredentialsRepo>,
+    seed: Option<KickInstallSeed>,
     bus: Arc<dyn EventPublisher>,
     live_viewers: forge_runtime::LiveViewerAggregatorHandle,
 ) -> Result<Arc<forge_platform_kick::KickIntegrationBundle>, String> {
-    let (client_id, client_secret) = forge_platform_kick::client_credentials()
-        .ok_or_else(|| "Kick OAuth client credentials are not configured".to_owned())?;
-    let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
-        credentials_repo,
-        client_id,
-        client_secret,
-    ));
-    let creds = manager
+    let seed = seed.ok_or_else(|| "Kick OAuth client credentials are not configured".to_owned())?;
+    let creds = seed
+        .manager
         .load()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no Kick credentials found right after authorization".to_owned())?;
 
-    let rate_limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(
-        forge_platform_core::TokenBucketRateLimiter::new(60, Duration::from_secs(60)),
-    );
-    let platform = Arc::new(forge_platform_kick::KickPlatform::new(
-        Arc::clone(&manager),
-        Arc::clone(&rate_limiter),
-    ));
-    let channel = Arc::new(forge_platform_kick::KickChannel::new(Arc::clone(
-        &rate_limiter,
-    )));
-    let rewards = Arc::new(forge_platform_kick::KickRewards::new(Arc::clone(
-        &rate_limiter,
-    )));
-
     let stack = crate::integrations::assemble_kick_stack(
-        manager,
-        platform,
-        rate_limiter,
-        channel,
-        rewards,
+        seed.manager,
+        seed.platform,
+        seed.rate_limiter,
+        seed.channel,
+        seed.rewards,
         bus,
         creds.username,
         creds.user_id,

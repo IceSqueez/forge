@@ -29,6 +29,7 @@ use std::time::{Duration, Instant};
 use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::{content_sections, health_grid};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
+use crate::integrations::KickInstallSeed;
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
@@ -42,13 +43,14 @@ pub struct IntegrationDetail {
     health: Arc<dyn BuiltinHealth>,
     content: Arc<dyn BuiltinContent>,
     quick: Arc<dyn QuickActions>,
-    control: Option<Arc<dyn BuiltinControl>>,
+    pub(crate) control: Option<Arc<dyn BuiltinControl>>,
     pub(crate) rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     obs_source: Option<Arc<ObsClient>>,
     pub(crate) credentials: Arc<dyn CredentialsRepo>,
     pub(crate) bus: Arc<dyn EventPublisher>,
     pub(crate) live_viewers: LiveViewerAggregatorHandle,
+    pub(crate) kick_install_seed: Option<KickInstallSeed>,
     pub(crate) connect_platform: Option<PlatformId>,
     pub(crate) flow_phase: LocalCallbackFlowPhase,
     pub(crate) flow_auth_url: Option<String>,
@@ -109,6 +111,7 @@ impl IntegrationDetail {
         bus: Arc<dyn EventPublisher>,
         event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
+        kick_install_seed: Option<KickInstallSeed>,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -173,6 +176,7 @@ impl IntegrationDetail {
             credentials,
             bus,
             live_viewers,
+            kick_install_seed,
             connect_platform,
             flow_phase: LocalCallbackFlowPhase::Idle,
             flow_auth_url: None,

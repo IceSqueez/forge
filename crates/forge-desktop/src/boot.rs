@@ -316,6 +316,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         trigger_evaluator,
         live_viewers,
         builtins: integrations.builtins,
+        kick_install_seed: integrations.kick_install_seed,
         server,
         speak,
         speak_events,

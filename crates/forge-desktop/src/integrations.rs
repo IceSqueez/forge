@@ -28,6 +28,16 @@ pub struct BuiltinObject {
 pub struct Integrations {
     pub builtins: HashMap<BuiltinId, BuiltinObject>,
     pub viewer_sources: Vec<Box<dyn LiveViewerSource>>,
+    pub kick_install_seed: Option<KickInstallSeed>,
+}
+
+#[derive(Clone)]
+pub struct KickInstallSeed {
+    pub manager: Arc<forge_platform_kick::KickCredentialsManager>,
+    pub rate_limiter: Arc<dyn RateLimiter>,
+    pub platform: Arc<forge_platform_kick::KickPlatform>,
+    pub channel: Arc<forge_platform_kick::KickChannel>,
+    pub rewards: Arc<forge_platform_kick::KickRewards>,
 }
 
 struct NoopRateLimiter;
@@ -75,7 +85,7 @@ pub async fn build_integrations(
     }
     insert("youtube", youtube);
 
-    let (kick, kick_viewers) = build_kick(sub_actions, backend, bus).await;
+    let (kick, kick_viewers, kick_install_seed) = build_kick(sub_actions, backend, bus).await;
     if let Some(source) = kick_viewers {
         viewer_sources.push(source);
     }
@@ -84,6 +94,7 @@ pub async fn build_integrations(
     Integrations {
         builtins,
         viewer_sources,
+        kick_install_seed,
     }
 }
 
@@ -613,9 +624,13 @@ async fn build_kick(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> (Option<BuiltinObject>, Option<Box<dyn LiveViewerSource>>) {
+) -> (
+    Option<BuiltinObject>,
+    Option<Box<dyn LiveViewerSource>>,
+    Option<KickInstallSeed>,
+) {
     let Some((client_id, client_secret)) = forge_platform_kick::client_credentials() else {
-        return (None, None);
+        return (None, None, None);
     };
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
         creds_of(backend),
@@ -646,6 +661,14 @@ async fn build_kick(
     let categories = Arc::new(forge_platform_kick::KickCategories::new(Arc::clone(
         &rate_limiter,
     )));
+
+    let install_seed = KickInstallSeed {
+        manager: Arc::clone(&manager),
+        rate_limiter: Arc::clone(&rate_limiter),
+        platform: Arc::clone(&platform),
+        channel: Arc::clone(&channel),
+        rewards: Arc::clone(&rewards),
+    };
 
     let manager_for_sub_actions = Arc::clone(&manager);
     let manager_for_broadcaster = Arc::clone(&manager);
@@ -679,10 +702,10 @@ async fn build_kick(
 
     let creds = match manager.load().await {
         Ok(Some(creds)) => creds,
-        Ok(None) => return (None, None),
+        Ok(None) => return (None, None, Some(install_seed)),
         Err(e) => {
             eprintln!("forge-desktop: failed to load kick credentials: {e}");
-            return (None, None);
+            return (None, None, Some(install_seed));
         }
     };
 
@@ -707,7 +730,7 @@ async fn build_kick(
         control: Some(stack.bundle as Arc<dyn BuiltinControl>),
         obs_client: None,
     };
-    (Some(object), Some(stack.viewer_source))
+    (Some(object), Some(stack.viewer_source), Some(install_seed))
 }
 
 pub(crate) struct KickStack {

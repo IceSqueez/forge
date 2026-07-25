@@ -1,3 +1,8 @@
+mod browser_refresh;
+mod capture_screenshot;
+mod filter_set_enabled;
+mod media_restart;
+mod profile_switch;
 mod query_input_list;
 mod query_input_settings;
 mod query_record_status;
@@ -6,12 +11,16 @@ mod query_stream_status;
 mod raw_request;
 mod record_pause;
 mod record_resume;
+mod record_set_active;
+mod record_set_directory;
 mod record_start;
 mod record_stop;
 mod record_toggle_pause;
 mod replay_save;
+mod replay_set_active;
 mod replay_start;
 mod replay_stop;
+mod scene_collection_switch;
 mod set_input_settings;
 mod set_mute;
 mod set_preview_scene;
@@ -19,12 +28,15 @@ mod set_transition;
 mod set_visible;
 mod set_volume;
 mod stream_send_caption;
+mod stream_set_active;
 mod stream_start;
 mod stream_stop;
 mod studio_disable;
 mod studio_enable;
+mod studio_set_enabled;
 mod studio_trigger_transition;
 mod switch_current;
+mod virtualcam_set_active;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -33,6 +45,11 @@ use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
 
+pub use browser_refresh::BrowserRefreshRunner;
+pub use capture_screenshot::CaptureScreenshotRunner;
+pub use filter_set_enabled::FilterSetEnabledRunner;
+pub use media_restart::MediaRestartRunner;
+pub use profile_switch::ProfileSwitchRunner;
 pub use query_input_list::QueryInputListRunner;
 pub use query_input_settings::QueryInputSettingsRunner;
 pub use query_record_status::QueryRecordStatusRunner;
@@ -41,12 +58,16 @@ pub use query_stream_status::QueryStreamStatusRunner;
 pub use raw_request::RawRequestRunner;
 pub use record_pause::RecordPauseRunner;
 pub use record_resume::RecordResumeRunner;
+pub use record_set_active::RecordSetActiveRunner;
+pub use record_set_directory::RecordSetDirectoryRunner;
 pub use record_start::RecordStartRunner;
 pub use record_stop::RecordStopRunner;
 pub use record_toggle_pause::RecordTogglePauseRunner;
 pub use replay_save::ReplaySaveRunner;
+pub use replay_set_active::ReplaySetActiveRunner;
 pub use replay_start::ReplayStartRunner;
 pub use replay_stop::ReplayStopRunner;
+pub use scene_collection_switch::SceneCollectionSwitchRunner;
 pub use set_input_settings::SetInputSettingsRunner;
 pub use set_mute::SetMuteRunner;
 pub use set_preview_scene::SetPreviewSceneRunner;
@@ -54,12 +75,15 @@ pub use set_transition::SetTransitionRunner;
 pub use set_visible::SetVisibleRunner;
 pub use set_volume::SetVolumeRunner;
 pub use stream_send_caption::StreamSendCaptionRunner;
+pub use stream_set_active::StreamSetActiveRunner;
 pub use stream_start::StreamStartRunner;
 pub use stream_stop::StreamStopRunner;
 pub use studio_disable::StudioDisableRunner;
 pub use studio_enable::StudioEnableRunner;
+pub use studio_set_enabled::StudioSetEnabledRunner;
 pub use studio_trigger_transition::StudioTriggerTransitionRunner;
 pub use switch_current::SwitchCurrentSceneRunner;
+pub use virtualcam_set_active::VirtualCamSetActiveRunner;
 
 use crate::ObsSink;
 
@@ -93,6 +117,20 @@ pub fn register_obs_sub_actions(
     reg.register(Box::new(StudioEnableRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(StudioDisableRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(StudioTriggerTransitionRunner::new(Arc::clone(
+        &sink,
+    ))))?;
+    reg.register(Box::new(StudioSetEnabledRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(FilterSetEnabledRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(BrowserRefreshRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(MediaRestartRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(StreamSetActiveRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(RecordSetActiveRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(VirtualCamSetActiveRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ReplaySetActiveRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(CaptureScreenshotRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(RecordSetDirectoryRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ProfileSwitchRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(SceneCollectionSwitchRunner::new(Arc::clone(
         &sink,
     ))))?;
     reg.register(Box::new(RawRequestRunner::new(sink)))?;

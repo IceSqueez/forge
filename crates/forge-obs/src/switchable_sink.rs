@@ -183,6 +183,65 @@ impl ObsSink for SwitchableObsSink {
         let client = self.get()?;
         client.get_input_settings(input).await
     }
+
+    async fn set_source_filter_enabled(
+        &self,
+        source: &str,
+        filter: &str,
+        enabled: bool,
+    ) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client
+            .set_source_filter_enabled(source, filter, enabled)
+            .await
+    }
+
+    async fn refresh_browser_source(&self, input: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.refresh_browser_source(input).await
+    }
+
+    async fn restart_media_input(&self, input: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.restart_media_input(input).await
+    }
+
+    async fn start_virtual_cam(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.start_virtual_cam().await
+    }
+
+    async fn stop_virtual_cam(&self) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.stop_virtual_cam().await
+    }
+
+    async fn save_source_screenshot(
+        &self,
+        source: &str,
+        file_path: &str,
+        format: &str,
+    ) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client
+            .save_source_screenshot(source, file_path, format)
+            .await
+    }
+
+    async fn set_record_directory(&self, path: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_record_directory(path).await
+    }
+
+    async fn set_current_profile(&self, name: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_current_profile(name).await
+    }
+
+    async fn set_current_scene_collection(&self, name: &str) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_current_scene_collection(name).await
+    }
 }
 
 #[cfg(test)]

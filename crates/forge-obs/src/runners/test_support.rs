@@ -121,6 +121,33 @@ impl ObsSink for MockSink {
         obj.insert("settings".to_owned(), Variant::Object(settings));
         Ok(Variant::Object(obj))
     }
+    async fn set_source_filter_enabled(&self, _: &str, _: &str, _: bool) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn refresh_browser_source(&self, _: &str) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn restart_media_input(&self, _: &str) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn start_virtual_cam(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn stop_virtual_cam(&self) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn save_source_screenshot(&self, _: &str, _: &str, _: &str) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn set_record_directory(&self, _: &str) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn set_current_profile(&self, _: &str) -> Result<(), ObsError> {
+        Ok(())
+    }
+    async fn set_current_scene_collection(&self, _: &str) -> Result<(), ObsError> {
+        Ok(())
+    }
 }
 
 pub(crate) struct NoopPublisher;

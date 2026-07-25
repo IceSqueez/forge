@@ -67,4 +67,32 @@ pub trait ObsSink: Send + Sync {
     async fn get_stream_status(&self) -> Result<Variant, ObsError>;
 
     async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError>;
+
+    async fn set_source_filter_enabled(
+        &self,
+        source: &str,
+        filter: &str,
+        enabled: bool,
+    ) -> Result<(), ObsError>;
+
+    async fn refresh_browser_source(&self, input: &str) -> Result<(), ObsError>;
+
+    async fn restart_media_input(&self, input: &str) -> Result<(), ObsError>;
+
+    async fn start_virtual_cam(&self) -> Result<(), ObsError>;
+
+    async fn stop_virtual_cam(&self) -> Result<(), ObsError>;
+
+    async fn save_source_screenshot(
+        &self,
+        source: &str,
+        file_path: &str,
+        format: &str,
+    ) -> Result<(), ObsError>;
+
+    async fn set_record_directory(&self, path: &str) -> Result<(), ObsError>;
+
+    async fn set_current_profile(&self, name: &str) -> Result<(), ObsError>;
+
+    async fn set_current_scene_collection(&self, name: &str) -> Result<(), ObsError>;
 }

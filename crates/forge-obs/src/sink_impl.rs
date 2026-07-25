@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use async_trait::async_trait;
 use forge_types::Variant;
+use obws::common::MediaAction;
+use obws::requests::filters::SetEnabled as FilterSetEnabled;
 use obws::requests::inputs::{InputId, SetSettings, Volume};
 use obws::requests::scene_items::{Id, SetEnabled};
 use obws::requests::scenes::SceneId;
+use obws::requests::sources::{SaveScreenshot, SourceId};
 
 use crate::client::ObsClient;
 use crate::error::ObsError;
@@ -424,6 +428,135 @@ impl ObsSink for ObsClient {
         obj.insert("settings".to_owned(), settings_variant);
         obj.insert("kind".to_owned(), Variant::String(result.kind));
         Ok(Variant::Object(obj))
+    }
+
+    async fn set_source_filter_enabled(
+        &self,
+        source: &str,
+        filter: &str,
+        enabled: bool,
+    ) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .filters()
+            .set_enabled(FilterSetEnabled {
+                source: SourceId::Name(source),
+                filter,
+                enabled,
+            })
+            .await
+            .map_err(|e| map_request_error("SetSourceFilterEnabled", e))
+    }
+
+    async fn refresh_browser_source(&self, input: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .inputs()
+            .press_properties_button(InputId::Name(input), "refreshnocache")
+            .await
+            .map_err(|e| map_request_error("PressInputPropertiesButton", e))
+    }
+
+    async fn restart_media_input(&self, input: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .media_inputs()
+            .trigger_action(InputId::Name(input), MediaAction::Restart)
+            .await
+            .map_err(|e| map_request_error("TriggerMediaInputAction", e))
+    }
+
+    async fn start_virtual_cam(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .virtual_cam()
+            .start()
+            .await
+            .map_err(|e| map_request_error("StartVirtualCam", e))
+    }
+
+    async fn stop_virtual_cam(&self) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .virtual_cam()
+            .stop()
+            .await
+            .map_err(|e| map_request_error("StopVirtualCam", e))
+    }
+
+    async fn save_source_screenshot(
+        &self,
+        source: &str,
+        file_path: &str,
+        format: &str,
+    ) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .sources()
+            .save_screenshot(SaveScreenshot {
+                source: SourceId::Name(source),
+                format,
+                width: None,
+                height: None,
+                compression_quality: None,
+                file_path: Path::new(file_path),
+            })
+            .await
+            .map_err(|e| map_request_error("SaveSourceScreenshot", e))
+    }
+
+    async fn set_record_directory(&self, path: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .config()
+            .set_record_directory(path)
+            .await
+            .map_err(|e| map_request_error("SetRecordDirectory", e))
+    }
+
+    async fn set_current_profile(&self, name: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .profiles()
+            .set_current(name)
+            .await
+            .map_err(|e| map_request_error("SetCurrentProfile", e))
+    }
+
+    async fn set_current_scene_collection(&self, name: &str) -> Result<(), ObsError> {
+        let guard = self.inner.read().await;
+        let Some(client) = guard.as_ref() else {
+            return Err(ObsError::Disconnected);
+        };
+        client
+            .scene_collections()
+            .set_current(name)
+            .await
+            .map_err(|e| map_request_error("SetCurrentSceneCollection", e))
     }
 }
 

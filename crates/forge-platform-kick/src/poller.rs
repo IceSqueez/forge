@@ -2,9 +2,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::{DedupSet, PlatformError};
+use forge_platform_core::{
+    DedupSet, LiveViewerSource, PlatformError, ViewerReport, ViewerReportStream,
+};
 use futures::future::BoxFuture;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
+use tokio_stream::wrappers::WatchStream;
 use tracing::warn;
 
 use crate::channel::{ChannelSnapshot, KickChannel};
@@ -21,13 +24,31 @@ const REWARD_REDEEMED_KIND: &str = "kick.channel.reward.redemption.updated";
 pub(crate) type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
+pub struct KickViewerSource {
+    reports: watch::Receiver<ViewerReport>,
+}
+
+impl LiveViewerSource for KickViewerSource {
+    fn viewer_reports(&self) -> ViewerReportStream {
+        Box::pin(WatchStream::new(self.reports.clone()))
+    }
+}
+
 pub fn spawn_kick_poller(
     channel: Arc<KickChannel>,
     rewards: Arc<KickRewards>,
     token_source: TokenSource,
     event_tx: mpsc::Sender<Event>,
-) {
-    tokio::spawn(run_loop(channel, rewards, token_source, event_tx));
+) -> KickViewerSource {
+    let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
+    tokio::spawn(run_loop(
+        channel,
+        rewards,
+        token_source,
+        event_tx,
+        viewer_tx,
+    ));
+    KickViewerSource { reports: viewer_rx }
 }
 
 struct ChannelDelta {
@@ -98,6 +119,7 @@ async fn poll_channel(
     channel: &KickChannel,
     token_source: &TokenSource,
     event_tx: &mpsc::Sender<Event>,
+    viewer_tx: &watch::Sender<ViewerReport>,
     last_snapshot: &mut Option<ChannelSnapshot>,
 ) -> Result<(), ()> {
     let Some(token) = resolve_token(token_source).await else {
@@ -111,6 +133,15 @@ async fn poll_channel(
             return Ok(());
         }
     };
+
+    let report = if snapshot.is_live {
+        ViewerReport::Live {
+            count: snapshot.viewer_count,
+        }
+    } else {
+        ViewerReport::Absent
+    };
+    let _ = viewer_tx.send(report);
 
     if let Some(prev) = last_snapshot.as_ref() {
         let delta = diff_channel(prev, &snapshot);
@@ -166,6 +197,7 @@ async fn run_loop(
     rewards: Arc<KickRewards>,
     token_source: TokenSource,
     event_tx: mpsc::Sender<Event>,
+    viewer_tx: watch::Sender<ViewerReport>,
 ) {
     let mut channel_interval = tokio::time::interval(CHANNEL_POLL_INTERVAL);
     let mut redemption_interval = tokio::time::interval(REDEMPTION_POLL_INTERVAL);
@@ -176,7 +208,7 @@ async fn run_loop(
     loop {
         tokio::select! {
             _ = channel_interval.tick() => {
-                if poll_channel(&channel, &token_source, &event_tx, &mut last_snapshot)
+                if poll_channel(&channel, &token_source, &event_tx, &viewer_tx, &mut last_snapshot)
                     .await
                     .is_err()
                 {
@@ -236,6 +268,10 @@ mod tests {
                 })
             }) as BoxFuture<'static, _>
         })
+    }
+
+    fn viewer_sender() -> watch::Sender<ViewerReport> {
+        watch::channel(ViewerReport::Absent).0
     }
 
     fn snapshot(
@@ -375,7 +411,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = None;
 
-        poll_channel(&channel, &ok_token(), &tx, &mut last)
+        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
             .await
             .unwrap();
 
@@ -396,7 +432,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = Some(snapshot(true, "T", 1, "C"));
 
-        poll_channel(&channel, &ok_token(), &tx, &mut last)
+        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
             .await
             .unwrap();
 
@@ -416,7 +452,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = Some(snapshot(false, "T", 1, "C"));
 
-        poll_channel(&channel, &ok_token(), &tx, &mut last)
+        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
             .await
             .unwrap();
 
@@ -444,7 +480,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = Some(snapshot(true, "Old", 1, "C"));
 
-        poll_channel(&channel, &ok_token(), &tx, &mut last)
+        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
             .await
             .unwrap();
 
@@ -471,7 +507,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = None;
 
-        let result = poll_channel(&channel, &err_token(), &tx, &mut last).await;
+        let result = poll_channel(&channel, &err_token(), &tx, &viewer_sender(), &mut last).await;
 
         assert!(
             result.is_ok(),

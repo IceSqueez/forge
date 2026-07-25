@@ -684,7 +684,7 @@ async fn build_kick(
     }
 
     let manager_for_poller = Arc::clone(&manager);
-    forge_platform_kick::spawn_kick_poller(
+    let viewer_source = forge_platform_kick::spawn_kick_poller(
         channel,
         rewards,
         Arc::new(move || {
@@ -693,16 +693,6 @@ async fn build_kick(
         }),
         poller_tx,
     );
-
-    let manager_for_viewer_poll = Arc::clone(&manager);
-    let (viewer_poll, viewer_source) = forge_platform_kick::KickViewerPoll::new(
-        Arc::clone(&rate_limiter),
-        Arc::new(move || {
-            let manager = Arc::clone(&manager_for_viewer_poll);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-    );
-    tokio::spawn(viewer_poll.run());
 
     let (bundle, _health_tx) =
         forge_platform_kick::KickIntegrationBundle::new(slug, Arc::clone(&platform), manager);

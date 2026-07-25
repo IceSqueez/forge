@@ -18,7 +18,6 @@ pub mod rewards;
 pub mod send;
 pub mod sub_actions;
 pub mod triggers;
-pub mod viewer_poll;
 
 pub use auth::{KickAuthBundle, KickAuthFlow, LoopbackCode, client_credentials, kick_auth_flow};
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
@@ -30,7 +29,7 @@ pub use chat_platform::KickPlatform;
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use moderation::KickModeration;
-pub use poller::spawn_kick_poller;
+pub use poller::{KickViewerSource, spawn_kick_poller};
 pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewardParams};
 pub use send::KickSendChat;
 pub use sub_actions::{
@@ -39,4 +38,3 @@ pub use sub_actions::{
     TimeoutUserRunner, UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner,
     register_kick_sub_actions,
 };
-pub use viewer_poll::{KickViewerPoll, KickViewerSource};

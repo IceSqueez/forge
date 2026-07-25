@@ -11,6 +11,9 @@ pub enum PlatformError {
     #[error("authentication failure: {reason}")]
     Auth { reason: String },
 
+    #[error("loopback port {port} is already in use; another forge instance may be running")]
+    LoopbackPortInUse { port: u16 },
+
     /// Refresh token rejected by the platform; the UI must prompt re-authentication.
     #[error("re-authentication required for platform '{platform}'")]
     ReauthRequired { platform: String },

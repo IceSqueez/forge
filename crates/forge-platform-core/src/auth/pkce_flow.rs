@@ -39,6 +39,7 @@ pub struct PkceClientConfig {
     pub scopes: Vec<String>,
     pub authorize_pre_redirect_params: Vec<(String, String)>,
     pub authorize_trailing_params: Vec<(String, String)>,
+    pub preferred_port: Option<u16>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +84,7 @@ impl PkceFlow {
         &mut self,
         extra_trailing_params: &[(&str, &str)],
     ) -> Result<PkceAuthorizeUrl, PlatformError> {
-        let driver = LocalCallbackDriver::bind().await?;
+        let driver = LocalCallbackDriver::bind(self.config.preferred_port).await?;
         let auth_url = build_authorize_url(&self.config, &driver, extra_trailing_params)?;
         self.pending = Some(driver);
         Ok(PkceAuthorizeUrl { auth_url })
@@ -256,6 +257,7 @@ mod tests {
             scopes: vec!["scope:a".to_owned(), "scope:b".to_owned()],
             authorize_pre_redirect_params: Vec::new(),
             authorize_trailing_params: Vec::new(),
+            preferred_port: None,
         }
     }
 

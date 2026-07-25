@@ -93,6 +93,7 @@ impl GoogleAuthFlow {
                 .collect(),
             authorize_pre_redirect_params: Vec::new(),
             authorize_trailing_params: vec![("access_type".to_owned(), "offline".to_owned())],
+            preferred_port: None,
         });
         Self {
             http: reqwest::Client::new(),

@@ -9,6 +9,8 @@ pub const KICK_AUTHORIZE_ENDPOINT: &str = "https://id.kick.com/oauth/authorize";
 pub const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
 pub const KICK_USERS_ENDPOINT: &str = "https://api.kick.com/public/v1/users";
 
+pub const KICK_OAUTH_CALLBACK_PORT: u16 = 53127;
+
 const KICK_SCOPES: &[&str] = &[
     "user:read",
     "channel:read",
@@ -76,6 +78,7 @@ impl KickAuthFlow {
             // Must precede "redirect_uri" to prevent NextJS host-rewriting on id.kick.com.
             authorize_pre_redirect_params: vec![("redirect".to_owned(), "127.0.0.1".to_owned())],
             authorize_trailing_params: Vec::new(),
+            preferred_port: Some(KICK_OAUTH_CALLBACK_PORT),
         });
         Self {
             client_id,

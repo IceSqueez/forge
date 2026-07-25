@@ -31,8 +31,17 @@ pub struct CallbackCode {
 }
 
 impl LocalCallbackDriver {
-    pub async fn bind() -> Result<Self, PlatformError> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
+    pub async fn bind(preferred_port: Option<u16>) -> Result<Self, PlatformError> {
+        let listener =
+            match preferred_port {
+                Some(port) => TcpListener::bind(("127.0.0.1", port))
+                    .await
+                    .map_err(|e| match e.kind() {
+                        std::io::ErrorKind::AddrInUse => PlatformError::LoopbackPortInUse { port },
+                        _ => PlatformError::Io(e),
+                    })?,
+                None => TcpListener::bind("127.0.0.1:0").await?,
+            };
         let port = listener.local_addr()?.port();
         let redirect_uri = format!("http://127.0.0.1:{port}{CALLBACK_PATH}");
 
@@ -328,8 +337,8 @@ mod tests {
 
     #[tokio::test]
     async fn bind_generates_distinct_values_each_time() {
-        let a = LocalCallbackDriver::bind().await.unwrap();
-        let b = LocalCallbackDriver::bind().await.unwrap();
+        let a = LocalCallbackDriver::bind(None).await.unwrap();
+        let b = LocalCallbackDriver::bind(None).await.unwrap();
         assert_ne!(a.state(), b.state());
         assert_ne!(a.code_verifier(), b.code_verifier());
         assert_ne!(a.code_challenge(), b.code_challenge());
@@ -345,14 +354,14 @@ mod tests {
 
     #[tokio::test]
     async fn bind_produces_loopback_uri_with_callback_path() {
-        let d = LocalCallbackDriver::bind().await.unwrap();
+        let d = LocalCallbackDriver::bind(None).await.unwrap();
         assert!(d.redirect_uri().starts_with("http://127.0.0.1:"));
         assert!(d.redirect_uri().ends_with(CALLBACK_PATH));
     }
 
     #[tokio::test]
     async fn bind_state_and_verifier_are_url_safe_lengths() {
-        let d = LocalCallbackDriver::bind().await.unwrap();
+        let d = LocalCallbackDriver::bind(None).await.unwrap();
         assert_eq!(d.state().len(), 43);
         assert_eq!(d.code_verifier().len(), 43);
         assert_eq!(d.code_challenge().len(), 43);
@@ -360,7 +369,7 @@ mod tests {
 
     #[tokio::test]
     async fn await_callback_times_out_when_no_request_arrives() {
-        let d = LocalCallbackDriver::bind().await.unwrap();
+        let d = LocalCallbackDriver::bind(None).await.unwrap();
         let err = d
             .await_callback(Duration::from_millis(50))
             .await

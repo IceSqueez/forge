@@ -174,6 +174,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn send_body_author_mode_drives_type_and_broadcaster_id_presence() {
+        for (as_bot, expected_type, expects_broadcaster_id) in
+            [(false, "user", true), (true, "bot", false)]
+        {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/chat"))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+
+            grant_sender(&server)
+                .send("hi", "tok", 42, as_bot)
+                .await
+                .unwrap();
+
+            let reqs = server.received_requests().await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+            assert_eq!(body["type"], expected_type, "as_bot={as_bot}");
+            assert_eq!(
+                body.get("broadcaster_user_id").is_some(),
+                expects_broadcaster_id,
+                "as_bot={as_bot}: broadcaster_user_id presence",
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn send_returns_auth_error_on_401() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

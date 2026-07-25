@@ -173,3 +173,128 @@ impl SubActionRunner for LookupUserRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::sub_actions::test_support::{GrantLimiter, make_ctx, token_source};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn runner_on(server: &MockServer) -> LookupUserRunner {
+        let channel = KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        LookupUserRunner::new(Arc::new(channel), token_source())
+    }
+
+    #[tokio::test]
+    async fn lookup_publishes_the_channel_identity_into_the_arg_stack() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{
+                    "broadcaster_user_id": 7,
+                    "slug": "target-streamer",
+                    "stream_title": "Ranked",
+                    "category": {"id": 3, "name": "Chess"},
+                    "stream": {"is_live": true, "viewer_count": 88}
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let stack = ArgStack::new().set("who".to_owned(), Variant::String("target".to_owned()));
+        let config = BTreeMap::from([(
+            "slug".to_owned(),
+            Variant::String("%who%-streamer".to_owned()),
+        )]);
+
+        let (telemetry, produced) = runner_on(&server).execute(&config, &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let produced = produced.expect("a successful lookup must return an arg stack");
+        assert_eq!(
+            produced.get("kick.viewer.id"),
+            Some(&Variant::Int(7)),
+            "the interpolated slug must resolve against the live channel"
+        );
+        assert_eq!(
+            produced.get("kick.viewer.username"),
+            Some(&Variant::String("target-streamer".to_owned()))
+        );
+        assert_eq!(
+            produced.get("kick.viewer.is_live"),
+            Some(&Variant::Bool(true))
+        );
+        assert_eq!(
+            produced.get("kick.viewer.viewer_count"),
+            Some(&Variant::Int(88))
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_slug_after_interpolation_fails_without_request() {
+        let server = MockServer::start().await;
+        let stack = ArgStack::new().set("who".to_owned(), Variant::String(String::new()));
+        let config = BTreeMap::from([("slug".to_owned(), Variant::String("%who%".to_owned()))]);
+
+        let (telemetry, produced) = runner_on(&server).execute(&config, &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(produced.is_none());
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn validate_config_requires_a_non_empty_slug() {
+        let runner = LookupUserRunner::new(
+            Arc::new(KickChannel::new(Arc::new(GrantLimiter))),
+            token_source(),
+        );
+        let cases: Vec<(&str, SubActionConfig, bool)> = vec![
+            (
+                "non-empty",
+                BTreeMap::from([("slug".to_owned(), Variant::String("chan".to_owned()))]),
+                true,
+            ),
+            (
+                "empty",
+                BTreeMap::from([("slug".to_owned(), Variant::String(String::new()))]),
+                false,
+            ),
+            ("missing", BTreeMap::new(), false),
+            (
+                "non-string",
+                BTreeMap::from([("slug".to_owned(), Variant::Int(7))]),
+                false,
+            ),
+        ];
+
+        for (label, config, expect_ok) in cases {
+            assert_eq!(
+                runner.validate_config(&config).is_ok(),
+                expect_ok,
+                "case: {label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn upstream_http_error_is_reported_without_an_arg_stack() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
+            .mount(&server)
+            .await;
+
+        let stack = ArgStack::new();
+        let config = BTreeMap::from([("slug".to_owned(), Variant::String("chan".to_owned()))]);
+
+        let (telemetry, produced) = runner_on(&server).execute(&config, &make_ctx(&stack)).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(produced.is_none());
+    }
+}

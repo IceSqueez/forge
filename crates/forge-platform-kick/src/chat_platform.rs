@@ -269,6 +269,19 @@ mod tests {
         assert_eq!(p.connection_state(), ConnectionState::Disconnected);
     }
 
+    /// Runners are registered before credentials exist, so connect must fail with a typed
+    /// reauth prompt rather than assuming a boot-time identity.
+    #[tokio::test]
+    async fn connect_without_credentials_requires_reauth_and_stays_disconnected() {
+        let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));
+        let err = p.connect().await.unwrap_err();
+        assert!(
+            matches!(&err, PlatformError::ReauthRequired { platform } if platform == "kick"),
+            "expected ReauthRequired {{ platform: kick }}, got {err:?}"
+        );
+        assert_eq!(p.connection_state(), ConnectionState::Disconnected);
+    }
+
     #[tokio::test]
     async fn send_message_without_credentials_requires_reauth() {
         let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));

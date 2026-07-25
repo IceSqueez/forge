@@ -467,7 +467,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_ws_text_parses_chat_event() {
+    async fn handle_ws_text_parses_chat_event_and_reports_a_healthy_frame() {
         let (tx, mut rx) = mpsc::channel(8);
         let inner = serde_json::to_string(&chat_payload()).unwrap();
         let frame = serde_json::json!({
@@ -475,11 +475,51 @@ mod tests {
             "channel": "chatrooms.12345.v2",
             "data": inner
         });
-        handle_ws_text(&frame.to_string(), &tx).await;
+        let health = handle_ws_text(&frame.to_string(), &tx).await;
 
+        assert!(health == WsFrameHealth::Healthy);
         let event = rx.recv().await.unwrap();
         assert_eq!(event.kind, "kick.chat.message.sent");
         assert_eq!(event.source, EventSource::Kick);
+    }
+
+    /// Only a healthy frame resets the reconnect backoff, so a rejected subscription must not
+    /// be mistaken for a working session.
+    #[tokio::test]
+    async fn only_a_pusher_error_frame_is_reported_unhealthy() {
+        let cases = [
+            (
+                r#"{"event":"pusher:error","data":"{\"code\":4004,\"message\":\"over quota\"}"}"#,
+                WsFrameHealth::Error,
+            ),
+            (
+                r#"{"event":"pusher:pong","data":{}}"#,
+                WsFrameHealth::Healthy,
+            ),
+            (
+                r#"{"event":"pusher_internal:subscription_succeeded","channel":"chatrooms.1.v2","data":"{}"}"#,
+                WsFrameHealth::Healthy,
+            ),
+            (
+                r#"{"event":"App\\Events\\ChatMessageEvent","data":"not json {"}"#,
+                WsFrameHealth::Healthy,
+            ),
+            (
+                r#"{"event":"App\\Events\\Unknown","data":"{}"}"#,
+                WsFrameHealth::Healthy,
+            ),
+            ("this is not a Pusher frame", WsFrameHealth::Healthy),
+        ];
+
+        for (raw, expected_health) in cases {
+            let (tx, mut rx) = mpsc::channel(8);
+            let health = handle_ws_text(raw, &tx).await;
+            assert!(health == expected_health, "wrong health for frame: {raw}");
+            assert!(
+                rx.try_recv().is_err(),
+                "non-chat frame must not publish an event: {raw}"
+            );
+        }
     }
 
     #[test]
@@ -492,32 +532,5 @@ mod tests {
         );
         assert!(event.payload.get("slug").is_none());
         assert!(event.payload["sender"].get("identity").is_none());
-    }
-
-    #[tokio::test]
-    async fn handle_ws_text_ignores_pusher_pong() {
-        let (tx, mut rx) = mpsc::channel(8);
-        let frame = r#"{"event":"pusher:pong","data":{}}"#;
-        handle_ws_text(frame, &tx).await;
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn handle_ws_text_ignores_subscription_succeeded() {
-        let (tx, mut rx) = mpsc::channel(8);
-        let frame = r#"{"event":"pusher_internal:subscription_succeeded","channel":"chatrooms.1.v2","data":"{}"}"#;
-        handle_ws_text(frame, &tx).await;
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn handle_ws_text_ignores_unparseable_inner_data() {
-        let (tx, mut rx) = mpsc::channel(8);
-        let frame = serde_json::json!({
-            "event": "App\\Events\\ChatMessageEvent",
-            "data": "not json {"
-        });
-        handle_ws_text(&frame.to_string(), &tx).await;
-        assert!(rx.try_recv().is_err());
     }
 }

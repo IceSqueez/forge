@@ -8,6 +8,8 @@ mod lookup_stream_stats;
 mod lookup_user;
 mod reject_redemption;
 mod send_message;
+#[cfg(test)]
+mod test_support;
 mod timeout_user;
 mod unban_user;
 mod update_info;

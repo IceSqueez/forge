@@ -695,7 +695,7 @@ impl QuickActions for KickIntegrationBundle {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use forge_registry::KindPlatformContract;
     use forge_types::PlatformId;
@@ -783,7 +783,7 @@ mod tests {
             }
         }
 
-        struct GrantLimiter;
+        pub(super) struct GrantLimiter;
         #[async_trait]
         impl RateLimiter for GrantLimiter {
             async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, PlatformError> {
@@ -795,14 +795,15 @@ mod tests {
             async fn observe_remote_throttle(&self, _: StdDuration) {}
         }
 
-        fn disconnected_bundle() -> Arc<KickIntegrationBundle> {
+        pub(super) fn bundle_with_viewer_channel()
+        -> (Arc<KickIntegrationBundle>, watch::Sender<ViewerReport>) {
             let manager = Arc::new(KickCredentialsManager::new(
                 Arc::new(EmptyRepo),
                 "test_cid".to_owned(),
                 "test_secret".to_owned(),
             ));
             let platform = Arc::new(KickPlatform::new(manager.clone(), Arc::new(GrantLimiter)));
-            let (_viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
+            let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
             let (bundle, _) = KickIntegrationBundle::new(
                 "test_channel".to_owned(),
                 777,
@@ -811,7 +812,11 @@ mod tests {
                 Arc::new(GrantLimiter),
                 viewer_rx,
             );
-            bundle
+            (bundle, viewer_tx)
+        }
+
+        pub(super) fn disconnected_bundle() -> Arc<KickIntegrationBundle> {
+            bundle_with_viewer_channel().0
         }
 
         #[test]
@@ -870,6 +875,125 @@ mod tests {
             let control: Arc<dyn BuiltinControl> = disconnected_bundle();
             let outcome = control.disconnect().await;
             assert_eq!(outcome, Err(ControlFailure::NotConnected));
+        }
+
+        #[tokio::test]
+        async fn a_viewer_report_updates_the_metric_slot_labelled_viewers() {
+            let (bundle, viewer_tx) = bundle_with_viewer_channel();
+            let mut health = bundle.stream();
+
+            viewer_tx.send(ViewerReport::Live { count: 5 }).unwrap();
+
+            let delta = tokio::time::timeout(StdDuration::from_secs(5), health.next())
+                .await
+                .expect("the viewer bridge must publish a health delta")
+                .expect("the health stream must stay open");
+
+            assert_eq!(
+                bundle.metrics()[usize::from(delta.index)].label,
+                "Viewers",
+                "the viewer bridge index must address the Viewers metric",
+            );
+            assert_eq!(
+                delta.new_value,
+                HealthValue::Text {
+                    primary: "5".to_owned(),
+                    secondary: Some("live".to_owned()),
+                }
+            );
+        }
+    }
+
+    mod roster {
+        use std::collections::BTreeSet;
+
+        use forge_platform_core::PlatformError;
+        use forge_registry::SubActionRegistry;
+        use futures::future::BoxFuture;
+
+        use super::super::*;
+        use super::lifecycle::{GrantLimiter, disconnected_bundle};
+        use crate::categories::KickCategories;
+        use crate::channel::KickChannel;
+        use crate::moderation::KickModeration;
+        use crate::rewards::KickRewards;
+        use crate::send::KickSendChat;
+        use crate::sub_actions::{KickSubActionDeps, register_kick_sub_actions};
+
+        fn runner_registry() -> SubActionRegistry {
+            let limiter: Arc<dyn RateLimiter> = Arc::new(GrantLimiter);
+            let mut registry = SubActionRegistry::new();
+            register_kick_sub_actions(
+                &mut registry,
+                KickSubActionDeps {
+                    client: Arc::new(KickSendChat::new(Arc::clone(&limiter))),
+                    token_source: Arc::new(|| {
+                        Box::pin(async { Ok("tok".to_owned()) })
+                            as BoxFuture<'static, Result<String, PlatformError>>
+                    }),
+                    broadcaster_id_source: Arc::new(|| {
+                        Box::pin(async { Ok(1_u64) })
+                            as BoxFuture<'static, Result<u64, PlatformError>>
+                    }),
+                    moderation: Arc::new(KickModeration::new(Arc::clone(&limiter))),
+                    channel: Arc::new(KickChannel::new(Arc::clone(&limiter))),
+                    rewards: Arc::new(KickRewards::new(Arc::clone(&limiter))),
+                    categories: Arc::new(KickCategories::new(limiter)),
+                },
+            )
+            .unwrap();
+            registry
+        }
+
+        /// A quick action that names an unregistered runner, or presets a key the runner never
+        /// reads, silently does nothing when the user clicks it.
+        #[test]
+        fn every_quick_action_targets_a_registered_runner_that_reads_its_keys() {
+            let registry = runner_registry();
+
+            for action in disconnected_bundle().actions() {
+                let kind_id = &action.subaction_template.kind_id;
+                let runner = registry.get(kind_id).unwrap_or_else(|| {
+                    panic!(
+                        "quick action '{}' targets unknown runner '{kind_id}'",
+                        action.label
+                    )
+                });
+                let accepted: BTreeSet<String> = runner.default_config().into_keys().collect();
+
+                let used = action
+                    .subaction_template
+                    .config
+                    .keys()
+                    .cloned()
+                    .chain(action.fields.iter().map(|f| f.key.clone()));
+                for key in used {
+                    assert!(
+                        accepted.contains(&key),
+                        "quick action '{}' sets '{key}', which runner '{kind_id}' does not read",
+                        action.label,
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn quick_actions_are_marked_destructive_exactly_where_the_effect_is_irreversible() {
+            let destructive: BTreeSet<String> = disconnected_bundle()
+                .actions()
+                .into_iter()
+                .filter(|a| a.destructive)
+                .map(|a| a.label)
+                .collect();
+
+            assert_eq!(
+                destructive,
+                BTreeSet::from([
+                    "Ban user".to_owned(),
+                    "Delete message".to_owned(),
+                    "Delete reward".to_owned(),
+                ])
+            );
         }
     }
 }

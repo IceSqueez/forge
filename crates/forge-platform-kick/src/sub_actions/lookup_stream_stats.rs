@@ -142,3 +142,102 @@ impl SubActionRunner for LookupStreamStatsRunner {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::sub_actions::test_support::{GrantLimiter, make_ctx, token_source};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn runner_on(server: &MockServer) -> LookupStreamStatsRunner {
+        let channel = KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        LookupStreamStatsRunner::new(Arc::new(channel), token_source())
+    }
+
+    #[tokio::test]
+    async fn stats_of_the_authorized_channel_land_in_the_arg_stack() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{
+                    "stream_title": "Marathon",
+                    "category": {"id": 9, "name": "Retro"},
+                    "stream": {
+                        "is_live": true,
+                        "viewer_count": 1200,
+                        "start_time": "2026-07-25T09:00:00Z"
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let stack = ArgStack::new();
+        let (telemetry, produced) = runner_on(&server)
+            .execute(&BTreeMap::new(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let produced = produced.expect("a successful lookup must return an arg stack");
+        assert_eq!(
+            produced.get("kick.stream.is_live"),
+            Some(&Variant::Bool(true))
+        );
+        assert_eq!(
+            produced.get("kick.stream.viewer_count"),
+            Some(&Variant::Int(1200))
+        );
+        assert_eq!(
+            produced.get("kick.stream.started_at"),
+            Some(&Variant::String("2026-07-25T09:00:00Z".to_owned()))
+        );
+        assert_eq!(
+            produced.get("kick.stream.category_id"),
+            Some(&Variant::Int(9))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_offline_channel_still_reports_success_with_a_false_live_flag() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{ "stream_title": "Offline" }]
+            })))
+            .mount(&server)
+            .await;
+
+        let stack = ArgStack::new();
+        let (telemetry, produced) = runner_on(&server)
+            .execute(&BTreeMap::new(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            produced.unwrap().get("kick.stream.is_live"),
+            Some(&Variant::Bool(false))
+        );
+    }
+
+    #[tokio::test]
+    async fn upstream_failure_is_reported_without_an_arg_stack() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .mount(&server)
+            .await;
+
+        let stack = ArgStack::new();
+        let (telemetry, produced) = runner_on(&server)
+            .execute(&BTreeMap::new(), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(produced.is_none());
+    }
+}

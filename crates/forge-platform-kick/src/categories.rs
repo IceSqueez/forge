@@ -112,3 +112,172 @@ async fn map_categories_error<T>(
         _ => Err(PlatformError::Http { status, body }),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use forge_platform_core::RateLimitOutcome;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct GrantLimiter;
+    #[async_trait]
+    impl RateLimiter for GrantLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+        fn remaining(&self) -> u32 {
+            120
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    struct ExhaustedLimiter;
+    #[async_trait]
+    impl RateLimiter for ExhaustedLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Exhausted)
+        }
+        fn remaining(&self) -> u32 {
+            0
+        }
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
+
+    fn categories_on(server: &MockServer) -> KickCategories {
+        KickCategories::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+    }
+
+    // CategoryMatch is not Debug, so `unwrap_err` is unavailable on a search result.
+    fn expect_err(result: Result<Vec<CategoryMatch>, PlatformError>) -> PlatformError {
+        match result {
+            Ok(matches) => panic!("expected an error, got {} matches", matches.len()),
+            Err(e) => e,
+        }
+    }
+
+    async fn mount_categories(server: &MockServer, body: serde_json::Value) {
+        Mock::given(method("GET"))
+            .and(path("/categories"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn search_passes_the_query_and_maps_id_and_name() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/categories"))
+            .and(query_param("q", "just chatting"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"id": 15, "name": "Just Chatting"}]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let matches = categories_on(&server)
+            .search("tok", "just chatting")
+            .await
+            .unwrap();
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].id, 15);
+        assert_eq!(matches[0].name, "Just Chatting");
+    }
+
+    #[tokio::test]
+    async fn search_truncates_an_oversized_result_set() {
+        let server = MockServer::start().await;
+        let data: Vec<serde_json::Value> = (0..MAX_MATCHES + 5)
+            .map(|i| serde_json::json!({"id": i, "name": format!("cat {i}")}))
+            .collect();
+        mount_categories(&server, serde_json::json!({ "data": data })).await;
+
+        let matches = categories_on(&server).search("tok", "cat").await.unwrap();
+
+        assert_eq!(matches.len(), MAX_MATCHES);
+        assert_eq!(matches[MAX_MATCHES - 1].id, (MAX_MATCHES - 1) as u64);
+    }
+
+    #[tokio::test]
+    async fn search_with_no_results_returns_an_empty_list_not_an_error() {
+        let server = MockServer::start().await;
+        mount_categories(&server, serde_json::json!({ "data": [] })).await;
+
+        let matches = categories_on(&server)
+            .search("tok", "nothing")
+            .await
+            .unwrap();
+
+        assert!(matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_maps_error_statuses_to_typed_errors() {
+        type Check = fn(&PlatformError) -> bool;
+        let cases: [(u16, Option<&str>, Check, &str); 3] = [
+            (
+                401,
+                None,
+                |e| matches!(e, PlatformError::Auth { .. }),
+                "Auth",
+            ),
+            (
+                429,
+                Some("42"),
+                |e| {
+                    matches!(
+                        e,
+                        PlatformError::RateLimited {
+                            retry_after_secs: 42
+                        }
+                    )
+                },
+                "RateLimited(42)",
+            ),
+            (
+                500,
+                None,
+                |e| matches!(e, PlatformError::Http { status: 500, .. }),
+                "Http(500)",
+            ),
+        ];
+
+        for (status, retry_after, check, expected) in cases {
+            let server = MockServer::start().await;
+            let mut template = ResponseTemplate::new(status).set_body_string("nope");
+            if let Some(retry_after) = retry_after {
+                template = template.insert_header("retry-after", retry_after);
+            }
+            Mock::given(method("GET"))
+                .and(path("/categories"))
+                .respond_with(template)
+                .mount(&server)
+                .await;
+
+            let err = expect_err(categories_on(&server).search("tok", "q").await);
+
+            assert!(
+                check(&err),
+                "status {status} must map to {expected}: {err:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn exhausted_limiter_short_circuits_before_any_request() {
+        let server = MockServer::start().await;
+        mount_categories(&server, serde_json::json!({ "data": [] })).await;
+
+        let client = KickCategories::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let err = expect_err(client.search("tok", "q").await);
+
+        assert!(matches!(err, PlatformError::RateLimitExhausted));
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+}

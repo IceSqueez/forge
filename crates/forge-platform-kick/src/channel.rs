@@ -222,7 +222,7 @@ mod tests {
     use super::*;
     use forge_platform_core::RateLimitOutcome;
     use std::time::Duration;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct GrantLimiter;
@@ -450,5 +450,46 @@ mod tests {
         // Why: Kick omits "stream" entirely off-air. Defaulting to 0 (not an error) is what
         // lets an offline channel resolve to ViewerReport::Absent instead of a failed poll.
         assert_eq!(snapshot.viewer_count, 0);
+        assert!(!snapshot.is_live);
+    }
+
+    /// The live flag lives inside "stream"; a top-level key of the same name is not part of
+    /// the channels schema and must never drive the snapshot.
+    #[tokio::test]
+    async fn live_flag_is_read_from_the_nested_stream_object_only() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{
+                    "is_live": true,
+                    "stream": { "is_live": false, "viewer_count": 0 }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let snapshot = channel_on(&server).get_channel("tok").await.unwrap();
+        assert!(!snapshot.is_live);
+    }
+
+    #[tokio::test]
+    async fn get_channel_by_slug_queries_the_requested_channel() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .and(query_param("slug", "other-streamer"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{ "slug": "other-streamer" }]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let snapshot = channel_on(&server)
+            .get_channel_by_slug("tok", "other-streamer")
+            .await
+            .unwrap();
+        assert_eq!(snapshot.slug, "other-streamer");
     }
 }

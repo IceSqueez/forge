@@ -189,6 +189,17 @@ mod tests {
         Arc::new(move || Box::pin(async move { Ok(id) }))
     }
 
+    fn failing_broadcaster_id_source()
+    -> Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync> {
+        Arc::new(|| {
+            Box::pin(async {
+                Err(PlatformError::ReauthRequired {
+                    platform: "kick".to_owned(),
+                })
+            })
+        })
+    }
+
     fn runner_on(server: &MockServer) -> SendMessageRunner {
         let client = KickSendChat::new(Arc::new(GrantLimiter))
             .with_send_endpoint(format!("{}/chat", server.uri()));
@@ -197,6 +208,13 @@ mod tests {
 
     fn config(message: &str) -> SubActionConfig {
         BTreeMap::from([("message".to_owned(), Variant::String(message.to_owned()))])
+    }
+
+    fn bot_config(message: &str) -> SubActionConfig {
+        BTreeMap::from([
+            ("message".to_owned(), Variant::String(message.to_owned())),
+            ("as_bot".to_owned(), Variant::Bool(true)),
+        ])
     }
 
     #[tokio::test]
@@ -230,6 +248,56 @@ mod tests {
             server.received_requests().await.unwrap().is_empty(),
             "empty message must not reach the send transport"
         );
+    }
+
+    #[tokio::test]
+    async fn bot_mode_sends_even_when_the_broadcaster_id_cannot_be_resolved() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = KickSendChat::new(Arc::new(GrantLimiter))
+            .with_send_endpoint(format!("{}/chat", server.uri()));
+        let runner = SendMessageRunner::new(
+            Arc::new(client),
+            token_source(),
+            failing_broadcaster_id_source(),
+        );
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&bot_config("hi"), &make_ctx(&stack)).await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn user_mode_reports_a_broadcaster_id_failure_without_sending() {
+        let server = MockServer::start().await;
+        let client = KickSendChat::new(Arc::new(GrantLimiter))
+            .with_send_endpoint(format!("{}/chat", server.uri()));
+        let runner = SendMessageRunner::new(
+            Arc::new(client),
+            token_source(),
+            failing_broadcaster_id_source(),
+        );
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner.execute(&config("hi"), &make_ctx(&stack)).await;
+
+        match telemetry.outcome {
+            SubActionOutcome::Failed(reason) => {
+                assert!(
+                    reason.contains("broadcaster id error"),
+                    "unresolved identity must be attributed to the broadcaster id, got: {reason}"
+                );
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 
     #[test]

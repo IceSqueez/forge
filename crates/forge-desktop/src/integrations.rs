@@ -686,6 +686,7 @@ async fn build_kick(
         }
     };
     let slug = creds.username;
+    let user_id = creds.user_id;
 
     spawn_event_bridge(Arc::clone(bus), chat_platform.events(), "kick");
     spawn_connect(Arc::clone(&chat_platform), "kick");
@@ -708,9 +709,16 @@ async fn build_kick(
         }),
         poller_tx,
     );
+    let viewer_report_rx = viewer_source.subscribe();
 
-    let (bundle, _health_tx) =
-        forge_platform_kick::KickIntegrationBundle::new(slug, Arc::clone(&platform), manager);
+    let (bundle, _health_tx) = forge_platform_kick::KickIntegrationBundle::new(
+        slug,
+        user_id,
+        Arc::clone(&platform),
+        manager,
+        rate_limiter,
+        viewer_report_rx,
+    );
 
     let object = BuiltinObject {
         icon: SectionIcon::new("brand-kick"),

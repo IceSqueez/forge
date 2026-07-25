@@ -34,6 +34,12 @@ impl LiveViewerSource for KickViewerSource {
     }
 }
 
+impl KickViewerSource {
+    pub fn subscribe(&self) -> watch::Receiver<ViewerReport> {
+        self.reports.clone()
+    }
+}
+
 pub fn spawn_kick_poller(
     channel: Arc<KickChannel>,
     rewards: Arc<KickRewards>,

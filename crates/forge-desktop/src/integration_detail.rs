@@ -155,7 +155,7 @@ impl IntegrationDetail {
         if is_twitch {
             Self::spawn_eventsub_tally(&event_bus, cx);
         }
-        if is_twitch || status.id().as_str() == "youtube" {
+        if is_twitch || matches!(status.id().as_str(), "youtube" | "kick") {
             Self::spawn_viewer_sampler(&live_viewers, cx);
             Self::spawn_detail_ticker(cx);
         }

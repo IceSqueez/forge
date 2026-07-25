@@ -163,6 +163,9 @@ tabler_icons! {
     Category => "category.svg",
     User => "user.svg",
     Video => "video.svg",
+    Typography => "typography.svg",
+    Browser => "browser.svg",
+    Movie => "movie.svg",
 }
 
 impl Icon {
@@ -302,6 +305,9 @@ impl Icon {
             "category" => Icon::Category,
             "user" => Icon::User,
             "video" | "clip" => Icon::Video,
+            "typography" | "text" => Icon::Typography,
+            "browser" | "web" => Icon::Browser,
+            "movie" | "film" => Icon::Movie,
             _ => Icon::InfoCircle,
         }
     }

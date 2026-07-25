@@ -11,6 +11,7 @@ use forge_platform_core::{
     ControlFailure, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge,
     HeroBadgeTone, QuickAction, QuickActions, SectionIcon,
 };
+use forge_platform_kick::KickIntegrationBundle;
 use forge_platform_twitch::TwitchIntegrationBundle;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
 use forge_storage::CredentialsRepo;
@@ -513,6 +514,26 @@ impl IntegrationDetail {
         self.flow_auth_url = None;
         self.flow_error = None;
         self.twitch_flow = None;
+        self.reload(cx);
+    }
+
+    pub(crate) fn install_kick_bundle(
+        &mut self,
+        bundle: Arc<KickIntegrationBundle>,
+        cx: &mut Context<Self>,
+    ) {
+        self.status = bundle.clone();
+        self.health = bundle.clone();
+        self.content = bundle.clone();
+        self.quick = bundle.clone();
+        self.control = Some(bundle as Arc<dyn BuiltinControl>);
+        self.connect_platform = None;
+        self.eventsub_tally.clear();
+        self.viewer_samples.clear();
+        self.flow_phase = LocalCallbackFlowPhase::Idle;
+        self.flow_auth_url = None;
+        self.flow_error = None;
+        self.kick_flow = None;
         self.reload(cx);
     }
 

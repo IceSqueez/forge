@@ -119,7 +119,7 @@ fn creds_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn CredentialsRepo> {
     Arc::clone(backend) as Arc<dyn CredentialsRepo>
 }
 
-fn spawn_event_bridge(bus: Arc<EventBus>, mut events: EventStream, label: &'static str) {
+fn spawn_event_bridge(bus: Arc<dyn EventPublisher>, mut events: EventStream, label: &'static str) {
     tokio::spawn(async move {
         loop {
             match events.recv().await {
@@ -587,7 +587,7 @@ async fn build_youtube(
         quota,
     );
 
-    spawn_event_bridge(Arc::clone(bus), chat_platform.events(), "youtube");
+    spawn_event_bridge(publisher(bus), chat_platform.events(), "youtube");
     spawn_connect(Arc::clone(&chat_platform), "youtube");
     spawn_chat_send_bridge(
         Arc::clone(bus),
@@ -685,14 +685,53 @@ async fn build_kick(
             return (None, None);
         }
     };
-    let slug = creds.username;
-    let user_id = creds.user_id;
 
-    spawn_event_bridge(Arc::clone(bus), chat_platform.events(), "kick");
-    spawn_connect(Arc::clone(&chat_platform), "kick");
+    let stack = assemble_kick_stack(
+        manager,
+        platform,
+        rate_limiter,
+        channel,
+        rewards,
+        publisher(bus),
+        creds.username,
+        creds.user_id,
+    )
+    .await;
+
+    let object = BuiltinObject {
+        icon: SectionIcon::new("brand-kick"),
+        status: stack.bundle.clone(),
+        health: stack.bundle.clone(),
+        content: stack.bundle.clone(),
+        quick: stack.bundle.clone(),
+        control: Some(stack.bundle as Arc<dyn BuiltinControl>),
+        obs_client: None,
+    };
+    (Some(object), Some(stack.viewer_source))
+}
+
+pub(crate) struct KickStack {
+    pub(crate) bundle: Arc<forge_platform_kick::KickIntegrationBundle>,
+    pub(crate) viewer_source: Box<dyn LiveViewerSource>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn assemble_kick_stack(
+    manager: Arc<forge_platform_kick::KickCredentialsManager>,
+    platform: Arc<forge_platform_kick::KickPlatform>,
+    rate_limiter: Arc<dyn RateLimiter>,
+    channel: Arc<forge_platform_kick::KickChannel>,
+    rewards: Arc<forge_platform_kick::KickRewards>,
+    bus: Arc<dyn EventPublisher>,
+    slug: String,
+    user_id: u64,
+) -> KickStack {
+    let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
+    spawn_event_bridge(Arc::clone(&bus), chat_platform.events(), "kick");
+    spawn_connect(chat_platform, "kick");
 
     let (poller_tx, mut poller_rx) = tokio::sync::mpsc::channel::<Event>(256);
-    let bus_poller = Arc::clone(bus);
+    let bus_poller = Arc::clone(&bus);
     tokio::spawn(async move {
         while let Some(event) = poller_rx.recv().await {
             bus_poller.publish(event);
@@ -714,22 +753,16 @@ async fn build_kick(
     let (bundle, _health_tx) = forge_platform_kick::KickIntegrationBundle::new(
         slug,
         user_id,
-        Arc::clone(&platform),
+        platform,
         manager,
         rate_limiter,
         viewer_report_rx,
     );
 
-    let object = BuiltinObject {
-        icon: SectionIcon::new("brand-kick"),
-        status: bundle.clone(),
-        health: bundle.clone(),
-        content: bundle.clone(),
-        quick: bundle.clone(),
-        control: Some(bundle as Arc<dyn BuiltinControl>),
-        obs_client: None,
-    };
-    (Some(object), Some(Box::new(viewer_source)))
+    KickStack {
+        bundle,
+        viewer_source: Box::new(viewer_source),
+    }
 }
 
 #[cfg(test)]

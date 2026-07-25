@@ -178,13 +178,7 @@ impl IntegrationDetail {
                         });
                     }
                     Some(PlatformId::Kick) => {
-                        let credentials = Arc::clone(&self.credentials);
-                        let bus = Arc::clone(&self.bus);
-                        self.rt_handle.spawn(async move {
-                            if let Err(e) = connect_kick_after_oauth(credentials, bus).await {
-                                eprintln!("forge-desktop: kick in-session connect failed: {e}");
-                            }
-                        });
+                        self.install_kick(cx);
                     }
                     Some(PlatformId::Twitch) | None => {}
                 }
@@ -195,6 +189,34 @@ impl IntegrationDetail {
             }
         }
         cx.notify();
+    }
+
+    fn install_kick(&mut self, cx: &mut Context<Self>) {
+        let credentials = Arc::clone(&self.credentials);
+        let bus = Arc::clone(&self.bus);
+        let live_viewers = self.live_viewers.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { assemble_kick_install(credentials, bus, live_viewers).await },
+            |this, result, cx| this.apply_kick_install(result, cx),
+            cx,
+        );
+    }
+
+    fn apply_kick_install(
+        &mut self,
+        result: Result<Arc<forge_platform_kick::KickIntegrationBundle>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(bundle) => self.install_kick_bundle(bundle, cx),
+            Err(e) => {
+                tracing::warn!(error = %e, "kick in-session connect failed");
+                self.flow_phase = LocalCallbackFlowPhase::Failed;
+                self.flow_error = Some(e);
+                cx.notify();
+            }
+        }
     }
 
     fn retry_flow(&mut self, cx: &mut Context<Self>) {
@@ -1154,10 +1176,11 @@ async fn connect_youtube_after_oauth(
     Ok(())
 }
 
-async fn connect_kick_after_oauth(
+async fn assemble_kick_install(
     credentials_repo: Arc<dyn CredentialsRepo>,
     bus: Arc<dyn EventPublisher>,
-) -> Result<(), String> {
+    live_viewers: forge_runtime::LiveViewerAggregatorHandle,
+) -> Result<Arc<forge_platform_kick::KickIntegrationBundle>, String> {
     let (client_id, client_secret) = forge_platform_kick::client_credentials()
         .ok_or_else(|| "Kick OAuth client credentials are not configured".to_owned())?;
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
@@ -1165,7 +1188,7 @@ async fn connect_kick_after_oauth(
         client_id,
         client_secret,
     ));
-    manager
+    let creds = manager
         .load()
         .await
         .map_err(|e| e.to_string())?
@@ -1175,26 +1198,28 @@ async fn connect_kick_after_oauth(
         forge_platform_core::TokenBucketRateLimiter::new(60, Duration::from_secs(60)),
     );
     let platform = Arc::new(forge_platform_kick::KickPlatform::new(
-        manager,
-        rate_limiter,
+        Arc::clone(&manager),
+        Arc::clone(&rate_limiter),
     ));
+    let channel = Arc::new(forge_platform_kick::KickChannel::new(Arc::clone(
+        &rate_limiter,
+    )));
+    let rewards = Arc::new(forge_platform_kick::KickRewards::new(Arc::clone(
+        &rate_limiter,
+    )));
 
-    let mut platform_events = platform.events();
-    let forward_bus = Arc::clone(&bus);
-    tokio::spawn(async move {
-        loop {
-            match platform_events.recv().await {
-                Ok(event) => forward_bus.publish(event),
-                Err(forge_events::EventsError::BusClosed) => break,
-                Err(forge_events::EventsError::LaggingReceiver) => {
-                    tracing::warn!("kick platform event bridge: lagging receiver");
-                    continue;
-                }
-                Err(_) => continue,
-            }
-        }
-    });
+    let stack = crate::integrations::assemble_kick_stack(
+        manager,
+        platform,
+        rate_limiter,
+        channel,
+        rewards,
+        bus,
+        creds.username,
+        creds.user_id,
+    )
+    .await;
 
-    platform.connect().await.map_err(|e| e.to_string())?;
-    Ok(())
+    live_viewers.register(stack.viewer_source);
+    Ok(stack.bundle)
 }

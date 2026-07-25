@@ -16,6 +16,7 @@ pub struct ChannelSnapshot {
     pub stream_title: String,
     pub category_id: u64,
     pub category_name: String,
+    pub viewer_count: u64,
 }
 
 #[derive(Serialize)]
@@ -42,6 +43,8 @@ struct ChannelData {
     stream_title: String,
     #[serde(default)]
     category: CategoryData,
+    #[serde(default)]
+    stream: StreamData,
 }
 
 #[derive(Deserialize, Default)]
@@ -50,6 +53,12 @@ struct CategoryData {
     id: u64,
     #[serde(default)]
     name: String,
+}
+
+#[derive(Deserialize, Default)]
+struct StreamData {
+    #[serde(default)]
+    viewer_count: u64,
 }
 
 impl KickChannel {
@@ -133,6 +142,7 @@ impl KickChannel {
             stream_title: channel.stream_title,
             category_id: channel.category.id,
             category_name: channel.category.name,
+            viewer_count: channel.stream.viewer_count,
         })
     }
 

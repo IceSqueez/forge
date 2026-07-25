@@ -617,7 +617,6 @@ async fn build_kick(
     let Some(client_id) = forge_platform_kick::client_credentials() else {
         return (None, None);
     };
-    let http = reqwest::Client::new();
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
         creds_of(backend),
         client_id,
@@ -695,7 +694,14 @@ async fn build_kick(
         poller_tx,
     );
 
-    let (viewer_poll, viewer_source) = forge_platform_kick::KickViewerPoll::new(slug.clone(), http);
+    let manager_for_viewer_poll = Arc::clone(&manager);
+    let (viewer_poll, viewer_source) = forge_platform_kick::KickViewerPoll::new(
+        Arc::clone(&rate_limiter),
+        Arc::new(move || {
+            let manager = Arc::clone(&manager_for_viewer_poll);
+            Box::pin(async move { manager.get_valid_access_token().await })
+        }),
+    );
     tokio::spawn(viewer_poll.run());
 
     let (bundle, _health_tx) =

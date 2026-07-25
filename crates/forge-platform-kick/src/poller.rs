@@ -18,7 +18,8 @@ const LIVESTREAM_STATUS_KIND: &str = "kick.livestream.status.updated";
 const LIVESTREAM_METADATA_KIND: &str = "kick.livestream.metadata.updated";
 const REWARD_REDEEMED_KIND: &str = "kick.channel.reward.redemption.updated";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+pub(crate) type TokenSource =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub fn spawn_kick_poller(
     channel: Arc<KickChannel>,
@@ -248,6 +249,7 @@ mod tests {
             stream_title: title.to_owned(),
             category_id,
             category_name: category_name.to_owned(),
+            viewer_count: 0,
         }
     }
 

@@ -17,8 +17,16 @@ pub(crate) struct ObsCatalog {
     pub audio_inputs: Vec<String>,
 }
 
-fn scene_to_item(name: &str, current_scene: Option<&str>) -> ContentListItem {
+fn scene_to_item(
+    name: &str,
+    current_scene: Option<&str>,
+    source_count: Option<usize>,
+) -> ContentListItem {
     let is_current = current_scene == Some(name);
+    let mut trailing = Vec::new();
+    if !is_current && let Some(count) = source_count {
+        trailing.push(TrailingToken::Label(format!("{count} src")));
+    }
     ContentListItem {
         icon: if is_current {
             SectionIcon::new("eye")
@@ -33,9 +41,43 @@ fn scene_to_item(name: &str, current_scene: Option<&str>) -> ContentListItem {
         } else {
             None
         },
-        trailing: vec![],
+        trailing,
         enabled: true,
     }
+}
+
+/// Classifies an OBS input kind id into the closest matching source glyph. Kind ids differ by
+/// OS/OBS version (e.g. `monitor_capture` on Linux/macOS vs `game_capture` on Windows), so this
+/// matches on stable substrings rather than an exhaustive enum.
+fn icon_for_kind(kind: Option<&str>) -> SectionIcon {
+    let Some(kind) = kind else {
+        return SectionIcon::new("device-desktop");
+    };
+    if kind == "image_source" {
+        SectionIcon::new("photo")
+    } else if kind.starts_with("text_") {
+        SectionIcon::new("typography")
+    } else if kind == "browser_source" {
+        SectionIcon::new("browser")
+    } else if kind.contains("ffmpeg_source")
+        || kind.contains("vlc_source")
+        || kind.contains("slideshow")
+    {
+        SectionIcon::new("movie")
+    } else if kind.contains("input_capture") {
+        SectionIcon::new("microphone")
+    } else if kind.contains("output_capture") {
+        SectionIcon::new("volume")
+    } else if kind.contains("v4l2") || kind.contains("dshow") || kind.contains("avcapture") {
+        SectionIcon::new("video")
+    } else {
+        SectionIcon::new("device-desktop")
+    }
+}
+
+/// Audio-capable kinds are the only ones a `GetInputVolume` request succeeds against.
+pub(crate) fn is_audio_kind(kind: Option<&str>) -> bool {
+    kind.is_some_and(|k| k.contains("input_capture") || k.contains("output_capture"))
 }
 
 fn source_to_item(info: &SourceInfo) -> ContentListItem {
@@ -60,7 +102,7 @@ fn source_to_item(info: &SourceInfo) -> ContentListItem {
         trailing.push(TrailingToken::Label(format!("{db:.1} dB")));
     }
     ContentListItem {
-        icon: SectionIcon::new("device-desktop"),
+        icon: icon_for_kind(info.kind.as_deref()),
         name: info.name.clone(),
         monospace_name: true,
         active: false,
@@ -79,7 +121,10 @@ impl BuiltinContent for ObsClient {
         let scene_items: Vec<ContentListItem> = catalog
             .scenes
             .iter()
-            .map(|s| scene_to_item(s, catalog.current_scene.as_deref()))
+            .map(|s| {
+                let source_count = catalog.sources.get(s).map(Vec::len);
+                scene_to_item(s, catalog.current_scene.as_deref(), source_count)
+            })
             .collect();
         let scene_count = format!("{}", catalog.scenes.len());
 
@@ -89,7 +134,10 @@ impl BuiltinContent for ObsClient {
             .and_then(|scene| catalog.sources.get(scene))
             .map(|sources| sources.iter().map(source_to_item).collect())
             .unwrap_or_default();
-        let source_count = format!("{}", source_items.len());
+        let source_count_label = match catalog.current_scene.as_deref() {
+            Some(scene) => format!("in {scene} \u{00b7} {} total", source_items.len()),
+            None => format!("{} total", source_items.len()),
+        };
 
         let left = ContentList {
             title: "Scenes".to_owned(),
@@ -102,7 +150,7 @@ impl BuiltinContent for ObsClient {
         let right = ContentList {
             title: "Sources".to_owned(),
             icon: SectionIcon::new("stack-2"),
-            count_label: Some(source_count),
+            count_label: Some(source_count_label),
             items: source_items,
             footer: None,
         };
@@ -145,6 +193,7 @@ mod tests {
                     visible: true,
                     locked: false,
                     audio_db: Some(-12.5),
+                    kind: Some("monitor_capture".to_owned()),
                 }],
             );
         }

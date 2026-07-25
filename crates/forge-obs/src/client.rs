@@ -11,7 +11,8 @@ use tokio::task::JoinHandle;
 use forge_events::EventPublisher;
 use forge_platform_core::{
     AtomicConnectionState, Backoff, BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags,
-    ConnectionState, ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HealthValue,
+    ConnectionState, ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HeroBadge,
+    HeroBadgeTone,
 };
 use forge_types::EventId;
 
@@ -33,6 +34,7 @@ pub struct ObsClient {
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_id: BuiltinId,
     obs_version: Arc<OnceLock<String>>,
+    obs_ws_version: Arc<OnceLock<String>>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
@@ -57,6 +59,7 @@ impl ObsClient {
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
         let obs_version = Arc::new(OnceLock::new());
+        let obs_ws_version = Arc::new(OnceLock::new());
         let item_cache = Arc::new(Mutex::new(HashMap::<(String, String), i64>::new()));
 
         let (health_tx, health_state) = make_health_channel();
@@ -71,6 +74,7 @@ impl ObsClient {
             shutdown: Arc::clone(&notify),
             connected_at: Arc::clone(&connected_at),
             obs_version: Arc::clone(&obs_version),
+            obs_ws_version: Arc::clone(&obs_ws_version),
             catalog_state: Arc::clone(&catalog_state),
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
@@ -94,6 +98,7 @@ impl ObsClient {
             connected_at,
             obs_id: BuiltinId::new("obs"),
             obs_version,
+            obs_ws_version,
             health_state,
             health_tx,
             catalog_state,
@@ -123,6 +128,7 @@ impl ObsClient {
             connected_at: Arc::new(RwLock::new(None)),
             obs_id: BuiltinId::new("obs"),
             obs_version: Arc::new(OnceLock::new()),
+            obs_ws_version: Arc::new(OnceLock::new()),
             health_state,
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
@@ -178,11 +184,28 @@ impl BuiltinStatus for ObsClient {
     }
 
     fn header_actions(&self) -> Vec<HeaderAction> {
-        vec![
-            HeaderAction::Reconnect,
-            HeaderAction::Disconnect,
-            HeaderAction::Settings,
-        ]
+        vec![HeaderAction::Reconnect, HeaderAction::Disconnect]
+    }
+
+    /// `obs-websocket` protocol version plus our own WS session uptime, computed fresh on every
+    /// render (unlike `endpoint()`/`version()`, which are fixed `&str` slots that cannot carry a
+    /// value that changes every tick without violating their `&self`-tied lifetime).
+    fn name_badges(&self) -> Vec<HeroBadge> {
+        let Some(ws_version) = self.obs_ws_version.get() else {
+            return Vec::new();
+        };
+        let label = match self.uptime() {
+            Some(uptime) => format!(
+                "obs-websocket v{ws_version} - uptime {}",
+                crate::health::format_duration_hm(uptime)
+            ),
+            None => format!("obs-websocket v{ws_version}"),
+        };
+        vec![HeroBadge {
+            label,
+            tone: HeroBadgeTone::Neutral,
+            monospace: true,
+        }]
     }
 }
 
@@ -213,6 +236,7 @@ impl BuiltinControl for ObsClient {
             shutdown: new_notify,
             connected_at: Arc::clone(&self.connected_at),
             obs_version: Arc::clone(&self.obs_version),
+            obs_ws_version: Arc::clone(&self.obs_ws_version),
             catalog_state: Arc::clone(&self.catalog_state),
             health_state: Arc::clone(&self.health_state),
             health_tx: self.health_tx.clone(),
@@ -257,6 +281,7 @@ struct SupervisorContext {
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
     obs_version: Arc<OnceLock<String>>,
+    obs_ws_version: Arc<OnceLock<String>>,
     catalog_state: Arc<RwLock<ObsCatalog>>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
@@ -272,6 +297,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         shutdown,
         connected_at,
         obs_version,
+        obs_ws_version,
         catalog_state,
         health_state,
         health_tx,
@@ -325,6 +351,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 match client.general().version().await {
                     Ok(v) => {
                         let _ = obs_version.set(v.obs_studio_version.to_string());
+                        let _ = obs_ws_version.set(v.obs_web_socket_version.to_string());
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "failed to fetch OBS version");
@@ -531,6 +558,7 @@ async fn snapshot_catalog(
     health_state: &RwLock<HealthSnapshot>,
     health_tx: &broadcast::Sender<HealthDelta>,
 ) {
+    use obws::requests::inputs::InputId;
     use obws::requests::scenes::SceneId;
 
     let scenes: Vec<String> = client
@@ -548,17 +576,39 @@ async fn snapshot_catalog(
         .ok();
 
     let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
+    let mut db_cache: HashMap<String, f32> = HashMap::new();
     for scene in &scenes {
         if let Ok(items) = client.scene_items().list(SceneId::Name(scene)).await {
-            let infos = items
-                .into_iter()
-                .map(|i| SourceInfo {
-                    name: i.source_name,
+            let mut infos = Vec::with_capacity(items.len());
+            for item in items {
+                let kind = item.input_kind;
+                let audio_db = if crate::catalog::is_audio_kind(kind.as_deref()) {
+                    match db_cache.get(&item.source_name) {
+                        Some(db) => Some(*db),
+                        None => {
+                            let fetched = client
+                                .inputs()
+                                .volume(InputId::Name(&item.source_name))
+                                .await
+                                .ok()
+                                .map(|v| v.db);
+                            if let Some(db) = fetched {
+                                db_cache.insert(item.source_name.clone(), db);
+                            }
+                            fetched
+                        }
+                    }
+                } else {
+                    None
+                };
+                infos.push(SourceInfo {
+                    name: item.source_name,
                     visible: true,
                     locked: false,
-                    audio_db: None,
-                })
-                .collect();
+                    audio_db,
+                    kind,
+                });
+            }
             sources_by_scene.insert(scene.clone(), infos);
         }
     }
@@ -577,45 +627,19 @@ async fn snapshot_catalog(
         catalog.current_scene = current_scene;
     }
 
-    if let Ok(status) = client.streaming().status().await {
-        seed_health_status(health_state, health_tx, 0, status.active, |a| {
-            crate::events::make_stream_health_value(a)
-        });
-    }
-    if let Ok(status) = client.recording().status().await {
-        seed_health_status(health_state, health_tx, 1, status.active, |a| {
-            crate::events::make_record_health_value(a)
-        });
-    }
-}
-
-/// Only broadcasts a delta when the value actually differs from the persisted snapshot, so a
-/// reconnect never emits a spurious duplicate delta.
-fn seed_health_status(
-    health_state: &RwLock<HealthSnapshot>,
-    health_tx: &broadcast::Sender<HealthDelta>,
-    index: u8,
-    active: bool,
-    make_value: impl Fn(bool) -> HealthValue,
-) {
-    let changed = match health_state.write() {
-        Ok(mut snap) => {
-            let field = if index == 0 {
-                &mut snap.stream_active
-            } else {
-                &mut snap.record_active
-            };
-            let changed = *field != active;
-            *field = active;
-            changed
+    if let Ok(status) = client.streaming().status().await
+        && let Ok(mut snapshot) = health_state.write()
+    {
+        for delta in crate::events::apply_stream_status_update(&status, &mut snapshot) {
+            let _ = health_tx.send(delta);
         }
-        Err(_) => false,
-    };
-    if changed {
-        let _ = health_tx.send(HealthDelta {
-            index,
-            new_value: make_value(active),
-        });
+    }
+    if let Ok(status) = client.recording().status().await
+        && let Ok(mut snapshot) = health_state.write()
+    {
+        for delta in crate::events::apply_record_status_update(&status, &mut snapshot) {
+            let _ = health_tx.send(delta);
+        }
     }
 }
 
@@ -634,21 +658,39 @@ fn spawn_stats_poll(
         loop {
             ticker.tick().await;
 
-            let stats = {
+            let (stats, stream_status, record_status) = {
                 let guard = inner.read().await;
                 let Some(client) = guard.as_ref() else {
                     continue;
                 };
-                client.general().stats().await
-            };
-            let Ok(stats) = stats else {
-                continue;
+                let general = client.general();
+                let streaming = client.streaming();
+                let recording = client.recording();
+                tokio::join!(general.stats(), streaming.status(), recording.status())
             };
 
-            let deltas = match health_state.write() {
-                Ok(mut snapshot) => crate::events::apply_stats_update(&stats, &mut snapshot),
-                Err(_) => continue,
-            };
+            let mut deltas = Vec::new();
+            if let Ok(stats) = stats
+                && let Ok(mut snapshot) = health_state.write()
+            {
+                deltas.extend(crate::events::apply_stats_update(&stats, &mut snapshot));
+            }
+            if let Ok(status) = stream_status
+                && let Ok(mut snapshot) = health_state.write()
+            {
+                deltas.extend(crate::events::apply_stream_status_update(
+                    &status,
+                    &mut snapshot,
+                ));
+            }
+            if let Ok(status) = record_status
+                && let Ok(mut snapshot) = health_state.write()
+            {
+                deltas.extend(crate::events::apply_record_status_update(
+                    &status,
+                    &mut snapshot,
+                ));
+            }
             for delta in deltas {
                 let _ = health_tx.send(delta);
             }

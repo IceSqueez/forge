@@ -7,6 +7,7 @@ pub struct SourceInfo {
     pub visible: bool,
     pub locked: bool,
     pub audio_db: Option<f32>,
+    pub kind: Option<String>,
 }
 
 #[async_trait]

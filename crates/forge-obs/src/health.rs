@@ -1,4 +1,5 @@
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
@@ -11,9 +12,13 @@ use crate::client::ObsClient;
 #[derive(Debug, Clone, Default)]
 pub struct HealthSnapshot {
     pub stream_active: bool,
+    pub stream_duration: Option<Duration>,
     pub record_active: bool,
+    pub record_paused: bool,
+    pub record_duration: Option<Duration>,
     pub cpu_percent: f64,
     pub fps: f64,
+    pub render_lag: bool,
     pub dropped_frames: u64,
     pub total_frames: u64,
 }
@@ -22,6 +27,80 @@ pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLo
 {
     let (tx, _) = broadcast::channel(16);
     (tx, Arc::new(RwLock::new(HealthSnapshot::default())))
+}
+
+/// Formats a duration as `"<h>h <m>m"`, dropping the hour segment under one hour.
+pub(crate) fn format_duration_hm(d: Duration) -> String {
+    let total_minutes = d.as_secs() / 60;
+    let hours = total_minutes / 60;
+    let minutes = total_minutes % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else {
+        format!("{minutes}m")
+    }
+}
+
+pub(crate) fn stream_health_value(active: bool, duration: Option<Duration>) -> HealthValue {
+    HealthValue::Status {
+        label: if active {
+            "Live".to_owned()
+        } else {
+            "Off".to_owned()
+        },
+        active,
+        detail: Some(
+            duration
+                .map(format_duration_hm)
+                .unwrap_or_else(|| "-".to_owned()),
+        ),
+    }
+}
+
+pub(crate) fn record_health_value(
+    active: bool,
+    paused: bool,
+    duration: Option<Duration>,
+) -> HealthValue {
+    let label = if !active {
+        "Off".to_owned()
+    } else if paused {
+        "Paused".to_owned()
+    } else {
+        "Active".to_owned()
+    };
+    HealthValue::Status {
+        label,
+        active,
+        detail: Some(
+            duration
+                .map(format_duration_hm)
+                .unwrap_or_else(|| "-".to_owned()),
+        ),
+    }
+}
+
+pub(crate) fn cpu_fps_value(cpu_percent: f64, fps: f64, render_lag: bool) -> HealthValue {
+    HealthValue::Text {
+        primary: format!("{cpu_percent:.1}% \u{00b7} {fps:.1}"),
+        secondary: Some(if render_lag {
+            "lagging".to_owned()
+        } else {
+            "smooth".to_owned()
+        }),
+    }
+}
+
+pub(crate) fn dropped_value(dropped: u64, total: u64) -> HealthValue {
+    let pct = if total > 0 {
+        dropped as f64 / total as f64 * 100.0
+    } else {
+        0.0
+    };
+    HealthValue::Text {
+        primary: format!("{dropped} frames"),
+        secondary: Some(format!("{pct:.2}%")),
+    }
 }
 
 impl BuiltinHealth for ObsClient {
@@ -35,42 +114,23 @@ impl BuiltinHealth for ObsClient {
         [
             HealthMetric {
                 label: "Stream".to_owned(),
-                value: HealthValue::Status {
-                    label: if snap.stream_active {
-                        "Live".to_owned()
-                    } else {
-                        "Offline".to_owned()
-                    },
-                    active: snap.stream_active,
-                    detail: None,
-                },
+                value: stream_health_value(snap.stream_active, snap.stream_duration),
             },
             HealthMetric {
                 label: "Recording".to_owned(),
-                value: HealthValue::Status {
-                    label: if snap.record_active {
-                        "Active".to_owned()
-                    } else {
-                        "Off".to_owned()
-                    },
-                    active: snap.record_active,
-                    detail: None,
-                },
+                value: record_health_value(
+                    snap.record_active,
+                    snap.record_paused,
+                    snap.record_duration,
+                ),
             },
             HealthMetric {
                 label: "CPU \u{00b7} FPS".to_owned(),
-                value: HealthValue::Pair {
-                    left: format!("{:.1}%", snap.cpu_percent),
-                    right: format!("{:.1} fps", snap.fps),
-                },
+                value: cpu_fps_value(snap.cpu_percent, snap.fps, snap.render_lag),
             },
             HealthMetric {
                 label: "Dropped".to_owned(),
-                value: HealthValue::Ratio {
-                    used: snap.dropped_frames,
-                    total: snap.total_frames,
-                    reset_hint: None,
-                },
+                value: dropped_value(snap.dropped_frames, snap.total_frames),
             },
         ]
     }

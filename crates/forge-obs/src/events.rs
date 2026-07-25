@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::{HealthDelta, HealthValue};
+use forge_platform_core::HealthDelta;
 use forge_types::EventId;
 use serde_json::json;
 
@@ -423,31 +423,9 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
     }
 }
 
-/// Shared by the event-driven update and the cold-connect seed so both render the same shape.
-pub(crate) fn make_stream_health_value(active: bool) -> HealthValue {
-    HealthValue::Status {
-        label: if active {
-            "Live".to_owned()
-        } else {
-            "Offline".to_owned()
-        },
-        active,
-        detail: None,
-    }
-}
-
-pub(crate) fn make_record_health_value(active: bool) -> HealthValue {
-    HealthValue::Status {
-        label: if active {
-            "Active".to_owned()
-        } else {
-            "Off".to_owned()
-        },
-        active,
-        detail: None,
-    }
-}
-
+/// Only the `active` flag flips instantly here; duration/paused/dropped-frame figures are owned
+/// by the 2s status poll (`apply_stream_status_update` / `apply_record_status_update`) since OBS
+/// WebSocket v5 carries no duration field on these events.
 pub(crate) fn apply_health_update(
     ev: &obws::events::Event,
     snapshot: &mut HealthSnapshot,
@@ -460,7 +438,7 @@ pub(crate) fn apply_health_update(
             snapshot.stream_active = *active;
             vec![HealthDelta {
                 index: 0,
-                new_value: make_stream_health_value(*active),
+                new_value: crate::health::stream_health_value(*active, snapshot.stream_duration),
             }]
         }
         obws::events::Event::RecordStateChanged { active, .. } => {
@@ -470,50 +448,94 @@ pub(crate) fn apply_health_update(
             snapshot.record_active = *active;
             vec![HealthDelta {
                 index: 1,
-                new_value: make_record_health_value(*active),
+                new_value: crate::health::record_health_value(
+                    *active,
+                    snapshot.record_paused,
+                    snapshot.record_duration,
+                ),
             }]
         }
         _ => vec![],
     }
 }
 
-/// Only emits a delta when the rendered value actually changed.
+/// Only emits a delta when the rendered value actually changed. Dropped-frame figures come from
+/// the stream-status poll (`apply_stream_status_update`), not from `GetStats`.
 pub(crate) fn apply_stats_update(
     stats: &obws::responses::general::Stats,
     snapshot: &mut HealthSnapshot,
 ) -> Vec<HealthDelta> {
+    let render_lag = stats.render_skipped_frames > 0 || stats.output_skipped_frames > 0;
+    let unchanged = (snapshot.cpu_percent - stats.cpu_usage).abs() <= f64::EPSILON
+        && (snapshot.fps - stats.active_fps).abs() <= f64::EPSILON
+        && snapshot.render_lag == render_lag;
+    if unchanged {
+        return vec![];
+    }
+    snapshot.cpu_percent = stats.cpu_usage;
+    snapshot.fps = stats.active_fps;
+    snapshot.render_lag = render_lag;
+    vec![HealthDelta {
+        index: 2,
+        new_value: crate::health::cpu_fps_value(
+            snapshot.cpu_percent,
+            snapshot.fps,
+            snapshot.render_lag,
+        ),
+    }]
+}
+
+/// Feeds the Stream stat card (active + duration) and the Dropped stat card from one
+/// `GetStreamStatus` poll.
+pub(crate) fn apply_stream_status_update(
+    status: &obws::responses::streaming::StreamStatus,
+    snapshot: &mut HealthSnapshot,
+) -> Vec<HealthDelta> {
+    let duration = Some(status.duration.unsigned_abs());
+    let dropped = u64::from(status.skipped_frames);
+    let total = u64::from(status.total_frames);
     let mut deltas = Vec::new();
 
-    if (snapshot.cpu_percent - stats.cpu_usage).abs() > f64::EPSILON
-        || (snapshot.fps - stats.active_fps).abs() > f64::EPSILON
-    {
-        snapshot.cpu_percent = stats.cpu_usage;
-        snapshot.fps = stats.active_fps;
+    if snapshot.stream_active != status.active || snapshot.stream_duration != duration {
+        snapshot.stream_active = status.active;
+        snapshot.stream_duration = duration;
         deltas.push(HealthDelta {
-            index: 2,
-            new_value: HealthValue::Pair {
-                left: format!("{:.1}%", stats.cpu_usage),
-                right: format!("{:.1} fps", stats.active_fps),
-            },
+            index: 0,
+            new_value: crate::health::stream_health_value(status.active, duration),
         });
     }
 
-    let dropped = u64::from(stats.output_skipped_frames);
-    let total = u64::from(stats.output_total_frames);
     if snapshot.dropped_frames != dropped || snapshot.total_frames != total {
         snapshot.dropped_frames = dropped;
         snapshot.total_frames = total;
         deltas.push(HealthDelta {
             index: 3,
-            new_value: HealthValue::Ratio {
-                used: dropped,
-                total,
-                reset_hint: None,
-            },
+            new_value: crate::health::dropped_value(dropped, total),
         });
     }
 
     deltas
+}
+
+/// Feeds the Recording stat card (active + paused + duration) from one `GetRecordStatus` poll.
+pub(crate) fn apply_record_status_update(
+    status: &obws::responses::recording::RecordStatus,
+    snapshot: &mut HealthSnapshot,
+) -> Vec<HealthDelta> {
+    let duration = Some(status.duration.unsigned_abs());
+    let unchanged = snapshot.record_active == status.active
+        && snapshot.record_paused == status.paused
+        && snapshot.record_duration == duration;
+    if unchanged {
+        return vec![];
+    }
+    snapshot.record_active = status.active;
+    snapshot.record_paused = status.paused;
+    snapshot.record_duration = duration;
+    vec![HealthDelta {
+        index: 1,
+        new_value: crate::health::record_health_value(status.active, status.paused, duration),
+    }]
 }
 
 #[cfg(test)]

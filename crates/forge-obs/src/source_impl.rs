@@ -37,6 +37,7 @@ impl ObsSource for ObsClient {
                         visible: s.visible,
                         locked: s.locked,
                         audio_db: s.audio_db,
+                        kind: s.kind.clone(),
                     })
                     .collect()
             })
@@ -145,6 +146,7 @@ mod tests {
                     visible: true,
                     locked: false,
                     audio_db: None,
+                    kind: None,
                 }],
             );
         }

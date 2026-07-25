@@ -919,3 +919,74 @@ async fn fetch_picker_items(
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_platform_core::{QuickActionAccent, SectionIcon};
+
+    use super::*;
+
+    fn picker_only_action(picker: PickerKind) -> QuickAction {
+        QuickAction {
+            label: "Switch scene".to_owned(),
+            icon: SectionIcon::new("arrows-shuffle"),
+            enabled: true,
+            locked_reason: None,
+            group: None,
+            group_icon: None,
+            group_accent: None,
+            destructive: false,
+            accent: QuickActionAccent::Brand,
+            subaction_template: SubActionStep {
+                kind_id: "obs.scenes.switch_current".to_owned(),
+                config: BTreeMap::from([("scene".to_owned(), Variant::String(String::new()))]),
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            },
+            picker: Some(picker),
+            fields: Vec::new(),
+        }
+    }
+
+    // Why: merge_config only walks an action's own fields, so a picker-only action depends on
+    // the synthesized picker spec being folded back in - otherwise the modal runs the untouched
+    // template and the picked value is silently dropped.
+    #[test]
+    fn a_picker_only_action_merges_the_picked_value_into_the_step_config() {
+        let action = picker_only_action(PickerKind::Scene);
+        let mut merge_action = action.clone();
+        merge_action.fields = build_specs(&action).iter().map(spec_to_field).collect();
+        let values = BTreeMap::from([(
+            "scene".to_owned(),
+            QuickActionFieldValue::Text("Gameplay".to_owned()),
+        )]);
+
+        let step = merge_action.merge_config(&values);
+
+        assert_eq!(
+            step.config.get("scene"),
+            Some(&Variant::String("Gameplay".to_owned())),
+        );
+    }
+
+    #[test]
+    fn declared_fields_take_precedence_over_the_action_picker() {
+        let mut action = picker_only_action(PickerKind::Scene);
+        action.fields = vec![QuickActionField {
+            key: "scene".to_owned(),
+            label: "Scene".to_owned(),
+            kind: QuickActionFieldKind::Text,
+            default: Some(QuickActionFieldValue::Text("BRB".to_owned())),
+            placeholder: None,
+            hint: None,
+        }];
+
+        let specs = build_specs(&action);
+
+        assert_eq!(specs.len(), 1);
+        assert!(matches!(specs[0].kind, QuickActionFieldKind::Text));
+    }
+}

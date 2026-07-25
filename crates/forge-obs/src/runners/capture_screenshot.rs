@@ -123,3 +123,99 @@ impl SubActionRunner for CaptureScreenshotRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+
+    async fn recorded_call(source: &str, path: &str) -> String {
+        let sink = RecordingSink::new();
+        let runner = CaptureScreenshotRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new();
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String(source.to_owned())),
+            ("path".to_owned(), Variant::String(path.to_owned())),
+        ]);
+        runner.execute(&config, &make_ctx(&stack)).await;
+        sink.calls().first().cloned().unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn screenshot_format_comes_from_the_lowercased_path_extension() {
+        for (path, expected_format) in [
+            ("/tmp/shot.png", "png"),
+            ("/tmp/shot.jpg", "jpg"),
+            ("/tmp/shot.JPEG", "jpeg"),
+            ("/tmp/my.shot.bmp", "bmp"),
+        ] {
+            let call = recorded_call("Cam", path).await;
+            assert_eq!(
+                call,
+                format!("save_source_screenshot(Cam,{path},{expected_format})"),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn screenshot_format_falls_back_to_png_when_the_path_carries_no_extension() {
+        for path in ["/tmp/shot", "/tmp/.png"] {
+            let call = recorded_call("Cam", path).await;
+            assert_eq!(
+                call,
+                format!("save_source_screenshot(Cam,{path},png)"),
+                "path {path:?}",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn screenshot_path_and_source_are_interpolated_before_the_format_is_derived() {
+        let sink = RecordingSink::new();
+        let runner = CaptureScreenshotRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new()
+            .set("cam".to_owned(), Variant::String("Webcam".to_owned()))
+            .set("ext".to_owned(), Variant::String("jpg".to_owned()));
+        let config = BTreeMap::from([
+            ("source".to_owned(), Variant::String("%cam%".to_owned())),
+            (
+                "path".to_owned(),
+                Variant::String("/tmp/shot.%ext%".to_owned()),
+            ),
+        ]);
+
+        runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert_eq!(
+            sink.calls(),
+            vec!["save_source_screenshot(Webcam,/tmp/shot.jpg,jpg)".to_owned()],
+        );
+    }
+
+    #[test]
+    fn validate_config_rejects_a_blank_or_missing_path() {
+        let runner = CaptureScreenshotRunner::new(Arc::new(MockSink));
+        for path in [Some(""), Some("   "), None] {
+            let mut config =
+                BTreeMap::from([("source".to_owned(), Variant::String("Cam".to_owned()))]);
+            if let Some(p) = path {
+                config.insert("path".to_owned(), Variant::String(p.to_owned()));
+            }
+            assert!(
+                runner.validate_config(&config).is_err(),
+                "accepted path {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn validate_config_rejects_a_missing_source() {
+        let runner = CaptureScreenshotRunner::new(Arc::new(MockSink));
+        let config = BTreeMap::from([(
+            "path".to_owned(),
+            Variant::String("/tmp/shot.png".to_owned()),
+        )]);
+        assert!(runner.validate_config(&config).is_err());
+    }
+}

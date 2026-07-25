@@ -95,3 +95,22 @@ impl SubActionRunner for RecordSetDirectoryRunner {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::runners::test_support::MockSink;
+
+    #[test]
+    fn validate_config_rejects_a_whitespace_only_directory() {
+        let runner = RecordSetDirectoryRunner::new(Arc::new(MockSink));
+        for path in ["", " ", "\t\n"] {
+            let config = BTreeMap::from([("path".to_owned(), Variant::String(path.to_owned()))]);
+            assert!(
+                runner.validate_config(&config).is_err(),
+                "accepted path {path:?}",
+            );
+        }
+    }
+}

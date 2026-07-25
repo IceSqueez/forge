@@ -140,8 +140,47 @@ pub fn register_obs_sub_actions(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::{ArgStack, SubActionOutcome, Variant};
+
     use super::*;
-    use crate::runners::test_support::MockSink;
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+
+    /// Runners whose only config is an `on` flag that picks between two sink calls.
+    const SET_ACTIVE_RUNNERS: &[(&str, &str, &str)] = &[
+        ("obs.stream.set_active", "start_stream", "stop_stream"),
+        ("obs.record.set_active", "start_record", "stop_record"),
+        (
+            "obs.virtualcam.set_active",
+            "start_virtual_cam",
+            "stop_virtual_cam",
+        ),
+        (
+            "obs.replay.set_active",
+            "start_replay_buffer",
+            "stop_replay_buffer",
+        ),
+    ];
+
+    /// Runners whose only config is one interpolated string forwarded to one sink call.
+    const SINGLE_STRING_RUNNERS: &[(&str, &str, &str)] = &[
+        ("obs.browser.refresh", "source", "refresh_browser_source"),
+        ("obs.media.restart", "source", "restart_media_input"),
+        ("obs.record.set_directory", "path", "set_record_directory"),
+        ("obs.profile.switch", "name", "set_current_profile"),
+        (
+            "obs.scene_collection.switch",
+            "name",
+            "set_current_scene_collection",
+        ),
+    ];
+
+    fn registry_with(sink: Arc<dyn ObsSink>) -> SubActionRegistry {
+        let mut reg = SubActionRegistry::new();
+        register_obs_sub_actions(&mut reg, sink).unwrap();
+        reg
+    }
 
     #[test]
     fn all_expected_runner_ids_are_present() {
@@ -174,6 +213,18 @@ mod tests {
             "obs.studio.enable",
             "obs.studio.disable",
             "obs.studio.trigger_transition",
+            "obs.studio.set_enabled",
+            "obs.stream.set_active",
+            "obs.record.set_active",
+            "obs.virtualcam.set_active",
+            "obs.replay.set_active",
+            "obs.filter.set_enabled",
+            "obs.browser.refresh",
+            "obs.media.restart",
+            "obs.capture.screenshot",
+            "obs.record.set_directory",
+            "obs.profile.switch",
+            "obs.scene_collection.switch",
             "obs.misc.raw_request",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
@@ -186,5 +237,167 @@ mod tests {
         register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
         let result = register_obs_sub_actions(&mut reg, Arc::new(MockSink));
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_active_runners_route_the_on_flag_to_exactly_one_matching_sink_call() {
+        for (id, start_call, stop_call) in SET_ACTIVE_RUNNERS {
+            for (on, expected) in [(true, start_call), (false, stop_call)] {
+                let sink = RecordingSink::new();
+                let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+                let runner = reg.get(id).unwrap();
+                let stack = ArgStack::new();
+                let config = BTreeMap::from([("on".to_owned(), Variant::Bool(on))]);
+
+                runner.execute(&config, &make_ctx(&stack)).await;
+
+                assert_eq!(
+                    sink.calls(),
+                    vec![(*expected).to_owned()],
+                    "{id} with on={on}",
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn studio_set_enabled_forwards_the_on_flag_as_the_studio_mode_argument() {
+        for on in [true, false] {
+            let sink = RecordingSink::new();
+            let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+            let runner = reg.get("obs.studio.set_enabled").unwrap();
+            let stack = ArgStack::new();
+            let config = BTreeMap::from([("on".to_owned(), Variant::Bool(on))]);
+
+            runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert_eq!(sink.calls(), vec![format!("set_studio_mode({on})")]);
+        }
+    }
+
+    #[test]
+    fn on_flag_runners_reject_a_missing_or_non_bool_flag() {
+        let reg = registry_with(Arc::new(MockSink));
+        let bad_configs = [
+            BTreeMap::new(),
+            BTreeMap::from([("on".to_owned(), Variant::String("true".to_owned()))]),
+            BTreeMap::from([("on".to_owned(), Variant::Int(1))]),
+        ];
+        for (id, _, _) in
+            SET_ACTIVE_RUNNERS
+                .iter()
+                .chain(std::iter::once(&("obs.studio.set_enabled", "", "")))
+        {
+            let runner = reg.get(id).unwrap();
+            for config in &bad_configs {
+                assert!(
+                    runner.validate_config(config).is_err(),
+                    "{id} accepted {config:?}",
+                );
+            }
+            assert!(
+                runner
+                    .validate_config(&BTreeMap::from([("on".to_owned(), Variant::Bool(false))]))
+                    .is_ok(),
+                "{id} rejected a valid flag",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn single_string_runners_forward_the_interpolated_value_to_their_sink_call() {
+        for (id, key, sink_call) in SINGLE_STRING_RUNNERS {
+            let sink = RecordingSink::new();
+            let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+            let runner = reg.get(id).unwrap();
+            let stack = ArgStack::new().set(
+                "picked".to_owned(),
+                Variant::String("Late Night".to_owned()),
+            );
+            let config = BTreeMap::from([(
+                (*key).to_owned(),
+                Variant::String("%picked% Setup".to_owned()),
+            )]);
+
+            runner.execute(&config, &make_ctx(&stack)).await;
+
+            assert_eq!(
+                sink.calls(),
+                vec![format!("{sink_call}(Late Night Setup)")],
+                "{id} did not forward the interpolated value",
+            );
+        }
+    }
+
+    #[test]
+    fn single_string_runners_reject_a_non_string_value() {
+        let reg = registry_with(Arc::new(MockSink));
+        for (id, key, _) in SINGLE_STRING_RUNNERS {
+            let runner = reg.get(id).unwrap();
+            for value in [Variant::Bool(true), Variant::Int(3)] {
+                let config = BTreeMap::from([((*key).to_owned(), value.clone())]);
+                assert!(
+                    runner.validate_config(&config).is_err(),
+                    "{id} accepted {value:?}",
+                );
+            }
+            assert!(
+                runner.validate_config(&BTreeMap::new()).is_err(),
+                "{id} accepted a missing {key}",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_screen_roster_runner_reports_a_failed_outcome_when_the_sink_errors() {
+        let cases: Vec<(&str, BTreeMap<String, Variant>)> = vec![
+            ("obs.stream.set_active", on_flag(true)),
+            ("obs.record.set_active", on_flag(false)),
+            ("obs.virtualcam.set_active", on_flag(true)),
+            ("obs.replay.set_active", on_flag(false)),
+            ("obs.studio.set_enabled", on_flag(true)),
+            ("obs.browser.refresh", one_string("source", "Overlay")),
+            ("obs.media.restart", one_string("source", "Intro Video")),
+            ("obs.record.set_directory", one_string("path", "/tmp/rec")),
+            ("obs.profile.switch", one_string("name", "Streaming")),
+            ("obs.scene_collection.switch", one_string("name", "Main")),
+            (
+                "obs.filter.set_enabled",
+                BTreeMap::from([
+                    ("source".to_owned(), Variant::String("Cam".to_owned())),
+                    ("filter".to_owned(), Variant::String("Blur".to_owned())),
+                    ("enabled".to_owned(), Variant::Bool(true)),
+                ]),
+            ),
+            (
+                "obs.capture.screenshot",
+                BTreeMap::from([
+                    ("source".to_owned(), Variant::String("Cam".to_owned())),
+                    ("path".to_owned(), Variant::String("/tmp/a.png".to_owned())),
+                ]),
+            ),
+        ];
+
+        let reg = registry_with(RecordingSink::failing() as Arc<dyn ObsSink>);
+        for (id, config) in cases {
+            let stack = ArgStack::new();
+            let runner = reg.get(id).unwrap();
+            let (telemetry, extra) = runner.execute(&config, &make_ctx(&stack)).await;
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{id} reported {:?} for a failing sink",
+                telemetry.outcome,
+            );
+            assert_eq!(telemetry.kind, id);
+            assert!(extra.is_none(), "{id} produced an arg stack");
+        }
+    }
+
+    fn on_flag(on: bool) -> BTreeMap<String, Variant> {
+        BTreeMap::from([("on".to_owned(), Variant::Bool(on))])
+    }
+
+    fn one_string(key: &str, value: &str) -> BTreeMap<String, Variant> {
+        BTreeMap::from([(key.to_owned(), Variant::String(value.to_owned()))])
     }
 }

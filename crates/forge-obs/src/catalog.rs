@@ -210,4 +210,122 @@ mod tests {
         assert_eq!(right.items[0].name, "Game Capture");
         assert!(right.items[0].enabled);
     }
+
+    fn source(visible: bool, locked: bool, audio_db: Option<f32>, kind: &str) -> SourceInfo {
+        SourceInfo {
+            name: "Cam".to_owned(),
+            visible,
+            locked,
+            audio_db,
+            kind: Some(kind.to_owned()),
+        }
+    }
+
+    #[test]
+    fn icon_for_kind_maps_input_kinds_to_their_glyph_family() {
+        for (kind, expected) in [
+            (Some("image_source"), "photo"),
+            (Some("text_ft2_source_v2"), "typography"),
+            (Some("text_gdiplus_v3"), "typography"),
+            (Some("browser_source"), "browser"),
+            (Some("ffmpeg_source"), "movie"),
+            (Some("vlc_source"), "movie"),
+            (Some("slideshow_v2"), "movie"),
+            (Some("wasapi_input_capture"), "microphone"),
+            (Some("pulse_input_capture"), "microphone"),
+            (Some("wasapi_output_capture"), "volume"),
+            (Some("v4l2_input"), "video"),
+            (Some("dshow_input"), "video"),
+            (Some("monitor_capture"), "device-desktop"),
+            (Some(""), "device-desktop"),
+            (None, "device-desktop"),
+        ] {
+            assert_eq!(
+                icon_for_kind(kind).as_str(),
+                expected,
+                "icon_for_kind({kind:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn is_audio_kind_accepts_only_capture_inputs_and_outputs() {
+        for kind in [
+            Some("wasapi_input_capture"),
+            Some("coreaudio_output_capture"),
+        ] {
+            assert!(is_audio_kind(kind), "{kind:?} should be audio");
+        }
+        for kind in [Some("browser_source"), Some("monitor_capture"), None] {
+            assert!(!is_audio_kind(kind), "{kind:?} should not be audio");
+        }
+    }
+
+    #[test]
+    fn active_scene_row_carries_the_live_label_instead_of_a_source_count() {
+        let item = scene_to_item("Gameplay", Some("Gameplay"), Some(4));
+        assert_eq!(item.active_label.as_deref(), Some("LIVE"));
+        assert!(item.trailing.is_empty());
+    }
+
+    #[test]
+    fn inactive_scene_row_carries_its_source_count_and_no_live_label() {
+        let item = scene_to_item("BRB", Some("Gameplay"), Some(4));
+        assert!(item.active_label.is_none());
+        assert_eq!(
+            item.trailing,
+            vec![TrailingToken::Label("4 src".to_owned())]
+        );
+    }
+
+    #[test]
+    fn scene_row_with_an_uncached_source_count_carries_no_trailing_token() {
+        let item = scene_to_item("BRB", Some("Gameplay"), None);
+        assert!(item.trailing.is_empty());
+    }
+
+    #[test]
+    fn source_row_tints_the_visibility_glyph_by_state() {
+        for (visible, glyph, color) in [
+            (true, "eye", TokenColor::Green),
+            (false, "eye-off", TokenColor::Muted),
+        ] {
+            let item = source_to_item(&source(visible, false, None, "browser_source"));
+            assert_eq!(
+                item.trailing[0],
+                TrailingToken::Icon(SectionIcon::new(glyph), color),
+            );
+        }
+    }
+
+    #[test]
+    fn source_row_tints_the_lock_glyph_by_state() {
+        for (locked, glyph, color) in [
+            (true, "lock", TokenColor::Yellow),
+            (false, "lock-open", TokenColor::Muted),
+        ] {
+            let item = source_to_item(&source(true, locked, None, "browser_source"));
+            assert_eq!(
+                item.trailing[1],
+                TrailingToken::Icon(SectionIcon::new(glyph), color),
+            );
+        }
+    }
+
+    #[test]
+    fn source_row_appends_a_one_decimal_db_label_only_when_a_level_is_known() {
+        let with_level = source_to_item(&source(true, false, Some(-12.34), "wasapi_input_capture"));
+        assert_eq!(
+            with_level.trailing.last(),
+            Some(&TrailingToken::Label("-12.3 dB".to_owned())),
+        );
+
+        let without_level = source_to_item(&source(true, false, None, "wasapi_input_capture"));
+        assert_eq!(without_level.trailing.len(), 2);
+    }
+
+    #[test]
+    fn hidden_source_row_is_rendered_disabled() {
+        assert!(!source_to_item(&source(false, false, None, "browser_source")).enabled);
+    }
 }

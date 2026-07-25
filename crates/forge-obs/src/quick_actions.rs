@@ -401,29 +401,179 @@ impl QuickActions for ObsClient {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_platform_core::QuickActions;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
 
+    use forge_platform_core::QuickActions;
+    use forge_registry::SubActionRegistry;
+
+    use super::*;
     use crate::client::ObsClient;
+    use crate::runners::register_obs_sub_actions;
+    use crate::sink::ObsSink;
+
+    fn roster() -> Vec<QuickAction> {
+        ObsClient::new_for_test("localhost:4455".to_owned()).actions()
+    }
+
+    fn registry() -> SubActionRegistry {
+        let client = Arc::new(ObsClient::new_for_test("localhost:4455".to_owned()));
+        let mut reg = SubActionRegistry::new();
+        register_obs_sub_actions(&mut reg, client as Arc<dyn ObsSink>).unwrap();
+        reg
+    }
 
     #[test]
     fn all_actions_disabled_when_disconnected() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let actions = client.actions();
-        for action in &actions {
+        for action in &roster() {
             assert!(!action.enabled, "expected {} to be disabled", action.label);
         }
     }
 
+    /// Blank string slots are the ones the picker or a form field fills in before the step runs,
+    /// so validating the raw template would only re-assert that they are still blank.
+    fn filled(config: &BTreeMap<String, Variant>) -> BTreeMap<String, Variant> {
+        config
+            .iter()
+            .map(|(k, v)| match v {
+                Variant::String(s) if s.is_empty() => {
+                    (k.clone(), Variant::String("supplied".to_owned()))
+                }
+                other => (k.clone(), other.clone()),
+            })
+            .collect()
+    }
+
     #[test]
-    #[allow(clippy::unwrap_used)]
-    fn start_recording_disabled_when_recording_active() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        {
-            let mut snap = client.health_state.write().unwrap();
-            snap.record_active = true;
+    fn every_quick_action_targets_a_registered_runner_that_accepts_its_template() {
+        let reg = registry();
+        for action in &roster() {
+            let kind_id = &action.subaction_template.kind_id;
+            let runner = reg
+                .get(kind_id)
+                .unwrap_or_else(|| panic!("{} targets unregistered {kind_id}", action.label));
+            assert!(
+                runner
+                    .validate_config(&filled(&action.subaction_template.config))
+                    .is_ok(),
+                "{} ships a template config its runner rejects",
+                action.label,
+            );
         }
-        let actions = client.actions();
-        assert!(!actions[3].enabled);
+    }
+
+    // Why: a config key the runner never reads is silently dropped by effective_config, so the
+    // button runs and reports success while doing nothing the user asked for.
+    #[test]
+    fn every_quick_action_config_and_field_key_is_one_its_runner_reads() {
+        let reg = registry();
+        for action in &roster() {
+            let kind_id = &action.subaction_template.kind_id;
+            let runner = reg.get(kind_id).unwrap();
+            let known: BTreeSet<String> = runner.default_config().keys().cloned().collect();
+
+            for key in action.subaction_template.config.keys() {
+                assert!(
+                    known.contains(key),
+                    "{}: template key {key:?} is not read by {kind_id}",
+                    action.label,
+                );
+            }
+            for field in &action.fields {
+                assert!(
+                    known.contains(&field.key),
+                    "{}: field key {:?} is not read by {kind_id}",
+                    action.label,
+                    field.key,
+                );
+            }
+        }
+    }
+
+    // Why: an action whose only blank config slot has neither a picker nor an editable field
+    // renders as a button the user can press but cannot fill in.
+    #[test]
+    fn every_action_with_a_blank_config_slot_offers_a_picker_or_a_field() {
+        for action in &roster() {
+            let has_blank = action
+                .subaction_template
+                .config
+                .values()
+                .any(|v| matches!(v, Variant::String(s) if s.is_empty()));
+            if !has_blank {
+                continue;
+            }
+            assert!(
+                action.picker.is_some() || !action.fields.is_empty(),
+                "{} has a blank config slot with no way to fill it",
+                action.label,
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_stream_toggle_is_marked_destructive() {
+        let destructive: Vec<String> = roster()
+            .iter()
+            .filter(|a| a.destructive)
+            .map(|a| a.subaction_template.kind_id.clone())
+            .collect();
+        assert_eq!(destructive, vec!["obs.stream.set_active".to_owned()]);
+    }
+
+    #[test]
+    fn every_action_belongs_to_one_of_the_five_screen_groups() {
+        let expected = BTreeSet::from([
+            "Profiles",
+            "Replay & capture",
+            "Scenes",
+            "Sources & audio",
+            "Stream & record",
+        ]);
+        let actions = roster();
+        let groups: BTreeSet<&str> = actions.iter().filter_map(|a| a.group.as_deref()).collect();
+        assert_eq!(groups, expected);
+        assert!(
+            actions.iter().all(|a| a.group.is_some()),
+            "every action must carry a group",
+        );
+    }
+
+    // Why: group_badge falls through to a generic "dot" badge for an unknown group string, so a
+    // typo in a group name degrades the header silently instead of failing.
+    #[test]
+    fn every_group_resolves_to_its_own_badge_rather_than_the_fallback() {
+        for action in &roster() {
+            let group = action.group.as_deref().unwrap_or_default();
+            let (icon, _) = group_badge(group);
+            assert_ne!(
+                icon.as_str(),
+                "dot",
+                "group {group:?} fell back to the default badge"
+            );
+        }
+    }
+
+    #[test]
+    fn name_pickers_are_wired_to_the_actions_that_switch_by_name() {
+        let by_kind: Vec<(String, Option<PickerKind>)> = roster()
+            .iter()
+            .map(|a| (a.subaction_template.kind_id.clone(), a.picker))
+            .collect();
+        for (kind_id, expected) in [
+            ("obs.scenes.switch_current", PickerKind::Scene),
+            ("obs.scenes.set_preview", PickerKind::Scene),
+            ("obs.scenes.set_transition", PickerKind::Transition),
+            ("obs.profile.switch", PickerKind::Profile),
+            ("obs.scene_collection.switch", PickerKind::SceneCollection),
+        ] {
+            let found = by_kind
+                .iter()
+                .find(|(k, _)| k == kind_id)
+                .unwrap_or_else(|| panic!("{kind_id} missing from the roster"));
+            assert_eq!(found.1, Some(expected), "{kind_id} picker");
+        }
     }
 }

@@ -539,7 +539,15 @@ pub(crate) fn apply_record_status_update(
 }
 
 #[cfg(test)]
+#[allow(clippy::panic)]
 mod tests {
+    use std::time::Duration;
+
+    use forge_platform_core::HealthValue;
+    use obws::responses::general::Stats;
+    use obws::responses::recording::RecordStatus;
+    use obws::responses::streaming::StreamStatus;
+
     use super::*;
 
     #[test]
@@ -733,6 +741,157 @@ mod tests {
                 .is_some_and(|ev| ev.payload.get("enabled").is_some());
             assert!(!carries_enabled, "enabled should be dropped");
         }
+    }
+
+    fn stream_status(active: bool, secs: i64, skipped: u32, total: u32) -> StreamStatus {
+        StreamStatus {
+            active,
+            duration: time::Duration::seconds(secs),
+            skipped_frames: skipped,
+            total_frames: total,
+            ..StreamStatus::default()
+        }
+    }
+
+    fn record_status(active: bool, paused: bool, secs: i64) -> RecordStatus {
+        RecordStatus {
+            active,
+            paused,
+            duration: time::Duration::seconds(secs),
+            ..RecordStatus::default()
+        }
+    }
+
+    #[test]
+    fn stream_status_poll_emits_a_stream_and_a_dropped_delta_on_the_first_reading() {
+        let mut snapshot = HealthSnapshot::default();
+
+        let deltas =
+            apply_stream_status_update(&stream_status(true, 3_720, 5, 1_000), &mut snapshot);
+
+        assert_eq!(
+            deltas.iter().map(|d| d.index).collect::<Vec<_>>(),
+            vec![0, 3],
+        );
+        assert!(snapshot.stream_active);
+        assert_eq!(snapshot.stream_duration, Some(Duration::from_secs(3_720)));
+        assert_eq!(snapshot.dropped_frames, 5);
+        assert_eq!(snapshot.total_frames, 1_000);
+    }
+
+    #[test]
+    fn stream_status_poll_repeating_the_same_reading_emits_nothing() {
+        let mut snapshot = HealthSnapshot::default();
+        let status = stream_status(true, 90, 0, 300);
+        apply_stream_status_update(&status, &mut snapshot);
+
+        assert!(apply_stream_status_update(&status, &mut snapshot).is_empty());
+    }
+
+    #[test]
+    fn stream_status_poll_emits_only_the_stream_delta_when_frame_counts_hold_steady() {
+        let mut snapshot = HealthSnapshot::default();
+        apply_stream_status_update(&stream_status(true, 90, 2, 300), &mut snapshot);
+
+        let deltas = apply_stream_status_update(&stream_status(true, 120, 2, 300), &mut snapshot);
+
+        assert_eq!(deltas.iter().map(|d| d.index).collect::<Vec<_>>(), vec![0]);
+    }
+
+    #[test]
+    fn stream_status_poll_clears_the_duration_and_active_flag_when_the_stream_stops() {
+        let mut snapshot = HealthSnapshot::default();
+        apply_stream_status_update(&stream_status(true, 600, 0, 900), &mut snapshot);
+
+        apply_stream_status_update(&stream_status(false, 0, 0, 900), &mut snapshot);
+
+        assert!(!snapshot.stream_active);
+        assert_eq!(snapshot.stream_duration, Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn record_status_poll_emits_one_recording_delta_per_changed_reading() {
+        let mut snapshot = HealthSnapshot::default();
+
+        let started = apply_record_status_update(&record_status(true, false, 30), &mut snapshot);
+        assert_eq!(started.iter().map(|d| d.index).collect::<Vec<_>>(), vec![1]);
+
+        let paused = apply_record_status_update(&record_status(true, true, 30), &mut snapshot);
+        assert_eq!(paused.len(), 1);
+        assert!(snapshot.record_paused);
+
+        assert!(
+            apply_record_status_update(&record_status(true, true, 30), &mut snapshot).is_empty(),
+            "an unchanged reading must not emit a delta",
+        );
+    }
+
+    #[test]
+    fn record_status_poll_reports_a_paused_recording_as_still_active() {
+        let mut snapshot = HealthSnapshot::default();
+
+        let deltas = apply_record_status_update(&record_status(true, true, 45), &mut snapshot);
+
+        let HealthValue::Status { label, active, .. } = &deltas[0].new_value else {
+            panic!("expected a Status value");
+        };
+        assert_eq!(label, "Paused");
+        assert!(active);
+    }
+
+    #[test]
+    fn stats_poll_emits_a_cpu_delta_only_when_a_rendered_figure_changes() {
+        let mut snapshot = HealthSnapshot::default();
+        let stats = Stats {
+            cpu_usage: 12.5,
+            active_fps: 60.0,
+            ..Stats::default()
+        };
+
+        assert_eq!(apply_stats_update(&stats, &mut snapshot).len(), 1);
+        assert!(apply_stats_update(&stats, &mut snapshot).is_empty());
+
+        let lagging = Stats {
+            render_skipped_frames: 1,
+            ..stats.clone()
+        };
+        let deltas = apply_stats_update(&lagging, &mut snapshot);
+        assert_eq!(deltas.iter().map(|d| d.index).collect::<Vec<_>>(), vec![2]);
+        assert!(snapshot.render_lag);
+    }
+
+    #[test]
+    fn stream_state_event_flips_the_active_flag_but_leaves_the_polled_duration_alone() {
+        let mut snapshot = HealthSnapshot::default();
+        apply_stream_status_update(&stream_status(true, 600, 0, 900), &mut snapshot);
+
+        let deltas = apply_health_update(
+            &obws::events::Event::StreamStateChanged {
+                active: false,
+                state: obws::events::OutputState::Stopped,
+            },
+            &mut snapshot,
+        );
+
+        assert_eq!(deltas.iter().map(|d| d.index).collect::<Vec<_>>(), vec![0]);
+        assert!(!snapshot.stream_active);
+        assert_eq!(snapshot.stream_duration, Some(Duration::from_secs(600)));
+    }
+
+    #[test]
+    fn a_state_event_matching_the_current_flag_emits_nothing() {
+        let mut snapshot = HealthSnapshot::default();
+
+        let deltas = apply_health_update(
+            &obws::events::Event::RecordStateChanged {
+                active: false,
+                state: obws::events::OutputState::Stopped,
+                path: None,
+            },
+            &mut snapshot,
+        );
+
+        assert!(deltas.is_empty());
     }
 
     #[test]

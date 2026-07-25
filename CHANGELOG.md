@@ -1,6 +1,99 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-07-25
+### 🐛 Bug Fixes
+- *(ui)* Size the oauth footer buttons to the design button specs
+- *(platforms)* Show zero viewers with an immediate delta hint
+- *(ci)* Scope release notes to the nearest ancestor tag
+- *(ui)* Subscribe the event bridge before seeding connectivity
+
+### 🚀 Features
+- *(ui)* Rebuild the oauth connect screen on the stepped design flow
+- *(ui)* Add the category glyph
+- *(youtube)* Align the connected page with the design surface
+- *(youtube)* Add thumbnail, ad break, poll, and lookup sub-actions
+- *(youtube)* Complete the quick-action roster and handle identity
+- *(ui)* Add the user and video glyphs
+
+### 🧪 Testing
+- *(youtube)* Pin connected-page roster, metrics, and identity
+- *(youtube)* Pin zero viewers when absent
+- *(youtube)* Adapt pins to the full roster and channel handle
+- *(youtube)* Cover thumbnail, ad break, poll, and lookup sub-actions
+- *(vtube)* Poll for disconnect events instead of fixed sleeps
+
+## [0.3.1] - 2026-07-24
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### ⚡ Performance
+- *(ui)* Virtualize the scopes and subscription panels
+
+### 🐛 Bug Fixes
+- *(ui)* Rebuild platform connect screen around the real PKCE flow
+- *(ui)* Route twitch connect through the shared oauth screen
+- *(ui)* Preview the real authorize endpoint before the flow starts
+- *(ui)* Surface twitch device start failures with the real error
+- *(ui)* Hide device code cards until a code exists
+- *(twitch)* Drop the nonexistent user manage broadcast scope
+- *(twitch)* Repair rejected eventsub subscription conditions
+- *(twitch)* Adopt automod v2 subscriptions and wire mapping
+- *(ui)* Align the twitch detail page with the design review
+- *(ui)* Size separator strips with a shared visible hairline token
+- *(ui)* Match the platform hero type scale to the design
+- *(ui)* Match twitch detail metrics to the design pixel scale
+- *(ui)* Style hero and quick-action buttons as design ghost buttons
+- *(twitch)* Make disconnect idempotent and correct the scope-loss hint
+- *(ui)* Surface the twitch re-auth banner and sign out on disconnect
+- *(twitch)* Create eventsub subscriptions concurrently at connect
+- *(twitch)* Resubscribe with a freshly refreshed token on reconnect
+- *(twitch)* Route scope-denied eventsub responses to re-auth
+- *(ui)* Drop the session clock from the platform hero
+- *(twitch)* Always show the broadcaster tier badge
+- *(twitch)* Refresh the token countdown after a manual token refresh
+- *(ui)* Even the quick-actions grid and match button height to design
+- *(ui)* Compact the quick-actions filter input to design height
+- *(ui)* Contain wheel scrolling inside overflowing detail panels
+- *(ui)* Merge quick-action values through the contract and name the toast
+- *(ui)* Render thin borders at one pixel and retire hairline
+- *(ui)* Anchor the quick-action modal overlay to the full window
+- *(twitch)* Deliver chat send requests through a live bridge
+
+### 🚀 Features
+- *(ui)* Unify integration hero strips behind one kit component
+- *(twitch)* Switch authentication to the device authorization grant
+- *(ui)* Present the twitch device code connect screen
+- *(twitch)* Gate quick actions by broadcaster tier
+- *(ui)* Redesign the twitch detail page
+- *(twitch)* Expand quick actions into the designed grouped roster
+- *(ui)* Render quick actions and section headers with real glyphs
+- *(ui)* Lead quick-action group headers with the design icons
+- *(twitch)* Report real helix usage on the api calls card
+- *(platforms)* Add a parameter field contract to quick actions
+- *(ui)* Collect quick-action parameters in a run modal
+- *(twitch)* Describe quick-action parameters for the modal
+- *(core)* Persist quick-action runs in the execution history
+- *(script)* Target or broadcast chat sends across platforms
+
+### 🚜 Refactor
+- *(twitch)* Expose an eventsub base-url seam for test harnesses
+
+### 🧪 Testing
+- *(twitch)* Pin eventsub moderator condition and hype train version
+- *(twitch)* Cover grouped quick actions, eventsub status, raid labels
+- *(platforms)* Pin quick-action accent serde default
+- *(twitch)* Pin idempotent disconnect without a live session
+- *(twitch)* Cover chat session welcome token refresh routing
+- *(twitch)* Cover concurrent eventsub subscribe outcomes
+- *(twitch)* Pin scope-denied 403 eventsub path to re-auth
+- *(twitch)* Pin tier badge tone per level
+- *(rate-limit)* Cover usage introspection and twitch api card
+- *(platforms)* Cover quick-action config merge and marshaling
+- *(twitch)* Pin quick-action field keys to runner config
+- *(core)* Cover quick-action run history persistence
+- *(chat)* Cover script targeting and cross-platform send bridge
+
 ## [0.3.0] - 2026-07-23
 ### ⚠️ BREAKING CHANGES
 - **kick**: kick event kinds and payload keys renamed to official names
@@ -13,6 +106,9 @@ All notable changes to this project will be documented in this file.
 - **speak**: speak.* payload keys restructured, reasons tokenized
 - **core**: action.invoked removed, quick_action.done renamed, script keys unified
 
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(youtube)* Emit stream lifecycle events on real transitions
 - *(app)* Silence symphonia decoder info noise in default log filter
@@ -22,6 +118,10 @@ All notable changes to this project will be documented in this file.
 - *(youtube)* [**breaking**] Normalize chat payloads and revive dead deletion event
 - *(runtime)* Count chat activity from all platform chat kinds
 - *(vtube)* Poll expression state through the official request api
+- *(hotkey)* Gate portal payload constants to linux targets
+
+### 📚 Documentation
+- *(release)* Release v0.3.0
 
 ### 🚀 Features
 - *(runtime)* Run bounded graceful shutdown on app quit

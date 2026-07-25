@@ -86,6 +86,10 @@ impl KickCredentialsManager {
         Ok(creds.access_token)
     }
 
+    pub async fn user_id(&self) -> Result<u64, PlatformError> {
+        Ok(self.load().await?.ok_or_else(reauth_err)?.user_id)
+    }
+
     pub async fn refresh(&self, refresh_token: &str) -> Result<KickCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
         let parsed = self.refresher.refresh(refresh_token).await?;

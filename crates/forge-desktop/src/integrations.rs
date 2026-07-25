@@ -622,36 +622,14 @@ async fn build_kick(
         client_id,
         client_secret,
     ));
-    let creds = match manager.load().await {
-        Ok(Some(creds)) => creds,
-        Ok(None) => return (None, None),
-        Err(e) => {
-            eprintln!("forge-desktop: failed to load kick credentials: {e}");
-            return (None, None);
-        }
-    };
-    let slug = creds.username.clone();
-    let broadcaster_user_id = creds.user_id;
 
     let rate_limiter: Arc<dyn RateLimiter> =
         Arc::new(TokenBucketRateLimiter::new(60, Duration::from_secs(60)));
     let platform = Arc::new(forge_platform_kick::KickPlatform::new(
-        slug.clone(),
         Arc::clone(&manager),
         Arc::clone(&rate_limiter),
     ));
     let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
-
-    spawn_event_bridge(Arc::clone(bus), chat_platform.events(), "kick");
-    spawn_connect(Arc::clone(&chat_platform), "kick");
-
-    let (poller_tx, mut poller_rx) = tokio::sync::mpsc::channel::<Event>(256);
-    let bus_poller = Arc::clone(bus);
-    tokio::spawn(async move {
-        while let Some(event) = poller_rx.recv().await {
-            bus_poller.publish(event);
-        }
-    });
 
     let sender = Arc::new(forge_platform_kick::KickSendChat::new(Arc::new(
         NoopRateLimiter,
@@ -667,6 +645,7 @@ async fn build_kick(
     )));
 
     let manager_for_sub_actions = Arc::clone(&manager);
+    let manager_for_broadcaster = Arc::clone(&manager);
     if let Err(e) = forge_platform_kick::register_kick_sub_actions(
         sub_actions,
         forge_platform_kick::KickSubActionDeps {
@@ -675,7 +654,10 @@ async fn build_kick(
                 let manager = Arc::clone(&manager_for_sub_actions);
                 Box::pin(async move { manager.get_valid_access_token().await })
             }),
-            broadcaster_user_id,
+            broadcaster_id_source: Arc::new(move || {
+                let manager = Arc::clone(&manager_for_broadcaster);
+                Box::pin(async move { manager.user_id().await })
+            }),
             moderation,
             channel: Arc::clone(&channel),
             rewards: Arc::clone(&rewards),
@@ -683,6 +665,34 @@ async fn build_kick(
     ) {
         eprintln!("forge-desktop: kick sub-action registration failed: {e}");
     }
+
+    spawn_chat_send_bridge(
+        Arc::clone(bus),
+        Arc::clone(&chat_platform),
+        "kick",
+        EventSource::Kick,
+    );
+
+    let creds = match manager.load().await {
+        Ok(Some(creds)) => creds,
+        Ok(None) => return (None, None),
+        Err(e) => {
+            eprintln!("forge-desktop: failed to load kick credentials: {e}");
+            return (None, None);
+        }
+    };
+    let slug = creds.username;
+
+    spawn_event_bridge(Arc::clone(bus), chat_platform.events(), "kick");
+    spawn_connect(Arc::clone(&chat_platform), "kick");
+
+    let (poller_tx, mut poller_rx) = tokio::sync::mpsc::channel::<Event>(256);
+    let bus_poller = Arc::clone(bus);
+    tokio::spawn(async move {
+        while let Some(event) = poller_rx.recv().await {
+            bus_poller.publish(event);
+        }
+    });
 
     let manager_for_poller = Arc::clone(&manager);
     let viewer_source = forge_platform_kick::spawn_kick_poller(
@@ -697,8 +707,6 @@ async fn build_kick(
 
     let (bundle, _health_tx) =
         forge_platform_kick::KickIntegrationBundle::new(slug, Arc::clone(&platform), manager);
-
-    spawn_chat_send_bridge(Arc::clone(bus), chat_platform, "kick", EventSource::Kick);
 
     let object = BuiltinObject {
         icon: SectionIcon::new("brand-kick"),

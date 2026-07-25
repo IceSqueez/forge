@@ -19,7 +19,8 @@ const KIND_ID: &str = "kick.chat.send_message";
 pub struct SendMessageRunner {
     client: Arc<KickSendChat>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
-    broadcaster_user_id: u64,
+    broadcaster_id_source:
+        Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync>,
 }
 
 impl SendMessageRunner {
@@ -28,12 +29,14 @@ impl SendMessageRunner {
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
         >,
-        broadcaster_user_id: u64,
+        broadcaster_id_source: Arc<
+            dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync,
+        >,
     ) -> Self {
         Self {
             client,
             token_source,
-            broadcaster_user_id,
+            broadcaster_id_source,
         }
     }
 }
@@ -100,13 +103,16 @@ impl SubActionRunner for SendMessageRunner {
         } else {
             match (self.token_source)().await {
                 Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-                Ok(token) => match self
-                    .client
-                    .send(&message, &token, self.broadcaster_user_id)
-                    .await
-                {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
+                Ok(token) => match (self.broadcaster_id_source)().await {
+                    Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                    Ok(broadcaster_user_id) => match self
+                        .client
+                        .send(&message, &token, broadcaster_user_id)
+                        .await
+                    {
+                        Ok(()) => SubActionOutcome::Success,
+                        Err(e) => SubActionOutcome::Failed(e.to_string()),
+                    },
                 },
             }
         };
@@ -163,10 +169,16 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
     }
 
+    fn broadcaster_id_source(
+        id: u64,
+    ) -> Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync> {
+        Arc::new(move || Box::pin(async move { Ok(id) }))
+    }
+
     fn runner_on(server: &MockServer) -> SendMessageRunner {
         let client = KickSendChat::new(Arc::new(GrantLimiter))
             .with_send_endpoint(format!("{}/chat", server.uri()));
-        SendMessageRunner::new(Arc::new(client), token_source(), 42)
+        SendMessageRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
 
     fn config(message: &str) -> SubActionConfig {
@@ -211,7 +223,7 @@ mod tests {
         let runner = SendMessageRunner::new(
             Arc::new(KickSendChat::new(Arc::new(GrantLimiter))),
             token_source(),
-            42,
+            broadcaster_id_source(42),
         );
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

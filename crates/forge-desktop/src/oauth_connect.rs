@@ -1165,7 +1165,7 @@ async fn connect_kick_after_oauth(
         client_id,
         client_secret,
     ));
-    let creds = manager
+    manager
         .load()
         .await
         .map_err(|e| e.to_string())?
@@ -1175,7 +1175,6 @@ async fn connect_kick_after_oauth(
         forge_platform_core::TokenBucketRateLimiter::new(60, Duration::from_secs(60)),
     );
     let platform = Arc::new(forge_platform_kick::KickPlatform::new(
-        creds.username,
         manager,
         rate_limiter,
     ));

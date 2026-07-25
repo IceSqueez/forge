@@ -19,7 +19,8 @@ const KIND_ID: &str = "kick.moderation.ban";
 pub struct BanUserRunner {
     client: Arc<KickModeration>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
-    broadcaster_user_id: u64,
+    broadcaster_id_source:
+        Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync>,
 }
 
 impl BanUserRunner {
@@ -28,12 +29,14 @@ impl BanUserRunner {
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
         >,
-        broadcaster_user_id: u64,
+        broadcaster_id_source: Arc<
+            dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync,
+        >,
     ) -> Self {
         Self {
             client,
             token_source,
-            broadcaster_user_id,
+            broadcaster_id_source,
         }
     }
 }
@@ -102,13 +105,16 @@ impl SubActionRunner for BanUserRunner {
             }
             Ok(target_id) => match (self.token_source)().await {
                 Err(e) => SubActionOutcome::Failed(format!("token error: {e}")),
-                Ok(token) => match self
-                    .client
-                    .ban(target_id, self.broadcaster_user_id, &token)
-                    .await
-                {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
+                Ok(token) => match (self.broadcaster_id_source)().await {
+                    Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
+                    Ok(broadcaster_user_id) => match self
+                        .client
+                        .ban(target_id, broadcaster_user_id, &token)
+                        .await
+                    {
+                        Ok(()) => SubActionOutcome::Success,
+                        Err(e) => SubActionOutcome::Failed(e.to_string()),
+                    },
                 },
             },
         };
@@ -165,9 +171,15 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
     }
 
+    fn broadcaster_id_source(
+        id: u64,
+    ) -> Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync> {
+        Arc::new(move || Box::pin(async move { Ok(id) }))
+    }
+
     fn runner_on(server: &MockServer) -> BanUserRunner {
         let client = KickModeration::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
-        BanUserRunner::new(Arc::new(client), token_source(), 42)
+        BanUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
 
     fn config(user_id: &str) -> SubActionConfig {
@@ -212,7 +224,7 @@ mod tests {
         let runner = BanUserRunner::new(
             Arc::new(KickModeration::new(Arc::new(GrantLimiter))),
             token_source(),
-            42,
+            broadcaster_id_source(42),
         );
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

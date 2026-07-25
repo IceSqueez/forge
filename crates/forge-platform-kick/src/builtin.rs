@@ -395,11 +395,7 @@ mod tests {
                 "test_cid".to_owned(),
                 "test_secret".to_owned(),
             ));
-            let platform = Arc::new(KickPlatform::new(
-                "test_channel".to_owned(),
-                manager.clone(),
-                Arc::new(GrantLimiter),
-            ));
+            let platform = Arc::new(KickPlatform::new(manager.clone(), Arc::new(GrantLimiter)));
             let (bundle, _) =
                 KickIntegrationBundle::new("test_channel".to_owned(), platform, manager);
             bundle

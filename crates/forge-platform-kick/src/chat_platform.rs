@@ -22,7 +22,6 @@ const CHAT_FORWARD_CAPACITY: usize = 256;
 pub struct KickPlatform {
     auth_flow: AuthFlow,
     capabilities: PlatformCapabilities,
-    slug: String,
     events: Arc<PlatformEventChannel>,
     credentials_manager: Arc<KickCredentialsManager>,
     http: reqwest::Client,
@@ -36,7 +35,6 @@ pub struct KickPlatform {
 
 impl KickPlatform {
     pub fn new(
-        slug: String,
         credentials_manager: Arc<KickCredentialsManager>,
         rate_limiter: Arc<dyn RateLimiter>,
     ) -> Self {
@@ -44,7 +42,6 @@ impl KickPlatform {
         Self {
             auth_flow: kick_auth_flow(),
             capabilities: kick_capabilities(),
-            slug,
             events: Arc::new(PlatformEventChannel::new()),
             credentials_manager,
             http: reqwest::Client::new(),
@@ -83,13 +80,19 @@ impl ChatPlatform for KickPlatform {
     }
 
     async fn connect(&self) -> Result<(), PlatformError> {
+        let creds = self.credentials_manager.load().await?.ok_or_else(|| {
+            PlatformError::ReauthRequired {
+                platform: PLATFORM_ID.to_owned(),
+            }
+        })?;
+
         let previous = self.handle.lock().unwrap_or_else(|p| p.into_inner()).take();
         if let Some(previous) = previous {
             previous.shutdown();
         }
 
         let (chat_tx, mut chat_rx) = mpsc::channel::<Event>(CHAT_FORWARD_CAPACITY);
-        let handle = KickChat::new(self.slug.clone(), self.http.clone())
+        let handle = KickChat::new(creds.username, self.http.clone())
             .connect(chat_tx)
             .await
             .map_err(map_connect_error)?;
@@ -257,7 +260,7 @@ mod tests {
             "test_cid".to_owned(),
             "test_secret".to_owned(),
         ));
-        KickPlatform::new("test_channel".to_owned(), manager, limiter)
+        KickPlatform::new(manager, limiter)
     }
 
     #[test]

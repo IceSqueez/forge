@@ -37,7 +37,8 @@ pub struct KickSubActionDeps {
     pub client: Arc<KickSendChat>,
     pub token_source:
         Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
-    pub broadcaster_user_id: u64,
+    pub broadcaster_id_source:
+        Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync>,
     pub moderation: Arc<KickModeration>,
     pub channel: Arc<KickChannel>,
     pub rewards: Arc<KickRewards>,
@@ -50,7 +51,7 @@ pub fn register_kick_sub_actions(
     let KickSubActionDeps {
         client,
         token_source,
-        broadcaster_user_id,
+        broadcaster_id_source,
         moderation,
         channel,
         rewards,
@@ -58,7 +59,7 @@ pub fn register_kick_sub_actions(
     reg.register(Box::new(SendMessageRunner::new(
         Arc::clone(&client),
         Arc::clone(&token_source),
-        broadcaster_user_id,
+        Arc::clone(&broadcaster_id_source),
     )))?;
     reg.register(Box::new(DeleteMessageRunner::new(
         Arc::clone(&client),
@@ -67,17 +68,17 @@ pub fn register_kick_sub_actions(
     reg.register(Box::new(BanUserRunner::new(
         Arc::clone(&moderation),
         Arc::clone(&token_source),
-        broadcaster_user_id,
+        Arc::clone(&broadcaster_id_source),
     )))?;
     reg.register(Box::new(TimeoutUserRunner::new(
         Arc::clone(&moderation),
         Arc::clone(&token_source),
-        broadcaster_user_id,
+        Arc::clone(&broadcaster_id_source),
     )))?;
     reg.register(Box::new(UnbanUserRunner::new(
         Arc::clone(&moderation),
         Arc::clone(&token_source),
-        broadcaster_user_id,
+        broadcaster_id_source,
     )))?;
     reg.register(Box::new(UpdateInfoRunner::new(
         Arc::clone(&channel),

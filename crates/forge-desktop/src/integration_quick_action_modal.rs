@@ -56,6 +56,7 @@ struct ModalField {
     key: String,
     label: String,
     hint: Option<String>,
+    required: bool,
     control: FieldControl,
 }
 
@@ -104,19 +105,24 @@ impl QuickActionModal {
                 QuickActionFieldKind::Text => {
                     let content = default_text(&spec.default);
                     let placeholder = spec.placeholder.clone().unwrap_or_default();
+                    let blank = spec.required && content.trim().is_empty();
                     let input = cx.new(|cx| {
                         let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
                         if !content.is_empty() {
                             ti.set_content(content, cx);
                         }
+                        ti.set_invalid(blank, cx);
                         ti
                     });
-                    subs.push(cx.subscribe(&input, Self::on_field_input));
+                    subs.push(cx.subscribe(&input, move |this, _, event, cx| {
+                        this.on_field_event(i, event, cx)
+                    }));
                     FieldControl::Text(input)
                 }
                 QuickActionFieldKind::Multiline | QuickActionFieldKind::MultilineList => {
                     let content = default_text(&spec.default);
                     let placeholder = spec.placeholder.clone().unwrap_or_default();
+                    let blank = spec.required && content.trim().is_empty();
                     let area = cx.new(|cx| {
                         let mut ta = TextArea::new(placeholder, cx)
                             .with_palette(palette)
@@ -124,8 +130,12 @@ impl QuickActionModal {
                         if !content.is_empty() {
                             ta.set_content(content, cx);
                         }
+                        ta.set_invalid(blank, cx);
                         ta
                     });
+                    subs.push(cx.subscribe(&area, move |this, _, event, cx| {
+                        this.on_field_event(i, event, cx)
+                    }));
                     FieldControl::Multiline(area)
                 }
                 QuickActionFieldKind::Toggle => FieldControl::Toggle(default_toggle(&spec.default)),
@@ -163,6 +173,7 @@ impl QuickActionModal {
                 key: spec.key,
                 label: spec.label,
                 hint: spec.hint,
+                required: spec.required,
                 control,
             });
         }
@@ -209,14 +220,35 @@ impl QuickActionModal {
         }
     }
 
-    fn on_field_input(
-        &mut self,
-        _input: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
-        if matches!(event, InputEvent::Cancelled) {
-            self.cancel(cx);
+    fn on_field_event(&mut self, index: usize, event: &InputEvent, cx: &mut Context<Self>) {
+        match event {
+            InputEvent::Cancelled => self.cancel(cx),
+            InputEvent::Changed(text) => {
+                let blank = text.trim().is_empty();
+                self.mark_blank(index, blank, cx);
+                cx.notify();
+            }
+            InputEvent::Submitted(_) => {}
+        }
+    }
+
+    fn mark_blank(&mut self, index: usize, blank: bool, cx: &mut Context<Self>) {
+        let Some(field) = self.fields.get(index) else {
+            return;
+        };
+        if !field.required {
+            return;
+        }
+        match &field.control {
+            FieldControl::Text(input) => {
+                let input = input.clone();
+                input.update(cx, |input, cx| input.set_invalid(blank, cx));
+            }
+            FieldControl::Multiline(area) => {
+                let area = area.clone();
+                area.update(cx, |area, cx| area.set_invalid(blank, cx));
+            }
+            _ => {}
         }
     }
 
@@ -333,10 +365,16 @@ impl QuickActionModal {
         cx.notify();
     }
 
-    fn can_run(&self) -> bool {
+    fn can_run(&self, cx: &Context<Self>) -> bool {
         self.fields.iter().all(|field| match &field.control {
             FieldControl::Choice(choice) => choice.selected.is_some(),
-            _ => true,
+            FieldControl::Text(input) => {
+                !field.required || !input.read(cx).content().trim().is_empty()
+            }
+            FieldControl::Multiline(area) => {
+                !field.required || !area.read(cx).content().trim().is_empty()
+            }
+            FieldControl::Toggle(_) => true,
         })
     }
 
@@ -360,7 +398,7 @@ impl QuickActionModal {
     }
 
     fn run(&mut self, cx: &mut Context<Self>) {
-        if !self.can_run() {
+        if !self.can_run(cx) {
             return;
         }
         let step = self.build_step(cx);
@@ -601,7 +639,7 @@ impl Render for QuickActionModal {
                 &palette,
             )
         }
-        .disabled(!self.can_run())
+        .disabled(!self.can_run(cx))
         .on_click(
             "qa-modal-run",
             cx.listener(|this, _: &ClickEvent, _, cx| this.run(cx)),
@@ -698,6 +736,7 @@ struct FieldSpec {
     kind: QuickActionFieldKind,
     default: Option<QuickActionFieldValue>,
     placeholder: Option<String>,
+    required: bool,
 }
 
 fn build_specs(action: &QuickAction) -> Vec<FieldSpec> {
@@ -712,6 +751,7 @@ fn build_specs(action: &QuickAction) -> Vec<FieldSpec> {
                 kind: field.kind.clone(),
                 default: field.default.clone(),
                 placeholder: field.placeholder.clone(),
+                required: field.required,
             })
             .collect();
     }
@@ -723,6 +763,7 @@ fn build_specs(action: &QuickAction) -> Vec<FieldSpec> {
             kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Dynamic(pk)),
             default: None,
             placeholder: None,
+            required: true,
         }],
         None => Vec::new(),
     }
@@ -736,6 +777,7 @@ fn spec_to_field(spec: &FieldSpec) -> QuickActionField {
         default: spec.default.clone(),
         placeholder: spec.placeholder.clone(),
         hint: spec.hint.clone(),
+        required: spec.required,
     }
 }
 
@@ -982,6 +1024,7 @@ mod tests {
             default: Some(QuickActionFieldValue::Text("BRB".to_owned())),
             placeholder: None,
             hint: None,
+            required: false,
         }];
 
         let specs = build_specs(&action);

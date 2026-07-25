@@ -360,6 +360,19 @@ pub struct QuickActionField {
     pub placeholder: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// Mirrors the target runner rejecting a blank value: the collection form blocks the run
+    /// instead of letting it fail.
+    #[serde(default)]
+    pub required: bool,
+}
+
+impl QuickActionField {
+    pub fn required(self) -> Self {
+        Self {
+            required: true,
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -754,6 +767,7 @@ mod tests {
                 default: None,
                 placeholder: None,
                 hint: None,
+                required: false,
             }],
         };
         let json = serde_json::to_string(&action).unwrap();
@@ -826,6 +840,7 @@ mod tests {
             default,
             placeholder: None,
             hint: None,
+            required: false,
         }
     }
 

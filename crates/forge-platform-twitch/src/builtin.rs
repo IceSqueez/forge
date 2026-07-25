@@ -627,6 +627,7 @@ fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
         default: Some(QuickActionFieldValue::Text(default.to_owned())),
         placeholder: None,
         hint: None,
+        required: false,
     }
 }
 
@@ -657,6 +658,7 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
         default: Some(QuickActionFieldValue::Toggle(default)),
         placeholder: None,
         hint: None,
+        required: false,
     }
 }
 
@@ -747,11 +749,10 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.update_title",
                 config([("title", blank())]),
-                vec![text_field(
-                    "title",
-                    "Stream title",
-                    "GTNH: Aluminium grind continues",
-                )],
+                vec![
+                    text_field("title", "Stream title", "GTNH: Aluminium grind continues")
+                        .required(),
+                ],
             ),
             quick_action(
                 "Set category / game",
@@ -763,7 +764,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.update_category",
                 config([("category_id", blank())]),
-                vec![text_field("category_id", "Category", "Minecraft")],
+                vec![text_field("category_id", "Category", "Minecraft").required()],
             ),
             quick_action(
                 "Update tags",
@@ -813,12 +814,13 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("duration_seconds", Variant::Int(60)),
                 ]),
                 vec![
-                    text_field("title", "Question", "Next game?"),
+                    text_field("title", "Question", "Next game?").required(),
                     multiline_field(
                         "choices",
                         "Choices (one per line)",
                         "Factorio\nMinecraft\nSatisfactory",
-                    ),
+                    )
+                    .required(),
                     toggle_field(
                         "channel_points_voting_enabled",
                         "Channel Points voting",
@@ -871,12 +873,13 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("prediction_window_seconds", Variant::Int(120)),
                 ]),
                 vec![
-                    text_field("title", "Title", "Will we beat the boss?"),
+                    text_field("title", "Title", "Will we beat the boss?").required(),
                     multiline_field(
                         "outcomes",
                         "Outcomes (one per line)",
                         "Yes, easy\nNo, we die",
-                    ),
+                    )
+                    .required(),
                 ],
             ),
             quick_action(
@@ -928,7 +931,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("message", blank()),
                     ("target", Variant::String("twitch".to_owned())),
                 ]),
-                vec![multiline_field("message", "Message", "Hey chat \u{1f44b}")],
+                vec![multiline_field("message", "Message", "Hey chat \u{1f44b}").required()],
             ),
             quick_action(
                 "Announcement",
@@ -944,7 +947,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("color", Variant::String("primary".to_owned())),
                 ]),
                 vec![
-                    multiline_field("message", "Announcement", "Big news!"),
+                    multiline_field("message", "Announcement", "Big news!").required(),
                     choice_field(
                         "color",
                         "Color",
@@ -1028,7 +1031,7 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("reason", blank()),
                 ]),
                 vec![
-                    text_field("target_user_login", "Username", "@spammer"),
+                    text_field("target_user_login", "Username", "@spammer").required(),
                     text_field_placeholder("reason", "Reason", "", "optional"),
                 ],
             ),
@@ -1043,7 +1046,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 "twitch.moderation.ban_user",
                 config([("target_user_login", blank()), ("reason", blank())]),
                 vec![
-                    text_field("target_user_login", "Username", "@baduser"),
+                    text_field("target_user_login", "Username", "@baduser").required(),
                     text_field("reason", "Reason", ""),
                 ],
             ),
@@ -1057,7 +1060,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.unban_user",
                 config([("target_user_login", blank())]),
-                vec![text_field("target_user_login", "Username", "@user")],
+                vec![text_field("target_user_login", "Username", "@user").required()],
             ),
             quick_action(
                 "Shield mode",
@@ -1081,7 +1084,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.add_vip",
                 config([("target_user_login", blank())]),
-                vec![text_field("target_user_login", "Username", "@loyalfan")],
+                vec![text_field("target_user_login", "Username", "@loyalfan").required()],
             ),
             quick_action(
                 "Add / remove Mod",
@@ -1093,7 +1096,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.moderation.add_moderator",
                 config([("target_user_login", blank())]),
-                vec![text_field("target_user_login", "Username", "@trustedmod")],
+                vec![text_field("target_user_login", "Username", "@trustedmod").required()],
             ),
             quick_action(
                 "Start raid",
@@ -1105,11 +1108,10 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.start_raid",
                 config([("to_broadcaster_login", blank())]),
-                vec![text_field(
-                    "to_broadcaster_login",
-                    "Raid target",
-                    "@factorio_streamer",
-                )],
+                vec![
+                    text_field("to_broadcaster_login", "Raid target", "@factorio_streamer")
+                        .required(),
+                ],
             ),
             quick_action(
                 "Cancel raid",
@@ -1133,11 +1135,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.send_shoutout",
                 config([("to_broadcaster_login", blank())]),
-                vec![text_field(
-                    "to_broadcaster_login",
-                    "Channel",
-                    "@factorio_streamer",
-                )],
+                vec![
+                    text_field("to_broadcaster_login", "Channel", "@factorio_streamer").required(),
+                ],
             ),
             quick_action(
                 "Run commercial",
@@ -1149,20 +1149,23 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel.run_ad",
                 config([("duration_seconds", Variant::String("90".to_owned()))]),
-                vec![choice_field_hint(
-                    "duration_seconds",
-                    "Duration",
-                    "90",
-                    &[
-                        ("30", "30 seconds"),
-                        ("60", "60 seconds"),
-                        ("90", "90 seconds"),
-                        ("120", "120 seconds"),
-                        ("150", "150 seconds"),
-                        ("180", "180 seconds"),
-                    ],
-                    "8+ min cooldown between ads",
-                )],
+                vec![
+                    choice_field_hint(
+                        "duration_seconds",
+                        "Duration",
+                        "90",
+                        &[
+                            ("30", "30 seconds"),
+                            ("60", "60 seconds"),
+                            ("90", "90 seconds"),
+                            ("120", "120 seconds"),
+                            ("150", "150 seconds"),
+                            ("180", "180 seconds"),
+                        ],
+                        "8+ min cooldown between ads",
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 "Snooze next ad",

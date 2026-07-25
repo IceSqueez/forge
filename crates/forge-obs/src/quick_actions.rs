@@ -35,6 +35,7 @@ fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
         default: Some(QuickActionFieldValue::Text(default.to_owned())),
         placeholder: None,
         hint: None,
+        required: false,
     }
 }
 
@@ -58,6 +59,7 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
         default: Some(QuickActionFieldValue::Toggle(default)),
         placeholder: None,
         hint: None,
+        required: false,
     }
 }
 
@@ -69,6 +71,7 @@ fn choice_field(key: &str, label: &str, picker: PickerKind) -> QuickActionField 
         default: None,
         placeholder: None,
         hint: None,
+        required: false,
     }
 }
 
@@ -185,7 +188,7 @@ impl QuickActions for ObsClient {
                 ]),
                 Some(PickerKind::Source),
                 vec![
-                    choice_field("source", "Source", PickerKind::Source),
+                    choice_field("source", "Source", PickerKind::Source).required(),
                     toggle_field("visible", "Visible", true),
                 ],
             ),
@@ -200,7 +203,7 @@ impl QuickActions for ObsClient {
                 config([("source", blank()), ("muted", Variant::Bool(false))]),
                 Some(PickerKind::Input),
                 vec![
-                    choice_field("source", "Audio source", PickerKind::Input),
+                    choice_field("source", "Audio source", PickerKind::Input).required(),
                     toggle_field("muted", "Muted", false),
                 ],
             ),
@@ -218,8 +221,8 @@ impl QuickActions for ObsClient {
                 ]),
                 Some(PickerKind::Input),
                 vec![
-                    choice_field("source", "Source", PickerKind::Input),
-                    text_field_placeholder("volume_db", "Gain (dB)", "-18", "e.g. -6.0"),
+                    choice_field("source", "Source", PickerKind::Input).required(),
+                    text_field_placeholder("volume_db", "Gain (dB)", "-18", "e.g. -6.0").required(),
                 ],
             ),
             quick_action(
@@ -237,8 +240,8 @@ impl QuickActions for ObsClient {
                 ]),
                 Some(PickerKind::Source),
                 vec![
-                    choice_field("source", "Source", PickerKind::Source),
-                    text_field("filter", "Filter", "Chroma Key"),
+                    choice_field("source", "Source", PickerKind::Source).required(),
+                    text_field("filter", "Filter", "Chroma Key").required(),
                     toggle_field("enabled", "Enabled", true),
                 ],
             ),
@@ -351,8 +354,9 @@ impl QuickActions for ObsClient {
                 config([("source", blank()), ("path", blank())]),
                 Some(PickerKind::Source),
                 vec![
-                    choice_field("source", "Source", PickerKind::Source),
-                    text_field_placeholder("path", "Save To", "", "~/Pictures/screenshot.png"),
+                    choice_field("source", "Source", PickerKind::Source).required(),
+                    text_field_placeholder("path", "Save To", "", "~/Pictures/screenshot.png")
+                        .required(),
                 ],
             ),
             quick_action(
@@ -365,7 +369,7 @@ impl QuickActions for ObsClient {
                 "obs.record.set_directory",
                 config([("path", Variant::String("~/Recordings".to_owned()))]),
                 None,
-                vec![text_field("path", "Folder", "~/Recordings")],
+                vec![text_field("path", "Folder", "~/Recordings").required()],
             ),
             // Profiles
             quick_action(
@@ -378,7 +382,7 @@ impl QuickActions for ObsClient {
                 "obs.profile.switch",
                 config([("name", blank())]),
                 Some(PickerKind::Profile),
-                vec![choice_field("name", "Profile", PickerKind::Profile)],
+                vec![choice_field("name", "Profile", PickerKind::Profile).required()],
             ),
             quick_action(
                 "Switch scene collection",
@@ -390,11 +394,7 @@ impl QuickActions for ObsClient {
                 "obs.scene_collection.switch",
                 config([("name", blank())]),
                 Some(PickerKind::SceneCollection),
-                vec![choice_field(
-                    "name",
-                    "Collection",
-                    PickerKind::SceneCollection,
-                )],
+                vec![choice_field("name", "Collection", PickerKind::SceneCollection).required()],
             ),
         ]
     }

@@ -343,6 +343,7 @@ fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
         default: Some(QuickActionFieldValue::Text(default.to_owned())),
         placeholder: None,
         hint: None,
+        required: false,
     }
 }
 
@@ -380,6 +381,7 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
         default: Some(QuickActionFieldValue::Toggle(default)),
         placeholder: None,
         hint: None,
+        required: false,
     }
 }
 
@@ -433,12 +435,15 @@ impl QuickActions for KickIntegrationBundle {
                 false,
                 "kick.channel.update_info",
                 config([("title", blank())]),
-                vec![text_field_placeholder(
-                    "title",
-                    "Stream Title",
-                    "",
-                    "Leave empty to keep current",
-                )],
+                vec![
+                    text_field_placeholder(
+                        "title",
+                        "Stream Title",
+                        "",
+                        "e.g. Modded Minecraft, day 14",
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 "Set category",
@@ -449,12 +454,15 @@ impl QuickActions for KickIntegrationBundle {
                 false,
                 "kick.channel.update_info",
                 config([("category_id", blank())]),
-                vec![text_field_hint(
-                    "category_id",
-                    "Category ID",
-                    "",
-                    "Use Find category (Lookups) to get the numeric id",
-                )],
+                vec![
+                    text_field_hint(
+                        "category_id",
+                        "Category ID",
+                        "",
+                        "Use Find category (Lookups) to get the numeric id",
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 "Set custom tags",
@@ -465,12 +473,15 @@ impl QuickActions for KickIntegrationBundle {
                 false,
                 "kick.channel.update_info",
                 config([("tags", blank())]),
-                vec![text_field_placeholder(
-                    "tags",
-                    "Tags (comma-separated, max 10)",
-                    "",
-                    "Leave empty to keep current",
-                )],
+                vec![
+                    text_field_placeholder(
+                        "tags",
+                        "Tags (comma-separated, max 10)",
+                        "",
+                        "gaming, chill, speedrun",
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 "Send message",
@@ -482,7 +493,7 @@ impl QuickActions for KickIntegrationBundle {
                 "kick.chat.send_message",
                 config([("message", blank()), ("as_bot", Variant::Bool(false))]),
                 vec![
-                    multiline_field("message", "Message", "Hey chat!"),
+                    multiline_field("message", "Message", "Hey chat!").required(),
                     toggle_field("as_bot", "Send as bot", false),
                 ],
             ),
@@ -495,12 +506,10 @@ impl QuickActions for KickIntegrationBundle {
                 true,
                 "kick.chat.delete_message",
                 config([("message_id", blank())]),
-                vec![text_field_placeholder(
-                    "message_id",
-                    "Message ID",
-                    "",
-                    "%message_id%",
-                )],
+                vec![
+                    text_field_placeholder("message_id", "Message ID", "", "%message_id%")
+                        .required(),
+                ],
             ),
             quick_action(
                 "Timeout user",
@@ -511,12 +520,9 @@ impl QuickActions for KickIntegrationBundle {
                 false,
                 "kick.moderation.timeout",
                 config([("user_id", blank()), ("duration_minutes", Variant::Int(10))]),
-                vec![text_field_placeholder(
-                    "user_id",
-                    "Target User ID",
-                    "",
-                    "%user_id%",
-                )],
+                vec![
+                    text_field_placeholder("user_id", "Target User ID", "", "%user_id%").required(),
+                ],
             ),
             quick_action(
                 "Ban user",
@@ -527,12 +533,9 @@ impl QuickActions for KickIntegrationBundle {
                 true,
                 "kick.moderation.ban",
                 config([("user_id", blank())]),
-                vec![text_field_placeholder(
-                    "user_id",
-                    "Target User ID",
-                    "",
-                    "%user_id%",
-                )],
+                vec![
+                    text_field_placeholder("user_id", "Target User ID", "", "%user_id%").required(),
+                ],
             ),
             quick_action(
                 "Unban user",
@@ -543,12 +546,9 @@ impl QuickActions for KickIntegrationBundle {
                 false,
                 "kick.moderation.unban",
                 config([("user_id", blank())]),
-                vec![text_field_placeholder(
-                    "user_id",
-                    "Target User ID",
-                    "",
-                    "%user_id%",
-                )],
+                vec![
+                    text_field_placeholder("user_id", "Target User ID", "", "%user_id%").required(),
+                ],
             ),
             quick_action(
                 "Create reward",
@@ -560,8 +560,9 @@ impl QuickActions for KickIntegrationBundle {
                 "kick.reward.create",
                 config([("title", blank()), ("cost", blank())]),
                 vec![
-                    text_field_placeholder("title", "Reward Title", "", "e.g. Hydrate"),
-                    text_field_placeholder("cost", "Cost (channel points)", "", "e.g. 500"),
+                    text_field_placeholder("title", "Reward Title", "", "e.g. Hydrate").required(),
+                    text_field_placeholder("cost", "Cost (channel points)", "", "e.g. 500")
+                        .required(),
                 ],
             ),
             quick_action(
@@ -578,7 +579,7 @@ impl QuickActions for KickIntegrationBundle {
                     ("cost", blank()),
                 ]),
                 vec![
-                    text_field_placeholder("reward_id", "Reward ID", "", "%reward_id%"),
+                    text_field_placeholder("reward_id", "Reward ID", "", "%reward_id%").required(),
                     text_field_placeholder(
                         "title",
                         "New Title (optional)",
@@ -602,12 +603,9 @@ impl QuickActions for KickIntegrationBundle {
                 true,
                 "kick.reward.delete",
                 config([("reward_id", blank())]),
-                vec![text_field_placeholder(
-                    "reward_id",
-                    "Reward ID",
-                    "",
-                    "%reward_id%",
-                )],
+                vec![
+                    text_field_placeholder("reward_id", "Reward ID", "", "%reward_id%").required(),
+                ],
             ),
             quick_action(
                 "Accept redemption",
@@ -621,12 +619,15 @@ impl QuickActions for KickIntegrationBundle {
                     "redemption_ids",
                     Variant::String("%redemption_id%".to_owned()),
                 )]),
-                vec![text_field_placeholder(
-                    "redemption_ids",
-                    "Redemption ID(s)",
-                    "%redemption_id%",
-                    "%redemption_id% or id1,id2,id3 (max 25)",
-                )],
+                vec![
+                    text_field_placeholder(
+                        "redemption_ids",
+                        "Redemption ID(s)",
+                        "%redemption_id%",
+                        "%redemption_id% or id1,id2,id3 (max 25)",
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 "Reject redemption",
@@ -640,12 +641,15 @@ impl QuickActions for KickIntegrationBundle {
                     "redemption_ids",
                     Variant::String("%redemption_id%".to_owned()),
                 )]),
-                vec![text_field_placeholder(
-                    "redemption_ids",
-                    "Redemption ID(s)",
-                    "%redemption_id%",
-                    "%redemption_id% or id1,id2,id3 (max 25)",
-                )],
+                vec![
+                    text_field_placeholder(
+                        "redemption_ids",
+                        "Redemption ID(s)",
+                        "%redemption_id%",
+                        "%redemption_id% or id1,id2,id3 (max 25)",
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 "Lookup user",
@@ -656,12 +660,7 @@ impl QuickActions for KickIntegrationBundle {
                 false,
                 "kick.lookup.user",
                 config([("slug", blank())]),
-                vec![text_field_placeholder(
-                    "slug",
-                    "Channel Slug",
-                    "",
-                    "channel-slug",
-                )],
+                vec![text_field_placeholder("slug", "Channel Slug", "", "channel-slug").required()],
             ),
             quick_action(
                 "Stream stats",
@@ -683,12 +682,9 @@ impl QuickActions for KickIntegrationBundle {
                 false,
                 "kick.lookup.category",
                 config([("query", blank())]),
-                vec![text_field_placeholder(
-                    "query",
-                    "Search Query",
-                    "",
-                    "just chatting",
-                )],
+                vec![
+                    text_field_placeholder("query", "Search Query", "", "just chatting").required(),
+                ],
             ),
         ]
     }

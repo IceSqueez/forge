@@ -178,6 +178,7 @@ pub struct TextArea {
     follow_caret: bool,
     blink_visible: bool,
     focused_cached: bool,
+    invalid: bool,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
@@ -211,6 +212,7 @@ impl TextArea {
             follow_caret: true,
             blink_visible: true,
             focused_cached: false,
+            invalid: false,
         }
     }
 
@@ -280,6 +282,13 @@ impl TextArea {
     pub fn set_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
         self.height = height;
         cx.notify();
+    }
+
+    pub fn set_invalid(&mut self, invalid: bool, cx: &mut Context<Self>) {
+        if self.invalid != invalid {
+            self.invalid = invalid;
+            cx.notify();
+        }
     }
 
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
@@ -1280,6 +1289,11 @@ impl Render for TextArea {
             self.palette.border_active
         } else {
             self.palette.border_input
+        };
+        let border_color = if self.invalid {
+            self.palette.random
+        } else {
+            border_color
         };
         let text_color = if self.read_only {
             self.palette.text_muted

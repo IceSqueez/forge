@@ -76,7 +76,7 @@ pub trait HelixTokenSource: Send + Sync {
 /// A rejected refresh token surfaces as `ReauthRequired`.
 #[async_trait]
 pub trait HelixTokenRefresher: Send + Sync {
-    async fn refresh(&self) -> Result<OAuthToken, HelixError>;
+    async fn refresh(&self, failed_token: &OAuthToken) -> Result<OAuthToken, HelixError>;
 }
 
 /// Every non-2xx response publishes a `request.fail` bus event before the error is returned.
@@ -228,7 +228,7 @@ impl HelixTransport for HelixHttpTransport {
             Err(HelixError::ReauthRequired) => match &self.refresher {
                 // A second 401 after a successful refresh is terminal - a rejected token cannot loop.
                 Some(refresher) => {
-                    let fresh = refresher.refresh().await?;
+                    let fresh = refresher.refresh(&token).await?;
                     self.attempt(&request, &fresh).await
                 }
                 None => Err(HelixError::ReauthRequired),

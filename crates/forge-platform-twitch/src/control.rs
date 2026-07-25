@@ -41,13 +41,15 @@ impl BuiltinControl for TwitchIntegrationBundle {
 
         // No stored refresh token means renewal is impossible - surface the
         // re-auth prompt rather than pretending the token was renewed.
-        let refresh_token = stored.refresh_token.ok_or(ControlFailure::Unauthorized)?;
+        if stored.refresh_token.is_none() {
+            return Err(ControlFailure::Unauthorized);
+        }
 
         let manager = TwitchCredentialsManager::new(
             Arc::clone(self.credentials()),
             self.config().client_id.clone(),
         );
-        match manager.refresh(&refresh_token).await {
+        match manager.refresh(&stored.access_token).await {
             Ok(_) => {
                 self.refresh_identity().await;
                 Ok(())

@@ -16,6 +16,7 @@ const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
 pub struct KickCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
     refresher: PkceRefresher,
+    refresh_guard: tokio::sync::Mutex<()>,
 }
 
 impl KickCredentialsManager {
@@ -41,7 +42,11 @@ impl KickCredentialsManager {
             token_endpoint: refresh_endpoint,
             reauth_policy: ReauthPolicy::AnyClientError,
         });
-        Self { repo, refresher }
+        Self {
+            repo,
+            refresher,
+            refresh_guard: tokio::sync::Mutex::new(()),
+        }
     }
 
     #[cfg(test)]
@@ -79,19 +84,43 @@ impl KickCredentialsManager {
     /// Refreshes proactively when within 5 minutes of expiry.
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.load().await?.ok_or_else(reauth_err)?;
-        if creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER {
-            let refreshed = self.refresh(&creds.refresh_token).await?;
-            return Ok(refreshed.access_token);
+        if !near_expiry(&creds) {
+            return Ok(creds.access_token);
         }
-        Ok(creds.access_token)
+        let _guard = self.refresh_guard.lock().await;
+        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        if !near_expiry(&creds) {
+            return Ok(creds.access_token);
+        }
+        let refresh_token = creds.refresh_token.clone();
+        let refreshed = self.perform_refresh(&refresh_token, creds).await?;
+        Ok(refreshed.access_token)
     }
 
     pub async fn user_id(&self) -> Result<u64, PlatformError> {
         Ok(self.load().await?.ok_or_else(reauth_err)?.user_id)
     }
 
-    pub async fn refresh(&self, refresh_token: &str) -> Result<KickCredentials, PlatformError> {
+    /// Rechecks against the stored access token under the guard: a concurrent refresh may have
+    /// already rotated the pair while this call waited, in which case Kick is not called again.
+    pub async fn refresh(
+        &self,
+        failed_access_token: &str,
+    ) -> Result<KickCredentials, PlatformError> {
+        let _guard = self.refresh_guard.lock().await;
         let existing = self.load().await?.ok_or_else(reauth_err)?;
+        if existing.access_token != failed_access_token {
+            return Ok(existing);
+        }
+        let refresh_token = existing.refresh_token.clone();
+        self.perform_refresh(&refresh_token, existing).await
+    }
+
+    async fn perform_refresh(
+        &self,
+        refresh_token: &str,
+        existing: KickCredentials,
+    ) -> Result<KickCredentials, PlatformError> {
         let parsed = self.refresher.refresh(refresh_token).await?;
         let expires_in = parsed.expires_in.unwrap_or(0);
 
@@ -124,6 +153,10 @@ impl KickCredentialsManager {
             .await
             .map_err(storage_err)
     }
+}
+
+fn near_expiry(creds: &KickCredentials) -> bool {
+    creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER
 }
 
 fn storage_err(e: StorageError) -> PlatformError {
@@ -354,7 +387,7 @@ mod tests {
 
         let repo = InMemRepo::with_creds(&creds);
         let mgr = manager_with_server(repo.clone(), &server);
-        mgr.refresh("kick_refresh_existing").await.unwrap();
+        mgr.refresh("kick_access_existing").await.unwrap();
 
         let reqs = server.received_requests().await.unwrap();
         assert_eq!(reqs.len(), 1);
@@ -376,7 +409,7 @@ mod tests {
 
         let repo = InMemRepo::with_creds(&creds);
         let mgr = manager_with_server(repo.clone(), &server);
-        mgr.refresh("kick_refresh_existing").await.unwrap();
+        mgr.refresh("kick_access_existing").await.unwrap();
 
         let stored = repo.get_stored_creds().unwrap();
         assert_eq!(
@@ -400,7 +433,7 @@ mod tests {
             .await;
 
         let mgr = manager_with_server(InMemRepo::with_creds(&creds), &server);
-        let err = mgr.refresh("expired_refresh").await.unwrap_err();
+        let err = mgr.refresh("kick_access_existing").await.unwrap_err();
         assert!(
             matches!(
                 err,
@@ -422,7 +455,7 @@ mod tests {
             .await;
 
         let mgr = manager_with_server(InMemRepo::with_creds(&creds), &server);
-        let err = mgr.refresh("expired_refresh").await.unwrap_err();
+        let err = mgr.refresh("kick_access_existing").await.unwrap_err();
         assert!(
             matches!(
                 err,

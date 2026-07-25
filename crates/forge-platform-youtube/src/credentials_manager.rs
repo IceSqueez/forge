@@ -18,6 +18,7 @@ pub struct YoutubeCredentialsManager {
     refresher: PkceRefresher,
     http: reqwest::Client,
     channels_endpoint: String,
+    refresh_guard: tokio::sync::Mutex<()>,
 }
 
 impl YoutubeCredentialsManager {
@@ -29,6 +30,7 @@ impl YoutubeCredentialsManager {
             refresher,
             http: reqwest::Client::new(),
             channels_endpoint,
+            refresh_guard: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -70,16 +72,40 @@ impl YoutubeCredentialsManager {
     /// Refreshes proactively when within 5 minutes of expiry.
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.load().await?.ok_or_else(reauth_err)?;
-        if creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER {
-            let refreshed = self.refresh(&creds.refresh_token).await?;
-            return Ok(refreshed.access_token);
+        if !near_expiry(&creds) {
+            return Ok(creds.access_token);
         }
-        Ok(creds.access_token)
+        let _guard = self.refresh_guard.lock().await;
+        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        if !near_expiry(&creds) {
+            return Ok(creds.access_token);
+        }
+        let refresh_token = creds.refresh_token.clone();
+        let refreshed = self.perform_refresh(&refresh_token, creds).await?;
+        Ok(refreshed.access_token)
+    }
+
+    /// Rechecks against the stored access token under the guard, avoiding a redundant call to
+    /// Google when a concurrent refresh already rotated the pair while this call waited.
+    pub async fn refresh(
+        &self,
+        failed_access_token: &str,
+    ) -> Result<YoutubeCredentials, PlatformError> {
+        let _guard = self.refresh_guard.lock().await;
+        let existing = self.load().await?.ok_or_else(reauth_err)?;
+        if existing.access_token != failed_access_token {
+            return Ok(existing);
+        }
+        let refresh_token = existing.refresh_token.clone();
+        self.perform_refresh(&refresh_token, existing).await
     }
 
     /// When the Google response omits `refresh_token`, the previously stored token is preserved.
-    pub async fn refresh(&self, refresh_token: &str) -> Result<YoutubeCredentials, PlatformError> {
-        let existing = self.load().await?.ok_or_else(reauth_err)?;
+    async fn perform_refresh(
+        &self,
+        refresh_token: &str,
+        existing: YoutubeCredentials,
+    ) -> Result<YoutubeCredentials, PlatformError> {
         let parsed = self.refresher.refresh(refresh_token).await?;
         let expires_in = parsed.expires_in.unwrap_or(0);
 
@@ -157,6 +183,10 @@ impl YoutubeCredentialsManager {
             .await
             .map_err(storage_err)
     }
+}
+
+fn near_expiry(creds: &YoutubeCredentials) -> bool {
+    creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER
 }
 
 fn storage_err(e: StorageError) -> PlatformError {
@@ -391,7 +421,7 @@ mod tests {
         let repo = InMemRepo::with_creds(&creds);
         let mgr = manager_with_server(repo.clone(), &server);
 
-        mgr.refresh("1//existing_refresh").await.unwrap();
+        mgr.refresh("ya29.existing").await.unwrap();
 
         let stored = repo.get_stored_creds().unwrap();
         assert_eq!(
@@ -416,7 +446,7 @@ mod tests {
 
         let mgr = manager_with_server(InMemRepo::with_creds(&creds), &server);
 
-        let err = mgr.refresh("1//expired_refresh").await.unwrap_err();
+        let err = mgr.refresh("ya29.existing").await.unwrap_err();
         assert!(
             matches!(
                 err,

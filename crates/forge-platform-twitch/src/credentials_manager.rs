@@ -18,6 +18,7 @@ const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
 pub struct TwitchCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
     refresher: PkceRefresher,
+    refresh_guard: tokio::sync::Mutex<()>,
 }
 
 impl TwitchCredentialsManager {
@@ -37,7 +38,11 @@ impl TwitchCredentialsManager {
             token_endpoint: refresh_endpoint,
             reauth_policy: ReauthPolicy::AnyClientError,
         });
-        Self { repo, refresher }
+        Self {
+            repo,
+            refresher,
+            refresh_guard: tokio::sync::Mutex::new(()),
+        }
     }
 
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
@@ -47,24 +52,40 @@ impl TwitchCredentialsManager {
     /// Renews proactively within the refresh buffer; a refresh-token-less credential near expiry routes to re-auth.
     pub async fn get_valid_access_token(&self) -> Result<OAuthToken, PlatformError> {
         let cred = self.load().await?.ok_or_else(reauth_err)?;
-        let near_expiry = cred
-            .expires_at
-            .map(|at| at <= SystemTime::now() + REFRESH_BUFFER)
-            .unwrap_or(false);
-        if near_expiry {
-            let refresh = cred.refresh_token.as_ref().ok_or_else(reauth_err)?;
-            let renewed = self.refresh(refresh).await?;
-            return Ok(renewed.access_token);
+        if !near_expiry(&cred) {
+            return Ok(cred.access_token);
         }
-        Ok(cred.access_token)
+        let _guard = self.refresh_guard.lock().await;
+        let cred = self.load().await?.ok_or_else(reauth_err)?;
+        if !near_expiry(&cred) {
+            return Ok(cred.access_token);
+        }
+        let refresh_token = cred.refresh_token.clone().ok_or_else(reauth_err)?;
+        let renewed = self.perform_refresh(&refresh_token, cred).await?;
+        Ok(renewed.access_token)
+    }
+
+    /// Rechecks against the stored access token under the guard: a concurrent refresh may have
+    /// already rotated the pair while this call waited, in which case Twitch is not called again.
+    pub async fn refresh(
+        &self,
+        failed_access_token: &OAuthToken,
+    ) -> Result<StoredCredential, PlatformError> {
+        let _guard = self.refresh_guard.lock().await;
+        let existing = self.load().await?.ok_or_else(reauth_err)?;
+        if existing.access_token.expose() != failed_access_token.expose() {
+            return Ok(existing);
+        }
+        let refresh_token = existing.refresh_token.clone().ok_or_else(reauth_err)?;
+        self.perform_refresh(&refresh_token, existing).await
     }
 
     /// Public-client refresh (no `client_secret`); keeps the prior refresh token only if the response omits a new one.
-    pub async fn refresh(
+    async fn perform_refresh(
         &self,
         refresh_token: &OAuthToken,
+        existing: StoredCredential,
     ) -> Result<StoredCredential, PlatformError> {
-        let existing = self.load().await?.ok_or_else(reauth_err)?;
         let parsed = self.refresher.refresh(refresh_token.expose()).await?;
 
         let renewed = StoredCredential {
@@ -89,6 +110,12 @@ impl TwitchCredentialsManager {
     }
 }
 
+fn near_expiry(cred: &StoredCredential) -> bool {
+    cred.expires_at
+        .map(|at| at <= SystemTime::now() + REFRESH_BUFFER)
+        .unwrap_or(false)
+}
+
 #[async_trait]
 impl crate::helix::HelixTokenSource for TwitchCredentialsManager {
     async fn access_token(&self) -> Result<OAuthToken, crate::helix::HelixError> {
@@ -102,17 +129,11 @@ impl crate::helix::HelixTokenSource for TwitchCredentialsManager {
 
 #[async_trait]
 impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
-    async fn refresh(&self) -> Result<OAuthToken, crate::helix::HelixError> {
-        let cred = self
-            .load()
-            .await
-            .map_err(|_| crate::helix::HelixError::ReauthRequired)?
-            .ok_or(crate::helix::HelixError::ReauthRequired)?;
-        let refresh_token = cred
-            .refresh_token
-            .as_ref()
-            .ok_or(crate::helix::HelixError::ReauthRequired)?;
-        match self.refresh(refresh_token).await {
+    async fn refresh(
+        &self,
+        failed_token: &OAuthToken,
+    ) -> Result<OAuthToken, crate::helix::HelixError> {
+        match self.refresh(failed_token).await {
             Ok(renewed) => Ok(renewed.access_token),
             Err(_) => Err(crate::helix::HelixError::ReauthRequired),
         }
@@ -302,8 +323,8 @@ mod tests {
         let repo = InMemRepo::seeded(&cred);
         let mgr = manager_with_server(repo.clone(), &server);
 
-        let prior_rt = OAuthToken::new("existing_refresh");
-        mgr.refresh(&prior_rt).await.unwrap();
+        let stale_access = OAuthToken::new("existing_access");
+        mgr.refresh(&stale_access).await.unwrap();
 
         let stored = repo.get_stored_cred().unwrap();
         assert_eq!(
@@ -330,8 +351,8 @@ mod tests {
         let repo = InMemRepo::seeded(&cred);
         let mgr = manager_with_server(repo.clone(), &server);
 
-        let prior_rt = OAuthToken::new("existing_refresh");
-        mgr.refresh(&prior_rt).await.unwrap();
+        let stale_access = OAuthToken::new("existing_access");
+        mgr.refresh(&stale_access).await.unwrap();
 
         let stored = repo.get_stored_cred().unwrap();
         assert_eq!(
@@ -356,7 +377,7 @@ mod tests {
         let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
 
         let err = mgr
-            .refresh(&OAuthToken::new("expired_rt"))
+            .refresh(&OAuthToken::new("existing_access"))
             .await
             .unwrap_err();
         assert!(
@@ -378,7 +399,7 @@ mod tests {
         let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
 
         let err = mgr
-            .refresh(&OAuthToken::new("revoked_rt"))
+            .refresh(&OAuthToken::new("existing_access"))
             .await
             .unwrap_err();
         assert!(
@@ -404,7 +425,7 @@ mod tests {
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
         let repo = InMemRepo::seeded(&cred);
         let mgr = manager_with_server(repo, &server);
-        mgr.refresh(&OAuthToken::new("existing_refresh"))
+        mgr.refresh(&OAuthToken::new("existing_access"))
             .await
             .unwrap();
 

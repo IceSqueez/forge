@@ -45,7 +45,7 @@ impl BuiltinControl for KickIntegrationBundle {
 
         match self
             .credentials_manager()
-            .refresh(&creds.refresh_token)
+            .refresh(&creds.access_token)
             .await
         {
             Ok(_) => Ok(()),

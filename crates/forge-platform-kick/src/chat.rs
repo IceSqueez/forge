@@ -282,8 +282,15 @@ async fn run_loop(
                                 backoff.reset();
                             }
                         }
-                        Some(Ok(Message::Close(_))) => {
-                            info!("kick chat server sent close frame; reconnecting");
+                        Some(Ok(Message::Close(frame))) => {
+                            match frame {
+                                Some(frame) => warn!(
+                                    code = %frame.code,
+                                    reason = %frame.reason,
+                                    "kick chat server sent close frame; reconnecting",
+                                ),
+                                None => warn!("kick chat server sent close frame; reconnecting"),
+                            }
                             break 'session;
                         }
                         Some(Ok(_)) => {}

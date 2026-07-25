@@ -1562,7 +1562,7 @@ integration_state_disconnected_detail = Use Reconnect above to link this integra
 
 auth_error_credentials_missing_twitch = Twitch integration is not configured. Set FORGE_TWITCH_CLIENT_ID with your own registered application's client_id and restart the app.
 auth_error_credentials_missing_youtube = YouTube OAuth client credentials are not configured
-auth_error_credentials_missing_kick = Kick OAuth client credentials are not configured
+auth_error_credentials_missing_kick = Kick integration is not configured. Set FORGE_KICK_CLIENT_ID and FORGE_KICK_CLIENT_SECRET with your own registered application's credentials and restart the app.
 
 ## Widget - key capture
 

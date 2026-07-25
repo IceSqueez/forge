@@ -19,19 +19,25 @@ pub struct KickCredentialsManager {
 }
 
 impl KickCredentialsManager {
-    pub fn new(repo: Arc<dyn CredentialsRepo>, client_id: String) -> Self {
-        Self::with_refresh_endpoint(repo, client_id, crate::auth::KICK_TOKEN_ENDPOINT.to_owned())
+    pub fn new(repo: Arc<dyn CredentialsRepo>, client_id: String, client_secret: String) -> Self {
+        Self::with_refresh_endpoint(
+            repo,
+            client_id,
+            client_secret,
+            crate::auth::KICK_TOKEN_ENDPOINT.to_owned(),
+        )
     }
 
     fn with_refresh_endpoint(
         repo: Arc<dyn CredentialsRepo>,
         client_id: String,
+        client_secret: String,
         refresh_endpoint: String,
     ) -> Self {
         let refresher = PkceRefresher::new(PkceRefreshConfig {
             platform: PLATFORM.to_owned(),
             client_id,
-            client_secret: None,
+            client_secret: Some(client_secret),
             token_endpoint: refresh_endpoint,
             reauth_policy: ReauthPolicy::AnyClientError,
         });
@@ -42,9 +48,10 @@ impl KickCredentialsManager {
     pub(crate) fn for_test(
         repo: Arc<dyn CredentialsRepo>,
         client_id: String,
+        client_secret: String,
         refresh_endpoint: String,
     ) -> Self {
-        Self::with_refresh_endpoint(repo, client_id, refresh_endpoint)
+        Self::with_refresh_endpoint(repo, client_id, client_secret, refresh_endpoint)
     }
 
     /// Returns `None` if no credentials row exists for this account.
@@ -79,7 +86,6 @@ impl KickCredentialsManager {
         Ok(creds.access_token)
     }
 
-    /// Public-client form POST - no `client_secret`.
     pub async fn refresh(&self, refresh_token: &str) -> Result<KickCredentials, PlatformError> {
         let existing = self.load().await?.ok_or_else(reauth_err)?;
         let parsed = self.refresher.refresh(refresh_token).await?;
@@ -223,6 +229,7 @@ mod tests {
         KickCredentialsManager::for_test(
             repo,
             "test_cid".to_owned(),
+            "test_secret".to_owned(),
             format!("{}/token", server.uri()),
         )
     }
@@ -324,7 +331,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refresh_sends_form_with_client_id_no_secret() {
+    async fn refresh_sends_form_with_client_id_and_client_secret() {
         let server = MockServer::start().await;
         let creds = stub_creds(OffsetDateTime::now_utc() + Duration::hours(1));
 
@@ -332,6 +339,7 @@ mod tests {
             .and(path("/token"))
             .and(body_string_contains("grant_type=refresh_token"))
             .and(body_string_contains("client_id=test_cid"))
+            .and(body_string_contains("client_secret=test_secret"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "access_token": "new_access",
                 "refresh_token": "new_refresh",
@@ -346,11 +354,6 @@ mod tests {
 
         let reqs = server.received_requests().await.unwrap();
         assert_eq!(reqs.len(), 1);
-        let body = std::str::from_utf8(&reqs[0].body).unwrap();
-        assert!(
-            !body.contains("client_secret"),
-            "client_secret must not appear in form body - public client flow"
-        );
     }
 
     #[tokio::test]

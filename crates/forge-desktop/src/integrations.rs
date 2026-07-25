@@ -614,12 +614,13 @@ async fn build_kick(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
 ) -> (Option<BuiltinObject>, Option<Box<dyn LiveViewerSource>>) {
-    let Some(client_id) = forge_platform_kick::client_credentials() else {
+    let Some((client_id, client_secret)) = forge_platform_kick::client_credentials() else {
         return (None, None);
     };
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
         creds_of(backend),
         client_id,
+        client_secret,
     ));
     let creds = match manager.load().await {
         Ok(Some(creds)) => creds,

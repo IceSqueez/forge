@@ -54,9 +54,10 @@ pub struct KickAuthFlow {
 }
 
 impl KickAuthFlow {
-    pub fn new(client_id: String) -> Self {
+    pub fn new(client_id: String, client_secret: String) -> Self {
         Self::with_endpoints(
             client_id,
+            client_secret,
             KICK_AUTHORIZE_ENDPOINT.to_owned(),
             KICK_TOKEN_ENDPOINT.to_owned(),
             KICK_USERS_ENDPOINT.to_owned(),
@@ -65,13 +66,14 @@ impl KickAuthFlow {
 
     pub(crate) fn with_endpoints(
         client_id: String,
+        client_secret: String,
         authorize_endpoint: String,
         token_endpoint: String,
         users_endpoint: String,
     ) -> Self {
         let pkce = PkceFlow::new(PkceClientConfig {
             client_id: client_id.clone(),
-            client_secret: None,
+            client_secret: Some(client_secret),
             authorize_endpoint,
             token_endpoint,
             scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
@@ -95,8 +97,8 @@ impl KickAuthFlow {
         })
     }
 
-    /// PKCE (no `client_secret`); resolves `user_id` + `username` from the authenticated-user
-    /// endpoint after the code exchange.
+    /// Resolves `user_id` + `username` from the authenticated-user endpoint after the code
+    /// exchange.
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,
@@ -173,15 +175,21 @@ async fn fetch_user_info(
         })
 }
 
-/// Priority: runtime env `FORGE_KICK_CLIENT_ID` → compile-time `option_env!` → `None`.
-pub fn client_credentials() -> Option<String> {
-    resolve_client_id(
+/// Each of id and secret resolves independently: runtime env → compile-time `option_env!` →
+/// absent. Both must resolve or the pair is `None`.
+pub fn client_credentials() -> Option<(String, String)> {
+    let client_id = resolve_credential(
         std::env::var("FORGE_KICK_CLIENT_ID").ok().as_deref(),
         option_env!("FORGE_KICK_CLIENT_ID"),
-    )
+    )?;
+    let client_secret = resolve_credential(
+        std::env::var("FORGE_KICK_CLIENT_SECRET").ok().as_deref(),
+        option_env!("FORGE_KICK_CLIENT_SECRET"),
+    )?;
+    Some((client_id, client_secret))
 }
 
-fn resolve_client_id(
+fn resolve_credential(
     runtime_env: Option<&str>,
     compile_env: Option<&'static str>,
 ) -> Option<String> {
@@ -232,7 +240,7 @@ mod tests {
     #[test]
     fn client_credentials_prefers_runtime_over_compile_time() {
         assert_eq!(
-            resolve_client_id(Some("runtime_id"), Some("compile_id")),
+            resolve_credential(Some("runtime_id"), Some("compile_id")),
             Some("runtime_id".to_owned()),
         );
     }
@@ -240,32 +248,32 @@ mod tests {
     #[test]
     fn client_credentials_falls_back_to_compile_time_when_runtime_absent() {
         assert_eq!(
-            resolve_client_id(None, Some("compile_id")),
+            resolve_credential(None, Some("compile_id")),
             Some("compile_id".to_owned()),
         );
     }
 
     #[test]
     fn client_credentials_returns_none_when_both_absent() {
-        assert_eq!(resolve_client_id(None, None), None);
+        assert_eq!(resolve_credential(None, None), None);
     }
 
     #[test]
     fn client_credentials_treats_empty_runtime_as_absent() {
         assert_eq!(
-            resolve_client_id(Some(""), Some("compile_id")),
+            resolve_credential(Some(""), Some("compile_id")),
             Some("compile_id".to_owned()),
         );
     }
 
     #[test]
     fn client_credentials_treats_empty_compile_time_as_absent() {
-        assert_eq!(resolve_client_id(None, Some("")), None);
+        assert_eq!(resolve_credential(None, Some("")), None);
     }
 
     #[tokio::test]
     async fn start_builds_authorize_url_with_kick_endpoint_and_redirect_quirk() {
-        let mut flow = KickAuthFlow::new("test_client".to_owned());
+        let mut flow = KickAuthFlow::new("test_client".to_owned(), "test_secret".to_owned());
         let url = flow.start().await.unwrap().auth_url;
         assert!(url.starts_with(KICK_AUTHORIZE_ENDPOINT));
         assert!(url.contains("client_id=test_client"));

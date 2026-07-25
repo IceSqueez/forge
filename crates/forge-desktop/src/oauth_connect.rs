@@ -66,14 +66,14 @@ impl IntegrationDetail {
                 self.spawn_start(async move { start_youtube_oauth(handle).await }, cx);
             }
             PlatformId::Kick => {
-                let Some(cid) = forge_platform_kick::client_credentials() else {
+                let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
                     self.flow_phase = LocalCallbackFlowPhase::Failed;
                     self.flow_error = Some(tr!("auth_error_credentials_missing_kick").to_string());
                     cx.notify();
                     return;
                 };
                 let handle = Arc::new(tokio::sync::Mutex::new(Some(
-                    forge_platform_kick::KickAuthFlow::new(cid),
+                    forge_platform_kick::KickAuthFlow::new(cid, csec),
                 )));
                 self.kick_flow = Some(Arc::clone(&handle));
                 self.spawn_start(async move { start_kick_oauth(handle).await }, cx);
@@ -1096,10 +1096,10 @@ async fn wait_for_kick_authorization(
         .wait_for_authorization(Duration::from_secs(300))
         .await
         .map_err(|e| e.to_string())?;
-    let Some(cid) = forge_platform_kick::client_credentials() else {
+    let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
         return Err("Kick OAuth client credentials are not configured".to_owned());
     };
-    let manager = forge_platform_kick::KickCredentialsManager::new(credentials_repo, cid);
+    let manager = forge_platform_kick::KickCredentialsManager::new(credentials_repo, cid, csec);
     manager
         .save_from_bundle(bundle)
         .await
@@ -1158,11 +1158,12 @@ async fn connect_kick_after_oauth(
     credentials_repo: Arc<dyn CredentialsRepo>,
     bus: Arc<dyn EventPublisher>,
 ) -> Result<(), String> {
-    let client_id = forge_platform_kick::client_credentials()
+    let (client_id, client_secret) = forge_platform_kick::client_credentials()
         .ok_or_else(|| "Kick OAuth client credentials are not configured".to_owned())?;
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
         credentials_repo,
         client_id,
+        client_secret,
     ));
     let creds = manager
         .load()

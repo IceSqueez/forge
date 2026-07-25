@@ -393,6 +393,7 @@ mod tests {
             let manager = Arc::new(KickCredentialsManager::new(
                 Arc::new(EmptyRepo),
                 "test_cid".to_owned(),
+                "test_secret".to_owned(),
             ));
             let platform = Arc::new(KickPlatform::new(
                 "test_channel".to_owned(),

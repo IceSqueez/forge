@@ -1581,7 +1581,7 @@ integration_state_disconnected_detail = Натисніть «Підключит�
 
 auth_error_credentials_missing_twitch = Інтеграцію Twitch не налаштовано. Встановіть FORGE_TWITCH_CLIENT_ID із client_id вашого зареєстрованого додатка та перезапустіть.
 auth_error_credentials_missing_youtube = Облікові дані OAuth для YouTube не налаштовані
-auth_error_credentials_missing_kick = Облікові дані OAuth для Kick не налаштовані
+auth_error_credentials_missing_kick = Інтеграцію Kick не налаштовано. Встановіть FORGE_KICK_CLIENT_ID та FORGE_KICK_CLIENT_SECRET із облікових даних вашого зареєстрованого додатка та перезапустіть.
 
 ## Widget - key capture
 

@@ -242,7 +242,7 @@ fn hex_digit(b: u8) -> Option<u8> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -357,6 +357,41 @@ mod tests {
         let d = LocalCallbackDriver::bind(None).await.unwrap();
         assert!(d.redirect_uri().starts_with("http://127.0.0.1:"));
         assert!(d.redirect_uri().ends_with(CALLBACK_PATH));
+    }
+
+    // Why: a platform whose redirect URI is registered upfront (Kick) needs the callback on a
+    // fixed port. Never bind that real port here - a running forge instance holds it; borrow an
+    // ephemeral one the OS just released instead.
+    async fn released_ephemeral_port() -> u16 {
+        let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        port
+    }
+
+    #[tokio::test]
+    async fn bind_with_preferred_port_exposes_that_exact_port_in_the_redirect_uri() {
+        let port = released_ephemeral_port().await;
+        let d = LocalCallbackDriver::bind(Some(port)).await.unwrap();
+        let uri = reqwest::Url::parse(d.redirect_uri()).unwrap();
+        assert_eq!(uri.port(), Some(port));
+    }
+
+    #[tokio::test]
+    async fn bind_on_a_port_held_by_another_listener_names_that_port_in_the_error() {
+        let holder = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = holder.local_addr().unwrap().port();
+
+        let err = LocalCallbackDriver::bind(Some(port))
+            .await
+            .err()
+            .expect("binding a port held by a live listener must fail");
+
+        assert!(matches!(err, PlatformError::LoopbackPortInUse { port: p } if p == port));
+        assert!(
+            err.to_string().contains(&port.to_string()),
+            "the user must be told which port is occupied: {err}"
+        );
     }
 
     #[tokio::test]

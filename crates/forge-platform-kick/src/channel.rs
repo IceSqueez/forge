@@ -367,7 +367,8 @@ mod tests {
                 "data": [{
                     "is_live": true,
                     "stream_title": "Speedrun Night",
-                    "category": { "id": 77, "name": "Just Chatting" }
+                    "category": { "id": 77, "name": "Just Chatting" },
+                    "stream": { "viewer_count": 1234 }
                 }]
             })))
             .mount(&server)
@@ -378,6 +379,7 @@ mod tests {
         assert_eq!(snapshot.stream_title, "Speedrun Night");
         assert_eq!(snapshot.category_id, 77);
         assert_eq!(snapshot.category_name, "Just Chatting");
+        assert_eq!(snapshot.viewer_count, 1234);
     }
 
     #[tokio::test]
@@ -396,7 +398,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_channel_missing_category_defaults_to_zero_id_and_empty_name() {
+    async fn get_channel_missing_optional_objects_default_to_zero_and_empty() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
@@ -412,5 +414,8 @@ mod tests {
         let snapshot = channel_on(&server).get_channel("tok").await.unwrap();
         assert_eq!(snapshot.category_id, 0);
         assert_eq!(snapshot.category_name, "");
+        // Why: Kick omits "stream" entirely off-air. Defaulting to 0 (not an error) is what
+        // lets an offline channel resolve to ViewerReport::Absent instead of a failed poll.
+        assert_eq!(snapshot.viewer_count, 0);
     }
 }

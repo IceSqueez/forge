@@ -308,12 +308,45 @@ mod tests {
         assert!(access_type_pos < prompt_pos);
     }
 
-    async fn spawn_callback(redirect_uri: &str, state: &str, code: &str) {
-        let url = format!("{redirect_uri}?code={code}&state={state}");
+    fn query_param(auth_url: &str, key: &str) -> String {
+        reqwest::Url::parse(auth_url)
+            .unwrap()
+            .query_pairs()
+            .find(|(k, _)| k == key)
+            .unwrap()
+            .1
+            .into_owned()
+    }
+
+    async fn spawn_callback(auth_url: &str, code: &str) {
+        let url = format!(
+            "{}?code={code}&state={}",
+            query_param(auth_url, "redirect_uri"),
+            query_param(auth_url, "state"),
+        );
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(20)).await;
             let _ = reqwest::Client::new().get(&url).send().await;
         });
+    }
+
+    #[tokio::test]
+    async fn start_binds_the_configured_preferred_port_into_the_redirect_uri() {
+        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+
+        let mut cfg = config(
+            "https://example.com/authorize".to_owned(),
+            "https://example.com/token".to_owned(),
+        );
+        cfg.preferred_port = Some(port);
+        let mut flow = PkceFlow::new(cfg);
+
+        let url = flow.start(&[]).await.unwrap().auth_url;
+
+        let redirect_uri = reqwest::Url::parse(&query_param(&url, "redirect_uri")).unwrap();
+        assert_eq!(redirect_uri.port(), Some(port));
     }
 
     #[tokio::test]
@@ -339,35 +372,12 @@ mod tests {
         cfg.client_secret = Some("shh".to_owned());
         let mut flow = PkceFlow::new(cfg);
         let auth_url = flow.start(&[]).await.unwrap().auth_url;
-        let redirect_uri = auth_url
-            .split("redirect_uri=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .to_owned();
-        let redirect_uri = urlencoding_decode(&redirect_uri);
-        let state = auth_url
-            .split("state=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .to_owned();
-        spawn_callback(&redirect_uri, &state, "auth_code_xyz").await;
+        spawn_callback(&auth_url, "auth_code_xyz").await;
 
         let token = flow.exchange(Duration::from_secs(2)).await.unwrap();
         assert_eq!(token.access_token, "access_abc");
         assert_eq!(token.refresh_token.as_deref(), Some("refresh_xyz"));
         assert_eq!(token.expires_in, Some(3600));
-    }
-
-    fn urlencoding_decode(s: &str) -> String {
-        s.replace("%3A", ":")
-            .replace("%2F", "/")
-            .replace("%2C", ",")
     }
 
     #[tokio::test]
@@ -386,24 +396,7 @@ mod tests {
             format!("{}/token", server.uri()),
         ));
         let auth_url = flow.start(&[]).await.unwrap().auth_url;
-        let redirect_uri = auth_url
-            .split("redirect_uri=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .to_owned();
-        let redirect_uri = urlencoding_decode(&redirect_uri);
-        let state = auth_url
-            .split("state=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .to_owned();
-        spawn_callback(&redirect_uri, &state, "bad_code").await;
+        spawn_callback(&auth_url, "bad_code").await;
 
         let err = flow.exchange(Duration::from_secs(2)).await.unwrap_err();
         assert!(matches!(err, PlatformError::Http { status: 400, .. }));
@@ -425,24 +418,7 @@ mod tests {
             format!("{}/token", server.uri()),
         ));
         let auth_url = flow.start(&[]).await.unwrap().auth_url;
-        let redirect_uri = auth_url
-            .split("redirect_uri=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .to_owned();
-        let redirect_uri = urlencoding_decode(&redirect_uri);
-        let state = auth_url
-            .split("state=")
-            .nth(1)
-            .unwrap()
-            .split('&')
-            .next()
-            .unwrap()
-            .to_owned();
-        spawn_callback(&redirect_uri, &state, "auth_code_abc").await;
+        spawn_callback(&auth_url, "auth_code_abc").await;
 
         let token = flow.exchange(Duration::from_secs(2)).await.unwrap();
         assert_eq!(token.access_token, "access_only");

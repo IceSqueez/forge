@@ -103,7 +103,7 @@ mod tests {
     use forge_platform_core::{PlatformError, RateLimitOutcome};
     use futures::future::BoxFuture;
     use serde_json::json;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct GrantLimiter;
@@ -121,6 +121,16 @@ mod tests {
     fn ok_token() -> TokenSource {
         Arc::new(|| {
             Box::pin(async { Ok::<_, PlatformError>("tok".to_owned()) }) as BoxFuture<'static, _>
+        })
+    }
+
+    fn failing_token() -> TokenSource {
+        Arc::new(|| {
+            Box::pin(async {
+                Err::<String, _>(PlatformError::ReauthRequired {
+                    platform: "kick".to_owned(),
+                })
+            }) as BoxFuture<'static, _>
         })
     }
 
@@ -164,9 +174,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poll_once_reports_absent_when_channel_is_offline() {
+    async fn poll_once_reports_absent_when_offline_even_with_a_stale_viewer_count() {
         assert_eq!(
-            poll_against(ResponseTemplate::new(200).set_body_json(channel_body(false, 0))).await,
+            poll_against(ResponseTemplate::new(200).set_body_json(channel_body(false, 300))).await,
             Some(ViewerReport::Absent)
         );
     }
@@ -174,5 +184,41 @@ mod tests {
     #[tokio::test]
     async fn poll_once_returns_none_on_non_200_keeping_last_figure() {
         assert_eq!(poll_against(ResponseTemplate::new(500)).await, None);
+    }
+
+    #[tokio::test]
+    async fn poll_once_returns_none_without_calling_the_api_when_the_token_source_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, 42)))
+            .mount(&server)
+            .await;
+        let (poll, _source) =
+            KickViewerPoll::with_api_base(Arc::new(GrantLimiter), failing_token(), server.uri());
+
+        assert_eq!(poll.poll_once().await, None);
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an unusable token must short-circuit before any HTTP call"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_once_authorizes_the_channels_request_with_the_token_source_value() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .and(header("authorization", "Bearer tok"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, 7)))
+            .mount(&server)
+            .await;
+        let (poll, _source) =
+            KickViewerPoll::with_api_base(Arc::new(GrantLimiter), ok_token(), server.uri());
+
+        assert_eq!(
+            poll.poll_once().await,
+            Some(ViewerReport::Live { count: 7 })
+        );
     }
 }

@@ -8,6 +8,17 @@ use super::local_callback::LocalCallbackDriver;
 
 pub const REFRESH_BUFFER_SECS: u64 = 5 * 60;
 
+const TOKEN_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const TOKEN_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn token_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(TOKEN_CONNECT_TIMEOUT)
+        .timeout(TOKEN_REQUEST_TIMEOUT)
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum ReauthPolicy {
     AnyClientError,
@@ -73,7 +84,7 @@ impl PkceFlow {
     pub fn new(config: PkceClientConfig) -> Self {
         Self {
             config,
-            http: reqwest::Client::new(),
+            http: token_http_client(),
             pending: None,
         }
     }
@@ -124,7 +135,7 @@ pub struct PkceRefresher {
 impl PkceRefresher {
     pub fn new(config: PkceRefreshConfig) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: token_http_client(),
             config,
         }
     }

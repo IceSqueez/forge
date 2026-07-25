@@ -167,14 +167,26 @@ impl IntegrationDetail {
         match result {
             Ok(()) => {
                 self.flow_phase = LocalCallbackFlowPhase::Authorized;
-                if matches!(self.connect_platform, Some(PlatformId::YouTube)) {
-                    let credentials = Arc::clone(&self.credentials);
-                    let bus = Arc::clone(&self.bus);
-                    self.rt_handle.spawn(async move {
-                        if let Err(e) = connect_youtube_after_oauth(credentials, bus).await {
-                            eprintln!("forge-desktop: youtube in-session connect failed: {e}");
-                        }
-                    });
+                match self.connect_platform {
+                    Some(PlatformId::YouTube) => {
+                        let credentials = Arc::clone(&self.credentials);
+                        let bus = Arc::clone(&self.bus);
+                        self.rt_handle.spawn(async move {
+                            if let Err(e) = connect_youtube_after_oauth(credentials, bus).await {
+                                eprintln!("forge-desktop: youtube in-session connect failed: {e}");
+                            }
+                        });
+                    }
+                    Some(PlatformId::Kick) => {
+                        let credentials = Arc::clone(&self.credentials);
+                        let bus = Arc::clone(&self.bus);
+                        self.rt_handle.spawn(async move {
+                            if let Err(e) = connect_kick_after_oauth(credentials, bus).await {
+                                eprintln!("forge-desktop: kick in-session connect failed: {e}");
+                            }
+                        });
+                    }
+                    Some(PlatformId::Twitch) | None => {}
                 }
             }
             Err(e) => {
@@ -1131,6 +1143,51 @@ async fn connect_youtube_after_oauth(
                 Err(forge_events::EventsError::BusClosed) => break,
                 Err(forge_events::EventsError::LaggingReceiver) => {
                     tracing::warn!("youtube platform event bridge: lagging receiver");
+                    continue;
+                }
+                Err(_) => continue,
+            }
+        }
+    });
+
+    platform.connect().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn connect_kick_after_oauth(
+    credentials_repo: Arc<dyn CredentialsRepo>,
+    bus: Arc<dyn EventPublisher>,
+) -> Result<(), String> {
+    let client_id = forge_platform_kick::client_credentials()
+        .ok_or_else(|| "Kick OAuth client credentials are not configured".to_owned())?;
+    let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
+        credentials_repo,
+        client_id,
+    ));
+    let creds = manager
+        .load()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no Kick credentials found right after authorization".to_owned())?;
+
+    let rate_limiter: Arc<dyn forge_platform_core::RateLimiter> = Arc::new(
+        forge_platform_core::TokenBucketRateLimiter::new(60, Duration::from_secs(60)),
+    );
+    let platform = Arc::new(forge_platform_kick::KickPlatform::new(
+        creds.username,
+        manager,
+        rate_limiter,
+    ));
+
+    let mut platform_events = platform.events();
+    let forward_bus = Arc::clone(&bus);
+    tokio::spawn(async move {
+        loop {
+            match platform_events.recv().await {
+                Ok(event) => forward_bus.publish(event),
+                Err(forge_events::EventsError::BusClosed) => break,
+                Err(forge_events::EventsError::LaggingReceiver) => {
+                    tracing::warn!("kick platform event bridge: lagging receiver");
                     continue;
                 }
                 Err(_) => continue,

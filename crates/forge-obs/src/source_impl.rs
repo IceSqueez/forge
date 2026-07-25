@@ -53,10 +53,7 @@ impl ObsSource for ObsClient {
     }
 
     async fn transitions(&self) -> Result<Vec<String>, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .transitions()
             .list()
@@ -66,10 +63,7 @@ impl ObsSource for ObsClient {
     }
 
     async fn profiles(&self) -> Result<Vec<String>, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .profiles()
             .list()
@@ -79,10 +73,7 @@ impl ObsSource for ObsClient {
     }
 
     async fn scene_collections(&self) -> Result<Vec<String>, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .scene_collections()
             .list()

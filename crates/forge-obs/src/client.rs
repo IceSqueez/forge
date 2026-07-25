@@ -22,7 +22,7 @@ use crate::health::{HealthSnapshot, make_health_channel};
 use crate::source::SourceInfo;
 
 pub struct ObsClient {
-    pub(crate) inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
+    pub(crate) inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
     pub(crate) scene_item_id_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     pub(crate) last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     endpoint: String,
@@ -53,7 +53,7 @@ impl ObsClient {
     ) -> Result<Self, ObsError> {
         let (host, port) = parse_endpoint(endpoint)?;
 
-        let inner = Arc::new(tokio::sync::RwLock::new(None::<obws::Client>));
+        let inner = Arc::new(tokio::sync::RwLock::new(None::<Arc<obws::Client>>));
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
@@ -113,6 +113,11 @@ impl ObsClient {
 
     pub fn connection_state(&self) -> ConnectionState {
         self.state.load()
+    }
+
+    pub(crate) async fn active_client(&self) -> Result<Arc<obws::Client>, ObsError> {
+        let guard = self.inner.read().await;
+        guard.clone().ok_or(ObsError::Disconnected)
     }
 
     #[cfg(test)]
@@ -276,7 +281,7 @@ impl BuiltinControl for ObsClient {
 }
 
 struct SupervisorContext {
-    inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
+    inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
     state: Arc<AtomicConnectionState>,
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -348,6 +353,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             .map_err(map_obws_error)
         {
             Ok(client) => {
+                let client = Arc::new(client);
                 match client.general().version().await {
                     Ok(v) => {
                         let _ = obs_version.set(v.obs_studio_version.to_string());
@@ -361,7 +367,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 snapshot_catalog(&client, &catalog_state, &health_state, &health_tx).await;
 
                 let events = client.events();
-                inner.write().await.replace(client);
+                inner.write().await.replace(Arc::clone(&client));
 
                 if let Ok(mut g) = connected_at.write() {
                     *g = Some(OffsetDateTime::now_utc());
@@ -648,7 +654,7 @@ const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// The returned handle MUST be `.abort()`-ed on every connection-loss/shutdown exit path;
 /// dropping a `JoinHandle` does not cancel the underlying task.
 fn spawn_stats_poll(
-    inner: Arc<tokio::sync::RwLock<Option<obws::Client>>>,
+    inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
 ) -> JoinHandle<()> {
@@ -658,16 +664,18 @@ fn spawn_stats_poll(
         loop {
             ticker.tick().await;
 
-            let (stats, stream_status, record_status) = {
+            let client = {
                 let guard = inner.read().await;
                 let Some(client) = guard.as_ref() else {
                     continue;
                 };
-                let general = client.general();
-                let streaming = client.streaming();
-                let recording = client.recording();
-                tokio::join!(general.stats(), streaming.status(), recording.status())
+                Arc::clone(client)
             };
+            let general = client.general();
+            let streaming = client.streaming();
+            let recording = client.recording();
+            let (stats, stream_status, record_status) =
+                tokio::join!(general.stats(), streaming.status(), recording.status());
 
             let mut deltas = Vec::new();
             if let Ok(stats) = stats

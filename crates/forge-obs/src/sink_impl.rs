@@ -17,10 +17,7 @@ use crate::sink::ObsSink;
 #[async_trait]
 impl ObsSink for ObsClient {
     async fn set_scene(&self, scene: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .scenes()
             .set_current_program_scene(SceneId::Name(scene))
@@ -41,10 +38,7 @@ impl ObsSink for ObsClient {
             .get(&(scene.to_owned(), source.to_owned()))
             .copied();
 
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
 
         let item_id = if let Some(id) = cached_id {
             id
@@ -77,10 +71,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .inputs()
             .set_muted(InputId::Name(input), mute)
@@ -89,10 +80,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn start_record(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .recording()
             .start()
@@ -101,10 +89,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn stop_record(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .recording()
             .stop()
@@ -114,10 +99,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn start_stream(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .streaming()
             .start()
@@ -126,10 +108,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn stop_stream(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .streaming()
             .stop()
@@ -148,10 +127,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .scenes()
             .set_current_preview_scene(SceneId::Name(scene))
@@ -160,10 +136,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_current_scene_transition(&self, name: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .transitions()
             .set_current(name)
@@ -172,16 +145,12 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_input_volume_db(&self, input: &str, db: f64) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .inputs()
             .set_volume(InputId::Name(input), Volume::Db(db as f32))
             .await
             .map_err(|e| map_request_error("SetInputVolume", e))?;
-        drop(guard);
 
         // An input's volume is global in OBS, so the same name can appear as a scene item
         // in several scenes; write the confirmed level back into every scene's copy.
@@ -205,10 +174,7 @@ impl ObsSink for ObsClient {
         overlay: bool,
     ) -> Result<(), ObsError> {
         let json_settings = settings.to_json();
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .inputs()
             .set_settings(SetSettings {
@@ -221,10 +187,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn pause_record(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .recording()
             .pause()
@@ -233,10 +196,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn resume_record(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .recording()
             .resume()
@@ -245,10 +205,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn toggle_record_pause(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .recording()
             .toggle_pause()
@@ -258,10 +215,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn send_stream_caption(&self, text: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .streaming()
             .send_caption(text)
@@ -270,10 +224,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn start_replay_buffer(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .replay_buffer()
             .start()
@@ -282,10 +233,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn stop_replay_buffer(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .replay_buffer()
             .stop()
@@ -294,10 +242,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn save_replay_buffer(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .replay_buffer()
             .save()
@@ -306,10 +251,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_studio_mode(&self, enabled: bool) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .ui()
             .set_studio_mode_enabled(enabled)
@@ -318,10 +260,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .transitions()
             .trigger()
@@ -330,10 +269,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_scene_list(&self) -> Result<Variant, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         let scenes = client
             .scenes()
             .list()
@@ -355,10 +291,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_input_list(&self) -> Result<Variant, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         let inputs = client
             .inputs()
             .list(None)
@@ -374,10 +307,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_record_status(&self) -> Result<Variant, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         let status = client
             .recording()
             .status()
@@ -394,10 +324,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_stream_status(&self) -> Result<Variant, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         let status = client
             .streaming()
             .status()
@@ -413,10 +340,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         let result = client
             .inputs()
             .settings::<serde_json::Value>(InputId::Name(input))
@@ -436,10 +360,7 @@ impl ObsSink for ObsClient {
         filter: &str,
         enabled: bool,
     ) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .filters()
             .set_enabled(FilterSetEnabled {
@@ -452,10 +373,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn refresh_browser_source(&self, input: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .inputs()
             .press_properties_button(InputId::Name(input), "refreshnocache")
@@ -464,10 +382,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn restart_media_input(&self, input: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .media_inputs()
             .trigger_action(InputId::Name(input), MediaAction::Restart)
@@ -476,10 +391,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn start_virtual_cam(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .virtual_cam()
             .start()
@@ -488,10 +400,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn stop_virtual_cam(&self) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .virtual_cam()
             .stop()
@@ -505,10 +414,7 @@ impl ObsSink for ObsClient {
         file_path: &str,
         format: &str,
     ) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .sources()
             .save_screenshot(SaveScreenshot {
@@ -524,10 +430,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_record_directory(&self, path: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .config()
             .set_record_directory(path)
@@ -536,10 +439,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_current_profile(&self, name: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .profiles()
             .set_current(name)
@@ -548,10 +448,7 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_current_scene_collection(&self, name: &str) -> Result<(), ObsError> {
-        let guard = self.inner.read().await;
-        let Some(client) = guard.as_ref() else {
-            return Err(ObsError::Disconnected);
-        };
+        let client = self.active_client().await?;
         client
             .scene_collections()
             .set_current(name)

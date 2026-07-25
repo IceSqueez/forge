@@ -68,7 +68,11 @@ fn icon_for_kind(kind: Option<&str>) -> SectionIcon {
         SectionIcon::new("microphone")
     } else if kind.contains("output_capture") {
         SectionIcon::new("volume")
-    } else if kind.contains("v4l2") || kind.contains("dshow") || kind.contains("avcapture") {
+    } else if kind.contains("v4l2")
+        || kind.contains("dshow")
+        || kind.contains("avcapture")
+        || kind.contains("av_capture")
+    {
         SectionIcon::new("video")
     } else {
         SectionIcon::new("device-desktop")

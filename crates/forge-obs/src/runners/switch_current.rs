@@ -109,7 +109,11 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::MockSink;
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+
+    fn scene_config(scene: &str) -> SubActionConfig {
+        BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))])
+    }
 
     #[test]
     fn validate_config_accepts_scene_string() {
@@ -129,5 +133,77 @@ mod tests {
         let runner = SwitchCurrentSceneRunner::new(Arc::new(MockSink));
         let config = BTreeMap::from([("scene".to_owned(), Variant::Int(1))]);
         assert!(runner.validate_config(&config).is_err());
+    }
+
+    // Why: OBS re-runs the whole transition when the program scene is set to the scene already on
+    // program, so a repeat trigger visibly restarts stingers and media sources.
+    #[tokio::test]
+    async fn switching_to_the_scene_already_on_program_reports_success_without_setting_it() {
+        let sink = RecordingSink::new();
+        let runner = SwitchCurrentSceneRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&scene_config("Gameplay"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(sink.calls(), vec!["get_current_scene".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn switching_to_a_scene_that_is_not_on_program_sets_it() {
+        let sink = RecordingSink::new();
+        let runner = SwitchCurrentSceneRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&scene_config("Starting Soon"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(
+            sink.calls(),
+            vec![
+                "get_current_scene".to_owned(),
+                "set_scene(Starting Soon)".to_owned()
+            ],
+        );
+    }
+
+    // The guard must compare the resolved name; comparing the raw template would never match and
+    // every interpolated switch would replay the transition it is meant to skip.
+    #[tokio::test]
+    async fn the_no_op_guard_compares_the_interpolated_scene_name() {
+        let sink = RecordingSink::new();
+        let runner = SwitchCurrentSceneRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack =
+            ArgStack::new().set("target".to_owned(), Variant::String("Gameplay".to_owned()));
+
+        runner
+            .execute(&scene_config("%target%"), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(sink.calls(), vec!["get_current_scene".to_owned()]);
+    }
+
+    // A sink that cannot report the program scene must not be read as "already there"; the switch
+    // has to be attempted and its own failure reported.
+    #[tokio::test]
+    async fn an_unreadable_program_scene_still_attempts_the_switch() {
+        let sink = RecordingSink::failing();
+        let runner = SwitchCurrentSceneRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new();
+
+        let (telemetry, _) = runner
+            .execute(&scene_config("Gameplay"), &make_ctx(&stack))
+            .await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+        assert!(
+            sink.calls().contains(&"set_scene(Gameplay)".to_owned()),
+            "the switch was skipped after a failed read: {:?}",
+            sink.calls(),
+        );
     }
 }

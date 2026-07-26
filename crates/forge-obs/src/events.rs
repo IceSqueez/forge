@@ -748,23 +748,16 @@ mod tests {
     }
 
     #[test]
-    fn resolve_source_name_returns_none_for_wrong_scene() {
+    fn resolve_source_name_requires_both_the_scene_and_the_item_id_to_match() {
         let mut cache = HashMap::new();
         cache.insert(("Gameplay".to_owned(), "Game Capture".to_owned()), 42i64);
-        assert!(resolve_source_name(&cache, "BRB", 42u64).is_none());
-    }
-
-    #[test]
-    fn resolve_source_name_returns_none_for_wrong_item_id() {
-        let mut cache = HashMap::new();
-        cache.insert(("Gameplay".to_owned(), "Game Capture".to_owned()), 42i64);
-        assert!(resolve_source_name(&cache, "Gameplay", 99u64).is_none());
-    }
-
-    #[test]
-    fn resolve_source_name_returns_none_for_empty_cache() {
-        let cache: HashMap<(String, String), i64> = HashMap::new();
-        assert!(resolve_source_name(&cache, "Gameplay", 1u64).is_none());
+        for (scene, item_id) in [("BRB", 42u64), ("Gameplay", 99u64), ("BRB", 99u64)] {
+            assert!(
+                resolve_source_name(&cache, scene, item_id).is_none(),
+                "resolved {scene}/{item_id} against a cache that holds Gameplay/42",
+            );
+        }
+        assert!(resolve_source_name(&HashMap::new(), "Gameplay", 42u64).is_none());
     }
 
     #[test]
@@ -952,6 +945,217 @@ mod tests {
         );
 
         assert!(deltas.is_empty());
+    }
+
+    fn scene_id(name: &str) -> obws::responses::scenes::SceneId {
+        obws::responses::scenes::SceneId {
+            name: name.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    fn source_id(name: &str) -> obws::responses::sources::SourceId {
+        obws::responses::sources::SourceId {
+            name: name.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    fn input_id(name: &str) -> obws::responses::inputs::InputId {
+        obws::responses::inputs::InputId {
+            name: name.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    fn source_info(name: &str, kind: Option<&str>) -> SourceInfo {
+        SourceInfo {
+            name: name.to_owned(),
+            visible: true,
+            locked: false,
+            audio_db: None,
+            kind: kind.map(str::to_owned),
+        }
+    }
+
+    fn source_names(catalog: &ObsCatalog, scene: &str) -> Vec<String> {
+        catalog
+            .sources
+            .get(scene)
+            .map(|items| items.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    fn scene_item_created(scene: &str, source: &str) -> obws::events::Event {
+        obws::events::Event::SceneItemCreated {
+            scene: scene_id(scene),
+            source: source_id(source),
+            item_id: 7,
+            index: 0,
+        }
+    }
+
+    fn input_created(name: &str, unversioned_kind: &str) -> obws::events::Event {
+        obws::events::Event::InputCreated {
+            id: input_id(name),
+            kind: format!("{unversioned_kind}_v2"),
+            unversioned_kind: unversioned_kind.to_owned(),
+            caps: Default::default(),
+            settings: json!({}),
+            default_settings: json!({}),
+        }
+    }
+
+    // OBS replays the full scene-item roster on some transitions, so the same creation can be seen
+    // twice for one item; the panel must not grow a duplicate row.
+    #[test]
+    fn a_repeated_scene_item_creation_adds_the_source_only_once() {
+        let mut catalog = ObsCatalog::default();
+
+        apply_catalog_update(&scene_item_created("Gameplay", "Webcam"), &mut catalog);
+        apply_catalog_update(&scene_item_created("Gameplay", "Webcam"), &mut catalog);
+
+        assert_eq!(source_names(&catalog, "Gameplay"), vec!["Webcam"]);
+    }
+
+    #[test]
+    fn a_removed_scene_item_leaves_the_same_source_standing_in_other_scenes() {
+        let mut catalog = ObsCatalog::default();
+        catalog
+            .sources
+            .insert("Gameplay".to_owned(), vec![source_info("Webcam", None)]);
+        catalog
+            .sources
+            .insert("BRB".to_owned(), vec![source_info("Webcam", None)]);
+
+        apply_catalog_update(
+            &obws::events::Event::SceneItemRemoved {
+                scene: scene_id("Gameplay"),
+                source: source_id("Webcam"),
+                item_id: 7,
+            },
+            &mut catalog,
+        );
+
+        assert!(source_names(&catalog, "Gameplay").is_empty());
+        assert_eq!(source_names(&catalog, "BRB"), vec!["Webcam"]);
+    }
+
+    // The audio panel lists capture inputs only; a new browser or text source must not appear there.
+    #[test]
+    fn only_a_capture_input_joins_the_audio_input_roster_when_created() {
+        for (kind, expected) in [
+            ("wasapi_input_capture", vec!["Mic"]),
+            ("browser_source", Vec::<&str>::new()),
+        ] {
+            let mut catalog = ObsCatalog::default();
+            apply_catalog_update(&input_created("Mic", kind), &mut catalog);
+            assert_eq!(catalog.audio_inputs, expected, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn a_repeated_audio_input_creation_registers_the_input_only_once() {
+        let mut catalog = ObsCatalog::default();
+
+        apply_catalog_update(&input_created("Mic", "wasapi_input_capture"), &mut catalog);
+        apply_catalog_update(&input_created("Mic", "wasapi_input_capture"), &mut catalog);
+
+        assert_eq!(catalog.audio_inputs, vec!["Mic"]);
+    }
+
+    #[test]
+    fn a_removed_input_is_purged_from_the_audio_roster_and_from_every_scene() {
+        let mut catalog = ObsCatalog {
+            audio_inputs: vec!["Mic".to_owned(), "Desktop Audio".to_owned()],
+            ..Default::default()
+        };
+        catalog.sources.insert(
+            "Gameplay".to_owned(),
+            vec![
+                source_info("Mic", Some("wasapi_input_capture")),
+                source_info("Webcam", None),
+            ],
+        );
+        catalog.sources.insert(
+            "BRB".to_owned(),
+            vec![source_info("Mic", Some("wasapi_input_capture"))],
+        );
+
+        apply_catalog_update(
+            &obws::events::Event::InputRemoved {
+                id: input_id("Mic"),
+            },
+            &mut catalog,
+        );
+
+        assert_eq!(catalog.audio_inputs, vec!["Desktop Audio"]);
+        assert_eq!(source_names(&catalog, "Gameplay"), vec!["Webcam"]);
+        assert!(source_names(&catalog, "BRB").is_empty());
+    }
+
+    #[test]
+    fn a_renamed_input_is_followed_in_the_audio_roster_and_in_every_scene() {
+        let mut catalog = ObsCatalog {
+            audio_inputs: vec!["Mic".to_owned()],
+            ..Default::default()
+        };
+        catalog.sources.insert(
+            "Gameplay".to_owned(),
+            vec![source_info("Mic", Some("wasapi_input_capture"))],
+        );
+        catalog.sources.insert(
+            "BRB".to_owned(),
+            vec![source_info("Mic", Some("wasapi_input_capture"))],
+        );
+
+        apply_catalog_update(
+            &obws::events::Event::InputNameChanged {
+                uuid: Default::default(),
+                old_name: "Mic".to_owned(),
+                new_name: "Studio Mic".to_owned(),
+            },
+            &mut catalog,
+        );
+
+        assert_eq!(catalog.audio_inputs, vec!["Studio Mic"]);
+        assert_eq!(source_names(&catalog, "Gameplay"), vec!["Studio Mic"]);
+        assert_eq!(source_names(&catalog, "BRB"), vec!["Studio Mic"]);
+    }
+
+    #[test]
+    fn a_volume_change_writes_the_level_on_that_input_in_every_scene_it_appears_in() {
+        let mut catalog = ObsCatalog::default();
+        catalog.sources.insert(
+            "Gameplay".to_owned(),
+            vec![
+                source_info("Mic", Some("wasapi_input_capture")),
+                source_info("Webcam", None),
+            ],
+        );
+        catalog.sources.insert(
+            "BRB".to_owned(),
+            vec![source_info("Mic", Some("wasapi_input_capture"))],
+        );
+
+        apply_catalog_update(
+            &obws::events::Event::InputVolumeChanged {
+                id: input_id("Mic"),
+                mul: 0.25,
+                db: -12.5,
+            },
+            &mut catalog,
+        );
+
+        let levels = |scene: &str, source: &str| {
+            catalog.sources[scene]
+                .iter()
+                .find(|s| s.name == source)
+                .and_then(|s| s.audio_db)
+        };
+        assert_eq!(levels("Gameplay", "Mic"), Some(-12.5));
+        assert_eq!(levels("BRB", "Mic"), Some(-12.5));
+        assert_eq!(levels("Gameplay", "Webcam"), None);
     }
 
     #[test]

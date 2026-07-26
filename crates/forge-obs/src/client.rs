@@ -1053,4 +1053,236 @@ mod tests {
             Err(forge_platform_core::ControlFailure::Unsupported)
         );
     }
+
+    #[derive(Default)]
+    struct CapturingPublisher(Mutex<Vec<forge_events::Event>>);
+
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: forge_events::Event) {
+            self.0.lock().unwrap_or_else(|p| p.into_inner()).push(event);
+        }
+    }
+
+    impl CapturingPublisher {
+        fn kinds(&self) -> Vec<String> {
+            self.0
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .iter()
+                .map(|e| e.kind.clone())
+                .collect()
+        }
+
+        fn last_payload(&self, field: &str) -> Option<serde_json::Value> {
+            self.0
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .last()
+                .map(|e| e.payload[field].clone())
+        }
+    }
+
+    struct EventHarness {
+        catalog: RwLock<ObsCatalog>,
+        health: RwLock<HealthSnapshot>,
+        health_tx: broadcast::Sender<HealthDelta>,
+        item_cache: Mutex<HashMap<(String, String), i64>>,
+        publisher: CapturingPublisher,
+        last_set_scene_event_id: RwLock<Option<EventId>>,
+    }
+
+    impl EventHarness {
+        fn new() -> Self {
+            let (health_tx, _) = broadcast::channel(16);
+            Self {
+                catalog: RwLock::new(ObsCatalog::default()),
+                health: RwLock::new(HealthSnapshot::default()),
+                health_tx,
+                item_cache: Mutex::new(HashMap::new()),
+                publisher: CapturingPublisher::default(),
+                last_set_scene_event_id: RwLock::new(None),
+            }
+        }
+
+        fn with_source(self, scene: &str, source: &str, item_id: i64) -> Self {
+            if let Ok(mut catalog) = self.catalog.write() {
+                catalog
+                    .sources
+                    .entry(scene.to_owned())
+                    .or_default()
+                    .push(SourceInfo {
+                        name: source.to_owned(),
+                        visible: true,
+                        locked: false,
+                        audio_db: None,
+                        kind: None,
+                    });
+            }
+            if let Ok(mut cache) = self.item_cache.lock() {
+                cache.insert((scene.to_owned(), source.to_owned()), item_id);
+            }
+            self
+        }
+
+        fn feed(&self, ev: &obws::events::Event) {
+            handle_obs_event(
+                ev,
+                &self.catalog,
+                &self.health,
+                &self.health_tx,
+                &self.item_cache,
+                &self.publisher,
+                &self.last_set_scene_event_id,
+            );
+        }
+
+        fn source_flags(&self, scene: &str, source: &str) -> Option<(bool, bool)> {
+            let catalog = self.catalog.read().ok()?;
+            catalog
+                .sources
+                .get(scene)?
+                .iter()
+                .find(|s| s.name == source)
+                .map(|s| (s.visible, s.locked))
+        }
+    }
+
+    fn scene_id(name: &str) -> obws::responses::scenes::SceneId {
+        obws::responses::scenes::SceneId {
+            name: name.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    fn source_id(name: &str) -> obws::responses::sources::SourceId {
+        obws::responses::sources::SourceId {
+            name: name.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    fn enable_state_changed(scene: &str, item_id: u64, enabled: bool) -> obws::events::Event {
+        obws::events::Event::SceneItemEnableStateChanged {
+            scene: scene_id(scene),
+            item_id,
+            enabled,
+        }
+    }
+
+    // Why: a source hidden from inside OBS reaches forge as a numeric item id only. Before the
+    // id cache was seeded from the catalog snapshot, only items forge had toggled itself could be
+    // resolved, so hiding a source in OBS left the panel row and the bus event missing.
+    #[test]
+    fn hiding_a_scene_item_inside_obs_updates_the_catalog_row_and_publishes_the_change() {
+        let h = EventHarness::new().with_source("Gameplay", "Webcam", 42);
+
+        h.feed(&enable_state_changed("Gameplay", 42, false));
+
+        assert_eq!(h.source_flags("Gameplay", "Webcam"), Some((false, false)));
+        assert_eq!(h.publisher.kinds(), vec!["obs.source.visibility_changed"]);
+        assert_eq!(
+            h.publisher.last_payload("source_name"),
+            Some(serde_json::json!("Webcam")),
+        );
+    }
+
+    #[test]
+    fn locking_a_scene_item_inside_obs_updates_the_catalog_row_and_publishes_the_change() {
+        let h = EventHarness::new().with_source("Gameplay", "Webcam", 42);
+
+        h.feed(&obws::events::Event::SceneItemLockStateChanged {
+            scene: scene_id("Gameplay"),
+            item_id: 42,
+            locked: true,
+        });
+
+        assert_eq!(h.source_flags("Gameplay", "Webcam"), Some((true, true)));
+        assert_eq!(h.publisher.kinds(), vec!["obs.source.lock_changed"]);
+    }
+
+    #[test]
+    fn a_scene_item_id_that_is_not_cached_changes_nothing_and_publishes_nothing() {
+        let h = EventHarness::new().with_source("Gameplay", "Webcam", 42);
+
+        h.feed(&enable_state_changed("Gameplay", 99, false));
+
+        assert_eq!(h.source_flags("Gameplay", "Webcam"), Some((true, false)));
+        assert!(h.publisher.kinds().is_empty());
+    }
+
+    #[test]
+    fn the_id_cache_follows_a_scene_item_from_creation_to_removal() {
+        let h = EventHarness::new();
+
+        h.feed(&obws::events::Event::SceneItemCreated {
+            scene: scene_id("Gameplay"),
+            source: source_id("Webcam"),
+            item_id: 42,
+            index: 0,
+        });
+        h.feed(&enable_state_changed("Gameplay", 42, false));
+        assert_eq!(
+            h.publisher.kinds().last().map(String::as_str),
+            Some("obs.source.visibility_changed"),
+            "a freshly created item id could not be resolved",
+        );
+
+        h.feed(&obws::events::Event::SceneItemRemoved {
+            scene: scene_id("Gameplay"),
+            source: source_id("Webcam"),
+            item_id: 42,
+        });
+        let before = h.publisher.kinds().len();
+        h.feed(&enable_state_changed("Gameplay", 42, true));
+        assert_eq!(
+            h.publisher.kinds().len(),
+            before,
+            "a removed item id still resolved to a source",
+        );
+    }
+
+    #[test]
+    fn a_renamed_input_keeps_its_cached_item_id_under_the_new_source_name() {
+        let h = EventHarness::new().with_source("Gameplay", "Mic", 42);
+
+        h.feed(&obws::events::Event::InputNameChanged {
+            uuid: Default::default(),
+            old_name: "Mic".to_owned(),
+            new_name: "Studio Mic".to_owned(),
+        });
+        h.feed(&enable_state_changed("Gameplay", 42, false));
+
+        assert_eq!(
+            h.publisher.kinds().last().map(String::as_str),
+            Some("obs.source.visibility_changed"),
+        );
+        assert_eq!(
+            h.publisher.last_payload("source_name"),
+            Some(serde_json::json!("Studio Mic")),
+        );
+    }
+
+    #[test]
+    fn a_removed_input_evicts_its_cached_item_ids_from_every_scene() {
+        let h = EventHarness::new()
+            .with_source("Gameplay", "Mic", 42)
+            .with_source("BRB", "Mic", 43);
+
+        h.feed(&obws::events::Event::InputRemoved {
+            id: obws::responses::inputs::InputId {
+                name: "Mic".to_owned(),
+                ..Default::default()
+            },
+        });
+        let before = h.publisher.kinds().len();
+        h.feed(&enable_state_changed("Gameplay", 42, false));
+        h.feed(&enable_state_changed("BRB", 43, false));
+
+        assert_eq!(
+            h.publisher.kinds().len(),
+            before,
+            "a removed input still resolved a cached item id: {:?}",
+            h.publisher.kinds(),
+        );
+    }
 }

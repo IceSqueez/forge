@@ -1,13 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use forge_events::{Event, EventPublisher};
 use forge_obs::{ObsClient, ObsError};
+use forge_platform_core::ConnectionState;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
@@ -140,4 +141,88 @@ async fn a_rejected_password_makes_the_supervisor_report_an_authentication_failu
     drop(client);
 
     assert_eq!(event.kind, "obs.connection.auth_failed");
+}
+
+/// Reads the client's connection state at the instant each event is published, which is the only
+/// vantage point that can tell "stored, then published" apart from "published, then stored".
+struct StateProbePublisher {
+    client: Arc<OnceLock<Arc<ObsClient>>>,
+    tx: mpsc::UnboundedSender<(String, Option<ConnectionState>)>,
+}
+
+impl EventPublisher for StateProbePublisher {
+    fn publish(&self, event: Event) {
+        let state = self.client.get().map(|c| c.connection_state());
+        let _ = self.tx.send((event.kind, state));
+    }
+}
+
+/// Holds the connection open until `gate` fires, so the test can finish its own setup before the
+/// server triggers the supervisor's failure path.
+async fn serve_one_gated_close_frame(
+    listener: TcpListener,
+    code: u16,
+    reason: &'static str,
+    gate: oneshot::Receiver<()>,
+) {
+    let Ok((stream, _)) = listener.accept().await else {
+        return;
+    };
+    let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
+        return;
+    };
+    if gate.await.is_err() {
+        return;
+    }
+    let frame = CloseFrame {
+        code: CloseCode::from(code),
+        reason: reason.into(),
+    };
+    if socket.send(Message::Close(Some(frame))).await.is_err() {
+        return;
+    }
+    while let Some(Ok(_)) = socket.next().await {}
+}
+
+// Why: the open integration screen reloads off the `obs.connection.*` bus event and then reads the
+// connection state back. Publishing before the state is stored let that read observe the state the
+// connection was leaving, so the header kept claiming the connection was still coming up.
+#[tokio::test]
+async fn the_connection_state_is_already_settled_when_the_auth_failure_is_published() {
+    let (listener, port) = bind_loopback().await;
+    let (gate_tx, gate_rx) = oneshot::channel();
+    let server = tokio::spawn(serve_one_gated_close_frame(
+        listener,
+        AUTHENTICATION_FAILED,
+        "authentication failed",
+        gate_rx,
+    ));
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let slot: Arc<OnceLock<Arc<ObsClient>>> = Arc::new(OnceLock::new());
+
+    let client = Arc::new(
+        ObsClient::connect(
+            &format!("127.0.0.1:{port}"),
+            Some("wrong-password"),
+            Arc::new(StateProbePublisher {
+                client: Arc::clone(&slot),
+                tx,
+            }),
+        )
+        .await
+        .unwrap(),
+    );
+    let _ = slot.set(Arc::clone(&client));
+    let _ = gate_tx.send(());
+
+    let (kind, state_at_publish) = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the supervisor published nothing before the timeout")
+        .expect("the publisher channel closed without an event");
+
+    server.abort();
+    drop(client);
+
+    assert_eq!(kind, "obs.connection.auth_failed");
+    assert_eq!(state_at_publish, Some(ConnectionState::Disconnected));
 }

@@ -428,4 +428,19 @@ mod tests {
         let loaded = IconAssets.load("tabler/does-not-exist.svg").unwrap();
         assert!(loaded.is_none());
     }
+
+    // Why: `IconAssets::load` resolves a path to the FIRST variant claiming it, so two variants
+    // sharing one file silently render the wrong glyph for the loser instead of failing to build.
+    #[test]
+    fn no_two_icon_variants_claim_the_same_asset_path() {
+        let mut seen: std::collections::HashMap<&str, Icon> = std::collections::HashMap::new();
+        for icon in Icon::ALL {
+            let clash = seen.insert(icon.path(), *icon);
+            assert!(
+                clash.is_none(),
+                "{icon:?} reuses the asset path of {clash:?}: {}",
+                icon.path(),
+            );
+        }
+    }
 }

@@ -183,7 +183,7 @@ impl QuickActionModal {
                 let client = Arc::clone(client);
                 async_bridge::run_async(
                     &rt_handle,
-                    fetch_picker_items(client, pk),
+                    fetch_picker_items(client, pk, fetch_labels()),
                     move |this, result, cx| this.apply_dynamic(i, result, cx),
                     cx,
                 );
@@ -263,7 +263,9 @@ impl QuickActionModal {
         };
         match result {
             Ok(fetch) => {
-                field.hint = fetch.hint;
+                field.hint = fetch
+                    .hint_scene
+                    .map(|scene| tr!("integration_qa_scene_current_hint", scene = scene));
                 let FieldControl::Choice(choice) = &mut field.control else {
                     return;
                 };
@@ -312,7 +314,7 @@ impl QuickActionModal {
         cx.notify();
         async_bridge::run_async(
             &self.rt_handle,
-            fetch_picker_items(client, pk),
+            fetch_picker_items(client, pk, fetch_labels()),
             move |this, result, cx| this.apply_dynamic(index, result, cx),
             cx,
         );
@@ -872,7 +874,7 @@ struct PickerFetch {
     items: Vec<PickerItem>,
     scene: Option<String>,
     preselect: Option<SharedString>,
-    hint: Option<String>,
+    hint_scene: Option<String>,
 }
 
 fn no_context(items: Vec<PickerItem>) -> PickerFetch {
@@ -880,13 +882,30 @@ fn no_context(items: Vec<PickerItem>) -> PickerFetch {
         items,
         scene: None,
         preselect: None,
-        hint: None,
+        hint_scene: None,
+    }
+}
+
+struct FetchLabels {
+    no_scene: String,
+    source_visible: String,
+    source_hidden: String,
+    unavailable: String,
+}
+
+fn fetch_labels() -> FetchLabels {
+    FetchLabels {
+        no_scene: tr!("integration_qa_field_no_scene"),
+        source_visible: tr!("integration_qa_source_visible"),
+        source_hidden: tr!("integration_qa_source_hidden"),
+        unavailable: tr!("integration_qa_field_unavailable"),
     }
 }
 
 async fn fetch_picker_items(
     client: Arc<ObsClient>,
     kind: PickerKind,
+    labels: FetchLabels,
 ) -> Result<PickerFetch, String> {
     match kind {
         PickerKind::Scene => {
@@ -905,7 +924,7 @@ async fn fetch_picker_items(
                 items,
                 scene: None,
                 preselect: current.clone().map(SharedString::from),
-                hint: current.map(|scene| tr!("integration_qa_scene_current_hint", scene = scene)),
+                hint_scene: current,
             })
         }
         PickerKind::Source => {
@@ -913,7 +932,7 @@ async fn fetch_picker_items(
                 .current_scene()
                 .await
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| tr!("integration_qa_field_no_scene"))?;
+                .ok_or(labels.no_scene)?;
             let sources = client.sources(&scene).await.map_err(|e| e.to_string())?;
             let items = sources
                 .into_iter()
@@ -922,9 +941,9 @@ async fn fetch_picker_items(
                     label: source.name.into(),
                     sublabel: Some(
                         if source.visible {
-                            tr!("integration_qa_source_visible")
+                            labels.source_visible.clone()
                         } else {
-                            tr!("integration_qa_source_hidden")
+                            labels.source_hidden.clone()
                         }
                         .into(),
                     ),
@@ -935,7 +954,7 @@ async fn fetch_picker_items(
                 items,
                 scene: Some(scene),
                 preselect: None,
-                hint: None,
+                hint_scene: None,
             })
         }
         PickerKind::Input => {
@@ -994,7 +1013,7 @@ async fn fetch_picker_items(
             Ok(no_context(items))
         }
         PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
-            Err(tr!("integration_qa_field_unavailable"))
+            Err(labels.unavailable)
         }
     }
 }

@@ -411,10 +411,15 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     Arc::clone(&item_cache),
                 );
 
+                let mut pending_resync: Option<JoinHandle<()>> = None;
+
                 match events {
                     Ok(mut stream) => loop {
                         tokio::select! {
                             () = shutdown.notified() => {
+                                if let Some(handle) = pending_resync.take() {
+                                    handle.abort();
+                                }
                                 stats_handle.abort();
                                 inner.write().await.take();
                                 clear_connected_at(&connected_at);
@@ -446,12 +451,15 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                             ev,
                                             obws::events::Event::CurrentSceneCollectionChanged { .. }
                                         ) {
+                                            if let Some(handle) = pending_resync.take() {
+                                                handle.abort();
+                                            }
                                             let client = Arc::clone(&client);
                                             let catalog_state = Arc::clone(&catalog_state);
                                             let health_state = Arc::clone(&health_state);
                                             let health_tx = health_tx.clone();
                                             let item_cache = Arc::clone(&item_cache);
-                                            tokio::spawn(async move {
+                                            pending_resync = Some(tokio::spawn(async move {
                                                 snapshot_catalog(
                                                     &client,
                                                     &catalog_state,
@@ -460,7 +468,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                                     &item_cache,
                                                 )
                                                 .await;
-                                            });
+                                            }));
                                         }
                                     }
                                 }
@@ -473,6 +481,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                             "OBS event subscription unavailable; waiting for shutdown only"
                         );
                         shutdown.notified().await;
+                        if let Some(handle) = pending_resync.take() {
+                            handle.abort();
+                        }
                         stats_handle.abort();
                         inner.write().await.take();
                         clear_connected_at(&connected_at);
@@ -481,6 +492,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     }
                 }
 
+                if let Some(handle) = pending_resync.take() {
+                    handle.abort();
+                }
                 stats_handle.abort();
                 inner.write().await.take();
                 clear_connected_at(&connected_at);
@@ -634,6 +648,24 @@ fn handle_obs_event(
         && let Ok(mut cache) = item_cache.lock()
     {
         cache.insert((scene.name.clone(), source.name.clone()), *item_id as i64);
+    }
+
+    if let obws::events::Event::SceneItemCreated { scene, source, .. } = ev {
+        let known_kind = catalog_state.read().ok().and_then(|guard| {
+            guard
+                .sources
+                .values()
+                .flatten()
+                .find(|s| s.name == source.name)
+                .and_then(|s| s.kind.clone())
+        });
+        if let Some(kind) = known_kind
+            && let Ok(mut catalog) = catalog_state.write()
+            && let Some(items) = catalog.sources.get_mut(&scene.name)
+            && let Some(info) = items.iter_mut().find(|s| s.name == source.name)
+        {
+            info.kind = Some(kind);
+        }
     }
 
     if let obws::events::Event::SceneItemRemoved { scene, source, .. } = ev
@@ -804,14 +836,14 @@ async fn reconcile_catalog_topology(
         .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
         .unwrap_or_default();
 
-    let current_scene: Option<String> = client
+    let fetched_current_scene: Option<String> = client
         .scenes()
         .current_program_scene()
         .await
         .map(|s| s.id.name.clone())
         .ok();
 
-    let current_preview_scene: Option<String> = client
+    let fetched_current_preview_scene: Option<String> = client
         .scenes()
         .current_preview_scene()
         .await
@@ -825,40 +857,46 @@ async fn reconcile_catalog_topology(
         .map(|inputs| inputs.into_iter().map(|i| i.id.name.clone()).collect())
         .unwrap_or_default();
 
-    let previous_sources: HashMap<String, Vec<SourceInfo>> = catalog_state
-        .read()
-        .ok()
-        .map(|guard| guard.sources.clone())
-        .unwrap_or_default();
-
-    let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
+    let mut fetched_topology: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
     let mut fresh_item_cache: HashMap<(String, String), i64> = HashMap::new();
     for scene in &scenes {
         if let Ok(items) = client.scene_items().list(SceneId::Name(scene)).await {
-            let mut infos = Vec::with_capacity(items.len());
+            let mut entries = Vec::with_capacity(items.len());
             for item in items {
                 fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
-                let previous = previous_sources
-                    .get(scene)
-                    .and_then(|known| known.iter().find(|s| s.name == item.source_name));
-                infos.push(SourceInfo {
-                    visible: previous.map(|s| s.visible).unwrap_or(true),
-                    locked: previous.map(|s| s.locked).unwrap_or(false),
-                    audio_db: previous.and_then(|s| s.audio_db),
-                    kind: item.input_kind,
-                    name: item.source_name,
-                });
+                entries.push((item.source_name, item.input_kind));
             }
-            sources_by_scene.insert(scene.clone(), infos);
+            fetched_topology.insert(scene.clone(), entries);
         }
     }
 
     if let Ok(mut catalog) = catalog_state.write() {
+        let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> =
+            HashMap::with_capacity(fetched_topology.len());
+        for (scene, entries) in fetched_topology {
+            let live = catalog.sources.get(&scene);
+            let mut infos = Vec::with_capacity(entries.len());
+            for (name, kind) in entries {
+                let live_info = live.and_then(|known| known.iter().find(|s| s.name == name));
+                infos.push(SourceInfo {
+                    visible: live_info.map(|s| s.visible).unwrap_or(true),
+                    locked: live_info.map(|s| s.locked).unwrap_or(false),
+                    audio_db: live_info.and_then(|s| s.audio_db),
+                    kind: kind.or_else(|| live_info.and_then(|s| s.kind.clone())),
+                    name,
+                });
+            }
+            sources_by_scene.insert(scene, infos);
+        }
+
         catalog.scenes = scenes;
         catalog.audio_inputs = audio_inputs;
         catalog.sources = sources_by_scene;
-        catalog.current_scene = current_scene;
-        catalog.current_preview_scene = current_preview_scene;
+        catalog.current_scene = catalog.current_scene.take().or(fetched_current_scene);
+        catalog.current_preview_scene = catalog
+            .current_preview_scene
+            .take()
+            .or(fetched_current_preview_scene);
     }
     if let Ok(mut cache) = item_cache.lock() {
         *cache = fresh_item_cache;

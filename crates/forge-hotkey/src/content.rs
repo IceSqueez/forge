@@ -22,6 +22,7 @@ impl BuiltinContent for HotkeyClient {
             .iter()
             .map(|combo| ContentListItem {
                 icon: SectionIcon::new("keyboard"),
+                icon_tint: None,
                 name: combo.as_str().to_owned(),
                 monospace_name: true,
                 active: true,
@@ -45,6 +46,7 @@ impl BuiltinContent for HotkeyClient {
                     .unwrap_or_else(|_| "--:--:--".to_owned());
                 ContentListItem {
                     icon: SectionIcon::new("bolt"),
+                    icon_tint: None,
                     name: record.combo.clone(),
                     monospace_name: true,
                     active: true,
@@ -62,6 +64,7 @@ impl BuiltinContent for HotkeyClient {
                 title: "Registered Hotkeys".to_owned(),
                 icon: SectionIcon::new("keyboard"),
                 count_label: Some(hotkey_count),
+                visible_rows: None,
                 items: hotkey_items,
                 footer: None,
             },
@@ -69,6 +72,7 @@ impl BuiltinContent for HotkeyClient {
                 title: "Recent Triggers".to_owned(),
                 icon: SectionIcon::new("bolt"),
                 count_label: Some(trigger_count),
+                visible_rows: None,
                 items: trigger_items,
                 footer: None,
             },

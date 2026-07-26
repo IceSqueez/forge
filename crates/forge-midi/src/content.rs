@@ -34,6 +34,7 @@ impl BuiltinContent for MidiClient {
                 let count = snap.events_per_input.get(&p.name).copied().unwrap_or(0);
                 ContentListItem {
                     icon: SectionIcon::new("plug"),
+                    icon_tint: None,
                     name: p.name.clone(),
                     monospace_name: true,
                     active: true,
@@ -49,6 +50,7 @@ impl BuiltinContent for MidiClient {
             .iter()
             .map(|p| ContentListItem {
                 icon: SectionIcon::new("plug"),
+                icon_tint: None,
                 name: p.name.clone(),
                 monospace_name: true,
                 active: false,
@@ -67,6 +69,7 @@ impl BuiltinContent for MidiClient {
                     title: "Input Ports".to_owned(),
                     icon: SectionIcon::new("plug"),
                     count_label: Some(input_count),
+                    visible_rows: None,
                     items: input_items,
                     footer: None,
                 },
@@ -74,6 +77,7 @@ impl BuiltinContent for MidiClient {
                     title: "Output Ports".to_owned(),
                     icon: SectionIcon::new("plug"),
                     count_label: Some(output_count),
+                    visible_rows: None,
                     items: output_items,
                     footer: None,
                 },

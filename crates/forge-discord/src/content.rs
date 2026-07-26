@@ -66,6 +66,7 @@ impl BuiltinContent for DiscordClient {
                 let last_ok = snap.webhook_last_ok.get(name).copied().unwrap_or(false);
                 ContentListItem {
                     icon: SectionIcon::new("webhook"),
+                    icon_tint: None,
                     name: name.clone(),
                     monospace_name: true,
                     active: last_ok,
@@ -98,6 +99,7 @@ impl BuiltinContent for DiscordClient {
                     .unwrap_or_else(|_| "--:--:--".to_owned());
                 ContentListItem {
                     icon: SectionIcon::new("message"),
+                    icon_tint: None,
                     name: format!("{}: {short_id}", r.webhook_name),
                     monospace_name: true,
                     active: r.ok,
@@ -120,6 +122,7 @@ impl BuiltinContent for DiscordClient {
                 title: "Webhooks".to_owned(),
                 icon: SectionIcon::new("webhook"),
                 count_label: Some(webhook_count),
+                visible_rows: None,
                 items: webhook_items,
                 footer: None,
             },
@@ -127,6 +130,7 @@ impl BuiltinContent for DiscordClient {
                 title: "Recent Posts".to_owned(),
                 icon: SectionIcon::new("message"),
                 count_label: Some(post_count),
+                visible_rows: None,
                 items: post_items,
                 footer: None,
             },

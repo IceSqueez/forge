@@ -216,6 +216,7 @@ impl BuiltinContent for VTubeClient {
                 let is_current = snap.current_model_id.as_deref() == Some(m.id.as_str());
                 ContentListItem {
                     icon: SectionIcon::new(if is_current { "user-check" } else { "user" }),
+                    icon_tint: None,
                     name: m.name.clone(),
                     monospace_name: false,
                     active: is_current,
@@ -236,6 +237,7 @@ impl BuiltinContent for VTubeClient {
             .iter()
             .map(|h| ContentListItem {
                 icon: SectionIcon::new("bolt"),
+                icon_tint: None,
                 name: h.name.clone(),
                 monospace_name: false,
                 active: false,
@@ -261,6 +263,7 @@ impl BuiltinContent for VTubeClient {
                     title: "Models".to_owned(),
                     icon: SectionIcon::new("user-square"),
                     count_label: Some(model_count),
+                    visible_rows: None,
                     items: model_items,
                     footer: None,
                 },
@@ -268,6 +271,7 @@ impl BuiltinContent for VTubeClient {
                     title: "Hotkeys".to_owned(),
                     icon: SectionIcon::new("bolt"),
                     count_label: Some(hotkey_count),
+                    visible_rows: None,
                     items: hotkey_items,
                     footer: None,
                 },

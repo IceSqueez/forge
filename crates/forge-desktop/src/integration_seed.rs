@@ -12,6 +12,8 @@ use forge_types::SubActionStep;
 
 use forge_components::tr;
 
+const OBS_PANEL_ROWS: u16 = 8;
+
 pub struct IntegrationSeed {
     pub icon: SectionIcon,
     pub status: Arc<dyn BuiltinStatus>,
@@ -136,6 +138,7 @@ fn ratio_metric(
 fn list_item(icon: &str, name: &str, active: bool, active_label: Option<&str>) -> ContentListItem {
     ContentListItem {
         icon: SectionIcon::new(icon),
+        icon_tint: None,
         name: name.to_owned(),
         monospace_name: false,
         active,
@@ -392,6 +395,7 @@ fn obs() -> IntegrationSeed {
         title: tr!("iseed_scenes"),
         icon: SectionIcon::new("layout"),
         count_label: Some("4".to_owned()),
+        visible_rows: Some(OBS_PANEL_ROWS),
         items: vec![
             list_item("layout", "Main", true, Some("Live")),
             list_item("layout", "BRB", false, None),
@@ -404,6 +408,7 @@ fn obs() -> IntegrationSeed {
         title: tr!("iseed_sources"),
         icon: SectionIcon::new("device-desktop"),
         count_label: Some("4".to_owned()),
+        visible_rows: Some(OBS_PANEL_ROWS),
         items: vec![
             list_item("device-desktop", "Webcam", true, Some("On")),
             list_item("device-desktop", "Game Capture", true, Some("On")),

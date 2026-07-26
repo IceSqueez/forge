@@ -23,6 +23,13 @@ fn panel_overflows(count: usize) -> bool {
     count as f32 * SCROLL_ROW_EST_H > SCROLL_PANEL_MAX_H
 }
 
+/// Row padding plus a `FONT_SM` line box at gpui's default relative line height.
+const CONTENT_LIST_ROW_H: f32 = 37.0;
+
+fn content_list_region_h(visible_rows: u16) -> f32 {
+    f32::from(visible_rows) * CONTENT_LIST_ROW_H
+}
+
 fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
     div()
         .font_family(mono_family())
@@ -480,10 +487,36 @@ fn render_stats_grid(
 }
 
 fn content_list_panel(list: &ContentList, palette: &ForgePalette, density: Density) -> AnyElement {
-    let mut rows = div().w_full().flex().flex_col();
-    for item in &list.items {
-        rows = rows.child(content_list_item_row(item, palette, density));
-    }
+    let list_region: AnyElement = match list.visible_rows.map(content_list_region_h) {
+        Some(h) if list.items.len() as f32 * CONTENT_LIST_ROW_H > h => {
+            let owned: Vec<ContentListItem> = list.items.clone();
+            let pal = *palette;
+            uniform_list(
+                SharedString::from(format!("content-list-{}", list.title)),
+                owned.len(),
+                move |range, _window, _cx| {
+                    range
+                        .map(|i| content_list_item_row(&owned[i], &pal, density))
+                        .collect::<Vec<_>>()
+                },
+            )
+            .w_full()
+            .flex_none()
+            .h(px(h))
+            .occlude()
+            .into_any_element()
+        }
+        pinned_h => {
+            let mut rows = div().w_full().flex().flex_col();
+            if let Some(h) = pinned_h {
+                rows = rows.flex_none().h(px(h));
+            }
+            for item in &list.items {
+                rows = rows.child(content_list_item_row(item, palette, density));
+            }
+            rows.into_any_element()
+        }
+    };
     let mut card = card_shell(palette)
         .child(panel_header_row(
             list.icon.as_str(),
@@ -493,7 +526,7 @@ fn content_list_panel(list: &ContentList, palette: &ForgePalette, density: Densi
             density,
         ))
         .child(divider(palette))
-        .child(rows);
+        .child(list_region);
     if let Some(f) = &list.footer {
         card = card.child(list_footer_bar(f, palette, density));
     }
@@ -517,10 +550,10 @@ fn content_list_item_row(
         dim,
     );
     let icon_color = with_alpha(
-        if item.active {
-            palette.success
-        } else {
-            palette.text_faint
+        match &item.icon_tint {
+            Some(tint) => token_color_value(tint, palette),
+            None if item.active => palette.success,
+            None => palette.text_faint,
         },
         dim,
     );
@@ -787,7 +820,8 @@ fn stat_column_cell(col: &StatColumn, palette: &ForgePalette, density: Density) 
 fn panel_header_icon_color(icon_str: &str, palette: &ForgePalette) -> Rgba {
     match icon_str {
         "key" => palette.warning,
-        "rss" => palette.brand,
+        "rss" | "layout-grid" => palette.brand,
+        "stack-2" => palette.info,
         _ => palette.text_secondary,
     }
 }
@@ -954,6 +988,12 @@ fn trailing_token_elem(
         TrailingToken::Label(label) => {
             mono(label.clone(), FONT_XS, with_alpha(palette.text_faint, dim)).into_any_element()
         }
+        TrailingToken::TintedLabel(label, color) => mono(
+            label.clone(),
+            FONT_XS,
+            with_alpha(token_color_value(color, palette), dim),
+        )
+        .into_any_element(),
     }
 }
 
@@ -963,6 +1003,8 @@ fn token_color_value(color: &TokenColor, palette: &ForgePalette) -> Rgba {
         TokenColor::Yellow => palette.warning,
         TokenColor::Red => palette.random,
         TokenColor::Muted => palette.text_faint,
+        TokenColor::Accent => palette.brand,
+        TokenColor::Subtle => palette.text_muted,
     }
 }
 

@@ -90,6 +90,8 @@ pub enum TokenColor {
     Yellow,
     Red,
     Muted,
+    Accent,
+    Subtle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,6 +100,7 @@ pub enum TrailingToken {
     Badge(String, TokenColor),
     Icon(SectionIcon, TokenColor),
     Label(String),
+    TintedLabel(String, TokenColor),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +113,8 @@ pub enum RowAction {
 #[serde(rename_all = "snake_case")]
 pub struct ContentListItem {
     pub icon: SectionIcon,
+    /// `None` tints the leading glyph by `active` state; `Some` overrides it.
+    pub icon_tint: Option<TokenColor>,
     pub name: String,
     pub monospace_name: bool,
     pub active: bool,
@@ -123,6 +128,8 @@ pub struct ContentList {
     pub title: String,
     pub icon: SectionIcon,
     pub count_label: Option<String>,
+    /// `Some` pins the row area to that many rows and scrolls inside it; `None` grows to fit.
+    pub visible_rows: Option<u16>,
     pub items: Vec<ContentListItem>,
     pub footer: Option<ListFooter>,
 }

@@ -8,6 +8,8 @@ use forge_platform_core::{
 use crate::client::ObsClient;
 use crate::source::SourceInfo;
 
+const PANEL_VISIBLE_ROWS: u16 = 8;
+
 #[derive(Default)]
 pub(crate) struct ObsCatalog {
     pub scenes: Vec<String>,
@@ -33,6 +35,7 @@ fn scene_to_item(
         } else {
             SectionIcon::new("layout")
         },
+        icon_tint: None,
         name: name.to_owned(),
         monospace_name: false,
         active: is_current,
@@ -103,10 +106,22 @@ fn source_to_item(info: &SourceInfo) -> ContentListItem {
         },
     ));
     if let Some(db) = info.audio_db {
-        trailing.push(TrailingToken::Label(format!("{db:.1} dB")));
+        trailing.push(TrailingToken::TintedLabel(
+            format!("{db:.1} dB"),
+            TokenColor::Subtle,
+        ));
     }
     ContentListItem {
-        icon: icon_for_kind(info.kind.as_deref()),
+        icon: if info.visible {
+            icon_for_kind(info.kind.as_deref())
+        } else {
+            SectionIcon::new("eye-off")
+        },
+        icon_tint: Some(if info.visible {
+            TokenColor::Accent
+        } else {
+            TokenColor::Muted
+        }),
         name: info.name.clone(),
         monospace_name: true,
         active: false,
@@ -147,6 +162,7 @@ impl BuiltinContent for ObsClient {
             title: "Scenes".to_owned(),
             icon: SectionIcon::new("layout-grid"),
             count_label: Some(scene_count),
+            visible_rows: Some(PANEL_VISIBLE_ROWS),
             items: scene_items,
             footer: None,
         };
@@ -155,6 +171,7 @@ impl BuiltinContent for ObsClient {
             title: "Sources".to_owned(),
             icon: SectionIcon::new("stack-2"),
             count_label: Some(source_count_label),
+            visible_rows: Some(PANEL_VISIBLE_ROWS),
             items: source_items,
             footer: None,
         };

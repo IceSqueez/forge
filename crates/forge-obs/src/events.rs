@@ -13,6 +13,7 @@ use crate::payload_fields::{
     scene as scene_fields, source as source_fields, streaming as streaming_fields,
     transition as transition_fields, virtualcam as virtualcam_fields,
 };
+use crate::source::SourceInfo;
 
 pub(crate) fn make_connection_connected() -> Event {
     Event::new(EventSource::Obs, "obs.connection.connected", json!({}))
@@ -417,6 +418,65 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
             }
             if let Some(sources) = catalog.sources.remove(old_name.as_str()) {
                 catalog.sources.insert(new_name.clone(), sources);
+            }
+        }
+        obws::events::Event::SceneItemCreated { scene, source, .. } => {
+            let items = catalog.sources.entry(scene.name.clone()).or_default();
+            if !items.iter().any(|s| s.name == source.name) {
+                items.push(SourceInfo {
+                    name: source.name.clone(),
+                    visible: true,
+                    locked: false,
+                    audio_db: None,
+                    kind: None,
+                });
+            }
+        }
+        obws::events::Event::SceneItemRemoved { scene, source, .. } => {
+            if let Some(items) = catalog.sources.get_mut(&scene.name) {
+                items.retain(|s| s.name != source.name);
+            }
+        }
+        obws::events::Event::InputCreated {
+            id,
+            unversioned_kind,
+            ..
+        } => {
+            if crate::catalog::is_audio_kind(Some(unversioned_kind))
+                && !catalog.audio_inputs.iter().any(|n| n == &id.name)
+            {
+                catalog.audio_inputs.push(id.name.clone());
+            }
+        }
+        obws::events::Event::InputRemoved { id } => {
+            catalog.audio_inputs.retain(|n| n != &id.name);
+            for items in catalog.sources.values_mut() {
+                items.retain(|s| s.name != id.name);
+            }
+        }
+        obws::events::Event::InputNameChanged {
+            old_name, new_name, ..
+        } => {
+            for name in &mut catalog.audio_inputs {
+                if name == old_name {
+                    *name = new_name.clone();
+                }
+            }
+            for items in catalog.sources.values_mut() {
+                for item in items.iter_mut() {
+                    if &item.name == old_name {
+                        item.name = new_name.clone();
+                    }
+                }
+            }
+        }
+        obws::events::Event::InputVolumeChanged { id, db, .. } => {
+            for items in catalog.sources.values_mut() {
+                for item in items.iter_mut() {
+                    if item.name == id.name {
+                        item.audio_db = Some(*db as f32);
+                    }
+                }
             }
         }
         _ => {}

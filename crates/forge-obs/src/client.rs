@@ -382,7 +382,14 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     }
                 }
 
-                snapshot_catalog(&client, &catalog_state, &health_state, &health_tx).await;
+                snapshot_catalog(
+                    &client,
+                    &catalog_state,
+                    &health_state,
+                    &health_tx,
+                    &item_cache,
+                )
+                .await;
 
                 let events = client.events();
                 inner.write().await.replace(Arc::clone(&client));
@@ -400,6 +407,8 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     Arc::clone(&inner),
                     Arc::clone(&health_state),
                     health_tx.clone(),
+                    Arc::clone(&catalog_state),
+                    Arc::clone(&item_cache),
                 );
 
                 match events {
@@ -433,6 +442,30 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                             &*publisher,
                                             &last_set_scene_event_id,
                                         );
+                                        // A scene collection swap replaces every scene and source
+                                        // wholesale; incremental catalog updates cannot track that,
+                                        // so force an immediate full resync instead of waiting for
+                                        // the next reconciliation tick.
+                                        if matches!(
+                                            ev,
+                                            obws::events::Event::CurrentSceneCollectionChanged { .. }
+                                        ) {
+                                            let client = Arc::clone(&client);
+                                            let catalog_state = Arc::clone(&catalog_state);
+                                            let health_state = Arc::clone(&health_state);
+                                            let health_tx = health_tx.clone();
+                                            let item_cache = Arc::clone(&item_cache);
+                                            tokio::spawn(async move {
+                                                snapshot_catalog(
+                                                    &client,
+                                                    &catalog_state,
+                                                    &health_state,
+                                                    &health_tx,
+                                                    &item_cache,
+                                                )
+                                                .await;
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -573,6 +606,12 @@ fn handle_obs_event(
             .and_then(|guard| crate::events::resolve_source_name(&guard, &scene.name, *item_id));
 
         if let Some(name) = source_name {
+            if let Ok(mut catalog) = catalog_state.write()
+                && let Some(sources) = catalog.sources.get_mut(&scene.name)
+                && let Some(info) = sources.iter_mut().find(|s| s.name == name)
+            {
+                info.locked = *locked;
+            }
             publisher.publish(crate::events::map_scene_item_lock(
                 &scene.name,
                 &name,
@@ -580,15 +619,57 @@ fn handle_obs_event(
             ));
         }
     }
+
+    if let obws::events::Event::SceneItemCreated {
+        scene,
+        source,
+        item_id,
+        ..
+    } = ev
+        && let Ok(mut cache) = item_cache.lock()
+    {
+        cache.insert((scene.name.clone(), source.name.clone()), *item_id as i64);
+    }
+
+    if let obws::events::Event::SceneItemRemoved { scene, source, .. } = ev
+        && let Ok(mut cache) = item_cache.lock()
+    {
+        cache.remove(&(scene.name.clone(), source.name.clone()));
+    }
+
+    if let obws::events::Event::InputRemoved { id } = ev
+        && let Ok(mut cache) = item_cache.lock()
+    {
+        cache.retain(|(_, name), _| name != &id.name);
+    }
+
+    if let obws::events::Event::InputNameChanged {
+        old_name, new_name, ..
+    } = ev
+        && let Ok(mut cache) = item_cache.lock()
+    {
+        let renamed: Vec<(String, i64)> = cache
+            .iter()
+            .filter(|((_, name), _)| name == old_name)
+            .map(|((scene, _), id)| (scene.clone(), *id))
+            .collect();
+        for (scene, id) in renamed {
+            cache.remove(&(scene.clone(), old_name.clone()));
+            cache.insert((scene, new_name.clone()), id);
+        }
+    }
 }
 
 /// Snapshots every known scene's sources, not just the active one, so `BuiltinContent::sections()`
-/// has non-active scene counts available immediately after a cold connect.
+/// has non-active scene counts available immediately after a cold connect. Also (re)populates
+/// `item_cache` so live `SceneItemEnableStateChanged`/`SceneItemLockStateChanged` events can
+/// resolve a source name without ever having gone through a forge-initiated visibility toggle.
 async fn snapshot_catalog(
     client: &obws::Client,
     catalog_state: &RwLock<ObsCatalog>,
     health_state: &RwLock<HealthSnapshot>,
     health_tx: &broadcast::Sender<HealthDelta>,
+    item_cache: &Mutex<HashMap<(String, String), i64>>,
 ) {
     use obws::requests::inputs::InputId;
     use obws::requests::scenes::SceneId;
@@ -607,12 +688,33 @@ async fn snapshot_catalog(
         .map(|s| s.id.name.clone())
         .ok();
 
+    let current_preview_scene: Option<String> = client
+        .scenes()
+        .current_preview_scene()
+        .await
+        .map(|s| s.id.name.clone())
+        .ok();
+
     let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
     let mut db_cache: HashMap<String, f32> = HashMap::new();
+    let mut fresh_item_cache: HashMap<(String, String), i64> = HashMap::new();
     for scene in &scenes {
         if let Ok(items) = client.scene_items().list(SceneId::Name(scene)).await {
             let mut infos = Vec::with_capacity(items.len());
             for item in items {
+                fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
+
+                let visible = client
+                    .scene_items()
+                    .enabled(SceneId::Name(scene), item.id)
+                    .await
+                    .unwrap_or(true);
+                let locked = client
+                    .scene_items()
+                    .locked(SceneId::Name(scene), item.id)
+                    .await
+                    .unwrap_or(false);
+
                 let kind = item.input_kind;
                 let audio_db = if crate::catalog::is_audio_kind(kind.as_deref()) {
                     match db_cache.get(&item.source_name) {
@@ -635,8 +737,8 @@ async fn snapshot_catalog(
                 };
                 infos.push(SourceInfo {
                     name: item.source_name,
-                    visible: true,
-                    locked: false,
+                    visible,
+                    locked,
                     audio_db,
                     kind,
                 });
@@ -657,6 +759,10 @@ async fn snapshot_catalog(
         catalog.audio_inputs = audio_inputs;
         catalog.sources = sources_by_scene;
         catalog.current_scene = current_scene;
+        catalog.current_preview_scene = current_preview_scene;
+    }
+    if let Ok(mut cache) = item_cache.lock() {
+        *cache = fresh_item_cache;
     }
 
     if let Ok(status) = client.streaming().status().await
@@ -675,7 +781,87 @@ async fn snapshot_catalog(
     }
 }
 
+/// Cheap safety-net reconciliation for topology drift (missed scene/source create, remove, or
+/// rename events). Scoped per-scene, not per-source: it never re-fetches `enabled`/`locked`/dB,
+/// which stay live via `SceneItemEnableStateChanged`/`SceneItemLockStateChanged`/
+/// `InputVolumeChanged`, so cost scales with scene count rather than total source count.
+async fn reconcile_catalog_topology(
+    client: &obws::Client,
+    catalog_state: &RwLock<ObsCatalog>,
+    item_cache: &Mutex<HashMap<(String, String), i64>>,
+) {
+    use obws::requests::scenes::SceneId;
+
+    let scenes: Vec<String> = client
+        .scenes()
+        .list()
+        .await
+        .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
+        .unwrap_or_default();
+
+    let current_scene: Option<String> = client
+        .scenes()
+        .current_program_scene()
+        .await
+        .map(|s| s.id.name.clone())
+        .ok();
+
+    let current_preview_scene: Option<String> = client
+        .scenes()
+        .current_preview_scene()
+        .await
+        .map(|s| s.id.name.clone())
+        .ok();
+
+    let audio_inputs: Vec<String> = client
+        .inputs()
+        .list(None)
+        .await
+        .map(|inputs| inputs.into_iter().map(|i| i.id.name.clone()).collect())
+        .unwrap_or_default();
+
+    let previous_sources: HashMap<String, Vec<SourceInfo>> = catalog_state
+        .read()
+        .ok()
+        .map(|guard| guard.sources.clone())
+        .unwrap_or_default();
+
+    let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
+    let mut fresh_item_cache: HashMap<(String, String), i64> = HashMap::new();
+    for scene in &scenes {
+        if let Ok(items) = client.scene_items().list(SceneId::Name(scene)).await {
+            let mut infos = Vec::with_capacity(items.len());
+            for item in items {
+                fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
+                let previous = previous_sources
+                    .get(scene)
+                    .and_then(|known| known.iter().find(|s| s.name == item.source_name));
+                infos.push(SourceInfo {
+                    visible: previous.map(|s| s.visible).unwrap_or(true),
+                    locked: previous.map(|s| s.locked).unwrap_or(false),
+                    audio_db: previous.and_then(|s| s.audio_db),
+                    kind: item.input_kind,
+                    name: item.source_name,
+                });
+            }
+            sources_by_scene.insert(scene.clone(), infos);
+        }
+    }
+
+    if let Ok(mut catalog) = catalog_state.write() {
+        catalog.scenes = scenes;
+        catalog.audio_inputs = audio_inputs;
+        catalog.sources = sources_by_scene;
+        catalog.current_scene = current_scene;
+        catalog.current_preview_scene = current_preview_scene;
+    }
+    if let Ok(mut cache) = item_cache.lock() {
+        *cache = fresh_item_cache;
+    }
+}
+
 const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const CATALOG_RECONCILE_EVERY_NTH_TICK: u32 = 3;
 
 /// The returned handle MUST be `.abort()`-ed on every connection-loss/shutdown exit path;
 /// dropping a `JoinHandle` does not cancel the underlying task.
@@ -683,12 +869,16 @@ fn spawn_stats_poll(
     inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
+    catalog_state: Arc<RwLock<ObsCatalog>>,
+    item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(STATS_POLL_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut tick: u32 = 0;
         loop {
             ticker.tick().await;
+            tick = tick.wrapping_add(1);
 
             let client = {
                 let guard = inner.read().await;
@@ -727,6 +917,10 @@ fn spawn_stats_poll(
             }
             for delta in deltas {
                 let _ = health_tx.send(delta);
+            }
+
+            if tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK) {
+                reconcile_catalog_topology(&client, &catalog_state, &item_cache).await;
             }
         }
     })

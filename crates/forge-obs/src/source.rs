@@ -2,6 +2,7 @@ use async_trait::async_trait;
 
 use crate::ObsError;
 
+#[derive(Debug, Clone)]
 pub struct SourceInfo {
     pub name: String,
     pub visible: bool,

@@ -241,6 +241,7 @@ impl IntegrationDetail {
         let idx = delta.index as usize;
         if idx < self.health_metrics.len() {
             self.health_metrics[idx].value = delta.new_value;
+            self.sections = self.content.sections();
             cx.notify();
         }
     }
@@ -300,7 +301,11 @@ impl IntegrationDetail {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DETAIL_TICK).await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                let alive = this.update(cx, |this, cx| {
+                    this.sections = this.content.sections();
+                    cx.notify();
+                });
+                if alive.is_err() {
                     break;
                 }
             }

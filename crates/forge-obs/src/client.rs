@@ -1204,6 +1204,34 @@ mod tests {
             self
         }
 
+        fn with_kinded_source(self, scene: &str, source: &str, kind: &str) -> Self {
+            if let Ok(mut catalog) = self.catalog.write() {
+                catalog
+                    .sources
+                    .entry(scene.to_owned())
+                    .or_default()
+                    .push(SourceInfo {
+                        name: source.to_owned(),
+                        visible: true,
+                        locked: false,
+                        audio_db: None,
+                        kind: Some(kind.to_owned()),
+                    });
+            }
+            self
+        }
+
+        fn source_kind(&self, scene: &str, source: &str) -> Option<String> {
+            let catalog = self.catalog.read().ok()?;
+            catalog
+                .sources
+                .get(scene)?
+                .iter()
+                .find(|s| s.name == source)?
+                .kind
+                .clone()
+        }
+
         fn feed(&self, ev: &obws::events::Event) {
             handle_obs_event(
                 ev,
@@ -1364,5 +1392,31 @@ mod tests {
             "a removed input still resolved a cached item id: {:?}",
             h.publisher.kinds(),
         );
+    }
+
+    // Why: an item created live enters the catalog with no kind, so it renders with the fallback
+    // glyph and no dB readout until the next reconciliation supplies one. The backfill must read
+    // the kind off a row that HAS one. Scanning for the first row that merely shares the name can
+    // land on the kindless row just inserted for this very event, and which of the two comes first
+    // is decided by HashMap iteration order. Repeated so that order cannot hide the miss.
+    #[test]
+    fn a_created_scene_item_inherits_the_kind_of_the_same_source_in_another_scene() {
+        for _ in 0..64 {
+            let h = EventHarness::new()
+                .with_kinded_source("Gameplay", "Mic", "wasapi_input_capture")
+                .with_kinded_source("Starting", "Overlay", "browser_source");
+
+            h.feed(&obws::events::Event::SceneItemCreated {
+                scene: scene_id("BRB"),
+                source: source_id("Mic"),
+                item_id: 43,
+                index: 0,
+            });
+
+            assert_eq!(
+                h.source_kind("BRB", "Mic").as_deref(),
+                Some("wasapi_input_capture"),
+            );
+        }
     }
 }

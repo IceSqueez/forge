@@ -479,6 +479,9 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
                 }
             }
         }
+        obws::events::Event::StudioModeStateChanged { enabled: false } => {
+            catalog.current_preview_scene = None;
+        }
         _ => {}
     }
 }

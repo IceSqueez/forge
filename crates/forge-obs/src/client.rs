@@ -656,7 +656,7 @@ fn handle_obs_event(
                 .sources
                 .values()
                 .flatten()
-                .find(|s| s.name == source.name)
+                .find(|s| s.name == source.name && s.kind.is_some())
                 .and_then(|s| s.kind.clone())
         });
         if let Some(kind) = known_kind
@@ -829,6 +829,16 @@ async fn reconcile_catalog_topology(
 ) {
     use obws::requests::scenes::SceneId;
 
+    let (pre_fetch_current_scene, pre_fetch_current_preview_scene) = catalog_state
+        .read()
+        .map(|guard| {
+            (
+                guard.current_scene.clone(),
+                guard.current_preview_scene.clone(),
+            )
+        })
+        .unwrap_or_default();
+
     let scenes: Vec<String> = client
         .scenes()
         .list()
@@ -871,35 +881,67 @@ async fn reconcile_catalog_topology(
     }
 
     if let Ok(mut catalog) = catalog_state.write() {
-        let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> =
-            HashMap::with_capacity(fetched_topology.len());
-        for (scene, entries) in fetched_topology {
-            let live = catalog.sources.get(&scene);
-            let mut infos = Vec::with_capacity(entries.len());
-            for (name, kind) in entries {
-                let live_info = live.and_then(|known| known.iter().find(|s| s.name == name));
-                infos.push(SourceInfo {
-                    visible: live_info.map(|s| s.visible).unwrap_or(true),
-                    locked: live_info.map(|s| s.locked).unwrap_or(false),
-                    audio_db: live_info.and_then(|s| s.audio_db),
-                    kind: kind.or_else(|| live_info.and_then(|s| s.kind.clone())),
-                    name,
-                });
-            }
-            sources_by_scene.insert(scene, infos);
-        }
-
-        catalog.scenes = scenes;
-        catalog.audio_inputs = audio_inputs;
-        catalog.sources = sources_by_scene;
-        catalog.current_scene = catalog.current_scene.take().or(fetched_current_scene);
-        catalog.current_preview_scene = catalog
-            .current_preview_scene
-            .take()
-            .or(fetched_current_preview_scene);
+        merge_reconciled_topology(
+            &mut catalog,
+            FetchedTopology {
+                scenes,
+                audio_inputs,
+                sources: fetched_topology,
+                current_scene: fetched_current_scene,
+                current_preview_scene: fetched_current_preview_scene,
+            },
+            pre_fetch_current_scene,
+            pre_fetch_current_preview_scene,
+        );
     }
     if let Ok(mut cache) = item_cache.lock() {
         *cache = fresh_item_cache;
+    }
+}
+
+pub(crate) struct FetchedTopology {
+    pub(crate) scenes: Vec<String>,
+    pub(crate) audio_inputs: Vec<String>,
+    pub(crate) sources: HashMap<String, Vec<(String, Option<String>)>>,
+    pub(crate) current_scene: Option<String>,
+    pub(crate) current_preview_scene: Option<String>,
+}
+
+/// Adopts a fetched current/preview scene only when the catalog value is unchanged since the
+/// pre-fetch capture; a live event landing during the fetch window wins over the fetch.
+pub(crate) fn merge_reconciled_topology(
+    catalog: &mut ObsCatalog,
+    fetched: FetchedTopology,
+    pre_fetch_current_scene: Option<String>,
+    pre_fetch_current_preview_scene: Option<String>,
+) {
+    let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> =
+        HashMap::with_capacity(fetched.sources.len());
+    for (scene, entries) in fetched.sources {
+        let live = catalog.sources.get(&scene);
+        let mut infos = Vec::with_capacity(entries.len());
+        for (name, kind) in entries {
+            let live_info = live.and_then(|known| known.iter().find(|s| s.name == name));
+            infos.push(SourceInfo {
+                visible: live_info.map(|s| s.visible).unwrap_or(true),
+                locked: live_info.map(|s| s.locked).unwrap_or(false),
+                audio_db: live_info.and_then(|s| s.audio_db),
+                kind: kind.or_else(|| live_info.and_then(|s| s.kind.clone())),
+                name,
+            });
+        }
+        sources_by_scene.insert(scene, infos);
+    }
+
+    catalog.scenes = fetched.scenes;
+    catalog.audio_inputs = fetched.audio_inputs;
+    catalog.sources = sources_by_scene;
+
+    if catalog.current_scene == pre_fetch_current_scene {
+        catalog.current_scene = fetched.current_scene;
+    }
+    if catalog.current_preview_scene == pre_fetch_current_preview_scene {
+        catalog.current_preview_scene = fetched.current_preview_scene;
     }
 }
 

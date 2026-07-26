@@ -80,7 +80,15 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
         let raw = config.str("scene").unwrap_or_default();
         let scene = ctx.arg_stack.interpolate(raw);
 
-        let outcome = SubActionOutcome::from_result(&self.sink.set_scene(&scene).await);
+        let already_current = matches!(
+            self.sink.get_current_scene().await,
+            Ok(Some(current)) if current == scene
+        );
+        let outcome = if already_current {
+            SubActionOutcome::Success
+        } else {
+            SubActionOutcome::from_result(&self.sink.set_scene(&scene).await)
+        };
 
         (
             SubActionTelemetry {

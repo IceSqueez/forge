@@ -66,6 +66,8 @@ pub trait ObsSink: Send + Sync {
 
     async fn get_stream_status(&self) -> Result<Variant, ObsError>;
 
+    async fn get_current_scene(&self) -> Result<Option<String>, ObsError>;
+
     async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError>;
 
     async fn set_source_filter_enabled(

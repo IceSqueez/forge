@@ -111,6 +111,9 @@ impl ObsSink for MockSink {
         obj.insert("duration_ms".to_owned(), Variant::Int(45_000));
         Ok(Variant::Object(obj))
     }
+    async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
+        Ok(Some("Gameplay".to_owned()))
+    }
     async fn get_input_settings(&self, _: &str) -> Result<Variant, ObsError> {
         let mut settings = BTreeMap::new();
         settings.insert("text".to_owned(), Variant::String("hello".to_owned()));
@@ -277,6 +280,10 @@ impl ObsSink for RecordingSink {
     }
     async fn get_stream_status(&self) -> Result<Variant, ObsError> {
         self.record_query("get_stream_status".to_owned())
+    }
+    async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
+        self.record("get_current_scene".to_owned())?;
+        Ok(Some("Gameplay".to_owned()))
     }
     async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
         self.record_query(format!("get_input_settings({input})"))

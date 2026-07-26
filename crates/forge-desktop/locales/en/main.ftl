@@ -1551,6 +1551,7 @@ integration_qa_field_retry = Retry
 integration_qa_field_select = Select...
 integration_qa_field_unavailable = Options are unavailable while this integration is disconnected
 integration_qa_field_no_scene = No active scene to read sources from
+integration_qa_scene_current_hint = Currently: { $scene } (LIVE)
 integration_qa_toggle_on = On
 integration_qa_toggle_off = Off
 integration_qa_source_visible = visible

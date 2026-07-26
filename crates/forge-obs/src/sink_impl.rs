@@ -339,6 +339,16 @@ impl ObsSink for ObsClient {
         Ok(Variant::Object(obj))
     }
 
+    async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
+        let client = self.active_client().await?;
+        let current = client
+            .scenes()
+            .current_program_scene()
+            .await
+            .map_err(|e| map_request_error("GetCurrentProgramScene", e))?;
+        Ok(Some(current.id.name))
+    }
+
     async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
         let client = self.active_client().await?;
         let result = client

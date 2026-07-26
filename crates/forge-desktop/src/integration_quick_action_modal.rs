@@ -255,20 +255,30 @@ impl QuickActionModal {
     fn apply_dynamic(
         &mut self,
         index: usize,
-        result: Result<(Vec<PickerItem>, Option<String>), String>,
+        result: Result<PickerFetch, String>,
         cx: &mut Context<Self>,
     ) {
-        let Some(FieldControl::Choice(choice)) = self.fields.get_mut(index).map(|f| &mut f.control)
-        else {
+        let Some(field) = self.fields.get_mut(index) else {
             return;
         };
         match result {
-            Ok((items, scene)) => {
-                choice.selected = items.first().map(|item| item.id.clone());
-                choice.scene = scene;
-                choice.state = ChoiceState::Ready(items);
+            Ok(fetch) => {
+                field.hint = fetch.hint;
+                let FieldControl::Choice(choice) = &mut field.control else {
+                    return;
+                };
+                choice.selected = fetch
+                    .preselect
+                    .filter(|id| fetch.items.iter().any(|item| &item.id == id))
+                    .or_else(|| fetch.items.first().map(|item| item.id.clone()));
+                choice.scene = fetch.scene;
+                choice.state = ChoiceState::Ready(fetch.items);
             }
             Err(reason) => {
+                field.hint = None;
+                let FieldControl::Choice(choice) = &mut field.control else {
+                    return;
+                };
                 choice.selected = None;
                 choice.state = ChoiceState::Failed(reason);
             }
@@ -858,12 +868,29 @@ fn default_toggle(default: &Option<QuickActionFieldValue>) -> bool {
     matches!(default, Some(QuickActionFieldValue::Toggle(true)))
 }
 
+struct PickerFetch {
+    items: Vec<PickerItem>,
+    scene: Option<String>,
+    preselect: Option<SharedString>,
+    hint: Option<String>,
+}
+
+fn no_context(items: Vec<PickerItem>) -> PickerFetch {
+    PickerFetch {
+        items,
+        scene: None,
+        preselect: None,
+        hint: None,
+    }
+}
+
 async fn fetch_picker_items(
     client: Arc<ObsClient>,
     kind: PickerKind,
-) -> Result<(Vec<PickerItem>, Option<String>), String> {
+) -> Result<PickerFetch, String> {
     match kind {
         PickerKind::Scene => {
+            let current = client.current_scene().await.map_err(|e| e.to_string())?;
             let scenes = client.scenes().await.map_err(|e| e.to_string())?;
             let items = scenes
                 .into_iter()
@@ -874,7 +901,12 @@ async fn fetch_picker_items(
                     icon: Icon::from_name("layout"),
                 })
                 .collect();
-            Ok((items, None))
+            Ok(PickerFetch {
+                items,
+                scene: None,
+                preselect: current.clone().map(SharedString::from),
+                hint: current.map(|scene| tr!("integration_qa_scene_current_hint", scene = scene)),
+            })
         }
         PickerKind::Source => {
             let scene = client
@@ -899,7 +931,12 @@ async fn fetch_picker_items(
                     icon: Icon::from_name("device-desktop"),
                 })
                 .collect();
-            Ok((items, Some(scene)))
+            Ok(PickerFetch {
+                items,
+                scene: Some(scene),
+                preselect: None,
+                hint: None,
+            })
         }
         PickerKind::Input => {
             let inputs = client.audio_inputs().await.map_err(|e| e.to_string())?;
@@ -912,7 +949,7 @@ async fn fetch_picker_items(
                     icon: Icon::from_name("volume"),
                 })
                 .collect();
-            Ok((items, None))
+            Ok(no_context(items))
         }
         PickerKind::Transition => {
             let transitions = client.transitions().await.map_err(|e| e.to_string())?;
@@ -925,7 +962,7 @@ async fn fetch_picker_items(
                     icon: Icon::from_name("transition-right"),
                 })
                 .collect();
-            Ok((items, None))
+            Ok(no_context(items))
         }
         PickerKind::Profile => {
             let profiles = client.profiles().await.map_err(|e| e.to_string())?;
@@ -938,7 +975,7 @@ async fn fetch_picker_items(
                     icon: Icon::from_name("user-cog"),
                 })
                 .collect();
-            Ok((items, None))
+            Ok(no_context(items))
         }
         PickerKind::SceneCollection => {
             let collections = client
@@ -954,7 +991,7 @@ async fn fetch_picker_items(
                     icon: Icon::from_name("layout-2"),
                 })
                 .collect();
-            Ok((items, None))
+            Ok(no_context(items))
         }
         PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
             Err(tr!("integration_qa_field_unavailable"))

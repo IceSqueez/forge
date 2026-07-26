@@ -1570,6 +1570,7 @@ integration_qa_field_retry = Повторити
 integration_qa_field_select = Оберіть...
 integration_qa_field_unavailable = Варіанти недоступні, поки цю інтеграцію відключено
 integration_qa_field_no_scene = Немає активної сцени, щоб зчитати джерела
+integration_qa_scene_current_hint = Зараз: { $scene } (В ЕФІРІ)
 integration_qa_toggle_on = Увімк.
 integration_qa_toggle_off = Вимк.
 integration_qa_source_visible = видиме

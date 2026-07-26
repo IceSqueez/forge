@@ -338,11 +338,26 @@ mod tests {
         let with_level = source_to_item(&source(true, false, Some(-12.34), "wasapi_input_capture"));
         assert_eq!(
             with_level.trailing.last(),
-            Some(&TrailingToken::Label("-12.3 dB".to_owned())),
+            Some(&TrailingToken::TintedLabel(
+                "-12.3 dB".to_owned(),
+                TokenColor::Subtle,
+            )),
         );
 
         let without_level = source_to_item(&source(true, false, None, "wasapi_input_capture"));
         assert_eq!(without_level.trailing.len(), 2);
+    }
+
+    #[test]
+    fn source_row_leading_glyph_and_tint_follow_visibility() {
+        for (visible, glyph, tint) in [
+            (true, "browser", TokenColor::Accent),
+            (false, "eye-off", TokenColor::Muted),
+        ] {
+            let item = source_to_item(&source(visible, false, None, "browser_source"));
+            assert_eq!(item.icon.as_str(), glyph, "glyph for visible={visible}");
+            assert_eq!(item.icon_tint, Some(tint), "tint for visible={visible}");
+        }
     }
 
     #[test]

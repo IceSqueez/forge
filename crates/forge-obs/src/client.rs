@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
@@ -43,6 +44,7 @@ pub struct ObsClient {
     // Never logged or surfaced.
     reconnect_password: Arc<Option<String>>,
     reconnect_publisher: Arc<dyn EventPublisher>,
+    auto_reconnect: Arc<AtomicBool>,
 }
 
 impl ObsClient {
@@ -67,6 +69,7 @@ impl ObsClient {
         let last_set_scene_event_id = Arc::new(RwLock::new(None::<EventId>));
 
         let stored_password = password.map(str::to_owned);
+        let auto_reconnect = Arc::new(AtomicBool::new(true));
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&inner),
@@ -81,6 +84,7 @@ impl ObsClient {
             publisher: Arc::clone(&publisher),
             item_cache: Arc::clone(&item_cache),
             last_set_scene_event_id: Arc::clone(&last_set_scene_event_id),
+            auto_reconnect: Arc::clone(&auto_reconnect),
         };
         let handle = tokio::spawn(run_supervisor(
             host.clone(),
@@ -108,11 +112,20 @@ impl ObsClient {
             reconnect_port: port,
             reconnect_password: Arc::new(stored_password),
             reconnect_publisher: publisher,
+            auto_reconnect,
         })
     }
 
     pub fn connection_state(&self) -> ConnectionState {
         self.state.load()
+    }
+
+    pub fn set_auto_reconnect(&self, enabled: bool) {
+        self.auto_reconnect.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn auto_reconnect_enabled(&self) -> bool {
+        self.auto_reconnect.load(Ordering::Relaxed)
     }
 
     pub(crate) async fn active_client(&self) -> Result<Arc<obws::Client>, ObsError> {
@@ -143,6 +156,7 @@ impl ObsClient {
             reconnect_port: port,
             reconnect_password: Arc::new(None),
             reconnect_publisher: Arc::new(crate::runners::test_support::NoopPublisher),
+            auto_reconnect: Arc::new(AtomicBool::new(true)),
         }
     }
 }
@@ -248,6 +262,7 @@ impl BuiltinControl for ObsClient {
             publisher: Arc::clone(&self.reconnect_publisher),
             item_cache: Arc::clone(&self.scene_item_id_cache),
             last_set_scene_event_id: Arc::clone(&self.last_set_scene_event_id),
+            auto_reconnect: Arc::clone(&self.auto_reconnect),
         };
         let password = (*self.reconnect_password).clone();
         let handle = tokio::spawn(run_supervisor(
@@ -293,7 +308,11 @@ struct SupervisorContext {
     publisher: Arc<dyn EventPublisher>,
     item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
+    auto_reconnect: Arc<AtomicBool>,
 }
+
+const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
+const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
 
 async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
     let SupervisorContext {
@@ -309,8 +328,9 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         publisher,
         item_cache,
         last_set_scene_event_id,
+        auto_reconnect,
     } = ctx;
-    let mut backoff = Backoff::default();
+    let mut backoff = Backoff::new(RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY);
     let mut reconnecting = false;
 
     loop {
@@ -434,8 +454,13 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
                 stats_handle.abort();
                 inner.write().await.take();
-                backoff.reset();
-                reconnecting = true;
+                if auto_reconnect.load(Ordering::Relaxed) {
+                    backoff.reset();
+                    reconnecting = true;
+                } else {
+                    state.store(ConnectionState::Disconnected);
+                    return;
+                }
             }
 
             Err(ObsError::Authentication) => {
@@ -737,7 +762,7 @@ fn required_event_subscriptions() -> obws::requests::EventSubscription {
         | Sub::FILTERS
 }
 
-fn map_obws_error(e: obws::error::Error) -> ObsError {
+pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
     match &e {
         obws::error::Error::Timeout => ObsError::Timeout,
         obws::error::Error::Disconnected => ObsError::Disconnected,

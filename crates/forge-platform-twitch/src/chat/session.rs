@@ -140,8 +140,8 @@ impl ChatSession {
                 SessionOutcome::Disconnected => {}
                 SessionOutcome::ReauthRequired => {
                     warn!(
-                        "twitch chat session stopped: token is missing a required scope; \
-                         sign in again from the re-authorization banner"
+                        "twitch chat session stopped: re-authorization required (rejected \
+                         refresh or missing scope); sign in again from the banner"
                     );
                     break;
                 }

@@ -297,6 +297,9 @@ impl ObsCredentialsForm {
         let value = match flag {
             ObsFlag::AutoReconnect => {
                 self.auto_reconnect = !self.auto_reconnect;
+                if let Some(client) = self.seed.live() {
+                    client.set_auto_reconnect(self.auto_reconnect);
+                }
                 self.auto_reconnect
             }
             ObsFlag::ConnectOnLaunch => {
@@ -784,6 +787,10 @@ async fn connect_obs(
     auto_reconnect: bool,
     connect_on_launch: bool,
 ) -> Result<(), String> {
+    forge_obs::probe_connection(&form.host, form.port, &form.password)
+        .await
+        .map_err(|e| e.to_string())?;
+
     forge_obs::credentials::store(&*credentials, &form.host, form.port, &form.password)
         .await
         .map_err(|e| e.to_string())?;

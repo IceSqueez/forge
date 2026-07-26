@@ -65,22 +65,28 @@ impl BuiltinContent for MidiClient {
 
         vec![
             DetailSection::TwoColumnLists {
-                left: ContentList {
+                left: Box::new(ContentList {
                     title: "Input Ports".to_owned(),
                     icon: SectionIcon::new("plug"),
+                    inline_label: None,
                     count_label: Some(input_count),
                     visible_rows: None,
+                    row_padding_y_px: 7,
+                    refreshable: false,
                     items: input_items,
                     footer: None,
-                },
-                right: ContentList {
+                }),
+                right: Box::new(ContentList {
                     title: "Output Ports".to_owned(),
                     icon: SectionIcon::new("plug"),
+                    inline_label: None,
                     count_label: Some(output_count),
                     visible_rows: None,
+                    row_padding_y_px: 7,
+                    refreshable: false,
                     items: output_items,
                     footer: None,
-                },
+                }),
             },
             DetailSection::KeyValueList {
                 title: "Status".to_owned(),

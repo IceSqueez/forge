@@ -60,22 +60,28 @@ impl BuiltinContent for HotkeyClient {
         let trigger_count = trigger_items.len().to_string();
 
         vec![DetailSection::TwoColumnLists {
-            left: ContentList {
+            left: Box::new(ContentList {
                 title: "Registered Hotkeys".to_owned(),
                 icon: SectionIcon::new("keyboard"),
+                inline_label: None,
                 count_label: Some(hotkey_count),
                 visible_rows: None,
+                row_padding_y_px: 7,
+                refreshable: false,
                 items: hotkey_items,
                 footer: None,
-            },
-            right: ContentList {
+            }),
+            right: Box::new(ContentList {
                 title: "Recent Triggers".to_owned(),
                 icon: SectionIcon::new("bolt"),
+                inline_label: None,
                 count_label: Some(trigger_count),
                 visible_rows: None,
+                row_padding_y_px: 7,
+                refreshable: false,
                 items: trigger_items,
                 footer: None,
-            },
+            }),
         }]
     }
 }

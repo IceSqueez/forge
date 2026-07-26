@@ -8,9 +8,10 @@ use forge_platform_core::{
     StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
 use gpui::{
-    AnyElement, Div, ListSizingBehavior, Rgba, SharedString, div, prelude::*, px, relative,
-    uniform_list,
+    AnyElement, App, ClickEvent, Div, FontWeight, ListSizingBehavior, Pixels, Rgba, SharedString,
+    Window, div, prelude::*, px, relative, uniform_list,
 };
+use std::rc::Rc;
 
 /// Keeps the scopes and subscription panels within one calm viewport; their row lists scroll
 /// internally past this so Quick actions stay reachable below.
@@ -23,11 +24,30 @@ fn panel_overflows(count: usize) -> bool {
     count as f32 * SCROLL_ROW_EST_H > SCROLL_PANEL_MAX_H
 }
 
-/// Row padding plus a `FONT_SM` line box at gpui's default relative line height.
-const CONTENT_LIST_ROW_H: f32 = 37.0;
+const PANEL_TITLE_FONT: Pixels = px(12.5);
+const PANEL_BADGE_FONT: Pixels = px(9.5);
+const PANEL_REFRESH_GLYPH: Pixels = px(13.0);
+const ROW_GLYPH: Pixels = px(13.0);
+const DEFAULT_ROW_PAD_Y: f32 = 7.0;
+const ROW_NAME_FONT: Pixels = FONT_XS;
+const ROW_MONO_NAME_FONT: Pixels = px(11.5);
+const ROW_TRAILING_GLYPH: Pixels = px(12.0);
+const ROW_TINTED_LABEL_FONT: Pixels = px(10.0);
+/// gpui's default line height, which rounds the resulting line box to whole pixels.
+const LINE_HEIGHT_RATIO: f32 = 1.618_034;
 
-fn content_list_region_h(visible_rows: u16) -> f32 {
-    f32::from(visible_rows) * CONTENT_LIST_ROW_H
+/// Invoked by the header control a `ContentList` marks `refreshable`.
+pub type SectionRefresh = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+/// The row's tallest element is its name line box; both name fonts round to the same box, and
+/// every glyph and badge in the row is shorter.
+fn content_list_row_h(list: &ContentList) -> f32 {
+    f32::from(list.row_padding_y_px) * 2.0 + (f32::from(ROW_NAME_FONT) * LINE_HEIGHT_RATIO).round()
+}
+
+fn content_list_region_h(list: &ContentList) -> Option<f32> {
+    list.visible_rows
+        .map(|rows| f32::from(rows) * content_list_row_h(list))
 }
 
 fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
@@ -76,6 +96,7 @@ pub(crate) fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
 
 pub fn content_sections(
     sections: &[DetailSection],
+    on_refresh: Option<&SectionRefresh>,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -85,19 +106,20 @@ pub fn content_sections(
         .flex_col()
         .gap(spacing(Spacing::Lg, density));
     for section in sections {
-        col = col.child(dispatch_section(section, palette, density));
+        col = col.child(dispatch_section(section, on_refresh, palette, density));
     }
     col.into_any_element()
 }
 
 fn dispatch_section(
     section: &DetailSection,
+    on_refresh: Option<&SectionRefresh>,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
     match section {
         DetailSection::TwoColumnLists { left, right } => {
-            render_two_column_lists(left, right, palette, density)
+            render_two_column_lists(left, right, on_refresh, palette, density)
         }
         DetailSection::KeyValueList { title, icon, items } => {
             render_key_value_list(title, icon, items, palette, density)
@@ -133,7 +155,7 @@ fn dispatch_section(
             footer,
         } => render_scopes_list(title, icon, scopes, footer.as_ref(), palette, density),
         DetailSection::TwoColumn { left, right } => {
-            render_two_column(left, right, palette, density)
+            render_two_column(left, right, on_refresh, palette, density)
         }
         DetailSection::InfoCard {
             title,
@@ -152,15 +174,26 @@ fn dispatch_section(
 fn render_two_column_lists(
     left: &ContentList,
     right: &ContentList,
+    on_refresh: Option<&SectionRefresh>,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
+    let (left_h, right_h) = match (content_list_region_h(left), content_list_region_h(right)) {
+        (Some(a), Some(b)) => (Some(a.max(b)), Some(a.max(b))),
+        pair => pair,
+    };
     div()
         .w_full()
         .flex()
         .gap(spacing(Spacing::Md, density))
-        .child(grow_cell(content_list_panel(left, palette, density), 10.0))
-        .child(grow_cell(content_list_panel(right, palette, density), 13.0))
+        .child(grow_cell(
+            content_list_panel(left, left_h, on_refresh, palette, density),
+            10.0,
+        ))
+        .child(grow_cell(
+            content_list_panel(right, right_h, on_refresh, palette, density),
+            13.0,
+        ))
         .into_any_element()
 }
 
@@ -179,6 +212,8 @@ fn render_key_value_list(
         .child(panel_header_row(
             icon.as_str(),
             title,
+            None,
+            None,
             None,
             palette,
             density,
@@ -208,7 +243,9 @@ fn render_active_item_list(
         .child(panel_header_row(
             icon.as_str(),
             title,
+            None,
             count.as_deref(),
+            None,
             palette,
             density,
         ))
@@ -311,7 +348,9 @@ fn render_subscription_list(
         .child(panel_header_row(
             icon.as_str(),
             title,
+            None,
             Some(&count),
+            None,
             palette,
             density,
         ))
@@ -391,7 +430,9 @@ fn render_scopes_list(
         .child(panel_header_row(
             icon_token.as_str(),
             title,
+            None,
             Some(&count),
+            None,
             palette,
             density,
         ))
@@ -406,6 +447,7 @@ fn render_scopes_list(
 fn render_two_column(
     left: &DetailSection,
     right: &DetailSection,
+    on_refresh: Option<&SectionRefresh>,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -414,8 +456,14 @@ fn render_two_column(
         .flex()
         .items_stretch()
         .gap(px(12.0))
-        .child(grow_cell(dispatch_section(left, palette, density), 10.0))
-        .child(grow_cell(dispatch_section(right, palette, density), 13.0))
+        .child(grow_cell(
+            dispatch_section(left, on_refresh, palette, density),
+            10.0,
+        ))
+        .child(grow_cell(
+            dispatch_section(right, on_refresh, palette, density),
+            13.0,
+        ))
         .into_any_element()
 }
 
@@ -478,6 +526,8 @@ fn render_stats_grid(
             icon.as_str(),
             title,
             None,
+            None,
+            None,
             palette,
             density,
         ))
@@ -486,9 +536,20 @@ fn render_stats_grid(
         .into_any_element()
 }
 
-fn content_list_panel(list: &ContentList, palette: &ForgePalette, density: Density) -> AnyElement {
-    let list_region: AnyElement = match list.visible_rows.map(content_list_region_h) {
-        Some(h) if list.items.len() as f32 * CONTENT_LIST_ROW_H > h => {
+fn content_list_panel(
+    list: &ContentList,
+    region_h: Option<f32>,
+    on_refresh: Option<&SectionRefresh>,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let row_h = content_list_row_h(list);
+    let pad_y = f32::from(list.row_padding_y_px);
+    let mut slack = 0.0;
+    let list_region: AnyElement = match region_h {
+        Some(h) if list.items.len() as f32 * row_h > h => {
+            let whole_rows = (h / row_h).floor().max(1.0);
+            slack = h - whole_rows * row_h;
             let owned: Vec<ContentListItem> = list.items.clone();
             let pal = *palette;
             uniform_list(
@@ -496,13 +557,13 @@ fn content_list_panel(list: &ContentList, palette: &ForgePalette, density: Densi
                 owned.len(),
                 move |range, _window, _cx| {
                     range
-                        .map(|i| content_list_item_row(&owned[i], &pal, density))
+                        .map(|i| content_list_item_row(&owned[i], pad_y, &pal, density))
                         .collect::<Vec<_>>()
                 },
             )
             .w_full()
             .flex_none()
-            .h(px(h))
+            .h(px(whole_rows * row_h))
             .occlude()
             .into_any_element()
         }
@@ -512,21 +573,27 @@ fn content_list_panel(list: &ContentList, palette: &ForgePalette, density: Densi
                 rows = rows.flex_none().h(px(h));
             }
             for item in &list.items {
-                rows = rows.child(content_list_item_row(item, palette, density));
+                rows = rows.child(content_list_item_row(item, pad_y, palette, density));
             }
             rows.into_any_element()
         }
     };
+    let refresh = list.refreshable.then(|| on_refresh.cloned()).flatten();
     let mut card = card_shell(palette)
         .child(panel_header_row(
             list.icon.as_str(),
             &list.title,
+            list.inline_label.as_deref(),
             list.count_label.as_deref(),
+            refresh,
             palette,
             density,
         ))
         .child(divider(palette))
         .child(list_region);
+    if slack > 0.0 {
+        card = card.child(div().w_full().flex_none().h(px(slack)));
+    }
     if let Some(f) = &list.footer {
         card = card.child(list_footer_bar(f, palette, density));
     }
@@ -535,6 +602,7 @@ fn content_list_panel(list: &ContentList, palette: &ForgePalette, density: Densi
 
 fn content_list_item_row(
     item: &ContentListItem,
+    pad_y: f32,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -558,16 +626,16 @@ fn content_list_item_row(
         dim,
     );
 
-    let name_family = if item.monospace_name {
-        mono_family()
+    let (name_family, name_font) = if item.monospace_name {
+        (mono_family(), ROW_MONO_NAME_FONT)
     } else {
-        body_family()
+        (body_family(), ROW_NAME_FONT)
     };
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
         .font_family(name_family)
-        .text_size(FONT_SM)
+        .text_size(name_font)
         .text_color(text_color)
         .child(item.name.clone());
 
@@ -591,16 +659,16 @@ fn content_list_item_row(
         .gap(spacing(Spacing::Sm, density))
         .child(icon(
             Icon::from_name(item.icon.as_str()),
-            FONT_SM,
+            ROW_GLYPH,
             icon_color,
         ))
         .child(name_el)
         .child(trailing);
 
     if item.active {
-        active_row_wrapper(content.into_any_element(), palette, density)
+        active_row_wrapper(content.into_any_element(), pad_y, palette, density)
     } else {
-        plain_row_wrapper(content.into_any_element(), palette, density)
+        plain_row_wrapper(content.into_any_element(), pad_y, palette, density)
     }
 }
 
@@ -633,7 +701,7 @@ fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Densi
         };
         row = row.child(icon(ic, FONT_SM, palette.success));
     }
-    plain_row_wrapper(row.into_any_element(), palette, density)
+    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
 }
 
 fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -667,9 +735,9 @@ fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Densi
     }
 
     if item.active {
-        active_row_wrapper(row.into_any_element(), palette, density)
+        active_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
     } else {
-        plain_row_wrapper(row.into_any_element(), palette, density)
+        plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
     }
 }
 
@@ -714,7 +782,7 @@ fn subscription_row_elem(
         div().into_any_element()
     };
     row = row.child(trailing);
-    plain_row_wrapper(row.into_any_element(), palette, density)
+    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
 }
 
 fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -733,7 +801,7 @@ fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyE
                 .text_color(palette.text_primary)
                 .child(scope.to_owned()),
         );
-    plain_row_wrapper(row.into_any_element(), palette, density)
+    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
 }
 
 fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -829,11 +897,13 @@ fn panel_header_icon_color(icon_str: &str, palette: &ForgePalette) -> Rgba {
 fn panel_header_row(
     icon_str: &str,
     title: &str,
+    inline_label: Option<&str>,
     count: Option<&str>,
+    refresh: Option<SectionRefresh>,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    let left = div()
+    let mut left = div()
         .flex_1()
         .min_w(px(0.0))
         .flex()
@@ -844,7 +914,13 @@ fn panel_header_row(
             FONT_SM,
             panel_header_icon_color(icon_str, palette),
         ))
-        .child(body(title.to_owned(), FONT_SM, palette.text_primary));
+        .child(
+            body(title.to_owned(), PANEL_TITLE_FONT, palette.text_primary)
+                .font_weight(FontWeight::MEDIUM),
+        );
+    if let Some(label) = inline_label {
+        left = left.child(body(label.to_owned(), PANEL_TITLE_FONT, palette.text_faint));
+    }
 
     let mut row = div()
         .w_full()
@@ -856,6 +932,16 @@ fn panel_header_row(
         .child(left);
     if let Some(c) = count {
         row = row.child(mono(c.to_owned(), FONT_XXS, palette.text_faint));
+    }
+    if let Some(handler) = refresh {
+        row = row.child(
+            div()
+                .id(SharedString::from(format!("panel-refresh-{title}")))
+                .flex_none()
+                .cursor_pointer()
+                .child(icon(Icon::Refresh, PANEL_REFRESH_GLYPH, palette.text_faint))
+                .on_click(move |event, window, cx| handler(event, window, cx)),
+        );
     }
     row.into_any_element()
 }
@@ -924,13 +1010,14 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
 
 fn active_row_wrapper(
     content: AnyElement,
+    pad_y: f32,
     palette: &ForgePalette,
     _density: Density,
 ) -> AnyElement {
     let padded = div()
         .flex_1()
         .min_w(px(0.0))
-        .py(px(7.0))
+        .py(px(pad_y))
         .px(px(14.0))
         .child(content);
     div()
@@ -942,10 +1029,15 @@ fn active_row_wrapper(
         .into_any_element()
 }
 
-fn plain_row_wrapper(content: AnyElement, palette: &ForgePalette, _density: Density) -> AnyElement {
+fn plain_row_wrapper(
+    content: AnyElement,
+    pad_y: f32,
+    palette: &ForgePalette,
+    _density: Density,
+) -> AnyElement {
     div()
         .w_full()
-        .py(px(7.0))
+        .py(px(pad_y))
         .px(px(14.0))
         .bg(palette.elevated)
         .child(content)
@@ -959,7 +1051,11 @@ fn active_badge(label: &str, palette: &ForgePalette, density: Density) -> AnyEle
         .px(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Md))
         .bg(palette.surface_overlay)
-        .child(body(label.to_uppercase(), FONT_XS, palette.success))
+        .child(body(
+            label.to_uppercase(),
+            PANEL_BADGE_FONT,
+            palette.success,
+        ))
         .into_any_element()
 }
 
@@ -978,19 +1074,19 @@ fn trailing_token_elem(
                 .px(spacing(Spacing::Xs, density))
                 .rounded(radius(Radius::Md))
                 .bg(palette.surface_overlay)
-                .child(body(label.clone(), FONT_XS, tc))
+                .child(body(label.clone(), PANEL_BADGE_FONT, tc))
                 .into_any_element()
         }
         TrailingToken::Icon(ic, color) => {
             let tc = with_alpha(token_color_value(color, palette), dim);
-            icon(Icon::from_name(ic.as_str()), FONT_SM, tc).into_any_element()
+            icon(Icon::from_name(ic.as_str()), ROW_TRAILING_GLYPH, tc).into_any_element()
         }
         TrailingToken::Label(label) => {
-            mono(label.clone(), FONT_XS, with_alpha(palette.text_faint, dim)).into_any_element()
+            mono(label.clone(), FONT_XXS, with_alpha(palette.text_faint, dim)).into_any_element()
         }
         TrailingToken::TintedLabel(label, color) => mono(
             label.clone(),
-            FONT_XS,
+            ROW_TINTED_LABEL_FONT,
             with_alpha(token_color_value(color, palette), dim),
         )
         .into_any_element(),

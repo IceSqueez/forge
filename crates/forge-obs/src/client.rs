@@ -45,6 +45,7 @@ pub struct ObsClient {
     reconnect_password: Arc<Option<String>>,
     reconnect_publisher: Arc<dyn EventPublisher>,
     auto_reconnect: Arc<AtomicBool>,
+    resync_nudge: Arc<Notify>,
 }
 
 impl ObsClient {
@@ -70,6 +71,7 @@ impl ObsClient {
 
         let stored_password = password.map(str::to_owned);
         let auto_reconnect = Arc::new(AtomicBool::new(true));
+        let resync_nudge = Arc::new(Notify::new());
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&inner),
@@ -85,6 +87,7 @@ impl ObsClient {
             item_cache: Arc::clone(&item_cache),
             last_set_scene_event_id: Arc::clone(&last_set_scene_event_id),
             auto_reconnect: Arc::clone(&auto_reconnect),
+            resync_nudge: Arc::clone(&resync_nudge),
         };
         let handle = tokio::spawn(run_supervisor(
             host.clone(),
@@ -113,11 +116,18 @@ impl ObsClient {
             reconnect_password: Arc::new(stored_password),
             reconnect_publisher: publisher,
             auto_reconnect,
+            resync_nudge,
         })
     }
 
     pub fn connection_state(&self) -> ConnectionState {
         self.state.load()
+    }
+
+    /// Runs the scene/source reconciliation pass out of its polling cadence. Returns once the
+    /// request is queued, not once the catalog has caught up.
+    pub fn request_catalog_resync(&self) {
+        self.resync_nudge.notify_one();
     }
 
     pub fn set_auto_reconnect(&self, enabled: bool) {
@@ -157,6 +167,7 @@ impl ObsClient {
             reconnect_password: Arc::new(None),
             reconnect_publisher: Arc::new(crate::runners::test_support::NoopPublisher),
             auto_reconnect: Arc::new(AtomicBool::new(true)),
+            resync_nudge: Arc::new(Notify::new()),
         }
     }
 }
@@ -261,6 +272,7 @@ impl BuiltinControl for ObsClient {
             item_cache: Arc::clone(&self.scene_item_id_cache),
             last_set_scene_event_id: Arc::clone(&self.last_set_scene_event_id),
             auto_reconnect: Arc::clone(&self.auto_reconnect),
+            resync_nudge: Arc::clone(&self.resync_nudge),
         };
         let password = (*self.reconnect_password).clone();
         let handle = tokio::spawn(run_supervisor(
@@ -307,6 +319,7 @@ struct SupervisorContext {
     item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     auto_reconnect: Arc<AtomicBool>,
+    resync_nudge: Arc<Notify>,
 }
 
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
@@ -327,6 +340,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         item_cache,
         last_set_scene_event_id,
         auto_reconnect,
+        resync_nudge,
     } = ctx;
     let mut backoff = Backoff::new(RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY);
     let mut reconnecting = false;
@@ -409,6 +423,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     health_tx.clone(),
                     Arc::clone(&catalog_state),
                     Arc::clone(&item_cache),
+                    Arc::clone(&resync_nudge),
                 );
 
                 let mut pending_resync: Option<JoinHandle<()>> = None;
@@ -956,14 +971,17 @@ fn spawn_stats_poll(
     health_tx: broadcast::Sender<HealthDelta>,
     catalog_state: Arc<RwLock<ObsCatalog>>,
     item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
+    resync_nudge: Arc<Notify>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(STATS_POLL_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut tick: u32 = 0;
         loop {
-            ticker.tick().await;
-            tick = tick.wrapping_add(1);
+            let nudged = tokio::select! {
+                _ = ticker.tick() => false,
+                () = resync_nudge.notified() => true,
+            };
 
             let client = {
                 let guard = inner.read().await;
@@ -972,39 +990,43 @@ fn spawn_stats_poll(
                 };
                 Arc::clone(client)
             };
-            let general = client.general();
-            let streaming = client.streaming();
-            let recording = client.recording();
-            let (stats, stream_status, record_status) =
-                tokio::join!(general.stats(), streaming.status(), recording.status());
 
-            let mut deltas = Vec::new();
-            if let Ok(stats) = stats
-                && let Ok(mut snapshot) = health_state.write()
-            {
-                deltas.extend(crate::events::apply_stats_update(&stats, &mut snapshot));
-            }
-            if let Ok(status) = stream_status
-                && let Ok(mut snapshot) = health_state.write()
-            {
-                deltas.extend(crate::events::apply_stream_status_update(
-                    &status,
-                    &mut snapshot,
-                ));
-            }
-            if let Ok(status) = record_status
-                && let Ok(mut snapshot) = health_state.write()
-            {
-                deltas.extend(crate::events::apply_record_status_update(
-                    &status,
-                    &mut snapshot,
-                ));
-            }
-            for delta in deltas {
-                let _ = health_tx.send(delta);
+            if !nudged {
+                tick = tick.wrapping_add(1);
+                let general = client.general();
+                let streaming = client.streaming();
+                let recording = client.recording();
+                let (stats, stream_status, record_status) =
+                    tokio::join!(general.stats(), streaming.status(), recording.status());
+
+                let mut deltas = Vec::new();
+                if let Ok(stats) = stats
+                    && let Ok(mut snapshot) = health_state.write()
+                {
+                    deltas.extend(crate::events::apply_stats_update(&stats, &mut snapshot));
+                }
+                if let Ok(status) = stream_status
+                    && let Ok(mut snapshot) = health_state.write()
+                {
+                    deltas.extend(crate::events::apply_stream_status_update(
+                        &status,
+                        &mut snapshot,
+                    ));
+                }
+                if let Ok(status) = record_status
+                    && let Ok(mut snapshot) = health_state.write()
+                {
+                    deltas.extend(crate::events::apply_record_status_update(
+                        &status,
+                        &mut snapshot,
+                    ));
+                }
+                for delta in deltas {
+                    let _ = health_tx.send(delta);
+                }
             }
 
-            if tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK) {
+            if nudged || tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK) {
                 reconcile_catalog_topology(&client, &catalog_state, &item_cache).await;
             }
         }

@@ -9,6 +9,8 @@ use crate::client::ObsClient;
 use crate::source::SourceInfo;
 
 const PANEL_VISIBLE_ROWS: u16 = 8;
+const SCENE_ROW_PADDING_Y_PX: u8 = 8;
+const SOURCE_ROW_PADDING_Y_PX: u8 = 7;
 
 #[derive(Default)]
 pub(crate) struct ObsCatalog {
@@ -153,16 +155,20 @@ impl BuiltinContent for ObsClient {
             .and_then(|scene| catalog.sources.get(scene))
             .map(|sources| sources.iter().map(source_to_item).collect())
             .unwrap_or_default();
-        let source_count_label = match catalog.current_scene.as_deref() {
-            Some(scene) => format!("in {scene} \u{00b7} {} total", source_items.len()),
-            None => format!("{} total", source_items.len()),
-        };
+        let source_scene_label = catalog
+            .current_scene
+            .as_deref()
+            .map(|scene| format!("in {scene}"));
+        let source_count_label = format!("{} total", source_items.len());
 
         let left = ContentList {
             title: "Scenes".to_owned(),
             icon: SectionIcon::new("layout-grid"),
-            count_label: Some(scene_count),
+            inline_label: Some(scene_count),
+            count_label: None,
             visible_rows: Some(PANEL_VISIBLE_ROWS),
+            row_padding_y_px: SCENE_ROW_PADDING_Y_PX,
+            refreshable: true,
             items: scene_items,
             footer: None,
         };
@@ -170,13 +176,19 @@ impl BuiltinContent for ObsClient {
         let right = ContentList {
             title: "Sources".to_owned(),
             icon: SectionIcon::new("stack-2"),
+            inline_label: source_scene_label,
             count_label: Some(source_count_label),
             visible_rows: Some(PANEL_VISIBLE_ROWS),
+            row_padding_y_px: SOURCE_ROW_PADDING_Y_PX,
+            refreshable: false,
             items: source_items,
             footer: None,
         };
 
-        vec![DetailSection::TwoColumnLists { left, right }]
+        vec![DetailSection::TwoColumnLists {
+            left: Box::new(left),
+            right: Box::new(right),
+        }]
     }
 }
 

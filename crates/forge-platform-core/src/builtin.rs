@@ -123,13 +123,25 @@ pub struct ContentListItem {
     pub enabled: bool,
 }
 
+fn default_row_padding_y_px() -> u8 {
+    7
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContentList {
     pub title: String,
     pub icon: SectionIcon,
+    /// Sits directly after the title; `count_label` sits on the header's opposite edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inline_label: Option<String>,
     pub count_label: Option<String>,
     /// `Some` pins the row area to that many rows and scrolls inside it; `None` grows to fit.
     pub visible_rows: Option<u16>,
+    #[serde(default = "default_row_padding_y_px")]
+    pub row_padding_y_px: u8,
+    /// Offers a header control that forces the owning integration to re-sync this roster now.
+    #[serde(default)]
+    pub refreshable: bool,
     pub items: Vec<ContentListItem>,
     pub footer: Option<ListFooter>,
 }
@@ -228,8 +240,8 @@ pub struct StatColumn {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DetailSection {
     TwoColumnLists {
-        left: ContentList,
-        right: ContentList,
+        left: Box<ContentList>,
+        right: Box<ContentList>,
     },
     KeyValueList {
         title: String,

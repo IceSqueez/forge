@@ -394,8 +394,11 @@ fn obs() -> IntegrationSeed {
     let scenes = ContentList {
         title: tr!("iseed_scenes"),
         icon: SectionIcon::new("layout"),
+        inline_label: None,
         count_label: Some("4".to_owned()),
         visible_rows: Some(OBS_PANEL_ROWS),
+        row_padding_y_px: 7,
+        refreshable: false,
         items: vec![
             list_item("layout", "Main", true, Some("Live")),
             list_item("layout", "BRB", false, None),
@@ -407,8 +410,11 @@ fn obs() -> IntegrationSeed {
     let sources = ContentList {
         title: tr!("iseed_sources"),
         icon: SectionIcon::new("device-desktop"),
+        inline_label: None,
         count_label: Some("4".to_owned()),
         visible_rows: Some(OBS_PANEL_ROWS),
+        row_padding_y_px: 7,
+        refreshable: false,
         items: vec![
             list_item("device-desktop", "Webcam", true, Some("On")),
             list_item("device-desktop", "Game Capture", true, Some("On")),
@@ -474,8 +480,8 @@ fn obs() -> IntegrationSeed {
         metrics,
         vec![
             DetailSection::TwoColumnLists {
-                left: scenes,
-                right: sources,
+                left: Box::new(scenes),
+                right: Box::new(sources),
             },
             stats,
         ],

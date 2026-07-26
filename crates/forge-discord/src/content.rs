@@ -118,22 +118,28 @@ impl BuiltinContent for DiscordClient {
         let post_count = post_items.len().to_string();
 
         vec![DetailSection::TwoColumnLists {
-            left: ContentList {
+            left: Box::new(ContentList {
                 title: "Webhooks".to_owned(),
                 icon: SectionIcon::new("webhook"),
+                inline_label: None,
                 count_label: Some(webhook_count),
                 visible_rows: None,
+                row_padding_y_px: 7,
+                refreshable: false,
                 items: webhook_items,
                 footer: None,
-            },
-            right: ContentList {
+            }),
+            right: Box::new(ContentList {
                 title: "Recent Posts".to_owned(),
                 icon: SectionIcon::new("message"),
+                inline_label: None,
                 count_label: Some(post_count),
                 visible_rows: None,
+                row_padding_y_px: 7,
+                refreshable: false,
                 items: post_items,
                 footer: None,
-            },
+            }),
         }]
     }
 }

@@ -23,11 +23,12 @@ use gpui::{
 };
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::builtin_sections::{content_sections, health_grid};
+use crate::builtin_sections::{SectionRefresh, content_sections, health_grid};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integrations::{KickInstallSeed, ObsInstallSeed};
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
@@ -657,6 +658,13 @@ impl IntegrationDetail {
         self.begin_twitch_device(cx);
     }
 
+    fn resync_content(&mut self, cx: &mut Context<Self>) {
+        if let Some(obs) = &self.obs_source {
+            obs.request_catalog_resync();
+        }
+        self.reload(cx);
+    }
+
     fn augmented_sections(&self) -> Vec<DetailSection> {
         let mut sections = self.sections.clone();
         for section in &mut sections {
@@ -1002,7 +1010,14 @@ impl Render for IntegrationDetail {
                 let reauth_banner = (self.is_twitch && self.twitch_reauth_required)
                     .then(|| self.twitch_reauth_banner(&palette, density, cx));
                 let health = health_grid(&self.augmented_health(), reconnecting, &palette, density);
-                let content = content_sections(&self.augmented_sections(), &palette, density);
+                let on_refresh: SectionRefresh =
+                    Rc::new(cx.listener(|this, _: &ClickEvent, _, cx| this.resync_content(cx)));
+                let content = content_sections(
+                    &self.augmented_sections(),
+                    Some(&on_refresh),
+                    &palette,
+                    density,
+                );
                 let quick = self.quick_actions_card(&palette, density, cx);
 
                 div()

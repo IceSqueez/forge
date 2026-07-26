@@ -259,22 +259,28 @@ impl BuiltinContent for VTubeClient {
 
         vec![
             DetailSection::TwoColumnLists {
-                left: ContentList {
+                left: Box::new(ContentList {
                     title: "Models".to_owned(),
                     icon: SectionIcon::new("user-square"),
+                    inline_label: None,
                     count_label: Some(model_count),
                     visible_rows: None,
+                    row_padding_y_px: 7,
+                    refreshable: false,
                     items: model_items,
                     footer: None,
-                },
-                right: ContentList {
+                }),
+                right: Box::new(ContentList {
                     title: "Hotkeys".to_owned(),
                     icon: SectionIcon::new("bolt"),
+                    inline_label: None,
                     count_label: Some(hotkey_count),
                     visible_rows: None,
+                    row_padding_y_px: 7,
+                    refreshable: false,
                     items: hotkey_items,
                     footer: None,
-                },
+                }),
             },
             DetailSection::ActiveItemList {
                 title: "Expressions".to_owned(),

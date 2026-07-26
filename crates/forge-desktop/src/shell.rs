@@ -21,6 +21,8 @@ use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
 use crate::integration_detail::IntegrationDetail;
 use crate::integration_seed;
+use crate::integrations::obs_builtin_object;
+use crate::obs_connect::{ObsConnectView, ObsConnected};
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
@@ -39,6 +41,7 @@ use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
 
 const TOAST_PRIORITY: usize = 2;
+const OBS_BUILTIN_ID: &str = "obs";
 
 struct Router {
     screen: Screen,
@@ -167,11 +170,20 @@ impl AppShell {
                 apps.into()
             }
             Screen::BuiltinDetail(id) => {
+                let installed = (id.as_str() == OBS_BUILTIN_ID)
+                    .then(|| handles.obs_install_seed.live())
+                    .flatten()
+                    .map(obs_builtin_object);
+                let builtin = installed.as_ref().or_else(|| handles.builtins.get(id));
+                if builtin.is_none() && id.as_str() == OBS_BUILTIN_ID {
+                    return Self::obs_connect_screen(handles, cx);
+                }
+
                 let connectivity = topics.platforms.clone();
                 let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
                 let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
                 let event_bus = Arc::clone(&handles.bus);
-                let detail = match handles.builtins.get(id) {
+                let detail = match builtin {
                     Some(obj) => {
                         let icon = obj.icon.clone();
                         let status = obj.status.clone();
@@ -389,6 +401,31 @@ impl AppShell {
                 editor.into()
             }
         }
+    }
+
+    fn obs_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
+        let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
+        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
+        let rt_handle = handles.rt_handle.clone();
+        let seed = handles.obs_install_seed.clone();
+        let connect =
+            cx.new(|cx| ObsConnectView::new(rt_handle, credentials, settings, bus, seed, cx));
+        cx.subscribe(&connect, |this, _view, event: &NavRequested, cx| {
+            this.navigate(event.0.clone(), cx);
+        })
+        .detach();
+        cx.subscribe(&connect, |this, _view, _: &ObsConnected, cx| {
+            this.rebuild_current(cx);
+        })
+        .detach();
+        connect.into()
+    }
+
+    fn rebuild_current(&mut self, cx: &mut Context<Self>) {
+        let screen = self.router.screen.clone();
+        self.router.content = Self::content_for(&screen, &self.topics, &self.handles, cx);
+        cx.notify();
     }
 
     fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {

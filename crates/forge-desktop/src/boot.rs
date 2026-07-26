@@ -317,6 +317,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         live_viewers,
         builtins: integrations.builtins,
         kick_install_seed: integrations.kick_install_seed,
+        obs_install_seed: integrations.obs_install_seed,
         server,
         speak,
         speak_events,

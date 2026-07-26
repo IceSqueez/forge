@@ -9,7 +9,7 @@ use forge_runtime::{
 };
 use forge_storage::{DataProvider, Language};
 
-use crate::integrations::{BuiltinObject, KickInstallSeed};
+use crate::integrations::{BuiltinObject, KickInstallSeed, ObsInstallSeed};
 
 #[allow(dead_code)]
 pub struct RuntimeHandles {
@@ -28,6 +28,7 @@ pub struct RuntimeHandles {
     pub builtins: HashMap<BuiltinId, BuiltinObject>,
     /// `None` when Kick client credentials are absent.
     pub kick_install_seed: Option<KickInstallSeed>,
+    pub obs_install_seed: ObsInstallSeed,
     /// `None` when the server is disabled in settings or the boot bind failed.
     pub server: Option<forge_server::ServerHandle>,
     /// `None` only if speak-queue construction failed.

@@ -59,7 +59,7 @@ fn card_shell(palette: &ForgePalette) -> Div {
         .bg(palette.elevated)
 }
 
-fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
+pub(crate) fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
     let mut cell = div().min_w(px(0.0)).child(el);
     let style = cell.style();
     style.flex_grow = Some(grow);

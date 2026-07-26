@@ -23,6 +23,7 @@ mod integration_quick_actions;
 mod integration_seed;
 mod integrations;
 mod oauth_connect;
+mod obs_connect;
 mod picker_favorites;
 mod platforms;
 mod presentation;

@@ -10,7 +10,9 @@ use forge_platform_core::{
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialsRepo, DataProvider};
+use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
+
+use crate::obs_connect::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 
@@ -29,6 +31,47 @@ pub struct Integrations {
     pub builtins: HashMap<BuiltinId, BuiltinObject>,
     pub viewer_sources: Vec<Box<dyn LiveViewerSource>>,
     pub kick_install_seed: Option<KickInstallSeed>,
+    pub obs_install_seed: ObsInstallSeed,
+}
+
+/// Holds the same `SwitchableObsSink` the registered OBS runners resolve through, so a post-boot
+/// connect reaches them without a restart.
+#[derive(Clone)]
+pub struct ObsInstallSeed {
+    sink: Arc<forge_obs::SwitchableObsSink>,
+    live: Arc<std::sync::RwLock<Option<Arc<forge_obs::ObsClient>>>>,
+}
+
+impl ObsInstallSeed {
+    fn new(sink: Arc<forge_obs::SwitchableObsSink>) -> Self {
+        Self {
+            sink,
+            live: Arc::new(std::sync::RwLock::new(None)),
+        }
+    }
+
+    pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
+        self.sink.install(Arc::clone(&client));
+        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(client);
+    }
+
+    pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
+        let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
+        guard.clone()
+    }
+}
+
+pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
+    BuiltinObject {
+        icon: SectionIcon::new("broadcast"),
+        status: client.clone(),
+        health: client.clone(),
+        content: client.clone(),
+        quick: client.clone(),
+        control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
+        obs_client: Some(client),
+    }
 }
 
 #[derive(Clone)]
@@ -73,7 +116,8 @@ pub async fn build_integrations(
     };
 
     insert("twitch", build_twitch(sub_actions, backend, bus).await);
-    insert("obs", build_obs(sub_actions, backend, bus).await);
+    let (obs, obs_install_seed) = build_obs(sub_actions, backend, bus).await;
+    insert("obs", obs);
     insert("vtube", build_vtube(sub_actions, backend, bus).await);
     insert("discord", build_discord(sub_actions, backend, bus));
     insert("midi", build_midi(sub_actions, bus));
@@ -95,6 +139,7 @@ pub async fn build_integrations(
         builtins,
         viewer_sources,
         kick_install_seed,
+        obs_install_seed,
     }
 }
 
@@ -307,7 +352,7 @@ async fn build_obs(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> Option<BuiltinObject> {
+) -> (Option<BuiltinObject>, ObsInstallSeed) {
     let sink = forge_obs::SwitchableObsSink::new();
     if let Err(e) = forge_obs::register_obs_sub_actions(
         sub_actions,
@@ -315,28 +360,27 @@ async fn build_obs(
     ) {
         eprintln!("forge-desktop: obs sub-action registration failed: {e}");
     }
+    let seed = ObsInstallSeed::new(sink);
+
+    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    if !get_bool_setting(&*settings, OBS_CONNECT_ON_LAUNCH_KEY, true).await {
+        return (None, seed);
+    }
 
     let creds = creds_of(backend);
     let connect = forge_obs::credentials::load_and_connect(&*creds, publisher(bus));
     let client = match tokio::time::timeout(CONNECT_GUARD, connect).await {
         Ok(Ok(client)) => client,
-        Ok(Err(_)) => return None,
+        Ok(Err(_)) => return (None, seed),
         Err(_) => {
             eprintln!("forge-desktop: obs connect timed out");
-            return None;
+            return (None, seed);
         }
     };
-    sink.install(Arc::clone(&client));
+    client.set_auto_reconnect(get_bool_setting(&*settings, OBS_AUTO_RECONNECT_KEY, true).await);
+    seed.install(Arc::clone(&client));
 
-    Some(BuiltinObject {
-        icon: SectionIcon::new("broadcast"),
-        status: client.clone(),
-        health: client.clone(),
-        content: client.clone(),
-        quick: client.clone(),
-        control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
-        obs_client: Some(client),
-    })
+    (Some(obs_builtin_object(client)), seed)
 }
 
 async fn build_vtube(

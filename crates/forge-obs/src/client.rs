@@ -731,7 +731,7 @@ fn spawn_stats_poll(
     })
 }
 
-fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
+pub fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
     let without_scheme = endpoint
         .strip_prefix("ws://")
         .or_else(|| endpoint.strip_prefix("wss://"))

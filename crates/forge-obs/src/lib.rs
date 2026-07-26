@@ -17,7 +17,7 @@ mod source_impl;
 pub mod switchable_sink;
 pub mod triggers;
 
-pub use client::ObsClient;
+pub use client::{ObsClient, parse_endpoint};
 pub use error::ObsError;
 pub use health::HealthSnapshot;
 pub use probe::{ObsProbeResult, probe_connection};

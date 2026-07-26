@@ -59,3 +59,53 @@ async fn run_probe(host: &str, port: u16, password: &str) -> Result<ObsProbeResu
         round_trip_ms,
     })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    const PROBE_PASSWORD: &str = "obs-probe-secret-1a2b3c";
+
+    /// Binds and immediately releases a loopback port so the probe hits a refused connection
+    /// without touching anything outside this process.
+    async fn closed_loopback_port() -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        port
+    }
+
+    async fn probe_error(port: u16, password: &str) -> ObsError {
+        match probe_connection("127.0.0.1", port, password).await {
+            Err(e) => e,
+            Ok(_) => panic!("probe unexpectedly reached an obs-websocket server on port {port}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn probe_of_a_port_nothing_listens_on_reports_a_connect_failure() {
+        let port = closed_loopback_port().await;
+        let error = probe_error(port, "").await;
+        assert!(
+            matches!(error, ObsError::Connect(_)),
+            "expected a connect failure, got {error:?}"
+        );
+    }
+
+    // Why: the probe is the only path that takes a plaintext OBS password straight from a form
+    // field, and its failure text is rendered verbatim in the setup screen banner.
+    #[tokio::test]
+    async fn probe_failure_never_carries_the_password_into_its_error_text() {
+        let port = closed_loopback_port().await;
+        let error = probe_error(port, PROBE_PASSWORD).await;
+        assert!(
+            !format!("{error}").contains(PROBE_PASSWORD),
+            "probe error leaked the password: {error}"
+        );
+        assert!(
+            !format!("{error:?}").contains(PROBE_PASSWORD),
+            "probe error Debug leaked the password"
+        );
+    }
+}

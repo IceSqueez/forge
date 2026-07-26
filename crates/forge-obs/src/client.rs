@@ -779,39 +779,46 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn parse_endpoint_with_scheme_and_port() {
-        let (host, port) = parse_endpoint("ws://localhost:4455").unwrap();
-        assert_eq!(host, "localhost");
-        assert_eq!(port, 4455);
+    fn parse_endpoint_drops_the_scheme_and_falls_back_to_the_obs_websocket_port() {
+        for (endpoint, expected_host, expected_port) in [
+            ("ws://localhost:4455", "localhost", 4455),
+            ("wss://obs.example.com:4456", "obs.example.com", 4456),
+            ("192.168.1.10:4455", "192.168.1.10", 4455),
+            ("localhost", "localhost", 4455),
+            ("ws://localhost", "localhost", 4455),
+            ("localhost:65535", "localhost", 65535),
+        ] {
+            let (host, port) = parse_endpoint(endpoint).unwrap();
+            assert_eq!((host.as_str(), port), (expected_host, expected_port));
+        }
     }
 
     #[test]
-    #[allow(clippy::unwrap_used)]
-    fn parse_endpoint_without_scheme() {
-        let (host, port) = parse_endpoint("192.168.1.10:4455").unwrap();
-        assert_eq!(host, "192.168.1.10");
-        assert_eq!(port, 4455);
+    fn parse_endpoint_rejects_a_port_that_is_not_a_u16() {
+        for endpoint in [
+            "localhost:notaport",
+            "localhost:",
+            "localhost:65536",
+            "localhost:-1",
+            "localhost:44 55",
+        ] {
+            assert!(
+                parse_endpoint(endpoint).is_err(),
+                "expected {endpoint} to be rejected"
+            );
+        }
     }
 
+    // Why: an OBS restart mid-stream must heal itself, so reconnection stays on until the user
+    // turns it off from the connection settings; a fresh client must never start out gated off.
     #[test]
-    #[allow(clippy::unwrap_used)]
-    fn parse_endpoint_default_port() {
-        let (host, port) = parse_endpoint("localhost").unwrap();
-        assert_eq!(host, "localhost");
-        assert_eq!(port, 4455);
-    }
-
-    #[test]
-    fn parse_endpoint_invalid_port_errors() {
-        assert!(parse_endpoint("localhost:notaport").is_err());
-    }
-
-    #[test]
-    fn client_coerces_to_dyn_builtin_control() {
-        fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
-        accepts(Arc::new(ObsClient::new_for_test(
-            "localhost:4455".to_owned(),
-        )));
+    fn auto_reconnect_starts_enabled_and_follows_the_user_toggle() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        assert!(client.auto_reconnect_enabled());
+        client.set_auto_reconnect(false);
+        assert!(!client.auto_reconnect_enabled());
+        client.set_auto_reconnect(true);
+        assert!(client.auto_reconnect_enabled());
     }
 
     #[tokio::test]

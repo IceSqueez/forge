@@ -17,6 +17,7 @@ mod globals_view;
 mod home;
 mod home_stats;
 mod i18n;
+mod instance_lock;
 mod integration_detail;
 mod integration_quick_action_modal;
 mod integration_quick_actions;
@@ -136,7 +137,22 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
 }
 
 fn main() {
-    let _log_guard = init_tracing();
+    let log_guard = init_tracing();
+
+    let _instance_lock = match instance_lock::acquire(&paths::data_dir()) {
+        instance_lock::LockOutcome::Acquired(lock) => Some(lock),
+        instance_lock::LockOutcome::AlreadyRunning => {
+            tracing::error!(
+                "another forge instance is already running for this data directory; exiting"
+            );
+            drop(log_guard);
+            std::process::exit(1);
+        }
+        instance_lock::LockOutcome::Unavailable(err) => {
+            tracing::warn!(error = %err, "single-instance lock unavailable; starting anyway");
+            None
+        }
+    };
 
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,

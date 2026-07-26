@@ -706,13 +706,15 @@ mod tests {
         assert_eq!(back, section);
     }
 
-    #[test]
-    fn detail_section_two_column_lists_roundtrip() {
-        let make_list = |title: &str| ContentList {
+    fn content_list_fixture(title: &str) -> ContentList {
+        ContentList {
             title: title.to_owned(),
             icon: SectionIcon::new("list"),
+            inline_label: None,
             count_label: Some("3".to_owned()),
             visible_rows: Some(8),
+            row_padding_y_px: 7,
+            refreshable: false,
             items: vec![ContentListItem {
                 icon: SectionIcon::new("camera"),
                 icon_tint: Some(TokenColor::Accent),
@@ -727,14 +729,45 @@ mod tests {
                 enabled: true,
             }],
             footer: None,
-        };
+        }
+    }
+
+    #[test]
+    fn detail_section_two_column_lists_roundtrip_preserves_per_side_header_options() {
         let section = DetailSection::TwoColumnLists {
-            left: make_list("Scenes"),
-            right: make_list("Sources"),
+            left: Box::new(ContentList {
+                inline_label: Some("in Gameplay".to_owned()),
+                row_padding_y_px: 8,
+                refreshable: true,
+                ..content_list_fixture("Sources")
+            }),
+            right: Box::new(content_list_fixture("Scenes")),
         };
         let json = serde_json::to_string(&section).unwrap();
         let back: DetailSection = serde_json::from_str(&json).unwrap();
         assert_eq!(back, section);
+    }
+
+    #[test]
+    fn content_list_json_omits_absent_inline_label() {
+        let json = serde_json::to_string(&content_list_fixture("Scenes")).unwrap();
+        assert!(!json.contains("inline_label"), "unexpected key in {json}");
+    }
+
+    #[test]
+    fn content_list_without_header_options_deserializes_to_compact_row_defaults() {
+        let json = r#"{
+            "title": "Scenes",
+            "icon": "list",
+            "count_label": null,
+            "visible_rows": null,
+            "items": [],
+            "footer": null
+        }"#;
+        let list: ContentList = serde_json::from_str(json).unwrap();
+        assert_eq!(list.inline_label, None);
+        assert_eq!(list.row_padding_y_px, 7);
+        assert!(!list.refreshable);
     }
 
     #[test]

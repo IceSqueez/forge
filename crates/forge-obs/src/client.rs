@@ -1419,4 +1419,254 @@ mod tests {
             );
         }
     }
+
+    fn live_source(
+        name: &str,
+        visible: bool,
+        locked: bool,
+        audio_db: Option<f32>,
+        kind: Option<&str>,
+    ) -> SourceInfo {
+        SourceInfo {
+            name: name.to_owned(),
+            visible,
+            locked,
+            audio_db,
+            kind: kind.map(str::to_owned),
+        }
+    }
+
+    fn empty_fetch() -> FetchedTopology {
+        FetchedTopology {
+            scenes: Vec::new(),
+            audio_inputs: Vec::new(),
+            sources: HashMap::new(),
+            current_scene: None,
+            current_preview_scene: None,
+        }
+    }
+
+    // Why: reconciliation only re-lists scene items, so it must not clobber the flags that live
+    // events own. `visible`/`locked`/`audio_db` are never re-fetched and stay live-wins; `kind`
+    // comes off the listing and is fetch-wins, falling back to the live row so a source the
+    // listing reports kindless does not lose the kind it already had.
+    #[test]
+    fn reconciliation_keeps_the_live_flags_per_source_and_resolves_the_kind_fetch_first() {
+        for (label, live, fetched_kind, expected) in [
+            (
+                "a fetched kind overrides the live one, the flags survive",
+                Some(live_source(
+                    "Mic",
+                    false,
+                    true,
+                    Some(-7.5),
+                    Some("stale_kind"),
+                )),
+                Some("wasapi_input_capture"),
+                (false, true, Some(-7.5), Some("wasapi_input_capture")),
+            ),
+            (
+                "a kindless listing falls back to the live kind",
+                Some(live_source(
+                    "Mic",
+                    false,
+                    true,
+                    Some(-7.5),
+                    Some("wasapi_input_capture"),
+                )),
+                None,
+                (false, true, Some(-7.5), Some("wasapi_input_capture")),
+            ),
+            (
+                "neither side knows the kind",
+                Some(live_source("Mic", true, false, None, None)),
+                None,
+                (true, false, None, None),
+            ),
+            (
+                "a source the catalog has never seen takes the visible unlocked defaults",
+                None,
+                Some("browser_source"),
+                (true, false, None, Some("browser_source")),
+            ),
+            (
+                "an unknown source with a kindless listing still takes the defaults",
+                None,
+                None,
+                (true, false, None, None),
+            ),
+        ] {
+            let mut catalog = ObsCatalog::default();
+            if let Some(row) = live {
+                catalog.sources.insert("Gameplay".to_owned(), vec![row]);
+            }
+
+            merge_reconciled_topology(
+                &mut catalog,
+                FetchedTopology {
+                    scenes: vec!["Gameplay".to_owned()],
+                    sources: HashMap::from([(
+                        "Gameplay".to_owned(),
+                        vec![("Mic".to_owned(), fetched_kind.map(str::to_owned))],
+                    )]),
+                    ..empty_fetch()
+                },
+                None,
+                None,
+            );
+
+            let merged = &catalog.sources["Gameplay"][0];
+            assert_eq!(
+                (
+                    merged.visible,
+                    merged.locked,
+                    merged.audio_db,
+                    merged.kind.as_deref()
+                ),
+                expected,
+                "{label}",
+            );
+        }
+    }
+
+    // Why: the listing is the authority on which scenes and rows exist, so anything absent from it
+    // is gone from the catalog. A scene whose item listing failed therefore loses its rows until
+    // the next tick, which is the accepted cost of per-scene rather than per-source reconciliation.
+    #[test]
+    fn reconciliation_replaces_the_scene_source_and_input_rosters_with_the_fetched_ones() {
+        let mut catalog = ObsCatalog {
+            scenes: vec!["Gameplay".to_owned(), "Deleted".to_owned()],
+            audio_inputs: vec!["Old Mic".to_owned()],
+            sources: HashMap::from([
+                (
+                    "Gameplay".to_owned(),
+                    vec![
+                        live_source("Mic", true, false, None, None),
+                        live_source("Removed Overlay", true, false, None, None),
+                    ],
+                ),
+                (
+                    "Deleted".to_owned(),
+                    vec![live_source("Webcam", true, false, None, None)],
+                ),
+            ]),
+            ..ObsCatalog::default()
+        };
+
+        merge_reconciled_topology(
+            &mut catalog,
+            FetchedTopology {
+                scenes: vec!["Gameplay".to_owned(), "Starting".to_owned()],
+                audio_inputs: vec!["New Mic".to_owned()],
+                sources: HashMap::from([("Gameplay".to_owned(), vec![("Mic".to_owned(), None)])]),
+                ..empty_fetch()
+            },
+            None,
+            None,
+        );
+
+        assert_eq!(catalog.scenes, vec!["Gameplay", "Starting"]);
+        assert_eq!(catalog.audio_inputs, vec!["New Mic"]);
+        assert_eq!(catalog.sources.keys().collect::<Vec<_>>(), vec!["Gameplay"]);
+        assert_eq!(
+            catalog.sources["Gameplay"]
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Mic"],
+        );
+    }
+
+    fn merged_scene_field(
+        preview: bool,
+        pre_fetch: Option<&str>,
+        live_at_merge: Option<&str>,
+        fetched: Option<&str>,
+    ) -> Option<String> {
+        let owned = |v: Option<&str>| v.map(str::to_owned);
+        let mut catalog = ObsCatalog::default();
+        let mut fetch = empty_fetch();
+        if preview {
+            catalog.current_preview_scene = owned(live_at_merge);
+            fetch.current_preview_scene = owned(fetched);
+        } else {
+            catalog.current_scene = owned(live_at_merge);
+            fetch.current_scene = owned(fetched);
+        }
+        let (pre_scene, pre_preview) = if preview {
+            (None, owned(pre_fetch))
+        } else {
+            (owned(pre_fetch), None)
+        };
+
+        merge_reconciled_topology(&mut catalog, fetch, pre_scene, pre_preview);
+
+        if preview {
+            catalog.current_preview_scene
+        } else {
+            catalog.current_scene
+        }
+    }
+
+    // Why: the program/preview scene is the one catalog field a live event and the reconciliation
+    // fetch both write, and the fetch reads OBS before it takes the write guard. Arbitration is by
+    // comparison with the pre-fetch capture: an untouched field adopts the fetch (so an event
+    // missed before `client.events()` subscribed heals), a field a live event moved during the
+    // window keeps the live value (so the stale fetch cannot undo a real switch).
+    #[test]
+    fn a_reconciled_scene_field_heals_from_the_fetch_only_when_no_live_event_moved_it() {
+        for (label, pre_fetch, live_at_merge, fetched, expected) in [
+            (
+                "a missed switch heals from the fetch",
+                Some("Gameplay"),
+                Some("Gameplay"),
+                Some("BRB"),
+                Some("BRB"),
+            ),
+            (
+                "a live switch during the window outranks the stale fetch",
+                Some("Gameplay"),
+                Some("BRB"),
+                Some("Gameplay"),
+                Some("BRB"),
+            ),
+            (
+                "a live switch during the window outranks an unavailable fetch",
+                None,
+                Some("BRB"),
+                None,
+                Some("BRB"),
+            ),
+            (
+                "an untouched empty field takes the fetched value",
+                None,
+                None,
+                Some("Gameplay"),
+                Some("Gameplay"),
+            ),
+            (
+                "an unavailable fetch clears an untouched field",
+                Some("Gameplay"),
+                Some("Gameplay"),
+                None,
+                None,
+            ),
+            (
+                "a live switch the fetch also saw keeps that value",
+                Some("Gameplay"),
+                Some("BRB"),
+                Some("BRB"),
+                Some("BRB"),
+            ),
+        ] {
+            for preview in [false, true] {
+                let field = if preview { "preview" } else { "program" };
+                assert_eq!(
+                    merged_scene_field(preview, pre_fetch, live_at_merge, fetched).as_deref(),
+                    expected,
+                    "{field}: {label}",
+                );
+            }
+        }
+    }
 }

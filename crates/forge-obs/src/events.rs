@@ -1161,6 +1161,30 @@ mod tests {
         assert_eq!(levels("Gameplay", "Webcam"), None);
     }
 
+    // Why: OBS has no preview scene outside studio mode and sends no scene-change event when the
+    // mode is turned off, so leaving it is the only signal that the field is now meaningless.
+    // Entering studio mode carries no scene either and must leave a known preview scene standing.
+    #[test]
+    fn only_leaving_studio_mode_clears_the_preview_scene() {
+        for (enabled, expected) in [(false, None), (true, Some("BRB"))] {
+            let mut catalog = ObsCatalog {
+                current_preview_scene: Some("BRB".to_owned()),
+                ..ObsCatalog::default()
+            };
+
+            apply_catalog_update(
+                &obws::events::Event::StudioModeStateChanged { enabled },
+                &mut catalog,
+            );
+
+            assert_eq!(
+                catalog.current_preview_scene.as_deref(),
+                expected,
+                "studio mode enabled={enabled}",
+            );
+        }
+    }
+
     #[test]
     fn every_emitted_kind_is_namespaced_under_obs() {
         use obws::events::OutputState;

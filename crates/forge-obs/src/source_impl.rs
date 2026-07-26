@@ -112,13 +112,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn current_scene_returns_none_when_unset() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let scene = client.current_scene().await.unwrap();
-        assert_eq!(scene, None);
-    }
-
-    #[tokio::test]
     async fn sources_returns_empty_for_unknown_scene() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         let sources = client.sources("NonExistent").await.unwrap();

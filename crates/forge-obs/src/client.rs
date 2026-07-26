@@ -426,10 +426,6 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                 match item {
                                     None => {
                                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
-                                        publisher.publish(crate::events::make_connection_disconnected(
-                                            crate::payload_fields::connection::reason::CONNECTION_LOST,
-                                            None,
-                                        ));
                                         break;
                                     }
                                     Some(ev) => {
@@ -488,21 +484,30 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 stats_handle.abort();
                 inner.write().await.take();
                 clear_connected_at(&connected_at);
-                if auto_reconnect.load(Ordering::Relaxed) {
+                let retry = auto_reconnect.load(Ordering::Relaxed);
+                state.store(if retry {
+                    ConnectionState::Reconnecting
+                } else {
+                    ConnectionState::Disconnected
+                });
+                publisher.publish(crate::events::make_connection_disconnected(
+                    crate::payload_fields::connection::reason::CONNECTION_LOST,
+                    None,
+                ));
+                if retry {
                     backoff.reset();
                     reconnecting = true;
                 } else {
-                    state.store(ConnectionState::Disconnected);
                     return;
                 }
             }
 
             Err(ObsError::Authentication) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
+                state.store(ConnectionState::Disconnected);
                 publisher.publish(crate::events::make_connection_auth_failed(
                     "authentication rejected",
                 ));
-                state.store(ConnectionState::Disconnected);
                 return;
             }
 

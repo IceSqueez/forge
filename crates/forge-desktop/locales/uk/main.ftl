@@ -1325,6 +1325,7 @@ server_btn_disconnect = Відключити
 ## Загальні бейджі статусу (використовуються на сторінках деталей платформ)
 
 common_status_not_connected = Не підключено
+common_status_connected = Підключено
 
 ## Деталі платформи YouTube
 

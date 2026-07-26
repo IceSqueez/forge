@@ -1313,6 +1313,7 @@ server_btn_disconnect = Disconnect
 ## Common status badges (shared across platform detail pages)
 
 common_status_not_connected = Not connected
+common_status_connected = Connected
 
 ## YouTube platform detail
 

@@ -91,6 +91,7 @@ pub struct IntegrationDetail {
 const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
 const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
+const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
 impl EventEmitter<ObsConnected> for IntegrationDetail {}
@@ -169,6 +170,9 @@ impl IntegrationDetail {
 
         if is_twitch {
             Self::spawn_eventsub_tally(&event_bus, cx);
+        }
+        if is_obs {
+            Self::spawn_obs_connection_watch(&event_bus, cx);
         }
         if is_twitch || matches!(status.id().as_str(), "youtube" | "kick") {
             Self::spawn_viewer_sampler(&live_viewers, cx);
@@ -271,6 +275,26 @@ impl IntegrationDetail {
                     })
                     .is_err()
                 {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn spawn_obs_connection_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+        let mut sub = bus.subscribe();
+        cx.spawn(async move |this, cx| {
+            while let async_bridge::EventBatch::Ready(batch) =
+                async_bridge::recv_event_batch(&mut sub).await
+            {
+                let transitioned = batch.iter().any(|e| {
+                    e.source == EventSource::Obs && e.kind.starts_with(OBS_CONNECTION_PREFIX)
+                });
+                if !transitioned {
+                    continue;
+                }
+                if this.update(cx, |this, cx| this.reload(cx)).is_err() {
                     break;
                 }
             }
@@ -460,7 +484,7 @@ impl IntegrationDetail {
             .detach();
             return;
         }
-        async_bridge::report_failure(
+        async_bridge::run_async(
             &self.rt_handle,
             async move {
                 match verb {
@@ -469,8 +493,13 @@ impl IntegrationDetail {
                     ControlVerb::RefreshToken => ctrl.refresh_token().await,
                 }
             },
-            ErrorSink::Toast,
-            tr!("integration_control_failed"),
+            move |this, result, cx| match result {
+                Ok(()) => this.reload(cx),
+                Err(err) => {
+                    tracing::warn!(error = %err, "integration control failed");
+                    cx.push_toast(ToastKind::Error, tr!("integration_control_failed"));
+                }
+            },
             cx,
         );
     }
@@ -721,6 +750,44 @@ impl IntegrationDetail {
                 );
         }
         row.into_any_element()
+    }
+
+    fn header_right_connection(&self, palette: &ForgePalette) -> AnyElement {
+        let (dot, text, label) = match self.connection {
+            ConnectionState::Connected => (
+                palette.success,
+                palette.success,
+                tr!("common_status_connected"),
+            ),
+            ConnectionState::Connecting => (
+                palette.info,
+                palette.info,
+                tr!("integration_state_connecting_title"),
+            ),
+            ConnectionState::Reconnecting => (
+                palette.warning,
+                palette.warning,
+                tr!("integration_state_reconnecting_title"),
+            ),
+            ConnectionState::Disconnected => (
+                palette.text_faint,
+                palette.text_muted,
+                tr!("common_status_not_connected"),
+            ),
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .child(status_dot(dot, px(7.0)))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(text)
+                    .child(label),
+            )
+            .into_any_element()
     }
 
     fn is_oauth_platform(&self) -> bool {
@@ -986,7 +1053,8 @@ impl Render for IntegrationDetail {
             None if is_oauth_platform && self.connection == ConnectionState::Connected => {
                 Some(self.header_right_connected(&palette, density))
             }
-            None => None,
+            None if is_oauth_platform => None,
+            None => Some(self.header_right_connection(&palette)),
         };
         let mut frame = page_frame(
             vec![

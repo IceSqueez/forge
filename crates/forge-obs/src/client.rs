@@ -245,9 +245,7 @@ impl BuiltinControl for ObsClient {
         drop(slot);
 
         self.state.store(ConnectionState::Connecting);
-        if let Ok(mut g) = self.connected_at.write() {
-            *g = None;
-        }
+        clear_connected_at(&self.connected_at);
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&self.inner),
@@ -410,6 +408,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                             () = shutdown.notified() => {
                                 stats_handle.abort();
                                 inner.write().await.take();
+                                clear_connected_at(&connected_at);
                                 state.store(ConnectionState::Disconnected);
                                 tracing::info!("OBS supervisor shutting down");
                                 return;
@@ -447,6 +446,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                         shutdown.notified().await;
                         stats_handle.abort();
                         inner.write().await.take();
+                        clear_connected_at(&connected_at);
                         state.store(ConnectionState::Disconnected);
                         return;
                     }
@@ -454,6 +454,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
                 stats_handle.abort();
                 inner.write().await.take();
+                clear_connected_at(&connected_at);
                 if auto_reconnect.load(Ordering::Relaxed) {
                     backoff.reset();
                     reconnecting = true;
@@ -762,6 +763,22 @@ fn required_event_subscriptions() -> obws::requests::EventSubscription {
         | Sub::FILTERS
 }
 
+fn clear_connected_at(connected_at: &RwLock<Option<OffsetDateTime>>) {
+    if let Ok(mut g) = connected_at.write() {
+        *g = None;
+    }
+}
+
+fn describe_error_chain(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut parts = vec![e.to_string()];
+    let mut current = e.source();
+    while let Some(source) = current {
+        parts.push(source.to_string());
+        current = source.source();
+    }
+    parts.join(": ")
+}
+
 pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
     match &e {
         obws::error::Error::Timeout => ObsError::Timeout,
@@ -769,7 +786,14 @@ pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
         obws::error::Error::Handshake(obws::client::HandshakeError::NoIdentified) => {
             ObsError::Authentication
         }
-        _ => ObsError::Connect(e.to_string()),
+        obws::error::Error::Handshake(obws::client::HandshakeError::ConnectionClosed(Some(
+            details,
+        ))) if u16::from(details.code)
+            == u16::from(obws::responses::WebSocketCloseCode::AuthenticationFailed) =>
+        {
+            ObsError::Authentication
+        }
+        _ => ObsError::Connect(describe_error_chain(&e)),
     }
 }
 

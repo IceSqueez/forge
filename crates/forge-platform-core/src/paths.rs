@@ -24,6 +24,9 @@ fn app_segment() -> &'static str {
 }
 
 pub fn data_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("FORGE_DATA_DIR").filter(|v| !v.is_empty()) {
+        return PathBuf::from(dir);
+    }
     base_dirs().data_dir().join(app_segment())
 }
 

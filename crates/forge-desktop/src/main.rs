@@ -24,6 +24,8 @@ mod integration_seed;
 mod integrations;
 mod oauth_connect;
 mod obs_connect;
+mod obs_credentials_form;
+mod obs_settings_modal;
 mod picker_favorites;
 mod platforms;
 mod presentation;

@@ -14,7 +14,7 @@ use forge_platform_core::{
 use forge_platform_kick::KickIntegrationBundle;
 use forge_platform_twitch::TwitchIntegrationBundle;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
-use forge_storage::CredentialsRepo;
+use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_types::{PlatformId, SubActionStep};
 use futures_util::StreamExt as _;
 use gpui::{
@@ -29,8 +29,10 @@ use std::time::{Duration, Instant};
 use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::{content_sections, health_grid};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
-use crate::integrations::KickInstallSeed;
+use crate::integrations::{KickInstallSeed, ObsInstallSeed};
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
+use crate::obs_credentials_form::ObsConnected;
+use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
@@ -48,9 +50,11 @@ pub struct IntegrationDetail {
     action_engine: ActionEngineHandle,
     obs_source: Option<Arc<ObsClient>>,
     pub(crate) credentials: Arc<dyn CredentialsRepo>,
+    settings: Arc<dyn SettingsRepo>,
     pub(crate) bus: Arc<dyn EventPublisher>,
     pub(crate) live_viewers: LiveViewerAggregatorHandle,
     pub(crate) kick_install_seed: Option<KickInstallSeed>,
+    obs_install_seed: ObsInstallSeed,
     pub(crate) connect_platform: Option<PlatformId>,
     pub(crate) flow_phase: LocalCallbackFlowPhase,
     pub(crate) flow_auth_url: Option<String>,
@@ -58,6 +62,7 @@ pub struct IntegrationDetail {
     pub(crate) youtube_flow: Option<YoutubeFlowHandle>,
     pub(crate) kick_flow: Option<KickFlowHandle>,
     is_twitch: bool,
+    is_obs: bool,
     twitch_reauth_required: bool,
     pub(crate) twitch_flow: Option<TwitchFlowHandle>,
     pub(crate) twitch_device: Option<TwitchDeviceState>,
@@ -76,7 +81,9 @@ pub struct IntegrationDetail {
     viewer_samples: VecDeque<(Instant, u64)>,
     pending_disconnect: Confirm<()>,
     quick_action_modal: Option<Entity<QuickActionModal>>,
+    obs_settings_modal: Option<Entity<ObsSettingsModal>>,
     _qa_modal_sub: Option<Subscription>,
+    _obs_modal_sub: Option<Subscription>,
     _conn_obs: Subscription,
     _qa_search_sub: Subscription,
 }
@@ -86,6 +93,7 @@ const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
+impl EventEmitter<ObsConnected> for IntegrationDetail {}
 
 impl Drop for IntegrationDetail {
     fn drop(&mut self) {
@@ -108,16 +116,19 @@ impl IntegrationDetail {
         rt_handle: tokio::runtime::Handle,
         action_engine: ActionEngineHandle,
         credentials: Arc<dyn CredentialsRepo>,
+        settings: Arc<dyn SettingsRepo>,
         bus: Arc<dyn EventPublisher>,
         event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
         kick_install_seed: Option<KickInstallSeed>,
+        obs_install_seed: ObsInstallSeed,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
 
         let is_twitch = status.id().as_str() == "twitch";
+        let is_obs = status.id().as_str() == "obs";
         let palette = cx.palette();
         let qa_search = SearchState::from_field(cx.new(|cx| {
             forge_components::search_input(tr!("integration_qa_filter_placeholder"), palette, cx)
@@ -174,9 +185,11 @@ impl IntegrationDetail {
             action_engine,
             obs_source,
             credentials,
+            settings,
             bus,
             live_viewers,
             kick_install_seed,
+            obs_install_seed,
             connect_platform,
             flow_phase: LocalCallbackFlowPhase::Idle,
             flow_auth_url: None,
@@ -184,6 +197,7 @@ impl IntegrationDetail {
             youtube_flow: None,
             kick_flow: None,
             is_twitch,
+            is_obs,
             twitch_reauth_required: false,
             twitch_flow: None,
             twitch_device: None,
@@ -202,7 +216,9 @@ impl IntegrationDetail {
             viewer_samples: VecDeque::new(),
             pending_disconnect: Confirm::default(),
             quick_action_modal: None,
+            obs_settings_modal: None,
             _qa_modal_sub: None,
+            _obs_modal_sub: None,
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
         }
@@ -347,18 +363,65 @@ impl IntegrationDetail {
         cx.emit(NavRequested(screen));
     }
 
-    fn on_header_action(&mut self, action: HeaderAction, cx: &mut Context<Self>) {
+    fn on_header_action(
+        &mut self,
+        action: HeaderAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match action {
-            HeaderAction::Disconnect => {
-                self.pending_disconnect.request(());
-                cx.notify();
-            }
+            HeaderAction::Disconnect => self.request_disconnect(cx),
             HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect, cx),
             HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken, cx),
+            HeaderAction::Settings if self.is_obs => self.open_obs_settings(window, cx),
             HeaderAction::Settings => {
                 cx.push_toast(ToastKind::Info, tr!("integration_settings_coming_soon"));
             }
         }
+    }
+
+    fn request_disconnect(&mut self, cx: &mut Context<Self>) {
+        self.pending_disconnect.request(());
+        cx.notify();
+    }
+
+    fn open_obs_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let rt_handle = self.rt_handle.clone();
+        let credentials = Arc::clone(&self.credentials);
+        let settings = Arc::clone(&self.settings);
+        let bus = Arc::clone(&self.bus);
+        let seed = self.obs_install_seed.clone();
+        let modal =
+            cx.new(|cx| ObsSettingsModal::new(rt_handle, credentials, settings, bus, seed, cx));
+        modal.update(cx, |m, cx| m.focus(window, cx));
+        self._obs_modal_sub = Some(cx.subscribe(&modal, Self::on_obs_settings_event));
+        self.obs_settings_modal = Some(modal);
+        cx.notify();
+    }
+
+    fn on_obs_settings_event(
+        &mut self,
+        _modal: Entity<ObsSettingsModal>,
+        event: &ObsSettingsModalEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ObsSettingsModalEvent::Close => self.close_obs_settings(cx),
+            ObsSettingsModalEvent::Saved => {
+                self.close_obs_settings(cx);
+                cx.emit(ObsConnected);
+            }
+            ObsSettingsModalEvent::Disconnect => {
+                self.close_obs_settings(cx);
+                self.request_disconnect(cx);
+            }
+        }
+    }
+
+    fn close_obs_settings(&mut self, cx: &mut Context<Self>) {
+        self.obs_settings_modal = None;
+        self._obs_modal_sub = None;
+        cx.notify();
     }
 
     fn dispatch_control(&mut self, verb: ControlVerb, cx: &mut Context<Self>) {
@@ -741,8 +804,8 @@ impl IntegrationDetail {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.on_header_action(action.clone(), cx)
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.on_header_action(action.clone(), window, cx)
             }))
             .child(icon(glyph, FONT_XS, text_color))
             .child(
@@ -940,6 +1003,7 @@ impl Render for IntegrationDetail {
             .child(frame)
             .children(disconnect_overlay)
             .children(self.quick_action_modal.clone())
+            .children(self.obs_settings_modal.clone())
     }
 }
 

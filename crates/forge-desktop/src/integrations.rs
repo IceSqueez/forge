@@ -12,7 +12,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
 
-use crate::obs_connect::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
+use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 

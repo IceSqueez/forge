@@ -22,7 +22,8 @@ use crate::home::HomeView;
 use crate::integration_detail::IntegrationDetail;
 use crate::integration_seed;
 use crate::integrations::obs_builtin_object;
-use crate::obs_connect::{ObsConnectView, ObsConnected};
+use crate::obs_connect::ObsConnectView;
+use crate::obs_credentials_form::ObsConnected;
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
@@ -181,6 +182,7 @@ impl AppShell {
 
                 let connectivity = topics.platforms.clone();
                 let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
+                let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
                 let event_bus = Arc::clone(&handles.bus);
                 let detail = match builtin {
@@ -196,6 +198,7 @@ impl AppShell {
                         let action_engine = handles.action_engine.clone();
                         let live_viewers = handles.live_viewers.clone();
                         let kick_install_seed = handles.kick_install_seed.clone();
+                        let obs_install_seed = handles.obs_install_seed.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 icon,
@@ -208,10 +211,12 @@ impl AppShell {
                                 rt_handle,
                                 action_engine,
                                 credentials,
+                                settings,
                                 bus,
                                 event_bus.clone(),
                                 live_viewers,
                                 kick_install_seed,
+                                obs_install_seed,
                                 connectivity,
                                 cx,
                             )
@@ -223,6 +228,7 @@ impl AppShell {
                         let action_engine = handles.action_engine.clone();
                         let live_viewers = handles.live_viewers.clone();
                         let kick_install_seed = handles.kick_install_seed.clone();
+                        let obs_install_seed = handles.obs_install_seed.clone();
                         cx.new(|cx| {
                             IntegrationDetail::new(
                                 seed.icon,
@@ -235,10 +241,12 @@ impl AppShell {
                                 rt_handle,
                                 action_engine,
                                 credentials,
+                                settings,
                                 bus,
                                 event_bus.clone(),
                                 live_viewers,
                                 kick_install_seed,
+                                obs_install_seed,
                                 connectivity,
                                 cx,
                             )
@@ -247,6 +255,10 @@ impl AppShell {
                 };
                 cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                cx.subscribe(&detail, |this, _view, _: &ObsConnected, cx| {
+                    this.rebuild_current(cx);
                 })
                 .detach();
                 detail.into()

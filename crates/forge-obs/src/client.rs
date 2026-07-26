@@ -203,7 +203,7 @@ impl BuiltinStatus for ObsClient {
     }
 
     fn header_actions(&self) -> Vec<HeaderAction> {
-        vec![HeaderAction::Reconnect, HeaderAction::Disconnect]
+        vec![HeaderAction::Reconnect, HeaderAction::Settings]
     }
 
     /// `obs-websocket` protocol version plus our own WS session uptime, computed fresh on every

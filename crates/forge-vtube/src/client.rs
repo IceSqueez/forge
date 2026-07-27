@@ -782,4 +782,287 @@ pub(crate) mod tests {
             "connect_failed must carry a non-empty human detail string"
         );
     }
+
+    #[test]
+    fn split_endpoint_recovers_the_host_and_port_that_get_persisted() {
+        for (endpoint, expected) in [
+            ("ws://127.0.0.1:8001/", ("127.0.0.1", 8001)),
+            ("wss://vts.local:9123", ("vts.local", 9123)),
+            ("ws://vts.local/", ("vts.local", 8001)),
+            ("ws://[::1]:8001/", ("[::1]", 8001)),
+        ] {
+            let (host, port) = split_endpoint(endpoint);
+
+            assert_eq!((host.as_str(), port), expected, "endpoint {endpoint}");
+        }
+    }
+
+    /// Reads the connection state at the instant each event is published, which is the only
+    /// vantage point that can tell "stored, then published" apart from "published, then stored".
+    struct StateProbePublisher {
+        client: Arc<OnceLock<Arc<VTubeClient>>>,
+        tx: mpsc::UnboundedSender<(Event, Option<ConnectionState>)>,
+    }
+
+    impl EventPublisher for StateProbePublisher {
+        fn publish(&self, event: Event) {
+            let state = self.client.get().map(|c| c.connection_state());
+            let _ = self.tx.send((event, state));
+        }
+    }
+
+    type ProbedEvents = mpsc::UnboundedReceiver<(Event, Option<ConnectionState>)>;
+
+    async fn state_when(
+        rx: &mut ProbedEvents,
+        matches: impl Fn(&Event) -> bool,
+    ) -> Option<Option<ConnectionState>> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (event, state) = rx.recv().await?;
+                if matches(&event) {
+                    return Some(state);
+                }
+            }
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
+    fn is_connected(event: &Event) -> bool {
+        event.payload["is_connected"].as_bool() == Some(true)
+    }
+
+    fn has_reason(event: &Event, reason: &str) -> bool {
+        event.payload["reason"].as_str() == Some(reason)
+    }
+
+    /// Holds an authenticated connection open until `gate` fires, so a test can finish its own
+    /// setup before the peer drops the socket under the supervisor.
+    async fn serve_auth_then_gated_close(
+        listener: tokio::net::TcpListener,
+        gate: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let Ok((stream, _)) = listener.accept().await else {
+            return;
+        };
+        let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+            return;
+        };
+        serve_full_auth(&mut ws).await;
+        if gate.await.is_err() {
+            return;
+        }
+        let _ = ws.close(None).await;
+    }
+
+    /// Rejects the stored token, but only once `gate` fires.
+    async fn serve_gated_token_rejection(
+        listener: tokio::net::TcpListener,
+        gate: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        use tokio_tungstenite::tungstenite::Message;
+        let Ok((stream, _)) = listener.accept().await else {
+            return;
+        };
+        let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+            return;
+        };
+        let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
+            Duration::from_secs(3),
+            futures_util::StreamExt::next(&mut ws),
+        )
+        .await
+        else {
+            return;
+        };
+        let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        let request_id = req["requestID"].as_str().unwrap_or("unknown").to_owned();
+        if gate.await.is_err() {
+            return;
+        }
+        let resp = serde_json::json!({
+            "apiName": "VTubeStudioPublicAPI",
+            "apiVersion": "1.0",
+            "requestID": request_id,
+            "messageType": "AuthenticationResponse",
+            "data": { "authenticated": false, "reason": "Plugin removed" }
+        });
+        ws.send(Message::Text(resp.to_string().into())).await.ok();
+        while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
+    }
+
+    // Why: the VTube screen reloads off vtube.connection.changed and then reads the connection
+    // state back. Publishing before the state was stored let that read observe the state the
+    // connection was leaving, so the header kept claiming a live connection after it dropped.
+    #[tokio::test]
+    async fn the_connection_state_is_already_settled_when_a_socket_close_is_published() {
+        for (auto_reconnect, expected) in [
+            (false, ConnectionState::Disconnected),
+            (true, ConnectionState::Reconnecting),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
+            let server = tokio::spawn(serve_auth_then_gated_close(listener, gate_rx));
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let slot: Arc<OnceLock<Arc<VTubeClient>>> = Arc::new(OnceLock::new());
+
+            let client = Arc::new(VTubeClient::connect(
+                VTubeConfig {
+                    endpoint: format!("ws://{addr}"),
+                },
+                Arc::new(StateProbePublisher {
+                    client: Arc::clone(&slot),
+                    tx,
+                }),
+                MockCreds::new().creds(),
+            ));
+            let _ = slot.set(Arc::clone(&client));
+            assert!(
+                state_when(&mut rx, is_connected).await.is_some(),
+                "expected the client to reach connected before the peer drops the socket"
+            );
+            client.set_auto_reconnect(auto_reconnect);
+            let _ = gate_tx.send(());
+
+            let state = state_when(&mut rx, |e| has_reason(e, "socket_closed")).await;
+
+            server.abort();
+            drop(client);
+            assert_eq!(
+                state,
+                Some(Some(expected)),
+                "state observed at the socket_closed publish with auto_reconnect = {auto_reconnect}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_closed_socket_stops_the_supervisor_when_auto_reconnect_is_off() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_auth_then_gated_close(listener, gate_rx));
+        let publisher = MockPublisher::new();
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            publisher.publisher(),
+            MockCreds::new().creds(),
+        );
+        assert!(wait_for_connected(&publisher).await, "expected connected");
+
+        client.set_auto_reconnect(false);
+        let _ = gate_tx.send(());
+
+        let handle = client.supervisor.lock().unwrap().take().unwrap();
+        let stopped = tokio::time::timeout(Duration::from_secs(5), handle).await;
+        server.abort();
+        assert!(
+            stopped.is_ok(),
+            "the supervisor kept looping after the socket closed with auto-reconnect off"
+        );
+    }
+
+    // Why: a rejected token cannot be fixed by dialing again, so the terminal auth exits must
+    // ignore the retry flag entirely rather than fall into the backoff loop.
+    #[tokio::test]
+    async fn a_rejected_token_stops_the_supervisor_even_with_auto_reconnect_on() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_gated_token_rejection(listener, gate_rx));
+        let creds = MockCreds::new();
+        creds.insert(
+            "vtube:default",
+            &serde_json::json!({ "token": "stale-token", "api_version": "1.0" }).to_string(),
+        );
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            MockPublisher::new().publisher(),
+            creds.creds(),
+        );
+
+        client.set_auto_reconnect(true);
+        let _ = gate_tx.send(());
+
+        let handle = client.supervisor.lock().unwrap().take().unwrap();
+        let stopped = tokio::time::timeout(Duration::from_secs(5), handle).await;
+        server.abort();
+        assert!(
+            stopped.is_ok(),
+            "a rejected token must end the supervisor even while retries are enabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_connection_state_is_already_disconnected_when_the_auth_rejection_is_published() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_gated_token_rejection(listener, gate_rx));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let slot: Arc<OnceLock<Arc<VTubeClient>>> = Arc::new(OnceLock::new());
+        let creds = MockCreds::new();
+        creds.insert(
+            "vtube:default",
+            &serde_json::json!({ "token": "stale-token", "api_version": "1.0" }).to_string(),
+        );
+
+        let client = Arc::new(VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            Arc::new(StateProbePublisher {
+                client: Arc::clone(&slot),
+                tx,
+            }),
+            creds.creds(),
+        ));
+        let _ = slot.set(Arc::clone(&client));
+        let _ = gate_tx.send(());
+
+        let state = state_when(&mut rx, |e| has_reason(e, "auth_required")).await;
+
+        server.abort();
+        drop(client);
+        assert_eq!(state, Some(Some(ConnectionState::Disconnected)));
+    }
+
+    // Why: the approval popup blocks inside VTube Studio with no feedback on our side. Without
+    // this phase the screen sits on "connecting" for the whole 30 s token wait.
+    #[tokio::test]
+    async fn the_client_announces_that_it_is_waiting_for_the_vts_approval_popup() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                return;
+            };
+            while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
+        });
+        let publisher = MockPublisher::new();
+
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            publisher.publisher(),
+            MockCreds::new().creds(),
+        );
+
+        assert!(
+            wait_for(|| publisher.disconnected_with_reason("awaiting_approval")).await,
+            "a cold start must announce the pending approval popup"
+        );
+        assert_eq!(client.auth_state(), AuthState::AwaitingApproval);
+    }
 }

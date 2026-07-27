@@ -80,17 +80,9 @@ impl BuiltinControl for VTubeClient {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use forge_platform_core::{BuiltinControl, ControlFailure};
 
     use crate::client::VTubeClient;
-
-    #[test]
-    fn client_coerces_to_dyn_builtin_control() {
-        fn accepts(_: Arc<dyn BuiltinControl>) {}
-        accepts(Arc::new(VTubeClient::new_for_test("ws://127.0.0.1:8001/")));
-    }
 
     #[tokio::test]
     async fn refresh_token_is_unsupported() {

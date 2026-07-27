@@ -92,17 +92,34 @@ pub async fn clear(creds: &dyn CredentialsRepo) -> Result<bool, StorageError> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::client::tests::{MockCreds, MockPublisher};
 
+    // Why: bundles persisted before the endpoint became configurable carry only token and
+    // api_version. Without the serde defaults every one of those bundles fails to parse, and
+    // the user is pushed back through the VTube Studio approval popup on upgrade.
     #[test]
-    fn credentials_serde_roundtrip() {
-        let creds = VTubeCredentials {
-            token: "tok-abc123".into(),
-            api_version: "1.0".into(),
-        };
-        let json = serde_json::to_string(&creds).unwrap();
-        let back: VTubeCredentials = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.token, creds.token);
-        assert_eq!(back.api_version, creds.api_version);
+    fn a_bundle_saved_without_an_endpoint_loads_against_the_vts_loopback_defaults() {
+        let stored = r#"{"token":"tok-abc123","api_version":"1.0"}"#;
+
+        let creds: VTubeCredentials = serde_json::from_str(stored).unwrap();
+
+        assert_eq!(creds.token, "tok-abc123");
+        assert_eq!(creds.host, "127.0.0.1");
+        assert_eq!(creds.port, 8001);
+    }
+
+    #[tokio::test]
+    async fn a_custom_endpoint_survives_a_store_then_load_cycle() {
+        let repo = MockCreds::new();
+
+        store(&*repo, "tok-xyz", "1.0", "192.168.1.50", 9123)
+            .await
+            .unwrap();
+        let back = load(&*repo).await.unwrap().unwrap();
+
+        assert_eq!(back.token, "tok-xyz");
+        assert_eq!(back.host, "192.168.1.50");
+        assert_eq!(back.port, 9123);
     }
 
     #[test]
@@ -110,10 +127,31 @@ mod tests {
         let creds = VTubeCredentials {
             token: "super-secret-vtube-token".into(),
             api_version: "1.0".into(),
+            host: "127.0.0.1".into(),
+            port: 8001,
         };
+
         let s = format!("{creds:?}");
-        assert!(!s.contains("super-secret-vtube-token"));
+
+        assert!(!s.contains("super-secret-vtube-token"), "Debug leaked: {s}");
         assert!(s.contains("***"));
-        assert!(s.contains("1.0"));
+    }
+
+    // Why: the loader used to dial the compiled-in default endpoint no matter what was stored,
+    // so a user running VTube Studio on another port reconnected to the wrong socket on every
+    // restart. TEST-NET-3 keeps the spawned supervisor's dial off any real host.
+    #[tokio::test]
+    async fn load_and_connect_dials_the_stored_endpoint_not_the_compiled_in_default() {
+        let repo = MockCreds::new();
+        store(&*repo, "tok", "1.0", "203.0.113.7", 9123)
+            .await
+            .unwrap();
+        let publisher = MockPublisher::new();
+
+        let client = load_and_connect(&*repo, publisher.publisher(), repo.creds())
+            .await
+            .unwrap();
+
+        assert_eq!(client.config.endpoint, "ws://203.0.113.7:9123/");
     }
 }

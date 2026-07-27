@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use time::OffsetDateTime;
@@ -19,6 +20,9 @@ pub(crate) type ReqTxSlot = Arc<tokio::sync::Mutex<mpsc::UnboundedSender<Pending
 pub(crate) type VtsWs =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+pub(crate) const DEFAULT_VTS_HOST: &str = "127.0.0.1";
+pub(crate) const DEFAULT_VTS_PORT: u16 = 8001;
+
 #[derive(Debug, Clone)]
 pub struct VTubeConfig {
     pub endpoint: String,
@@ -27,8 +31,28 @@ pub struct VTubeConfig {
 impl Default for VTubeConfig {
     fn default() -> Self {
         Self {
-            endpoint: "ws://127.0.0.1:8001/".to_owned(),
+            endpoint: format!("ws://{DEFAULT_VTS_HOST}:{DEFAULT_VTS_PORT}/"),
         }
+    }
+}
+
+pub(crate) fn split_endpoint(endpoint: &str) -> (String, u16) {
+    let without_scheme = endpoint
+        .strip_prefix("ws://")
+        .or_else(|| endpoint.strip_prefix("wss://"))
+        .unwrap_or(endpoint);
+
+    let authority = without_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(without_scheme);
+
+    match authority.rsplit_once(':') {
+        Some((host, port_str)) => match port_str.parse::<u16>() {
+            Ok(port) => (host.to_owned(), port),
+            Err(_) => (authority.to_owned(), DEFAULT_VTS_PORT),
+        },
+        None => (authority.to_owned(), DEFAULT_VTS_PORT),
     }
 }
 
@@ -50,6 +74,7 @@ pub struct VTubeClient {
     pub(crate) content_state: Arc<RwLock<crate::content::ContentSnapshot>>,
     pub(crate) content_notifier: crate::content::ContentNotifier,
     content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
+    pub(crate) auto_reconnect: Arc<AtomicBool>,
     // Never logged or surfaced.
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
     pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
@@ -72,6 +97,7 @@ impl VTubeClient {
         let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
         let content_state = Arc::new(RwLock::new(crate::content::ContentSnapshot::default()));
         let (content_notifier, content_changed_rx) = crate::content::ContentNotifier::new();
+        let auto_reconnect = Arc::new(AtomicBool::new(true));
 
         let health_handle = spawn_health_task(
             Arc::clone(&health_state),
@@ -98,6 +124,7 @@ impl VTubeClient {
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
             content_notifier: content_notifier.clone(),
+            auto_reconnect: Arc::clone(&auto_reconnect),
         };
         let handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
 
@@ -118,6 +145,7 @@ impl VTubeClient {
             content_state,
             content_notifier,
             content_task: Arc::new(std::sync::Mutex::new(Some(content_handle))),
+            auto_reconnect,
             reconnect_publisher: publisher,
             reconnect_creds: creds,
         }
@@ -125,6 +153,18 @@ impl VTubeClient {
 
     pub fn connection_state(&self) -> ConnectionState {
         self.state.load()
+    }
+
+    pub fn auth_state(&self) -> AuthState {
+        self.auth_state.read().map_or(AuthState::Cold, |g| *g)
+    }
+
+    pub fn set_auto_reconnect(&self, enabled: bool) {
+        self.auto_reconnect.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn auto_reconnect_enabled(&self) -> bool {
+        self.auto_reconnect.load(Ordering::Relaxed)
     }
 
     pub(crate) async fn send_json_request(
@@ -193,6 +233,7 @@ impl VTubeClient {
             content_state: Arc::new(RwLock::new(crate::content::ContentSnapshot::default())),
             content_notifier: crate::content::ContentNotifier::noop(),
             content_task: Arc::new(std::sync::Mutex::new(None)),
+            auto_reconnect: Arc::new(AtomicBool::new(true)),
             reconnect_publisher: publisher,
             reconnect_creds: creds,
         }

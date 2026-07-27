@@ -21,6 +21,9 @@ pub enum VTubeError {
     #[error("not connected")]
     NotConnected,
 
+    #[error("connection timed out")]
+    Timeout,
+
     #[error("serialization error: {0}")]
     Json(#[from] serde_json::Error),
 }

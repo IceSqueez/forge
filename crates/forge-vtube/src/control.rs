@@ -49,6 +49,7 @@ impl BuiltinControl for VTubeClient {
             health_state: Arc::clone(&self.health_state),
             health_tx: self.health_tx.clone(),
             content_notifier: self.content_notifier.clone(),
+            auto_reconnect: Arc::clone(&self.auto_reconnect),
         };
         let new_handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
         if let Ok(mut g) = self.supervisor.lock() {

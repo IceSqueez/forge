@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -97,14 +98,17 @@ async fn await_expression_response(
     }
 }
 
-async fn send_ws_msg<T: serde::Serialize>(ws: &mut VtsWs, msg: &T) -> Result<(), VTubeError> {
+pub(crate) async fn send_ws_msg<T: serde::Serialize>(
+    ws: &mut VtsWs,
+    msg: &T,
+) -> Result<(), VTubeError> {
     let text = serde_json::to_string(msg).map_err(VTubeError::Json)?;
     ws.send(Message::Text(text.into()))
         .await
         .map_err(|e| VTubeError::Connect(e.to_string()))
 }
 
-async fn recv_next_text(ws: &mut VtsWs) -> Result<serde_json::Value, VTubeError> {
+pub(crate) async fn recv_next_text(ws: &mut VtsWs) -> Result<serde_json::Value, VTubeError> {
     loop {
         match ws.next().await {
             None => return Err(VTubeError::Connect("connection closed".to_owned())),
@@ -193,6 +197,8 @@ async fn run_auth(
     ws: &mut VtsWs,
     creds: &dyn CredentialsRepo,
     endpoint: &str,
+    auth_state: &RwLock<AuthState>,
+    publisher: &dyn EventPublisher,
 ) -> Result<(), VTubeError> {
     let stored = crate::credentials::load(creds).await.ok().flatten();
 
@@ -200,14 +206,20 @@ async fn run_auth(
         tracing::debug!(endpoint, "using stored VTube Studio credential");
         c.token
     } else {
-        let new_token = request_new_token(ws, endpoint).await?;
-        if let Err(e) = crate::credentials::store(creds, &new_token, "1.0").await {
-            tracing::warn!(endpoint, error = %e, "failed to persist VTube Studio token");
+        if let Ok(mut g) = auth_state.write() {
+            *g = AuthState::AwaitingApproval;
         }
-        new_token
+        emit_connection_changed(publisher, endpoint, false, Some("awaiting_approval"), None);
+        request_new_token(ws, endpoint).await?
     };
 
-    authenticate_with_token(ws, creds, &token, endpoint).await
+    authenticate_with_token(ws, creds, &token, endpoint).await?;
+
+    let (host, port) = crate::client::split_endpoint(endpoint);
+    if let Err(e) = crate::credentials::store(creds, &token, "1.0", &host, port).await {
+        tracing::warn!(endpoint, error = %e, "failed to persist VTube Studio credential");
+    }
+    Ok(())
 }
 
 pub(crate) struct SupervisorContext {
@@ -222,6 +234,7 @@ pub(crate) struct SupervisorContext {
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) content_notifier: crate::content::ContentNotifier,
+    pub(crate) auto_reconnect: Arc<AtomicBool>,
 }
 
 pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
@@ -237,6 +250,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         health_state,
         health_tx,
         content_notifier,
+        auto_reconnect,
     } = ctx;
 
     let mut backoff = Backoff::with_cap(VTS_BACKOFF_CAP);
@@ -258,6 +272,11 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     return;
                 }
             }
+            if !auto_reconnect.load(Ordering::Relaxed) {
+                state.store(ConnectionState::Disconnected);
+                emit_connection_changed(&*publisher, &endpoint, false, None, None);
+                return;
+            }
         }
 
         state.store(if reconnecting {
@@ -275,6 +294,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     error = %e,
                     "VTube Studio connection attempt failed"
                 );
+                let retry = auto_reconnect.load(Ordering::Relaxed);
+                if !retry {
+                    state.store(ConnectionState::Disconnected);
+                }
                 emit_connection_changed(
                     &*publisher,
                     &endpoint,
@@ -282,35 +305,38 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     Some("connect_failed"),
                     Some(e.to_string()),
                 );
-                reconnecting = true;
-                continue;
+                if retry {
+                    reconnecting = true;
+                    continue;
+                }
+                return;
             }
         };
 
-        match run_auth(&mut ws, &*creds, &endpoint).await {
+        match run_auth(&mut ws, &*creds, &endpoint, &auth_state, &*publisher).await {
             Ok(()) => {}
             Err(VTubeError::TokenRejected) => {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_required"), None);
                 state.store(ConnectionState::Disconnected);
+                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_required"), None);
                 return;
             }
             Err(VTubeError::TokenDenied) => {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_denied"), None);
                 state.store(ConnectionState::Disconnected);
+                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_denied"), None);
                 return;
             }
             Err(VTubeError::TokenTimeout) => {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_timeout"), None);
                 state.store(ConnectionState::Disconnected);
+                emit_connection_changed(&*publisher, &endpoint, false, Some("auth_timeout"), None);
                 return;
             }
             Err(e) => {
@@ -319,6 +345,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     error = %e,
                     "auth failed, will retry"
                 );
+                let retry = auto_reconnect.load(Ordering::Relaxed);
+                if !retry {
+                    state.store(ConnectionState::Disconnected);
+                }
                 emit_connection_changed(
                     &*publisher,
                     &endpoint,
@@ -326,13 +356,20 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     Some("auth_failed"),
                     Some(e.to_string()),
                 );
-                reconnecting = true;
-                continue;
+                if retry {
+                    reconnecting = true;
+                    continue;
+                }
+                return;
             }
         }
 
         if let Err(e) = crate::events::subscribe_all(&mut ws).await {
             tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
+            let retry = auto_reconnect.load(Ordering::Relaxed);
+            if !retry {
+                state.store(ConnectionState::Disconnected);
+            }
             emit_connection_changed(
                 &*publisher,
                 &endpoint,
@@ -340,8 +377,11 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 Some("subscribe_failed"),
                 Some(e.to_string()),
             );
-            reconnecting = true;
-            continue;
+            if retry {
+                reconnecting = true;
+                continue;
+            }
+            return;
         }
 
         if let Ok(mut g) = connected_at.write() {
@@ -439,7 +479,16 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::Cold;
         }
+        let retry = auto_reconnect.load(Ordering::Relaxed);
+        state.store(if retry {
+            ConnectionState::Reconnecting
+        } else {
+            ConnectionState::Disconnected
+        });
         emit_connection_changed(&*publisher, &endpoint, false, Some("socket_closed"), None);
+        if !retry {
+            return;
+        }
         backoff.reset();
         reconnecting = true;
     }

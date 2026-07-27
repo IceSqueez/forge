@@ -217,6 +217,7 @@ mod tests {
             _: Option<f64>,
             _: Option<f64>,
             _: Option<f64>,
+            _: Option<f64>,
             _: f64,
         ) -> Result<(), VTubeError> {
             Ok(())
@@ -249,6 +250,51 @@ mod tests {
         }
         async fn get_items(&self) -> Result<Variant, VTubeError> {
             Ok(Variant::Object(BTreeMap::new()))
+        }
+        #[allow(clippy::too_many_arguments)]
+        async fn pin_item(
+            &self,
+            _: &str,
+            _: bool,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: f64,
+            _: f64,
+        ) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        #[allow(clippy::too_many_arguments)]
+        async fn load_item(
+            &self,
+            _: &str,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<f64>,
+            _: Option<i64>,
+            _: bool,
+        ) -> Result<Variant, VTubeError> {
+            Ok(Variant::Object(BTreeMap::new()))
+        }
+        async fn unload_all_items(&self) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn tint_all_art_meshes(
+            &self,
+            _: i64,
+            _: i64,
+            _: i64,
+            _: i64,
+            _: Option<f64>,
+        ) -> Result<(), VTubeError> {
+            Ok(())
+        }
+        async fn set_physics_override(&self, _: f64, _: f64) -> Result<(), VTubeError> {
+            Ok(())
         }
     }
 

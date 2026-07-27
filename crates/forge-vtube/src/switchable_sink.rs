@@ -249,7 +249,7 @@ mod tests {
             Err(VTubeError::NotConnected)
         ));
         assert!(matches!(
-            sink.move_model(Some(0.0), None, None, 0.5).await,
+            sink.move_model(Some(0.0), None, None, None, 0.5).await,
             Err(VTubeError::NotConnected)
         ));
     }

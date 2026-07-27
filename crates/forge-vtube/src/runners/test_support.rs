@@ -74,6 +74,7 @@ impl VTubeSink for MockSink {
         _: Option<f64>,
         _: Option<f64>,
         _: Option<f64>,
+        _: Option<f64>,
         _: f64,
     ) -> Result<(), VTubeError> {
         self.record()
@@ -158,6 +159,63 @@ impl VTubeSink for MockSink {
             ),
             ("count".to_owned(), Variant::Int(1)),
         ])))
+    }
+
+    async fn pin_item(
+        &self,
+        _: &str,
+        _: bool,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: f64,
+        _: f64,
+    ) -> Result<(), VTubeError> {
+        self.record()
+    }
+
+    async fn load_item(
+        &self,
+        _: &str,
+        _: Option<f64>,
+        _: Option<f64>,
+        _: Option<f64>,
+        _: Option<f64>,
+        _: Option<f64>,
+        _: Option<i64>,
+        _: bool,
+    ) -> Result<Variant, VTubeError> {
+        self.record_lookup(Variant::Object(BTreeMap::from([
+            (
+                "instance_id".to_owned(),
+                Variant::String("inst-new-1".to_owned()),
+            ),
+            (
+                "file_name".to_owned(),
+                Variant::String("crown.png".to_owned()),
+            ),
+        ])))
+    }
+
+    async fn unload_all_items(&self) -> Result<(), VTubeError> {
+        self.record()
+    }
+
+    async fn tint_all_art_meshes(
+        &self,
+        _: i64,
+        _: i64,
+        _: i64,
+        _: i64,
+        _: Option<f64>,
+    ) -> Result<(), VTubeError> {
+        self.record()
+    }
+
+    async fn set_physics_override(&self, _: f64, _: f64) -> Result<(), VTubeError> {
+        self.record()
     }
 }
 

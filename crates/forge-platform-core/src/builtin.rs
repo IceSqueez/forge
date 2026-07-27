@@ -288,6 +288,12 @@ pub enum DetailSection {
         left: Box<DetailSection>,
         right: Box<DetailSection>,
     },
+    ChipGrid {
+        title: String,
+        icon: SectionIcon,
+        chip_icon: SectionIcon,
+        items: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -302,6 +308,9 @@ pub enum PickerKind {
     Transition,
     Profile,
     SceneCollection,
+    Model,
+    Item,
+    ItemInstance,
 }
 
 /// Maps to a fixed `ForgePalette` field so a quick action's icon renders in the same

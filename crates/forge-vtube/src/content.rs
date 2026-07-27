@@ -1,21 +1,22 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
-use forge_platform_core::{
-    ActiveRow, BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon,
-};
+use forge_platform_core::{BuiltinContent, DetailSection, HealthDelta, HealthValue, SectionIcon};
 
 use crate::client::VTubeClient;
+use crate::health::HealthSnapshot;
 use crate::protocol::new_request;
-use crate::request::PendingRequest;
+use crate::request::{PendingRequest, ReqTxHandle};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ContentSnapshot {
     pub models: Vec<ModelItem>,
     pub current_model_id: Option<String>,
+    pub current_model_param_count: Option<u32>,
     pub hotkeys: Vec<HotkeyItem>,
     pub expressions: Vec<ExpressionItem>,
+    pub item_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +32,7 @@ pub(crate) struct HotkeyItem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExpressionItem {
+    pub name: String,
     pub file: String,
     pub active: bool,
 }
@@ -66,37 +68,148 @@ impl ContentNotifier {
 
 pub(crate) fn spawn_content_task(
     snap: Arc<RwLock<ContentSnapshot>>,
-    req_tx: mpsc::UnboundedSender<PendingRequest>,
+    req_tx: impl Into<ReqTxHandle>,
     model_changed_rx: mpsc::UnboundedReceiver<()>,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(run_content_task(snap, req_tx, model_changed_rx))
+    tokio::spawn(run_content_task(snap, req_tx.into(), model_changed_rx))
 }
 
 async fn run_content_task(
     snap: Arc<RwLock<ContentSnapshot>>,
-    req_tx: mpsc::UnboundedSender<PendingRequest>,
+    req_tx: ReqTxHandle,
     mut model_changed_rx: mpsc::UnboundedReceiver<()>,
 ) {
-    use tokio::time::{Duration, interval};
+    refresh_models_and_hotkeys(&snap, &req_tx.current().await).await;
 
-    refresh_models_and_hotkeys(&snap, &req_tx).await;
+    while let Some(()) = model_changed_rx.recv().await {
+        refresh_models_and_hotkeys(&snap, &req_tx.current().await).await;
+    }
+}
 
-    let mut expr_tick = interval(Duration::from_secs(5));
-    expr_tick.tick().await;
+pub(crate) fn spawn_catalog_metrics_task(
+    content_state: Arc<RwLock<ContentSnapshot>>,
+    health_state: Arc<RwLock<HealthSnapshot>>,
+    req_tx: impl Into<ReqTxHandle>,
+    health_tx: broadcast::Sender<HealthDelta>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(run_catalog_metrics_task(
+        content_state,
+        health_state,
+        req_tx.into(),
+        health_tx,
+    ))
+}
+
+async fn run_catalog_metrics_task(
+    content_state: Arc<RwLock<ContentSnapshot>>,
+    health_state: Arc<RwLock<HealthSnapshot>>,
+    req_tx: ReqTxHandle,
+    health_tx: broadcast::Sender<HealthDelta>,
+) {
+    use tokio::time::{Duration, MissedTickBehavior, interval};
+
+    let mut tick = interval(Duration::from_secs(5));
+    tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut last_param_count: Option<Option<u32>> = None;
+    let mut last_model_id: Option<Option<String>> = None;
 
     loop {
-        tokio::select! {
-            result = model_changed_rx.recv() => {
-                match result {
-                    Some(()) => refresh_models_and_hotkeys(&snap, &req_tx).await,
-                    None => return,
-                }
-            }
-            _ = expr_tick.tick() => {
-                refresh_expressions(&snap, &req_tx).await;
-            }
+        tick.tick().await;
+
+        let dialing = health_state.read().map(|s| s.dialing).unwrap_or(false);
+        if !dialing {
+            let tx = req_tx.current().await;
+            report_expressions(&content_state, &tx, &health_tx).await;
+            report_items(&content_state, &tx, &health_tx).await;
         }
+
+        let current_model_id = content_state
+            .read()
+            .map(|s| s.current_model_id.clone())
+            .unwrap_or(None);
+        if last_model_id != Some(current_model_id.clone()) {
+            last_param_count = None;
+        }
+        last_model_id = Some(current_model_id);
+
+        report_model_secondary(
+            &content_state,
+            &health_state,
+            &health_tx,
+            &mut last_param_count,
+        );
     }
+}
+
+async fn report_expressions(
+    snap: &Arc<RwLock<ContentSnapshot>>,
+    req_tx: &mpsc::UnboundedSender<PendingRequest>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+) {
+    let before = snap.read().map(|s| s.expressions.len()).unwrap_or(0);
+    refresh_expressions(snap, req_tx).await;
+    let after = snap.read().map(|s| s.expressions.len()).unwrap_or(before);
+    if after != before {
+        let _ = health_tx.send(HealthDelta {
+            index: 1,
+            new_value: HealthValue::Text {
+                primary: after.to_string(),
+                secondary: Some("hotkey-bound".to_owned()),
+            },
+        });
+    }
+}
+
+async fn report_items(
+    snap: &Arc<RwLock<ContentSnapshot>>,
+    req_tx: &mpsc::UnboundedSender<PendingRequest>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+) {
+    let before = snap.read().map(|s| s.item_count).unwrap_or(None);
+    refresh_items(snap, req_tx).await;
+    let after = snap.read().map(|s| s.item_count).unwrap_or(before);
+    if after != before {
+        let _ = health_tx.send(HealthDelta {
+            index: 2,
+            new_value: HealthValue::Text {
+                primary: after.unwrap_or(0).to_string(),
+                secondary: Some("throwable / pinned".to_owned()),
+            },
+        });
+    }
+}
+
+fn report_model_secondary(
+    content_state: &Arc<RwLock<ContentSnapshot>>,
+    health_state: &Arc<RwLock<HealthSnapshot>>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+    last_param_count: &mut Option<Option<u32>>,
+) {
+    let param_count = content_state
+        .read()
+        .map(|s| s.current_model_param_count)
+        .unwrap_or(None);
+    if *last_param_count == Some(param_count) {
+        return;
+    }
+    *last_param_count = Some(param_count);
+
+    let Ok(health) = health_state.read() else {
+        return;
+    };
+    if !health.model_loaded || health.model_name.is_empty() {
+        return;
+    }
+    let primary = health.model_name.clone();
+    drop(health);
+
+    let _ = health_tx.send(HealthDelta {
+        index: 0,
+        new_value: HealthValue::Text {
+            primary,
+            secondary: param_count.map(|n| format!("{n} parameters")),
+        },
+    });
 }
 
 async fn refresh_models_and_hotkeys(
@@ -121,13 +234,15 @@ async fn refresh_models_and_hotkeys(
     }
 
     if let Ok(data) = send_internal(req_tx, "CurrentModelRequest", serde_json::json!({})).await {
-        let current_id = if data["modelLoaded"].as_bool().unwrap_or(false) {
-            Some(data["modelID"].as_str().unwrap_or("").to_owned())
-        } else {
-            None
-        };
+        let loaded = data["modelLoaded"].as_bool().unwrap_or(false);
+        let current_id = loaded.then(|| data["modelID"].as_str().unwrap_or("").to_owned());
+        let param_count = loaded
+            .then(|| data["numberOfLive2DParameters"].as_u64())
+            .flatten()
+            .map(|n| n as u32);
         if let Ok(mut s) = snap.write() {
             s.current_model_id = current_id;
+            s.current_model_param_count = param_count;
         }
     }
 
@@ -167,6 +282,7 @@ async fn refresh_expressions(
         .map(|arr| {
             arr.iter()
                 .map(|e| ExpressionItem {
+                    name: e["name"].as_str().unwrap_or("").to_owned(),
                     file: e["file"].as_str().unwrap_or("").to_owned(),
                     active: e["active"].as_bool().unwrap_or(false),
                 })
@@ -176,6 +292,50 @@ async fn refresh_expressions(
     if let Ok(mut s) = snap.write() {
         s.expressions = expressions;
     }
+}
+
+async fn refresh_items(
+    snap: &Arc<RwLock<ContentSnapshot>>,
+    req_tx: &mpsc::UnboundedSender<PendingRequest>,
+) {
+    let Ok(data) = send_internal(
+        req_tx,
+        "ItemListRequest",
+        serde_json::json!({
+            "includeAvailableSpots": false,
+            "includeItemInstancesInScene": false,
+            "includeAvailableItemFiles": false,
+        }),
+    )
+    .await
+    else {
+        return;
+    };
+    let item_count = data["itemsInSceneCount"].as_u64().map(|n| n as u32);
+    if let Ok(mut s) = snap.write() {
+        s.item_count = item_count;
+    }
+}
+
+pub(crate) fn spawn_version_fetch(
+    req_tx: impl Into<ReqTxHandle>,
+    vtube_version: Arc<OnceLock<String>>,
+    mut connected_rx: mpsc::UnboundedReceiver<()>,
+) -> tokio::task::JoinHandle<()> {
+    let req_tx: ReqTxHandle = req_tx.into();
+    tokio::spawn(async move {
+        while connected_rx.recv().await.is_some() {
+            if vtube_version.get().is_some() {
+                continue;
+            }
+            let tx = req_tx.current().await;
+            if let Ok(data) = send_internal(&tx, "APIStateRequest", serde_json::json!({})).await
+                && let Some(version) = data["vTubeStudioVersion"].as_str()
+            {
+                let _ = vtube_version.set(version.to_owned());
+            }
+        }
+    })
 }
 
 async fn send_internal(
@@ -208,86 +368,24 @@ impl BuiltinContent for VTubeClient {
             .unwrap_or_else(|p| p.into_inner())
             .clone();
 
-        let model_count = snap.models.len().to_string();
-        let model_items: Vec<ContentListItem> = snap
-            .models
+        let expression_names: Vec<String> = snap
+            .expressions
             .iter()
-            .map(|m| {
-                let is_current = snap.current_model_id.as_deref() == Some(m.id.as_str());
-                ContentListItem {
-                    icon: SectionIcon::new(if is_current { "user-check" } else { "user" }),
-                    icon_tint: None,
-                    name: m.name.clone(),
-                    monospace_name: false,
-                    active: is_current,
-                    active_label: if is_current {
-                        Some("LOADED".to_owned())
-                    } else {
-                        None
-                    },
-                    trailing: vec![],
-                    enabled: true,
+            .map(|e| {
+                if e.name.is_empty() {
+                    e.file.clone()
+                } else {
+                    e.name.clone()
                 }
             })
             .collect();
 
-        let hotkey_count = snap.hotkeys.len().to_string();
-        let hotkey_items: Vec<ContentListItem> = snap
-            .hotkeys
-            .iter()
-            .map(|h| ContentListItem {
-                icon: SectionIcon::new("bolt"),
-                icon_tint: None,
-                name: h.name.clone(),
-                monospace_name: false,
-                active: false,
-                active_label: None,
-                trailing: vec![],
-                enabled: true,
-            })
-            .collect();
-
-        let expression_items: Vec<ActiveRow> = snap
-            .expressions
-            .iter()
-            .map(|e| ActiveRow {
-                name: e.file.clone(),
-                active: e.active,
-                mode_label: None,
-            })
-            .collect();
-
-        vec![
-            DetailSection::TwoColumnLists {
-                left: Box::new(ContentList {
-                    title: "Models".to_owned(),
-                    icon: SectionIcon::new("user-square"),
-                    inline_label: None,
-                    count_label: Some(model_count),
-                    visible_rows: None,
-                    row_padding_y_px: 7,
-                    refreshable: false,
-                    items: model_items,
-                    footer: None,
-                }),
-                right: Box::new(ContentList {
-                    title: "Hotkeys".to_owned(),
-                    icon: SectionIcon::new("bolt"),
-                    inline_label: None,
-                    count_label: Some(hotkey_count),
-                    visible_rows: None,
-                    row_padding_y_px: 7,
-                    refreshable: false,
-                    items: hotkey_items,
-                    footer: None,
-                }),
-            },
-            DetailSection::ActiveItemList {
-                title: "Expressions".to_owned(),
-                icon: SectionIcon::new("mood-smile"),
-                items: expression_items,
-            },
-        ]
+        vec![DetailSection::ChipGrid {
+            title: "Available Expressions".to_owned(),
+            icon: SectionIcon::new("mood-smile"),
+            chip_icon: SectionIcon::new("mood-smile"),
+            items: expression_names,
+        }]
     }
 }
 

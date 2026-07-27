@@ -1,26 +1,22 @@
-use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-use forge_platform_core::{
-    AtomicConnectionState, BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue,
-};
+use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream, HealthValue};
 
 use crate::client::VTubeClient;
 use crate::events::RawEnvelope;
-use crate::protocol::new_request;
-use crate::request::PendingRequest;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HealthSnapshot {
     pub model_name: String,
     pub model_loaded: bool,
     pub tracking_active: bool,
-    pub fps: f64,
-    pub api_calls_60s: u32,
+    /// True while the supervisor is dialing, authenticating or backing off; gates the catalog
+    /// sweep so it does not enqueue requests nobody will drain until this clears.
+    pub dialing: bool,
 }
 
 pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLock<HealthSnapshot>>)
@@ -51,7 +47,7 @@ pub(crate) fn update_from_event(
                     "Off".to_owned()
                 };
                 let _ = tx.send(HealthDelta {
-                    index: 1,
+                    index: 3,
                     new_value: HealthValue::Status {
                         label,
                         active: found,
@@ -76,137 +72,18 @@ pub(crate) fn update_from_event(
                 changed = true;
             }
             if changed {
-                let primary = if loaded && !new_name.is_empty() {
-                    new_name
+                let (primary, secondary) = if loaded && !new_name.is_empty() {
+                    (new_name, None)
                 } else {
-                    "\u{2014}".to_owned()
+                    ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
                 };
                 let _ = tx.send(HealthDelta {
                     index: 0,
-                    new_value: HealthValue::Text {
-                        primary,
-                        secondary: None,
-                    },
+                    new_value: HealthValue::Text { primary, secondary },
                 });
             }
         }
         _ => {}
-    }
-}
-
-pub(crate) fn spawn_health_task(
-    snap: Arc<RwLock<HealthSnapshot>>,
-    tx: broadcast::Sender<HealthDelta>,
-    req_tx: mpsc::UnboundedSender<PendingRequest>,
-    api_call_rx: mpsc::UnboundedReceiver<()>,
-    connection_state: Arc<AtomicConnectionState>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(run_health_task(
-        snap,
-        tx,
-        req_tx,
-        api_call_rx,
-        connection_state,
-    ))
-}
-
-async fn run_health_task(
-    snap: Arc<RwLock<HealthSnapshot>>,
-    tx: broadcast::Sender<HealthDelta>,
-    req_tx: mpsc::UnboundedSender<PendingRequest>,
-    mut api_call_rx: mpsc::UnboundedReceiver<()>,
-    connection_state: Arc<AtomicConnectionState>,
-) {
-    use tokio::time::{Duration, interval};
-
-    let mut stats_tick = interval(Duration::from_secs(2));
-    let mut api_timestamps: VecDeque<tokio::time::Instant> = VecDeque::new();
-
-    loop {
-        tokio::select! {
-            result = api_call_rx.recv() => {
-                match result {
-                    Some(()) => {
-                        api_timestamps.push_back(tokio::time::Instant::now());
-                        // checked_sub avoids the Windows monotonic-clock underflow near process start.
-                        if let Some(cutoff) = tokio::time::Instant::now()
-                            .checked_sub(Duration::from_secs(60))
-                        {
-                            while api_timestamps.front().is_some_and(|t| *t < cutoff) {
-                                api_timestamps.pop_front();
-                            }
-                        }
-                        let count = api_timestamps.len() as u32;
-                        let mut changed = false;
-                        if let Ok(mut s) = snap.write()
-                            && s.api_calls_60s != count
-                        {
-                            s.api_calls_60s = count;
-                            changed = true;
-                        }
-                        if changed {
-                            let _ = tx.send(HealthDelta {
-                                index: 3,
-                                new_value: HealthValue::Text {
-                                    primary: count.to_string(),
-                                    secondary: Some("last 60 s".to_owned()),
-                                },
-                            });
-                        }
-                    }
-                    None => return,
-                }
-            }
-            _ = stats_tick.tick() => {
-                if connection_state.load().is_connected() {
-                    poll_stats(&snap, &tx, &req_tx).await;
-                }
-            }
-        }
-    }
-}
-
-async fn poll_stats(
-    snap: &Arc<RwLock<HealthSnapshot>>,
-    tx: &broadcast::Sender<HealthDelta>,
-    req_tx: &mpsc::UnboundedSender<PendingRequest>,
-) {
-    let req = new_request("StatisticsRequest", serde_json::json!({}));
-    let request_id = req.request_id.clone();
-    let Ok(payload) = serde_json::to_string(&req) else {
-        return;
-    };
-    let (respond_to, rx) = tokio::sync::oneshot::channel();
-    if req_tx
-        .send(PendingRequest {
-            request_id,
-            payload,
-            respond_to,
-        })
-        .is_err()
-    {
-        return;
-    }
-    let data = match tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await {
-        Ok(Ok(d)) => d,
-        _ => return,
-    };
-    let fps = data["framerate"].as_f64().unwrap_or(0.0);
-    let mut changed = false;
-    if let Ok(mut s) = snap.write()
-        && (s.fps - fps).abs() > f64::EPSILON
-    {
-        s.fps = fps;
-        changed = true;
-    }
-    if changed {
-        let _ = tx.send(HealthDelta {
-            index: 2,
-            new_value: HealthValue::Text {
-                primary: format!("{fps:.1} fps"),
-                secondary: None,
-            },
-        });
     }
 }
 
@@ -217,20 +94,45 @@ impl BuiltinHealth for VTubeClient {
             .read()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
+        let content = self
+            .content_state
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
 
-        let model_primary = if snap.model_loaded && !snap.model_name.is_empty() {
-            snap.model_name.clone()
+        let model_loaded = snap.model_loaded && !snap.model_name.is_empty();
+        let (model_primary, model_secondary) = if model_loaded {
+            (
+                snap.model_name.clone(),
+                content
+                    .current_model_param_count
+                    .map(|n| format!("{n} parameters")),
+            )
         } else {
-            "\u{2014}".to_owned()
+            ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
         };
         let tracking_label = if snap.tracking_active { "Face" } else { "Off" };
 
         [
             HealthMetric {
-                label: "CURRENT MODEL".to_owned(),
+                label: "MODEL".to_owned(),
                 value: HealthValue::Text {
                     primary: model_primary,
-                    secondary: None,
+                    secondary: model_secondary,
+                },
+            },
+            HealthMetric {
+                label: "EXPRESSIONS".to_owned(),
+                value: HealthValue::Text {
+                    primary: content.expressions.len().to_string(),
+                    secondary: Some("hotkey-bound".to_owned()),
+                },
+            },
+            HealthMetric {
+                label: "ITEMS".to_owned(),
+                value: HealthValue::Text {
+                    primary: content.item_count.unwrap_or(0).to_string(),
+                    secondary: Some("throwable / pinned".to_owned()),
                 },
             },
             HealthMetric {
@@ -239,20 +141,6 @@ impl BuiltinHealth for VTubeClient {
                     label: tracking_label.to_owned(),
                     active: snap.tracking_active,
                     detail: None,
-                },
-            },
-            HealthMetric {
-                label: "FPS".to_owned(),
-                value: HealthValue::Text {
-                    primary: format!("{:.1} fps", snap.fps),
-                    secondary: None,
-                },
-            },
-            HealthMetric {
-                label: "API CALLS".to_owned(),
-                value: HealthValue::Text {
-                    primary: snap.api_calls_60s.to_string(),
-                    secondary: Some("last 60 s".to_owned()),
                 },
             },
         ]

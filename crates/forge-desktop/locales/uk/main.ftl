@@ -1220,6 +1220,9 @@ builtin_picker_midi_port = Оберіть порт MIDI
 builtin_picker_transition = Оберіть перехід
 builtin_picker_profile = Оберіть профіль
 builtin_picker_scene_collection = Оберіть колекцію сцен
+builtin_picker_model = Оберіть модель
+builtin_picker_item = Оберіть предмет
+builtin_picker_item_instance = Оберіть завантажений предмет
 
 ## OAuth / локальний callback-потік
 
@@ -1629,6 +1632,7 @@ widget_builtin_event_count =
         [few] { $count } події
        *[other] { $count } подій
     }
+widget_builtin_chip_grid_empty = Поки немає елементів
 
 ## Widget - server file list
 

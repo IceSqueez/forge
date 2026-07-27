@@ -225,6 +225,21 @@ async fn run_auth(
     Ok(())
 }
 
+pub(crate) fn set_connection_state(
+    state: &AtomicConnectionState,
+    health_state: &RwLock<HealthSnapshot>,
+    new_state: ConnectionState,
+) {
+    state.store(new_state);
+    let dialing = matches!(
+        new_state,
+        ConnectionState::Connecting | ConnectionState::Reconnecting
+    );
+    if let Ok(mut g) = health_state.write() {
+        g.dialing = dialing;
+    }
+}
+
 pub(crate) struct SupervisorContext {
     pub(crate) endpoint: String,
     pub(crate) state: Arc<AtomicConnectionState>,
@@ -237,6 +252,7 @@ pub(crate) struct SupervisorContext {
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) content_notifier: crate::content::ContentNotifier,
+    pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
     pub(crate) auto_reconnect: Arc<AtomicBool>,
 }
 
@@ -253,6 +269,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         health_state,
         health_tx,
         content_notifier,
+        connected_notifier,
         auto_reconnect,
     } = ctx;
 
@@ -270,23 +287,27 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}
                 () = shutdown.notified() => {
-                    state.store(ConnectionState::Disconnected);
+                    set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                     emit_connection_changed(&*publisher, &endpoint, false, None, None);
                     return;
                 }
             }
             if !auto_reconnect.load(Ordering::Relaxed) {
-                state.store(ConnectionState::Disconnected);
+                set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                 emit_connection_changed(&*publisher, &endpoint, false, None, None);
                 return;
             }
         }
 
-        state.store(if reconnecting {
-            ConnectionState::Reconnecting
-        } else {
-            ConnectionState::Connecting
-        });
+        set_connection_state(
+            &state,
+            &health_state,
+            if reconnecting {
+                ConnectionState::Reconnecting
+            } else {
+                ConnectionState::Connecting
+            },
+        );
         tracing::debug!(endpoint = %endpoint, "attempting VTube Studio connection");
 
         let mut ws = match tokio_tungstenite::connect_async(&endpoint).await {
@@ -299,7 +320,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 );
                 let retry = auto_reconnect.load(Ordering::Relaxed);
                 if !retry {
-                    state.store(ConnectionState::Disconnected);
+                    set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                 }
                 emit_connection_changed(
                     &*publisher,
@@ -322,7 +343,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                state.store(ConnectionState::Disconnected);
+                set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                 emit_connection_changed(&*publisher, &endpoint, false, Some("auth_required"), None);
                 return;
             }
@@ -330,7 +351,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                state.store(ConnectionState::Disconnected);
+                set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                 emit_connection_changed(&*publisher, &endpoint, false, Some("auth_denied"), None);
                 return;
             }
@@ -338,7 +359,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 if let Ok(mut g) = auth_state.write() {
                     *g = AuthState::AuthRequired;
                 }
-                state.store(ConnectionState::Disconnected);
+                set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                 emit_connection_changed(&*publisher, &endpoint, false, Some("auth_timeout"), None);
                 return;
             }
@@ -350,7 +371,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 );
                 let retry = auto_reconnect.load(Ordering::Relaxed);
                 if !retry {
-                    state.store(ConnectionState::Disconnected);
+                    set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                 }
                 emit_connection_changed(
                     &*publisher,
@@ -371,7 +392,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
             let retry = auto_reconnect.load(Ordering::Relaxed);
             if !retry {
-                state.store(ConnectionState::Disconnected);
+                set_connection_state(&state, &health_state, ConnectionState::Disconnected);
             }
             emit_connection_changed(
                 &*publisher,
@@ -393,8 +414,9 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         if let Ok(mut g) = auth_state.write() {
             *g = AuthState::Connected;
         }
-        state.store(ConnectionState::Connected);
+        set_connection_state(&state, &health_state, ConnectionState::Connected);
         emit_connection_changed(&*publisher, &endpoint, true, None, None);
+        let _ = connected_notifier.send(());
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
 
         let mut pending: HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>> =
@@ -406,7 +428,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         loop {
             tokio::select! {
                 () = shutdown.notified() => {
-                    state.store(ConnectionState::Disconnected);
+                    set_connection_state(&state, &health_state, ConnectionState::Disconnected);
                     if let Ok(mut g) = auth_state.write() {
                         *g = AuthState::Cold;
                     }
@@ -483,11 +505,15 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             *g = AuthState::Cold;
         }
         let retry = auto_reconnect.load(Ordering::Relaxed);
-        state.store(if retry {
-            ConnectionState::Reconnecting
-        } else {
-            ConnectionState::Disconnected
-        });
+        set_connection_state(
+            &state,
+            &health_state,
+            if retry {
+                ConnectionState::Reconnecting
+            } else {
+                ConnectionState::Disconnected
+            },
+        );
         emit_connection_changed(&*publisher, &endpoint, false, Some("socket_closed"), None);
         if !retry {
             return;

@@ -168,6 +168,12 @@ fn dispatch_section(
             icon,
             columns,
         } => render_stats_grid(title, icon, columns, palette, density),
+        DetailSection::ChipGrid {
+            title,
+            icon,
+            chip_icon,
+            items,
+        } => render_chip_grid(title, icon, chip_icon, items, palette, density),
     }
 }
 
@@ -536,6 +542,84 @@ fn render_stats_grid(
         .into_any_element()
 }
 
+const CHIP_GRID_COLUMNS: u16 = 4;
+const CHIP_ICON_GLYPH: Pixels = px(11.0);
+const CHIP_NAME_FONT: Pixels = px(11.5);
+
+fn render_chip_grid(
+    title: &str,
+    icon_token: &SectionIcon,
+    chip_icon: &SectionIcon,
+    items: &[String],
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let panel_body: AnyElement = if items.is_empty() {
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .py(spacing(Spacing::Lg, density))
+            .child(body(
+                tr!("widget_builtin_chip_grid_empty"),
+                FONT_XS,
+                palette.text_secondary,
+            ))
+            .into_any_element()
+    } else {
+        let mut grid = div()
+            .w_full()
+            .grid()
+            .grid_cols(CHIP_GRID_COLUMNS)
+            .gap(px(6.0));
+        for item in items {
+            grid = grid.child(chip_elem(chip_icon, item, palette));
+        }
+        div()
+            .id(SharedString::from(format!("chip-grid-{title}")))
+            .w_full()
+            .max_h(px(SCROLL_PANEL_MAX_H))
+            .overflow_y_scroll()
+            .p(px(14.0))
+            .child(grid)
+            .into_any_element()
+    };
+    card_shell(palette)
+        .child(panel_header_row(
+            icon_token.as_str(),
+            title,
+            None,
+            None,
+            None,
+            palette,
+            density,
+        ))
+        .child(divider(palette))
+        .child(panel_body)
+        .into_any_element()
+}
+
+fn chip_elem(chip_icon: &SectionIcon, name: &str, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .bg(palette.shell)
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .rounded(radius(Radius::Sm))
+        .py(px(7.0))
+        .px(px(10.0))
+        .child(icon(
+            Icon::from_name(chip_icon.as_str()),
+            CHIP_ICON_GLYPH,
+            palette.warning,
+        ))
+        .child(body(name.to_owned(), CHIP_NAME_FONT, palette.text_primary))
+        .into_any_element()
+}
+
 fn content_list_panel(
     list: &ContentList,
     region_h: Option<f32>,
@@ -890,6 +974,7 @@ fn panel_header_icon_color(icon_str: &str, palette: &ForgePalette) -> Rgba {
         "key" => palette.warning,
         "rss" | "layout-grid" => palette.brand,
         "stack-2" => palette.info,
+        "mood-smile" => palette.accent_pink_light,
         _ => palette.text_secondary,
     }
 }

@@ -26,7 +26,11 @@ impl BuiltinControl for VTubeClient {
             let _ = h.await;
         }
 
-        self.state.store(ConnectionState::Connecting);
+        crate::supervisor::set_connection_state(
+            &self.state,
+            &self.health_state,
+            ConnectionState::Connecting,
+        );
         if let Ok(mut g) = self.connected_at.write() {
             *g = None;
         }
@@ -49,6 +53,7 @@ impl BuiltinControl for VTubeClient {
             health_state: Arc::clone(&self.health_state),
             health_tx: self.health_tx.clone(),
             content_notifier: self.content_notifier.clone(),
+            connected_notifier: self.connected_notifier.clone(),
             auto_reconnect: Arc::clone(&self.auto_reconnect),
         };
         let new_handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));

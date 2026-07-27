@@ -1213,6 +1213,9 @@ builtin_picker_midi_port = Choose a MIDI Port
 builtin_picker_transition = Choose a Transition
 builtin_picker_profile = Choose a Profile
 builtin_picker_scene_collection = Choose a Scene Collection
+builtin_picker_model = Choose a Model
+builtin_picker_item = Choose an Item
+builtin_picker_item_instance = Choose a Loaded Item
 
 ## OAuth / local callback flow
 
@@ -1609,6 +1612,7 @@ widget_builtin_event_count =
         [one] { $count } event
        *[other] { $count } events
     }
+widget_builtin_chip_grid_empty = No items yet
 
 ## Widget - server file list
 

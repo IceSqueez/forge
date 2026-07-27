@@ -11,11 +11,9 @@ use forge_storage::CredentialsRepo;
 
 use crate::auth::AuthState;
 use crate::error::VTubeError;
-use crate::health::{HealthSnapshot, make_health_channel, spawn_health_task};
+use crate::health::{HealthSnapshot, make_health_channel};
 use crate::protocol::new_request;
-use crate::request::PendingRequest;
-
-pub(crate) type ReqTxSlot = Arc<tokio::sync::Mutex<mpsc::UnboundedSender<PendingRequest>>>;
+use crate::request::{PendingRequest, ReqTxSlot};
 
 pub(crate) type VtsWs =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -69,11 +67,12 @@ pub struct VTubeClient {
     pub(crate) req_tx: ReqTxSlot,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
-    pub(crate) api_call_tx: mpsc::UnboundedSender<()>,
-    health_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) content_state: Arc<RwLock<crate::content::ContentSnapshot>>,
     pub(crate) content_notifier: crate::content::ContentNotifier,
+    pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
     content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
+    catalog_metrics_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
+    version_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) auto_reconnect: Arc<AtomicBool>,
     // Never logged or surfaced.
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
@@ -94,22 +93,27 @@ impl VTubeClient {
         let vtube_version = Arc::new(OnceLock::<String>::new());
         let (health_tx, health_state) = make_health_channel();
         let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
-        let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
+        let req_tx_slot: ReqTxSlot = Arc::new(tokio::sync::Mutex::new(req_tx.clone()));
         let content_state = Arc::new(RwLock::new(crate::content::ContentSnapshot::default()));
         let (content_notifier, content_changed_rx) = crate::content::ContentNotifier::new();
+        let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
         let auto_reconnect = Arc::new(AtomicBool::new(true));
 
-        let health_handle = spawn_health_task(
-            Arc::clone(&health_state),
-            health_tx.clone(),
-            req_tx.clone(),
-            api_call_rx,
-            Arc::clone(&state),
-        );
         let content_handle = crate::content::spawn_content_task(
             Arc::clone(&content_state),
-            req_tx.clone(),
+            Arc::clone(&req_tx_slot),
             content_changed_rx,
+        );
+        let catalog_metrics_handle = crate::content::spawn_catalog_metrics_task(
+            Arc::clone(&content_state),
+            Arc::clone(&health_state),
+            Arc::clone(&req_tx_slot),
+            health_tx.clone(),
+        );
+        let version_handle = crate::content::spawn_version_fetch(
+            Arc::clone(&req_tx_slot),
+            Arc::clone(&vtube_version),
+            connected_rx,
         );
 
         let ctx = crate::supervisor::SupervisorContext {
@@ -124,6 +128,7 @@ impl VTubeClient {
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
             content_notifier: content_notifier.clone(),
+            connected_notifier: connected_tx.clone(),
             auto_reconnect: Arc::clone(&auto_reconnect),
         };
         let handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
@@ -137,14 +142,15 @@ impl VTubeClient {
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
             vtube_version,
-            req_tx: Arc::new(tokio::sync::Mutex::new(req_tx)),
+            req_tx: req_tx_slot,
             health_state,
             health_tx,
-            api_call_tx,
-            health_task: Arc::new(std::sync::Mutex::new(Some(health_handle))),
             content_state,
             content_notifier,
+            connected_notifier: connected_tx,
             content_task: Arc::new(std::sync::Mutex::new(Some(content_handle))),
+            catalog_metrics_task: Arc::new(std::sync::Mutex::new(Some(catalog_metrics_handle))),
+            version_task: Arc::new(std::sync::Mutex::new(Some(version_handle))),
             auto_reconnect,
             reconnect_publisher: publisher,
             reconnect_creds: creds,
@@ -189,12 +195,15 @@ impl VTubeClient {
             })
             .map_err(|_| VTubeError::NotConnected)?;
         }
-        self.api_call_tx.send(()).ok();
         rx.await.map_err(|_| VTubeError::NotConnected)
     }
 
     pub async fn shutdown(&self) {
-        for task in [&self.health_task, &self.content_task] {
+        for task in [
+            &self.content_task,
+            &self.catalog_metrics_task,
+            &self.version_task,
+        ] {
             if let Some(h) = task.lock().ok().and_then(|mut g| g.take()) {
                 h.abort();
             }
@@ -211,7 +220,7 @@ impl VTubeClient {
     pub(crate) fn new_for_test(endpoint: impl Into<String>) -> Self {
         let (health_tx, health_state) = make_health_channel();
         let (req_tx, _) = mpsc::unbounded_channel::<PendingRequest>();
-        let (api_call_tx, _) = mpsc::unbounded_channel::<()>();
+        let (connected_notifier, _) = mpsc::unbounded_channel::<()>();
         let publisher = tests::MockPublisher::new().publisher();
         let creds = tests::MockCreds::new().creds();
         Self {
@@ -228,11 +237,12 @@ impl VTubeClient {
             req_tx: Arc::new(tokio::sync::Mutex::new(req_tx)),
             health_state,
             health_tx,
-            api_call_tx,
-            health_task: Arc::new(std::sync::Mutex::new(None)),
             content_state: Arc::new(RwLock::new(crate::content::ContentSnapshot::default())),
             content_notifier: crate::content::ContentNotifier::noop(),
+            connected_notifier,
             content_task: Arc::new(std::sync::Mutex::new(None)),
+            catalog_metrics_task: Arc::new(std::sync::Mutex::new(None)),
+            version_task: Arc::new(std::sync::Mutex::new(None)),
             auto_reconnect: Arc::new(AtomicBool::new(true)),
             reconnect_publisher: publisher,
             reconnect_creds: creds,
@@ -242,7 +252,11 @@ impl VTubeClient {
 
 impl Drop for VTubeClient {
     fn drop(&mut self) {
-        for task in [&self.health_task, &self.content_task] {
+        for task in [
+            &self.content_task,
+            &self.catalog_metrics_task,
+            &self.version_task,
+        ] {
             if let Ok(mut g) = task.lock()
                 && let Some(h) = g.take()
             {

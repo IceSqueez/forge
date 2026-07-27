@@ -803,6 +803,8 @@ fn picker_key(pk: PickerKind) -> &'static str {
         PickerKind::Transition => "transition",
         PickerKind::Profile => "profile",
         PickerKind::SceneCollection => "collection",
+        PickerKind::Model => "model",
+        PickerKind::Item | PickerKind::ItemInstance => "item",
     }
 }
 
@@ -817,6 +819,9 @@ fn picker_title(pk: PickerKind) -> String {
         PickerKind::Transition => tr!("builtin_picker_transition"),
         PickerKind::Profile => tr!("builtin_picker_profile"),
         PickerKind::SceneCollection => tr!("builtin_picker_scene_collection"),
+        PickerKind::Model => tr!("builtin_picker_model"),
+        PickerKind::Item => tr!("builtin_picker_item"),
+        PickerKind::ItemInstance => tr!("builtin_picker_item_instance"),
     }
 }
 
@@ -1012,9 +1017,12 @@ async fn fetch_picker_items(
                 .collect();
             Ok(no_context(items))
         }
-        PickerKind::Hotkey | PickerKind::Expression | PickerKind::MidiPort => {
-            Err(labels.unavailable)
-        }
+        PickerKind::Hotkey
+        | PickerKind::Expression
+        | PickerKind::MidiPort
+        | PickerKind::Model
+        | PickerKind::Item
+        | PickerKind::ItemInstance => Err(labels.unavailable),
     }
 }
 

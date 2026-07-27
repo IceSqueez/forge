@@ -305,22 +305,34 @@ impl IntegrationDetail {
     ) -> AnyElement {
         let accent = platform_accent(platform, palette);
         let (letter, desc) = connect_copy(platform);
+        let hero = platform_hero(letter, accent, self.display_name.clone(), desc, palette)
+            .density(density);
+        let column = match platform {
+            PlatformId::Twitch => self.twitch_device_column(accent, palette, density, cx),
+            PlatformId::YouTube | PlatformId::Kick => {
+                self.local_callback_column(platform, letter, accent, palette, density, cx)
+            }
+        };
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .child(hero)
+            .child(div().w_full().flex().justify_center().child(column))
+            .into_any_element()
+    }
 
-        if matches!(platform, PlatformId::Twitch) {
-            let hero = platform_hero(letter, accent, self.display_name.clone(), desc, palette)
-                .density(density);
-            let column = self.twitch_device_column(accent, palette, density, cx);
-            return div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Md, density))
-                .child(hero)
-                .child(div().w_full().flex().justify_center().child(column))
-                .into_any_element();
-        }
-        let _ = desc;
-
+    #[allow(clippy::too_many_arguments)]
+    fn local_callback_column(
+        &self,
+        platform: PlatformId,
+        letter: &'static str,
+        accent: Rgba,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let eyebrow = div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
@@ -340,7 +352,7 @@ impl IntegrationDetail {
         let error = matches!(self.flow_phase, LocalCallbackFlowPhase::Failed)
             .then(|| self.oauth_error_card(palette, density, cx));
 
-        let column = div()
+        div()
             .w_full()
             .max_w(px(640.0))
             .flex()
@@ -353,14 +365,7 @@ impl IntegrationDetail {
             .children(progress)
             .children(done)
             .children(error)
-            .child(self.oauth_footer(palette, cx));
-
-        div()
-            .w_full()
-            .flex()
-            .justify_center()
-            .pt(px(14.0))
-            .child(column)
+            .child(self.oauth_footer(palette, cx))
             .into_any_element()
     }
 

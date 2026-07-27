@@ -62,6 +62,7 @@ impl VTubeSink for VTubeClient {
         x: Option<f64>,
         y: Option<f64>,
         rotation: Option<f64>,
+        size: Option<f64>,
         time_in_seconds: f64,
     ) -> Result<(), VTubeError> {
         let mut data = json!({
@@ -76,6 +77,9 @@ impl VTubeSink for VTubeClient {
         }
         if let Some(v) = rotation {
             data["rotation"] = json!(v);
+        }
+        if let Some(v) = size {
+            data["size"] = json!(v);
         }
         let resp = self.send_json_request("MoveModelRequest", data).await?;
         check_response(&resp)
@@ -189,6 +193,124 @@ impl VTubeSink for VTubeClient {
         fields.insert("file_names".to_owned(), Variant::Array(file_names));
         fields.insert("count".to_owned(), Variant::Int(count));
         Ok(Variant::Object(fields))
+    }
+
+    async fn pin_item(
+        &self,
+        item_instance_id: &str,
+        pin: bool,
+        angle_relative_to: &str,
+        size_relative_to: &str,
+        vertex_pin_type: &str,
+        model_id: &str,
+        art_mesh_id: &str,
+        angle: f64,
+        size: f64,
+    ) -> Result<(), VTubeError> {
+        let mut data = json!({
+            "pin": pin,
+            "itemInstanceID": item_instance_id
+        });
+        if pin {
+            data["angleRelativeTo"] = json!(angle_relative_to);
+            data["sizeRelativeTo"] = json!(size_relative_to);
+            data["vertexPinType"] = json!(vertex_pin_type);
+            data["pinInfo"] = json!({
+                "modelID": model_id,
+                "artMeshID": art_mesh_id,
+                "angle": angle,
+                "size": size
+            });
+        }
+        let resp = self.send_json_request("ItemPinRequest", data).await?;
+        check_response(&resp)
+    }
+
+    async fn load_item(
+        &self,
+        file_name: &str,
+        x: Option<f64>,
+        y: Option<f64>,
+        size: Option<f64>,
+        rotation: Option<f64>,
+        fade_time: Option<f64>,
+        order: Option<i64>,
+        unload_on_disconnect: bool,
+    ) -> Result<Variant, VTubeError> {
+        let data = json!({
+            "fileName": file_name,
+            "positionX": x.unwrap_or(0.0),
+            "positionY": y.unwrap_or(0.0),
+            "size": size.unwrap_or(0.32),
+            "rotation": rotation.unwrap_or(0.0),
+            "fadeTime": fade_time.unwrap_or(0.5),
+            "order": order.unwrap_or(0),
+            "failIfOrderTaken": false,
+            "smoothing": 0,
+            "censored": false,
+            "flipped": false,
+            "locked": false,
+            "unloadWhenPluginDisconnects": unload_on_disconnect,
+            "customDataBase64": "",
+            "customDataAskUserFirst": false
+        });
+        let resp = self.send_json_request("ItemLoadRequest", data).await?;
+        check_response(&resp)?;
+        let mut fields = BTreeMap::new();
+        fields.insert("instance_id".to_owned(), string_field(&resp, "instanceID"));
+        fields.insert("file_name".to_owned(), string_field(&resp, "fileName"));
+        Ok(Variant::Object(fields))
+    }
+
+    async fn unload_all_items(&self) -> Result<(), VTubeError> {
+        let data = json!({ "unloadAllInScene": true });
+        let resp = self.send_json_request("ItemUnloadRequest", data).await?;
+        check_response(&resp)
+    }
+
+    async fn tint_all_art_meshes(
+        &self,
+        color_r: i64,
+        color_g: i64,
+        color_b: i64,
+        color_a: i64,
+        mix_with_scene_lighting: Option<f64>,
+    ) -> Result<(), VTubeError> {
+        let mut color_tint = json!({
+            "colorR": color_r,
+            "colorG": color_g,
+            "colorB": color_b,
+            "colorA": color_a
+        });
+        if let Some(v) = mix_with_scene_lighting {
+            color_tint["mixWithSceneLightingColor"] = json!(v);
+        }
+        let data = json!({
+            "colorTint": color_tint,
+            "artMeshMatcher": { "tintAll": true }
+        });
+        let resp = self.send_json_request("ColorTintRequest", data).await?;
+        check_response(&resp)
+    }
+
+    async fn set_physics_override(
+        &self,
+        strength: f64,
+        override_seconds: f64,
+    ) -> Result<(), VTubeError> {
+        let data = json!({
+            "strengthOverrides": [{
+                "id": "",
+                "value": strength,
+                "setBaseValue": true,
+                "overrideSeconds": override_seconds
+            }],
+            "windOverrides": []
+        });
+        let resp = self
+            .send_json_request("SetCurrentModelPhysicsRequest", data)
+            .await?;
+        check_response(&resp)
     }
 }
 

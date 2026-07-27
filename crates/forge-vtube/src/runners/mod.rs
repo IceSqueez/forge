@@ -1,6 +1,10 @@
 mod expression_set;
 mod hotkey_trigger;
+mod item_load;
 mod item_move;
+mod item_pin;
+mod item_throw;
+mod item_unload_all;
 mod lookup_current_model;
 mod lookup_expressions;
 mod lookup_hotkeys;
@@ -8,6 +12,8 @@ mod lookup_items;
 mod lookup_parameters;
 mod model_load;
 mod model_move;
+mod model_set_physics;
+mod model_tint;
 mod param_set;
 mod params_reset;
 #[cfg(test)]
@@ -19,7 +25,11 @@ use forge_registry::{RegistryError, SubActionRegistry};
 
 pub use expression_set::ExpressionSetRunner;
 pub use hotkey_trigger::HotkeyTriggerRunner;
+pub use item_load::ItemLoadRunner;
 pub use item_move::ItemMoveRunner;
+pub use item_pin::ItemPinRunner;
+pub use item_throw::ItemThrowRunner;
+pub use item_unload_all::ItemUnloadAllRunner;
 pub use lookup_current_model::LookupCurrentModelRunner;
 pub use lookup_expressions::LookupExpressionsRunner;
 pub use lookup_hotkeys::LookupHotkeysRunner;
@@ -27,6 +37,8 @@ pub use lookup_items::LookupItemsRunner;
 pub use lookup_parameters::LookupParametersRunner;
 pub use model_load::ModelLoadRunner;
 pub use model_move::ModelMoveRunner;
+pub use model_set_physics::ModelSetPhysicsRunner;
+pub use model_tint::ModelTintRunner;
 pub use param_set::ParamSetRunner;
 pub use params_reset::ParamsResetRunner;
 
@@ -47,7 +59,13 @@ pub fn register_vtube_sub_actions(
     reg.register(Box::new(LookupHotkeysRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(LookupExpressionsRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(LookupParametersRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(LookupItemsRunner::new(sink)))?;
+    reg.register(Box::new(LookupItemsRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ItemPinRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ItemLoadRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ItemUnloadAllRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ItemThrowRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ModelTintRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ModelSetPhysicsRunner::new(sink)))?;
     Ok(())
 }
 

@@ -87,6 +87,15 @@ impl SubActionRunner for ModelMoveRunner {
                 }),
             },
             FormField::Optional {
+                key: "size",
+                label: "Size",
+                inner: Box::new(FormField::Text {
+                    key: "size",
+                    label: "Size",
+                    placeholder: "-100 to 100",
+                }),
+            },
+            FormField::Optional {
                 key: "duration",
                 label: "Duration (s)",
                 inner: Box::new(FormField::Text {
@@ -113,14 +122,18 @@ impl SubActionRunner for ModelMoveRunner {
         let x = read_opt_float(config, "x");
         let y = read_opt_float(config, "y");
         let rotation = read_opt_float(config, "rotation");
+        let size = read_opt_float(config, "size");
         let duration = read_opt_float(config, "duration");
 
-        let outcome = if x.is_none() && y.is_none() && rotation.is_none() {
+        let outcome = if x.is_none() && y.is_none() && rotation.is_none() && size.is_none() {
             SubActionOutcome::Success
         } else {
             let time_in_seconds = duration.unwrap_or(0.0);
             SubActionOutcome::from_result(
-                &self.sink.move_model(x, y, rotation, time_in_seconds).await,
+                &self
+                    .sink
+                    .move_model(x, y, rotation, size, time_in_seconds)
+                    .await,
             )
         };
 

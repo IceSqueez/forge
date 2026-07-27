@@ -124,7 +124,10 @@ pub(crate) async fn recv_next_text(ws: &mut VtsWs) -> Result<serde_json::Value, 
 async fn request_new_token(ws: &mut VtsWs, endpoint: &str) -> Result<String, VTubeError> {
     let req = new_request(
         "AuthenticationTokenRequest",
-        serde_json::json!({ "pluginName": "forge", "pluginDeveloper": "forge" }),
+        serde_json::json!({
+            "pluginName": crate::PLUGIN_NAME,
+            "pluginDeveloper": crate::PLUGIN_NAME
+        }),
     );
     send_ws_msg(ws, &req).await?;
     tracing::debug!(endpoint, "sent AuthenticationTokenRequest, awaiting popup");
@@ -163,8 +166,8 @@ async fn authenticate_with_token(
     let req = new_request(
         "AuthenticationRequest",
         serde_json::json!({
-            "pluginName": "forge",
-            "pluginDeveloper": "forge",
+            "pluginName": crate::PLUGIN_NAME,
+            "pluginDeveloper": crate::PLUGIN_NAME,
             "authenticationToken": token
         }),
     );

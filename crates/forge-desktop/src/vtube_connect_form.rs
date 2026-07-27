@@ -7,7 +7,7 @@ use forge_components::{
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, SettingsRepo, get_bool_setting, set_bool_setting};
-use forge_vtube::{VTubeClient, VTubeConfig, VTubeProbeResult};
+use forge_vtube::{PLUGIN_NAME, VTubeClient, VTubeConfig, VTubeProbeResult};
 use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, Entity, EventEmitter, Focusable,
     FontWeight, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -23,10 +23,6 @@ pub const VTUBE_CONNECT_ON_LAUNCH_KEY: &str = "vtube.connect_on_launch";
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 8001;
-
-/// Must stay byte-identical to the `pluginName` forge-vtube sends, since this is the string
-/// VTube Studio prints in its approval popup; not a display label, so never localized.
-const PLUGIN_NAME: &str = "forge";
 
 const CONNECTION_CHANGED: &str = "vtube.connection.changed";
 const REASON_AWAITING_APPROVAL: &str = "awaiting_approval";

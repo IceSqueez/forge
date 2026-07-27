@@ -19,6 +19,9 @@ pub(crate) mod supervisor;
 pub mod switchable_sink;
 pub mod triggers;
 
+/// Must stay byte-identical to the string VTube Studio shows in its plugin-approval popup.
+pub const PLUGIN_NAME: &str = "forge";
+
 pub use auth::AuthState;
 pub use client::{VTubeClient, VTubeConfig};
 pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeConnectError, VTubeCredentials};

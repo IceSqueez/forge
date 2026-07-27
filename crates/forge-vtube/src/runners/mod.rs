@@ -70,15 +70,43 @@ pub fn register_vtube_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use forge_platform_core::QuickActions;
+    use forge_registry::FormField;
+
     use super::*;
+    use crate::client::VTubeClient;
     use crate::runners::test_support::MockSink;
+
+    fn registry() -> SubActionRegistry {
+        let mut reg = SubActionRegistry::new();
+        register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new())).unwrap();
+        reg
+    }
+
+    fn field_key(field: &FormField) -> &'static str {
+        match field {
+            FormField::Text { key, .. }
+            | FormField::TextArea { key, .. }
+            | FormField::Code { key, .. }
+            | FormField::Integer { key, .. }
+            | FormField::Toggle { key, .. }
+            | FormField::FilePicker { key, .. }
+            | FormField::DateTime { key, .. }
+            | FormField::Select { key, .. }
+            | FormField::DynamicSelect { key, .. }
+            | FormField::Optional { key, .. }
+            | FormField::SubChain { key, .. }
+            | FormField::CaseList { key, .. } => key,
+        }
+    }
 
     #[test]
     fn all_expected_runner_ids_are_present() {
-        let mut reg = SubActionRegistry::new();
-        register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new())).unwrap();
+        let reg = registry();
         for id in &[
             "vtube.hotkey.trigger",
             "vtube.expression.set",
@@ -86,7 +114,13 @@ mod tests {
             "vtube.model.load",
             "vtube.params.reset",
             "vtube.model.move",
+            "vtube.model.tint",
+            "vtube.model.set_physics",
             "vtube.item.move",
+            "vtube.item.pin",
+            "vtube.item.load",
+            "vtube.item.throw",
+            "vtube.item.unload_all",
             "vtube.lookup.current_model",
             "vtube.lookup.hotkeys",
             "vtube.lookup.expressions",
@@ -94,6 +128,46 @@ mod tests {
             "vtube.lookup.items",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
+        }
+    }
+
+    // Why: a quick action naming an unregistered runner, or presetting a key the runner never
+    // reads, silently does nothing when the user clicks it - no error, no log, no effect.
+    #[test]
+    fn every_quick_action_targets_a_registered_runner_that_reads_its_keys() {
+        let reg = registry();
+
+        for action in VTubeClient::new_for_test("ws://127.0.0.1:8001/").actions() {
+            let kind_id = &action.subaction_template.kind_id;
+            let runner = reg.get(kind_id).unwrap_or_else(|| {
+                panic!(
+                    "quick action '{}' targets unknown runner '{kind_id}'",
+                    action.label
+                )
+            });
+
+            let mut read: BTreeSet<String> = runner.default_config().into_keys().collect();
+            read.extend(
+                runner
+                    .config_fields()
+                    .iter()
+                    .map(|f| field_key(f).to_owned()),
+            );
+
+            let written = action
+                .subaction_template
+                .config
+                .keys()
+                .cloned()
+                .chain(action.fields.iter().map(|f| f.key.clone()));
+
+            for key in written {
+                assert!(
+                    read.contains(&key),
+                    "quick action '{}' sets '{key}', which runner '{kind_id}' never reads",
+                    action.label,
+                );
+            }
         }
     }
 

@@ -306,6 +306,28 @@ mod tests {
         );
     }
 
+    // Why: the load already put the item in the scene. Surfacing the instance id even on a
+    // failed move is the only handle a chain has to unload what it just spawned.
+    #[tokio::test]
+    async fn a_failed_move_still_surfaces_the_id_of_the_item_it_left_in_the_scene() {
+        let runner = ItemThrowRunner::new(Arc::new(MockSink::failing_item_move()));
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+        let config = BTreeMap::from([(
+            "file_name".to_owned(),
+            Variant::String("crown.png".to_owned()),
+        )]);
+
+        let (tel, extra) = runner.execute(&config, &ctx).await;
+
+        assert!(matches!(tel.outcome, SubActionOutcome::Failed(_)));
+        let out = extra.expect("a failed move must still hand back the spawned item id");
+        assert_eq!(
+            out.get("vtube.item.instance_id"),
+            Some(&Variant::String("inst-new-1".to_owned()))
+        );
+    }
+
     #[tokio::test]
     async fn execute_failed_outcome_when_load_fails() {
         let runner = ItemThrowRunner::new(Arc::new(MockSink::failing()));

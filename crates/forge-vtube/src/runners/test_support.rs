@@ -11,6 +11,7 @@ use crate::sink::VTubeSink;
 
 pub(crate) struct MockSink {
     fail: bool,
+    fail_item_move: bool,
     called: AtomicBool,
 }
 
@@ -18,6 +19,7 @@ impl MockSink {
     pub(crate) fn new() -> Self {
         Self {
             fail: false,
+            fail_item_move: false,
             called: AtomicBool::new(false),
         }
     }
@@ -25,6 +27,17 @@ impl MockSink {
     pub(crate) fn failing() -> Self {
         Self {
             fail: true,
+            fail_item_move: false,
+            called: AtomicBool::new(false),
+        }
+    }
+
+    /// Serves every call but rejects `move_item`, reproducing a spawn that lands in the scene
+    /// and then fails to travel.
+    pub(crate) fn failing_item_move() -> Self {
+        Self {
+            fail: false,
+            fail_item_move: true,
             called: AtomicBool::new(false),
         }
     }
@@ -91,6 +104,10 @@ impl VTubeSink for MockSink {
         _: f64,
         _: &str,
     ) -> Result<(), VTubeError> {
+        if self.fail_item_move {
+            self.called.store(true, Ordering::Release);
+            return Err(VTubeError::NotConnected);
+        }
         self.record()
     }
     async fn get_current_model(&self) -> Result<Variant, VTubeError> {

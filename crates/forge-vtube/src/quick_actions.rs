@@ -268,56 +268,79 @@ impl QuickActions for VTubeClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_platform_core::{PickerKind, QuickActions};
+    use std::collections::BTreeSet;
+
+    use forge_platform_core::{PickerKind, QuickAction, QuickActions};
     use forge_types::Variant;
 
     use crate::client::VTubeClient;
 
-    #[test]
-    fn trigger_hotkey_has_correct_kind_id_and_hotkey_picker() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let actions = c.actions();
-        let hk = &actions[0];
-        assert_eq!(hk.label, "Trigger Hotkey");
-        assert_eq!(hk.subaction_template.kind_id, "vtube.hotkey.trigger");
-        assert!(hk.subaction_template.config.contains_key("hotkey_id"));
-        assert_eq!(hk.picker, Some(PickerKind::Hotkey));
+    fn roster() -> Vec<QuickAction> {
+        VTubeClient::new_for_test("ws://127.0.0.1:8001/").actions()
     }
 
-    #[test]
-    fn load_model_has_no_picker_and_model_id_in_config() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let actions = c.actions();
-        let lm = &actions[2];
-        assert_eq!(lm.label, "Load Model");
-        assert_eq!(lm.subaction_template.kind_id, "vtube.model.load");
-        assert!(lm.subaction_template.config.contains_key("model_id"));
-        assert!(lm.picker.is_none());
+    fn row(label: &str) -> QuickAction {
+        roster()
+            .into_iter()
+            .find(|a| a.label == label)
+            .unwrap_or_else(|| panic!("roster is missing the '{label}' row"))
     }
 
+    // Why: both rows drive the same runner, so the baked-in `active` preset is the only
+    // thing that makes "Toggle expression" deactivate instead of duplicating "Set expression".
     #[test]
-    fn move_model_config_has_all_four_fields() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let actions = c.actions();
-        let mv = &actions[3];
-        assert_eq!(mv.subaction_template.kind_id, "vtube.model.move");
-        let cfg = &mv.subaction_template.config;
-        assert!(matches!(cfg.get("x"), Some(Variant::Float(_))));
-        assert!(matches!(cfg.get("y"), Some(Variant::Float(_))));
-        assert!(matches!(cfg.get("rotation"), Some(Variant::Float(_))));
-        assert!(matches!(
-            cfg.get("time_in_seconds"),
-            Some(Variant::Float(_))
-        ));
+    fn the_two_expression_rows_share_a_runner_but_preset_opposite_active_flags() {
+        let set = row("Set expression");
+        let toggle = row("Toggle expression");
+
+        assert_eq!(
+            set.subaction_template.kind_id,
+            toggle.subaction_template.kind_id
+        );
+        assert_eq!(
+            set.subaction_template.config.get("active"),
+            Some(&Variant::Bool(true))
+        );
+        assert_eq!(
+            toggle.subaction_template.config.get("active"),
+            Some(&Variant::Bool(false))
+        );
+    }
+
+    // Why: an item FILE (something to spawn) and a loaded item INSTANCE (something already in
+    // the scene) are separate id spaces in VTS; pinning against a file name silently no-ops.
+    #[test]
+    fn item_rows_pick_files_for_spawning_and_instances_for_pinning() {
+        for label in ["Throw item", "Load item"] {
+            assert_eq!(
+                row(label).picker,
+                Some(PickerKind::Item),
+                "'{label}' spawns from an item file"
+            );
+        }
+        assert_eq!(
+            row("Pin item to model").picker,
+            Some(PickerKind::ItemInstance)
+        );
+    }
+
+    // Why: `destructive` is what puts a confirmation in front of the click.
+    #[test]
+    fn only_the_irreversible_row_is_marked_destructive() {
+        let destructive: BTreeSet<String> = roster()
+            .into_iter()
+            .filter(|a| a.destructive)
+            .map(|a| a.label)
+            .collect();
+
+        assert_eq!(destructive, BTreeSet::from(["Remove all items".to_owned()]));
     }
 
     #[test]
     fn all_actions_disabled_when_disconnected() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let actions = c.actions();
-        for action in &actions {
+        for action in roster() {
             assert!(
                 !action.enabled,
                 "{} must be disabled when disconnected",

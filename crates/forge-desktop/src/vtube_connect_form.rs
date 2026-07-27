@@ -828,3 +828,71 @@ async fn load_prefill(
         connect_on_launch: get_bool_setting(&*settings, VTUBE_CONNECT_ON_LAUNCH_KEY, true).await,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outcome_tag(outcome: Option<ConnectOutcome>) -> String {
+        match outcome {
+            None => "ignored".to_owned(),
+            Some(ConnectOutcome::Connected) => "connected".to_owned(),
+            Some(ConnectOutcome::AwaitingApproval) => "awaiting".to_owned(),
+            Some(ConnectOutcome::Failed(reason)) => format!("failed:{reason}"),
+        }
+    }
+
+    // Why: "ignored" leaves the screen spinning on "Connecting" forever, so every payload the
+    // supervisor can emit has to resolve to a phase the user can act on.
+    #[test]
+    fn each_connection_payload_resolves_to_a_phase_the_connect_screen_can_show() {
+        for (payload, expected) in [
+            (
+                serde_json::json!({ "is_connected": true, "reason": null }),
+                "connected",
+            ),
+            (
+                serde_json::json!({ "is_connected": false, "reason": "awaiting_approval" }),
+                "awaiting",
+            ),
+            (
+                serde_json::json!({ "is_connected": false, "reason": "auth_denied" }),
+                "failed:auth_denied",
+            ),
+            (
+                serde_json::json!({ "is_connected": false, "reason": "connect_failed" }),
+                "failed:connect_failed",
+            ),
+            (
+                serde_json::json!({ "is_connected": false, "reason": null }),
+                "ignored",
+            ),
+        ] {
+            let event = Event::new(EventSource::VTube, CONNECTION_CHANGED, payload.clone());
+            assert_eq!(
+                outcome_tag(connect_outcome(&event)),
+                expected,
+                "unexpected phase for {payload}"
+            );
+        }
+    }
+
+    // Why: the form drains the shared bus, so an unrelated event must not push it out of the
+    // connecting phase.
+    #[test]
+    fn events_from_another_source_or_kind_are_ignored() {
+        let foreign_source = Event::new(
+            EventSource::Obs,
+            CONNECTION_CHANGED,
+            serde_json::json!({ "is_connected": true }),
+        );
+        let foreign_kind = Event::new(
+            EventSource::VTube,
+            "vtube.model.loaded",
+            serde_json::json!({ "is_connected": true }),
+        );
+
+        assert_eq!(outcome_tag(connect_outcome(&foreign_source)), "ignored");
+        assert_eq!(outcome_tag(connect_outcome(&foreign_kind)), "ignored");
+    }
+}

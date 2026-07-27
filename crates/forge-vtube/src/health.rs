@@ -153,23 +153,29 @@ impl BuiltinHealth for VTubeClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use std::sync::Arc;
-
-    use tokio::sync::mpsc;
     use tokio_stream::StreamExt as _;
 
-    use forge_platform_core::{BuiltinHealth, ConnectionState, HealthValue};
+    use forge_platform_core::{BuiltinHealth, HealthValue};
 
     use super::*;
     use crate::client::VTubeClient;
+    use crate::content::ExpressionItem;
     use crate::events::RawEnvelope;
 
     fn make_envelope(message_type: &str, data: serde_json::Value) -> RawEnvelope {
         RawEnvelope {
             message_type: message_type.to_owned(),
             data,
+        }
+    }
+
+    fn expression_item() -> ExpressionItem {
+        ExpressionItem {
+            name: "Blush".to_owned(),
+            file: "blush.exp3.json".to_owned(),
+            active: false,
         }
     }
 
@@ -181,10 +187,12 @@ mod tests {
         assert!(items.is_empty());
     }
 
+    // Why: the delta index is a hardcoded slot number into the array `metrics()` builds. If the
+    // two ever drift, the UI writes the model name into whichever metric now sits at that slot.
     #[test]
-    fn model_loaded_event_emits_delta_at_index_zero() {
-        let (tx, snap) = make_health_channel();
-        let mut rx = tx.subscribe();
+    fn the_model_loaded_delta_addresses_the_metric_labelled_model() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let mut rx = c.health_tx.subscribe();
 
         let env = make_envelope(
             "ModelLoadedEvent",
@@ -194,10 +202,10 @@ mod tests {
                 "modelName": "MyAvatar"
             }),
         );
-        update_from_event(&env, &snap, &tx);
+        update_from_event(&env, &c.health_state, &c.health_tx);
 
         let delta = rx.try_recv().unwrap();
-        assert_eq!(delta.index, 0);
+        assert_eq!(c.metrics()[usize::from(delta.index)].label, "MODEL");
         assert!(matches!(
             delta.new_value,
             HealthValue::Text { ref primary, .. } if primary == "MyAvatar"
@@ -205,18 +213,18 @@ mod tests {
     }
 
     #[test]
-    fn face_found_event_emits_delta_at_index_one() {
-        let (tx, snap) = make_health_channel();
-        let mut rx = tx.subscribe();
+    fn the_tracking_delta_addresses_the_metric_labelled_tracking() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let mut rx = c.health_tx.subscribe();
 
         let env = make_envelope(
             "TrackingStatusChangedEvent",
             serde_json::json!({ "faceFound": true }),
         );
-        update_from_event(&env, &snap, &tx);
+        update_from_event(&env, &c.health_state, &c.health_tx);
 
         let delta = rx.try_recv().unwrap();
-        assert_eq!(delta.index, 1);
+        assert_eq!(c.metrics()[usize::from(delta.index)].label, "TRACKING");
         assert!(matches!(
             delta.new_value,
             HealthValue::Status { active: true, .. }
@@ -262,67 +270,59 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn health_task_stops_when_api_sender_dropped() {
-        let (health_tx, health_snap) = make_health_channel();
-        let (req_tx, _req_rx) = mpsc::unbounded_channel();
-        let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
-        let connection_state = Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected));
+    fn text_metric(metrics: &[HealthMetric], label: &str) -> (String, Option<String>) {
+        let metric = metrics
+            .iter()
+            .find(|m| m.label == label)
+            .unwrap_or_else(|| panic!("no metric labelled {label}"));
+        match &metric.value {
+            HealthValue::Text { primary, secondary } => (primary.clone(), secondary.clone()),
+            _ => panic!("metric {label} is not a text value"),
+        }
+    }
 
-        let handle = spawn_health_task(
-            health_snap,
-            health_tx,
-            req_tx,
-            api_call_rx,
-            connection_state,
-        );
+    // Why: both counters live in the CONTENT snapshot, not the health snapshot; wiring them to
+    // the health snapshot's own fields would peg them at zero forever.
+    #[test]
+    fn metrics_report_expression_and_item_counts_from_the_content_snapshot() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        if let Ok(mut s) = c.content_state.write() {
+            s.expressions = vec![expression_item(), expression_item(), expression_item()];
+            s.item_count = Some(7);
+        }
 
-        drop(api_call_tx);
-        let result = tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await;
-        assert!(
-            result.is_ok(),
-            "health task should exit when api sender drops"
+        let metrics = c.metrics();
+        assert_eq!(text_metric(&metrics, "EXPRESSIONS").0, "3");
+        assert_eq!(text_metric(&metrics, "ITEMS").0, "7");
+    }
+
+    #[test]
+    fn a_loaded_model_is_annotated_with_its_live2d_parameter_count() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        if let Ok(mut s) = c.health_state.write() {
+            s.model_loaded = true;
+            s.model_name = "MyAvatar".to_owned();
+        }
+        if let Ok(mut s) = c.content_state.write() {
+            s.current_model_param_count = Some(42);
+        }
+
+        assert_eq!(
+            text_metric(&c.metrics(), "MODEL"),
+            ("MyAvatar".to_owned(), Some("42 parameters".to_owned()))
         );
     }
 
-    #[tokio::test]
-    async fn health_task_emits_api_calls_delta_on_signal() {
-        let (health_tx, health_snap) = make_health_channel();
-        let mut delta_rx = health_tx.subscribe();
-        let (req_tx, _req_rx) = mpsc::unbounded_channel();
-        let (api_call_tx, api_call_rx) = mpsc::unbounded_channel::<()>();
-        let connection_state = Arc::new(AtomicConnectionState::new(ConnectionState::Connected));
+    #[test]
+    fn an_empty_snapshot_reports_no_model_and_no_items_rather_than_a_blank_slot() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let metrics = c.metrics();
 
-        let handle = spawn_health_task(
-            Arc::clone(&health_snap),
-            health_tx,
-            req_tx,
-            api_call_rx,
-            connection_state,
+        assert_eq!(
+            text_metric(&metrics, "MODEL"),
+            ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
         );
-
-        api_call_tx.send(()).unwrap();
-
-        let delta = tokio::time::timeout(tokio::time::Duration::from_secs(2), async {
-            loop {
-                if let Ok(d) = delta_rx.try_recv()
-                    && d.index == 3
-                {
-                    return d;
-                }
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(delta.index, 3);
-        assert!(matches!(
-            delta.new_value,
-            HealthValue::Text { ref primary, .. } if primary == "1"
-        ));
-
-        handle.abort();
+        assert_eq!(text_metric(&metrics, "ITEMS").0, "0");
     }
 
     #[tokio::test]

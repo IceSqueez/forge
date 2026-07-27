@@ -1,12 +1,86 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.4] - 2026-07-27
+### 🐛 Bug Fixes
+- *(obs)* Classify macOS camera inputs by their av_capture kind
+- *(obs)* Stop holding the client lock across request awaits
+- *(obs)* Classify the 4009 close frame as an auth rejection
+- *(ui)* Validate the OBS connection before storing credentials
+- *(obs)* Merge catalog reconciliation against the live map
+- *(obs)* Heal missed scene events after the fetch window
+- *(ui)* Translate picker labels on the UI thread
+- *(twitch)* Report rejected refresh accurately in the chat stop log
+
+### 🚀 Features
+- *(obs)* Add screen-roster runners for filters, media, and profiles
+- *(obs)* Tint source-state icons and resolve transition, profile, and collection pickers
+- *(obs)* Rebuild the connected surface with live stats and the full roster
+- *(ui)* Add the typography, browser, and movie glyphs
+- *(ui)* Gate quick-action runs on required fields being filled
+- *(obs)* Add connection probe and gated auto-reconnect flag
+- *(obs)* Add the connection setup screen with live no-restart install
+- *(obs)* Open connection settings from the connected header
+- *(obs)* Pin the scene and source panels with virtualized tinted rows
+- *(obs)* Preselect the live scene and no-op same-scene switches
+- *(obs)* Track scene and source changes live in the catalog
+- *(obs)* Reflect connection loss and reconnects on the open screen
+- *(ui)* Register the missing quick-action glyphs
+- *(ui)* Align the panel headers, type scale, and row padding to design
+- *(app)* Allow overriding the data directory via FORGE_DATA_DIR
+- *(app)* Refuse to start a second instance on the same data directory
+
+### 🧪 Testing
+- *(obs)* Cover the screen-roster runners, the action roster, and the live health surface
+- *(obs)* Cover the connection probe and the auto-reconnect flag
+- *(obs)* Cover the handshake close-frame classification
+- *(builtin)* Cover list icon tints and pinned visible rows
+- *(obs)* Cover the live catalog, scene no-op guard, and state ordering
+- *(obs)* Cover scene-item kind inheritance across scenes
+- *(obs)* Pin the reconciliation merge policy and the studio-mode preview clear
+- *(platform-core)* Cover per-side header options on two-column lists
+
+## [0.3.3] - 2026-07-25
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🐛 Bug Fixes
+- *(platforms)* Bound OAuth token requests with connect and request timeouts
+- *(kick)* Send the client secret on token exchange and refresh
+- *(kick)* Replace the dead Pusher app key and surface close reasons
+- *(kick)* Read the live flag from the nested stream object
+- *(kick)* Log close codes in the chat reconnect loop
+- *(kick)* Share the boot stack with the in-session installer
+- *(platforms)* Single-flight OAuth token refresh across concurrent callers
+
+### 🚀 Features
+- *(kick)* Connect chat live right after in-session authorization
+- *(kick)* Bind the OAuth callback to a fixed loopback port
+- *(kick)* Register runners and resolve identity without boot credentials
+- *(kick)* Add lookup runners and bot-mode chat sending
+- *(kick)* Rebuild the connected surface with the full action roster
+- *(kick)* Install the live bundle right after in-session authorization
+
+### 🚜 Refactor
+- *(kick)* Poll viewers through the official channels API
+- *(kick)* Reuse the channel poll for viewer reports
+
+### 🧪 Testing
+- *(kick)* Cover the fixed callback port and the official viewer poll
+- *(kick)* Cover bot-mode sending, lookups, frame health, and the action roster
+
 ## [0.3.2] - 2026-07-25
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(ui)* Size the oauth footer buttons to the design button specs
 - *(platforms)* Show zero viewers with an immediate delta hint
 - *(ci)* Scope release notes to the nearest ancestor tag
 - *(ui)* Subscribe the event bridge before seeding connectivity
+
+### 📚 Documentation
+- *(release)* Release v0.3.2
 
 ### 🚀 Features
 - *(ui)* Rebuild the oauth connect screen on the stepped design flow

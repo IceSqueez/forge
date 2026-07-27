@@ -21,7 +21,7 @@ use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut};
 use crate::integration_seed;
-use crate::integrations::obs_builtin_object;
+use crate::integrations::{BuiltinObject, obs_builtin_object};
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::platforms::PlatformsView;
@@ -180,84 +180,53 @@ impl AppShell {
                     return Self::obs_connect_screen(handles, cx);
                 }
                 let builtin = if is_obs {
-                    installed.as_ref()
+                    installed
                 } else {
                     handles.builtins.get(id)
                 };
+                let object = builtin.unwrap_or_else(|| {
+                    let seed = integration_seed::seed(id);
+                    BuiltinObject {
+                        icon: seed.icon,
+                        status: seed.status,
+                        health: seed.health,
+                        content: seed.content,
+                        quick: seed.quick,
+                        control: None,
+                        obs_client: None,
+                    }
+                });
 
                 let connectivity = topics.platforms.clone();
                 let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
                 let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
                 let event_bus = Arc::clone(&handles.bus);
-                let detail = match builtin {
-                    Some(obj) => {
-                        let icon = obj.icon.clone();
-                        let status = obj.status.clone();
-                        let health = obj.health.clone();
-                        let content = obj.content.clone();
-                        let quick = obj.quick.clone();
-                        let control = obj.control.clone();
-                        let obs_client = obj.obs_client.clone();
-                        let rt_handle = handles.rt_handle.clone();
-                        let action_engine = handles.action_engine.clone();
-                        let live_viewers = handles.live_viewers.clone();
-                        let kick_install_seed = handles.kick_install_seed.clone();
-                        let obs_install_seed = handles.obs_install_seed.clone();
-                        cx.new(|cx| {
-                            IntegrationDetail::new(
-                                icon,
-                                status,
-                                health,
-                                content,
-                                quick,
-                                control,
-                                obs_client,
-                                rt_handle,
-                                action_engine,
-                                credentials,
-                                settings,
-                                bus,
-                                event_bus.clone(),
-                                live_viewers,
-                                kick_install_seed,
-                                obs_install_seed,
-                                connectivity,
-                                cx,
-                            )
-                        })
-                    }
-                    None => {
-                        let seed = integration_seed::seed(id);
-                        let rt_handle = handles.rt_handle.clone();
-                        let action_engine = handles.action_engine.clone();
-                        let live_viewers = handles.live_viewers.clone();
-                        let kick_install_seed = handles.kick_install_seed.clone();
-                        let obs_install_seed = handles.obs_install_seed.clone();
-                        cx.new(|cx| {
-                            IntegrationDetail::new(
-                                seed.icon,
-                                seed.status,
-                                seed.health,
-                                seed.content,
-                                seed.quick,
-                                None,
-                                None,
-                                rt_handle,
-                                action_engine,
-                                credentials,
-                                settings,
-                                bus,
-                                event_bus.clone(),
-                                live_viewers,
-                                kick_install_seed,
-                                obs_install_seed,
-                                connectivity,
-                                cx,
-                            )
-                        })
-                    }
-                };
+                let rt_handle = handles.rt_handle.clone();
+                let action_engine = handles.action_engine.clone();
+                let live_viewers = handles.live_viewers.clone();
+                let builtins = handles.builtins.clone();
+                let kick_install_seed = handles.kick_install_seed.clone();
+                let youtube_install_seed = handles.youtube_install_seed.clone();
+                let obs_install_seed = handles.obs_install_seed.clone();
+                let detail = cx.new(|cx| {
+                    IntegrationDetail::new(
+                        object,
+                        rt_handle,
+                        action_engine,
+                        credentials,
+                        settings,
+                        bus,
+                        event_bus,
+                        live_viewers,
+                        builtins,
+                        kick_install_seed,
+                        youtube_install_seed,
+                        obs_install_seed,
+                        connectivity,
+                        cx,
+                    )
+                });
                 cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
                 })

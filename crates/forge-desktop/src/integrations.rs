@@ -16,6 +16,7 @@ use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 
+#[derive(Clone)]
 #[allow(dead_code)]
 pub struct BuiltinObject {
     pub icon: SectionIcon,
@@ -27,10 +28,41 @@ pub struct BuiltinObject {
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
 }
 
+/// Every non-OBS screen mount resolves through this map, so it must stay current across sign-in and sign-out.
+#[derive(Clone, Default)]
+pub struct BuiltinRegistry {
+    entries: Arc<std::sync::RwLock<HashMap<BuiltinId, BuiltinObject>>>,
+}
+
+impl BuiltinRegistry {
+    fn seeded(entries: HashMap<BuiltinId, BuiltinObject>) -> Self {
+        Self {
+            entries: Arc::new(std::sync::RwLock::new(entries)),
+        }
+    }
+
+    pub fn get(&self, id: &BuiltinId) -> Option<BuiltinObject> {
+        let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
+        guard.get(id).cloned()
+    }
+
+    pub fn install(&self, object: BuiltinObject) {
+        let id = object.status.id().clone();
+        let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
+        guard.insert(id, object);
+    }
+
+    pub fn remove(&self, id: &BuiltinId) {
+        let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
+        guard.remove(id);
+    }
+}
+
 pub struct Integrations {
-    pub builtins: HashMap<BuiltinId, BuiltinObject>,
+    pub builtins: BuiltinRegistry,
     pub viewer_sources: Vec<Box<dyn LiveViewerSource>>,
     pub kick_install_seed: Option<KickInstallSeed>,
+    pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
 }
 
@@ -88,6 +120,57 @@ pub struct KickInstallSeed {
     pub rewards: Arc<forge_platform_kick::KickRewards>,
 }
 
+/// Holds the same handles the registered YouTube sub-actions resolve through, so a post-boot sign-in reaches them without a restart.
+#[derive(Clone)]
+pub struct YoutubeInstallSeed {
+    pub manager: Arc<forge_platform_youtube::YoutubeCredentialsManager>,
+    pub live_chat_id: forge_platform_youtube::LiveChatIdHandle,
+    pub active_broadcast: forge_platform_youtube::ActiveBroadcastIdHandle,
+    pub quota: Arc<tokio::sync::Mutex<forge_platform_youtube::QuotaState>>,
+}
+
+pub fn twitch_builtin_object(
+    bundle: Arc<forge_platform_twitch::TwitchIntegrationBundle>,
+) -> BuiltinObject {
+    BuiltinObject {
+        icon: SectionIcon::new("brand-twitch"),
+        status: bundle.clone(),
+        health: bundle.clone(),
+        content: bundle.clone(),
+        quick: bundle.clone(),
+        control: Some(bundle as Arc<dyn BuiltinControl>),
+        obs_client: None,
+    }
+}
+
+pub fn youtube_builtin_object(
+    bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
+) -> BuiltinObject {
+    BuiltinObject {
+        icon: SectionIcon::new("brand-youtube"),
+        status: bundle.clone(),
+        health: bundle.clone(),
+        content: bundle.clone(),
+        quick: bundle.clone(),
+        control: Some(bundle as Arc<dyn BuiltinControl>),
+        obs_client: None,
+    }
+}
+
+pub fn kick_builtin_object(
+    bundle: Arc<forge_platform_kick::KickIntegrationBundle>,
+) -> BuiltinObject {
+    BuiltinObject {
+        icon: SectionIcon::new("brand-kick"),
+        status: bundle.clone(),
+        health: bundle.clone(),
+        content: bundle.clone(),
+        quick: bundle.clone(),
+        control: Some(bundle as Arc<dyn BuiltinControl>),
+        obs_client: None,
+    }
+}
+
 struct NoopRateLimiter;
 
 #[async_trait::async_trait]
@@ -127,7 +210,8 @@ pub async fn build_integrations(
     insert("midi", build_midi(sub_actions, bus));
     insert("hotkey", build_hotkey(backend, bus).await);
 
-    let (youtube, youtube_viewers) = build_youtube(sub_actions, backend, bus).await;
+    let (youtube, youtube_viewers, youtube_install_seed) =
+        build_youtube(sub_actions, backend, bus).await;
     if let Some(source) = youtube_viewers {
         viewer_sources.push(source);
     }
@@ -140,9 +224,10 @@ pub async fn build_integrations(
     insert("kick", kick);
 
     Integrations {
-        builtins,
+        builtins: BuiltinRegistry::seeded(builtins),
         viewer_sources,
         kick_install_seed,
+        youtube_install_seed,
         obs_install_seed,
     }
 }
@@ -341,15 +426,7 @@ async fn build_twitch(
         rate_limiter,
     );
 
-    Some(BuiltinObject {
-        icon: SectionIcon::new("brand-twitch"),
-        status: bundle.clone(),
-        health: bundle.clone(),
-        content: bundle.clone(),
-        quick: bundle.clone(),
-        control: Some(bundle as Arc<dyn BuiltinControl>),
-        obs_client: None,
-    })
+    Some(twitch_builtin_object(bundle))
 }
 
 async fn build_obs(
@@ -530,24 +607,19 @@ async fn build_youtube(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> (Option<BuiltinObject>, Option<Box<dyn LiveViewerSource>>) {
+) -> (
+    Option<BuiltinObject>,
+    Option<Box<dyn LiveViewerSource>>,
+    Option<YoutubeInstallSeed>,
+) {
     let Some((client_id, client_secret)) = forge_platform_youtube::client_credentials() else {
-        return (None, None);
+        return (None, None, None);
     };
     let google = forge_platform_youtube::GoogleAuthFlow::new(client_id, client_secret);
     let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
         creds_of(backend),
         google,
     ));
-    let creds = match manager.load().await {
-        Ok(Some(creds)) => creds,
-        Ok(None) => return (None, None),
-        Err(e) => {
-            eprintln!("forge-desktop: failed to load youtube credentials: {e}");
-            return (None, None);
-        }
-    };
-    let channel_id = creds.channel_id.clone();
 
     let live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
     let active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
@@ -630,42 +702,66 @@ async fn build_youtube(
         eprintln!("forge-desktop: youtube sub-action registration failed: {e}");
     }
 
-    let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
-        channel_id.clone(),
-        Arc::clone(&manager),
+    let install_seed = YoutubeInstallSeed {
+        manager: Arc::clone(&manager),
         live_chat_id,
         active_broadcast,
-        Arc::clone(&quota),
+        quota,
+    };
+
+    let creds = match manager.load().await {
+        Ok(Some(creds)) => creds,
+        Ok(None) => return (None, None, Some(install_seed)),
+        Err(e) => {
+            eprintln!("forge-desktop: failed to load youtube credentials: {e}");
+            return (None, None, Some(install_seed));
+        }
+    };
+
+    let stack =
+        assemble_youtube_stack(install_seed.clone(), Arc::clone(bus), creds.channel_id).await;
+    (
+        Some(youtube_builtin_object(Arc::clone(&stack.bundle))),
+        Some(stack.viewer_source),
+        Some(install_seed),
+    )
+}
+
+pub(crate) struct YoutubeStack {
+    pub(crate) bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
+    pub(crate) viewer_source: Box<dyn LiveViewerSource>,
+}
+
+pub(crate) async fn assemble_youtube_stack(
+    seed: YoutubeInstallSeed,
+    bus: Arc<EventBus>,
+    channel_id: String,
+) -> YoutubeStack {
+    let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
+        channel_id.clone(),
+        Arc::clone(&seed.manager),
+        seed.live_chat_id,
+        seed.active_broadcast,
+        Arc::clone(&seed.quota),
     ));
     let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
 
     let (bundle, _health_tx) = forge_platform_youtube::YoutubeIntegrationBundle::new(
         channel_id,
         Arc::clone(&platform),
-        manager,
-        quota,
+        seed.manager,
+        seed.quota,
     );
 
-    spawn_event_bridge(publisher(bus), chat_platform.events(), "youtube");
+    spawn_event_bridge(publisher(&bus), chat_platform.events(), "youtube");
     spawn_connect(Arc::clone(&chat_platform), "youtube");
-    spawn_chat_send_bridge(
-        Arc::clone(bus),
-        chat_platform,
-        "youtube",
-        EventSource::YouTube,
-    );
+    spawn_chat_send_bridge(bus, chat_platform, "youtube", EventSource::YouTube);
 
     let viewer_source = bundle.viewer_source();
-    let object = BuiltinObject {
-        icon: SectionIcon::new("brand-youtube"),
-        status: bundle.clone(),
-        health: bundle.clone(),
-        content: bundle.clone(),
-        quick: bundle.clone(),
-        control: Some(bundle as Arc<dyn BuiltinControl>),
-        obs_client: None,
-    };
-    (Some(object), Some(viewer_source))
+    YoutubeStack {
+        bundle,
+        viewer_source,
+    }
 }
 
 async fn build_kick(
@@ -769,16 +865,11 @@ async fn build_kick(
     )
     .await;
 
-    let object = BuiltinObject {
-        icon: SectionIcon::new("brand-kick"),
-        status: stack.bundle.clone(),
-        health: stack.bundle.clone(),
-        content: stack.bundle.clone(),
-        quick: stack.bundle.clone(),
-        control: Some(stack.bundle as Arc<dyn BuiltinControl>),
-        obs_client: None,
-    };
-    (Some(object), Some(stack.viewer_source), Some(install_seed))
+    (
+        Some(kick_builtin_object(stack.bundle)),
+        Some(stack.viewer_source),
+        Some(install_seed),
+    )
 }
 
 pub(crate) struct KickStack {

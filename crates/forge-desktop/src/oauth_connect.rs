@@ -9,7 +9,6 @@ use forge_components::{
     with_alpha,
 };
 use forge_events::EventPublisher;
-use forge_platform_core::ChatPlatform;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
@@ -18,7 +17,7 @@ use gpui::{
 };
 
 use crate::integration_detail::IntegrationDetail;
-use crate::integrations::KickInstallSeed;
+use crate::integrations::{KickInstallSeed, YoutubeInstallSeed};
 
 pub(crate) type YoutubeFlowHandle =
     Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
@@ -169,18 +168,8 @@ impl IntegrationDetail {
             Ok(()) => {
                 self.flow_phase = LocalCallbackFlowPhase::Authorized;
                 match self.connect_platform {
-                    Some(PlatformId::YouTube) => {
-                        let credentials = Arc::clone(&self.credentials);
-                        let bus = Arc::clone(&self.bus);
-                        self.rt_handle.spawn(async move {
-                            if let Err(e) = connect_youtube_after_oauth(credentials, bus).await {
-                                eprintln!("forge-desktop: youtube in-session connect failed: {e}");
-                            }
-                        });
-                    }
-                    Some(PlatformId::Kick) => {
-                        self.install_kick(cx);
-                    }
+                    Some(PlatformId::YouTube) => self.install_youtube(cx),
+                    Some(PlatformId::Kick) => self.install_kick(cx),
                     Some(PlatformId::Twitch) | None => {}
                 }
             }
@@ -190,6 +179,37 @@ impl IntegrationDetail {
             }
         }
         cx.notify();
+    }
+
+    fn install_youtube(&mut self, cx: &mut Context<Self>) {
+        if self.control.is_some() {
+            return;
+        }
+        let seed = self.youtube_install_seed.clone();
+        let bus = Arc::clone(&self.event_bus);
+        let live_viewers = self.live_viewers.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { assemble_youtube_install(seed, bus, live_viewers).await },
+            |this, result, cx| this.apply_youtube_install(result, cx),
+            cx,
+        );
+    }
+
+    fn apply_youtube_install(
+        &mut self,
+        result: Result<Arc<forge_platform_youtube::YoutubeIntegrationBundle>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(bundle) => self.install_youtube_bundle(bundle, cx),
+            Err(e) => {
+                tracing::warn!(error = %e, "youtube in-session connect failed");
+                self.flow_phase = LocalCallbackFlowPhase::Failed;
+                self.flow_error = Some(e);
+                cx.notify();
+            }
+        }
     }
 
     fn install_kick(&mut self, cx: &mut Context<Self>) {
@@ -1132,52 +1152,24 @@ async fn wait_for_kick_authorization(
         .map_err(|e| e.to_string())
 }
 
-async fn connect_youtube_after_oauth(
-    credentials_repo: Arc<dyn CredentialsRepo>,
-    bus: Arc<dyn EventPublisher>,
-) -> Result<(), String> {
-    let (client_id, client_secret) = forge_platform_youtube::client_credentials()
-        .ok_or_else(|| "YouTube OAuth client credentials are not configured".to_owned())?;
-    let google = forge_platform_youtube::GoogleAuthFlow::new(client_id, client_secret);
-    let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
-        credentials_repo,
-        google,
-    ));
-    let creds = manager
+async fn assemble_youtube_install(
+    seed: Option<YoutubeInstallSeed>,
+    bus: Arc<forge_runtime::EventBus>,
+    live_viewers: forge_runtime::LiveViewerAggregatorHandle,
+) -> Result<Arc<forge_platform_youtube::YoutubeIntegrationBundle>, String> {
+    let seed =
+        seed.ok_or_else(|| "YouTube OAuth client credentials are not configured".to_owned())?;
+    let creds = seed
+        .manager
         .load()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no YouTube credentials found right after authorization".to_owned())?;
-    let channel_id = creds.channel_id;
 
-    let quota = Arc::new(tokio::sync::Mutex::new(
-        forge_platform_youtube::QuotaState::default(),
-    ));
-    let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
-        channel_id.clone(),
-        Arc::clone(&manager),
-        forge_platform_youtube::LiveChatIdHandle::new(),
-        forge_platform_youtube::ActiveBroadcastIdHandle::new(),
-        Arc::clone(&quota),
-    ));
+    let stack = crate::integrations::assemble_youtube_stack(seed, bus, creds.channel_id).await;
 
-    let mut platform_events = platform.events();
-    tokio::spawn(async move {
-        loop {
-            match platform_events.recv().await {
-                Ok(event) => bus.publish(event),
-                Err(forge_events::EventsError::BusClosed) => break,
-                Err(forge_events::EventsError::LaggingReceiver) => {
-                    tracing::warn!("youtube platform event bridge: lagging receiver");
-                    continue;
-                }
-                Err(_) => continue,
-            }
-        }
-    });
-
-    platform.connect().await.map_err(|e| e.to_string())?;
-    Ok(())
+    live_viewers.register(stack.viewer_source);
+    Ok(stack.bundle)
 }
 
 async fn assemble_kick_install(

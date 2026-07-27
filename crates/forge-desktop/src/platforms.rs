@@ -2,16 +2,15 @@ use forge_components::{
     BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, ForgePalette, Radius, Spacing,
     avatar_tile, body_family, connection_status_badge, nav_card, page_frame, radius, spacing, tr,
 };
-use std::collections::HashMap;
 
-use forge_platform_core::{BuiltinId, ConnectionState};
+use forge_platform_core::ConnectionState;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
 
 use crate::home_stats::Integration;
-use crate::integrations::BuiltinObject;
+use crate::integrations::BuiltinRegistry;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -89,7 +88,7 @@ impl PlatformConnectivity {
         self.connections.len()
     }
 
-    pub fn seed_from_builtins(&mut self, builtins: &HashMap<BuiltinId, BuiltinObject>) {
+    pub fn seed_from_builtins(&mut self, builtins: &BuiltinRegistry) {
         for (integ, connected) in self.connections.iter_mut() {
             *connected = builtins
                 .get(&integ.builtin_id())

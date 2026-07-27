@@ -30,7 +30,10 @@ use std::time::{Duration, Instant};
 use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::{SectionRefresh, content_sections, health_grid};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
-use crate::integrations::{KickInstallSeed, ObsInstallSeed};
+use crate::integrations::{
+    BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, YoutubeInstallSeed,
+    kick_builtin_object, twitch_builtin_object, youtube_builtin_object,
+};
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
@@ -53,8 +56,11 @@ pub struct IntegrationDetail {
     pub(crate) credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
     pub(crate) bus: Arc<dyn EventPublisher>,
+    pub(crate) event_bus: Arc<EventBus>,
     pub(crate) live_viewers: LiveViewerAggregatorHandle,
+    builtins: BuiltinRegistry,
     pub(crate) kick_install_seed: Option<KickInstallSeed>,
+    pub(crate) youtube_install_seed: Option<YoutubeInstallSeed>,
     obs_install_seed: ObsInstallSeed,
     pub(crate) connect_platform: Option<PlatformId>,
     pub(crate) flow_phase: LocalCallbackFlowPhase,
@@ -111,13 +117,7 @@ impl Drop for IntegrationDetail {
 impl IntegrationDetail {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        icon: SectionIcon,
-        status: Arc<dyn BuiltinStatus>,
-        health: Arc<dyn BuiltinHealth>,
-        content: Arc<dyn BuiltinContent>,
-        quick: Arc<dyn QuickActions>,
-        control: Option<Arc<dyn BuiltinControl>>,
-        obs_source: Option<Arc<ObsClient>>,
+        object: BuiltinObject,
         rt_handle: tokio::runtime::Handle,
         action_engine: ActionEngineHandle,
         credentials: Arc<dyn CredentialsRepo>,
@@ -125,11 +125,22 @@ impl IntegrationDetail {
         bus: Arc<dyn EventPublisher>,
         event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
+        builtins: BuiltinRegistry,
         kick_install_seed: Option<KickInstallSeed>,
+        youtube_install_seed: Option<YoutubeInstallSeed>,
         obs_install_seed: ObsInstallSeed,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let BuiltinObject {
+            icon,
+            status,
+            health,
+            content,
+            quick,
+            control,
+            obs_client: obs_source,
+        } = object;
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
 
         let is_twitch = status.id().as_str() == "twitch";
@@ -195,8 +206,11 @@ impl IntegrationDetail {
             credentials,
             settings,
             bus,
+            event_bus,
             live_viewers,
+            builtins,
             kick_install_seed,
+            youtube_install_seed,
             obs_install_seed,
             connect_platform,
             flow_phase: LocalCallbackFlowPhase::Idle,
@@ -609,19 +623,17 @@ impl IntegrationDetail {
         bundle: Arc<TwitchIntegrationBundle>,
         cx: &mut Context<Self>,
     ) {
-        self.status = bundle.clone();
-        self.health = bundle.clone();
-        self.content = bundle.clone();
-        self.quick = bundle.clone();
-        self.control = Some(bundle as Arc<dyn BuiltinControl>);
-        self.connect_platform = None;
-        self.eventsub_tally.clear();
-        self.viewer_samples.clear();
-        self.flow_phase = LocalCallbackFlowPhase::Idle;
-        self.flow_auth_url = None;
-        self.flow_error = None;
         self.twitch_flow = None;
-        self.reload(cx);
+        self.adopt_builtin(twitch_builtin_object(bundle), cx);
+    }
+
+    pub(crate) fn install_youtube_bundle(
+        &mut self,
+        bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
+        cx: &mut Context<Self>,
+    ) {
+        self.youtube_flow = None;
+        self.adopt_builtin(youtube_builtin_object(bundle), cx);
     }
 
     pub(crate) fn install_kick_bundle(
@@ -629,22 +641,29 @@ impl IntegrationDetail {
         bundle: Arc<KickIntegrationBundle>,
         cx: &mut Context<Self>,
     ) {
-        self.status = bundle.clone();
-        self.health = bundle.clone();
-        self.content = bundle.clone();
-        self.quick = bundle.clone();
-        self.control = Some(bundle as Arc<dyn BuiltinControl>);
+        self.kick_flow = None;
+        self.adopt_builtin(kick_builtin_object(bundle), cx);
+    }
+
+    fn adopt_builtin(&mut self, object: BuiltinObject, cx: &mut Context<Self>) {
+        self.builtins.install(object.clone());
+        self.icon = object.icon;
+        self.status = object.status;
+        self.health = object.health;
+        self.content = object.content;
+        self.quick = object.quick;
+        self.control = object.control;
         self.connect_platform = None;
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
         self.flow_phase = LocalCallbackFlowPhase::Idle;
         self.flow_auth_url = None;
         self.flow_error = None;
-        self.kick_flow = None;
         self.reload(cx);
     }
 
     pub(crate) fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
+        self.builtins.remove(self.status.id());
         let credentials = Arc::clone(&self.credentials);
         let control = self.control.take();
         let key = credential_key(platform);

@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_platform_core::BuiltinId;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, QueueSchedulerHandle, ScriptRegistry,
@@ -9,7 +7,7 @@ use forge_runtime::{
 };
 use forge_storage::{DataProvider, Language};
 
-use crate::integrations::{BuiltinObject, KickInstallSeed, ObsInstallSeed};
+use crate::integrations::{BuiltinRegistry, KickInstallSeed, ObsInstallSeed, YoutubeInstallSeed};
 
 #[allow(dead_code)]
 pub struct RuntimeHandles {
@@ -25,9 +23,11 @@ pub struct RuntimeHandles {
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
-    pub builtins: HashMap<BuiltinId, BuiltinObject>,
+    pub builtins: BuiltinRegistry,
     /// `None` when Kick client credentials are absent.
     pub kick_install_seed: Option<KickInstallSeed>,
+    /// `None` when YouTube client credentials are absent.
+    pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
     /// `None` when the server is disabled in settings or the boot bind failed.
     pub server: Option<forge_server::ServerHandle>,

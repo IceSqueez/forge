@@ -1246,6 +1246,7 @@ oauth_footer_signin = Увійти через { $name }
 oauth_btn_retry = Повторити
 oauth_btn_cancel = Скасувати
 oauth_failed_title = Авторизація не вдалася
+oauth_kick_hybrid_title = Гібридний транспорт чату
 
 ## Потік Twitch device code
 
@@ -1761,52 +1762,11 @@ fmt_relative_days = { $count ->
 
 ## Storage error screen
 
-## Integration seed
-iseed_metric_chat = Чат
-iseed_metric_messages = Повідомлення
-iseed_metric_eventsub = EventSub
-iseed_metric_api_budget = Бюджет API
-iseed_metric_websocket = WebSocket
-iseed_metric_streaming = Трансляція
-iseed_metric_mode = Режим
-iseed_metric_activity = Активність
-iseed_metric_session = Сеанс
-iseed_metric_detail = Деталі
-iseed_scenes = Сцени
-iseed_sources = Джерела
-iseed_dropped = Втрачено
-iseed_channel = Канал
-iseed_status = Статус
-iseed_stat_bitrate = Бітрейт
-iseed_stat_fps = FPS
-iseed_field_viewers = Глядачі
-iseed_field_category = Категорія
-iseed_field_uptime = Час роботи
-iseed_field_latency = Затримка
-iseed_field_since = Відколи
-iseed_section_eventsub_subs = Підписки EventSub
-iseed_section_oauth_scopes = Дозволи OAuth
-iseed_section_live_broadcast = Пряма трансляція
-iseed_section_stream_stats = Статистика трансляції
-iseed_section_overview = Огляд
-iseed_section_details = Подробиці
-iseed_cta_manage_subscriptions = Керувати підписками
-iseed_action_run_ad = Запустити рекламу
-iseed_action_create_clip = Створити кліп
-iseed_action_commercial = Рекламна пауза
-iseed_action_shoutout = Shoutout
-iseed_action_switch_scene = Змінити сцену
-iseed_action_toggle_source = Перемкнути джерело
-iseed_action_record = Запис
-iseed_action_toggle_mute = Перемкнути звук
-iseed_action_send_message = Надіслати повідомлення
-iseed_action_clear_chat = Очистити чат
-iseed_action_slow_mode = Повільний режим
-iseed_action_ban_user = Заблокувати користувача
-iseed_kick_capability = Гібридний транспорт
-iseed_kick_banner_title = Гібридний транспорт чату
-iseed_kick_banner_body = Отримання чату йде через спільнотний Pusher WebSocket; запис - через офіційний API.
-iseed_generic_connect_hint = Підключіться, щоб бачити стан у реальному часі
+## Недоступна інтеграція
+builtin_unavailable_metric_status = Статус
+builtin_unavailable_metric_uptime = Час роботи
+builtin_unavailable_metric_endpoint = Адреса
+builtin_unavailable_metric_version = Версія
 
 obs_connect_title = OBS Studio
 obs_connect_subtitle = Підключіться, щоб керувати сценами, джерелами, звуком, фільтрами та записом

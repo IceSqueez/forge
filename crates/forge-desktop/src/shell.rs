@@ -20,8 +20,7 @@ use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
-use crate::integration_seed;
-use crate::integrations::{BuiltinObject, obs_builtin_object, vtube_builtin_object};
+use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::platforms::PlatformsView;
@@ -40,6 +39,7 @@ use crate::toasts::Toasts;
 use crate::topics::Topics;
 use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
+use crate::unavailable_builtin::unavailable_builtin;
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
 
@@ -185,18 +185,7 @@ impl AppShell {
                     },
                     _ => handles.builtins.get(id),
                 };
-                let object = builtin.unwrap_or_else(|| {
-                    let seed = integration_seed::seed(id);
-                    BuiltinObject {
-                        icon: seed.icon,
-                        status: seed.status,
-                        health: seed.health,
-                        content: seed.content,
-                        quick: seed.quick,
-                        control: None,
-                        obs_client: None,
-                    }
-                });
+                let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
 
                 let connectivity = topics.platforms.clone();
                 let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;

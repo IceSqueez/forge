@@ -874,7 +874,7 @@ impl IntegrationDetail {
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
-                    .child(tr!("iseed_kick_banner_title")),
+                    .child(tr!("oauth_kick_hybrid_title")),
             )
             .child(
                 div()

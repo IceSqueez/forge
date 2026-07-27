@@ -1239,6 +1239,7 @@ oauth_footer_signin = Sign in with { $name }
 oauth_btn_retry = Retry
 oauth_btn_cancel = Cancel
 oauth_failed_title = Authorization failed
+oauth_kick_hybrid_title = Hybrid chat transport
 
 ## Twitch device code flow
 
@@ -1733,52 +1734,11 @@ fmt_relative_days = { $count ->
 
 ## Storage error screen
 
-## Integration seed
-iseed_metric_chat = Chat
-iseed_metric_messages = Messages
-iseed_metric_eventsub = EventSub
-iseed_metric_api_budget = API budget
-iseed_metric_websocket = WebSocket
-iseed_metric_streaming = Streaming
-iseed_metric_mode = Mode
-iseed_metric_activity = Activity
-iseed_metric_session = Session
-iseed_metric_detail = Detail
-iseed_scenes = Scenes
-iseed_sources = Sources
-iseed_dropped = Dropped
-iseed_channel = Channel
-iseed_status = Status
-iseed_stat_bitrate = Bitrate
-iseed_stat_fps = FPS
-iseed_field_viewers = Viewers
-iseed_field_category = Category
-iseed_field_uptime = Uptime
-iseed_field_latency = Latency
-iseed_field_since = Since
-iseed_section_eventsub_subs = EventSub subscriptions
-iseed_section_oauth_scopes = OAuth scopes
-iseed_section_live_broadcast = Live broadcast
-iseed_section_stream_stats = Stream stats
-iseed_section_overview = Overview
-iseed_section_details = Details
-iseed_cta_manage_subscriptions = Manage subscriptions
-iseed_action_run_ad = Run ad
-iseed_action_create_clip = Create clip
-iseed_action_commercial = Commercial
-iseed_action_shoutout = Shoutout
-iseed_action_switch_scene = Switch scene
-iseed_action_toggle_source = Toggle source
-iseed_action_record = Record
-iseed_action_toggle_mute = Toggle mute
-iseed_action_send_message = Send message
-iseed_action_clear_chat = Clear chat
-iseed_action_slow_mode = Slow mode
-iseed_action_ban_user = Ban user
-iseed_kick_capability = Hybrid transport
-iseed_kick_banner_title = Hybrid chat transport
-iseed_kick_banner_body = Chat receive rides the community Pusher WebSocket; writes use the official API.
-iseed_generic_connect_hint = Connect to see live status
+## Unavailable integration
+builtin_unavailable_metric_status = Status
+builtin_unavailable_metric_uptime = Uptime
+builtin_unavailable_metric_endpoint = Endpoint
+builtin_unavailable_metric_version = Version
 
 obs_connect_title = OBS Studio
 obs_connect_subtitle = Connect to control scenes, sources, audio, filters, and recording

@@ -31,8 +31,8 @@ use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::{SectionRefresh, content_sections, health_grid};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integrations::{
-    BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, YoutubeInstallSeed,
-    kick_builtin_object, twitch_builtin_object, youtube_builtin_object,
+    BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, VTubeInstallSeed,
+    YoutubeInstallSeed, kick_builtin_object, twitch_builtin_object, youtube_builtin_object,
 };
 use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 use crate::obs_credentials_form::ObsConnected;
@@ -62,6 +62,7 @@ pub struct IntegrationDetail {
     pub(crate) kick_install_seed: Option<KickInstallSeed>,
     pub(crate) youtube_install_seed: Option<YoutubeInstallSeed>,
     obs_install_seed: ObsInstallSeed,
+    vtube_install_seed: VTubeInstallSeed,
     pub(crate) connect_platform: Option<PlatformId>,
     pub(crate) flow_phase: LocalCallbackFlowPhase,
     pub(crate) flow_auth_url: Option<String>,
@@ -70,6 +71,7 @@ pub struct IntegrationDetail {
     pub(crate) kick_flow: Option<KickFlowHandle>,
     is_twitch: bool,
     is_obs: bool,
+    is_vtube: bool,
     twitch_reauth_required: bool,
     pub(crate) twitch_flow: Option<TwitchFlowHandle>,
     pub(crate) twitch_device: Option<TwitchDeviceState>,
@@ -101,10 +103,12 @@ const DETAIL_TICK: Duration = Duration::from_secs(30);
 const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
 
 pub struct ObsSignedOut;
+pub struct VTubeSignedOut;
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
 impl EventEmitter<ObsConnected> for IntegrationDetail {}
 impl EventEmitter<ObsSignedOut> for IntegrationDetail {}
+impl EventEmitter<VTubeSignedOut> for IntegrationDetail {}
 
 impl Drop for IntegrationDetail {
     fn drop(&mut self) {
@@ -129,6 +133,7 @@ impl IntegrationDetail {
         kick_install_seed: Option<KickInstallSeed>,
         youtube_install_seed: Option<YoutubeInstallSeed>,
         obs_install_seed: ObsInstallSeed,
+        vtube_install_seed: VTubeInstallSeed,
         connectivity: Entity<PlatformConnectivity>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -145,6 +150,7 @@ impl IntegrationDetail {
 
         let is_twitch = status.id().as_str() == "twitch";
         let is_obs = status.id().as_str() == "obs";
+        let is_vtube = status.id().as_str() == "vtube";
         let palette = cx.palette();
         let qa_search = SearchState::from_field(cx.new(|cx| {
             forge_components::search_input(tr!("integration_qa_filter_placeholder"), palette, cx)
@@ -212,6 +218,7 @@ impl IntegrationDetail {
             kick_install_seed,
             youtube_install_seed,
             obs_install_seed,
+            vtube_install_seed,
             connect_platform,
             flow_phase: LocalCallbackFlowPhase::Idle,
             flow_auth_url: None,
@@ -220,6 +227,7 @@ impl IntegrationDetail {
             kick_flow: None,
             is_twitch,
             is_obs,
+            is_vtube,
             twitch_reauth_required: false,
             twitch_flow: None,
             twitch_device: None,
@@ -531,6 +539,8 @@ impl IntegrationDetail {
         if self.pending_disconnect.take().is_some() {
             if self.is_obs {
                 self.sign_out_obs(cx);
+            } else if self.is_vtube {
+                self.sign_out_vtube(cx);
             } else if let Some(platform) = platform_of(self.status.id().as_str()) {
                 self.reset_to_connect(platform, cx);
             } else {
@@ -703,6 +713,20 @@ impl IntegrationDetail {
         self.obs_install_seed.clear();
         self.obs_source = None;
         cx.emit(ObsSignedOut);
+        cx.notify();
+    }
+
+    fn sign_out_vtube(&mut self, cx: &mut Context<Self>) {
+        let credentials = Arc::clone(&self.credentials);
+        let control = self.control.take();
+        self.rt_handle.spawn(async move {
+            if let Some(ctrl) = control {
+                let _ = ctrl.disconnect().await;
+            }
+            let _ = forge_vtube::credentials::clear(&*credentials).await;
+        });
+        self.vtube_install_seed.clear();
+        cx.emit(VTubeSignedOut);
         cx.notify();
     }
 

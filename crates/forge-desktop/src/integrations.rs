@@ -13,6 +13,7 @@ use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
 
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
+use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 
@@ -64,6 +65,7 @@ pub struct Integrations {
     pub kick_install_seed: Option<KickInstallSeed>,
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
+    pub vtube_install_seed: VTubeInstallSeed,
 }
 
 /// Holds the same `SwitchableObsSink` the registered OBS runners resolve through, so a post-boot
@@ -96,6 +98,51 @@ impl ObsInstallSeed {
     pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
+    }
+}
+
+/// Holds the same `SwitchableVTubeSink` the registered VTube runners resolve through, so a
+/// post-boot connect reaches them without a restart.
+#[derive(Clone)]
+pub struct VTubeInstallSeed {
+    sink: Arc<forge_vtube::SwitchableVTubeSink>,
+    live: Arc<std::sync::RwLock<Option<Arc<forge_vtube::VTubeClient>>>>,
+}
+
+impl VTubeInstallSeed {
+    fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>) -> Self {
+        Self {
+            sink,
+            live: Arc::new(std::sync::RwLock::new(None)),
+        }
+    }
+
+    pub fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
+        self.sink.install(Arc::clone(&client));
+        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(client);
+    }
+
+    pub fn clear(&self) {
+        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        *guard = None;
+    }
+
+    pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
+        let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
+        guard.clone()
+    }
+}
+
+pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObject {
+    BuiltinObject {
+        icon: SectionIcon::new("mood-smile"),
+        status: client.clone(),
+        health: client.clone(),
+        content: client.clone(),
+        quick: client.clone(),
+        control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
+        obs_client: None,
     }
 }
 
@@ -205,7 +252,7 @@ pub async fn build_integrations(
 
     insert("twitch", build_twitch(sub_actions, backend, bus).await);
     let obs_install_seed = build_obs(sub_actions, backend, bus).await;
-    insert("vtube", build_vtube(sub_actions, backend, bus).await);
+    let vtube_install_seed = build_vtube(sub_actions, backend, bus).await;
     insert("discord", build_discord(sub_actions, backend, bus));
     insert("midi", build_midi(sub_actions, bus));
     insert("hotkey", build_hotkey(backend, bus).await);
@@ -229,6 +276,7 @@ pub async fn build_integrations(
         kick_install_seed,
         youtube_install_seed,
         obs_install_seed,
+        vtube_install_seed,
     }
 }
 
@@ -468,7 +516,7 @@ async fn build_vtube(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> Option<BuiltinObject> {
+) -> VTubeInstallSeed {
     let sink = forge_vtube::SwitchableVTubeSink::new();
     if let Err(e) = forge_vtube::register_vtube_sub_actions(
         sub_actions,
@@ -476,29 +524,28 @@ async fn build_vtube(
     ) {
         eprintln!("forge-desktop: vtube sub-action registration failed: {e}");
     }
+    let seed = VTubeInstallSeed::new(sink);
+
+    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    if !get_bool_setting(&*settings, VTUBE_CONNECT_ON_LAUNCH_KEY, true).await {
+        return seed;
+    }
 
     let creds = creds_of(backend);
     let connect =
         forge_vtube::credentials::load_and_connect(&*creds, publisher(bus), Arc::clone(&creds));
     let client = match tokio::time::timeout(CONNECT_GUARD, connect).await {
         Ok(Ok(client)) => client,
-        Ok(Err(_)) => return None,
+        Ok(Err(_)) => return seed,
         Err(_) => {
             eprintln!("forge-desktop: vtube connect timed out");
-            return None;
+            return seed;
         }
     };
-    sink.install(Arc::clone(&client));
+    client.set_auto_reconnect(get_bool_setting(&*settings, VTUBE_AUTO_RECONNECT_KEY, true).await);
+    seed.install(client);
 
-    Some(BuiltinObject {
-        icon: SectionIcon::new("mood-smile"),
-        status: client.clone(),
-        health: client.clone(),
-        content: client.clone(),
-        quick: client.clone(),
-        control: Some(client as Arc<dyn BuiltinControl>),
-        obs_client: None,
-    })
+    seed
 }
 
 fn build_discord(

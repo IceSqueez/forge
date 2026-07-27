@@ -63,6 +63,8 @@ mod tts_engines;
 mod tts_filters;
 mod twitch_panel;
 mod voice_aliases;
+mod vtube_connect;
+mod vtube_connect_form;
 
 use forge_components::{IconAssets, bind_picker_keys, bind_text_area_keys, bind_text_input_keys};
 use forge_platform_core::paths;

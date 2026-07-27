@@ -319,6 +319,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         kick_install_seed: integrations.kick_install_seed,
         youtube_install_seed: integrations.youtube_install_seed,
         obs_install_seed: integrations.obs_install_seed,
+        vtube_install_seed: integrations.vtube_install_seed,
         server,
         speak,
         speak_events,

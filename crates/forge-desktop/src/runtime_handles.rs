@@ -7,7 +7,9 @@ use forge_runtime::{
 };
 use forge_storage::{DataProvider, Language};
 
-use crate::integrations::{BuiltinRegistry, KickInstallSeed, ObsInstallSeed, YoutubeInstallSeed};
+use crate::integrations::{
+    BuiltinRegistry, KickInstallSeed, ObsInstallSeed, VTubeInstallSeed, YoutubeInstallSeed,
+};
 
 #[allow(dead_code)]
 pub struct RuntimeHandles {
@@ -29,6 +31,7 @@ pub struct RuntimeHandles {
     /// `None` when YouTube client credentials are absent.
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
+    pub vtube_install_seed: VTubeInstallSeed,
     /// `None` when the server is disabled in settings or the boot bind failed.
     pub server: Option<forge_server::ServerHandle>,
     /// `None` only if speak-queue construction failed.

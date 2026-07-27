@@ -19,9 +19,9 @@ use crate::chrome::Chrome;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
-use crate::integration_detail::{IntegrationDetail, ObsSignedOut};
+use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integration_seed;
-use crate::integrations::{BuiltinObject, obs_builtin_object};
+use crate::integrations::{BuiltinObject, obs_builtin_object, vtube_builtin_object};
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::platforms::PlatformsView;
@@ -40,9 +40,12 @@ use crate::toasts::Toasts;
 use crate::topics::Topics;
 use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
+use crate::vtube_connect::VTubeConnectView;
+use crate::vtube_connect_form::VTubeConnected;
 
 const TOAST_PRIORITY: usize = 2;
 const OBS_BUILTIN_ID: &str = "obs";
+const VTUBE_BUILTIN_ID: &str = "vtube";
 
 struct Router {
     screen: Screen,
@@ -171,18 +174,16 @@ impl AppShell {
                 apps.into()
             }
             Screen::BuiltinDetail(id) => {
-                let is_obs = id.as_str() == OBS_BUILTIN_ID;
-                let installed = is_obs
-                    .then(|| handles.obs_install_seed.live())
-                    .flatten()
-                    .map(obs_builtin_object);
-                if is_obs && installed.is_none() {
-                    return Self::obs_connect_screen(handles, cx);
-                }
-                let builtin = if is_obs {
-                    installed
-                } else {
-                    handles.builtins.get(id)
+                let builtin = match id.as_str() {
+                    OBS_BUILTIN_ID => match handles.obs_install_seed.live() {
+                        Some(client) => Some(obs_builtin_object(client)),
+                        None => return Self::obs_connect_screen(handles, cx),
+                    },
+                    VTUBE_BUILTIN_ID => match handles.vtube_install_seed.live() {
+                        Some(client) => Some(vtube_builtin_object(client)),
+                        None => return Self::vtube_connect_screen(handles, cx),
+                    },
+                    _ => handles.builtins.get(id),
                 };
                 let object = builtin.unwrap_or_else(|| {
                     let seed = integration_seed::seed(id);
@@ -209,6 +210,7 @@ impl AppShell {
                 let kick_install_seed = handles.kick_install_seed.clone();
                 let youtube_install_seed = handles.youtube_install_seed.clone();
                 let obs_install_seed = handles.obs_install_seed.clone();
+                let vtube_install_seed = handles.vtube_install_seed.clone();
                 let detail = cx.new(|cx| {
                     IntegrationDetail::new(
                         object,
@@ -223,6 +225,7 @@ impl AppShell {
                         kick_install_seed,
                         youtube_install_seed,
                         obs_install_seed,
+                        vtube_install_seed,
                         connectivity,
                         cx,
                     )
@@ -236,6 +239,10 @@ impl AppShell {
                 })
                 .detach();
                 cx.subscribe(&detail, |this, _view, _: &ObsSignedOut, cx| {
+                    this.rebuild_current(cx);
+                })
+                .detach();
+                cx.subscribe(&detail, |this, _view, _: &VTubeSignedOut, cx| {
                     this.rebuild_current(cx);
                 })
                 .detach();
@@ -406,6 +413,27 @@ impl AppShell {
         })
         .detach();
         cx.subscribe(&connect, |this, _view, _: &ObsConnected, cx| {
+            this.rebuild_current(cx);
+        })
+        .detach();
+        connect.into()
+    }
+
+    fn vtube_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
+        let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
+        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
+        let event_bus = Arc::clone(&handles.bus);
+        let rt_handle = handles.rt_handle.clone();
+        let seed = handles.vtube_install_seed.clone();
+        let connect = cx.new(|cx| {
+            VTubeConnectView::new(rt_handle, credentials, settings, bus, event_bus, seed, cx)
+        });
+        cx.subscribe(&connect, |this, _view, event: &NavRequested, cx| {
+            this.navigate(event.0.clone(), cx);
+        })
+        .detach();
+        cx.subscribe(&connect, |this, _view, _: &VTubeConnected, cx| {
             this.rebuild_current(cx);
         })
         .detach();

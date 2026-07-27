@@ -19,7 +19,7 @@ use crate::chrome::Chrome;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
-use crate::integration_detail::IntegrationDetail;
+use crate::integration_detail::{IntegrationDetail, ObsSignedOut};
 use crate::integration_seed;
 use crate::integrations::obs_builtin_object;
 use crate::obs_connect::ObsConnectView;
@@ -171,14 +171,19 @@ impl AppShell {
                 apps.into()
             }
             Screen::BuiltinDetail(id) => {
-                let installed = (id.as_str() == OBS_BUILTIN_ID)
+                let is_obs = id.as_str() == OBS_BUILTIN_ID;
+                let installed = is_obs
                     .then(|| handles.obs_install_seed.live())
                     .flatten()
                     .map(obs_builtin_object);
-                let builtin = installed.as_ref().or_else(|| handles.builtins.get(id));
-                if builtin.is_none() && id.as_str() == OBS_BUILTIN_ID {
+                if is_obs && installed.is_none() {
                     return Self::obs_connect_screen(handles, cx);
                 }
+                let builtin = if is_obs {
+                    installed.as_ref()
+                } else {
+                    handles.builtins.get(id)
+                };
 
                 let connectivity = topics.platforms.clone();
                 let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
@@ -258,6 +263,10 @@ impl AppShell {
                 })
                 .detach();
                 cx.subscribe(&detail, |this, _view, _: &ObsConnected, cx| {
+                    this.rebuild_current(cx);
+                })
+                .detach();
+                cx.subscribe(&detail, |this, _view, _: &ObsSignedOut, cx| {
                     this.rebuild_current(cx);
                 })
                 .detach();

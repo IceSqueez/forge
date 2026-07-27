@@ -51,6 +51,10 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<StoredCredential
     Ok(Some(StoredCredential { url, password }))
 }
 
+pub async fn clear(creds: &dyn CredentialsRepo) -> Result<bool, StorageError> {
+    creds.delete(&CredentialId::new(OBS_CREDENTIAL_ID)).await
+}
+
 pub async fn load_and_connect(
     creds: &dyn CredentialsRepo,
     bus: Arc<dyn EventPublisher>,

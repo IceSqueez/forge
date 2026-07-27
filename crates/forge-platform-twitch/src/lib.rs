@@ -25,7 +25,7 @@ pub use chat::{
     ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
 };
 pub use chat_platform::TwitchPlatform;
-pub use credentials::CredentialsTokenSource;
+pub use credentials::{CredentialsTokenSource, TWITCH_CREDENTIAL_ID};
 pub use credentials_manager::TwitchCredentialsManager;
 pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,

@@ -94,8 +94,11 @@ const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
 
+pub struct ObsSignedOut;
+
 impl EventEmitter<NavRequested> for IntegrationDetail {}
 impl EventEmitter<ObsConnected> for IntegrationDetail {}
+impl EventEmitter<ObsSignedOut> for IntegrationDetail {}
 
 impl Drop for IntegrationDetail {
     fn drop(&mut self) {
@@ -512,8 +515,10 @@ impl IntegrationDetail {
 
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
         if self.pending_disconnect.take().is_some() {
-            if self.is_twitch {
-                self.reset_twitch_to_connect(cx);
+            if self.is_obs {
+                self.sign_out_obs(cx);
+            } else if let Some(platform) = platform_of(self.status.id().as_str()) {
+                self.reset_to_connect(platform, cx);
             } else {
                 self.dispatch_control(ControlVerb::Disconnect, cx);
             }
@@ -639,23 +644,47 @@ impl IntegrationDetail {
         self.reload(cx);
     }
 
-    pub(crate) fn reset_twitch_to_connect(&mut self, cx: &mut Context<Self>) {
-        if let Some(ctrl) = self.control.take() {
-            self.rt_handle.spawn(async move {
+    pub(crate) fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
+        let credentials = Arc::clone(&self.credentials);
+        let control = self.control.take();
+        let key = credential_key(platform);
+        self.rt_handle.spawn(async move {
+            if let Some(ctrl) = control {
                 let _ = ctrl.disconnect().await;
-            });
-        }
-        self.connect_platform = Some(PlatformId::Twitch);
+            }
+            let _ = credentials
+                .delete(&forge_storage::CredentialId::new(key))
+                .await;
+        });
+        self.connect_platform = Some(platform);
         self.flow_phase = LocalCallbackFlowPhase::Idle;
         self.flow_auth_url = None;
         self.flow_error = None;
+        self.youtube_flow = None;
+        self.kick_flow = None;
         self.twitch_reauth_required = false;
+        self.eventsub_tally.clear();
+        self.viewer_samples.clear();
+        if platform == PlatformId::Twitch {
+            self.begin_twitch_device(cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    fn sign_out_obs(&mut self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.credentials);
+        let control = self.control.take();
         self.rt_handle.spawn(async move {
-            let id = forge_storage::CredentialId::new("twitch:broadcaster");
-            let _ = credentials.delete(&id).await;
+            if let Some(ctrl) = control {
+                let _ = ctrl.disconnect().await;
+            }
+            let _ = forge_obs::credentials::clear(&*credentials).await;
         });
-        self.begin_twitch_device(cx);
+        self.obs_install_seed.clear();
+        self.obs_source = None;
+        cx.emit(ObsSignedOut);
+        cx.notify();
     }
 
     fn resync_content(&mut self, cx: &mut Context<Self>) {
@@ -1157,14 +1186,26 @@ fn hero_badge_elem(badge_spec: &HeroBadge, palette: &ForgePalette) -> impl IntoE
     .flex_none()
 }
 
-fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {
-    if has_control {
-        return None;
-    }
+fn platform_of(id: &str) -> Option<PlatformId> {
     match id {
         "twitch" => Some(PlatformId::Twitch),
         "youtube" => Some(PlatformId::YouTube),
         "kick" => Some(PlatformId::Kick),
         _ => None,
     }
+}
+
+fn credential_key(platform: PlatformId) -> &'static str {
+    match platform {
+        PlatformId::Twitch => forge_platform_twitch::TWITCH_CREDENTIAL_ID,
+        PlatformId::YouTube => forge_platform_youtube::CREDENTIAL_KEY,
+        PlatformId::Kick => forge_platform_kick::CREDENTIAL_KEY,
+    }
+}
+
+fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {
+    if has_control {
+        return None;
+    }
+    platform_of(id)
 }

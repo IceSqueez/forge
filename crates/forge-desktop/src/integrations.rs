@@ -56,6 +56,11 @@ impl ObsInstallSeed {
         *guard = Some(client);
     }
 
+    pub fn clear(&self) {
+        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        *guard = None;
+    }
+
     pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
@@ -116,8 +121,7 @@ pub async fn build_integrations(
     };
 
     insert("twitch", build_twitch(sub_actions, backend, bus).await);
-    let (obs, obs_install_seed) = build_obs(sub_actions, backend, bus).await;
-    insert("obs", obs);
+    let obs_install_seed = build_obs(sub_actions, backend, bus).await;
     insert("vtube", build_vtube(sub_actions, backend, bus).await);
     insert("discord", build_discord(sub_actions, backend, bus));
     insert("midi", build_midi(sub_actions, bus));
@@ -352,7 +356,7 @@ async fn build_obs(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> (Option<BuiltinObject>, ObsInstallSeed) {
+) -> ObsInstallSeed {
     let sink = forge_obs::SwitchableObsSink::new();
     if let Err(e) = forge_obs::register_obs_sub_actions(
         sub_actions,
@@ -364,23 +368,23 @@ async fn build_obs(
 
     let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
     if !get_bool_setting(&*settings, OBS_CONNECT_ON_LAUNCH_KEY, true).await {
-        return (None, seed);
+        return seed;
     }
 
     let creds = creds_of(backend);
     let connect = forge_obs::credentials::load_and_connect(&*creds, publisher(bus));
     let client = match tokio::time::timeout(CONNECT_GUARD, connect).await {
         Ok(Ok(client)) => client,
-        Ok(Err(_)) => return (None, seed),
+        Ok(Err(_)) => return seed,
         Err(_) => {
             eprintln!("forge-desktop: obs connect timed out");
-            return (None, seed);
+            return seed;
         }
     };
     client.set_auto_reconnect(get_bool_setting(&*settings, OBS_AUTO_RECONNECT_KEY, true).await);
-    seed.install(Arc::clone(&client));
+    seed.install(client);
 
-    (Some(obs_builtin_object(client)), seed)
+    seed
 }
 
 async fn build_vtube(

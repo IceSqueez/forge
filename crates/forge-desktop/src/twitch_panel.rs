@@ -11,6 +11,7 @@ use forge_platform_twitch::{
     TwitchAuthFlow, UserInfo,
 };
 use forge_storage::CredentialsRepo;
+use forge_types::PlatformId;
 use gpui::{
     Animation, AnimationExt, AnyElement, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla,
     Rgba, SharedString, StyledText, div, prelude::*, px,
@@ -989,7 +990,7 @@ impl IntegrationDetail {
             .bg(palette.warning)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.warning, 0.85)))
-            .on_click(cx.listener(|this, _, _, cx| this.reset_twitch_to_connect(cx)))
+            .on_click(cx.listener(|this, _, _, cx| this.reset_to_connect(PlatformId::Twitch, cx)))
             .child(
                 div()
                     .font_family(body_family())

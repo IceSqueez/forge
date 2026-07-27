@@ -1216,7 +1216,6 @@ builtin_picker_scene_collection = Choose a Scene Collection
 
 ## OAuth / local callback flow
 
-oauth_connect_eyebrow = CONNECT ACCOUNT
 oauth_connect_explainer_prefix = Forge uses
 oauth_connect_explainer_emphasis = { " " }OAuth 2.0 Authorization Code with PKCE
 oauth_connect_explainer_suffix = . Your browser opens { $name }, and the response returns to a local loopback address - no secret is ever stored.

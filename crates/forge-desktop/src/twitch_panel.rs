@@ -419,13 +419,6 @@ impl IntegrationDetail {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let eyebrow = div()
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_muted)
-            .mb(spacing(Spacing::Xs, density))
-            .child(tr!("oauth_connect_eyebrow"));
-
         let phase = self
             .twitch_device
             .as_ref()
@@ -460,7 +453,6 @@ impl IntegrationDetail {
             .max_w(px(640.0))
             .flex()
             .flex_col()
-            .child(eyebrow)
             .child(self.twitch_explainer(palette));
         if has_code {
             column = column

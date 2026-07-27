@@ -1223,7 +1223,6 @@ builtin_picker_scene_collection = Оберіть колекцію сцен
 
 ## OAuth / локальний callback-потік
 
-oauth_connect_eyebrow = ПІДКЛЮЧИТИ АКАУНТ
 oauth_connect_explainer_prefix = Forge використовує
 oauth_connect_explainer_emphasis = { " " }OAuth 2.0 Authorization Code з PKCE
 oauth_connect_explainer_suffix = . Ваш браузер відкриває { $name }, а відповідь повертається на локальну loopback-адресу - жоден секрет ніколи не зберігається.

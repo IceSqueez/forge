@@ -310,7 +310,7 @@ impl IntegrationDetail {
         let column = match platform {
             PlatformId::Twitch => self.twitch_device_column(accent, palette, density, cx),
             PlatformId::YouTube | PlatformId::Kick => {
-                self.local_callback_column(platform, letter, accent, palette, density, cx)
+                self.local_callback_column(platform, accent, palette, density, cx)
             }
         };
         div()
@@ -323,23 +323,14 @@ impl IntegrationDetail {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn local_callback_column(
         &self,
         platform: PlatformId,
-        letter: &'static str,
         accent: Rgba,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let eyebrow = div()
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_muted)
-            .mb(px(6.0))
-            .child(tr!("oauth_connect_eyebrow"));
-
         let disclaimer = matches!(platform, PlatformId::Kick)
             .then(|| self.connect_disclaimer(palette, density).into_any_element());
         let progress = matches!(
@@ -357,8 +348,6 @@ impl IntegrationDetail {
             .max_w(px(640.0))
             .flex()
             .flex_col()
-            .child(eyebrow)
-            .child(self.oauth_title(letter, accent, palette))
             .child(self.oauth_explainer(palette))
             .children(disclaimer)
             .child(self.oauth_steps_card(accent, palette))
@@ -366,46 +355,6 @@ impl IntegrationDetail {
             .children(done)
             .children(error)
             .child(self.oauth_footer(palette, cx))
-            .into_any_element()
-    }
-
-    fn oauth_title(
-        &self,
-        letter: &'static str,
-        accent: Rgba,
-        palette: &ForgePalette,
-    ) -> AnyElement {
-        let tile = div()
-            .flex_none()
-            .size(px(30.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(7.0))
-            .bg(accent)
-            .font_family(body_family())
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_size(px(16.0))
-            .text_color(palette.shell)
-            .child(letter);
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(px(12.0))
-            .mb(px(4.0))
-            .child(tile)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(px(22.0))
-                    .text_color(palette.text_primary)
-                    .child(tr!(
-                        "oauth_footer_signin",
-                        name = self.display_name.as_str()
-                    )),
-            )
             .into_any_element()
     }
 

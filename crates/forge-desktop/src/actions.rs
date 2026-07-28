@@ -236,3 +236,128 @@ pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
     bind_list_keys(cx);
     bind_shell(cx, overrides);
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn en_catalog() -> String {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("locales")
+            .join("en")
+            .join("main.ftl");
+        std::fs::read_to_string(&path).expect("en catalog is readable")
+    }
+
+    #[test]
+    fn chord_caps_rewrites_a_gpui_chord_into_plus_separated_keycaps() {
+        let cases = [
+            ("ctrl-1", "Ctrl+1"),
+            ("ctrl-shift-r", "Ctrl+Shift+R"),
+            ("alt-shift-f12", "Alt+Shift+F12"),
+            ("cmd-k", "Meta+K"),
+            ("super-k", "Meta+K"),
+            ("fn-f1", "Fn+F1"),
+            ("f5", "F5"),
+            ("", ""),
+        ];
+
+        for (chord, expected) in cases {
+            assert_eq!(chord_caps(chord), expected, "wrong caps for {chord:?}");
+        }
+    }
+
+    #[test]
+    fn chord_is_bindable_requires_a_strong_modifier_or_a_function_key() {
+        let bindable = ["ctrl-1", "alt-r", "cmd-k", "super-k", "win-k", "f1", "f12"];
+        let rejected = [
+            "shift-r",
+            "r",
+            "f13",
+            "f0",
+            "",
+            "ctrl",
+            "ctrl-shift",
+            "fn-r",
+        ];
+
+        for chord in bindable {
+            assert!(chord_is_bindable(chord), "expected bindable: {chord:?}");
+        }
+        for chord in rejected {
+            assert!(!chord_is_bindable(chord), "expected rejected: {chord:?}");
+        }
+    }
+
+    #[test]
+    fn every_shortcut_in_the_roster_is_bindable_resolvable_and_labelled() {
+        let catalog = en_catalog();
+        let mut seen: Vec<&str> = Vec::new();
+
+        for entry in SHORTCUTS {
+            assert!(
+                !seen.contains(&entry.id),
+                "duplicate shortcut id {:?} - owner_of and shortcut_entry would pick the first",
+                entry.id
+            );
+            seen.push(entry.id);
+
+            assert!(
+                chord_is_bindable(entry.default_chord),
+                "{}: default chord {:?} is not bindable, so effective_chord reports the shortcut as unbound",
+                entry.id,
+                entry.default_chord
+            );
+            assert!(
+                make_binding(entry.id, entry.default_chord).is_some(),
+                "{}: no make_binding arm, so the shortcut never reaches cx.bind_keys",
+                entry.id
+            );
+            assert!(
+                catalog.contains(&format!("\n{} = ", entry.label_key)),
+                "{}: label key {:?} is missing from the en catalog",
+                entry.id,
+                entry.label_key
+            );
+        }
+    }
+
+    #[test]
+    fn parse_stored_overrides_drops_ids_the_roster_no_longer_defines() {
+        let raw = r#"{"nav.home":"ctrl-9","nav.gone":"ctrl-8"}"#;
+
+        let parsed = parse_stored_overrides(raw);
+
+        assert_eq!(parsed.get("nav.home").map(String::as_str), Some("ctrl-9"));
+        assert!(!parsed.contains_key("nav.gone"));
+    }
+
+    #[test]
+    fn parse_stored_overrides_falls_back_to_defaults_when_the_setting_is_unreadable() {
+        for raw in ["", "not json", "[]", r#"{"nav.home":7}"#] {
+            assert!(
+                parse_stored_overrides(raw).is_empty(),
+                "expected defaults for {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn effective_chord_separates_an_unbound_shortcut_from_an_untouched_one() {
+        let entry = shortcut_entry("nav.home").expect("nav.home is in the roster");
+        let mut overrides = HashMap::new();
+
+        assert_eq!(effective_chord(&overrides, entry), Some("ctrl-1"));
+
+        overrides.insert("nav.home".to_owned(), String::new());
+        assert_eq!(
+            effective_chord(&overrides, entry),
+            None,
+            "an unbindable stored chord means unbound, not back to the default"
+        );
+
+        overrides.insert("nav.home".to_owned(), "ctrl-9".to_owned());
+        assert_eq!(effective_chord(&overrides, entry), Some("ctrl-9"));
+    }
+}

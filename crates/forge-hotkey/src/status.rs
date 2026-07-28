@@ -59,7 +59,7 @@ impl BuiltinStatus for HotkeyClient {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_platform_core::{BuiltinStatus, ConnectionState};
+    use forge_platform_core::{BuiltinStatus, ConnectionState, HeaderAction};
 
     use crate::backend::tests::MockPortalBackend;
     use crate::client::HotkeyClient;
@@ -91,5 +91,19 @@ mod tests {
 
         client.enable().await.unwrap();
         assert_eq!(status.connection(), ConnectionState::Connected);
+    }
+
+    #[tokio::test]
+    async fn the_header_offers_the_action_that_reverses_the_current_engine_state() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+        let status: &dyn BuiltinStatus = &*client;
+        assert_eq!(status.header_actions(), vec![HeaderAction::Disconnect]);
+
+        client.disable().await.unwrap();
+        assert_eq!(status.header_actions(), vec![HeaderAction::Reconnect]);
+
+        client.enable().await.unwrap();
+        assert_eq!(status.header_actions(), vec![HeaderAction::Disconnect]);
     }
 }

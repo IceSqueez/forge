@@ -19,6 +19,7 @@ use crate::chrome::Chrome;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
+use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::midi_screen::MidiScreenView;
@@ -48,6 +49,7 @@ const TOAST_PRIORITY: usize = 2;
 const OBS_BUILTIN_ID: &str = "obs";
 const VTUBE_BUILTIN_ID: &str = "vtube";
 const MIDI_BUILTIN_ID: &str = "midi";
+const HOTKEY_BUILTIN_ID: &str = "hotkey";
 
 struct Router {
     screen: Screen,
@@ -187,6 +189,10 @@ impl AppShell {
                     },
                     MIDI_BUILTIN_ID => match handles.midi_client.clone() {
                         Some(client) => return Self::midi_screen(handles, client, cx),
+                        None => handles.builtins.get(id),
+                    },
+                    HOTKEY_BUILTIN_ID => match handles.hotkey_client.clone() {
+                        Some(client) => return Self::hotkeys_screen(handles, client, cx),
                         None => handles.builtins.get(id),
                     },
                     _ => handles.builtins.get(id),
@@ -412,6 +418,19 @@ impl AppShell {
         })
         .detach();
         connect.into()
+    }
+
+    fn hotkeys_screen(
+        handles: &Arc<RuntimeHandles>,
+        client: Arc<forge_hotkey::HotkeyClient>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
+        let backend = Arc::clone(&handles.backend);
+        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let bus = Arc::clone(&handles.bus);
+        let rt_handle = handles.rt_handle.clone();
+        cx.new(|cx| HotkeysScreenView::new(client, backend, settings, bus, rt_handle, cx))
+            .into()
     }
 
     fn midi_screen(

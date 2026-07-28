@@ -1932,3 +1932,72 @@ midi_modal_save_changes = Зберегти зміни
 midi_footer_left = { $devices } пристроїв підключено · { $mappings } активних зіставлень
 midi_engine_running = Рушій MIDI працює
 midi_engine_stopped = Рушій MIDI зупинено
+
+## Hotkeys - hero
+
+hotkeys_breadcrumb_builtin = Вбудоване
+hotkeys_hero_title = Гарячі клавіші
+hotkeys_hero_blurb = Загальносистемні комбінації клавіш, які запускають дії, навіть коли forge працює у фоні.
+hotkeys_hero_enabled = Увімкнено
+hotkeys_hero_disabled = Вимкнено
+hotkeys_header_summary = { $count } активних · глобально
+hotkeys_toggle_failed = Не вдалося змінити стан рушія гарячих клавіш
+hotkeys_toggle_binding_failed = Не вдалося змінити стан прив'язки
+hotkeys_toast_error = Операція з гарячою клавішею не вдалася: { $message }
+hotkeys_toast_enable_partial = { $count } комбінацій не вдалося перереєструвати в системі
+
+## Hotkeys - stats
+
+hotkeys_stat_bindings = Прив'язки
+hotkeys_stat_bindings_hint = { $count } увімкнено
+hotkeys_stat_global = Глобальні
+hotkeys_stat_global_hint = на рівні ОС
+hotkeys_stat_conflicts = Конфлікти
+hotkeys_stat_conflicts_none = без збігів
+hotkeys_stat_conflicts_hint = від запуску
+hotkeys_stat_last_fired = Остання спрацювала
+hotkeys_stat_last_fired_none = ще нічого
+
+## Hotkeys - bindings
+
+hotkeys_section_bindings = Прив'язки
+hotkeys_section_hint = подвійний клік по комбінації, щоб перепризначити
+hotkeys_bindings_empty = Гарячих клавіш ще немає.
+hotkeys_unassigned = Не призначено - обери дію
+hotkeys_scope_global = Глобальна
+hotkeys_scope_unregistered = Не зареєстровано
+hotkeys_menu_rebind = Перепризначити...
+hotkeys_menu_change_action = Змінити дію...
+hotkeys_add_binding = Додати гарячу клавішу
+hotkeys_add_binding_kbd = захопити
+hotkeys_capture_prompt = Натисни комбінацію клавіш...
+
+## Hotkeys - conflict
+
+hotkeys_conflict_title = Комбінацію вже прив'язано
+hotkeys_conflict_body = вже прив'язана. Замінити наявну прив'язку чи скасувати?
+hotkeys_conflict_replace = Замінити
+
+## Hotkeys - modal
+
+hotkeys_modal_title_add = Прив'язати гарячу клавішу
+hotkeys_modal_title_edit = Редагувати гарячу клавішу
+hotkeys_modal_subtitle_captured = Захоплена комбінація
+hotkeys_modal_section_combo = Комбінація
+hotkeys_modal_section_action = Дія
+hotkeys_modal_recapture = Захопити знову
+hotkeys_modal_filter_actions = Фільтр дій...
+hotkeys_modal_actions_loading = Завантаження дій...
+hotkeys_modal_actions_empty = Жодна дія не відповідає фільтру
+hotkeys_modal_actions_none = Дій ще немає - спершу створи хоча б одну
+hotkeys_modal_hint_ready = Готово до збереження
+hotkeys_modal_hint_pick_action = Обери дію, щоб продовжити
+hotkeys_modal_add_binding = Додати гарячу клавішу
+hotkeys_modal_save_changes = Зберегти зміни
+
+## Hotkeys - footer
+
+hotkeys_footer_listening = { $count } прив'язок · глобальний слухач активний
+hotkeys_footer_stopped = { $count } прив'язок · глобальний слухач зупинено
+hotkeys_footer_no_conflicts = Немає конфліктів
+hotkeys_footer_conflicts = { $count } конфліктів

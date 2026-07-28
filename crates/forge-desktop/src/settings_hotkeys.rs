@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_components::{
@@ -7,15 +6,18 @@ use forge_components::{
     drive_overlay_focus, empty_state, icon, mono_family, overlay, primary_button, radius, spacing,
     tr, with_alpha,
 };
-use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
+use forge_hotkey::{HotkeyClient, HotkeyId};
 use forge_storage::DataProvider;
-use forge_types::{Action, ActionId, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
+use forge_types::{Action, ActionId, Variant};
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, Keystroke, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
+use crate::hotkey_bindings::{
+    HOTKEY_PRESSED_KIND, do_bind, do_replace, do_unbind, is_already_registered, keystroke_to_combo,
+};
 use crate::presentation::ActivePresentation;
 
 const PICKER_WIDTH: Pixels = px(240.0);
@@ -791,43 +793,12 @@ impl Render for SettingsHotkeysView {
     }
 }
 
-fn keystroke_to_combo(keystroke: &Keystroke) -> Option<String> {
-    let key = keystroke.key.as_str();
-    if key.is_empty() {
-        return None;
-    }
-    let modifiers = &keystroke.modifiers;
-    let mut parts: Vec<&str> = Vec::new();
-    if modifiers.control {
-        parts.push("Ctrl");
-    }
-    if modifiers.shift {
-        parts.push("Shift");
-    }
-    if modifiers.alt {
-        parts.push("Alt");
-    }
-    if modifiers.platform {
-        parts.push("Meta");
-    }
-    let raw = if parts.is_empty() {
-        key.to_owned()
-    } else {
-        format!("{}+{key}", parts.join("+"))
-    };
-    HotkeyCombo::parse(&raw).ok().map(|c| c.as_str().to_owned())
-}
-
 fn portal_status_label(available: Option<bool>) -> String {
     match available {
         Some(true) => "Portal (Wayland GlobalShortcuts) - active".to_owned(),
         Some(false) => "Evdev / X11 fallback - active".to_owned(),
         None => "N/A (Windows / macOS native)".to_owned(),
     }
-}
-
-fn is_already_registered(err: &str) -> bool {
-    err.contains("already registered")
 }
 
 struct LoadedData {
@@ -855,7 +826,7 @@ async fn load_data(
     let mut combo_to_action: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     for instance in &instances {
-        if instance.kind_id != "hotkey.global.pressed" {
+        if instance.kind_id != HOTKEY_PRESSED_KIND {
             continue;
         }
         let Some(Variant::String(combo)) = instance.overrides.get("combo") else {
@@ -890,121 +861,4 @@ async fn load_data(
         .collect();
 
     Ok(LoadedData { actions, bindings })
-}
-
-async fn cleanup_stale_combo_instances(
-    backend: &Arc<dyn DataProvider>,
-    combo_str: &str,
-) -> Result<(), String> {
-    let instances = backend
-        .trigger_instance_repo()
-        .list_all()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    for instance in instances {
-        if instance.kind_id != "hotkey.global.pressed" {
-            continue;
-        }
-        let Some(Variant::String(existing_combo)) = instance.overrides.get("combo") else {
-            continue;
-        };
-        if existing_combo != combo_str {
-            continue;
-        }
-        let action_ids = backend
-            .trigger_instance_repo()
-            .actions_using(instance.id)
-            .await
-            .map_err(|e| e.to_string())?;
-        for aid in action_ids {
-            backend
-                .trigger_instance_repo()
-                .unlink_action(aid, instance.id)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-        backend
-            .trigger_instance_repo()
-            .delete(instance.id)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
-}
-
-async fn do_bind(
-    client: Arc<HotkeyClient>,
-    backend: Arc<dyn DataProvider>,
-    combo_str: String,
-    action_id: ActionId,
-) -> Result<(), String> {
-    let combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
-    client.register(combo).await.map_err(|e| e.to_string())?;
-
-    cleanup_stale_combo_instances(&backend, &combo_str).await?;
-
-    let mut overrides = BTreeMap::new();
-    overrides.insert("combo".to_owned(), Variant::String(combo_str.clone()));
-    let instance = TriggerInstance {
-        id: TriggerInstanceId::new(),
-        kind_id: "hotkey.global.pressed".to_owned(),
-        name: combo_str,
-        overrides,
-        enabled: true,
-        user_defined: true,
-        platform_scope: PlatformScope::default(),
-        cooldown_secs: 0,
-        cooldown_global: true,
-    };
-    backend
-        .trigger_instance_repo()
-        .save(&instance)
-        .await
-        .map_err(|e| e.to_string())?;
-    backend
-        .trigger_instance_repo()
-        .link_action(action_id, instance.id, 0)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-async fn do_unbind(
-    client: Arc<HotkeyClient>,
-    backend: Arc<dyn DataProvider>,
-    hotkey_id: HotkeyId,
-) -> Result<(), String> {
-    let combo = client
-        .registered_combos()
-        .into_iter()
-        .find(|(id, _)| *id == hotkey_id)
-        .map(|(_, combo)| combo.as_str().to_owned());
-
-    client
-        .unregister(hotkey_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if let Some(combo) = combo {
-        cleanup_stale_combo_instances(&backend, &combo).await?;
-    }
-
-    Ok(())
-}
-
-async fn do_replace(
-    client: Arc<HotkeyClient>,
-    backend: Arc<dyn DataProvider>,
-    existing_id: HotkeyId,
-    combo_str: String,
-    action_id: ActionId,
-) -> Result<(), String> {
-    client
-        .unregister(existing_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    do_bind(client, backend, combo_str, action_id).await
 }

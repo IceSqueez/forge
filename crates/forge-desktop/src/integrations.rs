@@ -12,6 +12,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
 
+use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, HOTKEY_PRESSED_KIND};
 use crate::midi_screen::MIDI_ENABLED_KEY;
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
@@ -69,6 +70,7 @@ pub struct Integrations {
     pub vtube_install_seed: VTubeInstallSeed,
     /// `None` when the platform MIDI backend failed to initialize.
     pub midi_client: Option<Arc<forge_midi::MidiClient>>,
+    pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
 }
 
 /// Holds the same `SwitchableObsSink` the registered OBS runners resolve through, so a post-boot
@@ -259,7 +261,8 @@ pub async fn build_integrations(
     insert("discord", build_discord(sub_actions, backend, bus));
     let (midi, midi_client) = build_midi(sub_actions, backend, bus).await;
     insert("midi", midi);
-    insert("hotkey", build_hotkey(backend, bus).await);
+    let (hotkey, hotkey_client) = build_hotkey(backend, bus).await;
+    insert("hotkey", hotkey);
 
     let (youtube, youtube_viewers, youtube_install_seed) =
         build_youtube(sub_actions, backend, bus).await;
@@ -282,6 +285,7 @@ pub async fn build_integrations(
         obs_install_seed,
         vtube_install_seed,
         midi_client,
+        hotkey_client,
     }
 }
 
@@ -618,27 +622,38 @@ async fn build_midi(
 async fn build_hotkey(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> Option<BuiltinObject> {
+) -> (
+    Option<BuiltinObject>,
+    Option<Arc<forge_hotkey::HotkeyClient>>,
+) {
     let client =
         forge_hotkey::HotkeyClient::new(forge_hotkey::HotkeyConfig::default(), publisher(bus))
             .await;
     reregister_persisted_hotkeys(&client, backend).await;
-    Some(BuiltinObject {
+
+    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    if !get_bool_setting(&*settings, HOTKEY_ENABLED_KEY, true).await
+        && let Err(e) = client.disable().await
+    {
+        eprintln!("forge-desktop: hotkey engine could not be disabled at boot: {e}");
+    }
+
+    let object = BuiltinObject {
         icon: SectionIcon::new("keyboard"),
         status: client.clone(),
         health: client.clone(),
         content: client.clone(),
         quick: client.clone(),
-        control: Some(client),
+        control: Some(client.clone()),
         obs_client: None,
-    })
+    };
+    (Some(object), Some(client))
 }
 
 async fn reregister_persisted_hotkeys(
     client: &Arc<forge_hotkey::HotkeyClient>,
     backend: &Arc<dyn DataProvider>,
 ) {
-    const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
     let instances = match backend.trigger_instance_repo().list_all().await {
         Ok(instances) => instances,
         Err(e) => {

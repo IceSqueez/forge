@@ -1904,3 +1904,72 @@ midi_modal_save_changes = Save changes
 midi_footer_left = { $devices } devices connected · { $mappings } active mappings
 midi_engine_running = MIDI engine running
 midi_engine_stopped = MIDI engine stopped
+
+## Hotkeys - hero
+
+hotkeys_breadcrumb_builtin = Builtin
+hotkeys_hero_title = Hotkeys
+hotkeys_hero_blurb = System-wide keyboard shortcuts that fire actions even when forge is in the background.
+hotkeys_hero_enabled = Enabled
+hotkeys_hero_disabled = Disabled
+hotkeys_header_summary = { $count } active · global
+hotkeys_toggle_failed = Could not change the hotkey engine state
+hotkeys_toggle_binding_failed = Could not change the binding state
+hotkeys_toast_error = Hotkey operation failed: { $message }
+hotkeys_toast_enable_partial = { $count } combinations could not be re-registered with the system
+
+## Hotkeys - stats
+
+hotkeys_stat_bindings = Bindings
+hotkeys_stat_bindings_hint = { $count } enabled
+hotkeys_stat_global = Global
+hotkeys_stat_global_hint = OS-wide
+hotkeys_stat_conflicts = Conflicts
+hotkeys_stat_conflicts_none = no clashes
+hotkeys_stat_conflicts_hint = since startup
+hotkeys_stat_last_fired = Last fired
+hotkeys_stat_last_fired_none = nothing yet
+
+## Hotkeys - bindings
+
+hotkeys_section_bindings = Bindings
+hotkeys_section_hint = double-click a combo to rebind
+hotkeys_bindings_empty = No hotkeys bound yet.
+hotkeys_unassigned = Unassigned - pick an action
+hotkeys_scope_global = Global
+hotkeys_scope_unregistered = Not registered
+hotkeys_menu_rebind = Rebind...
+hotkeys_menu_change_action = Change action...
+hotkeys_add_binding = Add hotkey
+hotkeys_add_binding_kbd = capture
+hotkeys_capture_prompt = Press the key combination...
+
+## Hotkeys - conflict
+
+hotkeys_conflict_title = Combination already bound
+hotkeys_conflict_body = is already bound. Replace the existing binding or cancel?
+hotkeys_conflict_replace = Replace
+
+## Hotkeys - modal
+
+hotkeys_modal_title_add = Bind hotkey
+hotkeys_modal_title_edit = Edit hotkey
+hotkeys_modal_subtitle_captured = Captured combination
+hotkeys_modal_section_combo = Combination
+hotkeys_modal_section_action = Action
+hotkeys_modal_recapture = Re-capture
+hotkeys_modal_filter_actions = Filter actions...
+hotkeys_modal_actions_loading = Loading actions...
+hotkeys_modal_actions_empty = No actions match the filter
+hotkeys_modal_actions_none = No actions exist yet - create one first
+hotkeys_modal_hint_ready = Ready to save
+hotkeys_modal_hint_pick_action = Pick an action to continue
+hotkeys_modal_add_binding = Add hotkey
+hotkeys_modal_save_changes = Save changes
+
+## Hotkeys - footer
+
+hotkeys_footer_listening = { $count } bindings · global listener active
+hotkeys_footer_stopped = { $count } bindings · global listener stopped
+hotkeys_footer_no_conflicts = No conflicts
+hotkeys_footer_conflicts = { $count } conflicts

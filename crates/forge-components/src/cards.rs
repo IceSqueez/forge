@@ -243,13 +243,14 @@ pub fn metric_card(
         .child(
             div()
                 .font_family(mono_family())
-                .text_size(FONT_XS)
+                .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(label_upper),
         )
         .child(
             div()
                 .font_family(body_family())
+                .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
                 .child(value.into()),
@@ -259,14 +260,14 @@ pub fn metric_card(
         col = col.child(
             div()
                 .font_family(mono_family())
-                .text_size(FONT_XS)
+                .text_size(FONT_XXS)
                 .text_color(sublabel_color.unwrap_or(palette.text_faint))
                 .child(sub.into()),
         );
     }
 
     div()
-        .p(spacing(Spacing::Md, Density::Cozy))
+        .p(spacing(Spacing::Sm, Density::Cozy))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)

@@ -95,6 +95,8 @@ struct DataTableColors {
     header_bg: Rgba,
     header_ink: Rgba,
     separator: Rgba,
+    /// `None` reuses `separator`; set it when the rule under the column headers must read stronger than the rules between rows.
+    header_rule: Option<Rgba>,
     hover: Rgba,
 }
 
@@ -119,6 +121,7 @@ pub fn data_table(palette: &ForgePalette, columns: Vec<Column>, rows: Vec<DataRo
             header_bg: palette.shell,
             header_ink: palette.text_faint,
             separator: palette.border_regular,
+            header_rule: None,
             hover: palette.base,
         },
         density: Density::default(),
@@ -143,6 +146,11 @@ impl DataTable {
 
     pub fn separator(mut self, color: Rgba) -> Self {
         self.colors.separator = color;
+        self
+    }
+
+    pub fn header_rule(mut self, color: Rgba) -> Self {
+        self.colors.header_rule = Some(color);
         self
     }
 
@@ -241,7 +249,13 @@ impl RenderOnce for DataTable {
             .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
 
         let separator = colors.separator;
+        let header_rule_color = colors.header_rule.unwrap_or(separator);
         let rule = move || div().flex_none().h(BORDER_THIN).w_full().bg(separator);
+        let header_rule = div()
+            .flex_none()
+            .h(BORDER_THIN)
+            .w_full()
+            .bg(header_rule_color);
 
         let widths: Vec<ColumnWidth> = self.columns.iter().map(|c| c.width).collect();
 
@@ -304,7 +318,7 @@ impl RenderOnce for DataTable {
         if has_scroll {
             root = root.flex_1().min_h(px(0.0));
         }
-        root.child(header).child(rule()).child(body)
+        root.child(header).child(header_rule).child(body)
     }
 }
 
@@ -318,6 +332,8 @@ pub struct VirtualTable<'a> {
     header_bg: Rgba,
     header_ink: Rgba,
     separator: Rgba,
+    /// `None` reuses `separator`; set it when the rule under the column headers must read stronger than the rules between rows.
+    header_rule: Option<Rgba>,
     hover: Rgba,
     header_pad: Option<(Pixels, Pixels)>,
     row_pad: Option<(Pixels, Pixels)>,
@@ -342,6 +358,7 @@ pub fn virtual_table<'a>(
         header_bg: palette.shell,
         header_ink: palette.text_faint,
         separator: palette.border_regular,
+        header_rule: None,
         hover: palette.base,
         header_pad: None,
         row_pad: None,
@@ -360,6 +377,12 @@ impl<'a> VirtualTable<'a> {
     #[must_use]
     pub fn separator(mut self, color: Rgba) -> Self {
         self.separator = color;
+        self
+    }
+
+    #[must_use]
+    pub fn header_rule(mut self, color: Rgba) -> Self {
+        self.header_rule = Some(color);
         self
     }
 
@@ -408,6 +431,7 @@ impl<'a> VirtualTable<'a> {
             .row_pad
             .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
         let separator = self.separator;
+        let header_rule_color = self.header_rule.unwrap_or(separator);
         let hover = self.hover;
         let row_count = self.row_count;
         let trailing_rule = self.trailing_rule;
@@ -459,7 +483,11 @@ impl<'a> VirtualTable<'a> {
         .flex_1()
         .min_h(px(0.0));
 
-        let rule = div().flex_none().h(BORDER_THIN).w_full().bg(separator);
+        let rule = div()
+            .flex_none()
+            .h(BORDER_THIN)
+            .w_full()
+            .bg(header_rule_color);
 
         div()
             .flex()

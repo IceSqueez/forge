@@ -12,6 +12,7 @@ boot_failure_reassure = Your data is safe. If this keeps happening, please repor
 
 common_cancel = Cancel
 common_save = Save
+common_copy = Copy
 
 ## Navigation - screen labels (breadcrumb + sidebar)
 
@@ -1246,50 +1247,53 @@ twitch_device_denied_detail = You declined access on Twitch. Retry to request a 
 ## Server screen
 
 server_breadcrumb_builtin = Builtin
-server_breadcrumb_server = Server
-server_header_title = Built-in Server
-server_header_desc = Internal HTTP + WebSocket server for overlays and remote control
-server_status_running = Running
+server_breadcrumb_server = WebSocket server
+server_status_listening = Listening · { $clients ->
+    [one] { $clients } client
+   *[other] { $clients } clients
+  }
 server_status_stopped = Stopped
-server_status_error = Error
 server_not_running = Not running
-server_up_prefix = Up { $uptime }
 server_bind_address = BIND ADDRESS
 server_bearer_token = BEARER TOKEN
 server_btn_restart = Restart
 server_btn_restarting = Restarting…
-server_btn_stop = Stop
-server_btn_stopping = Stopping…
-server_btn_copy = COPY
 server_stat_clients = CLIENTS
-server_stat_clients_sub = connected
-server_stat_events_out = EVENTS OUT
-server_stat_events_sub = avg { $avg } ev/s
+server_stat_clients_sub = +{ $count } last { $minutes } min
+server_stat_events_rate = EVENTS / SEC
+server_stat_events_sub = { $seconds }s avg
 server_stat_http = HTTP REQUESTS
-server_stat_http_sub = since restart
+server_stat_http_sub = overlays served
 server_stat_bandwidth = BANDWIDTH
-server_stat_bandwidth_sub = peak { $peak } KB/s
-server_stat_dropped = DROPPED EVENTS
-server_stat_dropped_sub = since restart
-server_clients_header = Connected Clients
+server_stat_bandwidth_value = { $rate } KB/s
+server_stat_bandwidth_sub = ↑ out
+server_clients_header = Connected clients
 server_clients_empty = No clients connected
 server_col_client = CLIENT
 server_col_subscriptions = SUBSCRIPTIONS
 server_col_evs = EV/S
 server_col_uptime = UPTIME
 server_overlay_files_empty = No overlay files found
-server_overlay_dir_items = { $count } items
+server_overlay_dir_files = { $count ->
+    [one] { $count } file
+   *[other] { $count } files
+  }
 server_disconnect_confirm_hint = Client at { $info } will be disconnected from the WebSocket server. Other clients are not affected.
+server_disconnect_tooltip = Disconnect this client
 server_btn_regenerate = Regenerate
 server_regen_warning_title = Regenerating disconnects all clients
-server_regen_warning_body = Connected WebSocket clients must reconnect with the new token.
 server_throughput_title = Throughput
-server_throughput_meta = last { $seconds }s · peak { $peak } KB/s
-server_overlay_files_title = Overlay Files
-server_btn_open = OPEN
+server_throughput_meta = last { $seconds }s · max { $max } ev/s
+server_overlay_host_title = Overlay host
+server_overlay_browser_source_url = BROWSER SOURCE URL
+server_open_overlay_folder = Open the overlay folder
 server_open_overlay_folder_failed = Could not open the overlay folder
 server_clients_live = live
 server_footer_totals = Total sent: { $sent } · Total events: { $events }
+server_footer_health_ok = Healthy
+server_footer_health_degraded = Degraded ({ $dropped } dropped)
+server_footer_endpoint_accepting = WebSocket :{ $port } · accepting connections
+server_footer_endpoint_stopped = WebSocket · not running
 server_disconnect_confirm_title = Disconnect client?
 server_disconnect_esc_hint = to cancel
 server_btn_disconnect = Disconnect

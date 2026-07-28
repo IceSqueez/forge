@@ -12,6 +12,7 @@ boot_failure_reassure = Ваші дані у безпеці. Якщо це по�
 
 common_cancel = Скасувати
 common_save = Зберегти
+common_copy = Копіювати
 
 ## Навігація - назви екранів (хлібні крихти + бічна панель)
 
@@ -1253,31 +1254,28 @@ twitch_device_denied_detail = Ви відмовили в доступі на Twi
 ## Екран сервера
 
 server_breadcrumb_builtin = Вбудований
-server_breadcrumb_server = Сервер
-server_header_title = Вбудований сервер
-server_header_desc = Внутрішній HTTP + WebSocket сервер для оверлеїв і дистанційного керування
-server_status_running = Запущено
+server_breadcrumb_server = WebSocket-сервер
+server_status_listening = Слухає · { $clients ->
+    [one] { $clients } клієнт
+    [few] { $clients } клієнти
+    [many] { $clients } клієнтів
+   *[other] { $clients } клієнтів
+  }
 server_status_stopped = Зупинено
-server_status_error = Помилка
 server_not_running = Не запущено
-server_up_prefix = Працює { $uptime }
 server_bind_address = АДРЕСА ПРИВ'ЯЗКИ
 server_bearer_token = BEARER-ТОКЕН
 server_btn_restart = Перезапуск
 server_btn_restarting = Перезапуск…
-server_btn_stop = Зупинити
-server_btn_stopping = Зупинка…
-server_btn_copy = КОПІЯ
 server_stat_clients = КЛІЄНТИ
-server_stat_clients_sub = підключено
-server_stat_events_out = ПОДІЇ НАЗОВНІ
-server_stat_events_sub = сер. { $avg } под/с
+server_stat_clients_sub = +{ $count } за { $minutes } хв
+server_stat_events_rate = ПОДІЙ / С
+server_stat_events_sub = сер. за { $seconds }с
 server_stat_http = HTTP-ЗАПИТИ
-server_stat_http_sub = з моменту перезапуску
+server_stat_http_sub = оверлеїв віддано
 server_stat_bandwidth = ПРОПУСКНА ЗДАТНІСТЬ
-server_stat_bandwidth_sub = пік { $peak } КБ/с
-server_stat_dropped = ВТРАЧЕНІ ПОДІЇ
-server_stat_dropped_sub = з моменту перезапуску
+server_stat_bandwidth_value = { $rate } КБ/с
+server_stat_bandwidth_sub = ↑ назовні
 server_clients_header = Підключені клієнти
 server_clients_empty = Немає підключених клієнтів
 server_col_client = КЛІЄНТ
@@ -1285,23 +1283,28 @@ server_col_subscriptions = ПІДПИСКИ
 server_col_evs = ПОД/С
 server_col_uptime = АПТАЙМ
 server_overlay_files_empty = Файли оверлею не знайдено
-server_overlay_dir_items = { $count ->
-    [one] { $count } елемент
-    [few] { $count } елементи
-    [many] { $count } елементів
-   *[other] { $count } елементів
-}
+server_overlay_dir_files = { $count ->
+    [one] { $count } файл
+    [few] { $count } файли
+    [many] { $count } файлів
+   *[other] { $count } файлів
+  }
 server_disconnect_confirm_hint = Клієнта { $info } буде відключено від WebSocket-сервера. Інші клієнти не постраждають.
+server_disconnect_tooltip = Відключити цього клієнта
 server_btn_regenerate = Оновити
 server_regen_warning_title = Оновлення відключить усіх клієнтів
-server_regen_warning_body = Підключені WebSocket-клієнти мають перепідключитися з новим токеном.
 server_throughput_title = Пропускна здатність
-server_throughput_meta = останні { $seconds }с · пік { $peak } КБ/с
-server_overlay_files_title = Файли оверлею
-server_btn_open = ВІДКРИТИ
+server_throughput_meta = останні { $seconds }с · макс { $max } под/с
+server_overlay_host_title = Хостинг оверлеїв
+server_overlay_browser_source_url = URL ДЛЯ БРАУЗЕРНОГО ДЖЕРЕЛА
+server_open_overlay_folder = Відкрити теку оверлеїв
 server_open_overlay_folder_failed = Не вдалося відкрити теку оверлеїв
 server_clients_live = наживо
 server_footer_totals = Надіслано всього: { $sent } · Подій всього: { $events }
+server_footer_health_ok = Справно
+server_footer_health_degraded = Погіршено (втрачено { $dropped })
+server_footer_endpoint_accepting = WebSocket :{ $port } · приймає підключення
+server_footer_endpoint_stopped = WebSocket · не запущено
 server_disconnect_confirm_title = Відключити клієнта?
 server_disconnect_esc_hint = щоб скасувати
 server_btn_disconnect = Відключити

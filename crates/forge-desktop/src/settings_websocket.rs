@@ -61,6 +61,7 @@ pub struct SettingsWebSocketView {
 
     loading: bool,
     save_state: SaveState,
+    restarting: bool,
 
     port_input: Entity<TextInput>,
     lan_modal: Option<Entity<TypeToConfirm>>,
@@ -106,6 +107,7 @@ impl SettingsWebSocketView {
             token_revealed: false,
             loading: false,
             save_state: SaveState::default(),
+            restarting: false,
             port_input,
             lan_modal: None,
             lan_sub: None,
@@ -250,6 +252,59 @@ impl SettingsWebSocketView {
             },
             cx,
         );
+    }
+
+    fn restart_server(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.server.clone() else {
+            return;
+        };
+        if self.restarting {
+            return;
+        }
+        self.restarting = true;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { handle.restart().await.map_err(|e| e.to_string()) },
+            |this, result: Result<(), String>, cx| {
+                this.restarting = false;
+                if let Err(message) = result {
+                    tracing::warn!(error = %message, "failed to restart websocket server");
+                    this.save_state = SaveState::Error(message.into());
+                }
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn lifecycle_controls(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let label = if self.restarting {
+            tr!("server_btn_restarting")
+        } else {
+            tr!("server_btn_restart")
+        };
+        let restart = ghost_button_with_icon(Icon::Refresh, label, palette)
+            .disabled(self.restarting || self.server.is_none() || !self.enable_server)
+            .on_click(
+                "settings-ws-restart",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
+            );
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(restart)
+            .child(toggle(self.enable_server, palette).on_click(
+                "settings-ws-enable",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enable(cx)),
+            ))
     }
 
     fn select_localhost(&mut self, cx: &mut Context<Self>) {
@@ -964,10 +1019,7 @@ impl Render for SettingsWebSocketView {
             .child(setting_row(
                 tr!("settings_ws_enable_label"),
                 Some(tr!("settings_ws_enable_description").into()),
-                toggle(self.enable_server, &palette).on_click(
-                    "settings-ws-enable",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enable(cx)),
-                ),
+                self.lifecycle_controls(&palette, density, cx),
                 &palette,
                 density,
             ))

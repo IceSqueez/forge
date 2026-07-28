@@ -1,10 +1,10 @@
 use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, badge, body_family, card,
-    column, confirm_modal, data_table, empty_state, fmt_bytes, fmt_uptime, fmt_uptime_short, icon,
-    metric_card, mono_family, overlay, page_frame, platform_color, radius, spacing, sparkline,
-    status_dot, tr, virtual_table, with_alpha,
+    ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, body_family, card, column,
+    confirm_modal, data_table, empty_state, fmt_bytes, fmt_number, fmt_uptime_short, header_status,
+    icon, metric_card, mono_family, overlay, page_frame, platform_color, radius, spacing,
+    sparkline, status_dot, tooltip_builder, tr, virtual_table,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,8 +13,8 @@ use forge_events::EventSource;
 use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSnapshot};
 use forge_storage::{CredentialId, CredentialsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FontWeight, Pixels, Rgba, SharedString,
-    UniformListScrollHandle, Window, div, prelude::*, px, relative,
+    AnyElement, ClickEvent, Context, Div, ElementId, FontWeight, Pixels, Rgba, SharedString,
+    UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -22,44 +22,41 @@ use crate::presentation::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
-const MAX_BANDWIDTH_SAMPLES: usize = 60;
-const MAX_VISIBLE_CHIPS: usize = 3;
+const MAX_THROUGHPUT_SAMPLES: usize = 60;
+const MAX_VISIBLE_CHIPS: usize = 6;
+/// Matches the rolling window `forge-server` measures per-client event rate over, so the stat hint stays honest.
+const EVENT_RATE_WINDOW_SECONDS: i64 = 10;
+const RECENT_CLIENT_WINDOW_SECONDS: i64 = 600;
+const RECENT_CLIENT_WINDOW_MINUTES: i64 = RECENT_CLIENT_WINDOW_SECONDS / 60;
 
 const CLIENT_DOT: Pixels = px(6.0);
-const STATUS_DOT: Pixels = px(7.0);
-const DOT_CELL_W: Pixels = px(24.0);
-const EVS_CELL_W: Pixels = px(80.0);
+const FOOTER_DOT: Pixels = px(6.0);
+const DOT_CELL_W: Pixels = px(12.0);
+const EVS_CELL_W: Pixels = px(60.0);
 const UPTIME_CELL_W: Pixels = px(70.0);
-const X_CELL_W: Pixels = px(22.0);
-const ICON_BOX: Pixels = px(48.0);
-const SERVER_GLYPH: Pixels = px(20.0);
-const X_GLYPH: Pixels = px(13.0);
-const LINK_GLYPH: Pixels = px(11.0);
+const X_CELL_W: Pixels = px(20.0);
+const SUB_CHIP: Pixels = px(8.0);
+const SUB_CHIP_RADIUS: Pixels = px(2.0);
+const X_GLYPH: Pixels = px(12.0);
 const CONTROL_GLYPH: Pixels = px(12.0);
+const LINK_GLYPH: Pixels = px(11.0);
 const HEADER_GLYPH: Pixels = px(14.0);
-const COUNT_BADGE_RADIUS: Pixels = px(8.0);
-const KIND_BADGE_RADIUS: Pixels = px(4.0);
-const CLIENT_GROW: f32 = 14.0;
-const SUBS_GROW: f32 = 16.0;
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-enum ServerStatus {
-    Running,
-    #[default]
-    Stopped,
-    Error(String),
-}
+const FILE_GLYPH: Pixels = px(12.0);
+const SPARK_HEIGHT: Pixels = px(60.0);
+const CLIENT_GROW: f32 = 1.4;
+const SUBS_GROW: f32 = 1.6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ServerControl {
-    Restarting,
-    Stopping,
+enum SubscriptionChipKind {
+    All,
+    Source(EventSource),
+    Unknown,
 }
 
 #[derive(Debug, Clone)]
 struct OwnedSubscriptionChip {
     label: String,
-    source: EventSource,
+    kind: SubscriptionChipKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +69,7 @@ enum ClientLiveness {
 struct OwnedClientRow {
     key: String,
     identification: String,
-    client_type_label: String,
+    origin_label: String,
     liveness: ClientLiveness,
     subscriptions: Vec<OwnedSubscriptionChip>,
     events_per_second: f32,
@@ -80,38 +77,8 @@ struct OwnedClientRow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OwnedFileMime {
-    Html,
-    Css,
-    Js,
-    Json,
-    Image,
-    Wasm,
-    Other,
-}
-
-impl OwnedFileMime {
-    fn from_path(path: &std::path::Path) -> Self {
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        match ext.as_str() {
-            "html" | "htm" => Self::Html,
-            "css" => Self::Css,
-            "js" | "mjs" => Self::Js,
-            "json" => Self::Json,
-            "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => Self::Image,
-            "wasm" => Self::Wasm,
-            _ => Self::Other,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OwnedOverlayKind {
-    File { mime: OwnedFileMime },
+    File { html: bool },
     Dir,
 }
 
@@ -123,13 +90,21 @@ struct OwnedOverlayEntry {
     child_count: u32,
 }
 
+impl OwnedOverlayEntry {
+    fn is_html(&self) -> bool {
+        matches!(self.kind, OwnedOverlayKind::File { html: true })
+    }
+
+    fn is_file(&self) -> bool {
+        matches!(self.kind, OwnedOverlayKind::File { .. })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct ServerStats {
     events_per_second: f32,
-    events_per_second_avg: f32,
     http_requests: u64,
     bandwidth_kbps: f32,
-    bandwidth_peak_kbps: f32,
     total_bytes_sent: u64,
     total_events_out: u64,
     dropped_events: u64,
@@ -139,15 +114,13 @@ pub struct ServerConsoleView {
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
-    bind_address: String,
+    bind_address: Option<String>,
     bearer_token: String,
     token_revealed: bool,
-    server_status: ServerStatus,
-    control_in_flight: Option<ServerControl>,
-    uptime_seconds: i64,
     connected_clients: Vec<OwnedClientRow>,
+    recent_clients: usize,
     clients_scroll: UniformListScrollHandle,
-    bandwidth_samples: Vec<f32>,
+    throughput_samples: Vec<f32>,
     stats: ServerStats,
     overlay_root: String,
     overlay_entries: Vec<OwnedOverlayEntry>,
@@ -163,24 +136,17 @@ impl ServerConsoleView {
         credentials: Arc<dyn CredentialsRepo>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let server_status = if server.is_some() {
-            ServerStatus::Running
-        } else {
-            ServerStatus::Stopped
-        };
         let view = Self {
             server,
             rt_handle,
             credentials,
-            bind_address: "0.0.0.0:8081".to_owned(),
+            bind_address: None,
             bearer_token: String::new(),
             token_revealed: false,
-            server_status,
-            control_in_flight: None,
-            uptime_seconds: 0,
             connected_clients: Vec::new(),
+            recent_clients: 0,
             clients_scroll: UniformListScrollHandle::new(),
-            bandwidth_samples: Vec::new(),
+            throughput_samples: Vec::new(),
             stats: ServerStats::default(),
             overlay_root: String::new(),
             overlay_entries: Vec::new(),
@@ -192,6 +158,10 @@ impl ServerConsoleView {
             view.start_poll(cx);
         }
         view
+    }
+
+    fn is_running(&self) -> bool {
+        self.server.is_some()
     }
 
     fn fetch_token(&self, cx: &mut Context<Self>) {
@@ -261,34 +231,29 @@ impl ServerConsoleView {
     }
 
     fn apply_poll(&mut self, poll: ServerPoll) {
-        self.bind_address = poll.bind_address;
+        self.bind_address = Some(poll.bind_address);
 
-        if self.server_status == ServerStatus::Running && self.control_in_flight.is_none() {
-            let snapshot = &poll.snapshot;
-            self.uptime_seconds = snapshot.uptime_seconds;
-            self.connected_clients = snapshot
-                .connected_clients
-                .iter()
-                .map(client_row_from_snapshot)
-                .collect();
+        let snapshot = &poll.snapshot;
+        self.connected_clients = snapshot
+            .connected_clients
+            .iter()
+            .map(client_row_from_snapshot)
+            .collect();
+        self.recent_clients = count_recent_clients(&snapshot.connected_clients);
 
-            let kbps = snapshot.bandwidth.outbound_bytes_per_second as f32 / 1000.0;
-            let peak_kbps = snapshot.bandwidth.peak_outbound_bytes_per_second as f32 / 1000.0;
-            self.stats = ServerStats {
-                events_per_second: snapshot.aggregate_events_per_second,
-                events_per_second_avg: snapshot.aggregate_events_per_second,
-                http_requests: snapshot.http_requests_total,
-                bandwidth_kbps: kbps,
-                bandwidth_peak_kbps: peak_kbps,
-                total_bytes_sent: snapshot.bandwidth.outbound_bytes_total,
-                total_events_out: snapshot.events_out_total,
-                dropped_events: snapshot.dropped_events_total,
-            };
-            self.bandwidth_samples.push(kbps);
-            if self.bandwidth_samples.len() > MAX_BANDWIDTH_SAMPLES {
-                let excess = self.bandwidth_samples.len() - MAX_BANDWIDTH_SAMPLES;
-                self.bandwidth_samples.drain(..excess);
-            }
+        self.stats = ServerStats {
+            events_per_second: snapshot.aggregate_events_per_second,
+            http_requests: snapshot.http_requests_total,
+            bandwidth_kbps: snapshot.bandwidth.outbound_bytes_per_second as f32 / 1000.0,
+            total_bytes_sent: snapshot.bandwidth.outbound_bytes_total,
+            total_events_out: snapshot.events_out_total,
+            dropped_events: snapshot.dropped_events_total,
+        };
+        self.throughput_samples
+            .push(snapshot.aggregate_events_per_second);
+        if self.throughput_samples.len() > MAX_THROUGHPUT_SAMPLES {
+            let excess = self.throughput_samples.len() - MAX_THROUGHPUT_SAMPLES;
+            self.throughput_samples.drain(..excess);
         }
 
         if let Some(overlay) = poll.overlay {
@@ -302,21 +267,39 @@ impl ServerConsoleView {
         }
     }
 
+    /// Falls back to the first hosted `.html` so the browser-source box is populated before the user picks a file.
+    fn browser_source_entry(&self) -> Option<&OwnedOverlayEntry> {
+        self.selected_overlay_file
+            .and_then(|index| self.overlay_entries.get(index))
+            .filter(|entry| entry.is_file())
+            .or_else(|| self.overlay_entries.iter().find(|e| e.is_html()))
+    }
+
+    fn browser_source_url(&self) -> Option<String> {
+        let origin = overlay_origin(self.bind_address.as_deref()?);
+        let entry = self.browser_source_entry()?;
+        Some(format!("{origin}/overlays/{}", entry.name))
+    }
+
     fn toggle_token_reveal(&mut self, cx: &mut Context<Self>) {
         self.token_revealed = !self.token_revealed;
         cx.notify();
     }
 
     fn copy_bind_address(&mut self, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(self.bind_address.clone(), cx);
+        if let Some(address) = self.bind_address.clone() {
+            crate::toasts::copy_to_clipboard(address, cx);
+        }
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
         crate::toasts::copy_to_clipboard(self.bearer_token.clone(), cx);
     }
 
-    fn copy_overlay_url(&mut self, url: String, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(url, cx);
+    fn copy_browser_source_url(&mut self, cx: &mut Context<Self>) {
+        if let Some(url) = self.browser_source_url() {
+            crate::toasts::copy_to_clipboard(url, cx);
+        }
     }
 
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {
@@ -330,62 +313,16 @@ impl ServerConsoleView {
                 let auth = handle.auth_state().await;
                 auth.regenerate(credentials.as_ref())
                     .await
-                    .map_err(err_text)
+                    .map_err(|e| e.to_string())
             },
-            |this, result, cx| match result {
+            |this, result: Result<String, String>, cx| match result {
                 Ok(token) => {
                     this.bearer_token = token;
                     cx.notify();
                 }
-                Err(reason) => eprintln!("forge-desktop: token regenerate failed: {reason}"),
-            },
-            cx,
-        );
-    }
-
-    fn restart_server(&mut self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
-            return;
-        };
-        if self.control_in_flight.is_some() {
-            return;
-        }
-        self.control_in_flight = Some(ServerControl::Restarting);
-        cx.notify();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move { handle.restart().await.map_err(err_text) },
-            |this, result, cx| {
-                this.control_in_flight = None;
-                match result {
-                    Ok(()) => this.server_status = ServerStatus::Running,
-                    Err(reason) => this.server_status = ServerStatus::Error(reason),
+                Err(reason) => {
+                    tracing::warn!(error = %reason, "failed to regenerate the server bearer token");
                 }
-                cx.notify();
-            },
-            cx,
-        );
-    }
-
-    fn stop_server(&mut self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
-            return;
-        };
-        if self.control_in_flight.is_some() {
-            return;
-        }
-        self.control_in_flight = Some(ServerControl::Stopping);
-        cx.notify();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move { handle.stop().await.map_err(err_text) },
-            |this, result, cx| {
-                this.control_in_flight = None;
-                match result {
-                    Ok(()) => this.server_status = ServerStatus::Stopped,
-                    Err(reason) => this.server_status = ServerStatus::Error(reason),
-                }
-                cx.notify();
             },
             cx,
         );
@@ -425,111 +362,53 @@ impl ServerConsoleView {
     }
 
     fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.pending_disconnect.take() {
-            self.connected_clients.retain(|c| c.identification != id);
-        }
+        let target = self.pending_disconnect.take();
         cx.notify();
+        let (Some(identification), Some(handle)) = (target, self.server.clone()) else {
+            return;
+        };
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                handle.kick_client(&identification).await;
+                identification
+            },
+            |this, identification: String, cx| {
+                this.connected_clients
+                    .retain(|c| c.identification != identification);
+                cx.notify();
+            },
+            cx,
+        );
     }
 
-    fn header_card(
+    fn credentials_card(
         &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let brand = palette.brand;
-        let info = palette.info;
-        let s_color = status_color(&self.server_status, palette);
-
-        let icon_box = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(ICON_BOX)
-            .rounded(radius(Radius::Lg))
-            .border(BORDER_THIN)
-            .border_color(with_alpha(brand, 0.2))
-            .bg(with_alpha(brand, 0.1))
-            .child(icon(Icon::Server, SERVER_GLYPH, brand));
-
-        let ws_badge = badge(with_alpha(info, 0.12), info, "WS + HTTP", true, FONT_XS);
-
-        let title_row = div()
+        let row = div()
             .w_full()
             .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
+            .items_start()
+            .gap(spacing(Spacing::Md, density))
             .child(
                 div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("server_header_title")),
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(self.bind_column(palette, density, cx)),
             )
-            .child(ws_badge)
-            .child(div().flex_1())
-            .child(status_dot(s_color, STATUS_DOT))
             .child(
                 div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(s_color)
-                    .child(status_label(&self.server_status)),
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(self.token_column(palette, density, cx)),
             );
 
-        let description = div()
-            .font_family(body_family())
-            .text_size(FONT_SM)
-            .text_color(palette.text_muted)
-            .child(tr!("server_header_desc"));
-
-        let actions_row = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(div().flex_1())
-            .child(self.restart_button(palette, density, cx))
-            .child(self.stop_button(palette, density, cx));
-
-        let top_section = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(title_row)
-            .child(description)
-            .child(actions_row);
-
-        let header_row = div()
-            .w_full()
-            .flex()
-            .items_start()
-            .gap(spacing(Spacing::Md, density))
-            .child(icon_box)
-            .child(top_section);
-
-        let credentials_row = div()
-            .w_full()
-            .flex()
-            .items_start()
-            .gap(spacing(Spacing::Lg, density))
-            .child(weighted(1.0, self.bind_column(palette, density, cx)))
-            .child(weighted(2.0, self.token_column(palette, density, cx)));
-
-        let content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(header_row)
-            .child(hline(palette.border_regular))
-            .child(credentials_row);
-
-        card(content, palette)
-            .padding(spacing(Spacing::Lg, density))
-            .radius(Radius::Lg)
+        card(row, palette)
+            .padding_xy(spacing(Spacing::Sm, density), spacing(Spacing::Md, density))
+            .radius(Radius::Md)
             .full_width()
             .into_any_element()
     }
@@ -540,13 +419,35 @@ impl ServerConsoleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let uptime_str = if self.uptime_seconds > 0 {
-            tr!(
-                "server_up_prefix",
-                uptime = fmt_uptime(self.uptime_seconds.max(0) as u64)
-            )
-        } else {
-            tr!("server_not_running")
+        let field = match self.bind_address.clone() {
+            Some(address) => mono_field(palette, density)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .truncate()
+                        .text_color(palette.text_primary)
+                        .child(address),
+                )
+                .child(
+                    div()
+                        .id("srv-copy-addr")
+                        .flex()
+                        .flex_none()
+                        .cursor_pointer()
+                        .tooltip(tooltip_builder(tr!("common_copy"), palette))
+                        .on_click(
+                            cx.listener(|this, _: &ClickEvent, _, cx| this.copy_bind_address(cx)),
+                        )
+                        .child(icon(Icon::Copy, CONTROL_GLYPH, palette.text_faint)),
+                ),
+            None => mono_field(palette, density).child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .text_color(palette.text_faint)
+                    .child(tr!("server_not_running")),
+            ),
         };
 
         div()
@@ -554,21 +455,7 @@ impl ServerConsoleView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(caption(tr!("server_bind_address"), palette))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(self.bind_address.clone()),
-            )
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(uptime_str),
-            )
-            .child(self.copy_address_button(palette, density, cx))
+            .child(field)
             .into_any_element()
     }
 
@@ -605,29 +492,19 @@ impl ServerConsoleView {
             Icon::Eye
         };
 
-        let field = div()
-            .flex_1()
-            .min_w(px(0.0))
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .bg(palette.shell)
+        let field = mono_field(palette, density)
             .child(
                 div()
-                    .font_family(mono_family())
-                    .text_size(FONT_SM)
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .truncate()
                     .text_color(palette.text_primary)
                     .child(shown),
             )
             .child(
                 div()
                     .flex()
+                    .flex_none()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
                     .child(
@@ -645,6 +522,7 @@ impl ServerConsoleView {
                             .id("srv-token-copy")
                             .flex()
                             .cursor_pointer()
+                            .tooltip(tooltip_builder(tr!("common_copy"), palette))
                             .on_click(
                                 cx.listener(|this, _: &ClickEvent, _, cx| this.copy_token(cx)),
                             )
@@ -655,11 +533,16 @@ impl ServerConsoleView {
         let regenerate = div()
             .id("srv-token-regen")
             .flex()
+            .flex_none()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
             .cursor_pointer()
+            .hover(move |s| s.border_color(palette.warning))
             .child(icon(Icon::Refresh, CONTROL_GLYPH, palette.warning))
             .child(
                 div()
@@ -683,175 +566,49 @@ impl ServerConsoleView {
     fn regen_warning(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         div()
             .flex()
-            .flex_col()
+            .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xxs, density))
-                    .child(icon(Icon::AlertTriangle, LINK_GLYPH, palette.warning))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XXS)
-                            .text_color(palette.warning)
-                            .child(tr!("server_regen_warning_title")),
-                    ),
-            )
+            .child(icon(Icon::AlertTriangle, LINK_GLYPH, palette.warning))
             .child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XXS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("server_regen_warning_body")),
-            )
-            .into_any_element()
-    }
-
-    fn restart_button(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let busy = self.control_in_flight.is_some();
-        let base = palette.success;
-        let border = if busy { with_alpha(base, 0.4) } else { base };
-        let label = if self.control_in_flight == Some(ServerControl::Restarting) {
-            tr!("server_btn_restarting")
-        } else {
-            tr!("server_btn_restart")
-        };
-        let hover_bg = with_alpha(base, 0.08);
-
-        let mut btn = div()
-            .id("srv-restart")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(border)
-            .text_color(border)
-            .child(icon(Icon::Refresh, CONTROL_GLYPH, border))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .child(label),
-            );
-        if !busy {
-            btn = btn
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover_bg))
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)));
-        }
-        btn.into_any_element()
-    }
-
-    fn stop_button(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let busy = self.control_in_flight.is_some();
-        let base = palette.random;
-        let border = if busy { with_alpha(base, 0.4) } else { base };
-        let label = if self.control_in_flight == Some(ServerControl::Stopping) {
-            tr!("server_btn_stopping")
-        } else {
-            tr!("server_btn_stop")
-        };
-        let hover_bg = with_alpha(base, 0.08);
-
-        let mut btn = div()
-            .id("srv-stop")
-            .flex()
-            .items_center()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(border)
-            .text_color(border)
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .child(label),
-            );
-        if !busy {
-            btn = btn
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover_bg))
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.stop_server(cx)));
-        }
-        btn.into_any_element()
-    }
-
-    fn copy_address_button(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let normal = palette.text_secondary;
-        let hover_bg = with_alpha(palette.text_primary, 0.06);
-
-        div()
-            .id("srv-copy-addr")
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Xs, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .text_color(normal)
-            .cursor_pointer()
-            .hover(move |s| s.bg(hover_bg))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_bind_address(cx)))
-            .child(icon(Icon::Copy, CONTROL_GLYPH, normal))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .child(tr!("server_btn_copy")),
+                    .text_color(palette.warning)
+                    .child(tr!("server_regen_warning_title")),
             )
             .into_any_element()
     }
 
     fn stats_grid(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let success = palette.success;
         let cell = |el: AnyElement| div().flex_1().min_w(px(0.0)).child(el);
+        let recent_color = (self.recent_clients > 0).then_some(palette.success);
 
         div()
             .w_full()
             .flex()
             .flex_row()
-            .gap(spacing(Spacing::Xs, density))
+            .gap(spacing(Spacing::Sm, density))
             .child(cell(
                 metric_card(
                     tr!("server_stat_clients"),
-                    format!("{}", self.connected_clients.len()),
-                    Some(tr!("server_stat_clients_sub")),
-                    Some(success),
+                    fmt_number(self.connected_clients.len() as f64, 0),
+                    Some(tr!(
+                        "server_stat_clients_sub",
+                        count = self.recent_clients as i64,
+                        minutes = RECENT_CLIENT_WINDOW_MINUTES
+                    )),
+                    recent_color,
                     palette,
                 )
                 .into_any_element(),
             ))
             .child(cell(
                 metric_card(
-                    tr!("server_stat_events_out"),
-                    format!("{:.1} ev/s", self.stats.events_per_second),
+                    tr!("server_stat_events_rate"),
+                    fmt_number(self.stats.events_per_second as f64, 1),
                     Some(tr!(
                         "server_stat_events_sub",
-                        avg = format!("{:.1}", self.stats.events_per_second_avg)
+                        seconds = EVENT_RATE_WINDOW_SECONDS
                     )),
                     None,
                     palette,
@@ -861,7 +618,7 @@ impl ServerConsoleView {
             .child(cell(
                 metric_card(
                     tr!("server_stat_http"),
-                    format!("{}", self.stats.http_requests),
+                    fmt_number(self.stats.http_requests as f64, 0),
                     Some(tr!("server_stat_http_sub")),
                     None,
                     palette,
@@ -871,22 +628,12 @@ impl ServerConsoleView {
             .child(cell(
                 metric_card(
                     tr!("server_stat_bandwidth"),
-                    format!("{:.0} KB/s", self.stats.bandwidth_kbps),
-                    Some(tr!(
-                        "server_stat_bandwidth_sub",
-                        peak = format!("{:.0}", self.stats.bandwidth_peak_kbps)
-                    )),
-                    Some(success),
-                    palette,
-                )
-                .into_any_element(),
-            ))
-            .child(cell(
-                metric_card(
-                    tr!("server_stat_dropped"),
-                    format!("{}", self.stats.dropped_events),
-                    Some(tr!("server_stat_dropped_sub")),
-                    (self.stats.dropped_events > 0).then_some(palette.warning),
+                    tr!(
+                        "server_stat_bandwidth_value",
+                        rate = fmt_number(self.stats.bandwidth_kbps as f64, 0)
+                    ),
+                    Some(tr!("server_stat_bandwidth_sub")),
+                    None,
                     palette,
                 )
                 .into_any_element(),
@@ -895,11 +642,12 @@ impl ServerConsoleView {
     }
 
     fn throughput_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let sample_count = self.bandwidth_samples.len().min(MAX_BANDWIDTH_SAMPLES);
-        let peak = self
-            .bandwidth_samples
+        let sample_count = self.throughput_samples.len();
+        let max = self
+            .throughput_samples
             .iter()
             .copied()
+            .filter(|s| s.is_finite())
             .fold(0.0_f32, f32::max);
 
         let header = div()
@@ -916,6 +664,7 @@ impl ServerConsoleView {
                     .child(
                         div()
                             .font_family(body_family())
+                            .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("server_throughput_title")),
@@ -924,34 +673,31 @@ impl ServerConsoleView {
             .child(
                 div()
                     .font_family(mono_family())
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "server_throughput_meta",
                         seconds = sample_count as i64,
-                        peak = format!("{peak:.0}")
+                        max = fmt_number(max as f64, 0)
                     )),
             );
 
         let chart = div()
             .w_full()
-            .h(px(48.0))
-            .p(px(4.0))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.shell)
-            .child(sparkline(&self.bandwidth_samples, palette.brand));
+            .h(SPARK_HEIGHT)
+            .child(sparkline(&self.throughput_samples, palette.brand));
 
         card(
             div()
                 .flex()
                 .flex_col()
-                .gap(spacing(Spacing::Sm, density))
+                .gap(spacing(Spacing::Xs, density))
                 .child(header)
                 .child(chart),
             palette,
         )
-        .padding(spacing(Spacing::Md, density))
-        .radius(Radius::Lg)
+        .padding(spacing(Spacing::Sm, density))
+        .radius(Radius::Md)
         .full_width()
         .into_any_element()
     }
@@ -962,22 +708,23 @@ impl ServerConsoleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let origin = overlay_origin(&self.bind_address);
-
         let header = div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
             .child(icon(Icon::Folder, HEADER_GLYPH, palette.warning))
             .child(
                 div()
                     .font_family(body_family())
+                    .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
-                    .child(tr!("server_overlay_files_title")),
+                    .child(tr!("server_overlay_host_title")),
             );
 
         let root_label = if self.overlay_root.is_empty() {
@@ -990,40 +737,35 @@ impl ServerConsoleView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
             .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(root_label),
+                mono_field(palette, density).child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .truncate()
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_primary)
+                        .child(root_label),
+                ),
             )
             .child(
                 div()
                     .id("srv-open-folder")
                     .flex()
+                    .flex_none()
                     .items_center()
-                    .gap(spacing(Spacing::Xxs, density))
-                    .py(spacing(Spacing::Xxs, density))
+                    .py(spacing(Spacing::Xs, density))
                     .px(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Sm))
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)
-                    .text_color(palette.text_secondary)
                     .cursor_pointer()
+                    .hover(move |s| s.border_color(palette.border_input))
+                    .tooltip(tooltip_builder(tr!("server_open_overlay_folder"), palette))
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _, cx| this.open_overlay_folder(cx)),
                     )
-                    .child(icon(Icon::FolderOpen, CONTROL_GLYPH, palette.text_muted))
-                    .child(
-                        div()
-                            .font_family(mono_family())
-                            .text_size(FONT_XS)
-                            .child(tr!("server_btn_open")),
-                    ),
+                    .child(icon(Icon::FolderOpen, CONTROL_GLYPH, palette.text_muted)),
             );
 
         let files: AnyElement = if self.overlay_entries.is_empty() {
@@ -1031,168 +773,155 @@ impl ServerConsoleView {
                 .density(density)
                 .into_any_element()
         } else {
-            let mut col = div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xxs, density))
-                .py(spacing(Spacing::Xxs, density))
-                .px(spacing(Spacing::Xs, density));
+            let mut col = div().w_full().flex().flex_col();
             for (index, entry) in self.overlay_entries.iter().enumerate() {
-                let selected = self.selected_overlay_file == Some(index);
-                col = col.child(
-                    self.overlay_entry_row(index, entry, selected, &origin, palette, density, cx),
-                );
+                col = col.child(self.overlay_entry_row(index, entry, palette, density, cx));
             }
-            div()
-                .id("srv-overlay-scroll")
-                .w_full()
-                .flex_1()
-                .min_h(px(0.0))
-                .overflow_y_scroll()
-                .child(col)
-                .into_any_element()
+            col.into_any_element()
         };
+
+        let body = div()
+            .w_full()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .p(spacing(Spacing::Sm, density))
+            .child(path_row)
+            .child(files)
+            .child(self.browser_source_block(palette, density, cx));
 
         let inner = div()
             .size_full()
             .flex()
             .flex_col()
             .child(header)
-            .child(path_row)
-            .child(hline(palette.border_regular))
-            .child(files);
+            .child(body);
 
         card(inner, palette)
             .padding(px(0.0))
-            .radius(Radius::Lg)
+            .radius(Radius::Md)
             .full_width()
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn overlay_entry_row(
         &self,
         index: usize,
         entry: &OwnedOverlayEntry,
-        selected: bool,
-        origin: &str,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let size_label = match entry.kind {
-            OwnedOverlayKind::Dir => {
-                tr!("server_overlay_dir_items", count = entry.child_count as i64)
+        let (glyph, glyph_color, size_label) = match entry.kind {
+            OwnedOverlayKind::Dir => (
+                Icon::Folder,
+                palette.warning,
+                tr!("server_overlay_dir_files", count = entry.child_count as i64),
+            ),
+            OwnedOverlayKind::File { .. } => {
+                (Icon::FileCode, palette.info, fmt_bytes(entry.size_bytes))
             }
-            OwnedOverlayKind::File { .. } => fmt_bytes(entry.size_bytes),
         };
-        let kind_color = match entry.kind {
-            OwnedOverlayKind::File {
-                mime: OwnedFileMime::Html,
-            } => palette.brand,
-            OwnedOverlayKind::Dir => palette.warning,
-            _ => palette.text_muted,
-        };
-        let bg = if selected {
-            palette.shell
+        let selected = self
+            .browser_source_entry()
+            .is_some_and(|current| current.name == entry.name);
+        let name_color = if selected {
+            palette.text_primary
         } else {
-            palette.base
+            palette.text_secondary
         };
 
-        let kind_badge = div()
-            .flex_none()
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Xxs, density))
-            .rounded(KIND_BADGE_RADIUS)
-            .bg(with_alpha(kind_color, 0.12))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(kind_color)
-                    .child(overlay_kind_tag(entry.kind)),
-            );
-
-        let name_row = div()
+        let mut row = div()
+            .id((ElementId::from("srv-overlay-entry"), entry.name.clone()))
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(kind_badge)
+            .py(spacing(Spacing::Xxs, density))
+            .child(icon(glyph, FILE_GLYPH, glyph_color))
             .child(
                 div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .truncate()
                     .font_family(mono_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
+                    .text_size(FONT_XXS)
+                    .text_color(name_color)
                     .child(entry.name.clone()),
             )
-            .child(div().flex_1())
             .child(
                 div()
+                    .flex_none()
                     .font_family(mono_family())
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(size_label),
             );
 
-        let mut content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(name_row);
+        if entry.is_file() {
+            row =
+                row.cursor_pointer()
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.select_overlay_file(index, cx)
+                    }));
+        }
 
-        if selected {
-            let url = format!("{origin}/overlays/{}", entry.name);
-            let url_for_copy = url.clone();
-            content = content.child(
+        row.into_any_element()
+    }
+
+    fn browser_source_block(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let url = self.browser_source_url();
+
+        let value = match url.clone() {
+            Some(url) => div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .text_color(palette.info)
+                .child(url),
+            None => div()
+                .flex_1()
+                .min_w(px(0.0))
+                .text_color(palette.text_faint)
+                .child("-"),
+        };
+
+        let mut field = mono_field(palette, density)
+            .text_size(FONT_XXS)
+            .child(value);
+        if url.is_some() {
+            field = field.child(
                 div()
-                    .w_full()
+                    .id("srv-overlay-url-copy")
                     .flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .font_family(mono_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_muted)
-                            .child(url),
+                    .flex_none()
+                    .cursor_pointer()
+                    .tooltip(tooltip_builder(tr!("common_copy"), palette))
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.copy_browser_source_url(cx)),
                     )
-                    .child(
-                        div()
-                            .id((
-                                gpui::ElementId::from("srv-overlay-copy"),
-                                entry.name.clone(),
-                            ))
-                            .flex()
-                            .items_center()
-                            .gap(spacing(Spacing::Xxs, density))
-                            .cursor_pointer()
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                                this.copy_overlay_url(url_for_copy.clone(), cx)
-                            }))
-                            .child(icon(Icon::Copy, LINK_GLYPH, palette.text_secondary))
-                            .child(icon(Icon::ExternalLink, LINK_GLYPH, palette.text_secondary)),
-                    ),
+                    .child(icon(Icon::Copy, LINK_GLYPH, palette.brand)),
             );
         }
 
         div()
-            .id((
-                gpui::ElementId::from("srv-overlay-entry"),
-                entry.name.clone(),
-            ))
             .w_full()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Xs, density))
-            .rounded(radius(Radius::Sm))
-            .bg(bg)
-            .cursor_pointer()
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_overlay_file(index, cx)),
-            )
-            .child(content)
+            .flex_none()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .pt(spacing(Spacing::Sm, density))
+            .border_t(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(caption(tr!("server_overlay_browser_source_url"), palette))
+            .child(field)
             .into_any_element()
     }
 
@@ -1202,44 +931,39 @@ impl ServerConsoleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let count_badge = div()
-            .flex_none()
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Xs, density))
-            .rounded(COUNT_BADGE_RADIUS)
-            .bg(palette.surface_overlay)
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_primary)
-                    .child(format!("{}", self.connected_clients.len())),
-            );
-
         let header = div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
-            .child(icon(Icon::Users, HEADER_GLYPH, palette.text_faint))
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(icon(Icon::Browser, HEADER_GLYPH, palette.info))
             .child(
                 div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
+                    .font_family(body_family())
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
                     .child(tr!("server_clients_header")),
+            )
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_faint)
+                    .child(fmt_number(self.connected_clients.len() as f64, 0)),
             )
             .child(div().flex_1())
             .child(
                 div()
                     .font_family(mono_family())
-                    .text_size(FONT_XS)
+                    .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("server_clients_live")),
-            )
-            .child(count_badge);
+            );
 
         let columns = vec![
             column("", ColumnWidth::Fixed(DOT_CELL_W)),
@@ -1258,11 +982,9 @@ impl ServerConsoleView {
                 .density(density)
                 .header_bg(palette.elevated)
                 .separator(palette.elevated)
-                .header_padding(
-                    spacing(Spacing::Xxs, density),
-                    spacing(Spacing::Sm, density),
-                )
-                .cell_gap(spacing(Spacing::Xxs, density));
+                .header_rule(palette.border_regular)
+                .header_padding(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
+                .cell_gap(spacing(Spacing::Xs, density));
             div()
                 .w_full()
                 .flex_1()
@@ -1289,12 +1011,10 @@ impl ServerConsoleView {
             )
             .header_bg(palette.elevated)
             .separator(palette.elevated)
-            .header_padding(
-                spacing(Spacing::Xxs, density),
-                spacing(Spacing::Sm, density),
-            )
+            .header_rule(palette.border_regular)
+            .header_padding(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
             .row_padding(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
-            .cell_gap(spacing(Spacing::Xxs, density))
+            .cell_gap(spacing(Spacing::Xs, density))
             .build(
                 move |this, ix, _window, cx| match this.connected_clients.get(ix) {
                     Some(row) => this.client_row(ix, row, &pal, density, cx),
@@ -1309,12 +1029,11 @@ impl ServerConsoleView {
             .flex()
             .flex_col()
             .child(header)
-            .child(div().w_full().h(BORDER_THIN).bg(palette.border_regular))
             .child(table);
 
         card(inner, palette)
             .padding(px(0.0))
-            .radius(Radius::Lg)
+            .radius(Radius::Md)
             .full_width()
             .into_any_element()
     }
@@ -1332,36 +1051,18 @@ impl ServerConsoleView {
             ClientLiveness::Idle => palette.warning,
         };
 
-        let id_col = div()
-            .flex()
-            .flex_col()
-            .min_w(px(0.0))
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .truncate()
-                    .font_family(mono_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(row.identification.clone()),
-            )
-            .child(
-                div()
-                    .truncate()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(row.client_type_label.clone()),
-            );
+        let name = div()
+            .truncate()
+            .font_family(mono_family())
+            .text_size(FONT_XS)
+            .text_color(palette.text_primary)
+            .child(row.identification.clone());
 
         let x_button = div()
-            .id((gpui::ElementId::from("srv-disconnect"), row.key.clone()))
+            .id((ElementId::from("srv-disconnect"), row.key.clone()))
             .flex()
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Xxs, density))
-            .rounded(radius(Radius::Sm))
             .cursor_pointer()
-            .hover(move |s| s.bg(with_alpha(palette.text_secondary, 0.06)))
+            .tooltip(tooltip_builder(tr!("server_disconnect_tooltip"), palette))
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.request_disconnect(index, cx)),
             )
@@ -1371,17 +1072,17 @@ impl ServerConsoleView {
             .font_family(mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
-            .child(format!("{:.1}", row.events_per_second));
+            .child(fmt_number(row.events_per_second as f64, 1));
         let uptime = div()
             .font_family(mono_family())
-            .text_size(FONT_XS)
+            .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(row.uptime_short.clone());
 
         DataRow::new(vec![
             status_dot(dot_color, CLIENT_DOT).into_any_element(),
-            id_col.into_any_element(),
-            chips_row(&row.subscriptions, palette, density),
+            name.into_any_element(),
+            subscriptions_cell(row, palette, density),
             evs.into_any_element(),
             uptime.into_any_element(),
             x_button.into_any_element(),
@@ -1389,45 +1090,50 @@ impl ServerConsoleView {
     }
 
     fn footer_bar(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let port = extract_port(&self.bind_address);
-        let s_color = status_color(&self.server_status, palette);
+        let (health_label, health_color) = if self.stats.dropped_events == 0 {
+            (tr!("server_footer_health_ok"), palette.text_faint)
+        } else {
+            (
+                tr!(
+                    "server_footer_health_degraded",
+                    dropped = self.stats.dropped_events as i64
+                ),
+                palette.warning,
+            )
+        };
 
         let left = div()
-            .font_family(mono_family())
-            .text_size(FONT_XS)
-            .text_color(palette.text_faint)
-            .child(format!("WebSocket :{port}/ws · HTTP :{port}/"));
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(footer_cell(
+                tr!(
+                    "server_footer_totals",
+                    sent = fmt_bytes(self.stats.total_bytes_sent),
+                    events = self.stats.total_events_out as i64
+                ),
+                palette.text_faint,
+            ))
+            .child(footer_cell("·", palette.text_faint))
+            .child(footer_cell(health_label, health_color));
+
+        let (endpoint_label, dot_color) = match self.bind_address.as_deref() {
+            Some(address) if self.is_running() => (
+                tr!(
+                    "server_footer_endpoint_accepting",
+                    port = extract_port(address)
+                ),
+                palette.success,
+            ),
+            _ => (tr!("server_footer_endpoint_stopped"), palette.text_faint),
+        };
 
         let right = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(tr!(
-                        "server_footer_totals",
-                        sent = fmt_bytes(self.stats.total_bytes_sent),
-                        events = self.stats.total_events_out as i64
-                    )),
-            )
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child("·"),
-            )
-            .child(status_dot(s_color, STATUS_DOT))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(s_color)
-                    .child(status_label(&self.server_status)),
-            );
+            .child(status_dot(dot_color, FOOTER_DOT))
+            .child(footer_cell(endpoint_label, palette.text_faint));
 
         div()
             .w_full()
@@ -1436,13 +1142,28 @@ impl ServerConsoleView {
             .items_center()
             .justify_between()
             .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Md, density))
+            .px(spacing(Spacing::Sm, density))
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
             .child(left)
             .child(right)
             .into_any_element()
+    }
+
+    fn breadcrumb_status(&self, palette: &ForgePalette) -> AnyElement {
+        if self.is_running() {
+            header_status(
+                palette.success,
+                tr!(
+                    "server_status_listening",
+                    clients = self.connected_clients.len() as i64
+                ),
+            )
+            .into_any_element()
+        } else {
+            header_status(palette.text_faint, tr!("server_status_stopped")).into_any_element()
+        }
     }
 
     fn disconnect_confirm(
@@ -1458,7 +1179,7 @@ impl ServerConsoleView {
 
         let message = tr!(
             "server_disconnect_confirm_hint",
-            info = row.client_type_label.as_str()
+            info = row.origin_label.as_str()
         );
         let confirm = confirm_modal(
             tr!("server_disconnect_confirm_title"),
@@ -1522,7 +1243,7 @@ impl Render for ServerConsoleView {
             .gap(spacing(Spacing::Sm, density))
             .py(spacing(Spacing::Md, density))
             .px(spacing(Spacing::Lg, density))
-            .child(self.header_card(&palette, density, cx))
+            .child(self.credentials_card(&palette, density, cx))
             .child(self.stats_grid(&palette, density))
             .child(self.throughput_card(&palette, density))
             .child(panels);
@@ -1535,7 +1256,7 @@ impl Render for ServerConsoleView {
             .overflow_y_scroll()
             .child(body);
 
-        let overlay = self.disconnect_confirm(&palette, cx);
+        let modal = self.disconnect_confirm(&palette, cx);
 
         let frame = page_frame(
             vec![
@@ -1544,6 +1265,7 @@ impl Render for ServerConsoleView {
             ],
             &palette,
         )
+        .header_right(self.breadcrumb_status(&palette))
         .body(
             div()
                 .flex_1()
@@ -1561,98 +1283,135 @@ impl Render for ServerConsoleView {
             .flex_col()
             .bg(palette.base)
             .child(frame)
-            .children(overlay)
+            .children(modal)
     }
 }
 
-fn weighted(grow: f32, child: impl IntoElement) -> Div {
-    let mut cell = div().min_w(px(0.0)).child(child);
-    let style = cell.style();
-    style.flex_grow = Some(grow);
-    style.flex_basis = Some(relative(0.0).into());
-    cell
+fn mono_field(palette: &ForgePalette, density: Density) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(spacing(Spacing::Xs, density))
+        .py(spacing(Spacing::Xs, density))
+        .px(spacing(Spacing::Sm, density))
+        .rounded(radius(Radius::Sm))
+        .border(BORDER_THIN)
+        .border_color(palette.border_input)
+        .bg(palette.shell)
+        .font_family(mono_family())
+        .text_size(FONT_SM)
 }
 
-fn hline(color: Rgba) -> Div {
-    div().w_full().h(BORDER_THIN).bg(color)
+fn footer_cell(text: impl Into<SharedString>, color: Rgba) -> impl IntoElement {
+    div()
+        .font_family(mono_family())
+        .text_size(FONT_XXS)
+        .text_color(color)
+        .child(text.into())
 }
 
 fn caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(mono_family())
-        .text_size(FONT_XS)
+        .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into())
 }
 
-fn chips_row(
-    chips: &[OwnedSubscriptionChip],
+fn subscriptions_cell(
+    row: &OwnedClientRow,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    if chips.is_empty() {
-        return div()
-            .font_family(mono_family())
-            .text_size(FONT_XS)
-            .text_color(palette.text_faint)
-            .child("-")
+    let mut cell = div()
+        .flex()
+        .items_center()
+        .min_w(px(0.0))
+        .gap(spacing(Spacing::Xxs, density))
+        .child(
+            div()
+                .min_w(px(0.0))
+                .truncate()
+                .mr(spacing(Spacing::Xxs, density))
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.text_muted)
+                .child(row.origin_label.clone()),
+        );
+
+    if row.subscriptions.is_empty() {
+        return cell
+            .child(
+                div()
+                    .flex_none()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child("-"),
+            )
             .into_any_element();
     }
 
-    let visible = chips.len().min(MAX_VISIBLE_CHIPS);
-    let overflow = chips.len().saturating_sub(MAX_VISIBLE_CHIPS);
-    let bg = palette.surface_overlay;
-
-    let mut row = div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xxs, density));
-    for chip in &chips[..visible] {
-        row = row.child(chip_pill(
-            chip.label.clone(),
-            color_for_source(chip.source, palette),
-            bg,
-        ));
+    let visible = row.subscriptions.len().min(MAX_VISIBLE_CHIPS);
+    for chip in &row.subscriptions[..visible] {
+        cell = cell.child(subscription_chip_element(&row.key, chip, palette));
     }
+
+    let overflow = row.subscriptions.len().saturating_sub(MAX_VISIBLE_CHIPS);
     if overflow > 0 {
-        row = row.child(chip_pill(
-            format!("+{overflow} more"),
-            palette.text_faint,
-            bg,
-        ));
+        cell = cell.child(
+            div()
+                .flex_none()
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(format!("+{overflow}")),
+        );
     }
-    row.into_any_element()
+
+    cell.into_any_element()
 }
 
-fn chip_pill(label: String, fg: Rgba, bg: Rgba) -> impl IntoElement {
-    badge(bg, fg, label, true, FONT_XS)
-        .weight(FontWeight::NORMAL)
-        .padding_xy(
-            spacing(Spacing::Xxs, Density::Cozy),
-            spacing(Spacing::Xxs, Density::Cozy),
-        )
-        .radius(radius(Radius::Md))
+fn subscription_chip_element(
+    row_key: &str,
+    chip: &OwnedSubscriptionChip,
+    palette: &ForgePalette,
+) -> AnyElement {
+    if chip.kind == SubscriptionChipKind::All {
+        return div()
+            .flex_none()
+            .italic()
+            .font_family(mono_family())
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
+            .child(SUBSCRIBE_ALL_LABEL)
+            .into_any_element();
+    }
+
+    let color = match chip.kind {
+        SubscriptionChipKind::Source(source) => color_for_source(source, palette),
+        _ => palette.text_faint,
+    };
+
+    div()
+        .id((
+            ElementId::from("srv-sub-chip"),
+            SharedString::from(format!("{row_key}:{}", chip.label)),
+        ))
         .flex_none()
+        .size(SUB_CHIP)
+        .rounded(SUB_CHIP_RADIUS)
+        .bg(color)
+        .tooltip(tooltip_builder(chip.label.clone(), palette))
+        .into_any_element()
 }
 
-fn status_color(status: &ServerStatus, palette: &ForgePalette) -> Rgba {
-    match status {
-        ServerStatus::Running => palette.success,
-        ServerStatus::Stopped => palette.text_faint,
-        ServerStatus::Error(_) => palette.random,
-    }
-}
-
-fn status_label(status: &ServerStatus) -> String {
-    match status {
-        ServerStatus::Running => tr!("server_status_running"),
-        ServerStatus::Stopped => tr!("server_status_stopped"),
-        ServerStatus::Error(_) => tr!("server_status_error"),
-    }
-}
+const SUBSCRIBE_ALL_LABEL: &str = "*all";
 
 fn extract_port(bind_address: &str) -> &str {
-    bind_address.split(':').next_back().unwrap_or("8081")
+    bind_address.split(':').next_back().unwrap_or_default()
 }
 
 fn overlay_origin(bind_address: &str) -> String {
@@ -1666,21 +1425,6 @@ fn overlay_origin(bind_address: &str) -> String {
         other => other,
     };
     format!("http://{host}:{port}")
-}
-
-fn overlay_kind_tag(kind: OwnedOverlayKind) -> &'static str {
-    match kind {
-        OwnedOverlayKind::Dir => "dir",
-        OwnedOverlayKind::File { mime } => match mime {
-            OwnedFileMime::Html => "html",
-            OwnedFileMime::Css => "css",
-            OwnedFileMime::Js => "js",
-            OwnedFileMime::Json => "json",
-            OwnedFileMime::Image => "img",
-            OwnedFileMime::Wasm => "wasm",
-            OwnedFileMime::Other => "file",
-        },
-    }
 }
 
 fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
@@ -1703,6 +1447,9 @@ fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
 }
 
 fn mask_token(token: &str) -> String {
+    if token.is_empty() {
+        return "-".to_owned();
+    }
     let tail: String = token
         .chars()
         .rev()
@@ -1723,6 +1470,12 @@ struct ServerPoll {
 struct OverlayListing {
     root: String,
     entries: Vec<OwnedOverlayEntry>,
+}
+
+fn is_html_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm"))
 }
 
 async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing {
@@ -1758,10 +1511,11 @@ async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing {
                 child_count,
             });
         } else {
-            let mime = OwnedFileMime::from_path(&entry.path());
             entries.push(OwnedOverlayEntry {
                 name,
-                kind: OwnedOverlayKind::File { mime },
+                kind: OwnedOverlayKind::File {
+                    html: is_html_path(&entry.path()),
+                },
                 size_bytes: meta.len(),
                 child_count: 0,
             });
@@ -1787,6 +1541,13 @@ async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing {
     }
 }
 
+fn count_recent_clients(clients: &[ConnectedClientSnapshot]) -> usize {
+    clients
+        .iter()
+        .filter(|c| c.uptime_seconds >= 0 && c.uptime_seconds <= RECENT_CLIENT_WINDOW_SECONDS)
+        .count()
+}
+
 fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow {
     let liveness = if client.events_per_second > 0.0 {
         ClientLiveness::Active
@@ -1796,7 +1557,7 @@ fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow 
     OwnedClientRow {
         key: client.remote_addr.clone(),
         identification: client.identification.clone(),
-        client_type_label: format!("{} · {}", client.remote_addr, client.client_type),
+        origin_label: format!("{} · {}", client.remote_addr, client.client_type),
         liveness,
         subscriptions: client.subscriptions.iter().map(subscription_chip).collect(),
         events_per_second: client.events_per_second,
@@ -1807,19 +1568,37 @@ fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow 
 fn subscription_chip(filter: &EventFilterSnapshot) -> OwnedSubscriptionChip {
     let source_wildcard = filter.source == "*";
     let kind_wildcard = filter.kind == "*";
-    let source = if source_wildcard {
-        EventSource::Core
-    } else {
+
+    if source_wildcard && kind_wildcard {
+        return OwnedSubscriptionChip {
+            label: SUBSCRIBE_ALL_LABEL.to_owned(),
+            kind: SubscriptionChipKind::All,
+        };
+    }
+
+    if source_wildcard {
+        return OwnedSubscriptionChip {
+            label: filter.kind.clone(),
+            kind: SubscriptionChipKind::Unknown,
+        };
+    }
+
+    let source =
         serde_json::from_value::<EventSource>(serde_json::Value::String(filter.source.clone()))
-            .unwrap_or(EventSource::Core)
+            .ok();
+    let source_label = source.map(event_source_label).unwrap_or(&filter.source);
+    let label = if kind_wildcard {
+        format!("{source_label}.*")
+    } else {
+        format!("{source_label}.{}", filter.kind)
     };
-    let label = match (source_wildcard, kind_wildcard) {
-        (true, true) => "*".to_owned(),
-        (true, false) => filter.kind.clone(),
-        (false, true) => format!("{}.*", event_source_label(source)),
-        (false, false) => format!("{}.{}", event_source_label(source), filter.kind),
-    };
-    OwnedSubscriptionChip { label, source }
+    OwnedSubscriptionChip {
+        label,
+        kind: match source {
+            Some(source) => SubscriptionChipKind::Source(source),
+            None => SubscriptionChipKind::Unknown,
+        },
+    }
 }
 
 fn event_source_label(source: EventSource) -> &'static str {
@@ -1839,8 +1618,4 @@ fn event_source_label(source: EventSource) -> &'static str {
         EventSource::Server => "server",
         EventSource::Audio => "audio",
     }
-}
-
-fn err_text(err: forge_server::ServerError) -> String {
-    err.to_string()
 }

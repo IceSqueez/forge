@@ -144,3 +144,78 @@ impl MidiClient {
         })
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::backend::tests::MockMidiBackend;
+    use crate::events::{MidiPortInfo, PortDirection};
+
+    struct NoopPublisher;
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: forge_events::Event) {}
+    }
+
+    fn client_holding_control_rx() -> (Arc<MidiClient>, mpsc::Receiver<SupervisorCommand>) {
+        let (health_tx, health_state) = make_health_state();
+        let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
+        let client = Arc::new(MidiClient {
+            id: BuiltinId::new("midi"),
+            config: MidiConfig::default(),
+            backend: Arc::new(MockMidiBackend::new(vec![], vec![])),
+            publisher: Arc::new(NoopPublisher),
+            health_state,
+            health_tx,
+            content_state: make_content_state(),
+            enabled: Arc::new(AtomicBool::new(true)),
+            control_tx,
+            monitor_tx: make_monitor_state(),
+        });
+        (client, control_rx)
+    }
+
+    #[tokio::test]
+    async fn command_with_no_supervisor_listening_reports_supervisor_unavailable() {
+        let client = MidiClient::new_for_test();
+        let result = client.disable_input().await;
+        assert!(matches!(result, Err(MidiError::SupervisorUnavailable)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn command_to_a_wedged_supervisor_gives_up_instead_of_blocking_forever() {
+        let (client, _control_rx) = client_holding_control_rx();
+        for _ in 0..8 {
+            client.rescan_ports().await.unwrap();
+        }
+
+        let result = client.rescan_ports().await;
+
+        assert!(matches!(result, Err(MidiError::SupervisorUnavailable)));
+    }
+
+    #[test]
+    fn connected_port_getters_do_not_cross_directions() {
+        let client = MidiClient::new_for_test();
+        {
+            let mut snap = client
+                .content_state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            snap.input_ports = vec![MidiPortInfo {
+                name: "Keys In".to_owned(),
+                direction: PortDirection::Input,
+            }];
+            snap.output_ports = vec![MidiPortInfo {
+                name: "Synth Out".to_owned(),
+                direction: PortDirection::Output,
+            }];
+        }
+
+        assert_eq!(client.connected_input_ports(), vec!["Keys In".to_owned()]);
+        assert_eq!(
+            client.connected_output_ports(),
+            vec!["Synth Out".to_owned()]
+        );
+    }
+}

@@ -444,6 +444,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use tokio_stream::StreamExt;
+
     use forge_events::{Event, EventPublisher};
 
     use crate::backend::MidiBackend;
@@ -701,6 +703,169 @@ mod tests {
                 "{kind} still carries legacy `name` key"
             );
         }
+    }
+
+    async fn settle() {
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    fn note_on_ports(publisher: &RecordingPublisher) -> Vec<String> {
+        publisher
+            .find_all_kind("midi.input.note_on")
+            .iter()
+            .filter_map(|e| {
+                e.payload
+                    .get("port_name")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn disabled_engine_keeps_discovering_ports_but_leaves_them_unsubscribed() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        client.disable_input().await.unwrap();
+        settle().await;
+        assert!(!client.is_enabled());
+
+        backend.set_input_ports(vec![input_port("A"), input_port("B")]);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        settle().await;
+
+        assert!(
+            publisher
+                .find_all_kind("midi.port.added")
+                .iter()
+                .any(|e| e.payload["port_name"] == "B"),
+            "discovery must keep running while input is disabled"
+        );
+
+        backend.inject_all(0, vec![0x90, 60, 100]).await;
+        settle().await;
+        assert!(
+            !note_on_ports(&publisher).contains(&"B".to_owned()),
+            "disabled engine must not subscribe to a newly discovered port"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn enable_subscribes_ports_discovered_while_disabled() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        client.disable_input().await.unwrap();
+        settle().await;
+        backend.set_input_ports(vec![input_port("A"), input_port("B")]);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        settle().await;
+
+        client.enable_input().await.unwrap();
+        settle().await;
+        backend.inject_all(0, vec![0x90, 60, 100]).await;
+        settle().await;
+
+        assert!(
+            note_on_ports(&publisher).contains(&"B".to_owned()),
+            "enable must subscribe the port discovered while disabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn enable_while_already_enabled_does_not_duplicate_a_subscription() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        client.enable_input().await.unwrap();
+        settle().await;
+        backend.inject_all(0, vec![0x90, 60, 100]).await;
+        settle().await;
+
+        assert_eq!(
+            note_on_ports(&publisher).len(),
+            1,
+            "a redundant enable must not re-open an already open port"
+        );
+    }
+
+    #[tokio::test]
+    async fn engine_enable_and_disable_publish_their_own_event_kinds() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        client.disable_input().await.unwrap();
+        settle().await;
+        assert!(publisher.has_kind("midi.engine.disabled"));
+        assert!(!publisher.has_kind("midi.engine.enabled"));
+
+        client.enable_input().await.unwrap();
+        settle().await;
+        assert!(publisher.has_kind("midi.engine.enabled"));
+    }
+
+    #[tokio::test]
+    async fn disable_pushes_a_disabled_input_port_health_delta() {
+        use forge_platform_core::{BuiltinHealth, HealthValue};
+
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        let health: &dyn BuiltinHealth = &*client;
+        let mut stream = health.stream();
+        client.disable_input().await.unwrap();
+
+        let delta = stream.next().await.unwrap();
+        assert_eq!(delta.index, 0);
+        assert!(
+            matches!(
+                &delta.new_value,
+                HealthValue::Text { secondary, .. } if secondary.as_deref() == Some("disabled")
+            ),
+            "delta carried {:?}",
+            delta.new_value
+        );
+    }
+
+    #[tokio::test]
+    async fn rescan_discovers_a_port_without_waiting_for_the_poll_tick() {
+        let backend = Arc::new(MockMidiBackend::new(vec![], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        backend.set_input_ports(vec![input_port("Late")]);
+        client.rescan_ports().await.unwrap();
+        settle().await;
+
+        assert!(
+            publisher
+                .find_all_kind("midi.port.added")
+                .iter()
+                .any(|e| e.payload["port_name"] == "Late"),
+            "rescan must run discovery immediately"
+        );
+    }
+
+    #[tokio::test]
+    async fn monitor_stream_receives_every_decoded_input_event() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("Pad")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        let mut monitor = client.monitor_stream();
+        backend.inject_all(0, vec![0xB2, 7, 100]).await;
+
+        let event = monitor.next().await.unwrap();
+        assert_eq!(event.kind, "control_change");
+        assert_eq!(event.port_name, "Pad");
     }
 
     #[tokio::test(start_paused = true)]

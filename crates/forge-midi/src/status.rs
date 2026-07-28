@@ -51,3 +51,29 @@ impl BuiltinStatus for MidiClient {
         vec![]
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::events::{MidiPortInfo, PortDirection};
+
+    #[test]
+    fn connection_is_disconnected_while_input_is_disabled_despite_open_ports() {
+        let client = MidiClient::new_for_test();
+        client
+            .content_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .input_ports = vec![MidiPortInfo {
+            name: "Piano".to_owned(),
+            direction: PortDirection::Input,
+        }];
+
+        let status: &dyn BuiltinStatus = &*client;
+        assert_eq!(status.connection(), ConnectionState::Connected);
+
+        client.enabled.store(false, Ordering::Relaxed);
+        assert_eq!(status.connection(), ConnectionState::Disconnected);
+    }
+}

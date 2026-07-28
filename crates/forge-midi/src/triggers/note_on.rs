@@ -304,4 +304,83 @@ mod tests {
         let cfg = BTreeMap::from([("note".to_owned(), Variant::Int(60))]);
         assert_eq!(d.condition_display(&cfg), "note=60");
     }
+
+    #[test]
+    fn device_filter_admits_only_the_named_port() {
+        let d = MidiNoteOnDescriptor;
+        let from_piano = note_on_event(60, 100, 0);
+        let without_port = Event::new(
+            EventSource::Midi,
+            "midi.input.note_on",
+            json!({ "note": 60, "velocity": 100, "channel": 0 }),
+        );
+        let string_device =
+            |name: &str| BTreeMap::from([("device".to_owned(), Variant::String(name.to_owned()))]);
+
+        let cases: [(&str, TriggerConfig, &Event, bool); 4] = [
+            (
+                "device equal to the event port",
+                string_device("Piano"),
+                &from_piano,
+                true,
+            ),
+            (
+                "device different from the event port",
+                string_device("Keystation"),
+                &from_piano,
+                false,
+            ),
+            (
+                "non-string device is not a filter",
+                BTreeMap::from([("device".to_owned(), Variant::Int(5))]),
+                &from_piano,
+                true,
+            ),
+            (
+                "event carries no port name",
+                string_device("Piano"),
+                &without_port,
+                false,
+            ),
+        ];
+
+        for (label, config, event, expected) in cases {
+            assert_eq!(d.matches_trigger(&config, event), expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn condition_display_appends_the_device_after_note_and_channel() {
+        let d = MidiNoteOnDescriptor;
+        let device = || Variant::String("Piano".to_owned());
+        let cases: [(TriggerConfig, &str); 4] = [
+            (
+                BTreeMap::from([("device".to_owned(), device())]),
+                "any note, any channel, device=Piano",
+            ),
+            (
+                BTreeMap::from([
+                    ("note".to_owned(), Variant::Int(60)),
+                    ("device".to_owned(), device()),
+                ]),
+                "note=60, device=Piano",
+            ),
+            (
+                BTreeMap::from([
+                    ("note".to_owned(), Variant::Int(60)),
+                    ("channel".to_owned(), Variant::Int(2)),
+                    ("device".to_owned(), device()),
+                ]),
+                "note=60, ch=2, device=Piano",
+            ),
+            (
+                BTreeMap::from([("device".to_owned(), Variant::Int(5))]),
+                "any note, any channel",
+            ),
+        ];
+
+        for (config, expected) in cases {
+            assert_eq!(d.condition_display(&config), expected);
+        }
+    }
 }

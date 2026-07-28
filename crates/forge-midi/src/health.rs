@@ -128,4 +128,44 @@ mod tests {
         let items: Vec<_> = h.stream().take(0).collect().await;
         assert!(items.is_empty());
     }
+
+    #[test]
+    fn input_port_health_value_masks_the_port_count_while_disabled() {
+        for (enabled, count, expected_primary, expected_secondary) in [
+            (true, 3usize, "3", "connected"),
+            (false, 3, "0", "disabled"),
+        ] {
+            let value = input_port_health_value(enabled, count);
+            assert!(
+                matches!(
+                    &value,
+                    HealthValue::Text { primary, secondary }
+                        if primary == expected_primary
+                            && secondary.as_deref() == Some(expected_secondary)
+                ),
+                "enabled={enabled} count={count} produced {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn metrics_report_the_input_port_slot_as_disabled_when_input_is_off() {
+        let c = MidiClient::new_for_test();
+        c.health_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .input_count = 2;
+        c.enabled.store(false, Ordering::Relaxed);
+
+        let h: &dyn BuiltinHealth = &*c;
+        let input_metric = &h.metrics()[0];
+        assert!(
+            matches!(
+                &input_metric.value,
+                HealthValue::Text { secondary, .. } if secondary.as_deref() == Some("disabled")
+            ),
+            "input metric was {:?}",
+            input_metric.value
+        );
+    }
 }

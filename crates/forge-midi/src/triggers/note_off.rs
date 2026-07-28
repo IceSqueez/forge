@@ -221,7 +221,7 @@ mod tests {
         Event::new(
             EventSource::Midi,
             "midi.input.note_off",
-            json!({ "note": note, "velocity": 0, "channel": channel, "port": "Piano" }),
+            json!({ "note": note, "velocity": 0, "channel": channel, "port_name": "Piano" }),
         )
     }
 
@@ -254,7 +254,7 @@ mod tests {
         let ev = Event::new(
             EventSource::Midi,
             "midi.input.note_on",
-            json!({ "note": 60, "velocity": 100, "channel": 0, "port": "Piano" }),
+            json!({ "note": 60, "velocity": 100, "channel": 0, "port_name": "Piano" }),
         );
         assert!(!d.matches_trigger(&BTreeMap::new(), &ev));
     }

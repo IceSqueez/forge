@@ -1,6 +1,32 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-07-28
+### 🐛 Bug Fixes
+- *(midi)* Exit on closed control channel, skip empty device filter
+- *(ui)* Keep known devices on read failure, rename edited mapping
+- *(ui)* Sync the midi toggle and surface hidden empty states
+- *(ui)* Inset the pad playback bar inside the card rounding
+- *(ui)* Make midi learn exitable and filter mappings by device
+- *(ui)* Size the dropdown menu to the design canon
+- *(ui)* Show a dash when a pad duration is unknown
+
+### 🚀 Features
+- *(midi)* Add engine control, device filter and input monitor feed
+- *(ui)* Rebuild the midi screen to the design canon
+- *(ui)* Add midi learn capture and the mapping modal
+- *(ui)* Add pad hover, elapsed timer and a loop toggle
+
+### 🚜 Refactor
+- *(ui)* Extract pure midi device selection helpers
+
+### 🧪 Testing
+- *(midi)* Cover engine control, device filter and monitor feed
+- *(midi)* Cover signal model, mapping persistence, device filter
+- *(midi)* Fix the mock input handle drop and cover disable teardown
+- *(soundboard)* Cover the pad time readout and total resolution
+- *(midi)* Cover device selection and mapping visibility helpers
+
 ## [0.3.5] - 2026-07-28
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump base64 from 0.22.1 to 0.23.0 (#48)
@@ -8,6 +34,7 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump gpui_platform from v1.11.3 to v1.12.1 (#50)
 - *(deps)* Bump gpui from v1.11.3 to v1.12.1 (#51)
 - *(deps)* Cleanup and bump cargo libs
+- Release
 
 ### 🐛 Bug Fixes
 - *(ui)* Sign out and return to the connect screen on disconnect
@@ -15,6 +42,9 @@ All notable changes to this project will be documented in this file.
 - *(ui)* Show the platform hero on youtube and kick auth screens
 - *(ui)* Drop the eyebrow and sign-in heading from auth screens
 - *(ui)* Show honest empty state instead of the fake placeholder
+
+### 📚 Documentation
+- *(release)* Release v0.3.5
 
 ### 🚀 Features
 - *(vtube)* Add probe, stored endpoint, auth wait and reconnect flag

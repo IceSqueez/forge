@@ -8,7 +8,7 @@
 //! same `$placeholder` names in both locales.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn locale_path(locale: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -191,5 +191,79 @@ fn en_and_uk_reference_the_same_placeholders_in_every_message() {
         diverging.is_empty(),
         "these messages reference different placeholders per locale:\n  {}",
         diverging.join("\n  ")
+    );
+}
+
+/// Scan a Rust source tree for `tr!("key"` literals, tolerating the multi-line call
+/// form the view code uses.
+fn literal_tr_keys(root: &Path) -> BTreeSet<String> {
+    let mut keys = BTreeSet::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let Ok(content) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                collect_tr_keys(&content, &mut keys);
+            }
+        }
+    }
+    keys
+}
+
+fn collect_tr_keys(content: &str, keys: &mut BTreeSet<String>) {
+    let bytes = content.as_bytes();
+    for (index, _) in content.match_indices("tr!(") {
+        // Skip the tail of a longer identifier such as `include_str!(`.
+        if index > 0 && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_') {
+            continue;
+        }
+        let mut cursor = index + "tr!(".len();
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if cursor >= bytes.len() || bytes[cursor] != b'"' {
+            continue;
+        }
+        cursor += 1;
+        let start = cursor;
+        while cursor < bytes.len() && bytes[cursor] != b'"' {
+            cursor += 1;
+        }
+        if cursor < bytes.len() && cursor > start {
+            keys.insert(content[start..cursor].to_owned());
+        }
+    }
+}
+
+#[test]
+fn every_tr_key_used_in_the_source_tree_exists_in_the_catalogs() {
+    let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+
+    let mut used = literal_tr_keys(&crates.join("forge-desktop").join("src"));
+    used.extend(literal_tr_keys(
+        &crates.join("forge-components").join("src"),
+    ));
+
+    // A parser that matched nothing would make the assertion below vacuous.
+    assert!(
+        used.len() > 500,
+        "expected the source tree to reference many keys, found {}",
+        used.len()
+    );
+
+    let defined: BTreeSet<String> = message_keys(&load("en")).into_iter().collect();
+    let missing: Vec<&String> = used.difference(&defined).collect();
+
+    assert!(
+        missing.is_empty(),
+        "these keys are used in code but absent from the catalog: {missing:?}"
     );
 }

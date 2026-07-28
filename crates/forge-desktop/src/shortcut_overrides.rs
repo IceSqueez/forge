@@ -403,6 +403,155 @@ mod tests {
         assert_eq!(after, before);
     }
 
+    fn round_trip(overrides: &ShortcutOverrides) -> ShortcutOverrides {
+        let stored = serde_json::to_string(&overrides.snapshot()).unwrap();
+        let mut restored = ShortcutOverrides::default();
+        restored.replace_stored(Some(&stored));
+        restored
+    }
+
+    #[test]
+    fn a_stored_form_that_predates_per_row_toggles_reads_as_enabled() {
+        let cases = [
+            ("flat map", r#"{"nav.home":"ctrl-9","nav.chat":""}"#),
+            (
+                "object map without the toggle",
+                r#"{"nav.home":{"chord":"ctrl-9"},"nav.chat":{"chord":""}}"#,
+            ),
+        ];
+
+        for (case, raw) in cases {
+            let mut overrides = ShortcutOverrides::default();
+            overrides.replace_stored(Some(raw));
+
+            assert_eq!(chord(&overrides, HOME).as_deref(), Some("ctrl-9"), "{case}");
+            assert_eq!(
+                chord(&overrides, CHAT),
+                None,
+                "{case}: an unbound entry stays unbound"
+            );
+            for id in [HOME, CHAT] {
+                assert!(
+                    overrides.is_enabled(id),
+                    "{case}: {id} was stored before per-row toggles and must read as enabled"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_disabled_shortcut_survives_the_save_and_parse_round_trip() {
+        let mut overrides = ShortcutOverrides::default();
+        overrides.bind(HOME, "ctrl-9".to_owned());
+        overrides.set_enabled(HOME, false);
+        overrides.set_enabled(CHAT, false);
+
+        let restored = round_trip(&overrides);
+
+        assert_eq!(chord(&restored, HOME).as_deref(), Some("ctrl-9"));
+        assert!(!restored.is_enabled(HOME));
+        assert_eq!(
+            chord(&restored, CHAT).as_deref(),
+            Some(CHAT_DEFAULT),
+            "a shortcut disabled without a rebind keeps its default chord"
+        );
+        assert!(!restored.is_enabled(CHAT));
+    }
+
+    #[test]
+    fn an_entry_is_pruned_once_it_reduces_to_the_roster_default_and_enabled() {
+        let mut overrides = ShortcutOverrides::default();
+
+        overrides.set_enabled(HOME, false);
+        assert!(!overrides.is_empty(), "a disabled default must be stored");
+
+        overrides.set_enabled(HOME, true);
+        assert!(
+            overrides.is_empty(),
+            "an entry carrying no chord and no disable is dead weight"
+        );
+    }
+
+    #[test]
+    fn reset_restores_the_default_chord_but_leaves_a_disabled_shortcut_disabled() {
+        let mut overrides = ShortcutOverrides::default();
+        overrides.bind(HOME, "ctrl-9".to_owned());
+        overrides.set_enabled(HOME, false);
+
+        overrides.reset(HOME);
+
+        assert_eq!(chord(&overrides, HOME).as_deref(), Some(HOME_DEFAULT));
+        assert!(!overrides.is_enabled(HOME));
+        assert!(!overrides.is_empty());
+    }
+
+    #[test]
+    fn disabling_a_shortcut_hides_its_chord_from_the_keymap_without_forgetting_it() {
+        let mut overrides = ShortcutOverrides::default();
+        overrides.bind(HOME, "ctrl-9".to_owned());
+
+        overrides.set_enabled(HOME, false);
+        assert_eq!(
+            overrides.keymap_overrides().get(HOME).map(String::as_str),
+            Some(""),
+            "a disabled shortcut must reach the keymap as an unbindable chord"
+        );
+        assert_eq!(
+            chord(&overrides, HOME).as_deref(),
+            Some("ctrl-9"),
+            "the row must still show the chord it will get back"
+        );
+
+        overrides.set_enabled(HOME, true);
+        assert_eq!(
+            overrides.keymap_overrides().get(HOME).map(String::as_str),
+            Some("ctrl-9")
+        );
+    }
+
+    #[test]
+    fn bound_count_counts_only_shortcuts_that_have_a_chord_and_are_enabled() {
+        let mut overrides = ShortcutOverrides::default();
+        assert_eq!(overrides.bound_count(), SHORTCUTS.len());
+
+        overrides.unbind(HOME);
+        assert_eq!(overrides.bound_count(), SHORTCUTS.len() - 1);
+
+        overrides.set_enabled(CHAT, false);
+        assert_eq!(overrides.bound_count(), SHORTCUTS.len() - 2);
+
+        overrides.set_enabled(CHAT, true);
+        assert_eq!(overrides.bound_count(), SHORTCUTS.len() - 1);
+    }
+
+    #[test]
+    fn a_disabled_shortcut_still_owns_its_chord_for_conflict_detection() {
+        let mut overrides = ShortcutOverrides::default();
+        overrides.set_enabled(CHAT, false);
+
+        assert_eq!(
+            overrides.owner_of(CHAT_DEFAULT, HOME),
+            Some(CHAT),
+            "disabling must not silently free the chord for another shortcut to shadow"
+        );
+    }
+
+    #[test]
+    fn an_id_outside_the_roster_never_reaches_a_real_shortcut_or_a_reload() {
+        let mut overrides = ShortcutOverrides::default();
+
+        overrides.set_enabled("nav.gone", false);
+        overrides.bind("nav.gone", "ctrl-9".to_owned());
+
+        assert!(overrides.is_enabled(HOME));
+        assert_eq!(overrides.bound_count(), SHORTCUTS.len());
+        assert!(overrides.keymap_overrides().is_empty());
+        assert!(
+            round_trip(&overrides).is_empty(),
+            "an unknown id must not survive a reload"
+        );
+    }
+
     #[test]
     fn replace_stored_with_no_stored_value_returns_every_shortcut_to_its_default() {
         let mut overrides = ShortcutOverrides::default();

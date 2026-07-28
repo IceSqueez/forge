@@ -2006,4 +2006,80 @@ mod tests {
 
         assert!(rows[0].action.is_none());
     }
+
+    fn mapping_row(name: &str, device: Option<&str>) -> MappingRow {
+        MappingRow {
+            id: TriggerInstanceId::new(),
+            name: name.to_owned(),
+            signal: MidiSignal {
+                kind_id: NOTE_ON_KIND.to_owned(),
+                selector: Some(60),
+                channel: Some(1),
+                device: device.map(str::to_owned),
+            },
+            action: None,
+        }
+    }
+
+    fn devices(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| (*n).to_owned()).collect()
+    }
+
+    #[test]
+    fn visible_mappings_shows_unbound_rows_next_to_the_selected_devices_own_rows() {
+        let rows = vec![
+            mapping_row("keys", Some("Keys")),
+            mapping_row("pad", Some("Pad")),
+            mapping_row("any", None),
+        ];
+
+        for (selected, expected) in [
+            (Some("Keys"), vec!["keys", "any"]),
+            (Some("Pad"), vec!["pad", "any"]),
+            (Some("Ghost"), vec!["any"]),
+            (None, vec!["keys", "pad", "any"]),
+        ] {
+            let names: Vec<&str> = visible_mappings(&rows, selected)
+                .iter()
+                .map(|row| row.name.as_str())
+                .collect();
+            assert_eq!(names, expected, "selected {selected:?}");
+        }
+    }
+
+    #[test]
+    fn resolve_selection_keeps_a_listed_device_and_otherwise_falls_back_to_the_first() {
+        for (known, current, expected) in [
+            (devices(&["A", "B"]), None, Some("A")),
+            (devices(&["A", "B"]), Some("B"), Some("B")),
+            (devices(&["A", "B"]), Some("Gone"), Some("A")),
+            (devices(&[]), Some("A"), None),
+            (devices(&[]), None, None),
+        ] {
+            assert_eq!(
+                resolve_selection(&known, current).as_deref(),
+                expected,
+                "known {known:?} current {current:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn follow_device_switches_only_to_a_known_device_that_is_not_already_selected() {
+        let known = devices(&["A", "B"]);
+
+        for (current, saved, expected) in [
+            (Some("A"), Some("B"), Some("B")),
+            (None, Some("B"), Some("B")),
+            (Some("A"), Some("A"), None),
+            (Some("A"), Some("Ghost"), None),
+            (Some("A"), None, None),
+        ] {
+            assert_eq!(
+                follow_device(&known, current, saved).as_deref(),
+                expected,
+                "current {current:?} saved {saved:?}"
+            );
+        }
+    }
 }

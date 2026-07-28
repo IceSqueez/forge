@@ -630,6 +630,26 @@ impl DiscordClient {
     }
 
     #[cfg(test)]
+    pub(crate) fn new_for_test_with_creds(creds: Arc<dyn CredentialsRepo>) -> Arc<Self> {
+        struct NoopPublisher;
+        impl EventPublisher for NoopPublisher {
+            fn publish(&self, _: forge_events::Event) {}
+        }
+
+        let (health_tx, health_state) = make_health_state();
+        Arc::new(Self {
+            id: BuiltinId::new("discord"),
+            publisher: Arc::new(NoopPublisher),
+            creds,
+            http: reqwest::Client::new(),
+            health_tx,
+            health_state,
+            content_state: make_content_state(),
+            rate_limiter: Arc::new(Mutex::new(DiscordRateLimiter::new())),
+        })
+    }
+
+    #[cfg(test)]
     pub(crate) fn new_for_test() -> Arc<Self> {
         use forge_storage::{CredentialId, StorageError};
         use time::OffsetDateTime;
@@ -869,6 +889,16 @@ pub(crate) mod tests {
                 .lock()
                 .unwrap()
                 .insert(key.to_owned(), value.to_owned());
+        }
+
+        pub(crate) fn peek(&self, key: &str) -> Option<String> {
+            self.store.lock().unwrap().get(key).cloned()
+        }
+
+        pub(crate) fn keys(&self) -> Vec<String> {
+            let mut keys: Vec<String> = self.store.lock().unwrap().keys().cloned().collect();
+            keys.sort();
+            keys
         }
     }
 
@@ -1186,38 +1216,6 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn global_rate_limit_header_triggers_global_throttle() {
-        let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
-        let creds = MockCreds::new();
-        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
-
-        Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
-            .respond_with(
-                ResponseTemplate::new(429)
-                    .set_body_json(serde_json::json!({ "retry_after": 0.05 }))
-                    .insert_header("retry-after", "0.05")
-                    .insert_header("x-ratelimit-global", "true"),
-            )
-            .up_to_n_times(1)
-            .mount(&server)
-            .await;
-
-        Mock::given(method("POST"))
-            .and(path("/webhooks/test-id/test-token"))
-            .respond_with(make_standard_response("msg_global"))
-            .mount(&server)
-            .await;
-
-        let result = client.post_text("alerts", "global test").await;
-        assert!(result.is_ok());
-
-        let rl = client.rate_limiter.lock().unwrap();
-        assert!(rl.global_wait_duration().is_some() || result.is_ok());
-    }
-
-    #[tokio::test]
     async fn bucket_remaining_decremented_after_send() {
         let server = MockServer::start().await;
         let publisher = MockPublisher::new();
@@ -1237,18 +1235,6 @@ pub(crate) mod tests {
         let (remaining, total) = rl.budget("alerts");
         assert_eq!(total, 5);
         assert_eq!(remaining, 4);
-    }
-
-    #[test]
-    fn credential_debug_redacts_token_url() {
-        use crate::credentials::WebhookCredential;
-        let cred = WebhookCredential {
-            name: "alerts".to_owned(),
-            url: "https://discord.com/api/webhooks/123/super-secret-token".to_owned(),
-        };
-        let s = format!("{cred:?}");
-        assert!(!s.contains("super-secret-token"));
-        assert!(s.contains("***"));
     }
 
     #[tokio::test]

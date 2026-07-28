@@ -39,14 +39,16 @@ mod tests {
     }
 
     #[test]
-    fn serde_roundtrip() {
+    fn stored_blob_exposes_the_url_under_the_key_the_loader_reads() {
         let cred = WebhookCredential {
             name: "clips".to_owned(),
             url: "https://discord.com/api/webhooks/999/tok".to_owned(),
         };
-        let json = serde_json::to_string(&cred).unwrap();
-        let back: WebhookCredential = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.name, cred.name);
-        assert_eq!(back.url, cred.url);
+
+        let blob: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&cred).unwrap()).unwrap();
+
+        assert_eq!(blob["name"].as_str(), Some("clips"));
+        assert_eq!(blob["url"].as_str(), Some(cred.url.as_str()));
     }
 }

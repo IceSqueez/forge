@@ -232,63 +232,110 @@ impl BuiltinHealth for DiscordClient {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_platform_core::BuiltinHealth;
-    use tokio_stream::StreamExt as _;
-
     use super::*;
     use crate::client::DiscordClient;
+    use crate::client::tests::MockCreds;
 
-    #[tokio::test]
-    async fn stream_is_subscribable() {
-        let c = DiscordClient::new_for_test();
-        let h: &dyn BuiltinHealth = &*c;
-        let items: Vec<_> = h.stream().take(0).collect().await;
-        assert!(items.is_empty());
+    fn record(client: &DiscordClient, latency_ms: u64, ok: bool, remaining: u64, total: u64) {
+        let mut snap = client.health_state.lock().unwrap();
+        update_on_send(&mut snap, latency_ms, ok, remaining, total, None);
     }
 
     #[test]
-    fn update_on_send_emits_deltas() {
-        let (tx, snap) = make_health_state();
-        let mut rx = tx.subscribe();
-
-        let deltas = {
-            let mut s = snap.lock().unwrap();
-            update_on_send(&mut s, 50, true, 4, 5, None)
-        };
-
-        assert!(!deltas.is_empty());
-        assert!(deltas.iter().any(|d| d.index == 0));
-        assert!(deltas.iter().any(|d| d.index == 2));
-
-        for delta in &deltas {
-            let _ = tx.send(delta.clone());
-        }
-        assert!(rx.try_recv().is_ok());
-    }
-
-    #[test]
-    fn update_on_send_failed_increments_error_count() {
+    fn update_on_send_reports_latency_and_last_result_deltas() {
         let (_tx, snap) = make_health_state();
-        {
-            let mut s = snap.lock().unwrap();
-            update_on_send(&mut s, 100, false, 0, 5, None);
-            assert_eq!(s.error_timestamps.len(), 1);
+
+        let deltas = update_on_send(&mut snap.lock().unwrap(), 50, true, 4, 5, None);
+
+        assert!(deltas.iter().any(|d| d.index == 0), "missing latency delta");
+        assert!(
+            deltas.iter().any(|d| d.index == 2),
+            "missing last-send delta"
+        );
+    }
+
+    #[test]
+    fn update_on_send_rate_limit_delta_carries_the_reset_hint_seconds() {
+        let (_tx, snap) = make_health_state();
+
+        let deltas = update_on_send(
+            &mut snap.lock().unwrap(),
+            10,
+            true,
+            3,
+            5,
+            Some("12".to_owned()),
+        );
+
+        let hint = deltas
+            .iter()
+            .find_map(|d| match &d.new_value {
+                HealthValue::Ratio { reset_hint, .. } => reset_hint.clone(),
+                _ => None,
+            })
+            .unwrap_or_default();
+        assert!(hint.contains("12"), "reset hint lost the seconds: {hint:?}");
+    }
+
+    #[test]
+    fn update_on_send_records_a_timestamp_only_for_a_failed_send() {
+        let (_tx, snap) = make_health_state();
+        let mut snap = snap.lock().unwrap();
+
+        update_on_send(&mut snap, 10, true, 4, 5, None);
+        assert!(snap.error_timestamps.is_empty());
+
+        update_on_send(&mut snap, 100, false, 3, 5, None);
+        assert_eq!(snap.error_timestamps.len(), 1);
+    }
+
+    #[test]
+    fn compute_p50_returns_the_upper_median_of_the_sample_window() {
+        for (samples, expected) in [
+            (vec![], None),
+            (vec![42], Some(42)),
+            (vec![10, 30, 20, 50, 40], Some(30)),
+            (vec![40, 10, 30, 20], Some(30)),
+        ] {
+            let queue: VecDeque<u64> = samples.iter().copied().collect();
+            assert_eq!(compute_p50(&queue), expected, "samples {samples:?}");
         }
     }
 
     #[test]
-    fn p50_of_single_element() {
-        let mut q = VecDeque::new();
-        q.push_back(42u64);
-        assert_eq!(compute_p50(&q), Some(42));
+    fn send_health_before_any_send_reports_no_samples() {
+        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+
+        let health = client.send_health();
+
+        assert_eq!(health.latency_p50_ms, None);
+        assert_eq!(health.latency_samples, 0);
+        assert_eq!(health.last_send_ok, None);
+        assert_eq!(health.errors_last_hour, 0);
     }
 
     #[test]
-    fn p50_of_odd_count() {
-        let mut q = VecDeque::new();
-        for v in [10, 30, 20, 50, 40] {
-            q.push_back(v);
-        }
-        assert_eq!(compute_p50(&q), Some(30));
+    fn send_health_projects_latency_budget_and_last_result_of_recorded_sends() {
+        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        record(&client, 10, true, 4, 5);
+        record(&client, 90, true, 3, 5);
+        record(&client, 50, false, 2, 5);
+
+        let health = client.send_health();
+
+        assert_eq!(health.latency_p50_ms, Some(50));
+        assert_eq!(health.latency_samples, 3);
+        assert_eq!(health.rate_limit_used, 3);
+        assert_eq!(health.rate_limit_total, 5);
+        assert_eq!(health.last_send_ok, Some(false));
+        assert_eq!(health.errors_last_hour, 1);
+    }
+
+    #[test]
+    fn send_health_rate_limit_used_stays_zero_when_remaining_exceeds_total() {
+        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        record(&client, 10, true, 9, 5);
+
+        assert_eq!(client.send_health().rate_limit_used, 0);
     }
 }

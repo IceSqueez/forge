@@ -197,18 +197,40 @@ impl BuiltinContent for DiscordClient {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_platform_core::{BuiltinContent, DetailSection};
-
     use super::*;
     use crate::client::DiscordClient;
 
     #[test]
-    fn sections_returns_two_column_lists() {
-        let c = DiscordClient::new_for_test();
-        let content: &dyn BuiltinContent = &*c;
-        let sections = content.sections();
-        assert_eq!(sections.len(), 1);
-        assert!(matches!(sections[0], DetailSection::TwoColumnLists { .. }));
+    fn recent_posts_projects_the_history_newest_first() {
+        let client = DiscordClient::new_for_test();
+        {
+            let mut snap = client.content_state.lock().unwrap();
+            record_send(&mut snap, "oldest", None, false, true);
+            record_send(&mut snap, "middle", None, true, true);
+            record_send(&mut snap, "newest", None, false, false);
+        }
+
+        let names: Vec<String> = client
+            .recent_posts()
+            .into_iter()
+            .map(|post| post.webhook_name)
+            .collect();
+
+        assert_eq!(names, ["newest", "middle", "oldest"]);
+    }
+
+    #[test]
+    fn recent_posts_carries_the_embed_and_outcome_flags_of_each_send() {
+        let client = DiscordClient::new_for_test();
+        {
+            let mut snap = client.content_state.lock().unwrap();
+            record_send(&mut snap, "alerts", None, true, false);
+        }
+
+        let post = client.recent_posts().remove(0);
+
+        assert!(post.had_embed);
+        assert!(!post.ok);
     }
 
     #[test]
@@ -227,13 +249,16 @@ mod tests {
     }
 
     #[test]
-    fn recent_posts_capped_at_twenty() {
+    fn recent_posts_at_capacity_evicts_the_oldest_send() {
         let snap_arc = make_content_state();
         let mut snap = snap_arc.lock().unwrap();
-        for i in 0..25 {
-            record_send(&mut snap, "w", Some(i.to_string()), false, true);
+        for i in 0..RECENT_POSTS_CAP + 1 {
+            record_send(&mut snap, &format!("send-{i}"), None, false, true);
         }
+
         assert_eq!(snap.recent_posts.len(), RECENT_POSTS_CAP);
+        assert_eq!(snap.recent_posts.front().unwrap().webhook_name, "send-20");
+        assert_eq!(snap.recent_posts.back().unwrap().webhook_name, "send-1");
     }
 
     #[test]

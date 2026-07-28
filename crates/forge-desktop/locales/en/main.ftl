@@ -1913,8 +1913,7 @@ hotkeys_unassigned = Unassigned - pick an action
 hotkeys_scope_global = Global
 hotkeys_scope_app = App
 hotkeys_scope_unregistered = Not registered
-hotkeys_menu_rebind = Rebind...
-hotkeys_menu_change_action = Change action...
+hotkeys_menu_edit = Edit...
 hotkeys_menu_reset_default = Reset to default
 hotkeys_add_binding = Add hotkey
 hotkeys_add_binding_kbd = capture
@@ -1935,6 +1934,7 @@ hotkeys_conflict_replace = Replace
 
 hotkeys_modal_title_add = Bind hotkey
 hotkeys_modal_title_edit = Edit hotkey
+hotkeys_app_modal_subtitle = In-app shortcut
 hotkeys_modal_subtitle_captured = Captured combination
 hotkeys_modal_section_combo = Combination
 hotkeys_modal_section_action = Action

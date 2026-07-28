@@ -1941,8 +1941,7 @@ hotkeys_unassigned = Не призначено - обери дію
 hotkeys_scope_global = Глобальна
 hotkeys_scope_app = Застосунок
 hotkeys_scope_unregistered = Не зареєстровано
-hotkeys_menu_rebind = Перепризначити...
-hotkeys_menu_change_action = Змінити дію...
+hotkeys_menu_edit = Редагувати...
 hotkeys_menu_reset_default = Скинути до типової
 hotkeys_add_binding = Додати гарячу клавішу
 hotkeys_add_binding_kbd = захопити
@@ -1963,6 +1962,7 @@ hotkeys_conflict_replace = Замінити
 
 hotkeys_modal_title_add = Прив'язати гарячу клавішу
 hotkeys_modal_title_edit = Редагувати гарячу клавішу
+hotkeys_app_modal_subtitle = Скорочення в застосунку
 hotkeys_modal_subtitle_captured = Захоплена комбінація
 hotkeys_modal_section_combo = Комбінація
 hotkeys_modal_section_action = Дія

@@ -4,10 +4,11 @@ use std::sync::Arc;
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{SettingsRepo, set_json_setting};
 use gpui::{App, Keystroke};
+use serde::{Deserialize, Serialize};
 
 use crate::actions::{
     SHORTCUTS, ShortcutEntry, canonical_chord, chord_is_bindable, effective_chord,
-    parse_stored_overrides, reapply_key_bindings,
+    parse_stored_overrides, reapply_key_bindings, shortcut_entry,
 };
 
 pub enum ChordVerdict {
@@ -20,35 +21,115 @@ pub enum ChordVerdict {
     Free(String),
 }
 
+fn enabled_by_default() -> bool {
+    true
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OverrideEntry {
+    /// Absent means the roster default; a stored-but-unbindable chord means explicitly unbound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    chord: Option<String>,
+    #[serde(default = "enabled_by_default")]
+    enabled: bool,
+}
+
+impl Default for OverrideEntry {
+    fn default() -> Self {
+        Self {
+            chord: None,
+            enabled: true,
+        }
+    }
+}
+
+impl OverrideEntry {
+    fn is_default(&self) -> bool {
+        self.chord.is_none() && self.enabled
+    }
+}
+
+fn parse_entries(raw: &str) -> HashMap<String, OverrideEntry> {
+    let known = |id: &String| SHORTCUTS.iter().any(|entry| entry.id == id);
+    if let Ok(map) = serde_json::from_str::<HashMap<String, OverrideEntry>>(raw) {
+        return map.into_iter().filter(|(id, _)| known(id)).collect();
+    }
+    parse_stored_overrides(raw)
+        .into_iter()
+        .map(|(id, chord)| {
+            (
+                id,
+                OverrideEntry {
+                    chord: Some(chord),
+                    enabled: true,
+                },
+            )
+        })
+        .collect()
+}
+
 #[derive(Default)]
 pub struct ShortcutOverrides {
-    map: HashMap<String, String>,
+    map: HashMap<String, OverrideEntry>,
 }
 
 impl ShortcutOverrides {
     pub fn replace_stored(&mut self, raw: Option<&str>) {
-        self.map = raw.map(parse_stored_overrides).unwrap_or_default();
+        self.map = raw.map(parse_entries).unwrap_or_default();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 
     pub fn chord_of(&self, entry: &'static ShortcutEntry) -> Option<&str> {
-        effective_chord(&self.map, entry)
+        match self
+            .map
+            .get(entry.id)
+            .and_then(|stored| stored.chord.as_deref())
+        {
+            Some(chord) if chord_is_bindable(chord) => Some(chord),
+            Some(_) => None,
+            None => Some(entry.default_chord),
+        }
+    }
+
+    pub fn is_enabled(&self, id: &str) -> bool {
+        self.map.get(id).is_none_or(|stored| stored.enabled)
     }
 
     pub fn is_overridden(&self, id: &str) -> bool {
-        self.map.contains_key(id)
+        self.map
+            .get(id)
+            .is_some_and(|stored| stored.chord.is_some())
+    }
+
+    /// Flat `id -> chord` overrides for the keymap: a disabled shortcut is stored as an unbindable chord so it never reaches `cx.bind_keys`.
+    fn keymap_overrides(&self) -> HashMap<String, String> {
+        SHORTCUTS
+            .iter()
+            .filter_map(|entry| {
+                if !self.is_enabled(entry.id) {
+                    return Some((entry.id.to_owned(), String::new()));
+                }
+                let chord = self.map.get(entry.id)?.chord.clone()?;
+                Some((entry.id.to_owned(), chord))
+            })
+            .collect()
     }
 
     pub fn bound_count(&self) -> usize {
+        let keymap = self.keymap_overrides();
         SHORTCUTS
             .iter()
-            .filter(|entry| self.chord_of(entry).is_some())
+            .filter(|entry| effective_chord(&keymap, entry).is_some())
             .count()
     }
 
     pub fn owner_of(&self, chord: &str, exclude: &str) -> Option<&'static str> {
         SHORTCUTS
             .iter()
-            .find(|entry| entry.id != exclude && effective_chord(&self.map, entry) == Some(chord))
+            .find(|entry| entry.id != exclude && self.chord_of(entry) == Some(chord))
             .map(|entry| entry.id)
     }
 
@@ -65,25 +146,39 @@ impl ShortcutOverrides {
         }
     }
 
-    pub fn bind(&mut self, id: &str, chord: String) {
-        let default = SHORTCUTS
-            .iter()
-            .find(|entry| entry.id == id)
-            .map(|entry| entry.default_chord);
-        if default == Some(chord.as_str()) {
+    fn entry_mut(&mut self, id: &str) -> &mut OverrideEntry {
+        self.map.entry(id.to_owned()).or_default()
+    }
+
+    fn prune(&mut self, id: &str) {
+        if self.map.get(id).is_some_and(OverrideEntry::is_default) {
             self.map.remove(id);
-        } else {
-            self.map.insert(id.to_owned(), chord);
         }
     }
 
-    /// Stores an unbindable chord, which `effective_chord` reads back as "no chord" without losing the entry.
+    pub fn bind(&mut self, id: &str, chord: String) {
+        let default = shortcut_entry(id).map(|entry| entry.default_chord);
+        self.entry_mut(id).chord = if default == Some(chord.as_str()) {
+            None
+        } else {
+            Some(chord)
+        };
+        self.prune(id);
+    }
+
+    /// Stores an unbindable chord, which `chord_of` reads back as "no chord" without losing the entry.
     pub fn unbind(&mut self, id: &str) {
-        self.map.insert(id.to_owned(), String::new());
+        self.entry_mut(id).chord = Some(String::new());
+    }
+
+    pub fn set_enabled(&mut self, id: &str, enabled: bool) {
+        self.entry_mut(id).enabled = enabled;
+        self.prune(id);
     }
 
     pub fn reset(&mut self, id: &str) {
-        self.map.remove(id);
+        self.entry_mut(id).chord = None;
+        self.prune(id);
     }
 
     pub fn reset_all(&mut self) {
@@ -91,17 +186,17 @@ impl ShortcutOverrides {
     }
 
     pub fn apply(&self, cx: &mut App) {
-        reapply_key_bindings(cx, &self.map);
+        reapply_key_bindings(cx, &self.keymap_overrides());
     }
 
-    pub fn snapshot(&self) -> HashMap<String, String> {
+    pub fn snapshot(&self) -> HashMap<String, OverrideEntry> {
         self.map.clone()
     }
 }
 
 pub async fn save_overrides(
     repo: Arc<dyn SettingsRepo>,
-    map: HashMap<String, String>,
+    map: HashMap<String, OverrideEntry>,
 ) -> Result<(), String> {
     set_json_setting(repo.as_ref(), KEYBOARD_SHORTCUTS, &map)
         .await

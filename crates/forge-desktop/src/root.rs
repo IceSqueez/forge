@@ -397,11 +397,12 @@ fn apply_persisted_shortcuts(
         let Ok(Ok(Some(raw))) = rx.await else {
             return;
         };
-        let overrides = crate::actions::parse_stored_overrides(&raw);
+        let mut overrides = crate::shortcut_overrides::ShortcutOverrides::default();
+        overrides.replace_stored(Some(&raw));
         if overrides.is_empty() {
             return;
         }
-        cx.update(|cx| crate::actions::reapply_key_bindings(cx, &overrides));
+        cx.update(|cx| overrides.apply(cx));
     })
     .detach();
 }

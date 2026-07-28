@@ -19,6 +19,7 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, chord_caps, shortcut_entry};
+use crate::app_shortcut_modal::{AppShortcutModal, AppShortcutModalEvent};
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
 use crate::hotkey_action_modal::{
     ActionModalLaunch, BindingDraft, HotkeyActionModal, HotkeyActionModalEvent, keycaps,
@@ -113,6 +114,7 @@ enum Capture {
     Rebind(TriggerInstanceId),
     Modal(Option<TriggerInstanceId>),
     App(&'static str),
+    AppModal(&'static str),
 }
 
 impl Capture {
@@ -153,6 +155,12 @@ struct OpenModal {
     _sub: Subscription,
 }
 
+struct OpenAppModal {
+    id: &'static str,
+    view: Entity<AppShortcutModal>,
+    _sub: Subscription,
+}
+
 pub struct HotkeysScreenView {
     client: Arc<HotkeyClient>,
     backend: Arc<dyn DataProvider>,
@@ -168,6 +176,7 @@ pub struct HotkeysScreenView {
     conflict: Option<ConflictPrompt>,
     delete_prompt: Option<DeletePrompt>,
     modal: Option<OpenModal>,
+    app_modal: Option<OpenAppModal>,
     menu_open: Option<RowKey>,
     menu_click_pos: Option<Point<Pixels>>,
     overlay_focus: FocusHandle,
@@ -200,6 +209,7 @@ impl HotkeysScreenView {
             conflict: None,
             delete_prompt: None,
             modal: None,
+            app_modal: None,
             menu_open: None,
             menu_click_pos: None,
             overlay_focus: cx.focus_handle(),
@@ -406,7 +416,7 @@ impl HotkeysScreenView {
             self.cancel_capture(cx);
             return true;
         }
-        if let Capture::App(id) = self.capture {
+        if let Capture::App(id) | Capture::AppModal(id) = self.capture {
             self.on_app_capture(id, &keystroke, cx);
             return true;
         }
@@ -418,10 +428,12 @@ impl HotkeysScreenView {
     }
 
     fn on_app_capture(&mut self, id: &'static str, keystroke: &Keystroke, cx: &mut Context<Self>) {
+        let capture = self.capture;
         match self.shortcuts.verdict(keystroke, id) {
             ChordVerdict::Unusable => {}
             ChordVerdict::NeedsModifier => {
                 self.end_capture();
+                self.stop_app_modal_capture(cx);
                 cx.push_toast(
                     ToastKind::Warn,
                     tr!("settings_shortcuts_error_needs_modifier"),
@@ -435,14 +447,14 @@ impl HotkeysScreenView {
                     holder: shortcut_entry(owner_id)
                         .map(|entry| tr!(entry.label_key))
                         .unwrap_or_default(),
-                    capture: Capture::App(id),
+                    capture,
                     app_owner: Some(owner_id),
                 });
                 cx.notify();
             }
             ChordVerdict::Free(chord) => {
                 self.end_capture();
-                self.apply_capture(Capture::App(id), chord, cx);
+                self.apply_capture(capture, chord, cx);
             }
         }
     }
@@ -452,6 +464,12 @@ impl HotkeysScreenView {
         self.capture_sub = None;
     }
 
+    fn stop_app_modal_capture(&mut self, cx: &mut Context<Self>) {
+        if let Some(open) = &self.app_modal {
+            open.view.update(cx, |modal, cx| modal.cancel_capture(cx));
+        }
+    }
+
     fn cancel_capture(&mut self, cx: &mut Context<Self>) {
         let capture = std::mem::replace(&mut self.capture, Capture::Off);
         self.capture_sub = None;
@@ -459,6 +477,9 @@ impl HotkeysScreenView {
             && let Some(open) = &self.modal
         {
             open.view.update(cx, |modal, cx| modal.cancel_capture(cx));
+        }
+        if matches!(capture, Capture::AppModal(_)) {
+            self.stop_app_modal_capture(cx);
         }
         cx.notify();
     }
@@ -503,6 +524,13 @@ impl HotkeysScreenView {
             Capture::App(id) => {
                 self.shortcuts.bind(id, combo);
                 self.persist_shortcuts(cx);
+            }
+            Capture::AppModal(_) => {
+                if let Some(open) = &self.app_modal {
+                    open.view
+                        .update(cx, |modal, cx| modal.apply_capture(combo, cx));
+                }
+                cx.notify();
             }
         }
     }
@@ -550,6 +578,9 @@ impl HotkeysScreenView {
             && let Some(open) = &self.modal
         {
             open.view.update(cx, |modal, cx| modal.cancel_capture(cx));
+        }
+        if matches!(prompt.capture, Capture::AppModal(_)) {
+            self.stop_app_modal_capture(cx);
         }
         cx.notify();
     }
@@ -752,6 +783,57 @@ impl HotkeysScreenView {
         self.menu_open = None;
         self.shortcuts.reset(id);
         self.persist_shortcuts(cx);
+    }
+
+    fn toggle_app_binding(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        let enabled = !self.shortcuts.is_enabled(id);
+        self.shortcuts.set_enabled(id, enabled);
+        self.persist_shortcuts(cx);
+    }
+
+    fn edit_app_binding(&mut self, entry: &'static ShortcutEntry, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        let chord = self.shortcuts.chord_of(entry).map(str::to_owned);
+        let view = cx.new(|_| AppShortcutModal::new(entry, chord));
+        let sub = cx.subscribe(&view, Self::on_app_modal_event);
+        self.app_modal = Some(OpenAppModal {
+            id: entry.id,
+            view,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    fn on_app_modal_event(
+        &mut self,
+        _view: Entity<AppShortcutModal>,
+        event: &AppShortcutModalEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(id) = self.app_modal.as_ref().map(|open| open.id) else {
+            return;
+        };
+        match event {
+            AppShortcutModalEvent::Recapture => self.start_capture(Capture::AppModal(id), cx),
+            AppShortcutModalEvent::Cancel => self.close_app_modal(cx),
+            AppShortcutModalEvent::Save(chord) => {
+                let chord = chord.clone();
+                self.close_app_modal(cx);
+                match chord {
+                    Some(chord) => self.shortcuts.bind(id, chord),
+                    None => self.shortcuts.unbind(id),
+                }
+                self.persist_shortcuts(cx);
+            }
+        }
+    }
+
+    fn close_app_modal(&mut self, cx: &mut Context<Self>) {
+        self.app_modal = None;
+        if matches!(self.capture, Capture::AppModal(_)) {
+            self.end_capture();
+        }
+        cx.notify();
     }
 
     fn toggle_menu(&mut self, key: RowKey, position: Point<Pixels>, cx: &mut Context<Self>) {
@@ -959,6 +1041,7 @@ impl HotkeysScreenView {
             return self.render_capture_row(palette, cx);
         }
         let id = entry.id;
+        let enabled = self.shortcuts.is_enabled(id);
         let chord = self.shortcuts.chord_of(entry);
         let dot_color = if chord.is_some() {
             palette.brand
@@ -1016,16 +1099,21 @@ impl HotkeysScreenView {
                     .text_color(palette.text_primary)
                     .child(tr!(entry.label_key)),
             )
+            .child(toggle(enabled, palette).on_click(
+                ("hotkeys-app-toggle", index),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_app_binding(id, cx)),
+            ))
             .child(self.render_app_menu(index, entry, palette, cx));
 
-        div()
-            .w_full()
-            .child(
-                card(body, palette)
-                    .padding_xy(ROW_PAD_V, ROW_PAD_H)
-                    .full_width(),
-            )
-            .into_any_element()
+        let mut wrapper = div().w_full().child(
+            card(body, palette)
+                .padding_xy(ROW_PAD_V, ROW_PAD_H)
+                .full_width(),
+        );
+        if !enabled {
+            wrapper = wrapper.opacity(ROW_OFF_OPACITY);
+        }
+        wrapper.into_any_element()
     }
 
     fn render_app_menu(
@@ -1040,13 +1128,11 @@ impl HotkeysScreenView {
         let view = cx.entity();
         let mut items = vec![
             menu_item(
-                ("hotkeys-app-rebind", index),
-                tr!("hotkeys_menu_rebind"),
-                cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.start_capture(Capture::App(id), cx)
-                }),
+                ("hotkeys-app-edit", index),
+                tr!("hotkeys_menu_edit"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.edit_app_binding(entry, cx)),
             )
-            .icon(Icon::Keyboard)
+            .icon(Icon::Edit)
             .into(),
         ];
         if self.shortcuts.is_overridden(id) {
@@ -1183,17 +1269,8 @@ impl HotkeysScreenView {
             .open_at(self.menu_click_pos)
             .items(vec![
                 menu_item(
-                    ("hotkeys-menu-rebind", index),
-                    tr!("hotkeys_menu_rebind"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.start_capture(Capture::Rebind(instance_id), cx)
-                    }),
-                )
-                .icon(Icon::Keyboard)
-                .into(),
-                menu_item(
-                    ("hotkeys-menu-action", index),
-                    tr!("hotkeys_menu_change_action"),
+                    ("hotkeys-menu-edit", index),
+                    tr!("hotkeys_menu_edit"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.change_action(instance_id, cx)
                     }),
@@ -1595,6 +1672,7 @@ impl Render for HotkeysScreenView {
             .bg(palette.base)
             .child(frame)
             .children(self.modal.as_ref().map(|open| open.view.clone()))
+            .children(self.app_modal.as_ref().map(|open| open.view.clone()))
             .children(prompt)
     }
 }

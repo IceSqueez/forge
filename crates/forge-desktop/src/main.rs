@@ -1,5 +1,6 @@
 mod actions;
 mod actions_screen;
+mod app_shortcut_modal;
 mod async_bridge;
 mod boot;
 mod builtin_sections;

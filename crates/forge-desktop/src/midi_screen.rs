@@ -7,31 +7,31 @@ use forge_components::{
     menu_divider, menu_item, mono_family, page_frame, status_dot, toggle, tr,
 };
 use forge_midi::{MidiClient, MidiMonitorEvent};
+use forge_runtime::EventBus;
 use forge_storage::{
     ActionRepo, SettingsRepo, TriggerInstanceRepo, get_json_setting, set_bool_setting,
     set_json_setting,
 };
-use forge_types::{TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
+use forge_types::{ActionId, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Pixels, Point, Rgba, SharedString, Task, Window, div,
-    prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, Rgba, SharedString, Subscription,
+    Task, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, ErrorSink};
+use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
 use crate::builtin_sections::grow_cell;
+use crate::midi_mapping_modal::{
+    MappingDraft, MappingModalLaunch, MidiMappingModal, MidiMappingModalEvent,
+};
+use crate::midi_signal::{MIDI_INPUT_PREFIX, MidiSignal, kind_color, note_name};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
 pub const MIDI_ENABLED_KEY: &str = "midi.enabled";
 pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
 
-const MIDI_INPUT_PREFIX: &str = "midi.input.";
-const NOTE_ON_KIND: &str = "midi.input.note_on";
-const NOTE_OFF_KIND: &str = "midi.input.note_off";
-const CONTROL_CHANGE_KIND: &str = "midi.input.control_change";
-const PITCH_BEND_KIND: &str = "midi.input.pitch_bend";
-const PROGRAM_CHANGE_KIND: &str = "midi.input.program_change";
+const MIDI_PORT_PREFIX: &str = "midi.port.";
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -106,53 +106,12 @@ const FOOTER_PAD_V: Pixels = px(7.0);
 const FOOTER_PAD_H: Pixels = px(14.0);
 const FOOTER_MT: Pixels = px(14.0);
 
-const PORT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const LEARN_PAD_V: Pixels = px(11.0);
+const LEARN_GAP: Pixels = px(8.0);
+const LEARN_GLYPH: Pixels = px(14.0);
+const LEARN_CANCEL_ML: Pixels = px(6.0);
+
 const UNDO_TOAST_MS: u64 = 6000;
-
-const NOTE_NAMES: [&str; 12] = [
-    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-];
-
-/// Middle C (MIDI note 60) is named C4.
-fn note_name(note: i64) -> String {
-    let clamped = note.clamp(0, 127);
-    let octave = clamped / 12 - 1;
-    let name = NOTE_NAMES[(clamped % 12) as usize];
-    format!("{name}{octave}")
-}
-
-fn config_int(config: &TriggerConfig, key: &str) -> Option<i64> {
-    match config.get(key) {
-        Some(Variant::Int(n)) => Some(*n),
-        _ => None,
-    }
-}
-
-fn config_text(config: &TriggerConfig, key: &str) -> Option<String> {
-    match config.get(key) {
-        Some(Variant::String(s)) if !s.is_empty() => Some(s.clone()),
-        _ => None,
-    }
-}
-
-fn selector_of(kind_id: &str, config: &TriggerConfig) -> Option<i64> {
-    match kind_id {
-        NOTE_ON_KIND | NOTE_OFF_KIND => config_int(config, "note"),
-        CONTROL_CHANGE_KIND => config_int(config, "controller"),
-        PROGRAM_CHANGE_KIND => config_int(config, "program"),
-        _ => None,
-    }
-}
-
-fn kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
-    match kind_id {
-        NOTE_ON_KIND => palette.success,
-        NOTE_OFF_KIND => palette.text_faint,
-        CONTROL_CHANGE_KIND | PITCH_BEND_KIND => palette.info,
-        PROGRAM_CHANGE_KIND => palette.brand,
-        _ => palette.text_faint,
-    }
-}
 
 fn monitor_color(kind: &str, palette: &ForgePalette) -> Rgba {
     match kind {
@@ -200,40 +159,9 @@ fn monitor_value_label(event: &MidiMonitorEvent) -> String {
 
 struct MappingRow {
     id: TriggerInstanceId,
-    kind_id: String,
     name: String,
-    selector: Option<i64>,
-    channel: Option<i64>,
-    device: Option<String>,
-    action_name: Option<String>,
-}
-
-impl MappingRow {
-    fn signature(&self) -> String {
-        let value = match self.selector {
-            Some(n) if self.kind_id == NOTE_ON_KIND || self.kind_id == NOTE_OFF_KIND => {
-                note_name(n)
-            }
-            Some(n) => n.to_string(),
-            None => tr!("midi_value_any"),
-        };
-        match self.kind_id.as_str() {
-            NOTE_ON_KIND => format!("Note {value}"),
-            NOTE_OFF_KIND => format!("NoteOff {value}"),
-            CONTROL_CHANGE_KIND => format!("CC {value}"),
-            PROGRAM_CHANGE_KIND => format!("PC {value}"),
-            PITCH_BEND_KIND => "Pitch".to_owned(),
-            other => other.to_owned(),
-        }
-    }
-
-    fn channel_label(&self) -> String {
-        let value = match self.channel {
-            Some(channel) => channel.to_string(),
-            None => tr!("midi_value_any"),
-        };
-        format!("ch {value}")
-    }
+    signal: MidiSignal,
+    action: Option<(ActionId, String)>,
 }
 
 async fn load_mappings(
@@ -250,23 +178,95 @@ async fn load_mappings(
             .actions_using(instance.id)
             .await
             .map_err(|e| e.to_string())?;
-        let mut action_name = None;
+        let mut action = None;
         if let Some(first) = linked.first()
-            && let Some(action) = actions.get(*first).await.map_err(|e| e.to_string())?
+            && let Some(found) = actions.get(*first).await.map_err(|e| e.to_string())?
         {
-            action_name = Some(action.name);
+            action = Some((found.id, found.name));
         }
         rows.push(MappingRow {
-            selector: selector_of(&instance.kind_id, &instance.overrides),
-            channel: config_int(&instance.overrides, "channel"),
-            device: config_text(&instance.overrides, "device"),
+            signal: MidiSignal::from_instance(&instance.kind_id, &instance.overrides),
             id: instance.id,
-            kind_id: instance.kind_id,
             name: instance.name,
-            action_name,
+            action,
         });
     }
     Ok(rows)
+}
+
+async fn save_mapping(
+    triggers: &dyn TriggerInstanceRepo,
+    actions: &dyn ActionRepo,
+    draft: MappingDraft,
+) -> Result<Vec<MappingRow>, String> {
+    let overrides = draft.signal.overrides();
+    let instance_id = match draft.instance_id {
+        Some(id) => {
+            let source = triggers
+                .get(id)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "trigger instance not found".to_owned())?;
+            let updated = TriggerInstance {
+                kind_id: draft.signal.kind_id.clone(),
+                overrides,
+                ..source
+            };
+            triggers.save(&updated).await.map_err(|e| e.to_string())?;
+            id
+        }
+        None => {
+            let instance = TriggerInstance {
+                id: TriggerInstanceId::new(),
+                kind_id: draft.signal.kind_id.clone(),
+                name: draft.name,
+                overrides,
+                enabled: true,
+                user_defined: true,
+                platform_scope: PlatformScope::Any,
+                cooldown_secs: 0,
+                cooldown_global: true,
+            };
+            triggers.save(&instance).await.map_err(|e| e.to_string())?;
+            instance.id
+        }
+    };
+
+    let linked = triggers
+        .actions_using(instance_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !linked.contains(&draft.action_id) {
+        for previous in linked {
+            triggers
+                .unlink_action(previous, instance_id)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        let position = triggers
+            .list_for_action(draft.action_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .len() as i64;
+        triggers
+            .link_action(draft.action_id, instance_id, position)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    load_mappings(triggers, actions).await
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Capture {
+    Off,
+    Learn,
+    Relearn,
+}
+
+struct OpenModal {
+    view: Entity<MidiMappingModal>,
+    _sub: Subscription,
 }
 
 pub struct MidiScreenView {
@@ -280,10 +280,12 @@ pub struct MidiScreenView {
     known_devices: Vec<String>,
     monitor: Vec<MidiMonitorEvent>,
     mappings: Vec<MappingRow>,
+    capture: Capture,
+    modal: Option<OpenModal>,
     menu_open: Option<TriggerInstanceId>,
     menu_click_pos: Option<Point<Pixels>>,
     _monitor_bridge: Task<()>,
-    _port_poll: Task<()>,
+    _port_bridge: Task<()>,
 }
 
 impl MidiScreenView {
@@ -292,11 +294,12 @@ impl MidiScreenView {
         trigger_repo: Arc<dyn TriggerInstanceRepo>,
         action_repo: Arc<dyn ActionRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
+        bus: Arc<EventBus>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
         let monitor_bridge = Self::spawn_monitor_bridge(&client, &rt_handle, cx);
-        let port_poll = Self::spawn_port_poll(cx);
+        let port_bridge = Self::spawn_port_bridge(bus, cx);
         let mut view = Self {
             enabled: client.is_enabled(),
             live_ports: client.connected_input_ports(),
@@ -308,10 +311,12 @@ impl MidiScreenView {
             known_devices: Vec::new(),
             monitor: Vec::new(),
             mappings: Vec::new(),
+            capture: Capture::Off,
+            modal: None,
             menu_open: None,
             menu_click_pos: None,
             _monitor_bridge: monitor_bridge,
-            _port_poll: port_poll,
+            _port_bridge: port_bridge,
         };
         view.load(cx);
         view
@@ -343,14 +348,21 @@ impl MidiScreenView {
         })
     }
 
-    fn spawn_port_poll(cx: &mut Context<Self>) -> Task<()> {
+    fn spawn_port_bridge(bus: Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(PORT_POLL_INTERVAL).await;
-                if this.update(cx, |this, cx| this.refresh_ports(cx)).is_err() {
-                    break;
+            drain_events(&bus, cx, move |batch, cx| {
+                let touched = batch
+                    .iter()
+                    .any(|event| event.kind.starts_with(MIDI_PORT_PREFIX));
+                if !touched {
+                    return BridgeFlow::Continue;
                 }
-            }
+                match this.update(cx, |this, cx| this.refresh_ports(cx)) {
+                    Ok(()) => BridgeFlow::Continue,
+                    Err(_) => BridgeFlow::Stop,
+                }
+            })
+            .await;
         })
     }
 
@@ -393,9 +405,118 @@ impl MidiScreenView {
     }
 
     fn push_monitor(&mut self, event: MidiMonitorEvent, cx: &mut Context<Self>) {
+        if self.capture != Capture::Off
+            && let Some(signal) = MidiSignal::from_monitor(&event)
+        {
+            self.on_capture(signal, cx);
+        }
         self.monitor.insert(0, event);
         self.monitor.truncate(MONITOR_ROWS);
         cx.notify();
+    }
+
+    fn on_capture(&mut self, signal: MidiSignal, cx: &mut Context<Self>) {
+        let capture = std::mem::replace(&mut self.capture, Capture::Off);
+        match capture {
+            Capture::Off => {}
+            Capture::Learn => self.open_modal(None, signal, None, cx),
+            Capture::Relearn => {
+                if let Some(open) = &self.modal {
+                    open.view
+                        .update(cx, |modal, cx| modal.apply_capture(signal, cx));
+                }
+            }
+        }
+    }
+
+    fn start_learn(&mut self, cx: &mut Context<Self>) {
+        self.capture = Capture::Learn;
+        cx.notify();
+    }
+
+    fn cancel_learn(&mut self, cx: &mut Context<Self>) {
+        self.capture = Capture::Off;
+        cx.notify();
+    }
+
+    fn open_modal(
+        &mut self,
+        instance_id: Option<TriggerInstanceId>,
+        signal: MidiSignal,
+        linked_action: Option<ActionId>,
+        cx: &mut Context<Self>,
+    ) {
+        let launch = MappingModalLaunch {
+            instance_id,
+            signal,
+            linked_action,
+            devices: self.known_devices.clone(),
+            input_enabled: self.enabled,
+        };
+        let action_repo = Arc::clone(&self.action_repo);
+        let rt_handle = self.rt_handle.clone();
+        let view = cx.new(|cx| MidiMappingModal::new(launch, action_repo, rt_handle, cx));
+        let sub = cx.subscribe(&view, Self::on_modal_event);
+        self.modal = Some(OpenModal { view, _sub: sub });
+        cx.notify();
+    }
+
+    fn edit_mapping(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        let Some(row) = self.mappings.iter().find(|row| row.id == id) else {
+            cx.notify();
+            return;
+        };
+        let signal = row.signal.clone();
+        let linked = row.action.as_ref().map(|(action_id, _)| *action_id);
+        self.open_modal(Some(id), signal, linked, cx);
+    }
+
+    fn on_modal_event(
+        &mut self,
+        _view: Entity<MidiMappingModal>,
+        event: &MidiMappingModalEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            MidiMappingModalEvent::Relearn => {
+                self.capture = Capture::Relearn;
+                cx.notify();
+            }
+            MidiMappingModalEvent::Cancel => self.close_modal(cx),
+            MidiMappingModalEvent::Delete(id) => {
+                let id = *id;
+                self.close_modal(cx);
+                self.delete(id, cx);
+            }
+            MidiMappingModalEvent::Save(draft) => {
+                let draft = MappingDraft {
+                    instance_id: draft.instance_id,
+                    signal: draft.signal.clone(),
+                    action_id: draft.action_id,
+                    name: draft.name.clone(),
+                };
+                self.close_modal(cx);
+                self.persist_mapping(draft, cx);
+            }
+        }
+    }
+
+    fn close_modal(&mut self, cx: &mut Context<Self>) {
+        self.modal = None;
+        self.capture = Capture::Off;
+        cx.notify();
+    }
+
+    fn persist_mapping(&mut self, draft: MappingDraft, cx: &mut Context<Self>) {
+        let triggers = Arc::clone(&self.trigger_repo);
+        let actions = Arc::clone(&self.action_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { save_mapping(&*triggers, &*actions, draft).await },
+            |this, result, cx| this.apply_mappings(result, cx),
+            cx,
+        );
     }
 
     fn refresh_ports(&mut self, cx: &mut Context<Self>) {
@@ -586,7 +707,7 @@ impl MidiScreenView {
     fn maps_for_device(&self, port: &str) -> usize {
         self.mappings
             .iter()
-            .filter(|row| row.device.as_deref() == Some(port))
+            .filter(|row| row.signal.device.as_deref() == Some(port))
             .count()
     }
 
@@ -877,7 +998,7 @@ impl MidiScreenView {
                 palette,
                 Some(count),
             ))
-            .child(list.child(self.render_add_bar(palette)))
+            .child(list.child(self.render_add_bar(palette, cx)))
             .into_any_element()
     }
 
@@ -888,15 +1009,20 @@ impl MidiScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (target_text, target_ink) = match row.action_name.as_ref() {
-            Some(name) => (name.clone(), palette.text_primary),
+        let (target_text, target_ink) = match row.action.as_ref() {
+            Some((_, name)) => (name.clone(), palette.text_primary),
             None => (tr!("midi_unassigned"), palette.text_faint),
         };
-        let body = div()
-            .w_full()
+        let id = row.id;
+        let content = div()
+            .id(("midi-mapping-row", index))
+            .flex_1()
+            .min_w_0()
             .flex()
             .items_center()
             .gap(MAP_GAP)
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.edit_mapping(id, cx)))
             .child(
                 div()
                     .flex_none()
@@ -911,13 +1037,13 @@ impl MidiScreenView {
                     .font_family(mono_family())
                     .text_size(SIG_FS)
                     .text_color(palette.text_primary)
-                    .child(row.signature()),
+                    .child(row.signal.label()),
             )
             .child(
                 badge(
                     palette.surface_overlay,
                     palette.text_muted,
-                    row.channel_label(),
+                    row.signal.channel_label(),
                     true,
                     CH_BADGE_FS,
                 )
@@ -929,7 +1055,7 @@ impl MidiScreenView {
                     .flex_none()
                     .size(ACCENT_DOT)
                     .rounded_full()
-                    .bg(kind_color(&row.kind_id, palette)),
+                    .bg(kind_color(&row.signal.kind_id, palette)),
             )
             .child(
                 div()
@@ -940,7 +1066,14 @@ impl MidiScreenView {
                     .text_size(TARGET_FS)
                     .text_color(target_ink)
                     .child(target_text),
-            )
+            );
+
+        let body = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(MAP_GAP)
+            .child(content)
             .child(self.render_row_menu(index, row.id, palette, cx));
 
         div()
@@ -969,7 +1102,7 @@ impl MidiScreenView {
                 menu_item(
                     ("midi-menu-edit", index),
                     tr!("midi_menu_edit"),
-                    |_, _, _| {},
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.edit_mapping(id, cx)),
                 )
                 .icon(Icon::Edit)
                 .into(),
@@ -1002,8 +1135,12 @@ impl MidiScreenView {
             .into_any_element()
     }
 
-    fn render_add_bar(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_add_bar(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        if self.capture == Capture::Learn {
+            return self.render_learn_row(palette, cx);
+        }
         div()
+            .id("midi-add-learn")
             .w_full()
             .flex()
             .items_center()
@@ -1015,6 +1152,8 @@ impl MidiScreenView {
             .border(BORDER_THIN)
             .border_color(palette.border_input)
             .bg(palette.shell)
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_learn(cx)))
             .child(icon(Icon::Plus, ADD_BAR_GLYPH, palette.info))
             .child(
                 div()
@@ -1035,6 +1174,46 @@ impl MidiScreenView {
                     .text_size(KBD_FS)
                     .text_color(palette.text_faint)
                     .child(tr!("midi_add_learn_kbd")),
+            )
+            .into_any_element()
+    }
+
+    fn render_learn_row(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let (accent, prompt) = if self.enabled {
+            (palette.info, tr!("midi_learn_prompt"))
+        } else {
+            (palette.warning, tr!("midi_learn_input_disabled"))
+        };
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap(LEARN_GAP)
+            .py(LEARN_PAD_V)
+            .px(ADD_BAR_PAD_H)
+            .rounded(ADD_BAR_RADIUS)
+            .border(BORDER_THIN)
+            .border_color(accent)
+            .bg(palette.surface_overlay)
+            .child(icon(Icon::Antenna, LEARN_GLYPH, accent))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(ADD_BAR_FS)
+                    .text_color(accent)
+                    .child(prompt),
+            )
+            .child(
+                div()
+                    .id("midi-learn-cancel")
+                    .ml(LEARN_CANCEL_ML)
+                    .font_family(body_family())
+                    .text_size(ADD_BAR_FS)
+                    .text_color(palette.text_faint)
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_learn(cx)))
+                    .child(tr!("common_cancel")),
             )
             .into_any_element()
     }
@@ -1183,5 +1362,6 @@ impl Render for MidiScreenView {
             .flex_col()
             .bg(palette.base)
             .child(frame)
+            .children(self.modal.as_ref().map(|open| open.view.clone()))
     }
 }

@@ -1892,7 +1892,33 @@ midi_mappings_empty = Зіставлень MIDI ще немає
 midi_menu_edit = Редагувати зіставлення...
 midi_add_learn = Навчання MIDI
 midi_add_learn_kbd = слухати
+midi_learn_prompt = Поворуши регулятором або натисни клавішу...
+midi_learn_input_disabled = Вхід MIDI вимкнено - увімкни його вище, щоб захопити сигнал
 midi_toast_error = MIDI: { $message }
+
+## MIDI - вікно зіставлення
+
+midi_modal_title_add = Призначити зіставлення MIDI
+midi_modal_title_edit = Редагувати зіставлення MIDI
+midi_modal_subtitle_captured = Сигнал захоплено - обери, що він має робити
+midi_modal_section_signal = Сигнал
+midi_modal_section_action = Дія для запуску
+midi_modal_input = ВХІД
+midi_modal_listening = слухаю...
+midi_modal_type = ТИП
+midi_modal_channel = КАНАЛ
+midi_modal_channel_any = будь-який
+midi_modal_device = ПРИСТРІЙ
+midi_modal_device_any = Будь-який пристрій
+midi_modal_relearn = Перенавчити
+midi_modal_input_disabled = Вхід MIDI вимкнено - перенавчання недоступне, доки ти його не увімкнеш.
+midi_modal_filter_actions = Фільтр дій...
+midi_modal_actions_loading = Завантаження дій...
+midi_modal_actions_empty = Жодна дія не відповідає фільтру
+midi_modal_hint_ready = Готово до збереження
+midi_modal_hint_pick_action = Обери дію, щоб продовжити
+midi_modal_add_mapping = Додати зіставлення
+midi_modal_save_changes = Зберегти зміни
 
 ## MIDI - footer
 

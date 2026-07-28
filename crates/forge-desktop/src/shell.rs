@@ -422,9 +422,20 @@ impl AppShell {
         let trigger_repo = handles.backend.trigger_instance_repo();
         let action_repo = handles.backend.action_repo();
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();
-        cx.new(|cx| MidiScreenView::new(client, trigger_repo, action_repo, settings, rt_handle, cx))
-            .into()
+        cx.new(|cx| {
+            MidiScreenView::new(
+                client,
+                trigger_repo,
+                action_repo,
+                settings,
+                bus,
+                rt_handle,
+                cx,
+            )
+        })
+        .into()
     }
 
     fn vtube_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {

@@ -1864,7 +1864,33 @@ midi_mappings_empty = No MIDI mappings yet
 midi_menu_edit = Edit mapping...
 midi_add_learn = MIDI Learn
 midi_add_learn_kbd = listen
+midi_learn_prompt = Move a control or press a key...
+midi_learn_input_disabled = MIDI input is off - enable it above to capture
 midi_toast_error = MIDI: { $message }
+
+## MIDI - mapping modal
+
+midi_modal_title_add = Assign MIDI mapping
+midi_modal_title_edit = Edit MIDI mapping
+midi_modal_subtitle_captured = Signal captured - pick what it should do
+midi_modal_section_signal = Signal
+midi_modal_section_action = Action to run
+midi_modal_input = INPUT
+midi_modal_listening = listening...
+midi_modal_type = TYPE
+midi_modal_channel = CHANNEL
+midi_modal_channel_any = any
+midi_modal_device = DEVICE
+midi_modal_device_any = Any device
+midi_modal_relearn = Re-learn
+midi_modal_input_disabled = MIDI input is off - re-learn is unavailable until you enable it.
+midi_modal_filter_actions = Filter actions...
+midi_modal_actions_loading = Loading actions...
+midi_modal_actions_empty = No actions match the filter
+midi_modal_hint_ready = Ready to save
+midi_modal_hint_pick_action = Pick an action to continue
+midi_modal_add_mapping = Add mapping
+midi_modal_save_changes = Save changes
 
 ## MIDI - footer
 

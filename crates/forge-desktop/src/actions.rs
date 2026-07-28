@@ -124,6 +124,42 @@ pub fn canonical_chord(keystroke: &Keystroke) -> Option<String> {
     Some(out)
 }
 
+fn cap_token(token: &str) -> String {
+    match token {
+        "ctrl" | "control" => "Ctrl".to_owned(),
+        "alt" => "Alt".to_owned(),
+        "shift" => "Shift".to_owned(),
+        "cmd" | "super" | "win" | "platform" => "Meta".to_owned(),
+        "fn" | "function" | "secondary" => "Fn".to_owned(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        }
+    }
+}
+
+/// Rewrites a gpui chord (`ctrl-shift-r`) into the `+`-separated form the keycap row splits on.
+pub fn chord_caps(chord: &str) -> String {
+    let mut caps: Vec<String> = Vec::new();
+    let mut rest = chord;
+    while let Some((head, tail)) = rest.split_once('-') {
+        if !is_modifier_token(head) || tail.is_empty() {
+            break;
+        }
+        caps.push(cap_token(head));
+        rest = tail;
+    }
+    caps.push(cap_token(rest));
+    caps.join("+")
+}
+
+pub fn shortcut_entry(id: &str) -> Option<&'static ShortcutEntry> {
+    SHORTCUTS.iter().find(|entry| entry.id == id)
+}
+
 pub fn effective_chord<'a>(
     overrides: &'a HashMap<String, String>,
     entry: &'a ShortcutEntry,

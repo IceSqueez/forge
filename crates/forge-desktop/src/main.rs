@@ -51,6 +51,7 @@ mod settings_shortcuts;
 mod settings_storage;
 mod settings_websocket;
 mod shell;
+mod shortcut_overrides;
 mod shutdown;
 mod sidebar;
 mod soundboard;

@@ -1965,9 +1965,11 @@ hotkeys_section_hint = подвійний клік по комбінації, щ
 hotkeys_bindings_empty = Гарячих клавіш ще немає.
 hotkeys_unassigned = Не призначено - обери дію
 hotkeys_scope_global = Глобальна
+hotkeys_scope_app = Застосунок
 hotkeys_scope_unregistered = Не зареєстровано
 hotkeys_menu_rebind = Перепризначити...
 hotkeys_menu_change_action = Змінити дію...
+hotkeys_menu_reset_default = Скинути до типової
 hotkeys_add_binding = Додати гарячу клавішу
 hotkeys_add_binding_kbd = захопити
 hotkeys_capture_prompt = Натисни комбінацію клавіш...
@@ -1998,7 +2000,8 @@ hotkeys_modal_save_changes = Зберегти зміни
 
 ## Hotkeys - footer
 
-hotkeys_footer_listening = { $count } прив'язок · глобальний слухач активний
-hotkeys_footer_stopped = { $count } прив'язок · глобальний слухач зупинено
+hotkeys_footer_bindings = { $count } прив'язок
+hotkeys_footer_listening = глобальний слухач активний
+hotkeys_footer_stopped = глобальний слухач зупинено
 hotkeys_footer_no_conflicts = Немає конфліктів
 hotkeys_footer_conflicts = { $count } конфліктів

@@ -9,7 +9,8 @@ use forge_components::{
 use forge_events::Event;
 use forge_hotkey::HotkeyClient;
 use forge_runtime::EventBus;
-use forge_storage::{DataProvider, SettingsRepo, set_bool_setting};
+use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
+use forge_storage::{DataProvider, SettingsRepo, StorageError, set_bool_setting};
 use forge_types::{ActionId, TriggerInstanceId};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FocusHandle, Keystroke, Pixels, Point, SharedString,
@@ -17,6 +18,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
+use crate::actions::{SHORTCUTS, ShortcutEntry, chord_caps, shortcut_entry};
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
 use crate::hotkey_action_modal::{
     ActionModalLaunch, BindingDraft, HotkeyActionModal, HotkeyActionModalEvent, keycaps,
@@ -27,6 +29,7 @@ use crate::hotkey_bindings::{
     relink_action, set_binding_enabled,
 };
 use crate::presentation::ActivePresentation;
+use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
 use crate::toasts::PushToast;
 
 const ENABLE_FAILED_KIND: &str = "hotkey.engine.enable_failed";
@@ -70,6 +73,10 @@ const ARROW_GLYPH: Pixels = px(13.0);
 const ACCENT_DOT: Pixels = px(6.0);
 const TARGET_FS: Pixels = px(12.0);
 const ROW_OFF_OPACITY: f32 = 0.55;
+const UNBOUND_FS: Pixels = px(11.5);
+const UNBOUND_RADIUS: Pixels = px(5.0);
+const UNBOUND_PAD_V: Pixels = px(3.0);
+const UNBOUND_PAD_H: Pixels = px(8.0);
 
 const ADD_BAR_PAD_H: Pixels = px(12.0);
 const ADD_BAR_RADIUS: Pixels = px(9.0);
@@ -92,6 +99,7 @@ const FOOTER_GAP: Pixels = px(6.0);
 const FOOTER_PAD_V: Pixels = px(7.0);
 const FOOTER_PAD_H: Pixels = px(14.0);
 const FOOTER_MT: Pixels = px(14.0);
+const FOOTER_SEPARATOR: &str = "·";
 
 const HEADER_GAP: Pixels = px(5.0);
 const HEADER_GLYPH: Pixels = px(13.0);
@@ -104,6 +112,7 @@ enum Capture {
     Add,
     Rebind(TriggerInstanceId),
     Modal(Option<TriggerInstanceId>),
+    App(&'static str),
 }
 
 impl Capture {
@@ -115,10 +124,17 @@ impl Capture {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RowKey {
+    Global(TriggerInstanceId),
+    App(&'static str),
+}
+
 struct ConflictPrompt {
     combo: String,
     holder: String,
     capture: Capture,
+    app_owner: Option<&'static str>,
 }
 
 struct LastFired {
@@ -139,13 +155,14 @@ pub struct HotkeysScreenView {
     rt_handle: tokio::runtime::Handle,
     enabled: bool,
     bindings: Vec<BindingRow>,
+    shortcuts: ShortcutOverrides,
     conflicts: usize,
     last_fired: Option<LastFired>,
     capture: Capture,
     capture_sub: Option<Subscription>,
     conflict: Option<ConflictPrompt>,
     modal: Option<OpenModal>,
-    menu_open: Option<TriggerInstanceId>,
+    menu_open: Option<RowKey>,
     menu_click_pos: Option<Point<Pixels>>,
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
@@ -170,6 +187,7 @@ impl HotkeysScreenView {
             settings_repo,
             rt_handle,
             bindings: Vec::new(),
+            shortcuts: ShortcutOverrides::default(),
             last_fired: None,
             capture: Capture::Off,
             capture_sub: None,
@@ -182,6 +200,7 @@ impl HotkeysScreenView {
             _bus_bridge: bus_bridge,
         };
         view.load(cx);
+        view.load_shortcuts(cx);
         view
     }
 
@@ -255,6 +274,44 @@ impl HotkeysScreenView {
         }
     }
 
+    fn load_shortcuts(&mut self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.settings_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { repo.get_string(KEYBOARD_SHORTCUTS).await },
+            |this, result, cx| this.apply_shortcuts(result, cx),
+            cx,
+        );
+    }
+
+    fn apply_shortcuts(
+        &mut self,
+        result: Result<Option<String>, StorageError>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(raw) => self.shortcuts.replace_stored(raw.as_deref()),
+            Err(e) => self.on_repo_error(&e.to_string(), cx),
+        }
+        cx.notify();
+    }
+
+    fn persist_shortcuts(&mut self, cx: &mut Context<Self>) {
+        self.shortcuts.apply(cx);
+        let repo = Arc::clone(&self.settings_repo);
+        let map = self.shortcuts.snapshot();
+        async_bridge::run_async(
+            &self.rt_handle,
+            save_overrides(repo, map),
+            |this, result: Result<(), String>, cx| match result {
+                Ok(()) => cx.notify(),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
     fn refresh_from_client(&mut self, cx: &mut Context<Self>) {
         let registered = registered_combos(&self.client);
         for row in &mut self.bindings {
@@ -280,6 +337,14 @@ impl HotkeysScreenView {
 
     fn global_count(&self) -> usize {
         self.bindings.iter().filter(|row| row.registered).count()
+    }
+
+    fn total_count(&self) -> usize {
+        self.bindings.len() + SHORTCUTS.len()
+    }
+
+    fn active_count(&self) -> usize {
+        self.enabled_count() + self.shortcuts.bound_count()
     }
 
     fn toggle_engine(&mut self, cx: &mut Context<Self>) {
@@ -334,11 +399,50 @@ impl HotkeysScreenView {
             self.cancel_capture(cx);
             return true;
         }
+        if let Capture::App(id) = self.capture {
+            self.on_app_capture(id, &keystroke, cx);
+            return true;
+        }
         let Some(combo) = keystroke_to_combo(&keystroke) else {
             return true;
         };
         self.on_capture_combo(combo, cx);
         true
+    }
+
+    fn on_app_capture(&mut self, id: &'static str, keystroke: &Keystroke, cx: &mut Context<Self>) {
+        match self.shortcuts.verdict(keystroke, id) {
+            ChordVerdict::Unusable => {}
+            ChordVerdict::NeedsModifier => {
+                self.end_capture();
+                cx.push_toast(
+                    ToastKind::Warn,
+                    tr!("settings_shortcuts_error_needs_modifier"),
+                );
+                cx.notify();
+            }
+            ChordVerdict::Taken { owner_id, chord } => {
+                self.end_capture();
+                self.conflict = Some(ConflictPrompt {
+                    combo: chord,
+                    holder: shortcut_entry(owner_id)
+                        .map(|entry| tr!(entry.label_key))
+                        .unwrap_or_default(),
+                    capture: Capture::App(id),
+                    app_owner: Some(owner_id),
+                });
+                cx.notify();
+            }
+            ChordVerdict::Free(chord) => {
+                self.end_capture();
+                self.apply_capture(Capture::App(id), chord, cx);
+            }
+        }
+    }
+
+    fn end_capture(&mut self) {
+        self.capture = Capture::Off;
+        self.capture_sub = None;
     }
 
     fn cancel_capture(&mut self, cx: &mut Context<Self>) {
@@ -369,6 +473,7 @@ impl HotkeysScreenView {
                     combo,
                     holder,
                     capture,
+                    app_owner: None,
                 });
                 cx.notify();
             }
@@ -388,6 +493,10 @@ impl HotkeysScreenView {
                 }
                 cx.notify();
             }
+            Capture::App(id) => {
+                self.shortcuts.bind(id, combo);
+                self.persist_shortcuts(cx);
+            }
         }
     }
 
@@ -395,7 +504,17 @@ impl HotkeysScreenView {
         let Some(prompt) = self.conflict.take() else {
             return;
         };
-        let ConflictPrompt { combo, capture, .. } = prompt;
+        let ConflictPrompt {
+            combo,
+            capture,
+            app_owner,
+            ..
+        } = prompt;
+        if let Some(owner) = app_owner {
+            self.shortcuts.unbind(owner);
+            self.apply_capture(capture, combo, cx);
+            return;
+        }
         let client = Arc::clone(&self.client);
         let backend = Arc::clone(&self.backend);
         let doomed = combo.clone();
@@ -611,17 +730,18 @@ impl HotkeysScreenView {
         cx.notify();
     }
 
-    fn toggle_menu(
-        &mut self,
-        id: TriggerInstanceId,
-        position: Point<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        self.menu_open = if self.menu_open == Some(id) {
+    fn reset_app_binding(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        self.shortcuts.reset(id);
+        self.persist_shortcuts(cx);
+    }
+
+    fn toggle_menu(&mut self, key: RowKey, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.menu_open = if self.menu_open == Some(key) {
             None
         } else {
             self.menu_click_pos = Some(position);
-            Some(id)
+            Some(key)
         };
         cx.notify();
     }
@@ -710,7 +830,7 @@ impl HotkeysScreenView {
     }
 
     fn render_stats(&self, palette: &ForgePalette) -> AnyElement {
-        let enabled = self.enabled_count();
+        let active = self.active_count();
         let conflicts = self.conflicts;
         let (conflicts_ink, conflicts_hint, conflicts_hint_ink) = if conflicts == 0 {
             (
@@ -738,9 +858,9 @@ impl HotkeysScreenView {
             .mb(STAT_MARGIN_B)
             .child(stat_card(
                 tr!("hotkeys_stat_bindings"),
-                self.bindings.len().to_string(),
+                self.total_count().to_string(),
                 palette.text_primary,
-                tr!("hotkeys_stat_bindings_hint", count = enabled as i64),
+                tr!("hotkeys_stat_bindings_hint", count = active as i64),
                 palette.success,
                 palette,
             ))
@@ -792,6 +912,10 @@ impl HotkeysScreenView {
         for (index, row) in self.bindings.iter().enumerate() {
             list = list.child(self.render_binding(index, row, palette, cx));
         }
+        list = list.child(self.render_add_bar(palette, cx));
+        for (index, entry) in SHORTCUTS.iter().enumerate() {
+            list = list.child(self.render_app_binding(index, entry, palette, cx));
+        }
 
         div()
             .w_full()
@@ -802,7 +926,136 @@ impl HotkeysScreenView {
                 palette,
                 hint,
             ))
-            .child(list.child(self.render_add_bar(palette, cx)))
+            .child(list)
+            .into_any_element()
+    }
+
+    fn render_app_binding(
+        &self,
+        index: usize,
+        entry: &'static ShortcutEntry,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if self.capture == Capture::App(entry.id) {
+            return self.render_capture_row(palette, cx);
+        }
+        let id = entry.id;
+        let chord = self.shortcuts.chord_of(entry);
+        let dot_color = if chord.is_some() {
+            palette.brand
+        } else {
+            palette.text_faint
+        };
+        let combo: AnyElement = match chord {
+            Some(chord) => keycaps(&chord_caps(chord), palette).into_any_element(),
+            None => unbound_chip(palette),
+        };
+
+        let body = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(ROW_GAP)
+            .child(
+                div()
+                    .id(("hotkeys-app-combo", index))
+                    .flex_none()
+                    .min_w(KEYCAPS_MIN_W)
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                        if event.click_count() >= 2 {
+                            this.start_capture(Capture::App(id), cx);
+                        }
+                    }))
+                    .child(combo),
+            )
+            .child(
+                badge(
+                    palette.surface_overlay,
+                    palette.text_muted,
+                    tr!("hotkeys_scope_app"),
+                    false,
+                    SCOPE_BADGE_FS,
+                )
+                .flex_none(),
+            )
+            .child(icon(Icon::ArrowRight, ARROW_GLYPH, palette.text_faint))
+            .child(
+                div()
+                    .flex_none()
+                    .size(ACCENT_DOT)
+                    .rounded_full()
+                    .bg(dot_color),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .font_family(body_family())
+                    .text_size(TARGET_FS)
+                    .text_color(palette.text_primary)
+                    .child(tr!(entry.label_key)),
+            )
+            .child(self.render_app_menu(index, entry, palette, cx));
+
+        div()
+            .w_full()
+            .child(
+                card(body, palette)
+                    .padding_xy(ROW_PAD_V, ROW_PAD_H)
+                    .full_width(),
+            )
+            .into_any_element()
+    }
+
+    fn render_app_menu(
+        &self,
+        index: usize,
+        entry: &'static ShortcutEntry,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = entry.id;
+        let key = RowKey::App(id);
+        let view = cx.entity();
+        let mut items = vec![
+            menu_item(
+                ("hotkeys-app-rebind", index),
+                tr!("hotkeys_menu_rebind"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.start_capture(Capture::App(id), cx)
+                }),
+            )
+            .icon(Icon::Keyboard)
+            .into(),
+        ];
+        if self.shortcuts.is_overridden(id) {
+            items.push(
+                menu_item(
+                    ("hotkeys-app-reset", index),
+                    tr!("hotkeys_menu_reset_default"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.reset_app_binding(id, cx)),
+                )
+                .icon(Icon::Refresh)
+                .into(),
+            );
+        }
+
+        menu_button(Icon::DotsVertical, self.menu_open == Some(key), palette)
+            .placement(MenuPlacement::BottomRight)
+            .open_at(self.menu_click_pos)
+            .items(items)
+            .on_toggle(
+                ("hotkeys-app-menu-trigger", index),
+                cx.listener(move |this, event: &ClickEvent, _, cx| {
+                    this.toggle_menu(key, event.position(), cx)
+                }),
+            )
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_menu(cx));
+            })
             .into_any_element()
     }
 
@@ -814,6 +1067,9 @@ impl HotkeysScreenView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let instance_id = row.instance_id;
+        if self.capture == Capture::Rebind(instance_id) {
+            return self.render_capture_row(palette, cx);
+        }
         let (target_text, target_ink) = match row.action.as_ref() {
             Some((_, name)) => (name.clone(), palette.text_primary),
             None => (tr!("hotkeys_unassigned"), palette.text_faint),
@@ -901,7 +1157,8 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let open = self.menu_open == Some(instance_id);
+        let key = RowKey::Global(instance_id);
+        let open = self.menu_open == Some(key);
         let view = cx.entity();
         menu_button(Icon::DotsVertical, open, palette)
             .placement(MenuPlacement::BottomRight)
@@ -938,7 +1195,7 @@ impl HotkeysScreenView {
             .on_toggle(
                 ("hotkeys-menu-trigger", index),
                 cx.listener(move |this, event: &ClickEvent, _, cx| {
-                    this.toggle_menu(instance_id, event.position(), cx)
+                    this.toggle_menu(key, event.position(), cx)
                 }),
             )
             .on_dismiss(move |_window, cx| {
@@ -1028,13 +1285,10 @@ impl HotkeysScreenView {
     }
 
     fn render_footer(&self, palette: &ForgePalette) -> AnyElement {
-        let left = if self.enabled {
-            tr!(
-                "hotkeys_footer_listening",
-                count = self.bindings.len() as i64
-            )
+        let listener = if self.enabled {
+            tr!("hotkeys_footer_listening")
         } else {
-            tr!("hotkeys_footer_stopped", count = self.bindings.len() as i64)
+            tr!("hotkeys_footer_stopped")
         };
         let (dot, right) = if self.conflicts == 0 {
             (palette.success, tr!("hotkeys_footer_no_conflicts"))
@@ -1057,10 +1311,15 @@ impl HotkeysScreenView {
             .bg(palette.shell)
             .child(
                 div()
-                    .font_family(mono_family())
-                    .text_size(FOOTER_FS)
-                    .text_color(palette.text_faint)
-                    .child(left),
+                    .flex()
+                    .items_center()
+                    .gap(FOOTER_GAP)
+                    .child(footer_text(
+                        tr!("hotkeys_footer_bindings", count = self.total_count() as i64),
+                        palette,
+                    ))
+                    .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
+                    .child(footer_text(listener, palette)),
             )
             .child(
                 div()
@@ -1068,13 +1327,7 @@ impl HotkeysScreenView {
                     .items_center()
                     .gap(FOOTER_GAP)
                     .child(status_dot(dot, FOOTER_DOT))
-                    .child(
-                        div()
-                            .font_family(mono_family())
-                            .text_size(FOOTER_FS)
-                            .text_color(palette.text_faint)
-                            .child(right),
-                    ),
+                    .child(footer_text(right, palette)),
             )
             .into_any_element()
     }
@@ -1091,7 +1344,10 @@ impl HotkeysScreenView {
             ConfirmTone::Destructive,
             palette,
         )
-        .item_name(prompt.combo.clone())
+        .item_name(match prompt.capture {
+            Capture::App(_) => chord_caps(&prompt.combo),
+            _ => prompt.combo.clone(),
+        })
         .on_cancel(
             "hotkeys-conflict-cancel",
             tr!("common_cancel"),
@@ -1112,6 +1368,30 @@ impl HotkeysScreenView {
             })
             .into_any_element()
     }
+}
+
+fn footer_text(text: String, palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .font_family(mono_family())
+        .text_size(FOOTER_FS)
+        .text_color(palette.text_faint)
+        .child(text)
+}
+
+fn unbound_chip(palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex_none()
+        .py(UNBOUND_PAD_V)
+        .px(UNBOUND_PAD_H)
+        .rounded(UNBOUND_RADIUS)
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .bg(palette.shell)
+        .font_family(mono_family())
+        .text_size(UNBOUND_FS)
+        .text_color(palette.text_faint)
+        .child(tr!("settings_shortcuts_unbound"))
+        .into_any_element()
 }
 
 fn stat_card(

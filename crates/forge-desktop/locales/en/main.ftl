@@ -1937,9 +1937,11 @@ hotkeys_section_hint = double-click a combo to rebind
 hotkeys_bindings_empty = No hotkeys bound yet.
 hotkeys_unassigned = Unassigned - pick an action
 hotkeys_scope_global = Global
+hotkeys_scope_app = App
 hotkeys_scope_unregistered = Not registered
 hotkeys_menu_rebind = Rebind...
 hotkeys_menu_change_action = Change action...
+hotkeys_menu_reset_default = Reset to default
 hotkeys_add_binding = Add hotkey
 hotkeys_add_binding_kbd = capture
 hotkeys_capture_prompt = Press the key combination...
@@ -1970,7 +1972,8 @@ hotkeys_modal_save_changes = Save changes
 
 ## Hotkeys - footer
 
-hotkeys_footer_listening = { $count } bindings · global listener active
-hotkeys_footer_stopped = { $count } bindings · global listener stopped
+hotkeys_footer_bindings = { $count } bindings
+hotkeys_footer_listening = global listener active
+hotkeys_footer_stopped = global listener stopped
 hotkeys_footer_no_conflicts = No conflicts
 hotkeys_footer_conflicts = { $count } conflicts

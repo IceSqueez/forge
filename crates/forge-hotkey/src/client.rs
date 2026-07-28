@@ -143,7 +143,12 @@ impl HotkeyClient {
     }
 
     pub async fn disable(&self) -> Result<(), HotkeyError> {
-        self.send_command(SupervisorCommand::Disable).await
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.send_command(SupervisorCommand::Disable(reply_tx))
+            .await?;
+        reply_rx
+            .await
+            .map_err(|_| HotkeyError::SupervisorUnavailable)
     }
 
     pub async fn enable(&self) -> Result<Vec<EnableFailure>, HotkeyError> {

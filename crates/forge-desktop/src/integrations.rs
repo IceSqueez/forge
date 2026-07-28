@@ -628,8 +628,8 @@ async fn build_hotkey(
         status: client.clone(),
         health: client.clone(),
         content: client.clone(),
-        quick: client,
-        control: None,
+        quick: client.clone(),
+        control: Some(client),
         obs_client: None,
     })
 }

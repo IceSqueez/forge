@@ -6,10 +6,10 @@ use crate::client::HotkeyClient;
 #[async_trait]
 impl BuiltinControl for HotkeyClient {
     async fn reconnect(&self) -> ControlOutcome {
-        self.enable()
-            .await
-            .map(|_| ())
-            .map_err(|_| ControlFailure::Transport)
+        match self.enable().await {
+            Ok(failures) if failures.is_empty() => Ok(()),
+            _ => Err(ControlFailure::Transport),
+        }
     }
 
     async fn disconnect(&self) -> ControlOutcome {

@@ -13,7 +13,7 @@ use crate::payload_fields;
 
 pub(crate) enum SupervisorCommand {
     Enable(oneshot::Sender<Vec<EnableFailure>>),
-    Disable,
+    Disable(oneshot::Sender<()>),
 }
 
 pub(crate) async fn run_supervisor(
@@ -23,6 +23,7 @@ pub(crate) async fn run_supervisor(
 ) {
     loop {
         tokio::select! {
+            biased;
             maybe_event = fired_rx.recv() => {
                 let Some(event) = maybe_event else { break };
                 handle_fired_event(&client, event);
@@ -76,7 +77,11 @@ fn handle_fired_event(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
 
 fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand) {
     match cmd {
-        SupervisorCommand::Disable => {
+        SupervisorCommand::Disable(reply) => {
+            if !client.enabled.load(Ordering::Relaxed) {
+                let _ = reply.send(());
+                return;
+            }
             if !client.backend.delivery_gate_only() {
                 for (id, _combo) in known_combos(client) {
                     let _ = client.backend.unregister(id);
@@ -84,8 +89,13 @@ fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand)
             }
             client.enabled.store(false, Ordering::Relaxed);
             emit_engine_state_change(client, false);
+            let _ = reply.send(());
         }
         SupervisorCommand::Enable(reply) => {
+            if client.enabled.load(Ordering::Relaxed) {
+                let _ = reply.send(Vec::new());
+                return;
+            }
             let mut failures = Vec::new();
             if !client.backend.delivery_gate_only() {
                 for (id, combo) in known_combos(client) {
@@ -96,9 +106,40 @@ fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand)
             }
             client.enabled.store(true, Ordering::Relaxed);
             emit_engine_state_change(client, true);
+            if !failures.is_empty() {
+                record_enable_failures(client, &failures);
+                emit_enable_failed(client, &failures);
+            }
             let _ = reply.send(failures);
         }
     }
+}
+
+fn record_enable_failures(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {
+    let conflicts = failures
+        .iter()
+        .filter(|f| matches!(f.error, crate::error::HotkeyError::AlreadyRegistered { .. }))
+        .count();
+    if conflicts == 0 {
+        return;
+    }
+    let mut snap = client
+        .health_state
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    snap.conflict_count = snap.conflict_count.saturating_add(conflicts);
+}
+
+fn emit_enable_failed(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {
+    let combos: Vec<String> = failures
+        .iter()
+        .map(|f| f.combo.as_str().to_owned())
+        .collect();
+    client.publisher.publish(Event::new(
+        EventSource::Hotkey,
+        "hotkey.engine.enable_failed",
+        serde_json::json!({ (payload_fields::COMBOS): combos }),
+    ));
 }
 
 fn known_combos(client: &Arc<HotkeyClient>) -> Vec<(HotkeyId, HotkeyCombo)> {

@@ -280,24 +280,24 @@ async fn select_and_start(
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use forge_events::EventPublisher;
 
     use super::*;
     use crate::backend::tests::{MockFailAllBackend, MockPortalBackend};
 
-    struct RecordingPublisher {
+    pub(crate) struct RecordingPublisher {
         events: std::sync::Mutex<Vec<forge_events::Event>>,
     }
 
     impl RecordingPublisher {
-        fn new() -> Arc<Self> {
+        pub(crate) fn new() -> Arc<Self> {
             Arc::new(Self {
                 events: std::sync::Mutex::new(Vec::new()),
             })
         }
 
-        fn has_kind(&self, kind: &str) -> bool {
+        pub(crate) fn has_kind(&self, kind: &str) -> bool {
             self.events.lock().unwrap().iter().any(|e| e.kind == kind)
         }
 
@@ -317,21 +317,57 @@ mod tests {
         }
     }
 
+    pub(crate) fn noop_publisher() -> Arc<dyn EventPublisher> {
+        struct Noop;
+        impl EventPublisher for Noop {
+            fn publish(&self, _: forge_events::Event) {}
+        }
+        Arc::new(Noop)
+    }
+
+    pub(crate) fn start_supervised(
+        backend: MockPortalBackend,
+        publisher: Arc<dyn EventPublisher>,
+    ) -> Arc<HotkeyClient> {
+        HotkeyClient::start(
+            HotkeyConfig::default(),
+            publisher,
+            Arc::new(backend),
+            Some(true),
+        )
+    }
+
+    pub(crate) async fn disable_and_settle(client: &HotkeyClient) {
+        let mut health_rx = client.health_tx.subscribe();
+        client.disable().await.unwrap();
+        health_rx.recv().await.unwrap();
+    }
+
+    async fn drain_fired(tx: &mpsc::Sender<crate::backend::HotkeyFiredEvent>) {
+        while tx.capacity() < tx.max_capacity() {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    fn combo(s: &str) -> HotkeyCombo {
+        HotkeyCombo::parse(s).unwrap()
+    }
+
     #[tokio::test]
     async fn register_returns_id_and_stores_combo() {
         let client = HotkeyClient::new_for_test(Some(true));
-        let combo = HotkeyCombo::parse("Ctrl+F1").unwrap();
-        let id = client.register(combo.clone()).await.unwrap();
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
         let combos = client.registered_combos();
-        assert!(combos.iter().any(|(i, c)| i == &id && c == &combo));
+        assert!(combos.iter().any(|(i, stored)| i == &id && stored == &c));
     }
 
     #[tokio::test]
     async fn register_same_combo_twice_returns_already_registered() {
         let client = HotkeyClient::new_for_test(Some(true));
-        let combo = HotkeyCombo::parse("Ctrl+A").unwrap();
-        client.register(combo.clone()).await.unwrap();
-        let err = client.register(combo.clone()).await.unwrap_err();
+        let c = combo("Ctrl+A");
+        client.register(c.clone()).await.unwrap();
+        let err = client.register(c).await.unwrap_err();
         assert!(matches!(err, HotkeyError::AlreadyRegistered { .. }));
     }
 
@@ -339,14 +375,8 @@ mod tests {
     async fn register_emits_hotkey_registered_event() {
         let publisher = RecordingPublisher::new();
         let (backend, _tx) = MockPortalBackend::new();
-        let client = HotkeyClient::start(
-            HotkeyConfig::default(),
-            Arc::clone(&publisher) as Arc<dyn EventPublisher>,
-            Arc::new(backend),
-            Some(true),
-        );
-        let combo = HotkeyCombo::parse("Ctrl+B").unwrap();
-        client.register(combo).await.unwrap();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        client.register(combo("Ctrl+B")).await.unwrap();
         assert!(publisher.has_kind("hotkey.registered"));
     }
 
@@ -354,14 +384,8 @@ mod tests {
     async fn unregister_removes_combo_and_emits_event() {
         let publisher = RecordingPublisher::new();
         let (backend, _tx) = MockPortalBackend::new();
-        let client = HotkeyClient::start(
-            HotkeyConfig::default(),
-            Arc::clone(&publisher) as Arc<dyn EventPublisher>,
-            Arc::new(backend),
-            Some(true),
-        );
-        let combo = HotkeyCombo::parse("Ctrl+C").unwrap();
-        let id = client.register(combo).await.unwrap();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let id = client.register(combo("Ctrl+C")).await.unwrap();
         client.unregister(id).await.unwrap();
         assert!(client.registered_combos().is_empty());
         assert!(publisher.has_kind("hotkey.unregistered"));
@@ -371,43 +395,20 @@ mod tests {
     async fn backend_conflict_returns_already_registered() {
         let (backend, _tx) = MockPortalBackend::new();
         backend.add_conflict("Alt+X");
-        let client = HotkeyClient::start(
-            HotkeyConfig::default(),
-            Arc::new(struct_noop_publisher()),
-            Arc::new(backend),
-            Some(true),
-        );
-        let combo = HotkeyCombo::parse("Alt+X").unwrap();
-        let err = client.register(combo).await.unwrap_err();
+        let client = start_supervised(backend, noop_publisher());
+        let err = client.register(combo("Alt+X")).await.unwrap_err();
         assert!(matches!(err, HotkeyError::AlreadyRegistered { .. }));
     }
 
     #[tokio::test]
-    async fn portal_available_reflects_passed_flag() {
-        let client = HotkeyClient::new_for_test(Some(true));
-        assert_eq!(client.portal_available(), Some(true));
-
-        let (backend, _tx) = MockPortalBackend::new();
-        let c2 = HotkeyClient::start(
-            HotkeyConfig::default(),
-            Arc::new(struct_noop_publisher()),
-            Arc::new(backend),
-            Some(false),
-        );
-        assert_eq!(c2.portal_available(), Some(false));
-    }
-
-    #[tokio::test]
     async fn fail_all_backend_register_returns_permission_denied() {
-        let backend = MockFailAllBackend::new();
         let client = HotkeyClient::start(
             HotkeyConfig::default(),
-            Arc::new(struct_noop_publisher()),
-            Arc::new(backend),
+            noop_publisher(),
+            Arc::new(MockFailAllBackend::new()),
             None,
         );
-        let combo = HotkeyCombo::parse("Ctrl+D").unwrap();
-        let err = client.register(combo).await.unwrap_err();
+        let err = client.register(combo("Ctrl+D")).await.unwrap_err();
         assert!(matches!(err, HotkeyError::PermissionDenied));
     }
 
@@ -415,29 +416,20 @@ mod tests {
     async fn triggered_event_emitted_on_fired_rx() {
         let publisher = RecordingPublisher::new();
         let (backend, inject_tx) = MockPortalBackend::new();
-        let client = HotkeyClient::start(
-            HotkeyConfig::default(),
-            Arc::clone(&publisher) as Arc<dyn EventPublisher>,
-            Arc::new(backend),
-            Some(true),
-        );
-        let combo = HotkeyCombo::parse("Ctrl+F1").unwrap();
-        let id = client.register(combo.clone()).await.unwrap();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
 
         inject_tx
             .send(crate::backend::HotkeyFiredEvent {
                 id,
-                combo,
+                combo: c,
                 timestamp_us: 0,
             })
             .await
             .unwrap();
+        drain_fired(&inject_tx).await;
 
-        for _ in 0..8 {
-            tokio::task::yield_now().await;
-        }
-
-        assert!(publisher.has_kind("hotkey.global.pressed"));
         let ev = publisher.find_kind("hotkey.global.pressed").unwrap();
         assert_eq!(ev.payload["combo"], "Ctrl+F1");
     }
@@ -447,12 +439,7 @@ mod tests {
     async fn portal_unavailable_event_carries_reason_token_and_human_detail() {
         let publisher = RecordingPublisher::new();
         let (backend, _tx) = MockPortalBackend::new();
-        let client = HotkeyClient::start(
-            HotkeyConfig::default(),
-            Arc::clone(&publisher) as Arc<dyn EventPublisher>,
-            Arc::new(backend),
-            Some(false),
-        );
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
         crate::supervisor::emit_portal_unavailable(&client, "portal: no session; evdev: denied");
 
@@ -461,11 +448,182 @@ mod tests {
         assert_eq!(ev.payload["detail"], "portal: no session; evdev: denied");
     }
 
-    fn struct_noop_publisher() -> impl EventPublisher {
-        struct Noop;
-        impl EventPublisher for Noop {
-            fn publish(&self, _: forge_events::Event) {}
-        }
-        Noop
+    #[tokio::test]
+    async fn disable_drops_os_registrations_but_keeps_the_client_registry() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, noop_publisher());
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        disable_and_settle(&client).await;
+
+        assert!(os_registered.lock().unwrap().is_empty());
+        assert_eq!(client.registered_combos(), vec![(id, c)]);
+    }
+
+    #[tokio::test]
+    async fn enable_restores_os_registrations_for_the_same_ids() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, noop_publisher());
+        let first = client.register(combo("Ctrl+F1")).await.unwrap();
+        let second = client.register(combo("Alt+F2")).await.unwrap();
+
+        disable_and_settle(&client).await;
+        let failures = client.enable().await.unwrap();
+
+        assert!(failures.is_empty());
+        let os = os_registered.lock().unwrap();
+        assert_eq!(os.get(&first.0).map(String::as_str), Some("Ctrl+F1"));
+        assert_eq!(os.get(&second.0).map(String::as_str), Some("Alt+F2"));
+    }
+
+    #[tokio::test]
+    async fn combo_registered_while_disabled_reaches_the_os_only_after_enable() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, noop_publisher());
+
+        disable_and_settle(&client).await;
+        let id = client.register(combo("Ctrl+F3")).await.unwrap();
+        assert!(os_registered.lock().unwrap().is_empty());
+
+        client.enable().await.unwrap();
+
+        assert_eq!(
+            os_registered.lock().unwrap().get(&id.0).map(String::as_str),
+            Some("Ctrl+F3")
+        );
+    }
+
+    #[tokio::test]
+    async fn enable_reports_the_refused_combo_and_still_registers_the_others() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let os_registered = Arc::clone(&backend.registered);
+        let refuse = Arc::clone(&backend.fail_on);
+        let client = start_supervised(backend, noop_publisher());
+        let taken = client.register(combo("Alt+X")).await.unwrap();
+        let free = client.register(combo("Ctrl+F1")).await.unwrap();
+
+        disable_and_settle(&client).await;
+        refuse.lock().unwrap().insert("Alt+X".to_owned());
+        let failures = client.enable().await.unwrap();
+
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].id, taken);
+        assert_eq!(failures[0].combo, combo("Alt+X"));
+        assert!(matches!(
+            failures[0].error,
+            HotkeyError::AlreadyRegistered { .. }
+        ));
+        assert!(os_registered.lock().unwrap().contains_key(&free.0));
+    }
+
+    #[tokio::test]
+    async fn a_delivery_gate_only_backend_keeps_its_os_grabs_across_a_disable_cycle() {
+        let (backend, _tx) = MockPortalBackend::new_delivery_gate_only();
+        let os_registered = Arc::clone(&backend.registered);
+        let registers = Arc::clone(&backend.register_calls);
+        let unregisters = Arc::clone(&backend.unregister_calls);
+        let client = start_supervised(backend, noop_publisher());
+        let id = client.register(combo("Ctrl+F1")).await.unwrap();
+
+        disable_and_settle(&client).await;
+        client.enable().await.unwrap();
+
+        assert_eq!(registers.load(Ordering::Relaxed), 1);
+        assert_eq!(unregisters.load(Ordering::Relaxed), 0);
+        assert!(os_registered.lock().unwrap().contains_key(&id.0));
+    }
+
+    #[tokio::test]
+    async fn a_fired_event_is_dropped_while_the_engine_is_disabled() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new_delivery_gate_only();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        disable_and_settle(&client).await;
+        inject_tx
+            .send(crate::backend::HotkeyFiredEvent {
+                id,
+                combo: c,
+                timestamp_us: 0,
+            })
+            .await
+            .unwrap();
+        drain_fired(&inject_tx).await;
+
+        assert!(!publisher.has_kind("hotkey.global.pressed"));
+    }
+
+    #[tokio::test]
+    async fn a_fired_event_is_delivered_again_after_enable() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new_delivery_gate_only();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        disable_and_settle(&client).await;
+        client.enable().await.unwrap();
+        inject_tx
+            .send(crate::backend::HotkeyFiredEvent {
+                id,
+                combo: c,
+                timestamp_us: 0,
+            })
+            .await
+            .unwrap();
+        drain_fired(&inject_tx).await;
+
+        assert!(publisher.has_kind("hotkey.global.pressed"));
+    }
+
+    #[tokio::test]
+    async fn engine_state_events_follow_the_transition_direction() {
+        let publisher = RecordingPublisher::new();
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+
+        disable_and_settle(&client).await;
+        assert!(publisher.has_kind("hotkey.engine.disabled"));
+        assert!(!publisher.has_kind("hotkey.engine.enabled"));
+
+        client.enable().await.unwrap();
+        assert!(publisher.has_kind("hotkey.engine.enabled"));
+    }
+
+    #[tokio::test]
+    async fn a_redundant_disable_leaves_the_following_enable_intact() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, noop_publisher());
+        let id = client.register(combo("Ctrl+F1")).await.unwrap();
+
+        disable_and_settle(&client).await;
+        client.disable().await.unwrap();
+        let failures = client.enable().await.unwrap();
+
+        assert!(failures.is_empty());
+        assert!(client.is_enabled());
+        assert!(os_registered.lock().unwrap().contains_key(&id.0));
+    }
+
+    #[tokio::test]
+    async fn commands_report_supervisor_unavailable_when_no_supervisor_runs() {
+        let client = HotkeyClient::new_for_test(Some(true));
+
+        assert!(matches!(
+            client.disable().await,
+            Err(HotkeyError::SupervisorUnavailable)
+        ));
+        assert!(matches!(
+            client.enable().await,
+            Err(HotkeyError::SupervisorUnavailable)
+        ));
+        assert!(client.is_enabled());
     }
 }

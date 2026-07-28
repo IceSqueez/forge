@@ -57,15 +57,35 @@ impl BuiltinStatus for HotkeyClient {
 mod tests {
     use forge_platform_core::{BuiltinStatus, ConnectionState};
 
+    use crate::backend::tests::MockPortalBackend;
     use crate::client::HotkeyClient;
+    use crate::client::tests::{disable_and_settle, noop_publisher, start_supervised};
+    use crate::combo::HotkeyCombo;
 
     #[tokio::test]
     async fn connection_connected_after_register() {
-        use crate::combo::HotkeyCombo;
         let c = HotkeyClient::new_for_test(Some(true));
         let s: &dyn BuiltinStatus = &*c;
-        let combo = HotkeyCombo::parse("Ctrl+G").unwrap();
-        c.register(combo).await.unwrap();
+        c.register(HotkeyCombo::parse("Ctrl+G").unwrap())
+            .await
+            .unwrap();
         assert_eq!(s.connection(), ConnectionState::Connected);
+    }
+
+    #[tokio::test]
+    async fn connection_reports_disconnected_while_the_engine_is_disabled() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+        client
+            .register(HotkeyCombo::parse("Ctrl+G").unwrap())
+            .await
+            .unwrap();
+        let status: &dyn BuiltinStatus = &*client;
+
+        disable_and_settle(&client).await;
+        assert_eq!(status.connection(), ConnectionState::Disconnected);
+
+        client.enable().await.unwrap();
+        assert_eq!(status.connection(), ConnectionState::Connected);
     }
 }

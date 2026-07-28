@@ -188,14 +188,36 @@ mod tests {
     use forge_platform_core::BuiltinHealth;
 
     use super::*;
-    use crate::client::HotkeyClient;
+    use crate::backend::tests::MockPortalBackend;
+    use crate::client::tests::{disable_and_settle, noop_publisher, start_supervised};
+    use crate::combo::HotkeyCombo;
+
+    fn registered_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
+        match client.metrics().into_iter().next()?.value {
+            HealthValue::Text { primary, secondary } => Some((primary, secondary)),
+            _ => None,
+        }
+    }
 
     #[tokio::test]
-    async fn stream_is_subscribable() {
-        let c = HotkeyClient::new_for_test(None);
-        let h: &dyn BuiltinHealth = &*c;
-        let items: Vec<_> = h.stream().take(0).collect().await;
-        assert!(items.is_empty());
+    async fn the_registered_metric_masks_the_count_while_the_engine_is_disabled() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+        client
+            .register(HotkeyCombo::parse("Ctrl+F1").unwrap())
+            .await
+            .unwrap();
+        let counted = Some(("1".to_owned(), Some("hotkeys".to_owned())));
+        assert_eq!(registered_metric(&client), counted);
+
+        disable_and_settle(&client).await;
+        assert_eq!(
+            registered_metric(&client),
+            Some(("0".to_owned(), Some("disabled".to_owned())))
+        );
+
+        client.enable().await.unwrap();
+        assert_eq!(registered_metric(&client), counted);
     }
 
     #[test]

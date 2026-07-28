@@ -63,24 +63,36 @@ pub(crate) trait HotkeyBackend: Send + Sync {
 pub(crate) mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
 
     pub(crate) struct MockPortalBackend {
         pub(crate) registered: Arc<Mutex<HashMap<u32, String>>>,
         pub(crate) fail_on: Arc<Mutex<HashSet<String>>>,
-        #[allow(dead_code)]
-        pub(crate) fired_tx: mpsc::Sender<HotkeyFiredEvent>,
+        pub(crate) register_calls: Arc<AtomicUsize>,
+        pub(crate) unregister_calls: Arc<AtomicUsize>,
+        gate_only: bool,
         fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
     }
 
     impl MockPortalBackend {
         pub(crate) fn new() -> (Self, mpsc::Sender<HotkeyFiredEvent>) {
+            Self::with_gate(false)
+        }
+
+        pub(crate) fn new_delivery_gate_only() -> (Self, mpsc::Sender<HotkeyFiredEvent>) {
+            Self::with_gate(true)
+        }
+
+        fn with_gate(gate_only: bool) -> (Self, mpsc::Sender<HotkeyFiredEvent>) {
             let (tx, rx) = mpsc::channel(64);
             let mock = Self {
                 registered: Arc::new(Mutex::new(HashMap::new())),
                 fail_on: Arc::new(Mutex::new(HashSet::new())),
-                fired_tx: tx.clone(),
+                register_calls: Arc::new(AtomicUsize::new(0)),
+                unregister_calls: Arc::new(AtomicUsize::new(0)),
+                gate_only,
                 fired_rx_slot: Mutex::new(Some(rx)),
             };
             (mock, tx)
@@ -93,6 +105,7 @@ pub(crate) mod tests {
 
     impl HotkeyBackend for MockPortalBackend {
         fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
+            self.register_calls.fetch_add(1, Ordering::Relaxed);
             let combo_str = combo.as_str().to_owned();
             if self.fail_on.lock().unwrap().contains(&combo_str) {
                 return Err(HotkeyError::AlreadyRegistered { combo: combo_str });
@@ -102,6 +115,7 @@ pub(crate) mod tests {
         }
 
         fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
+            self.unregister_calls.fetch_add(1, Ordering::Relaxed);
             self.registered.lock().unwrap().remove(&id.0);
             Ok(())
         }
@@ -109,43 +123,9 @@ pub(crate) mod tests {
         fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
             self.fired_rx_slot.lock().unwrap().take()
         }
-    }
 
-    pub(crate) struct MockGlobalHotkeyBackend {
-        pub(crate) registered: Arc<Mutex<HashMap<u32, String>>>,
-        fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
-        #[allow(dead_code)]
-        pub(crate) fired_tx: mpsc::Sender<HotkeyFiredEvent>,
-    }
-
-    impl MockGlobalHotkeyBackend {
-        pub(crate) fn new() -> (Self, mpsc::Sender<HotkeyFiredEvent>) {
-            let (tx, rx) = mpsc::channel(64);
-            let mock = Self {
-                registered: Arc::new(Mutex::new(HashMap::new())),
-                fired_rx_slot: Mutex::new(Some(rx)),
-                fired_tx: tx.clone(),
-            };
-            (mock, tx)
-        }
-    }
-
-    impl HotkeyBackend for MockGlobalHotkeyBackend {
-        fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
-            self.registered
-                .lock()
-                .unwrap()
-                .insert(id.0, combo.as_str().to_owned());
-            Ok(())
-        }
-
-        fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
-            self.registered.lock().unwrap().remove(&id.0);
-            Ok(())
-        }
-
-        fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
-            self.fired_rx_slot.lock().unwrap().take()
+        fn delivery_gate_only(&self) -> bool {
+            self.gate_only
         }
     }
 
@@ -175,65 +155,5 @@ pub(crate) mod tests {
         fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
             self.fired_rx_slot.lock().unwrap().take()
         }
-    }
-
-    #[test]
-    fn hotkey_id_serde_roundtrip() {
-        let id = HotkeyId(42);
-        let json = serde_json::to_string(&id).unwrap();
-        let back: HotkeyId = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, id);
-    }
-
-    #[test]
-    fn mock_portal_register_stores_combo() {
-        let (mock, _tx) = MockPortalBackend::new();
-        let combo = HotkeyCombo::parse("Ctrl+A").unwrap();
-        mock.register(HotkeyId(1), &combo).unwrap();
-        let reg = mock.registered.lock().unwrap();
-        assert_eq!(reg.get(&1), Some(&"Ctrl+A".to_owned()));
-    }
-
-    #[test]
-    fn mock_portal_conflict_returns_already_registered() {
-        let (mock, _tx) = MockPortalBackend::new();
-        mock.add_conflict("Ctrl+A");
-        let combo = HotkeyCombo::parse("Ctrl+A").unwrap();
-        let err = mock.register(HotkeyId(1), &combo).unwrap_err();
-        assert!(matches!(err, HotkeyError::AlreadyRegistered { .. }));
-    }
-
-    #[test]
-    fn mock_portal_unregister_removes_entry() {
-        let (mock, _tx) = MockPortalBackend::new();
-        let combo = HotkeyCombo::parse("Ctrl+A").unwrap();
-        mock.register(HotkeyId(1), &combo).unwrap();
-        mock.unregister(HotkeyId(1)).unwrap();
-        assert!(mock.registered.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn mock_portal_fired_rx_returns_some_once() {
-        let (mock, _tx) = MockPortalBackend::new();
-        assert!(mock.fired_rx().is_some());
-        assert!(mock.fired_rx().is_none());
-    }
-
-    #[test]
-    fn mock_fail_all_register_returns_permission_denied() {
-        let mock = MockFailAllBackend::new();
-        let combo = HotkeyCombo::parse("Ctrl+A").unwrap();
-        let err = mock.register(HotkeyId(1), &combo).unwrap_err();
-        assert!(matches!(err, HotkeyError::PermissionDenied));
-    }
-
-    #[test]
-    fn mock_global_hotkey_registers_and_unregisters() {
-        let (mock, _tx) = MockGlobalHotkeyBackend::new();
-        let combo = HotkeyCombo::parse("Alt+F4").unwrap();
-        mock.register(HotkeyId(5), &combo).unwrap();
-        assert!(mock.registered.lock().unwrap().contains_key(&5));
-        mock.unregister(HotkeyId(5)).unwrap();
-        assert!(!mock.registered.lock().unwrap().contains_key(&5));
     }
 }

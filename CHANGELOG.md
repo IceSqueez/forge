@@ -1,7 +1,36 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.5] - 2026-07-28
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump base64 from 0.22.1 to 0.23.0 (#48)
+- *(deps)* Bump tokio-stream from 0.1.18 to 0.1.19 (#49)
+- *(deps)* Bump gpui_platform from v1.11.3 to v1.12.1 (#50)
+- *(deps)* Bump gpui from v1.11.3 to v1.12.1 (#51)
+- *(deps)* Cleanup and bump cargo libs
+
+### 🐛 Bug Fixes
+- *(ui)* Sign out and return to the connect screen on disconnect
+- *(ui)* Resolve integration screens from a live builtin registry
+- *(ui)* Show the platform hero on youtube and kick auth screens
+- *(ui)* Drop the eyebrow and sign-in heading from auth screens
+- *(ui)* Show honest empty state instead of the fake placeholder
+
+### 🚀 Features
+- *(vtube)* Add probe, stored endpoint, auth wait and reconnect flag
+- *(vtube)* Add a guided connect screen with no-restart install
+- *(vtube)* Add item, tint, physics and model scale sub-actions
+- *(vtube)* Rebuild the connected surface to the design canon
+
+### 🧪 Testing
+- *(vtube)* Cover probe, retry flag and endpoint credentials
+- *(vtube)* Extend sink doubles for the new item and model methods
+- *(vtube)* Cover the redesigned surface and reconnect paths
+
 ## [0.3.4] - 2026-07-27
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(obs)* Classify macOS camera inputs by their av_capture kind
 - *(obs)* Stop holding the client lock across request awaits
@@ -11,6 +40,9 @@ All notable changes to this project will be documented in this file.
 - *(obs)* Heal missed scene events after the fetch window
 - *(ui)* Translate picker labels on the UI thread
 - *(twitch)* Report rejected refresh accurately in the chat stop log
+
+### 📚 Documentation
+- *(release)* Release v0.3.4
 
 ### 🚀 Features
 - *(obs)* Add screen-roster runners for filters, media, and profiles

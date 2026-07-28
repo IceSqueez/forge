@@ -41,13 +41,32 @@ mod tests {
             .unwrap();
         let control: Arc<dyn BuiltinControl> = Arc::clone(&client) as Arc<dyn BuiltinControl>;
 
-        let mut health_rx = client.health_tx.subscribe();
         control.disconnect().await.unwrap();
-        health_rx.recv().await.unwrap();
         assert!(!client.is_enabled());
 
         control.reconnect().await.unwrap();
         assert!(client.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn reconnect_reports_transport_when_a_combo_cannot_be_re_registered() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let refuse = Arc::clone(&backend.fail_on);
+        let client = start_supervised(backend, noop_publisher());
+        client
+            .register(HotkeyCombo::parse("Alt+X").unwrap())
+            .await
+            .unwrap();
+        client
+            .register(HotkeyCombo::parse("Ctrl+F1").unwrap())
+            .await
+            .unwrap();
+        let control: &dyn BuiltinControl = &*client;
+
+        control.disconnect().await.unwrap();
+        refuse.lock().unwrap().insert("Alt+X".to_owned());
+
+        assert_eq!(control.reconnect().await, Err(ControlFailure::Transport));
     }
 
     #[tokio::test]

@@ -59,7 +59,7 @@ mod tests {
 
     use crate::backend::tests::MockPortalBackend;
     use crate::client::HotkeyClient;
-    use crate::client::tests::{disable_and_settle, noop_publisher, start_supervised};
+    use crate::client::tests::{noop_publisher, start_supervised};
     use crate::combo::HotkeyCombo;
 
     #[tokio::test]
@@ -82,7 +82,7 @@ mod tests {
             .unwrap();
         let status: &dyn BuiltinStatus = &*client;
 
-        disable_and_settle(&client).await;
+        client.disable().await.unwrap();
         assert_eq!(status.connection(), ConnectionState::Disconnected);
 
         client.enable().await.unwrap();

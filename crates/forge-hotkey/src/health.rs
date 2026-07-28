@@ -189,14 +189,22 @@ mod tests {
 
     use super::*;
     use crate::backend::tests::MockPortalBackend;
-    use crate::client::tests::{disable_and_settle, noop_publisher, start_supervised};
+    use crate::client::tests::{noop_publisher, start_supervised};
     use crate::combo::HotkeyCombo;
 
-    fn registered_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
-        match client.metrics().into_iter().next()?.value {
+    fn text_metric(client: &HotkeyClient, index: usize) -> Option<(String, Option<String>)> {
+        match client.metrics().into_iter().nth(index)?.value {
             HealthValue::Text { primary, secondary } => Some((primary, secondary)),
             _ => None,
         }
+    }
+
+    fn registered_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
+        text_metric(client, 0)
+    }
+
+    fn conflicts_metric(client: &HotkeyClient) -> Option<(String, Option<String>)> {
+        text_metric(client, 2)
     }
 
     #[tokio::test]
@@ -210,7 +218,7 @@ mod tests {
         let counted = Some(("1".to_owned(), Some("hotkeys".to_owned())));
         assert_eq!(registered_metric(&client), counted);
 
-        disable_and_settle(&client).await;
+        client.disable().await.unwrap();
         assert_eq!(
             registered_metric(&client),
             Some(("0".to_owned(), Some("disabled".to_owned())))
@@ -218,6 +226,30 @@ mod tests {
 
         client.enable().await.unwrap();
         assert_eq!(registered_metric(&client), counted);
+    }
+
+    #[tokio::test]
+    async fn a_combo_refused_at_enable_counts_toward_the_conflicts_metric() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let refuse = Arc::clone(&backend.fail_on);
+        let client = start_supervised(backend, noop_publisher());
+        client
+            .register(HotkeyCombo::parse("Alt+X").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            conflicts_metric(&client),
+            Some(("0".to_owned(), Some("since startup".to_owned())))
+        );
+
+        client.disable().await.unwrap();
+        refuse.lock().unwrap().insert("Alt+X".to_owned());
+        client.enable().await.unwrap();
+
+        assert_eq!(
+            conflicts_metric(&client),
+            Some(("1".to_owned(), Some("since startup".to_owned())))
+        );
     }
 
     #[test]

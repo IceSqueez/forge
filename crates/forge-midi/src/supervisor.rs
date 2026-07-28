@@ -53,7 +53,7 @@ pub(crate) async fn run_supervisor(
                 handle_raw_event(&client, ts, &data, &port_name);
             }
             maybe_cmd = control_rx.recv() => {
-                let Some(cmd) = maybe_cmd else { continue };
+                let Some(cmd) = maybe_cmd else { break };
                 handle_supervisor_command(
                     &client,
                     cmd,

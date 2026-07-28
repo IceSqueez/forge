@@ -78,7 +78,9 @@ impl TriggerKindDescriptor for MidiPitchBendDescriptor {
             }
         });
         let device = config.get("device").and_then(|v| {
-            if let Variant::String(d) = v {
+            if let Variant::String(d) = v
+                && !d.is_empty()
+            {
                 Some(d.clone())
             } else {
                 None
@@ -115,7 +117,9 @@ impl TriggerKindDescriptor for MidiPitchBendDescriptor {
                 return false;
             }
         }
-        if let Some(Variant::String(d)) = config.get("device") {
+        if let Some(Variant::String(d)) = config.get("device")
+            && !d.is_empty()
+        {
             let event_port = event
                 .payload
                 .get(fields::PORT_NAME)

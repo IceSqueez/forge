@@ -11,14 +11,24 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius,
-    spacing,
-};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, mono_family, spacing};
 
-const PANEL_WIDTH: Pixels = px(200.0);
+const PANEL_MIN_WIDTH: Pixels = px(180.0);
+const PANEL_PADDING: Pixels = px(4.0);
+const PANEL_RADIUS: Pixels = px(8.0);
+const PANEL_GAP: Pixels = px(4.0);
 
-const TRIGGER_SIZE: Pixels = px(28.0);
+const ITEM_GAP: Pixels = px(9.0);
+const ITEM_RADIUS: Pixels = px(5.0);
+const ITEM_ICON_SIZE: Pixels = px(13.0);
+const SHORTCUT_FONT_SIZE: Pixels = px(10.0);
+const HEADER_FONT_SIZE: Pixels = px(9.5);
+const DIVIDER_MARGIN: Pixels = px(4.0);
+const DISABLED_OPACITY: f32 = 0.5;
+
+const TRIGGER_SIZE: Pixels = px(20.0);
+const TRIGGER_ICON_SIZE: Pixels = px(14.0);
+const TRIGGER_RADIUS: Pixels = px(5.0);
 
 const MENU_PRIORITY: usize = 1;
 
@@ -109,10 +119,15 @@ pub enum MenuPlacement {
 impl MenuPlacement {
     fn anchor_and_offset(self) -> (Anchor, Point<Pixels>) {
         match self {
-            MenuPlacement::BottomLeft => (Anchor::TopLeft, point(px(0.0), TRIGGER_SIZE)),
-            MenuPlacement::BottomRight => (Anchor::TopRight, point(TRIGGER_SIZE, TRIGGER_SIZE)),
-            MenuPlacement::TopLeft => (Anchor::BottomLeft, point(px(0.0), px(0.0))),
-            MenuPlacement::TopRight => (Anchor::BottomRight, point(TRIGGER_SIZE, px(0.0))),
+            MenuPlacement::BottomLeft => {
+                (Anchor::TopLeft, point(px(0.0), TRIGGER_SIZE + PANEL_GAP))
+            }
+            MenuPlacement::BottomRight => (
+                Anchor::TopRight,
+                point(TRIGGER_SIZE, TRIGGER_SIZE + PANEL_GAP),
+            ),
+            MenuPlacement::TopLeft => (Anchor::BottomLeft, point(px(0.0), -PANEL_GAP)),
+            MenuPlacement::TopRight => (Anchor::BottomRight, point(TRIGGER_SIZE, -PANEL_GAP)),
         }
     }
 }
@@ -136,8 +151,8 @@ impl MenuInk {
             panel_border: palette.border_input,
             divider_ink: palette.border_regular,
             item_hover_bg: palette.surface_overlay,
-            header_ink: palette.text_muted,
-            label_ink: palette.text_primary,
+            header_ink: palette.text_faint,
+            label_ink: palette.text_secondary,
             icon_ink: palette.text_secondary,
             faint_ink: palette.text_faint,
         }
@@ -158,21 +173,21 @@ impl MenuInk {
         let mut row = div()
             .flex()
             .items_center()
-            .w_full()
-            .gap(pad(Spacing::Sm))
+            .gap(ITEM_GAP)
             .py(pad(Spacing::Xs))
             .px(pad(Spacing::Sm))
-            .rounded(radius(Radius::Sm))
+            .rounded(ITEM_RADIUS)
             .font_family(body_family());
 
         if let Some(glyph) = entry.icon {
-            row = row.child(icon(glyph, FONT_SM, glyph_ink));
+            row = row.child(icon(glyph, ITEM_ICON_SIZE, glyph_ink));
         }
 
         row = row.child(
             div()
-                .flex_1()
-                .text_size(FONT_SM)
+                .flex_grow_1()
+                .whitespace_nowrap()
+                .text_size(FONT_XS)
                 .text_color(text_ink)
                 .child(entry.label),
         );
@@ -181,14 +196,15 @@ impl MenuInk {
             row = row.child(
                 div()
                     .font_family(mono_family())
-                    .text_size(FONT_XS)
+                    .whitespace_nowrap()
+                    .text_size(SHORTCUT_FONT_SIZE)
                     .text_color(self.faint_ink)
                     .child(shortcut),
             );
         }
 
         if entry.disabled {
-            return row.into_any_element();
+            return row.opacity(DISABLED_OPACITY).into_any_element();
         }
 
         let hover_bg = self.item_hover_bg;
@@ -208,7 +224,7 @@ impl MenuInk {
 
     fn render_divider(&self) -> AnyElement {
         div()
-            .py(pad(Spacing::Xs) * 0.5)
+            .py(DIVIDER_MARGIN)
             .child(div().w_full().h(BORDER_THIN).bg(self.divider_ink))
             .into_any_element()
     }
@@ -219,7 +235,8 @@ impl MenuInk {
             .pb(pad(Spacing::Xs) * 0.5)
             .px(pad(Spacing::Sm))
             .font_family(mono_family())
-            .text_size(FONT_XS)
+            .whitespace_nowrap()
+            .text_size(HEADER_FONT_SIZE)
             .text_color(self.header_ink)
             .child(label)
             .into_any_element()
@@ -234,10 +251,10 @@ impl MenuInk {
         let mut panel = div()
             .flex()
             .flex_col()
-            .w(PANEL_WIDTH)
-            .py(pad(Spacing::Xs))
+            .min_w(PANEL_MIN_WIDTH)
+            .p(PANEL_PADDING)
             .bg(self.panel_bg)
-            .rounded(radius(Radius::Md))
+            .rounded(PANEL_RADIUS)
             .border(BORDER_THIN)
             .border_color(self.panel_border)
             .occlude();
@@ -348,8 +365,8 @@ impl MenuButton {
             .items_center()
             .justify_center()
             .size(TRIGGER_SIZE)
-            .rounded(radius(Radius::Sm))
-            .child(icon(self.trigger_icon, FONT_SM, self.trigger_ink));
+            .rounded(TRIGGER_RADIUS)
+            .child(icon(self.trigger_icon, TRIGGER_ICON_SIZE, self.trigger_ink));
 
         if self.open {
             trigger = trigger.bg(self.trigger_hover_bg);

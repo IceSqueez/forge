@@ -1257,3 +1257,35 @@ impl Render for HotkeysScreenView {
             .children(conflict)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_target_names_the_binding_a_capture_must_not_conflict_with() {
+        // Both edit flows carry the row they are editing so on_capture_combo can exclude it.
+        // Without it, recapturing a binding's own combo reports the binding as its own
+        // conflict, and confirming Replace deletes the row being edited.
+        let id = TriggerInstanceId::new();
+        let cases = [
+            ("idle", Capture::Off, None),
+            ("adding a new binding", Capture::Add, None),
+            ("rebinding from the row menu", Capture::Rebind(id), Some(id)),
+            (
+                "recapturing inside an edit modal",
+                Capture::Modal(Some(id)),
+                Some(id),
+            ),
+            (
+                "recapturing inside an add modal",
+                Capture::Modal(None),
+                None,
+            ),
+        ];
+
+        for (case, capture, expected) in cases {
+            assert_eq!(capture.target(), expected, "wrong exclusion while {case}");
+        }
+    }
+}

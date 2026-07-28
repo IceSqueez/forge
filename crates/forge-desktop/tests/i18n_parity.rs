@@ -2,11 +2,12 @@
 //!
 //! forge-desktop is a binary crate, so this integration test cannot import
 //! crate internals. It reads the `.ftl` files as plain text and enforces the
-//! two invariants we previously checked by hand on every commit: the `en` and
-//! `uk` catalogs must define the exact same set of top-level message keys, and
-//! no key may be defined twice within a single catalog.
+//! invariants we previously checked by hand on every commit: the `en` and `uk`
+//! catalogs must define the exact same set of top-level message keys, no key may
+//! be defined twice within a single catalog, and a message must reference the
+//! same `$placeholder` names in both locales.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 
 fn locale_path(locale: &str) -> PathBuf {
@@ -53,6 +54,59 @@ fn message_keys(content: &str) -> Vec<String> {
         }
     }
     keys
+}
+
+/// Map each message key to the set of `$placeholder` names its pattern references,
+/// following indented continuation lines (plural selectors, attributes) into the
+/// message they belong to.
+fn placeholders_by_key(content: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let mut by_key: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut current: Option<String> = None;
+
+    for raw in content.lines() {
+        let line = raw.trim_end();
+        let indented = line.starts_with(' ') || line.starts_with('\t');
+        if !indented {
+            current = None;
+            if let Some(first) = line.chars().next()
+                && first.is_ascii_lowercase()
+            {
+                let ident_len = line
+                    .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+                    .unwrap_or(line.len());
+                let (key, rest) = line.split_at(ident_len);
+                if rest == " =" || rest.starts_with(" = ") {
+                    current = Some(key.to_owned());
+                    by_key.entry(key.to_owned()).or_default();
+                }
+            }
+        }
+        let Some(key) = current.as_ref() else {
+            continue;
+        };
+        let entry = by_key.entry(key.clone()).or_default();
+        for name in placeholder_names(line) {
+            entry.insert(name);
+        }
+    }
+
+    by_key
+}
+
+fn placeholder_names(line: &str) -> Vec<String> {
+    let bytes = line.as_bytes();
+    let mut names = Vec::new();
+    for (index, _) in line.match_indices('$') {
+        let start = index + 1;
+        let end = bytes[start..]
+            .iter()
+            .position(|b| !(b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_'))
+            .map_or(line.len(), |offset| start + offset);
+        if end > start {
+            names.push(line[start..end].to_owned());
+        }
+    }
+    names
 }
 
 fn duplicates(keys: &[String]) -> Vec<String> {
@@ -106,4 +160,36 @@ fn no_message_key_is_defined_twice_within_a_locale() {
             "{locale} catalog defines these keys more than once: {dups:?}"
         );
     }
+}
+
+#[test]
+fn en_and_uk_reference_the_same_placeholders_in_every_message() {
+    let en = placeholders_by_key(&load("en"));
+    let uk = placeholders_by_key(&load("uk"));
+
+    // A message whose translation drops or renames a placeholder renders the raw
+    // `{$name}` (or loses the value) at runtime, which the key-set parity test above
+    // cannot see.
+    assert_eq!(
+        en.get("hotkeys_conflict_body")
+            .map(|args| args.iter().cloned().collect::<Vec<_>>()),
+        Some(vec!["holder".to_owned()]),
+        "parser failed to find the anchor placeholder, making this test vacuous"
+    );
+
+    let mut diverging = Vec::new();
+    for (key, en_args) in &en {
+        let Some(uk_args) = uk.get(key) else {
+            continue;
+        };
+        if en_args != uk_args {
+            diverging.push(format!("{key}: en={en_args:?} uk={uk_args:?}"));
+        }
+    }
+
+    assert!(
+        diverging.is_empty(),
+        "these messages reference different placeholders per locale:\n  {}",
+        diverging.join("\n  ")
+    );
 }

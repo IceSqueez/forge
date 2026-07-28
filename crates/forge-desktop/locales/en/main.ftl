@@ -1956,3 +1956,83 @@ hotkeys_footer_listening = global listener active
 hotkeys_footer_stopped = global listener stopped
 hotkeys_footer_no_conflicts = No conflicts
 hotkeys_footer_conflicts = { $count } conflicts
+
+## Discord - breadcrumb + hero
+
+discord_breadcrumb_builtin = Builtin
+discord_hero_title = Discord
+discord_hero_blurb = Post to your server channels through incoming webhooks. Each binding is one channel endpoint an action can write to.
+discord_hero_webhooks = { $count } webhooks
+discord_hero_webhooks_sub = configured
+discord_header_summary = { $webhooks } webhooks · { $actions } actions
+discord_toast_error = Webhook operation failed: { $message }
+discord_toast_saved = Webhook saved
+discord_toast_deleted = Webhook deleted
+discord_toast_name_taken = A webhook named { $name } already exists
+discord_toast_test_sent = Test message posted
+discord_toast_test_failed = Test post failed: { $message }
+discord_test_content = Test message from forge.
+
+## Discord - stats
+
+discord_stat_latency = Webhook latency
+discord_stat_latency_value = { $ms } ms
+discord_stat_latency_hint = p50 · last { $count }
+discord_stat_no_sends = nothing sent yet
+discord_stat_budget = Rate limit
+discord_stat_budget_value = { $used } / { $total }
+discord_stat_budget_hint = bucket used
+discord_stat_budget_unknown = no bucket data yet
+discord_stat_send = Last send
+discord_stat_send_ok = Delivered
+discord_stat_send_failed = Failed
+discord_stat_send_none = No sends yet
+discord_stat_errors = Errors
+discord_stat_errors_hint = last 60 min
+
+## Discord - channel bindings
+
+discord_section_bindings = Channel bindings
+discord_section_bindings_count = { $count } bound
+discord_bindings_empty = No channel bound yet.
+discord_binding_no_actions = no action posts here
+discord_binding_action_count = { $count } actions post here
+discord_add_binding = Bind channel
+discord_menu_edit = Edit...
+discord_menu_test = Test
+
+## Discord - recent posts
+
+discord_section_posts = Recent posts
+discord_posts_empty = Nothing posted yet.
+discord_posts_never = never
+discord_post_kind_embed = embed
+discord_post_kind_message = message
+
+## Discord - webhook modal
+
+discord_modal_title_add = Bind channel
+discord_modal_title_edit = Edit binding
+discord_modal_subtitle = Webhook endpoints are stored encrypted and never logged.
+discord_modal_name_label = Name
+discord_modal_name_placeholder = go-live
+discord_modal_name_locked = Actions reference this webhook by name, so it cannot be renamed here.
+discord_modal_url_label = Webhook URL
+discord_modal_url_placeholder = https://discord.com/api/webhooks/...
+discord_modal_url_hint = Copy it from Channel settings - Integrations - Webhooks.
+discord_modal_url_invalid = This is not a Discord webhook URL.
+discord_modal_test = Test post
+discord_modal_testing = Posting...
+discord_modal_add = Bind channel
+discord_modal_save_changes = Save changes
+
+## Discord - delete + footer
+
+discord_confirm_delete_title = Delete webhook?
+discord_confirm_delete_body = The endpoint will be removed from storage. This cannot be undone.
+discord_confirm_delete_body_linked = { $count } actions post to this webhook and will start failing. This cannot be undone.
+discord_footer_webhooks = { $count } webhooks
+discord_footer_linked = { $count } linked actions
+discord_footer_healthy = Sending
+discord_footer_failing = Last send failed
+discord_footer_idle = Nothing sent yet

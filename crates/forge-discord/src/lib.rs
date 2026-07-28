@@ -11,10 +11,14 @@ pub(crate) mod ratelimit;
 pub mod runners;
 pub mod sink;
 pub mod status;
+pub mod webhooks;
 
 pub use client::DiscordClient;
 pub use config::DiscordConfig;
+pub use content::WebhookPost;
 pub use embed::{DiscordEmbed, DiscordEmbedField};
 pub use error::DiscordError;
+pub use health::DiscordSendHealth;
 pub use runners::register_discord_sub_actions;
 pub use sink::DiscordSink;
+pub use webhooks::validate_webhook_url;

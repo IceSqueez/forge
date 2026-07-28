@@ -1984,3 +1984,83 @@ hotkeys_footer_listening = глобальний слухач активний
 hotkeys_footer_stopped = глобальний слухач зупинено
 hotkeys_footer_no_conflicts = Немає конфліктів
 hotkeys_footer_conflicts = { $count } конфліктів
+
+## Discord - breadcrumb + hero
+
+discord_breadcrumb_builtin = Вбудоване
+discord_hero_title = Discord
+discord_hero_blurb = Публікація в канали сервера через вхідні вебхуки. Кожна прив'язка - це одна кінцева точка каналу, куди може писати дія.
+discord_hero_webhooks = { $count } вебхуків
+discord_hero_webhooks_sub = налаштовано
+discord_header_summary = { $webhooks } вебхуків · { $actions } дій
+discord_toast_error = Операція з вебхуком не вдалася: { $message }
+discord_toast_saved = Вебхук збережено
+discord_toast_deleted = Вебхук видалено
+discord_toast_name_taken = Вебхук з назвою { $name } уже існує
+discord_toast_test_sent = Тестове повідомлення надіслано
+discord_toast_test_failed = Тестова публікація не вдалася: { $message }
+discord_test_content = Тестове повідомлення з forge.
+
+## Discord - stats
+
+discord_stat_latency = Затримка вебхука
+discord_stat_latency_value = { $ms } мс
+discord_stat_latency_hint = p50 · останні { $count }
+discord_stat_no_sends = ще нічого не надіслано
+discord_stat_budget = Ліміт запитів
+discord_stat_budget_value = { $used } / { $total }
+discord_stat_budget_hint = використано бюджету
+discord_stat_budget_unknown = ще немає даних бюджету
+discord_stat_send = Остання відправка
+discord_stat_send_ok = Доставлено
+discord_stat_send_failed = Помилка
+discord_stat_send_none = Відправок ще не було
+discord_stat_errors = Помилки
+discord_stat_errors_hint = за останні 60 хв
+
+## Discord - channel bindings
+
+discord_section_bindings = Прив'язки каналів
+discord_section_bindings_count = { $count } прив'язано
+discord_bindings_empty = Жодного каналу ще не прив'язано.
+discord_binding_no_actions = сюди не пише жодна дія
+discord_binding_action_count = сюди пише дій: { $count }
+discord_add_binding = Прив'язати канал
+discord_menu_edit = Редагувати...
+discord_menu_test = Тест
+
+## Discord - recent posts
+
+discord_section_posts = Останні публікації
+discord_posts_empty = Ще нічого не опубліковано.
+discord_posts_never = ніколи
+discord_post_kind_embed = вкладення
+discord_post_kind_message = повідомлення
+
+## Discord - webhook modal
+
+discord_modal_title_add = Прив'язати канал
+discord_modal_title_edit = Редагувати прив'язку
+discord_modal_subtitle = Адреси вебхуків зберігаються зашифрованими і ніколи не потрапляють у логи.
+discord_modal_name_label = Назва
+discord_modal_name_placeholder = go-live
+discord_modal_name_locked = Дії посилаються на цей вебхук за назвою, тому перейменувати його тут не можна.
+discord_modal_url_label = URL вебхука
+discord_modal_url_placeholder = https://discord.com/api/webhooks/...
+discord_modal_url_hint = Скопіюй його з налаштувань каналу - Інтеграції - Вебхуки.
+discord_modal_url_invalid = Це не URL вебхука Discord.
+discord_modal_test = Тестова публікація
+discord_modal_testing = Публікація...
+discord_modal_add = Прив'язати канал
+discord_modal_save_changes = Зберегти зміни
+
+## Discord - delete + footer
+
+discord_confirm_delete_title = Видалити вебхук?
+discord_confirm_delete_body = Кінцеву точку буде вилучено зі сховища. Це не можна скасувати.
+discord_confirm_delete_body_linked = До цього вебхука пише дій: { $count } - вони почнуть завершуватися помилкою. Це не можна скасувати.
+discord_footer_webhooks = { $count } вебхуків
+discord_footer_linked = { $count } пов'язаних дій
+discord_footer_healthy = Надсилання працює
+discord_footer_failing = Остання відправка не вдалася
+discord_footer_idle = Ще нічого не надіслано

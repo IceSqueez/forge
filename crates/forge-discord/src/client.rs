@@ -82,7 +82,7 @@ impl DiscordClient {
         }
     }
 
-    async fn load_webhook(&self, name: &str) -> Result<WebhookCredential, DiscordError> {
+    pub(crate) async fn load_webhook(&self, name: &str) -> Result<WebhookCredential, DiscordError> {
         let id = CredentialId::new(format!("{DISCORD_CRED_PREFIX}{name}"));
         let json = self
             .creds
@@ -338,7 +338,7 @@ impl DiscordClient {
         }
     }
 
-    async fn execute_post(
+    pub(crate) async fn execute_post(
         &self,
         url: &str,
         body: serde_json::Value,

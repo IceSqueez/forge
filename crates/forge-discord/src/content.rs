@@ -32,6 +32,35 @@ pub(crate) fn make_content_state() -> Arc<Mutex<DiscordContentSnapshot>> {
     Arc::new(Mutex::new(DiscordContentSnapshot::default()))
 }
 
+#[derive(Debug, Clone)]
+pub struct WebhookPost {
+    pub webhook_name: String,
+    pub had_embed: bool,
+    pub ok: bool,
+    pub sent_at: OffsetDateTime,
+}
+
+impl DiscordClient {
+    pub fn webhook_names(&self) -> Vec<String> {
+        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        snap.webhook_names.clone()
+    }
+
+    /// Newest first, capped at the in-memory send history; empty after a restart.
+    pub fn recent_posts(&self) -> Vec<WebhookPost> {
+        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        snap.recent_posts
+            .iter()
+            .map(|record| WebhookPost {
+                webhook_name: record.webhook_name.clone(),
+                had_embed: record.had_embed,
+                ok: record.ok,
+                sent_at: record.sent_at,
+            })
+            .collect()
+    }
+}
+
 pub(crate) fn record_send(
     snap: &mut DiscordContentSnapshot,
     webhook_name: &str,

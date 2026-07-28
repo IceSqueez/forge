@@ -105,6 +105,33 @@ pub(crate) fn update_on_send(
     deltas
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DiscordSendHealth {
+    pub latency_p50_ms: Option<u64>,
+    pub latency_samples: usize,
+    pub rate_limit_used: u64,
+    pub rate_limit_total: u64,
+    pub last_send_ok: Option<bool>,
+    pub errors_last_hour: usize,
+}
+
+impl DiscordClient {
+    /// Same four measurements `BuiltinHealth::metrics` renders, typed instead of pre-formatted.
+    pub fn send_health(&self) -> DiscordSendHealth {
+        let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+        DiscordSendHealth {
+            latency_p50_ms: compute_p50(&snap.latencies_ms),
+            latency_samples: snap.latencies_ms.len(),
+            rate_limit_used: snap
+                .rate_limit_total
+                .saturating_sub(snap.rate_limit_remaining),
+            rate_limit_total: snap.rate_limit_total,
+            last_send_ok: snap.last_send_ok,
+            errors_last_hour: age_out_errors(&mut snap.error_timestamps),
+        }
+    }
+}
+
 fn age_out_errors(timestamps: &mut VecDeque<Instant>) -> usize {
     // Windows can start the monotonic clock near zero; `now - 3600s` would underflow there.
     if let Some(cutoff) = Instant::now().checked_sub(Duration::from_secs(3600)) {

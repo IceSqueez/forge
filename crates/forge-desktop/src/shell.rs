@@ -16,6 +16,7 @@ use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch
 use crate::actions_screen::ScreenActionsView;
 use crate::chat::ChatView;
 use crate::chrome::Chrome;
+use crate::discord_screen::DiscordScreenView;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
@@ -50,6 +51,7 @@ const OBS_BUILTIN_ID: &str = "obs";
 const VTUBE_BUILTIN_ID: &str = "vtube";
 const MIDI_BUILTIN_ID: &str = "midi";
 const HOTKEY_BUILTIN_ID: &str = "hotkey";
+const DISCORD_BUILTIN_ID: &str = "discord";
 
 struct Router {
     screen: Screen,
@@ -195,6 +197,7 @@ impl AppShell {
                         Some(client) => return Self::hotkeys_screen(handles, client, cx),
                         None => handles.builtins.get(id),
                     },
+                    DISCORD_BUILTIN_ID => return Self::discord_screen(handles, cx),
                     _ => handles.builtins.get(id),
                 };
                 let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
@@ -430,6 +433,15 @@ impl AppShell {
         let bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();
         cx.new(|cx| HotkeysScreenView::new(client, backend, settings, bus, rt_handle, cx))
+            .into()
+    }
+
+    fn discord_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
+        let client = Arc::clone(&handles.discord_client);
+        let action_repo = handles.backend.action_repo();
+        let bus = Arc::clone(&handles.bus);
+        let rt_handle = handles.rt_handle.clone();
+        cx.new(|cx| DiscordScreenView::new(client, action_repo, bus, rt_handle, cx))
             .into()
     }
 

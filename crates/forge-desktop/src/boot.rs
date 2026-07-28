@@ -275,6 +275,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         youtube_install_seed: integrations.youtube_install_seed,
         obs_install_seed: integrations.obs_install_seed,
         vtube_install_seed: integrations.vtube_install_seed,
+        discord_client: integrations.discord_client,
         midi_client: integrations.midi_client,
         hotkey_client: integrations.hotkey_client,
         server,

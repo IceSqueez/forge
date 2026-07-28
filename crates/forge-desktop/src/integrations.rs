@@ -68,6 +68,7 @@ pub struct Integrations {
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
+    pub discord_client: Arc<forge_discord::DiscordClient>,
     /// `None` when the platform MIDI backend failed to initialize.
     pub midi_client: Option<Arc<forge_midi::MidiClient>>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
@@ -258,7 +259,8 @@ pub async fn build_integrations(
     insert("twitch", build_twitch(sub_actions, backend, bus).await);
     let obs_install_seed = build_obs(sub_actions, backend, bus).await;
     let vtube_install_seed = build_vtube(sub_actions, backend, bus).await;
-    insert("discord", build_discord(sub_actions, backend, bus));
+    let (discord, discord_client) = build_discord(sub_actions, backend, bus);
+    insert("discord", discord);
     let (midi, midi_client) = build_midi(sub_actions, backend, bus).await;
     insert("midi", midi);
     let (hotkey, hotkey_client) = build_hotkey(backend, bus).await;
@@ -284,6 +286,7 @@ pub async fn build_integrations(
         youtube_install_seed,
         obs_install_seed,
         vtube_install_seed,
+        discord_client,
         midi_client,
         hotkey_client,
     }
@@ -561,7 +564,7 @@ fn build_discord(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> Option<BuiltinObject> {
+) -> (Option<BuiltinObject>, Arc<forge_discord::DiscordClient>) {
     let client = forge_discord::DiscordClient::new(
         forge_discord::DiscordConfig::default(),
         publisher(bus),
@@ -570,15 +573,16 @@ fn build_discord(
     if let Err(e) = forge_discord::register_discord_sub_actions(sub_actions, Arc::clone(&client)) {
         eprintln!("forge-desktop: discord sub-action registration failed: {e}");
     }
-    Some(BuiltinObject {
+    let object = BuiltinObject {
         icon: SectionIcon::new("brand-discord"),
         status: client.clone(),
         health: client.clone(),
         content: client.clone(),
-        quick: client,
+        quick: client.clone(),
         control: None,
         obs_client: None,
-    })
+    };
+    (Some(object), client)
 }
 
 async fn build_midi(

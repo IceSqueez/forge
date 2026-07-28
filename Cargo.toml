@@ -79,7 +79,7 @@ mockall = { version = "0.15" }
 wiremock = { version = "0.6" }
 
 sha2 = { version = "0.11" }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 subtle = { version = "2.6" }
 arc-swap = { version = "1.9" }
 

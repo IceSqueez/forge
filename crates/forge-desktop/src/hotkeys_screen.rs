@@ -103,13 +103,13 @@ enum Capture {
     Off,
     Add,
     Rebind(TriggerInstanceId),
-    Modal,
+    Modal(Option<TriggerInstanceId>),
 }
 
 impl Capture {
     fn target(self) -> Option<TriggerInstanceId> {
         match self {
-            Capture::Rebind(id) => Some(id),
+            Capture::Rebind(id) | Capture::Modal(Some(id)) => Some(id),
             _ => None,
         }
     }
@@ -128,6 +128,7 @@ struct LastFired {
 
 struct OpenModal {
     view: Entity<HotkeyActionModal>,
+    editing: Option<TriggerInstanceId>,
     _sub: Subscription,
 }
 
@@ -343,7 +344,7 @@ impl HotkeysScreenView {
     fn cancel_capture(&mut self, cx: &mut Context<Self>) {
         let capture = std::mem::replace(&mut self.capture, Capture::Off);
         self.capture_sub = None;
-        if capture == Capture::Modal
+        if matches!(capture, Capture::Modal(_))
             && let Some(open) = &self.modal
         {
             open.view.update(cx, |modal, cx| modal.cancel_capture(cx));
@@ -358,7 +359,10 @@ impl HotkeysScreenView {
             .bindings
             .iter()
             .find(|row| row.combo == combo && Some(row.instance_id) != capture.target())
-            .map(|row| row.combo.clone());
+            .map(|row| match row.action.as_ref() {
+                Some((_, name)) => name.clone(),
+                None => tr!("hotkeys_conflict_holder_unassigned"),
+            });
         match holder {
             Some(holder) => {
                 self.conflict = Some(ConflictPrompt {
@@ -377,7 +381,7 @@ impl HotkeysScreenView {
             Capture::Off => cx.notify(),
             Capture::Add => self.open_modal(None, combo, None, cx),
             Capture::Rebind(id) => self.rebind(id, combo, cx),
-            Capture::Modal => {
+            Capture::Modal(_) => {
                 if let Some(open) = &self.modal {
                     open.view
                         .update(cx, |modal, cx| modal.apply_capture(combo, cx));
@@ -391,16 +395,13 @@ impl HotkeysScreenView {
         let Some(prompt) = self.conflict.take() else {
             return;
         };
-        let ConflictPrompt {
-            combo,
-            holder,
-            capture,
-        } = prompt;
+        let ConflictPrompt { combo, capture, .. } = prompt;
         let client = Arc::clone(&self.client);
         let backend = Arc::clone(&self.backend);
+        let doomed = combo.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            delete_binding(client, backend, holder),
+            delete_binding(client, backend, doomed),
             move |this, result: Result<(), String>, cx| match result {
                 Ok(()) => {
                     if capture.target().is_none() {
@@ -419,7 +420,7 @@ impl HotkeysScreenView {
         let Some(prompt) = self.conflict.take() else {
             return;
         };
-        if prompt.capture == Capture::Modal
+        if matches!(prompt.capture, Capture::Modal(_))
             && let Some(open) = &self.modal
         {
             open.view.update(cx, |modal, cx| modal.cancel_capture(cx));
@@ -443,7 +444,11 @@ impl HotkeysScreenView {
         let rt_handle = self.rt_handle.clone();
         let view = cx.new(|cx| HotkeyActionModal::new(launch, action_repo, rt_handle, cx));
         let sub = cx.subscribe(&view, Self::on_modal_event);
-        self.modal = Some(OpenModal { view, _sub: sub });
+        self.modal = Some(OpenModal {
+            view,
+            editing: instance_id,
+            _sub: sub,
+        });
         cx.notify();
     }
 
@@ -454,7 +459,10 @@ impl HotkeysScreenView {
         cx: &mut Context<Self>,
     ) {
         match event {
-            HotkeyActionModalEvent::Recapture => self.start_capture(Capture::Modal, cx),
+            HotkeyActionModalEvent::Recapture => {
+                let editing = self.modal.as_ref().and_then(|open| open.editing);
+                self.start_capture(Capture::Modal(editing), cx);
+            }
             HotkeyActionModalEvent::Cancel => self.close_modal(cx),
             HotkeyActionModalEvent::Save(draft) => {
                 let draft = BindingDraft {
@@ -1079,7 +1087,7 @@ impl HotkeysScreenView {
     ) -> AnyElement {
         let card = confirm_modal(
             tr!("hotkeys_conflict_title"),
-            tr!("hotkeys_conflict_body"),
+            tr!("hotkeys_conflict_body", holder = prompt.holder.as_str()),
             ConfirmTone::Destructive,
             palette,
         )

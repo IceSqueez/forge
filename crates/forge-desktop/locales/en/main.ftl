@@ -1947,7 +1947,8 @@ hotkeys_capture_prompt = Press the key combination...
 ## Hotkeys - conflict
 
 hotkeys_conflict_title = Combination already bound
-hotkeys_conflict_body = is already bound. Replace the existing binding or cancel?
+hotkeys_conflict_body = is already bound to { $holder }. Replace the existing binding or cancel?
+hotkeys_conflict_holder_unassigned = an unassigned binding
 hotkeys_conflict_replace = Replace
 
 ## Hotkeys - modal

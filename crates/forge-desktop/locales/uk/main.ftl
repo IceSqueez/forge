@@ -1975,7 +1975,8 @@ hotkeys_capture_prompt = Натисни комбінацію клавіш...
 ## Hotkeys - conflict
 
 hotkeys_conflict_title = Комбінацію вже прив'язано
-hotkeys_conflict_body = вже прив'язана. Замінити наявну прив'язку чи скасувати?
+hotkeys_conflict_body = вже прив'язана до { $holder }. Замінити наявну прив'язку чи скасувати?
+hotkeys_conflict_holder_unassigned = непризначеної прив'язки
 hotkeys_conflict_replace = Замінити
 
 ## Hotkeys - modal

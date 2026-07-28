@@ -444,10 +444,12 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use tokio::sync::mpsc;
     use tokio_stream::StreamExt;
 
     use forge_events::{Event, EventPublisher};
 
+    use super::run_supervisor;
     use crate::backend::MidiBackend;
     use crate::backend::tests::MockMidiBackend;
     use crate::client::MidiClient;
@@ -774,6 +776,48 @@ mod tests {
         assert!(
             note_on_ports(&publisher).contains(&"B".to_owned()),
             "enable must subscribe the port discovered while disabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn disable_stops_an_already_established_subscription() {
+        let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
+        let publisher = RecordingPublisher::new();
+        let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
+
+        backend.inject_all(0, vec![0x90, 60, 100]).await;
+        settle().await;
+        assert_eq!(
+            note_on_ports(&publisher).len(),
+            1,
+            "port A must start subscribed"
+        );
+
+        client.disable_input().await.unwrap();
+        settle().await;
+        backend.inject_all(0, vec![0x90, 62, 100]).await;
+        settle().await;
+
+        assert_eq!(
+            note_on_ports(&publisher).len(),
+            1,
+            "disable must close the subscription opened before it"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_closed_control_channel_ends_the_supervisor_instead_of_spinning() {
+        let client = MidiClient::new_for_test();
+        let (merged_tx, merged_rx) = mpsc::channel(8);
+        let (control_tx, control_rx) = mpsc::channel(8);
+        let task = tokio::spawn(run_supervisor(client, merged_tx, merged_rx, control_rx));
+
+        drop(control_tx);
+
+        let finished = tokio::time::timeout(Duration::from_secs(2), task).await;
+        assert!(
+            finished.is_ok(),
+            "the supervisor must exit once its control channel closes"
         );
     }
 

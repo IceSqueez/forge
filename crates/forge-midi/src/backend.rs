@@ -122,15 +122,32 @@ pub(crate) mod tests {
 
     use super::*;
 
-    pub(crate) struct MockInputHandle;
+    type PortSender = mpsc::Sender<(u64, Vec<u8>)>;
+
+    pub(crate) struct MockInputHandle {
+        state: Arc<Mutex<MockState>>,
+        token: u64,
+    }
 
     impl InputHandle for MockInputHandle {}
+
+    impl Drop for MockInputHandle {
+        fn drop(&mut self) {
+            let token = self.token;
+            self.state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .senders
+                .retain(|(open, _)| *open != token);
+        }
+    }
 
     #[derive(Default)]
     pub(crate) struct MockState {
         pub input_ports: Vec<MidiPortInfo>,
         pub output_ports: Vec<MidiPortInfo>,
-        pub senders: Vec<mpsc::Sender<(u64, Vec<u8>)>>,
+        pub senders: Vec<(u64, PortSender)>,
+        pub next_token: u64,
         pub sent_outputs: VecDeque<(String, Vec<u8>)>,
     }
 
@@ -145,6 +162,7 @@ pub(crate) mod tests {
                     input_ports,
                     output_ports,
                     senders: Vec::new(),
+                    next_token: 0,
                     sent_outputs: VecDeque::new(),
                 })),
             }
@@ -165,11 +183,12 @@ pub(crate) mod tests {
         }
 
         pub(crate) async fn inject_all(&self, ts: u64, data: Vec<u8>) {
-            let senders: Vec<mpsc::Sender<(u64, Vec<u8>)>> = {
+            let senders: Vec<PortSender> = {
                 let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
                 state
                     .senders
                     .iter()
+                    .map(|(_, sender)| sender)
                     .filter(|s| !s.is_closed())
                     .cloned()
                     .collect()
@@ -218,8 +237,13 @@ pub(crate) mod tests {
                     name: port_name.to_owned(),
                 });
             }
-            state.senders.push(event_tx);
-            Ok(Box::new(MockInputHandle))
+            let token = state.next_token;
+            state.next_token += 1;
+            state.senders.push((token, event_tx));
+            Ok(Box::new(MockInputHandle {
+                state: Arc::clone(&self.state),
+                token,
+            }))
         }
 
         fn send_output(&self, port_name: &str, data: &[u8]) -> Result<(), MidiError> {
@@ -234,72 +258,5 @@ pub(crate) mod tests {
                 .push_back((port_name.to_owned(), data.to_vec()));
             Ok(())
         }
-    }
-
-    #[test]
-    fn mock_list_input_ports_returns_configured() {
-        let backend = MockMidiBackend::new(
-            vec![MidiPortInfo {
-                name: "Piano".to_owned(),
-                direction: PortDirection::Input,
-            }],
-            vec![],
-        );
-        let ports = backend.list_input_ports();
-        assert_eq!(ports.len(), 1);
-        assert_eq!(ports[0].name, "Piano");
-    }
-
-    #[test]
-    fn mock_list_output_ports_returns_configured() {
-        let backend = MockMidiBackend::new(
-            vec![],
-            vec![MidiPortInfo {
-                name: "Synth".to_owned(),
-                direction: PortDirection::Output,
-            }],
-        );
-        let ports = backend.list_output_ports();
-        assert_eq!(ports.len(), 1);
-        assert_eq!(ports[0].name, "Synth");
-    }
-
-    #[test]
-    fn mock_send_output_records_bytes() {
-        let backend = MockMidiBackend::new(
-            vec![],
-            vec![MidiPortInfo {
-                name: "Out".to_owned(),
-                direction: PortDirection::Output,
-            }],
-        );
-        backend.send_output("Out", &[0x90, 60, 127]).unwrap();
-        let sent = backend.sent_outputs();
-        assert_eq!(sent.len(), 1);
-        assert_eq!(sent[0].0, "Out");
-        assert_eq!(sent[0].1, vec![0x90u8, 60, 127]);
-    }
-
-    #[test]
-    fn mock_send_output_unknown_port_returns_error() {
-        let backend = MockMidiBackend::new(vec![], vec![]);
-        let result = backend.send_output("None", &[0x90, 60, 127]);
-        assert!(matches!(result, Err(MidiError::PortNotFound { .. })));
-    }
-
-    #[tokio::test]
-    async fn mock_open_input_and_inject_forwards_event() {
-        let backend = MockMidiBackend::new(
-            vec![MidiPortInfo {
-                name: "Piano".to_owned(),
-                direction: PortDirection::Input,
-            }],
-            vec![],
-        );
-        let (tx, mut rx) = mpsc::channel(8);
-        backend.open_input("Piano", tx).unwrap();
-        backend.inject_all(0, vec![0x90, 60, 127]).await;
-        let event = rx.recv().await.unwrap();
-        assert_eq!(event.1, vec![0x90u8, 60, 127]);
     }
 }

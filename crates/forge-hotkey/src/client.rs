@@ -146,8 +146,9 @@ impl HotkeyClient {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.send_command(SupervisorCommand::Disable(reply_tx))
             .await?;
-        reply_rx
+        tokio::time::timeout(COMMAND_TIMEOUT, reply_rx)
             .await
+            .map_err(|_| HotkeyError::SupervisorUnavailable)?
             .map_err(|_| HotkeyError::SupervisorUnavailable)
     }
 
@@ -155,8 +156,9 @@ impl HotkeyClient {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.send_command(SupervisorCommand::Enable(reply_tx))
             .await?;
-        reply_rx
+        tokio::time::timeout(COMMAND_TIMEOUT, reply_rx)
             .await
+            .map_err(|_| HotkeyError::SupervisorUnavailable)?
             .map_err(|_| HotkeyError::SupervisorUnavailable)
     }
 

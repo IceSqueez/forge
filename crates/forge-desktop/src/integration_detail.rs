@@ -524,6 +524,7 @@ impl IntegrationDetail {
                 Err(err) => {
                     tracing::warn!(error = %err, "integration control failed");
                     cx.push_toast(ToastKind::Error, tr!("integration_control_failed"));
+                    this.reload(cx);
                 }
             },
             cx,

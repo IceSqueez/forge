@@ -48,7 +48,11 @@ impl BuiltinStatus for HotkeyClient {
     }
 
     fn header_actions(&self) -> Vec<HeaderAction> {
-        vec![]
+        if self.is_enabled() {
+            vec![HeaderAction::Disconnect]
+        } else {
+            vec![HeaderAction::Reconnect]
+        }
     }
 }
 

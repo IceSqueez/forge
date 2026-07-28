@@ -1881,6 +1881,7 @@ midi_rescan_ports = Пересканувати порти
 
 midi_section_monitor = Монітор входу
 midi_monitor_empty = Очікування MIDI-сигналу...
+midi_monitor_disabled = Вхід MIDI вимкнено - увімкни його вище, щоб бачити сигнали
 
 ## MIDI - mappings
 
@@ -1915,6 +1916,7 @@ midi_modal_input_disabled = Вхід MIDI вимкнено - перенавча�
 midi_modal_filter_actions = Фільтр дій...
 midi_modal_actions_loading = Завантаження дій...
 midi_modal_actions_empty = Жодна дія не відповідає фільтру
+midi_modal_actions_none = Дій ще немає - спершу створи хоча б одну
 midi_modal_hint_ready = Готово до збереження
 midi_modal_hint_pick_action = Обери дію, щоб продовжити
 midi_modal_add_mapping = Додати зіставлення

@@ -262,6 +262,9 @@ impl MidiMappingModal {
     }
 
     fn select_kind(&mut self, kind_id: &str, cx: &mut Context<Self>) {
+        if selector_key(kind_id) != selector_key(&self.kind_id) {
+            self.selector = None;
+        }
         self.kind_id = kind_id.to_owned();
         self.open_panel = None;
         cx.notify();
@@ -643,6 +646,9 @@ impl MidiMappingModal {
             ActionsState::Loading => self.list_message(tr!("midi_modal_actions_loading"), palette),
             ActionsState::Failed(message) => {
                 self.list_message(tr!("midi_toast_error", message = message.as_str()), palette)
+            }
+            ActionsState::Ready(actions) if actions.is_empty() => {
+                self.list_message(tr!("midi_modal_actions_none"), palette)
             }
             ActionsState::Ready(actions) => {
                 let matched: Vec<&ActionChoice> = actions

@@ -1853,6 +1853,7 @@ midi_rescan_ports = Rescan ports
 
 midi_section_monitor = Input monitor
 midi_monitor_empty = Waiting for MIDI input...
+midi_monitor_disabled = MIDI input is off - enable it above to see traffic
 
 ## MIDI - mappings
 
@@ -1887,6 +1888,7 @@ midi_modal_input_disabled = MIDI input is off - re-learn is unavailable until yo
 midi_modal_filter_actions = Filter actions...
 midi_modal_actions_loading = Loading actions...
 midi_modal_actions_empty = No actions match the filter
+midi_modal_actions_none = No actions exist yet - create one first
 midi_modal_hint_ready = Ready to save
 midi_modal_hint_pick_action = Pick an action to continue
 midi_modal_add_mapping = Add mapping

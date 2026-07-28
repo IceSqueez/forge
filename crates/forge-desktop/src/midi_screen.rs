@@ -369,29 +369,40 @@ impl MidiScreenView {
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
-        let settings = Arc::clone(&self.settings_repo);
+        self.load_known_devices(cx);
         let triggers = Arc::clone(&self.trigger_repo);
         let actions = Arc::clone(&self.action_repo);
         async_bridge::run_async(
             &self.rt_handle,
+            async move { load_mappings(&*triggers, &*actions).await },
+            |this, mappings, cx| this.apply_mappings(mappings, cx),
+            cx,
+        );
+    }
+
+    fn load_known_devices(&mut self, cx: &mut Context<Self>) {
+        let settings = Arc::clone(&self.settings_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
             async move {
-                let known = match settings.get_string(MIDI_KNOWN_DEVICES_KEY).await {
-                    Ok(stored) => Some(
+                settings
+                    .get_string(MIDI_KNOWN_DEVICES_KEY)
+                    .await
+                    .map(|stored| {
                         stored
                             .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-                            .unwrap_or_default(),
-                    ),
-                    Err(_) => None,
-                };
-                (known, load_mappings(&*triggers, &*actions).await)
+                            .unwrap_or_default()
+                    })
+                    .map_err(|e| e.to_string())
             },
-            |this, (known, mappings), cx| {
-                if let Some(known) = known {
+            |this, result: Result<Vec<String>, String>, cx| match result {
+                Ok(known) => {
                     this.known_devices = known;
                     this.known_devices_loaded = true;
                     this.remember_live_ports(cx);
+                    cx.notify();
                 }
-                this.apply_mappings(mappings, cx);
+                Err(message) => this.on_repo_error(&message, cx),
             },
             cx,
         );
@@ -565,12 +576,14 @@ impl MidiScreenView {
     }
 
     fn toggle_enabled(&mut self, cx: &mut Context<Self>) {
-        self.enabled = !self.enabled;
+        let previous = self.enabled;
+        self.enabled = !previous;
         let enabled = self.enabled;
         let client = Arc::clone(&self.client);
         let repo = Arc::clone(&self.settings_repo);
-        async_bridge::report_failure(
+        async_bridge::optimistic(
             &self.rt_handle,
+            previous,
             async move {
                 if enabled {
                     client.enable_input().await.map_err(|e| e.to_string())?;
@@ -581,14 +594,19 @@ impl MidiScreenView {
                     .await
                     .map_err(|e| e.to_string())
             },
-            ErrorSink::Toast,
-            tr!("midi_toggle_failed"),
+            |this, previous, _message, cx| {
+                this.enabled = previous;
+                ErrorSink::Toast.report(tr!("midi_toggle_failed"), cx);
+            },
             cx,
         );
         cx.notify();
     }
 
     fn rescan(&mut self, cx: &mut Context<Self>) {
+        if !self.known_devices_loaded {
+            self.load_known_devices(cx);
+        }
         let client = Arc::clone(&self.client);
         async_bridge::run_async(
             &self.rt_handle,
@@ -930,35 +948,41 @@ impl MidiScreenView {
             .line_height(MONITOR_LINE_H)
             .text_color(palette.text_secondary);
 
-        if self.monitor.is_empty() {
+        for event in &self.monitor {
+            lines = lines.child(
+                div()
+                    .w_full()
+                    .flex()
+                    .gap(MONITOR_GAP)
+                    .child(
+                        div()
+                            .w(MONITOR_KIND_W)
+                            .flex_shrink_0()
+                            .text_color(palette.text_faint)
+                            .child(monitor_kind_label(&event.kind).to_owned()),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_color(monitor_color(&event.kind, palette))
+                            .child(monitor_value_label(event)),
+                    ),
+            );
+        }
+
+        if !self.enabled {
+            lines = lines.child(
+                div()
+                    .text_color(palette.text_faint)
+                    .child(tr!("midi_monitor_disabled")),
+            );
+        } else if self.monitor.is_empty() {
             lines = lines.child(
                 div()
                     .text_color(palette.text_faint)
                     .child(tr!("midi_monitor_empty")),
             );
-        } else {
-            for event in &self.monitor {
-                lines = lines.child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .gap(MONITOR_GAP)
-                        .child(
-                            div()
-                                .w(MONITOR_KIND_W)
-                                .flex_shrink_0()
-                                .text_color(palette.text_faint)
-                                .child(monitor_kind_label(&event.kind).to_owned()),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .text_color(monitor_color(&event.kind, palette))
-                                .child(monitor_value_label(event)),
-                        ),
-                );
-            }
         }
 
         let body = div()

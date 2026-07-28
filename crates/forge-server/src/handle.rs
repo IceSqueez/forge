@@ -22,6 +22,7 @@ struct HandleInner {
 #[derive(Clone)]
 pub struct ServerHandle {
     inner: Arc<Mutex<HandleInner>>,
+    run_state_tx: watch::Sender<bool>,
 }
 
 impl ServerHandle {
@@ -30,6 +31,7 @@ impl ServerHandle {
         shutdown_tx: watch::Sender<bool>,
         state: AppState,
         bind_addr: SocketAddr,
+        run_state_tx: watch::Sender<bool>,
     ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(HandleInner {
@@ -38,7 +40,12 @@ impl ServerHandle {
                 state,
                 bind_addr,
             })),
+            run_state_tx,
         }
+    }
+
+    pub fn run_state(&self) -> watch::Receiver<bool> {
+        self.run_state_tx.subscribe()
     }
 
     pub async fn stop(&self) -> Result<(), ServerError> {
@@ -59,6 +66,8 @@ impl ServerHandle {
         if let Some(tx) = shutdown_tx {
             let _ = tx.send(true);
         }
+
+        let _ = self.run_state_tx.send(false);
 
         bus_adapter.broadcast_close().await;
 
@@ -131,13 +140,17 @@ impl ServerHandle {
                 reason: e.to_string(),
             })?;
 
-        let (join, shutdown_tx) = server::serve_on_with_shutdown(listener, new_state.clone());
+        let (join, shutdown_tx) =
+            server::serve_on_with_shutdown(listener, new_state.clone(), self.run_state_tx.clone());
 
         let mut guard = self.inner.lock().await;
         guard.join = Some(join);
         guard.shutdown_tx = Some(shutdown_tx);
         guard.state = new_state;
         guard.bind_addr = bind_addr;
+        drop(guard);
+
+        let _ = self.run_state_tx.send(true);
 
         Ok(())
     }
@@ -177,6 +190,7 @@ impl ServerHandle {
     }
 
     pub fn abort(&self) {
+        let _ = self.run_state_tx.send(false);
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {
             let mut guard = inner.lock().await;

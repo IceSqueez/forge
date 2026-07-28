@@ -226,8 +226,13 @@ mod tests {
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
-        let (join, shutdown_tx) = crate::server::serve_on_with_shutdown(listener, state.clone());
-        (ServerHandle::new(join, shutdown_tx, state, addr), addr)
+        let (run_state_tx, _run_state_rx) = tokio::sync::watch::channel(true);
+        let (join, shutdown_tx) =
+            crate::server::serve_on_with_shutdown(listener, state.clone(), run_state_tx.clone());
+        (
+            ServerHandle::new(join, shutdown_tx, state, addr, run_state_tx),
+            addr,
+        )
     }
 
     #[tokio::test]

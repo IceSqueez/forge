@@ -179,6 +179,7 @@ fn build_router(state: AppState) -> Router {
 pub fn serve_on_with_shutdown(
     listener: TcpListener,
     state: AppState,
+    run_state_tx: tokio::sync::watch::Sender<bool>,
 ) -> (
     tokio::task::JoinHandle<Result<(), ServerError>>,
     tokio::sync::watch::Sender<bool>,
@@ -186,7 +187,7 @@ pub fn serve_on_with_shutdown(
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
     let app = build_router(state).into_make_service_with_connect_info::<SocketAddr>();
     let join = tokio::spawn(async move {
-        axum::serve(listener, app)
+        let result = axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 loop {
                     if shutdown_rx.changed().await.is_err() {
@@ -198,7 +199,9 @@ pub fn serve_on_with_shutdown(
                 }
             })
             .await
-            .map_err(|e| ServerError::Io(std::io::Error::other(e)))
+            .map_err(|e| ServerError::Io(std::io::Error::other(e)));
+        let _ = run_state_tx.send(false);
+        result
     });
     (join, shutdown_tx)
 }
@@ -206,8 +209,9 @@ pub fn serve_on_with_shutdown(
 fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
     let bind_addr = listener.local_addr().unwrap_or(state.bind_addr);
     let stored_state = state.clone();
-    let (join, shutdown_tx) = serve_on_with_shutdown(listener, state);
-    ServerHandle::new(join, shutdown_tx, stored_state, bind_addr)
+    let (run_state_tx, _run_state_rx) = tokio::sync::watch::channel(true);
+    let (join, shutdown_tx) = serve_on_with_shutdown(listener, state, run_state_tx.clone());
+    ServerHandle::new(join, shutdown_tx, stored_state, bind_addr, run_state_tx)
 }
 
 #[cfg(test)]

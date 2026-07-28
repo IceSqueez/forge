@@ -152,7 +152,6 @@ settings_nav_language_region = Мова та регіон
 settings_nav_shortcuts = Скорочення
 settings_nav_notifications = Сповіщення
 settings_nav_audio = Аудіо
-settings_nav_hotkeys = Хоткеї
 
 ## Налаштування → панель діагностики
 
@@ -256,27 +255,6 @@ settings_ws_lan_bullet_phone = Телефон / планшет / другий П
 settings_ws_lan_bullet_token_warning = Будь-хто у вашій мережі може читати всі події та надсилати повідомлення в чат, якщо знає ваш bearer-токен
 settings_ws_lan_bullet_public_wifi = Якщо ви у публічній Wi-Fi (кафе, конференція, готель) - не вмикайте це
 settings_ws_lan_bullet_firewall = Ваш брандмауер також повинен дозволяти налаштований порт
-
-## Налаштування → панель хоткеїв
-
-settings_hotkeys_scope_subtitle = Ці комбінації реєструються в операційній системі та спрацьовують, навіть коли forge працює у фоні.
-settings_hotkeys_bind_section = ПРИВ'ЯЗАТИ ХОТКЕЙ
-settings_hotkeys_registered_section = ЗАРЕЄСТРОВАНІ
-settings_hotkeys_backend_section = БЕКЕНД
-settings_hotkeys_select_action = Оберіть дію…
-settings_hotkeys_bind_btn = Прив'язати
-settings_hotkeys_no_bindings = Хоткеїв ще не зареєстровано.
-settings_hotkeys_conflict_title = Комбінацію вже зареєстровано
-settings_hotkeys_conflict_body_suffix = вже зареєстрована. Замінити або скасувати?
-settings_hotkeys_replace_btn = Замінити
-settings_hotkeys_error_no_combo = Спочатку захопіть комбінацію хоткея.
-settings_hotkeys_error_no_action = Оберіть дію для прив'язки.
-settings_hotkeys_error_unavailable = Система хоткеїв недоступна.
-settings_hotkeys_error_load_bindings = Не вдалося завантажити прив'язки: { $error }
-settings_hotkeys_error_unbind = Помилка відв'язки: { $error }
-settings_hotkeys_error_replace = Помилка заміни: { $error }
-settings_hotkeys_error_conflict_not_found = Конфліктний хоткей не знайдено в локальному кеші. Оновіть і спробуйте знову.
-settings_hotkeys_capture_prompt = Натисніть клавіші... Esc для скасування
 
 ## Дії - заголовок сторінки / хлібні крихти
 
@@ -1593,10 +1571,6 @@ integration_state_disconnected_detail = Натисніть «Підключит�
 auth_error_credentials_missing_twitch = Інтеграцію Twitch не налаштовано. Встановіть FORGE_TWITCH_CLIENT_ID із client_id вашого зареєстрованого додатка та перезапустіть.
 auth_error_credentials_missing_youtube = Облікові дані OAuth для YouTube не налаштовані
 auth_error_credentials_missing_kick = Інтеграцію Kick не налаштовано. Встановіть FORGE_KICK_CLIENT_ID та FORGE_KICK_CLIENT_SECRET із облікових даних вашого зареєстрованого додатка та перезапустіть.
-
-## Widget - key capture
-
-widget_key_capture_placeholder = Натисніть комбінацію…
 
 ## Widget - event inspector
 

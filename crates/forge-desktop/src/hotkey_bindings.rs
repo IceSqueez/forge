@@ -74,10 +74,6 @@ pub fn keystroke_to_combo(keystroke: &Keystroke) -> Option<String> {
     HotkeyCombo::parse(&raw).ok().map(|c| c.as_str().to_owned())
 }
 
-pub fn is_already_registered(err: &str) -> bool {
-    err.contains("already registered")
-}
-
 fn combo_of(instance: &TriggerInstance) -> Option<&String> {
     match instance.overrides.get(COMBO_FIELD) {
         Some(Variant::String(combo)) => Some(combo),
@@ -200,43 +196,6 @@ pub async fn do_bind(
     Ok(())
 }
 
-pub async fn do_unbind(
-    client: Arc<HotkeyClient>,
-    backend: Arc<dyn DataProvider>,
-    hotkey_id: HotkeyId,
-) -> Result<(), String> {
-    let combo = client
-        .registered_combos()
-        .into_iter()
-        .find(|(id, _)| *id == hotkey_id)
-        .map(|(_, combo)| combo.as_str().to_owned());
-
-    client
-        .unregister(hotkey_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if let Some(combo) = combo {
-        cleanup_stale_combo_instances(&backend, &combo).await?;
-    }
-
-    Ok(())
-}
-
-pub async fn do_replace(
-    client: Arc<HotkeyClient>,
-    backend: Arc<dyn DataProvider>,
-    existing_id: HotkeyId,
-    combo_str: String,
-    action_id: ActionId,
-) -> Result<(), String> {
-    client
-        .unregister(existing_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    do_bind(client, backend, combo_str, action_id).await
-}
-
 pub async fn delete_binding(
     client: Arc<HotkeyClient>,
     backend: Arc<dyn DataProvider>,
@@ -334,7 +293,6 @@ pub async fn relink_action(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use forge_hotkey::HotkeyError;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{Action, ExecutionMode, QueueId};
     use gpui::Modifiers;
@@ -512,29 +470,6 @@ mod tests {
 
         for (combo, expected) in cases {
             assert_eq!(combo_keys(combo), expected, "wrong caps for {combo:?}");
-        }
-    }
-
-    #[test]
-    fn is_already_registered_matches_the_conflict_error_and_no_other_hotkey_error() {
-        let conflict = HotkeyError::AlreadyRegistered {
-            combo: "Ctrl+F1".to_owned(),
-        };
-        assert!(is_already_registered(&conflict.to_string()));
-
-        for other in [
-            HotkeyError::InvalidCombo("Ctrl+".to_owned()),
-            HotkeyError::PortalUnavailable {
-                reason: "no session".to_owned(),
-            },
-            HotkeyError::PermissionDenied,
-            HotkeyError::Backend("device busy".to_owned()),
-            HotkeyError::SupervisorUnavailable,
-        ] {
-            assert!(
-                !is_already_registered(&other.to_string()),
-                "misread {other:?} as a combo conflict"
-            );
         }
     }
 

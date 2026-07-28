@@ -17,7 +17,6 @@ use crate::async_bridge::{self, ErrorSink};
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
-use crate::settings_hotkeys::SettingsHotkeysView;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_storage::SettingsStorageView;
@@ -51,7 +50,6 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
             SettingsSection::Queues,
             SettingsSection::Storage,
             SettingsSection::WebSocket,
-            SettingsSection::Hotkeys,
         ],
     ),
     (
@@ -71,7 +69,6 @@ pub enum SettingsSection {
     Queues,
     Storage,
     WebSocket,
-    Hotkeys,
     Version,
     Diagnostics,
 }
@@ -88,7 +85,6 @@ impl SettingsSection {
             SettingsSection::Queues => tr!("settings_queues_section_title"),
             SettingsSection::Storage => tr!("settings_storage_section_title"),
             SettingsSection::WebSocket => tr!("settings_ws_title"),
-            SettingsSection::Hotkeys => tr!("settings_nav_hotkeys"),
             SettingsSection::Version => tr!("settings_version_title"),
             SettingsSection::Diagnostics => tr!("settings_diagnostics_section_title"),
         }
@@ -105,7 +101,6 @@ impl SettingsSection {
             SettingsSection::Queues => Icon::Notebook,
             SettingsSection::Storage => Icon::Folder,
             SettingsSection::WebSocket => Icon::Server,
-            SettingsSection::Hotkeys => Icon::Bolt,
             SettingsSection::Version => Icon::Diamond,
             SettingsSection::Diagnostics => Icon::Activity,
         }
@@ -122,7 +117,6 @@ impl SettingsSection {
             SettingsSection::Queues => "queues",
             SettingsSection::Storage => "storage",
             SettingsSection::WebSocket => "websocket",
-            SettingsSection::Hotkeys => "hotkeys",
             SettingsSection::Version => "version",
             SettingsSection::Diagnostics => "diagnostics",
         }
@@ -184,7 +178,6 @@ pub struct SettingsView {
     scripting: Entity<SettingsScriptingView>,
     websocket: Entity<SettingsWebSocketView>,
     shortcuts: Entity<SettingsShortcutsView>,
-    hotkeys: Entity<SettingsHotkeysView>,
     storage: Entity<SettingsStorageView>,
     font_picker: Option<FontPicker>,
 }
@@ -222,14 +215,6 @@ impl SettingsView {
         let shortcuts = cx.new(|cx| {
             SettingsShortcutsView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });
-        let hotkeys = cx.new(|cx| {
-            SettingsHotkeysView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                handles.hotkey_client.clone(),
-                cx,
-            )
-        });
         let storage = cx.new(|cx| {
             SettingsStorageView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });
@@ -241,7 +226,6 @@ impl SettingsView {
             scripting,
             websocket,
             shortcuts,
-            hotkeys,
             storage,
             font_picker: None,
         }
@@ -548,7 +532,6 @@ impl SettingsView {
             SettingsSection::Notifications => self.notifications_pane(palette, density),
             SettingsSection::Queues => self.queues_pane(palette, density),
             SettingsSection::Storage => self.storage.clone().into_any_element(),
-            SettingsSection::Hotkeys => self.hotkeys.clone().into_any_element(),
             SettingsSection::Version => self.version_pane(palette, density, cx),
             SettingsSection::Diagnostics => self.diagnostics_pane(palette, density, cx),
         };

@@ -152,7 +152,6 @@ settings_nav_language_region = Language & region
 settings_nav_shortcuts = Shortcuts
 settings_nav_notifications = Notifications
 settings_nav_audio = Audio
-settings_nav_hotkeys = Hotkeys
 
 ## Settings → Diagnostics pane
 
@@ -256,27 +255,6 @@ settings_ws_lan_bullet_phone = Phone / tablet / second PC can connect to overlay
 settings_ws_lan_bullet_token_warning = Anyone on your network can read all events and send chat messages if they know your bearer token
 settings_ws_lan_bullet_public_wifi = If you're on public Wi-Fi (café, conference, hotel), do not enable this
 settings_ws_lan_bullet_firewall = Your firewall must also allow the configured port for this to work
-
-## Settings → Hotkeys pane
-
-settings_hotkeys_scope_subtitle = These combinations are registered with the operating system and fire even when forge runs in the background.
-settings_hotkeys_bind_section = BIND NEW HOTKEY
-settings_hotkeys_registered_section = REGISTERED
-settings_hotkeys_backend_section = BACKEND
-settings_hotkeys_select_action = Select action…
-settings_hotkeys_bind_btn = Bind
-settings_hotkeys_no_bindings = No hotkeys registered yet.
-settings_hotkeys_conflict_title = Hotkey already registered
-settings_hotkeys_conflict_body_suffix = is already registered. Replace or cancel?
-settings_hotkeys_replace_btn = Replace
-settings_hotkeys_error_no_combo = Capture a hotkey combo first.
-settings_hotkeys_error_no_action = Select an action to bind.
-settings_hotkeys_error_unavailable = Hotkey system is not available.
-settings_hotkeys_error_load_bindings = Failed to load bindings: { $error }
-settings_hotkeys_error_unbind = Unbind failed: { $error }
-settings_hotkeys_error_replace = Replace failed: { $error }
-settings_hotkeys_error_conflict_not_found = Conflicting hotkey not found in local cache. Refresh and try again.
-settings_hotkeys_capture_prompt = Press keys... Esc to cancel
 
 ## Actions - page header / breadcrumb
 
@@ -1574,10 +1552,6 @@ integration_state_disconnected_detail = Use Reconnect above to link this integra
 auth_error_credentials_missing_twitch = Twitch integration is not configured. Set FORGE_TWITCH_CLIENT_ID with your own registered application's client_id and restart the app.
 auth_error_credentials_missing_youtube = YouTube OAuth client credentials are not configured
 auth_error_credentials_missing_kick = Kick integration is not configured. Set FORGE_KICK_CLIENT_ID and FORGE_KICK_CLIENT_SECRET with your own registered application's credentials and restart the app.
-
-## Widget - key capture
-
-widget_key_capture_placeholder = Press a combo…
 
 ## Widget - event inspector
 

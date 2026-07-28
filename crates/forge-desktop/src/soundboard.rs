@@ -1341,7 +1341,12 @@ impl SoundboardView {
                 .saturating_duration_since(p.started_at)
                 .as_secs_f64()
         });
-        let readout = time_readout(elapsed_secs, readout_total(clip.duration_secs, progress));
+        let total = readout_total(clip.duration_secs, progress);
+        let readout = if !playing && total.is_none() {
+            "\u{2014}".to_owned()
+        } else {
+            time_readout(elapsed_secs, total)
+        };
         let readout_color = if playing { color } else { palette.text_faint };
 
         let mut status = div().flex().flex_1().min_w_0().items_center().gap(px(5.0));

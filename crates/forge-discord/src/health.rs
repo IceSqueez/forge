@@ -105,6 +105,36 @@ pub(crate) fn update_on_send(
     deltas
 }
 
+/// No request was made (the webhook could not be resolved), so latency and rate-limit budget are left untouched.
+pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<HealthDelta> {
+    let mut deltas = Vec::new();
+
+    let prev_ok = snap.last_send_ok;
+    snap.last_send_ok = Some(false);
+    if prev_ok != Some(false) {
+        deltas.push(HealthDelta {
+            index: 2,
+            new_value: HealthValue::Status {
+                label: "Failed".to_owned(),
+                active: false,
+                detail: None,
+            },
+        });
+    }
+
+    snap.error_timestamps.push_back(Instant::now());
+    let count = age_out_errors(&mut snap.error_timestamps);
+    deltas.push(HealthDelta {
+        index: 3,
+        new_value: HealthValue::Text {
+            primary: count.to_string(),
+            secondary: Some("last 60 min".to_owned()),
+        },
+    });
+
+    deltas
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DiscordSendHealth {
     pub latency_p50_ms: Option<u64>,

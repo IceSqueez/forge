@@ -12,7 +12,9 @@ use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
 use crate::embed::DiscordEmbed;
 use crate::error::DiscordError;
 use crate::events::{publish_failed, publish_posted, publish_rate_limited};
-use crate::health::{DiscordHealthSnapshot, make_health_state, update_on_send};
+use crate::health::{
+    DiscordHealthSnapshot, make_health_state, record_missing_webhook, update_on_send,
+};
 use crate::ratelimit::{DiscordRateLimiter, RateLimitOutcome};
 use crate::sink::DiscordSink;
 
@@ -93,12 +95,38 @@ impl DiscordClient {
         })
     }
 
+    /// Routes a failed lookup through the same failure-recording path a post-send HTTP error uses, so an action targeting a deleted webhook stays visible instead of failing silently.
+    async fn load_webhook_checked(&self, name: &str) -> Result<WebhookCredential, DiscordError> {
+        match self.load_webhook(name).await {
+            Ok(cred) => Ok(cred),
+            Err(err) => {
+                self.record_missing_webhook_failure(name, &err);
+                Err(err)
+            }
+        }
+    }
+
+    fn record_missing_webhook_failure(&self, webhook_name: &str, err: &DiscordError) {
+        let deltas = {
+            let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+            record_missing_webhook(&mut snap)
+        };
+        for delta in deltas {
+            let _ = self.health_tx.send(delta);
+        }
+        {
+            let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+            record_test_send(&mut snap, webhook_name, None, false, false);
+        }
+        publish_failed(self.publisher.as_ref(), webhook_name, err);
+    }
+
     pub async fn post_text(
         &self,
         webhook_name: &str,
         content: &str,
     ) -> Result<String, DiscordError> {
-        let cred = self.load_webhook(webhook_name).await?;
+        let cred = self.load_webhook_checked(webhook_name).await?;
         let body = serde_json::json!({ "content": content });
         self.execute_post(&cred.url, body, webhook_name, 0, true)
             .await
@@ -110,7 +138,7 @@ impl DiscordClient {
         embed: DiscordEmbed,
     ) -> Result<String, DiscordError> {
         embed.validate()?;
-        let cred = self.load_webhook(webhook_name).await?;
+        let cred = self.load_webhook_checked(webhook_name).await?;
         let body = serde_json::json!({ "embeds": [embed_to_wire(&embed)] });
         self.execute_post(&cred.url, body, webhook_name, 1, true)
             .await
@@ -126,7 +154,7 @@ impl DiscordClient {
         if let Some(e) = &embed {
             e.validate()?;
         }
-        let cred = self.load_webhook(webhook_name).await?;
+        let cred = self.load_webhook_checked(webhook_name).await?;
         let edit_url = format!("{}/messages/{message_id}", cred.url);
 
         let mut map = serde_json::Map::new();
@@ -150,7 +178,7 @@ impl DiscordClient {
         file_name: &str,
         file_bytes: &[u8],
     ) -> Result<String, DiscordError> {
-        let cred = self.load_webhook(webhook_name).await?;
+        let cred = self.load_webhook_checked(webhook_name).await?;
 
         let mut payload = serde_json::Map::new();
         if let Some(c) = content {
@@ -238,7 +266,7 @@ impl DiscordClient {
         webhook_name: &str,
         message_id: &str,
     ) -> Result<(), DiscordError> {
-        let cred = self.load_webhook(webhook_name).await?;
+        let cred = self.load_webhook_checked(webhook_name).await?;
         let delete_url = format!("{}/messages/{message_id}", cred.url);
         self.execute_delete(&delete_url, webhook_name).await
     }

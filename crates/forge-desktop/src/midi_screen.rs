@@ -9,8 +9,7 @@ use forge_components::{
 use forge_midi::{MidiClient, MidiMonitorEvent};
 use forge_runtime::EventBus;
 use forge_storage::{
-    ActionRepo, SettingsRepo, TriggerInstanceRepo, get_json_setting, set_bool_setting,
-    set_json_setting,
+    ActionRepo, SettingsRepo, TriggerInstanceRepo, set_bool_setting, set_json_setting,
 };
 use forge_types::{ActionId, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
@@ -209,6 +208,7 @@ async fn save_mapping(
                 .ok_or_else(|| "trigger instance not found".to_owned())?;
             let updated = TriggerInstance {
                 kind_id: draft.signal.kind_id.clone(),
+                name: draft.name.clone(),
                 overrides,
                 ..source
             };
@@ -278,6 +278,7 @@ pub struct MidiScreenView {
     enabled: bool,
     live_ports: Vec<String>,
     known_devices: Vec<String>,
+    known_devices_loaded: bool,
     monitor: Vec<MidiMonitorEvent>,
     mappings: Vec<MappingRow>,
     capture: Capture,
@@ -309,6 +310,7 @@ impl MidiScreenView {
             settings_repo,
             rt_handle,
             known_devices: Vec::new(),
+            known_devices_loaded: false,
             monitor: Vec::new(),
             mappings: Vec::new(),
             capture: Capture::Off,
@@ -373,15 +375,22 @@ impl MidiScreenView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let known =
-                    get_json_setting::<Vec<String>>(settings.as_ref(), MIDI_KNOWN_DEVICES_KEY)
-                        .await
-                        .unwrap_or_default();
+                let known = match settings.get_string(MIDI_KNOWN_DEVICES_KEY).await {
+                    Ok(stored) => Some(
+                        stored
+                            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+                            .unwrap_or_default(),
+                    ),
+                    Err(_) => None,
+                };
                 (known, load_mappings(&*triggers, &*actions).await)
             },
             |this, (known, mappings), cx| {
-                this.known_devices = known;
-                this.remember_live_ports(cx);
+                if let Some(known) = known {
+                    this.known_devices = known;
+                    this.known_devices_loaded = true;
+                    this.remember_live_ports(cx);
+                }
                 this.apply_mappings(mappings, cx);
             },
             cx,
@@ -530,6 +539,9 @@ impl MidiScreenView {
     }
 
     fn remember_live_ports(&mut self, cx: &mut Context<Self>) {
+        if !self.known_devices_loaded {
+            return;
+        }
         let discovered: Vec<String> = self
             .live_ports
             .iter()
@@ -1701,7 +1713,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_mapping_keeps_the_stored_name_and_cooldowns_when_editing() {
+    async fn save_mapping_renames_from_the_draft_and_keeps_cooldowns_when_editing() {
         let triggers = FakeTriggerRepo::default();
         let target = action("Play sound");
         let actions = FakeActionRepo::with(vec![target.clone()]);
@@ -1720,7 +1732,7 @@ mod tests {
         .unwrap();
 
         let saved = triggers.instances().remove(0);
-        assert_eq!(saved.name, "Stored name");
+        assert_eq!(saved.name, "Draft name");
         assert_eq!(saved.cooldown_secs, 45);
         assert!(!saved.cooldown_global);
         assert!(

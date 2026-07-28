@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, ToastAction,
+    BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, Radius, ToastAction,
     ToastKind, badge, body_family, card, ghost_button_with_icon, header_status, icon, menu_button,
-    menu_divider, menu_item, mono_family, page_frame, status_dot, toggle, tr,
+    menu_divider, menu_item, mono_family, pad_tile, page_frame, radius, status_dot, toggle, tr,
 };
 use forge_midi::{MidiClient, MidiMonitorEvent};
 use forge_runtime::EventBus;
@@ -87,10 +87,8 @@ const ARROW_GLYPH: Pixels = px(13.0);
 const ACCENT_DOT: Pixels = px(6.0);
 const TARGET_FS: Pixels = px(12.0);
 
-const ADD_BAR_PAD_V: Pixels = px(9.0);
 const ADD_BAR_PAD_H: Pixels = px(12.0);
 const ADD_BAR_RADIUS: Pixels = px(9.0);
-const ADD_BAR_GAP: Pixels = px(6.0);
 const ADD_BAR_GLYPH: Pixels = px(13.0);
 const ADD_BAR_FS: Pixels = px(12.0);
 const KBD_FS: Pixels = px(10.0);
@@ -279,9 +277,11 @@ pub struct MidiScreenView {
     live_ports: Vec<String>,
     known_devices: Vec<String>,
     known_devices_loaded: bool,
+    selected_device: Option<String>,
     monitor: Vec<MidiMonitorEvent>,
     mappings: Vec<MappingRow>,
     capture: Capture,
+    escape_sub: Option<Subscription>,
     modal: Option<OpenModal>,
     menu_open: Option<TriggerInstanceId>,
     menu_click_pos: Option<Point<Pixels>>,
@@ -311,9 +311,11 @@ impl MidiScreenView {
             rt_handle,
             known_devices: Vec::new(),
             known_devices_loaded: false,
+            selected_device: None,
             monitor: Vec::new(),
             mappings: Vec::new(),
             capture: Capture::Off,
+            escape_sub: None,
             modal: None,
             menu_open: None,
             menu_click_pos: None,
@@ -400,6 +402,7 @@ impl MidiScreenView {
                     this.known_devices = known;
                     this.known_devices_loaded = true;
                     this.remember_live_ports(cx);
+                    this.ensure_device_selection();
                     cx.notify();
                 }
                 Err(message) => this.on_repo_error(&message, cx),
@@ -437,6 +440,7 @@ impl MidiScreenView {
 
     fn on_capture(&mut self, signal: MidiSignal, cx: &mut Context<Self>) {
         let capture = std::mem::replace(&mut self.capture, Capture::Off);
+        self.escape_sub = None;
         match capture {
             Capture::Off => {}
             Capture::Learn => self.open_modal(None, signal, None, cx),
@@ -451,12 +455,76 @@ impl MidiScreenView {
 
     fn start_learn(&mut self, cx: &mut Context<Self>) {
         self.capture = Capture::Learn;
+        let weak = cx.entity().downgrade();
+        self.escape_sub = Some(cx.intercept_keystrokes(move |event, _window, cx| {
+            if event.keystroke.key != "escape" || event.keystroke.modifiers.modified() {
+                return;
+            }
+            let handled = weak
+                .update(cx, |this, cx| {
+                    let armed = this.capture == Capture::Learn;
+                    if armed {
+                        this.cancel_learn(cx);
+                    }
+                    armed
+                })
+                .unwrap_or(false);
+            if handled {
+                cx.stop_propagation();
+            }
+        }));
         cx.notify();
     }
 
     fn cancel_learn(&mut self, cx: &mut Context<Self>) {
         self.capture = Capture::Off;
+        self.escape_sub = None;
         cx.notify();
+    }
+
+    fn select_device(&mut self, name: String, cx: &mut Context<Self>) {
+        if self.selected_device.as_deref() == Some(name.as_str()) {
+            return;
+        }
+        self.selected_device = Some(name);
+        cx.notify();
+    }
+
+    fn ensure_device_selection(&mut self) {
+        let still_listed = self
+            .selected_device
+            .as_ref()
+            .is_some_and(|name| self.known_devices.contains(name));
+        if !still_listed {
+            self.selected_device = self.known_devices.first().cloned();
+        }
+    }
+
+    fn follow_saved_device(&mut self, device: Option<&str>) {
+        let Some(device) = device else {
+            return;
+        };
+        if self.selected_device.as_deref() == Some(device) {
+            return;
+        }
+        if self.known_devices.iter().any(|known| known == device) {
+            self.selected_device = Some(device.to_owned());
+        }
+    }
+
+    fn visible_mappings(&self) -> Vec<&MappingRow> {
+        let Some(selected) = self.selected_device.as_deref() else {
+            return self.mappings.iter().collect();
+        };
+        self.mappings
+            .iter()
+            .filter(|row| {
+                row.signal
+                    .device
+                    .as_deref()
+                    .is_none_or(|device| device == selected)
+            })
+            .collect()
     }
 
     fn open_modal(
@@ -525,16 +593,23 @@ impl MidiScreenView {
     fn close_modal(&mut self, cx: &mut Context<Self>) {
         self.modal = None;
         self.capture = Capture::Off;
+        self.escape_sub = None;
         cx.notify();
     }
 
     fn persist_mapping(&mut self, draft: MappingDraft, cx: &mut Context<Self>) {
+        let saved_device = draft.signal.device.clone();
         let triggers = Arc::clone(&self.trigger_repo);
         let actions = Arc::clone(&self.action_repo);
         async_bridge::run_async(
             &self.rt_handle,
             async move { save_mapping(&*triggers, &*actions, draft).await },
-            |this, result, cx| this.apply_mappings(result, cx),
+            move |this, result, cx| {
+                if result.is_ok() {
+                    this.follow_saved_device(saved_device.as_deref());
+                }
+                this.apply_mappings(result, cx);
+            },
             cx,
         );
     }
@@ -564,6 +639,7 @@ impl MidiScreenView {
         }
         self.known_devices.extend(discovered);
         self.known_devices.sort();
+        self.ensure_device_selection();
         let repo = Arc::clone(&self.settings_repo);
         let devices = self.known_devices.clone();
         async_bridge::report_failure(
@@ -820,14 +896,11 @@ impl MidiScreenView {
     }
 
     fn render_devices(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let cards: Vec<AnyElement> = self
-            .known_devices
-            .iter()
-            .map(|name| {
-                let live_index = self.live_ports.iter().position(|port| port == name);
-                self.render_device(name, live_index, palette)
-            })
-            .collect();
+        let mut cards: Vec<AnyElement> = Vec::with_capacity(self.known_devices.len());
+        for (index, name) in self.known_devices.iter().enumerate() {
+            let live_index = self.live_ports.iter().position(|port| port == name);
+            cards.push(self.render_device(index, name, live_index, palette, cx));
+        }
 
         let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
         if cards.is_empty() {
@@ -864,11 +937,14 @@ impl MidiScreenView {
 
     fn render_device(
         &self,
+        index: usize,
         name: &str,
         live_index: Option<usize>,
         palette: &ForgePalette,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let online = live_index.is_some();
+        let selected = self.selected_device.as_deref() == Some(name);
         let glyph_color = if online {
             palette.success
         } else {
@@ -927,17 +1003,35 @@ impl MidiScreenView {
                 .flex_none(),
             );
 
-        let mut wrapper = div().w_full();
+        let (surface, border) = if selected {
+            (palette.surface_overlay, palette.brand)
+        } else {
+            (palette.elevated, palette.border_regular)
+        };
+        let hover_surface = palette.surface_overlay;
+        let target = name.to_owned();
+        let mut wrapper = div()
+            .id(("midi-device", index))
+            .w_full()
+            .py(DEVICE_PAD_V)
+            .px(DEVICE_PAD_H)
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(border)
+            .bg(surface)
+            .text_color(palette.text_primary)
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.select_device(target.clone(), cx)
+            }))
+            .child(row);
+        if !selected {
+            wrapper = wrapper.hover(move |style| style.bg(hover_surface));
+        }
         if !online {
             wrapper = wrapper.opacity(OFFLINE_OPACITY);
         }
-        wrapper
-            .child(
-                card(row, palette)
-                    .padding_xy(DEVICE_PAD_V, DEVICE_PAD_H)
-                    .full_width(),
-            )
-            .into_any_element()
+        wrapper.into_any_element()
     }
 
     fn render_monitor(&self, palette: &ForgePalette) -> AnyElement {
@@ -1000,27 +1094,30 @@ impl MidiScreenView {
     }
 
     fn render_mappings(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let visible = self.visible_mappings();
         let count = div()
             .font_family(mono_family())
             .text_size(BINDINGS_FS)
             .text_color(palette.text_faint)
-            .child(tr!(
-                "midi_bindings_count",
-                count = self.mappings.len() as i64
-            ))
+            .child(tr!("midi_bindings_count", count = visible.len() as i64))
             .into_any_element();
 
         let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
-        if self.mappings.is_empty() {
+        if visible.is_empty() {
+            let empty = if self.mappings.is_empty() {
+                tr!("midi_mappings_empty")
+            } else {
+                tr!("midi_mappings_empty_device")
+            };
             list = list.child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(tr!("midi_mappings_empty")),
+                    .child(empty),
             );
         } else {
-            for (index, row) in self.mappings.iter().enumerate() {
+            for (index, row) in visible.iter().enumerate() {
                 list = list.child(self.render_mapping(index, row, palette, cx));
             }
         }
@@ -1050,7 +1147,7 @@ impl MidiScreenView {
             None => (tr!("midi_unassigned"), palette.text_faint),
         };
         let id = row.id;
-        let content = div()
+        let mut content = div()
             .id(("midi-mapping-row", index))
             .flex_1()
             .min_w_0()
@@ -1084,7 +1181,22 @@ impl MidiScreenView {
                     CH_BADGE_FS,
                 )
                 .flex_none(),
-            )
+            );
+
+        if row.signal.device.is_none() {
+            content = content.child(
+                badge(
+                    palette.surface_overlay,
+                    palette.text_faint,
+                    tr!("midi_mapping_any_device"),
+                    true,
+                    CH_BADGE_FS,
+                )
+                .flex_none(),
+            );
+        }
+
+        let content = content
             .child(icon(Icon::ArrowRight, ARROW_GLYPH, palette.text_faint))
             .child(
                 div()
@@ -1175,30 +1287,10 @@ impl MidiScreenView {
         if self.capture == Capture::Learn {
             return self.render_learn_row(palette, cx);
         }
-        div()
-            .id("midi-add-learn")
-            .w_full()
+        let title = div()
             .flex()
             .items_center()
-            .justify_center()
-            .gap(ADD_BAR_GAP)
-            .py(ADD_BAR_PAD_V)
-            .px(ADD_BAR_PAD_H)
-            .rounded(ADD_BAR_RADIUS)
-            .border(BORDER_THIN)
-            .border_color(palette.border_input)
-            .bg(palette.shell)
-            .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_learn(cx)))
-            .child(icon(Icon::Plus, ADD_BAR_GLYPH, palette.info))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(ADD_BAR_FS)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(palette.info)
-                    .child(tr!("midi_add_learn")),
-            )
+            .child(tr!("midi_add_learn"))
             .child(
                 div()
                     .ml(KBD_ML)
@@ -1208,10 +1300,22 @@ impl MidiScreenView {
                     .bg(palette.surface_overlay)
                     .font_family(mono_family())
                     .text_size(KBD_FS)
+                    .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(palette.text_faint)
                     .child(tr!("midi_add_learn_kbd")),
-            )
-            .into_any_element()
+            );
+
+        pad_tile(
+            "midi-add-learn",
+            icon(Icon::Plus, ADD_BAR_GLYPH, palette.info),
+            title,
+            palette,
+        )
+        .bar(palette)
+        .title_color(palette.info)
+        .hover_border(palette.info)
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_learn(cx)))
+        .into_any_element()
     }
 
     fn render_learn_row(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
@@ -1220,7 +1324,9 @@ impl MidiScreenView {
         } else {
             (palette.warning, tr!("midi_learn_input_disabled"))
         };
+        let cancel_hover = palette.text_secondary;
         div()
+            .id("midi-learn-row")
             .w_full()
             .flex()
             .items_center()
@@ -1232,6 +1338,8 @@ impl MidiScreenView {
             .border(BORDER_THIN)
             .border_color(accent)
             .bg(palette.surface_overlay)
+            .cursor_pointer()
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_learn(cx)))
             .child(icon(Icon::Antenna, LEARN_GLYPH, accent))
             .child(
                 div()
@@ -1244,11 +1352,17 @@ impl MidiScreenView {
                 div()
                     .id("midi-learn-cancel")
                     .ml(LEARN_CANCEL_ML)
+                    .flex()
+                    .items_center()
                     .font_family(body_family())
                     .text_size(ADD_BAR_FS)
                     .text_color(palette.text_faint)
                     .cursor_pointer()
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_learn(cx)))
+                    .hover(move |style| style.text_color(cancel_hover))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.cancel_learn(cx);
+                    }))
                     .child(tr!("common_cancel")),
             )
             .into_any_element()

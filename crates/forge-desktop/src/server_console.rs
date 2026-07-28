@@ -114,6 +114,7 @@ pub struct ServerConsoleView {
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
+    running: bool,
     bind_address: Option<String>,
     bearer_token: String,
     token_revealed: bool,
@@ -136,10 +137,14 @@ impl ServerConsoleView {
         credentials: Arc<dyn CredentialsRepo>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let running = server
+            .as_ref()
+            .is_some_and(|handle| *handle.run_state().borrow());
         let view = Self {
             server,
             rt_handle,
             credentials,
+            running,
             bind_address: None,
             bearer_token: String::new(),
             token_revealed: false,
@@ -155,13 +160,48 @@ impl ServerConsoleView {
         };
         view.fetch_token(cx);
         if view.server.is_some() {
+            view.start_run_state_bridge(cx);
             view.start_poll(cx);
         }
         view
     }
 
     fn is_running(&self) -> bool {
-        self.server.is_some()
+        self.running
+    }
+
+    fn start_run_state_bridge(&self, cx: &mut Context<Self>) {
+        let Some(handle) = self.server.as_ref() else {
+            return;
+        };
+        let mut run_state = handle.run_state();
+        cx.spawn(async move |this, cx| {
+            loop {
+                let running = *run_state.borrow_and_update();
+                if this
+                    .update(cx, |this, cx| this.apply_run_state(running, cx))
+                    .is_err()
+                    || run_state.changed().await.is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn apply_run_state(&mut self, running: bool, cx: &mut Context<Self>) {
+        if self.running == running {
+            return;
+        }
+        self.running = running;
+        if !running {
+            self.connected_clients.clear();
+            self.recent_clients = 0;
+            self.pending_disconnect.cancel();
+            self.throughput_samples.clear();
+        }
+        cx.notify();
     }
 
     fn fetch_token(&self, cx: &mut Context<Self>) {
@@ -233,27 +273,29 @@ impl ServerConsoleView {
     fn apply_poll(&mut self, poll: ServerPoll) {
         self.bind_address = Some(poll.bind_address);
 
-        let snapshot = &poll.snapshot;
-        self.connected_clients = snapshot
-            .connected_clients
-            .iter()
-            .map(client_row_from_snapshot)
-            .collect();
-        self.recent_clients = count_recent_clients(&snapshot.connected_clients);
+        if self.running {
+            let snapshot = &poll.snapshot;
+            self.connected_clients = snapshot
+                .connected_clients
+                .iter()
+                .map(client_row_from_snapshot)
+                .collect();
+            self.recent_clients = count_recent_clients(&snapshot.connected_clients);
 
-        self.stats = ServerStats {
-            events_per_second: snapshot.aggregate_events_per_second,
-            http_requests: snapshot.http_requests_total,
-            bandwidth_kbps: snapshot.bandwidth.outbound_bytes_per_second as f32 / 1000.0,
-            total_bytes_sent: snapshot.bandwidth.outbound_bytes_total,
-            total_events_out: snapshot.events_out_total,
-            dropped_events: snapshot.dropped_events_total,
-        };
-        self.throughput_samples
-            .push(snapshot.aggregate_events_per_second);
-        if self.throughput_samples.len() > MAX_THROUGHPUT_SAMPLES {
-            let excess = self.throughput_samples.len() - MAX_THROUGHPUT_SAMPLES;
-            self.throughput_samples.drain(..excess);
+            self.stats = ServerStats {
+                events_per_second: snapshot.aggregate_events_per_second,
+                http_requests: snapshot.http_requests_total,
+                bandwidth_kbps: snapshot.bandwidth.outbound_bytes_per_second as f32 / 1000.0,
+                total_bytes_sent: snapshot.bandwidth.outbound_bytes_total,
+                total_events_out: snapshot.events_out_total,
+                dropped_events: snapshot.dropped_events_total,
+            };
+            self.throughput_samples
+                .push(snapshot.aggregate_events_per_second);
+            if self.throughput_samples.len() > MAX_THROUGHPUT_SAMPLES {
+                let excess = self.throughput_samples.len() - MAX_THROUGHPUT_SAMPLES;
+                self.throughput_samples.drain(..excess);
+            }
         }
 
         if let Some(overlay) = poll.overlay {
@@ -276,6 +318,9 @@ impl ServerConsoleView {
     }
 
     fn browser_source_url(&self) -> Option<String> {
+        if !self.running {
+            return None;
+        }
         let origin = overlay_origin(self.bind_address.as_deref()?);
         let entry = self.browser_source_entry()?;
         Some(format!("{origin}/overlays/{}", entry.name))
@@ -419,7 +464,13 @@ impl ServerConsoleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let field = match self.bind_address.clone() {
+        let address = if self.running {
+            self.bind_address.clone()
+        } else {
+            None
+        };
+
+        let field = match address {
             Some(address) => mono_field(palette, density)
                 .child(
                     div()

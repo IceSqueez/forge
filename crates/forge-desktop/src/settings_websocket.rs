@@ -62,6 +62,7 @@ pub struct SettingsWebSocketView {
     loading: bool,
     save_state: SaveState,
     restarting: bool,
+    running: bool,
 
     port_input: Entity<TextInput>,
     lan_modal: Option<Entity<TypeToConfirm>>,
@@ -92,6 +93,9 @@ impl SettingsWebSocketView {
             }),
         );
 
+        let running = server
+            .as_ref()
+            .is_some_and(|handle| *handle.run_state().borrow());
         let mut view = Self {
             backend,
             rt_handle,
@@ -108,6 +112,7 @@ impl SettingsWebSocketView {
             loading: false,
             save_state: SaveState::default(),
             restarting: false,
+            running,
             port_input,
             lan_modal: None,
             lan_sub: None,
@@ -115,7 +120,36 @@ impl SettingsWebSocketView {
         };
         view.load(cx);
         view.fetch_token(cx);
+        view.start_run_state_bridge(cx);
         view
+    }
+
+    fn start_run_state_bridge(&self, cx: &mut Context<Self>) {
+        let Some(handle) = self.server.as_ref() else {
+            return;
+        };
+        let mut run_state = handle.run_state();
+        cx.spawn(async move |this, cx| {
+            loop {
+                let running = *run_state.borrow_and_update();
+                if this
+                    .update(cx, |this, cx| this.apply_run_state(running, cx))
+                    .is_err()
+                    || run_state.changed().await.is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn apply_run_state(&mut self, running: bool, cx: &mut Context<Self>) {
+        if self.running == running {
+            return;
+        }
+        self.running = running;
+        cx.notify();
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -296,11 +330,22 @@ impl SettingsWebSocketView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
             );
 
-        div()
+        let mut row = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(restart)
+            .gap(spacing(Spacing::Xs, density));
+
+        if self.enable_server && !self.running {
+            row = row.child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("server_not_running")),
+            );
+        }
+
+        row.child(restart)
             .child(toggle(self.enable_server, palette).on_click(
                 "settings-ws-enable",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enable(cx)),

@@ -159,6 +159,23 @@ impl ServerHandle {
         crate::snapshot::build_server_snapshot(&state.server_info, &state.bus_adapter).await
     }
 
+    pub async fn kick_client(&self, identification: &str) -> bool {
+        let state = self.inner.lock().await.state.clone();
+        let id = {
+            let clients = state.server_info.connected_clients.read().await;
+            clients
+                .iter()
+                .find(|(_, client)| client.identification.load_full().as_str() == identification)
+                .map(|(id, _)| *id)
+        };
+        let Some(id) = id else {
+            return false;
+        };
+        state.server_info.unregister(id).await;
+        state.bus_adapter.kick_client(id).await;
+        true
+    }
+
     pub fn abort(&self) {
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {

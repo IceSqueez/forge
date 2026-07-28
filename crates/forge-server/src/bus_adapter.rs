@@ -192,6 +192,16 @@ impl BusAdapter {
         self.registry.write().await.retain(|c| c.id != id);
     }
 
+    pub async fn kick_client(&self, id: ClientId) -> bool {
+        let mut reg = self.registry.write().await;
+        let Some(pos) = reg.iter().position(|c| c.id == id) else {
+            return false;
+        };
+        let client = reg.remove(pos);
+        let _ = client.sender.send(WsFrame::Close);
+        true
+    }
+
     pub async fn update_subscriptions(&self, id: ClientId, filters: ClientFilterSet) {
         let mut reg = self.registry.write().await;
         if let Some(client) = reg.iter_mut().find(|c| c.id == id) {

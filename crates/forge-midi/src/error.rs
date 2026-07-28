@@ -19,6 +19,9 @@ pub enum MidiError {
 
     #[error("output send failed: {0}")]
     OutputSend(String),
+
+    #[error("MIDI supervisor task is not running")]
+    SupervisorUnavailable,
 }
 
 #[cfg(test)]

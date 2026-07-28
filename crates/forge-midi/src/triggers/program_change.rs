@@ -67,6 +67,15 @@ impl TriggerKindDescriptor for MidiProgramChangeDescriptor {
                     max: 15,
                 }),
             },
+            FormField::Optional {
+                key: "device",
+                label: "Device (leave empty for any)",
+                inner: Box::new(FormField::Text {
+                    key: "device",
+                    label: "Device",
+                    placeholder: "e.g. Launchkey Mini",
+                }),
+            },
         ]
     }
 
@@ -85,12 +94,23 @@ impl TriggerKindDescriptor for MidiProgramChangeDescriptor {
                 None
             }
         });
-        match (program, channel) {
+        let device = config.get("device").and_then(|v| {
+            if let Variant::String(d) = v {
+                Some(d.clone())
+            } else {
+                None
+            }
+        });
+        let mut display = match (program, channel) {
             (Some(p), Some(ch)) => format!("program={p}, ch={ch}"),
             (Some(p), None) => format!("program={p}"),
             (None, Some(ch)) => format!("ch={ch}"),
             (None, None) => "any program, any channel".to_owned(),
+        };
+        if let Some(d) = device {
+            display.push_str(&format!(", device={d}"));
         }
+        display
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -121,6 +141,16 @@ impl TriggerKindDescriptor for MidiProgramChangeDescriptor {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(u64::MAX);
             if *c as u64 != event_ch {
+                return false;
+            }
+        }
+        if let Some(Variant::String(d)) = config.get("device") {
+            let event_port = event
+                .payload
+                .get(fields::PORT_NAME)
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if d != event_port {
                 return false;
             }
         }

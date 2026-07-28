@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use forge_platform_core::{
@@ -20,6 +21,9 @@ impl BuiltinStatus for MidiClient {
     }
 
     fn connection(&self) -> ConnectionState {
+        if !self.enabled.load(Ordering::Relaxed) {
+            return ConnectionState::Disconnected;
+        }
         let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
         if snap.input_ports.is_empty() && snap.output_ports.is_empty() {
             ConnectionState::Disconnected

@@ -67,6 +67,15 @@ impl TriggerKindDescriptor for MidiNoteOnDescriptor {
                     max: 15,
                 }),
             },
+            FormField::Optional {
+                key: "device",
+                label: "Device (leave empty for any)",
+                inner: Box::new(FormField::Text {
+                    key: "device",
+                    label: "Device",
+                    placeholder: "e.g. Launchkey Mini",
+                }),
+            },
         ]
     }
 
@@ -85,12 +94,23 @@ impl TriggerKindDescriptor for MidiNoteOnDescriptor {
                 None
             }
         });
-        match (note, channel) {
+        let device = config.get("device").and_then(|v| {
+            if let Variant::String(d) = v {
+                Some(d.clone())
+            } else {
+                None
+            }
+        });
+        let mut display = match (note, channel) {
             (Some(n), Some(c)) => format!("note={n}, ch={c}"),
             (Some(n), None) => format!("note={n}"),
             (None, Some(c)) => format!("ch={c}"),
             (None, None) => "any note, any channel".to_owned(),
+        };
+        if let Some(d) = device {
+            display.push_str(&format!(", device={d}"));
         }
+        display
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -121,6 +141,16 @@ impl TriggerKindDescriptor for MidiNoteOnDescriptor {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(u64::MAX);
             if *c as u64 != event_ch {
+                return false;
+            }
+        }
+        if let Some(Variant::String(d)) = config.get("device") {
+            let event_port = event
+                .payload
+                .get(fields::PORT_NAME)
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if d != event_port {
                 return false;
             }
         }

@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -26,6 +27,20 @@ pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<MidiHealthSnapshot>>) 
     (tx, Arc::new(Mutex::new(MidiHealthSnapshot::default())))
 }
 
+pub(crate) fn input_port_health_value(enabled: bool, input_count: usize) -> HealthValue {
+    if enabled {
+        HealthValue::Text {
+            primary: input_count.to_string(),
+            secondary: Some("connected".to_owned()),
+        }
+    } else {
+        HealthValue::Text {
+            primary: "0".to_owned(),
+            secondary: Some("disabled".to_owned()),
+        }
+    }
+}
+
 pub(crate) fn events_per_minute(timestamps: &mut VecDeque<Instant>) -> usize {
     let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(60));
     if let Some(cutoff) = cutoff {
@@ -40,10 +55,8 @@ impl BuiltinHealth for MidiClient {
     fn metrics(&self) -> [HealthMetric; 4] {
         let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
 
-        let input_value = HealthValue::Text {
-            primary: snap.input_count.to_string(),
-            secondary: Some("connected".to_owned()),
-        };
+        let input_value =
+            input_port_health_value(self.enabled.load(Ordering::Relaxed), snap.input_count);
         let output_value = HealthValue::Text {
             primary: snap.output_count.to_string(),
             secondary: Some("available".to_owned()),

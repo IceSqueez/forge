@@ -60,6 +60,15 @@ pub enum PortDirection {
     Output,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiMonitorEvent {
+    pub kind: String,
+    pub port_name: String,
+    pub channel: u8,
+    pub number: Option<u8>,
+    pub value: Option<u16>,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

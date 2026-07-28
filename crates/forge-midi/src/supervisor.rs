@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
@@ -13,15 +14,22 @@ use crate::client::MidiClient;
 use crate::content::{record_midi_event, record_port_added, record_port_removed};
 use crate::decode::decode_midi_bytes;
 use crate::events::{MidiEvent, MidiPortInfo, PortDirection};
-use crate::health::{MidiHealthSnapshot, events_per_minute};
+use crate::health::{MidiHealthSnapshot, events_per_minute, input_port_health_value};
 use crate::payload_fields::{input as input_fields, port as port_fields};
 
 pub(crate) type RawEvent = (u64, Vec<u8>, String);
+
+pub(crate) enum SupervisorCommand {
+    Enable,
+    Disable,
+    Rescan,
+}
 
 pub(crate) async fn run_supervisor(
     client: Arc<MidiClient>,
     merged_tx: mpsc::Sender<RawEvent>,
     mut merged_rx: mpsc::Receiver<RawEvent>,
+    mut control_rx: mpsc::Receiver<SupervisorCommand>,
 ) {
     let mut input_snap: Vec<MidiPortInfo> = Vec::new();
     let mut output_snap: Vec<MidiPortInfo> = Vec::new();
@@ -44,6 +52,17 @@ pub(crate) async fn run_supervisor(
                 let Some((ts, data, port_name)) = maybe_raw else { break };
                 handle_raw_event(&client, ts, &data, &port_name);
             }
+            maybe_cmd = control_rx.recv() => {
+                let Some(cmd) = maybe_cmd else { continue };
+                handle_supervisor_command(
+                    &client,
+                    cmd,
+                    &merged_tx,
+                    &mut input_snap,
+                    &mut output_snap,
+                    &mut handles,
+                );
+            }
             _ = poll.tick() => {
                 do_port_discovery(
                     &client,
@@ -55,6 +74,59 @@ pub(crate) async fn run_supervisor(
             }
         }
     }
+}
+
+fn handle_supervisor_command(
+    client: &Arc<MidiClient>,
+    cmd: SupervisorCommand,
+    merged_tx: &mpsc::Sender<RawEvent>,
+    input_snap: &mut Vec<MidiPortInfo>,
+    output_snap: &mut Vec<MidiPortInfo>,
+    handles: &mut HashMap<String, Box<dyn InputHandle>>,
+) {
+    match cmd {
+        SupervisorCommand::Rescan => {
+            do_port_discovery(client, merged_tx, input_snap, output_snap, handles);
+        }
+        SupervisorCommand::Disable => {
+            handles.clear();
+            client.enabled.store(false, Ordering::Relaxed);
+            emit_engine_state_change(client, false);
+        }
+        SupervisorCommand::Enable => {
+            client.enabled.store(true, Ordering::Relaxed);
+            for port in input_snap.iter() {
+                if !handles.contains_key(&port.name) {
+                    open_input_port(client, merged_tx, handles, port);
+                }
+            }
+            emit_engine_state_change(client, true);
+        }
+    }
+}
+
+fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
+    let kind = if enabled {
+        "midi.engine.enabled"
+    } else {
+        "midi.engine.disabled"
+    };
+    client
+        .publisher
+        .publish(Event::new(EventSource::Midi, kind, serde_json::json!({})));
+
+    let input_count = {
+        let snap = client
+            .health_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        snap.input_count
+    };
+    let delta = HealthDelta {
+        index: 0,
+        new_value: input_port_health_value(enabled, input_count),
+    };
+    let _ = client.health_tx.send(delta);
 }
 
 fn do_port_discovery(
@@ -90,7 +162,7 @@ fn do_port_discovery(
             .health_state
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        build_port_count_deltas(&mut snap, input_count, output_count)
+        build_port_count_deltas(client, &mut snap, input_count, output_count)
     };
     for d in deltas {
         let _ = client.health_tx.send(d);
@@ -109,7 +181,9 @@ fn diff_input_ports(
 
     for port in new {
         if !old_names.contains(port.name.as_str()) {
-            open_input_port(client, merged_tx, handles, port);
+            if client.enabled.load(Ordering::Relaxed) {
+                open_input_port(client, merged_tx, handles, port);
+            }
             emit_port_event(client, &port.name, PortDirection::Input, true);
             let mut content = client
                 .content_state
@@ -274,6 +348,10 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
         .publisher
         .publish(Event::new(EventSource::Midi, kind, payload));
 
+    let _ = client
+        .monitor_tx
+        .send(crate::monitor::to_monitor_event(&event, port_name));
+
     let now = Instant::now();
     let is_note_on = matches!(event, MidiEvent::NoteOn { .. });
 
@@ -302,6 +380,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
 }
 
 fn build_port_count_deltas(
+    client: &Arc<MidiClient>,
     snap: &mut MidiHealthSnapshot,
     input_count: usize,
     output_count: usize,
@@ -309,12 +388,10 @@ fn build_port_count_deltas(
     let mut deltas = Vec::new();
     if snap.input_count != input_count {
         snap.input_count = input_count;
+        let enabled = client.enabled.load(Ordering::Relaxed);
         deltas.push(HealthDelta {
             index: 0,
-            new_value: forge_platform_core::HealthValue::Text {
-                primary: input_count.to_string(),
-                secondary: Some("connected".to_owned()),
-            },
+            new_value: input_port_health_value(enabled, input_count),
         });
     }
     if snap.output_count != output_count {

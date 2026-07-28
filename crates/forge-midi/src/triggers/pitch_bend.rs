@@ -46,16 +46,27 @@ impl TriggerKindDescriptor for MidiPitchBendDescriptor {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Optional {
-            key: "channel",
-            label: "Channel (leave empty for any)",
-            inner: Box::new(FormField::Integer {
+        vec![
+            FormField::Optional {
                 key: "channel",
-                label: "Channel",
-                min: 0,
-                max: 15,
-            }),
-        }]
+                label: "Channel (leave empty for any)",
+                inner: Box::new(FormField::Integer {
+                    key: "channel",
+                    label: "Channel",
+                    min: 0,
+                    max: 15,
+                }),
+            },
+            FormField::Optional {
+                key: "device",
+                label: "Device (leave empty for any)",
+                inner: Box::new(FormField::Text {
+                    key: "device",
+                    label: "Device",
+                    placeholder: "e.g. Launchkey Mini",
+                }),
+            },
+        ]
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> String {
@@ -66,10 +77,21 @@ impl TriggerKindDescriptor for MidiPitchBendDescriptor {
                 None
             }
         });
-        match channel {
+        let device = config.get("device").and_then(|v| {
+            if let Variant::String(d) = v {
+                Some(d.clone())
+            } else {
+                None
+            }
+        });
+        let mut display = match channel {
             Some(ch) => format!("ch={ch}"),
             None => "any channel".to_owned(),
+        };
+        if let Some(d) = device {
+            display.push_str(&format!(", device={d}"));
         }
+        display
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -90,6 +112,16 @@ impl TriggerKindDescriptor for MidiPitchBendDescriptor {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(u64::MAX);
             if *c as u64 != event_ch {
+                return false;
+            }
+        }
+        if let Some(Variant::String(d)) = config.get("device") {
+            let event_port = event
+                .payload
+                .get(fields::PORT_NAME)
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if d != event_port {
                 return false;
             }
         }

@@ -330,3 +330,396 @@ pub async fn relink_action(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use forge_hotkey::HotkeyError;
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::{Action, ExecutionMode, QueueId};
+    use gpui::Modifiers;
+
+    use super::*;
+
+    const TEST_KEY: [u8; 32] = [0x11; 32];
+    const OTHER_KIND: &str = "midi.note_on";
+
+    async fn provider() -> Arc<dyn DataProvider> {
+        Arc::new(
+            SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
+                .await
+                .expect("in-memory backend opens"),
+        )
+    }
+
+    async fn default_queue(backend: &Arc<dyn DataProvider>) -> QueueId {
+        backend
+            .queue_repo()
+            .get_by_name("Default")
+            .await
+            .unwrap()
+            .expect("migrations seed the default queue")
+            .id
+    }
+
+    async fn seed_action(backend: &Arc<dyn DataProvider>, name: &str) -> ActionId {
+        let action = Action {
+            id: ActionId::new(),
+            name: name.to_owned(),
+            group: None,
+            queue_id: default_queue(backend).await,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: vec![],
+        };
+        let id = action.id;
+        backend.action_repo().save(&action).await.unwrap();
+        id
+    }
+
+    async fn seed_instance(
+        backend: &Arc<dyn DataProvider>,
+        kind_id: &str,
+        combo: Option<&str>,
+    ) -> TriggerInstanceId {
+        let mut overrides = BTreeMap::new();
+        if let Some(combo) = combo {
+            overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo.to_owned()));
+        }
+        let instance = TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: kind_id.to_owned(),
+            name: combo.unwrap_or("no combo").to_owned(),
+            overrides,
+            enabled: true,
+            user_defined: true,
+            platform_scope: PlatformScope::default(),
+            cooldown_secs: 0,
+            cooldown_global: true,
+        };
+        let id = instance.id;
+        backend
+            .trigger_instance_repo()
+            .save(&instance)
+            .await
+            .unwrap();
+        id
+    }
+
+    fn keystroke(modifiers: Modifiers, key: &str) -> Keystroke {
+        Keystroke {
+            modifiers,
+            key: key.to_owned(),
+            key_char: None,
+        }
+    }
+
+    #[test]
+    fn keystroke_to_combo_maps_each_gpui_modifier_flag_to_its_own_combo_token() {
+        let cases = [
+            (Modifiers::default(), "A"),
+            (
+                Modifiers {
+                    control: true,
+                    ..Default::default()
+                },
+                "Ctrl+A",
+            ),
+            (
+                Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+                "Shift+A",
+            ),
+            (
+                Modifiers {
+                    alt: true,
+                    ..Default::default()
+                },
+                "Alt+A",
+            ),
+            (
+                Modifiers {
+                    platform: true,
+                    ..Default::default()
+                },
+                "Meta+A",
+            ),
+            (
+                Modifiers {
+                    function: true,
+                    ..Default::default()
+                },
+                "A",
+            ),
+            (
+                Modifiers {
+                    control: true,
+                    shift: true,
+                    alt: true,
+                    platform: true,
+                    function: false,
+                },
+                "Ctrl+Shift+Alt+Meta+A",
+            ),
+        ];
+
+        for (modifiers, expected) in cases {
+            assert_eq!(
+                keystroke_to_combo(&keystroke(modifiers, "a")).as_deref(),
+                Some(expected),
+                "wrong combo for {modifiers:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn keystroke_to_combo_rejects_keystrokes_the_combo_grammar_cannot_express() {
+        let ctrl = Modifiers {
+            control: true,
+            ..Default::default()
+        };
+        let cases = [
+            (Modifiers::default(), ""),
+            (ctrl, ""),
+            (ctrl, "f13"),
+            (ctrl, ";"),
+            (Modifiers::default(), "shift"),
+            (ctrl, "shift"),
+        ];
+
+        for (modifiers, key) in cases {
+            assert_eq!(
+                keystroke_to_combo(&keystroke(modifiers, key)),
+                None,
+                "expected no combo for key {key:?} with {modifiers:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn combo_keys_yields_one_cap_per_token_and_never_an_empty_cap() {
+        let cases: [(&str, Vec<&str>); 4] = [
+            ("Ctrl+Shift+F5", vec!["Ctrl", "Shift", "F5"]),
+            ("A", vec!["A"]),
+            ("Ctrl+", vec!["Ctrl"]),
+            ("", vec![]),
+        ];
+
+        for (combo, expected) in cases {
+            assert_eq!(combo_keys(combo), expected, "wrong caps for {combo:?}");
+        }
+    }
+
+    #[test]
+    fn is_already_registered_matches_the_conflict_error_and_no_other_hotkey_error() {
+        let conflict = HotkeyError::AlreadyRegistered {
+            combo: "Ctrl+F1".to_owned(),
+        };
+        assert!(is_already_registered(&conflict.to_string()));
+
+        for other in [
+            HotkeyError::InvalidCombo("Ctrl+".to_owned()),
+            HotkeyError::PortalUnavailable {
+                reason: "no session".to_owned(),
+            },
+            HotkeyError::PermissionDenied,
+            HotkeyError::Backend("device busy".to_owned()),
+            HotkeyError::SupervisorUnavailable,
+        ] {
+            assert!(
+                !is_already_registered(&other.to_string()),
+                "misread {other:?} as a combo conflict"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn load_bindings_keeps_only_hotkey_instances_that_carry_a_combo_override() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, None).await;
+        seed_instance(&backend, OTHER_KIND, Some("Ctrl+F2")).await;
+
+        let rows = load_bindings(Arc::clone(&backend), Vec::new())
+            .await
+            .unwrap();
+
+        let combos: Vec<&str> = rows.iter().map(|row| row.combo.as_str()).collect();
+        assert_eq!(combos, ["Ctrl+F1"]);
+    }
+
+    #[tokio::test]
+    async fn load_bindings_sorts_rows_by_combo() {
+        let backend = provider().await;
+        for combo in ["Meta+B", "Alt+C", "Ctrl+A"] {
+            seed_instance(&backend, HOTKEY_PRESSED_KIND, Some(combo)).await;
+        }
+
+        let rows = load_bindings(Arc::clone(&backend), Vec::new())
+            .await
+            .unwrap();
+
+        let combos: Vec<&str> = rows.iter().map(|row| row.combo.as_str()).collect();
+        assert_eq!(combos, ["Alt+C", "Ctrl+A", "Meta+B"]);
+    }
+
+    #[tokio::test]
+    async fn load_bindings_marks_a_row_registered_only_when_the_client_holds_its_combo() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
+
+        let rows = load_bindings(
+            Arc::clone(&backend),
+            vec![(HotkeyId(1), "Ctrl+F1".to_owned())],
+        )
+        .await
+        .unwrap();
+
+        let flags: Vec<(&str, bool)> = rows
+            .iter()
+            .map(|row| (row.combo.as_str(), row.registered))
+            .collect();
+        assert_eq!(flags, [("Ctrl+F1", true), ("Ctrl+F2", false)]);
+    }
+
+    #[tokio::test]
+    async fn load_bindings_resolves_the_linked_action_and_leaves_unlinked_rows_bare() {
+        let backend = provider().await;
+        let action = seed_action(&backend, "Play sound").await;
+        let bound = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
+        backend
+            .trigger_instance_repo()
+            .link_action(action, bound, 0)
+            .await
+            .unwrap();
+
+        let rows = load_bindings(Arc::clone(&backend), Vec::new())
+            .await
+            .unwrap();
+
+        assert_eq!(rows[0].action, Some((action, "Play sound".to_owned())));
+        assert_eq!(rows[1].action, None);
+    }
+
+    #[tokio::test]
+    async fn cleanup_stale_combo_instances_unlinks_the_action_before_deleting_the_instance() {
+        let backend = provider().await;
+        let action = seed_action(&backend, "Play sound").await;
+        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        backend
+            .trigger_instance_repo()
+            .link_action(action, instance, 0)
+            .await
+            .unwrap();
+
+        cleanup_stale_combo_instances(&backend, "Ctrl+F1")
+            .await
+            .unwrap();
+
+        assert!(
+            backend
+                .trigger_instance_repo()
+                .get(instance)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_stale_combo_instances_spares_other_combos_and_other_trigger_kinds() {
+        let backend = provider().await;
+        let other_combo = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
+        let other_kind = seed_instance(&backend, OTHER_KIND, Some("Ctrl+F1")).await;
+
+        cleanup_stale_combo_instances(&backend, "Ctrl+F1")
+            .await
+            .unwrap();
+
+        let repo = backend.trigger_instance_repo();
+        assert!(repo.get(other_combo).await.unwrap().is_some());
+        assert!(repo.get(other_kind).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn relink_action_moves_the_binding_from_the_previous_action_to_the_new_one() {
+        let backend = provider().await;
+        let old_action = seed_action(&backend, "Old").await;
+        let new_action = seed_action(&backend, "New").await;
+        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let repo = backend.trigger_instance_repo();
+        repo.link_action(old_action, instance, 0).await.unwrap();
+
+        relink_action(Arc::clone(&backend), instance, new_action)
+            .await
+            .unwrap();
+
+        assert_eq!(repo.actions_using(instance).await.unwrap(), [new_action]);
+    }
+
+    #[tokio::test]
+    async fn relink_action_leaves_the_existing_link_in_place_when_the_action_is_unchanged() {
+        let backend = provider().await;
+        let action = seed_action(&backend, "Play sound").await;
+        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let repo = backend.trigger_instance_repo();
+        repo.link_action(action, instance, 0).await.unwrap();
+        let mut expected = vec![instance];
+        for (offset, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
+            let sibling = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some(combo)).await;
+            repo.link_action(action, sibling, offset as i64 + 1)
+                .await
+                .unwrap();
+            expected.push(sibling);
+        }
+
+        relink_action(Arc::clone(&backend), instance, action)
+            .await
+            .unwrap();
+
+        let order: Vec<TriggerInstanceId> = repo
+            .list_for_action(action)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|i| i.id)
+            .collect();
+        assert_eq!(
+            order, expected,
+            "a no-op relink must not unlink and re-append the binding"
+        );
+    }
+
+    #[tokio::test]
+    async fn relink_action_appends_the_binding_after_the_actions_existing_triggers() {
+        let backend = provider().await;
+        let action = seed_action(&backend, "Play sound").await;
+        let repo = backend.trigger_instance_repo();
+        for (position, combo) in ["Ctrl+F2", "Ctrl+F3"].into_iter().enumerate() {
+            let existing = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some(combo)).await;
+            repo.link_action(action, existing, position as i64)
+                .await
+                .unwrap();
+        }
+        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+
+        relink_action(Arc::clone(&backend), instance, action)
+            .await
+            .unwrap();
+
+        let last = repo
+            .list_for_action(action)
+            .await
+            .unwrap()
+            .pop()
+            .map(|i| i.id);
+        assert_eq!(last, Some(instance));
+    }
+}

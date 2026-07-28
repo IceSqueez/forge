@@ -252,6 +252,23 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn re_registering_a_combo_the_client_already_holds_counts_toward_the_conflicts_metric() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let os_registered = Arc::clone(&backend.registered);
+        let client = start_supervised(backend, noop_publisher());
+        let combo = HotkeyCombo::parse("Ctrl+F1").unwrap();
+        client.register(combo.clone()).await.unwrap();
+
+        client.register(combo).await.unwrap_err();
+
+        assert_eq!(
+            conflicts_metric(&client),
+            Some(("1".to_owned(), Some("since startup".to_owned())))
+        );
+        assert_eq!(os_registered.lock().unwrap().len(), 1);
+    }
+
     #[test]
     fn build_trigger_delta_with_values() {
         let mut snap = HotkeyHealthSnapshot::default();

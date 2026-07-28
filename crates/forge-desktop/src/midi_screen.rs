@@ -255,6 +255,35 @@ async fn save_mapping(
     load_mappings(triggers, actions).await
 }
 
+fn resolve_selection(known: &[String], current: Option<&str>) -> Option<String> {
+    match current {
+        Some(name) if known.iter().any(|k| k == name) => Some(name.to_owned()),
+        _ => known.first().cloned(),
+    }
+}
+
+fn follow_device(known: &[String], current: Option<&str>, saved: Option<&str>) -> Option<String> {
+    let saved = saved?;
+    if current == Some(saved) {
+        return None;
+    }
+    known.iter().any(|k| k == saved).then(|| saved.to_owned())
+}
+
+fn visible_mappings<'a>(rows: &'a [MappingRow], selected: Option<&str>) -> Vec<&'a MappingRow> {
+    let Some(selected) = selected else {
+        return rows.iter().collect();
+    };
+    rows.iter()
+        .filter(|row| {
+            row.signal
+                .device
+                .as_deref()
+                .is_none_or(|device| device == selected)
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Capture {
     Off,
@@ -491,40 +520,20 @@ impl MidiScreenView {
     }
 
     fn ensure_device_selection(&mut self) {
-        let still_listed = self
-            .selected_device
-            .as_ref()
-            .is_some_and(|name| self.known_devices.contains(name));
-        if !still_listed {
-            self.selected_device = self.known_devices.first().cloned();
-        }
+        self.selected_device =
+            resolve_selection(&self.known_devices, self.selected_device.as_deref());
     }
 
     fn follow_saved_device(&mut self, device: Option<&str>) {
-        let Some(device) = device else {
-            return;
-        };
-        if self.selected_device.as_deref() == Some(device) {
-            return;
-        }
-        if self.known_devices.iter().any(|known| known == device) {
-            self.selected_device = Some(device.to_owned());
+        if let Some(next) =
+            follow_device(&self.known_devices, self.selected_device.as_deref(), device)
+        {
+            self.selected_device = Some(next);
         }
     }
 
     fn visible_mappings(&self) -> Vec<&MappingRow> {
-        let Some(selected) = self.selected_device.as_deref() else {
-            return self.mappings.iter().collect();
-        };
-        self.mappings
-            .iter()
-            .filter(|row| {
-                row.signal
-                    .device
-                    .as_deref()
-                    .is_none_or(|device| device == selected)
-            })
-            .collect()
+        visible_mappings(&self.mappings, self.selected_device.as_deref())
     }
 
     fn open_modal(

@@ -137,6 +137,11 @@ struct ConflictPrompt {
     app_owner: Option<&'static str>,
 }
 
+struct DeletePrompt {
+    combo: String,
+    action: Option<String>,
+}
+
 struct LastFired {
     combo: String,
     at: OffsetDateTime,
@@ -161,6 +166,7 @@ pub struct HotkeysScreenView {
     capture: Capture,
     capture_sub: Option<Subscription>,
     conflict: Option<ConflictPrompt>,
+    delete_prompt: Option<DeletePrompt>,
     modal: Option<OpenModal>,
     menu_open: Option<RowKey>,
     menu_click_pos: Option<Point<Pixels>>,
@@ -192,6 +198,7 @@ impl HotkeysScreenView {
             capture: Capture::Off,
             capture_sub: None,
             conflict: None,
+            delete_prompt: None,
             modal: None,
             menu_open: None,
             menu_click_pos: None,
@@ -666,20 +673,31 @@ impl HotkeysScreenView {
         self.open_modal(Some(instance_id), combo, linked, cx);
     }
 
-    fn delete(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
+    fn prompt_delete(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
         self.menu_open = None;
-        let Some(combo) = self
+        self.delete_prompt = self
             .bindings
             .iter()
             .find(|row| row.instance_id == instance_id)
-            .map(|row| row.combo.clone())
-        else {
-            cx.notify();
+            .map(|row| DeletePrompt {
+                combo: row.combo.clone(),
+                action: row.action.as_ref().map(|(_, name)| name.clone()),
+            });
+        cx.notify();
+    }
+
+    fn cancel_delete(&mut self, cx: &mut Context<Self>) {
+        self.delete_prompt = None;
+        cx.notify();
+    }
+
+    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
+        let Some(prompt) = self.delete_prompt.take() else {
             return;
         };
         let client = Arc::clone(&self.client);
         let backend = Arc::clone(&self.backend);
-        self.run_reload(delete_binding(client, backend, combo), cx);
+        self.run_reload(delete_binding(client, backend, prompt.combo), cx);
     }
 
     fn run_reload(
@@ -1186,7 +1204,9 @@ impl HotkeysScreenView {
                 menu_item(
                     ("hotkeys-menu-delete", index),
                     tr!("common_delete"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.delete(instance_id, cx)),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.prompt_delete(instance_id, cx)
+                    }),
                 )
                 .icon(Icon::Trash)
                 .color(palette.random)
@@ -1332,6 +1352,44 @@ impl HotkeysScreenView {
             .into_any_element()
     }
 
+    fn render_delete_confirm(
+        &self,
+        prompt: &DeletePrompt,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let message = match prompt.action.as_deref() {
+            Some(action) => tr!("hotkeys_confirm_delete_body", action = action),
+            None => tr!("hotkeys_confirm_delete_body_unassigned"),
+        };
+        let card = confirm_modal(
+            tr!("hotkeys_confirm_delete_title"),
+            message,
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .item_name(prompt.combo.clone())
+        .on_cancel(
+            "hotkeys-delete-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
+        )
+        .on_confirm(
+            "hotkeys-delete-confirm",
+            tr!("common_delete"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
+        );
+
+        let weak = cx.entity().downgrade();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .dismiss_on_escape(&self.overlay_focus)
+            .on_dismiss("hotkeys-delete-dismiss", move |_window, cx| {
+                let _ = weak.update(cx, |this, cx| this.cancel_delete(cx));
+            })
+            .into_any_element()
+    }
+
     fn render_conflict(
         &self,
         prompt: &ConflictPrompt,
@@ -1469,7 +1527,7 @@ impl Render for HotkeysScreenView {
         let density = cx.density();
 
         drive_overlay_focus(
-            self.conflict.is_some(),
+            self.conflict.is_some() || self.delete_prompt.is_some(),
             &self.overlay_focus,
             &mut self.focus_restore,
             window,
@@ -1522,10 +1580,13 @@ impl Render for HotkeysScreenView {
         .density(density)
         .body(body);
 
-        let conflict = self
-            .conflict
-            .as_ref()
-            .map(|prompt| self.render_conflict(prompt, &palette, cx));
+        let prompt = if let Some(conflict) = &self.conflict {
+            Some(self.render_conflict(conflict, &palette, cx))
+        } else {
+            self.delete_prompt
+                .as_ref()
+                .map(|prompt| self.render_delete_confirm(prompt, &palette, cx))
+        };
 
         div()
             .size_full()
@@ -1534,7 +1595,7 @@ impl Render for HotkeysScreenView {
             .bg(palette.base)
             .child(frame)
             .children(self.modal.as_ref().map(|open| open.view.clone()))
-            .children(conflict)
+            .children(prompt)
     }
 }
 

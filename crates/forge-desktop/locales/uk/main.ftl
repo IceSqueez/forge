@@ -1950,6 +1950,10 @@ hotkeys_capture_prompt = Натисни комбінацію клавіш...
 
 ## Hotkeys - conflict
 
+hotkeys_confirm_delete_title = Видалити гарячу клавішу?
+hotkeys_confirm_delete_body = { $action } більше не запускатиметься цією комбінацією. Це не можна скасувати.
+hotkeys_confirm_delete_body_unassigned = Ця комбінація не пов'язана з жодною дією. Це не можна скасувати.
+
 hotkeys_conflict_title = Комбінацію вже прив'язано
 hotkeys_conflict_body = вже прив'язана до { $holder }. Замінити наявну прив'язку чи скасувати?
 hotkeys_conflict_holder_unassigned = непризначеної прив'язки

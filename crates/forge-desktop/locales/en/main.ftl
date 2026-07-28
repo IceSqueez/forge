@@ -1922,6 +1922,10 @@ hotkeys_capture_prompt = Press the key combination...
 
 ## Hotkeys - conflict
 
+hotkeys_confirm_delete_title = Delete hotkey?
+hotkeys_confirm_delete_body = { $action } will no longer run on this combination. This cannot be undone.
+hotkeys_confirm_delete_body_unassigned = This combination is not linked to an action. This cannot be undone.
+
 hotkeys_conflict_title = Combination already bound
 hotkeys_conflict_body = is already bound to { $holder }. Replace the existing binding or cancel?
 hotkeys_conflict_holder_unassigned = an unassigned binding

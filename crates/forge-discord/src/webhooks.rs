@@ -99,7 +99,7 @@ impl DiscordClient {
         Ok(self.load_webhook(name).await?.url)
     }
 
-    /// Posts straight to `url` instead of resolving `webhook_name` from storage, so an unsaved endpoint can be verified before it is persisted.
+    /// Posts straight to `url` instead of resolving `webhook_name` from storage, so an unsaved endpoint can be verified before it is persisted. Never registers `webhook_name` in the saved-webhook list.
     pub async fn post_test(
         &self,
         webhook_name: &str,
@@ -109,6 +109,6 @@ impl DiscordClient {
         let url = url.trim();
         validate_webhook_url(url)?;
         let body = serde_json::json!({ "content": content });
-        self.execute_post(url, body, webhook_name, 0).await
+        self.execute_post(url, body, webhook_name, 0, false).await
     }
 }

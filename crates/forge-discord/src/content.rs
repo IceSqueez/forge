@@ -61,7 +61,7 @@ impl DiscordClient {
     }
 }
 
-pub(crate) fn record_send(
+fn push_send_record(
     snap: &mut DiscordContentSnapshot,
     webhook_name: &str,
     message_id: Option<String>,
@@ -69,9 +69,6 @@ pub(crate) fn record_send(
     ok: bool,
 ) {
     snap.webhook_last_ok.insert(webhook_name.to_owned(), ok);
-    if !snap.webhook_names.contains(&webhook_name.to_owned()) {
-        snap.webhook_names.push(webhook_name.to_owned());
-    }
     snap.recent_posts.push_front(SendRecord {
         webhook_name: webhook_name.to_owned(),
         message_id,
@@ -82,6 +79,30 @@ pub(crate) fn record_send(
     if snap.recent_posts.len() > RECENT_POSTS_CAP {
         snap.recent_posts.pop_back();
     }
+}
+
+pub(crate) fn record_send(
+    snap: &mut DiscordContentSnapshot,
+    webhook_name: &str,
+    message_id: Option<String>,
+    had_embed: bool,
+    ok: bool,
+) {
+    if !snap.webhook_names.contains(&webhook_name.to_owned()) {
+        snap.webhook_names.push(webhook_name.to_owned());
+    }
+    push_send_record(snap, webhook_name, message_id, had_embed, ok);
+}
+
+/// Records the post and health signal without registering `webhook_name` in the saved-webhook list.
+pub(crate) fn record_test_send(
+    snap: &mut DiscordContentSnapshot,
+    webhook_name: &str,
+    message_id: Option<String>,
+    had_embed: bool,
+    ok: bool,
+) {
+    push_send_record(snap, webhook_name, message_id, had_embed, ok);
 }
 
 impl BuiltinContent for DiscordClient {

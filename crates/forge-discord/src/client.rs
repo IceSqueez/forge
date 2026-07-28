@@ -7,7 +7,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use tokio::sync::broadcast;
 
 use crate::config::DiscordConfig;
-use crate::content::{DiscordContentSnapshot, make_content_state, record_send};
+use crate::content::{DiscordContentSnapshot, make_content_state, record_send, record_test_send};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
 use crate::embed::DiscordEmbed;
 use crate::error::DiscordError;
@@ -55,19 +55,9 @@ impl DiscordClient {
             rate_limiter,
         });
 
-        let creds_ref = Arc::clone(&client.creds);
-        let content_ref = Arc::clone(&content_state);
+        let boot_sync = Arc::clone(&client);
         tokio::spawn(async move {
-            if let Ok(ids) = creds_ref.list_ids().await {
-                let mut snap = content_ref.lock().unwrap_or_else(|p| p.into_inner());
-                for id in ids {
-                    if let Some(name) = id.as_str().strip_prefix(DISCORD_CRED_PREFIX)
-                        && !snap.webhook_names.contains(&name.to_owned())
-                    {
-                        snap.webhook_names.push(name.to_owned());
-                    }
-                }
-            }
+            let _ = boot_sync.list_webhooks().await;
         });
 
         client
@@ -110,7 +100,8 @@ impl DiscordClient {
     ) -> Result<String, DiscordError> {
         let cred = self.load_webhook(webhook_name).await?;
         let body = serde_json::json!({ "content": content });
-        self.execute_post(&cred.url, body, webhook_name, 0).await
+        self.execute_post(&cred.url, body, webhook_name, 0, true)
+            .await
     }
 
     pub async fn post_embed(
@@ -121,7 +112,8 @@ impl DiscordClient {
         embed.validate()?;
         let cred = self.load_webhook(webhook_name).await?;
         let body = serde_json::json!({ "embeds": [embed_to_wire(&embed)] });
-        self.execute_post(&cred.url, body, webhook_name, 1).await
+        self.execute_post(&cred.url, body, webhook_name, 1, true)
+            .await
     }
 
     pub async fn edit_message(
@@ -224,6 +216,7 @@ impl DiscordClient {
                     false,
                     None,
                     0,
+                    true,
                 );
                 publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
@@ -231,12 +224,12 @@ impl DiscordClient {
 
             let latency = retry_start.elapsed().as_millis() as u64;
             return self
-                .handle_post_response(retry_resp, webhook_name, latency, 0)
+                .handle_post_response(retry_resp, webhook_name, latency, 0, true)
                 .await;
         }
 
         let latency = start.elapsed().as_millis() as u64;
-        self.handle_post_response(resp, webhook_name, latency, 0)
+        self.handle_post_response(resp, webhook_name, latency, 0, true)
             .await
     }
 
@@ -293,6 +286,7 @@ impl DiscordClient {
                     false,
                     None,
                     0,
+                    true,
                 );
                 publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
@@ -323,7 +317,7 @@ impl DiscordClient {
         self.update_bucket(webhook_name, rl_limit, rl_remaining, rl_reset);
 
         if status.is_success() {
-            self.apply_send_result(webhook_name, latency_ms, true, None, 0);
+            self.apply_send_result(webhook_name, latency_ms, true, None, 0, true);
             Ok(())
         } else {
             let code = status.as_u16();
@@ -332,18 +326,20 @@ impl DiscordClient {
                 status: code,
                 body: body_text,
             };
-            self.apply_send_result(webhook_name, latency_ms, false, None, 0);
+            self.apply_send_result(webhook_name, latency_ms, false, None, 0, true);
             publish_failed(self.publisher.as_ref(), webhook_name, &err);
             Err(err)
         }
     }
 
+    /// `register_name` gates whether a successful send registers `webhook_name` in the saved-webhook list - false for an unsaved endpoint under test.
     pub(crate) async fn execute_post(
         &self,
         url: &str,
         body: serde_json::Value,
         webhook_name: &str,
         embed_count: u8,
+        register_name: bool,
     ) -> Result<String, DiscordError> {
         self.check_pre_send(webhook_name)?;
         let post_url = format!("{url}?wait=true");
@@ -391,6 +387,7 @@ impl DiscordClient {
                     false,
                     None,
                     embed_count,
+                    register_name,
                 );
                 publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
@@ -398,12 +395,18 @@ impl DiscordClient {
 
             let latency = retry_start.elapsed().as_millis() as u64;
             return self
-                .handle_post_response(retry_resp, webhook_name, latency, embed_count)
+                .handle_post_response(
+                    retry_resp,
+                    webhook_name,
+                    latency,
+                    embed_count,
+                    register_name,
+                )
                 .await;
         }
 
         let latency = start.elapsed().as_millis() as u64;
-        self.handle_post_response(resp, webhook_name, latency, embed_count)
+        self.handle_post_response(resp, webhook_name, latency, embed_count, register_name)
             .await
     }
 
@@ -413,6 +416,7 @@ impl DiscordClient {
         webhook_name: &str,
         latency_ms: u64,
         embed_count: u8,
+        register_name: bool,
     ) -> Result<String, DiscordError> {
         let status = resp.status();
         let (rl_limit, rl_remaining, rl_reset) = parse_bucket_headers(resp.headers());
@@ -427,6 +431,7 @@ impl DiscordClient {
                 true,
                 Some(message_id.clone()),
                 embed_count,
+                register_name,
             );
             publish_posted(
                 self.publisher.as_ref(),
@@ -442,7 +447,14 @@ impl DiscordClient {
                 status: code,
                 body: body_text.clone(),
             };
-            self.apply_send_result(webhook_name, latency_ms, false, None, embed_count);
+            self.apply_send_result(
+                webhook_name,
+                latency_ms,
+                false,
+                None,
+                embed_count,
+                register_name,
+            );
             publish_failed(self.publisher.as_ref(), webhook_name, &err);
             Err(err)
         }
@@ -498,6 +510,7 @@ impl DiscordClient {
                     false,
                     None,
                     0,
+                    true,
                 );
                 publish_failed(self.publisher.as_ref(), webhook_name, &err);
                 return Err(err);
@@ -524,7 +537,7 @@ impl DiscordClient {
         self.update_bucket(webhook_name, rl_limit, rl_remaining, rl_reset);
 
         if status.is_success() {
-            self.apply_send_result(webhook_name, latency_ms, true, None, 0);
+            self.apply_send_result(webhook_name, latency_ms, true, None, 0, true);
             Ok(())
         } else {
             let code = status.as_u16();
@@ -533,7 +546,7 @@ impl DiscordClient {
                 status: code,
                 body: body_text,
             };
-            self.apply_send_result(webhook_name, latency_ms, false, None, 0);
+            self.apply_send_result(webhook_name, latency_ms, false, None, 0, true);
             publish_failed(self.publisher.as_ref(), webhook_name, &err);
             Err(err)
         }
@@ -580,6 +593,7 @@ impl DiscordClient {
         ok: bool,
         message_id: Option<String>,
         embed_count: u8,
+        register_name: bool,
     ) {
         let (rl_remaining, rl_total) = {
             let rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
@@ -607,7 +621,11 @@ impl DiscordClient {
 
         {
             let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
-            record_send(&mut snap, webhook_name, message_id, embed_count > 0, ok);
+            if register_name {
+                record_send(&mut snap, webhook_name, message_id, embed_count > 0, ok);
+            } else {
+                record_test_send(&mut snap, webhook_name, message_id, embed_count > 0, ok);
+            }
         }
     }
 

@@ -67,7 +67,7 @@ pub(crate) fn update_on_send(
             new_value: HealthValue::Ratio {
                 used: rate_total.saturating_sub(rate_remaining),
                 total: rate_total,
-                reset_hint: rate_reset_hint.map(|s| format!("resets in {s:.0}s")),
+                reset_hint: rate_reset_hint.map(|s| format!("resets in {s}s")),
             },
         });
     }

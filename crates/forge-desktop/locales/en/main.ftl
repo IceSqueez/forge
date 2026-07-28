@@ -1914,6 +1914,7 @@ hotkeys_scope_global = Global
 hotkeys_scope_app = App
 hotkeys_scope_unregistered = Not registered
 hotkeys_menu_edit = Edit...
+hotkeys_menu_unbind = Unbind
 hotkeys_menu_reset_default = Reset to default
 hotkeys_add_binding = Add hotkey
 hotkeys_add_binding_kbd = capture

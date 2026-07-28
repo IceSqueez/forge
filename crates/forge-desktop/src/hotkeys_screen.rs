@@ -785,6 +785,12 @@ impl HotkeysScreenView {
         self.persist_shortcuts(cx);
     }
 
+    fn unbind_app_binding(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        self.shortcuts.unbind(id);
+        self.persist_shortcuts(cx);
+    }
+
     fn toggle_app_binding(&mut self, id: &'static str, cx: &mut Context<Self>) {
         let enabled = !self.shortcuts.is_enabled(id);
         self.shortcuts.set_enabled(id, enabled);
@@ -1033,10 +1039,10 @@ impl HotkeysScreenView {
         for (index, row) in self.bindings.iter().enumerate() {
             list = list.child(self.render_binding(index, row, palette, cx));
         }
-        list = list.child(self.render_add_bar(palette, cx));
         for (index, entry) in SHORTCUTS.iter().enumerate() {
             list = list.child(self.render_app_binding(index, entry, palette, cx));
         }
+        list = list.child(self.render_add_bar(palette, cx));
 
         div()
             .w_full()
@@ -1156,6 +1162,17 @@ impl HotkeysScreenView {
             .icon(Icon::Edit)
             .into(),
         ];
+        if self.shortcuts.chord_of(entry).is_some() {
+            items.push(
+                menu_item(
+                    ("hotkeys-app-unbind", index),
+                    tr!("hotkeys_menu_unbind"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.unbind_app_binding(id, cx)),
+                )
+                .icon(Icon::Eraser)
+                .into(),
+            );
+        }
         if self.shortcuts.is_overridden(id) {
             items.push(
                 menu_item(

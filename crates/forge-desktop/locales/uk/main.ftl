@@ -1942,6 +1942,7 @@ hotkeys_scope_global = Глобальна
 hotkeys_scope_app = Застосунок
 hotkeys_scope_unregistered = Не зареєстровано
 hotkeys_menu_edit = Редагувати...
+hotkeys_menu_unbind = Відв'язати
 hotkeys_menu_reset_default = Скинути до типової
 hotkeys_add_binding = Додати гарячу клавішу
 hotkeys_add_binding_kbd = захопити

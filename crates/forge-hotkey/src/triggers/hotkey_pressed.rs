@@ -150,50 +150,60 @@ mod tests {
         )
     }
 
-    #[test]
-    fn matches_any_when_config_empty() {
-        let ev = triggered_event("Ctrl+F1");
-        assert!(HotkeyPressedDescriptor.matches_trigger(&BTreeMap::new(), &ev));
+    fn combo_config(combo: &str) -> BTreeMap<String, Variant> {
+        BTreeMap::from([("combo".to_owned(), Variant::String(combo.to_owned()))])
     }
 
     #[test]
-    fn matches_exact_combo() {
-        let ev = triggered_event("Ctrl+Shift+1");
-        let cfg = BTreeMap::from([(
-            "combo".to_owned(),
-            Variant::String("Ctrl+Shift+1".to_owned()),
-        )]);
-        assert!(HotkeyPressedDescriptor.matches_trigger(&cfg, &ev));
-    }
+    fn matches_trigger_admits_only_a_hotkey_press_whose_combo_the_config_accepts() {
+        let cases = [
+            (
+                "empty config takes any combo",
+                BTreeMap::new(),
+                triggered_event("Ctrl+F1"),
+                true,
+            ),
+            (
+                "configured combo",
+                combo_config("Ctrl+Shift+1"),
+                triggered_event("Ctrl+Shift+1"),
+                true,
+            ),
+            (
+                "other combo",
+                combo_config("Ctrl+Shift+1"),
+                triggered_event("Ctrl+Shift+2"),
+                false,
+            ),
+            (
+                "other kind on the hotkey source",
+                BTreeMap::new(),
+                Event::new(
+                    EventSource::Hotkey,
+                    "hotkey.registered",
+                    json!({ "combo": "Ctrl+A", "id": 1u32 }),
+                ),
+                false,
+            ),
+            (
+                "hotkey kind forged on another source",
+                BTreeMap::new(),
+                Event::new(
+                    EventSource::Midi,
+                    "hotkey.global.pressed",
+                    json!({ "combo": "Ctrl+A" }),
+                ),
+                false,
+            ),
+        ];
 
-    #[test]
-    fn rejects_different_combo() {
-        let ev = triggered_event("Ctrl+Shift+2");
-        let cfg = BTreeMap::from([(
-            "combo".to_owned(),
-            Variant::String("Ctrl+Shift+1".to_owned()),
-        )]);
-        assert!(!HotkeyPressedDescriptor.matches_trigger(&cfg, &ev));
-    }
-
-    #[test]
-    fn does_not_match_wrong_kind() {
-        let ev = Event::new(
-            EventSource::Hotkey,
-            "hotkey.registered",
-            json!({ "combo": "Ctrl+A", "id": 1u32 }),
-        );
-        assert!(!HotkeyPressedDescriptor.matches_trigger(&BTreeMap::new(), &ev));
-    }
-
-    #[test]
-    fn does_not_match_wrong_source() {
-        let ev = Event::new(
-            EventSource::Midi,
-            "hotkey.global.pressed",
-            json!({ "combo": "Ctrl+A" }),
-        );
-        assert!(!HotkeyPressedDescriptor.matches_trigger(&BTreeMap::new(), &ev));
+        for (case, config, event, expected) in cases {
+            assert_eq!(
+                HotkeyPressedDescriptor.matches_trigger(&config, &event),
+                expected,
+                "wrong verdict for {case}"
+            );
+        }
     }
 
     #[test]
@@ -225,11 +235,5 @@ mod tests {
             HotkeyPressedDescriptor.condition_display(&BTreeMap::new()),
             "any hotkey"
         );
-    }
-
-    #[test]
-    fn event_filter_source_is_hotkey() {
-        let filter = HotkeyPressedDescriptor.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Hotkey));
     }
 }

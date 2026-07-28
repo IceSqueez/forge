@@ -95,6 +95,7 @@ struct ClipDraft {
     name: String,
     file_path: PathBuf,
     category: String,
+    loop_playback: bool,
 }
 
 enum AddModalEvent {
@@ -106,6 +107,7 @@ struct AddModal {
     file_path: Option<PathBuf>,
     name_input: Entity<TextInput>,
     category: String,
+    loop_playback: bool,
     saving: bool,
     error: Option<SharedString>,
     edit_id: Option<ClipId>,
@@ -121,6 +123,7 @@ impl AddModal {
         name: &str,
         category: String,
         file_path: Option<PathBuf>,
+        loop_playback: bool,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -144,6 +147,7 @@ impl AddModal {
             file_path,
             name_input,
             category,
+            loop_playback,
             saving: false,
             error: None,
             edit_id,
@@ -158,6 +162,11 @@ impl AddModal {
 
     fn set_category(&mut self, category: String, cx: &mut Context<Self>) {
         self.category = category;
+        cx.notify();
+    }
+
+    fn toggle_loop(&mut self, cx: &mut Context<Self>) {
+        self.loop_playback = !self.loop_playback;
         cx.notify();
     }
 
@@ -208,6 +217,7 @@ impl AddModal {
             name: self.name_input.read(cx).content().trim().to_owned(),
             file_path: self.file_path.clone().unwrap_or_default(),
             category: self.category.clone(),
+            loop_playback: self.loop_playback,
         };
         self.error = None;
         cx.emit(AddModalEvent::Submit(draft));
@@ -278,6 +288,36 @@ impl Render for AddModal {
             );
         }
 
+        let loop_row = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Sm, density))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_primary)
+                            .child(tr!("soundboard_modal_loop_label")),
+                    )
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(HINT_FS)
+                            .text_color(palette.text_faint)
+                            .child(tr!("soundboard_modal_loop_hint")),
+                    ),
+            )
+            .child(toggle(self.loop_playback, &palette).on_click(
+                "sb-modal-loop",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_loop(cx)),
+            ));
+
         let mut body = div()
             .flex()
             .flex_col()
@@ -296,7 +336,12 @@ impl Render for AddModal {
                 tr!("soundboard_modal_section_file"),
                 &palette,
             ))
-            .child(file_row);
+            .child(file_row)
+            .child(field_lite_label(
+                tr!("soundboard_modal_section_playback"),
+                &palette,
+            ))
+            .child(loop_row);
 
         if let Some(error) = self.error.clone() {
             body = body.child(
@@ -507,14 +552,12 @@ impl SoundboardView {
         }
     }
 
-    fn has_live_progress(&self) -> bool {
-        self.playing
-            .values()
-            .any(|p| !p.looped && p.duration_secs.is_some_and(|d| d > 0.0))
+    fn has_active_playback(&self) -> bool {
+        !self.playing.is_empty()
     }
 
     fn ensure_ticker(&mut self, cx: &mut Context<Self>) {
-        if self.ticking || !self.has_live_progress() {
+        if self.ticking || !self.has_active_playback() {
             return;
         }
         self.ticking = true;
@@ -522,7 +565,7 @@ impl SoundboardView {
             loop {
                 cx.background_executor().timer(TICK_INTERVAL).await;
                 let keep_going = this.update(cx, |this, cx| {
-                    if this.has_live_progress() {
+                    if this.has_active_playback() {
                         cx.notify();
                         true
                     } else {
@@ -842,8 +885,17 @@ impl SoundboardView {
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let rt_handle = self.rt_handle.clone();
-        let modal =
-            cx.new(|cx| AddModal::new(None, "", CATEGORY_ORDER[0].to_owned(), None, rt_handle, cx));
+        let modal = cx.new(|cx| {
+            AddModal::new(
+                None,
+                "",
+                CATEGORY_ORDER[0].to_owned(),
+                None,
+                false,
+                rt_handle,
+                cx,
+            )
+        });
         modal.update(cx, |m, cx| m.focus(window, cx));
         self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
@@ -857,9 +909,19 @@ impl SoundboardView {
         let name = clip.name.clone();
         let category = clip.category.clone();
         let file_path = clip.file_path.clone();
+        let loop_playback = clip.loop_playback;
         let rt_handle = self.rt_handle.clone();
-        let modal =
-            cx.new(|cx| AddModal::new(Some(id), &name, category, Some(file_path), rt_handle, cx));
+        let modal = cx.new(|cx| {
+            AddModal::new(
+                Some(id),
+                &name,
+                category,
+                Some(file_path),
+                loop_playback,
+                rt_handle,
+                cx,
+            )
+        });
         modal.update(cx, |m, cx| m.focus(window, cx));
         self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
@@ -917,6 +979,7 @@ impl SoundboardView {
         let name = draft.name.clone();
         let file_path = draft.file_path.clone();
         let category = draft.category.clone();
+        let loop_playback = draft.loop_playback;
         let edit_id = draft.edit_id;
 
         if let Some(modal) = self.modal.as_ref() {
@@ -944,6 +1007,7 @@ impl SoundboardView {
                             clip.duration_secs = None;
                         }
                         clip.category = category;
+                        clip.loop_playback = loop_playback;
                         (clip, id)
                     }
                     None => {
@@ -957,7 +1021,7 @@ impl SoundboardView {
                             hotkey: new_hotkey,
                             created_at: OffsetDateTime::now_utc(),
                             category,
-                            loop_playback: false,
+                            loop_playback,
                             duration_secs: None,
                             builtin_id: None,
                         };
@@ -1272,22 +1336,43 @@ impl SoundboardView {
             .child(delete_btn)
             .children(hotkey_badge);
 
-        let dur_color = if playing { color } else { palette.text_faint };
-        let mut sublabel = div().flex().items_center().gap(px(5.0)).mt(px(3.0));
+        let elapsed_secs = progress.map_or(0.0, |p| {
+            Instant::now()
+                .saturating_duration_since(p.started_at)
+                .as_secs_f64()
+        });
+        let readout = time_readout(elapsed_secs, readout_total(clip.duration_secs, progress));
+        let readout_color = if playing { color } else { palette.text_faint };
+
+        let mut status = div().flex().flex_1().min_w_0().items_center().gap(px(5.0));
         if clip.loop_playback {
-            sublabel = sublabel.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
+            status = status.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
         }
-        sublabel = sublabel.child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(dur_color)
-                .child(if playing {
-                    tr!("soundboard_pad_playing")
-                } else {
-                    duration_label(clip.duration_secs)
-                }),
-        );
+        if playing {
+            status = status.child(
+                div()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(color)
+                    .child(tr!("soundboard_pad_playing")),
+            );
+        }
+        let sublabel = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(5.0))
+            .mt(px(3.0))
+            .child(status)
+            .child(
+                div()
+                    .flex_none()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(readout_color)
+                    .child(readout),
+            );
 
         let mut pad = pad_tile(
             (gpui::ElementId::from("sb-pad"), id.to_string()),
@@ -1299,17 +1384,18 @@ impl SoundboardView {
         .sublabel(sublabel)
         .selected(playing)
         .accent(color)
+        .hover_border(color)
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_play(id, cx)));
 
         if let Some(prog) = progress {
-            let indeterminate = prog.looped || !prog.duration_secs.is_some_and(|d| d > 0.0);
-            let fraction = if indeterminate {
-                PROGRESS_WIDTH
+            let total = if prog.looped {
+                None
             } else {
-                let elapsed = Instant::now()
-                    .saturating_duration_since(prog.started_at)
-                    .as_secs_f64();
-                (elapsed / prog.duration_secs.unwrap_or(0.0)).clamp(0.0, 1.0) as f32
+                prog.duration_secs.filter(|d| *d > 0.0)
+            };
+            let fraction = match total {
+                Some(total) => (elapsed_secs / total).clamp(0.0, 1.0) as f32,
+                None => PROGRESS_WIDTH,
             };
             pad = pad.progress(fraction, color);
         }
@@ -1938,9 +2024,25 @@ fn stored_to_clip(c: StoredClip) -> SoundClip {
     }
 }
 
-fn duration_label(secs: Option<f32>) -> String {
-    match secs {
-        Some(s) => fmt_clock(s.max(0.0).round() as u64),
-        None => "\u{2014}".to_owned(),
+fn readout_total(clip_secs: Option<f32>, progress: Option<&PlaybackProgress>) -> Option<f64> {
+    match progress {
+        Some(p) if p.looped => None,
+        Some(p) => p.duration_secs,
+        None => clip_secs.map(f64::from),
+    }
+    .filter(|d| *d > 0.0)
+}
+
+fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String {
+    match total_secs {
+        Some(total) => {
+            let total = total.round();
+            format!(
+                "{}/{}",
+                fmt_clock(elapsed_secs.clamp(0.0, total) as u64),
+                fmt_clock(total as u64)
+            )
+        }
+        None => fmt_clock(elapsed_secs.max(0.0) as u64),
     }
 }

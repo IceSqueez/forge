@@ -1,16 +1,27 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use forge_events::EventPublisher;
 use forge_platform_core::BuiltinId;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::backend::{HotkeyBackend, HotkeyId, NullBackend};
 use crate::combo::HotkeyCombo;
 use crate::config::HotkeyConfig;
 use crate::error::HotkeyError;
 use crate::health::{HealthTx, HotkeyHealthSnapshot, make_health_state};
-use crate::supervisor;
+use crate::supervisor::{self, SupervisorCommand};
+
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[derive(Debug)]
+pub struct EnableFailure {
+    pub id: HotkeyId,
+    pub combo: HotkeyCombo,
+    pub error: HotkeyError,
+}
 
 pub struct HotkeyClient {
     pub(crate) id: BuiltinId,
@@ -23,6 +34,8 @@ pub struct HotkeyClient {
     pub(crate) health_state: Arc<Mutex<HotkeyHealthSnapshot>>,
     pub(crate) health_tx: HealthTx,
     pub(crate) portal_available: Option<bool>,
+    pub(crate) enabled: Arc<AtomicBool>,
+    control_tx: mpsc::Sender<SupervisorCommand>,
 }
 
 impl HotkeyClient {
@@ -33,6 +46,7 @@ impl HotkeyClient {
         portal_available: Option<bool>,
     ) -> Arc<Self> {
         let (health_tx, health_state) = make_health_state();
+        let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
 
         let client = Arc::new(Self {
             id: BuiltinId::new("hotkey"),
@@ -45,13 +59,15 @@ impl HotkeyClient {
             health_state,
             health_tx,
             portal_available,
+            enabled: Arc::new(AtomicBool::new(true)),
+            control_tx,
         });
 
         let fired_rx = client.backend.fired_rx();
         if let Some(rx) = fired_rx {
             let c = Arc::clone(&client);
             tokio::spawn(async move {
-                supervisor::run_supervisor(c, rx).await;
+                supervisor::run_supervisor(c, rx, control_rx).await;
             });
         }
 
@@ -76,13 +92,15 @@ impl HotkeyClient {
 
         let id = HotkeyId(self.id_counter.fetch_add(1, Ordering::Relaxed));
 
-        self.backend.register(id, &combo).map_err(|e| {
-            if matches!(e, HotkeyError::AlreadyRegistered { .. }) {
-                let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
-                snap.conflict_count = snap.conflict_count.saturating_add(1);
-            }
-            e
-        })?;
+        if self.os_registration_active() {
+            self.backend.register(id, &combo).map_err(|e| {
+                if matches!(e, HotkeyError::AlreadyRegistered { .. }) {
+                    let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+                    snap.conflict_count = snap.conflict_count.saturating_add(1);
+                }
+                e
+            })?;
+        }
 
         {
             let mut guard = self.registry.write().unwrap_or_else(|p| p.into_inner());
@@ -110,7 +128,9 @@ impl HotkeyClient {
 
         let combo_str = combo.as_str().to_owned();
 
-        self.backend.unregister(id)?;
+        if self.os_registration_active() {
+            self.backend.unregister(id)?;
+        }
 
         {
             let mut guard = self.registry.write().unwrap_or_else(|p| p.into_inner());
@@ -120,6 +140,34 @@ impl HotkeyClient {
         supervisor::emit_unregistered(self, &combo_str, id.0);
 
         Ok(())
+    }
+
+    pub async fn disable(&self) -> Result<(), HotkeyError> {
+        self.send_command(SupervisorCommand::Disable).await
+    }
+
+    pub async fn enable(&self) -> Result<Vec<EnableFailure>, HotkeyError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.send_command(SupervisorCommand::Enable(reply_tx))
+            .await?;
+        reply_rx
+            .await
+            .map_err(|_| HotkeyError::SupervisorUnavailable)
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Relaxed)
+    }
+
+    fn os_registration_active(&self) -> bool {
+        self.enabled.load(Ordering::Relaxed) || self.backend.delivery_gate_only()
+    }
+
+    async fn send_command(&self, cmd: SupervisorCommand) -> Result<(), HotkeyError> {
+        tokio::time::timeout(COMMAND_TIMEOUT, self.control_tx.send(cmd))
+            .await
+            .map_err(|_| HotkeyError::SupervisorUnavailable)?
+            .map_err(|_| HotkeyError::SupervisorUnavailable)
     }
 
     pub fn registered_combos(&self) -> Vec<(HotkeyId, HotkeyCombo)> {
@@ -146,6 +194,7 @@ impl HotkeyClient {
 
         let (backend, _tx) = MockPortalBackend::new();
         let (health_tx, health_state) = make_health_state();
+        let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
 
         Arc::new(Self {
             id: BuiltinId::new("hotkey"),
@@ -158,6 +207,8 @@ impl HotkeyClient {
             health_state,
             health_tx,
             portal_available,
+            enabled: Arc::new(AtomicBool::new(true)),
+            control_tx,
         })
     }
 }

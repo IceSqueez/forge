@@ -50,6 +50,12 @@ pub(crate) trait HotkeyBackend: Send + Sync {
     fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError>;
     fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError>;
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>>;
+
+    /// True when the OS-level grab survives the client's disable/enable cycle untouched
+    /// (the portal session stays bound to avoid a re-prompt); the client only gates delivery.
+    fn delivery_gate_only(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

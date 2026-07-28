@@ -3,6 +3,7 @@ pub mod client;
 pub mod combo;
 pub mod config;
 pub(crate) mod content;
+pub(crate) mod control;
 pub mod error;
 pub(crate) mod health;
 mod payload_fields;
@@ -20,7 +21,7 @@ pub(crate) mod backend_portal;
 pub(crate) mod backend_global;
 
 pub use backend::HotkeyId;
-pub use client::HotkeyClient;
+pub use client::{EnableFailure, HotkeyClient};
 pub use combo::HotkeyCombo;
 pub use config::HotkeyConfig;
 pub use error::HotkeyError;

@@ -16,6 +16,9 @@ pub enum HotkeyError {
 
     #[error("backend error: {0}")]
     Backend(String),
+
+    #[error("hotkey supervisor task is not running")]
+    SupervisorUnavailable,
 }
 
 #[cfg(test)]

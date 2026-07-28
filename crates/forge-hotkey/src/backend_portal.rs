@@ -80,6 +80,10 @@ impl HotkeyBackend for PortalBackend {
             .unwrap_or_else(|p| p.into_inner())
             .take()
     }
+
+    fn delivery_gate_only(&self) -> bool {
+        true
+    }
 }
 
 async fn register_host_app_id(conn: &Connection, app_id: &str) {

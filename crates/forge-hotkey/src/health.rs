@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use time::OffsetDateTime;
@@ -45,6 +46,20 @@ pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<HotkeyHealthSnapshot>>
     (tx, Arc::new(Mutex::new(HotkeyHealthSnapshot::default())))
 }
 
+pub(crate) fn registered_count_health_value(enabled: bool, count: usize) -> HealthValue {
+    if enabled {
+        HealthValue::Text {
+            primary: count.to_string(),
+            secondary: Some("hotkeys".to_owned()),
+        }
+    } else {
+        HealthValue::Text {
+            primary: "0".to_owned(),
+            secondary: Some("disabled".to_owned()),
+        }
+    }
+}
+
 pub(crate) fn build_trigger_delta(snap: &HotkeyHealthSnapshot) -> HealthDelta {
     let primary = match (&snap.last_triggered_at, &snap.last_triggered_combo) {
         (Some(t), Some(c)) => {
@@ -71,10 +86,10 @@ impl BuiltinHealth for HotkeyClient {
     fn metrics(&self) -> [HealthMetric; 4] {
         let snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
 
-        let registered_value = HealthValue::Text {
-            primary: snap.registered_count.to_string(),
-            secondary: Some("hotkeys".to_owned()),
-        };
+        let registered_value = registered_count_health_value(
+            self.enabled.load(Ordering::Relaxed),
+            snap.registered_count,
+        );
 
         let last_triggered_value = match (&snap.last_triggered_at, &snap.last_triggered_combo) {
             (Some(t), Some(c)) => {

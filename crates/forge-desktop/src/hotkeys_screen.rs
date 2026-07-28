@@ -157,6 +157,8 @@ struct OpenModal {
 
 struct OpenAppModal {
     id: &'static str,
+    /// Owner whose chord the draft took: unbound only when the draft is saved, so cancelling leaves it alone.
+    steal: Option<&'static str>,
     view: Entity<AppShortcutModal>,
     _sub: Subscription,
 }
@@ -525,13 +527,7 @@ impl HotkeysScreenView {
                 self.shortcuts.bind(id, combo);
                 self.persist_shortcuts(cx);
             }
-            Capture::AppModal(_) => {
-                if let Some(open) = &self.app_modal {
-                    open.view
-                        .update(cx, |modal, cx| modal.apply_capture(combo, cx));
-                }
-                cx.notify();
-            }
+            Capture::AppModal(_) => self.push_app_modal_chord(combo, None, cx),
         }
     }
 
@@ -546,8 +542,12 @@ impl HotkeysScreenView {
             ..
         } = prompt;
         if let Some(owner) = app_owner {
-            self.shortcuts.unbind(owner);
-            self.apply_capture(capture, combo, cx);
+            if matches!(capture, Capture::AppModal(_)) {
+                self.push_app_modal_chord(combo, Some(owner), cx);
+            } else {
+                self.shortcuts.unbind(owner);
+                self.apply_capture(capture, combo, cx);
+            }
             return;
         }
         let client = Arc::clone(&self.client);
@@ -798,9 +798,26 @@ impl HotkeysScreenView {
         let sub = cx.subscribe(&view, Self::on_app_modal_event);
         self.app_modal = Some(OpenAppModal {
             id: entry.id,
+            steal: None,
             view,
             _sub: sub,
         });
+        cx.notify();
+    }
+
+    fn push_app_modal_chord(
+        &mut self,
+        chord: String,
+        steal: Option<&'static str>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(open) = &mut self.app_modal {
+            open.steal = steal;
+        }
+        if let Some(open) = &self.app_modal {
+            open.view
+                .update(cx, |modal, cx| modal.apply_capture(chord, cx));
+        }
         cx.notify();
     }
 
@@ -818,7 +835,11 @@ impl HotkeysScreenView {
             AppShortcutModalEvent::Cancel => self.close_app_modal(cx),
             AppShortcutModalEvent::Save(chord) => {
                 let chord = chord.clone();
+                let steal = self.app_modal.as_ref().and_then(|open| open.steal);
                 self.close_app_modal(cx);
+                if let Some(owner) = steal {
+                    self.shortcuts.unbind(owner);
+                }
                 match chord {
                     Some(chord) => self.shortcuts.bind(id, chord),
                     None => self.shortcuts.unbind(id),

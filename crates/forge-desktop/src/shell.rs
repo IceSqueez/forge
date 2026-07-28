@@ -21,6 +21,7 @@ use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
+use crate::midi_screen::MidiScreenView;
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::platforms::PlatformsView;
@@ -46,6 +47,7 @@ use crate::vtube_connect_form::VTubeConnected;
 const TOAST_PRIORITY: usize = 2;
 const OBS_BUILTIN_ID: &str = "obs";
 const VTUBE_BUILTIN_ID: &str = "vtube";
+const MIDI_BUILTIN_ID: &str = "midi";
 
 struct Router {
     screen: Screen,
@@ -182,6 +184,10 @@ impl AppShell {
                     VTUBE_BUILTIN_ID => match handles.vtube_install_seed.live() {
                         Some(client) => Some(vtube_builtin_object(client)),
                         None => return Self::vtube_connect_screen(handles, cx),
+                    },
+                    MIDI_BUILTIN_ID => match handles.midi_client.clone() {
+                        Some(client) => return Self::midi_screen(handles, client, cx),
+                        None => handles.builtins.get(id),
                     },
                     _ => handles.builtins.get(id),
                 };
@@ -406,6 +412,19 @@ impl AppShell {
         })
         .detach();
         connect.into()
+    }
+
+    fn midi_screen(
+        handles: &Arc<RuntimeHandles>,
+        client: Arc<forge_midi::MidiClient>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
+        let trigger_repo = handles.backend.trigger_instance_repo();
+        let action_repo = handles.backend.action_repo();
+        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let rt_handle = handles.rt_handle.clone();
+        cx.new(|cx| MidiScreenView::new(client, trigger_repo, action_repo, settings, rt_handle, cx))
+            .into()
     }
 
     fn vtube_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {

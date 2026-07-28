@@ -1851,3 +1851,51 @@ vtube_connect_error_subscribe = Авторизовано, але не вдало
 vtube_connect_error_unknown = VTube Studio перервав спробу підключення
 vtube_connect_settings_save_failed = Не вдалося зберегти налаштування підключення VTube Studio
 obs_settings_disconnect_hint = Сеанс WebSocket буде закрито. Перемикання сцен і джерел не працюватиме, доки ти не підключишся знову.
+
+## Common - row actions
+
+common_duplicate = Дублювати
+
+## MIDI - breadcrumb + header
+
+midi_breadcrumb_builtin = Вбудоване
+midi_header_summary = { $devices } пристроїв · { $mappings } зіставлень
+
+## MIDI - hero
+
+midi_hero_blurb = Прив'язуй ноти, контрольні зміни та фейдери з будь-якого MIDI-контролера до дій Forge.
+midi_hero_enabled = Увімкнено
+midi_hero_disabled = Вимкнено
+midi_toggle_failed = Не вдалося змінити стан входу MIDI
+
+## MIDI - devices
+
+midi_section_devices = Пристрої
+midi_device_port = вхід · порт { $index }
+midi_device_offline = офлайн
+midi_device_maps = { $count } зіставлень
+midi_devices_empty = MIDI-пристроїв ще не виявлено
+midi_rescan_ports = Пересканувати порти
+
+## MIDI - input monitor
+
+midi_section_monitor = Монітор входу
+midi_monitor_empty = Очікування MIDI-сигналу...
+
+## MIDI - mappings
+
+midi_section_mappings = Зіставлення
+midi_bindings_count = { $count } прив'язок
+midi_value_any = будь-яке
+midi_unassigned = Не призначено - натисни, щоб обрати дію
+midi_mappings_empty = Зіставлень MIDI ще немає
+midi_menu_edit = Редагувати зіставлення...
+midi_add_learn = Навчання MIDI
+midi_add_learn_kbd = слухати
+midi_toast_error = MIDI: { $message }
+
+## MIDI - footer
+
+midi_footer_left = { $devices } пристроїв підключено · { $mappings } активних зіставлень
+midi_engine_running = Рушій MIDI працює
+midi_engine_stopped = Рушій MIDI зупинено

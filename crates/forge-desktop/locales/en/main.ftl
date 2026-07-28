@@ -1823,3 +1823,51 @@ vtube_connect_error_subscribe = Authorized, but subscribing to VTube Studio even
 vtube_connect_error_unknown = VTube Studio ended the connection attempt
 vtube_connect_settings_save_failed = Could not save the VTube Studio connection settings
 obs_settings_disconnect_hint = The WebSocket session closes. Scene switches and source toggles stop working until you reconnect.
+
+## Common - row actions
+
+common_duplicate = Duplicate
+
+## MIDI - breadcrumb + header
+
+midi_breadcrumb_builtin = Builtin
+midi_header_summary = { $devices } devices · { $mappings } mappings
+
+## MIDI - hero
+
+midi_hero_blurb = Bind notes, control changes, and faders from any MIDI controller to Forge actions.
+midi_hero_enabled = Enabled
+midi_hero_disabled = Disabled
+midi_toggle_failed = Could not change the MIDI input state
+
+## MIDI - devices
+
+midi_section_devices = Devices
+midi_device_port = in · port { $index }
+midi_device_offline = offline
+midi_device_maps = { $count } maps
+midi_devices_empty = No MIDI devices seen yet
+midi_rescan_ports = Rescan ports
+
+## MIDI - input monitor
+
+midi_section_monitor = Input monitor
+midi_monitor_empty = Waiting for MIDI input...
+
+## MIDI - mappings
+
+midi_section_mappings = Mappings
+midi_bindings_count = { $count } bindings
+midi_value_any = any
+midi_unassigned = Unassigned - click to pick an action
+midi_mappings_empty = No MIDI mappings yet
+midi_menu_edit = Edit mapping...
+midi_add_learn = MIDI Learn
+midi_add_learn_kbd = listen
+midi_toast_error = MIDI: { $message }
+
+## MIDI - footer
+
+midi_footer_left = { $devices } devices connected · { $mappings } active mappings
+midi_engine_running = MIDI engine running
+midi_engine_stopped = MIDI engine stopped

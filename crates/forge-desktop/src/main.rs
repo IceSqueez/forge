@@ -22,6 +22,7 @@ mod integration_detail;
 mod integration_quick_action_modal;
 mod integration_quick_actions;
 mod integrations;
+mod midi_screen;
 mod oauth_connect;
 mod obs_connect;
 mod obs_credentials_form;

@@ -12,6 +12,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
 
+use crate::midi_screen::MIDI_ENABLED_KEY;
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
 
@@ -66,6 +67,8 @@ pub struct Integrations {
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
+    /// `None` when the platform MIDI backend failed to initialize.
+    pub midi_client: Option<Arc<forge_midi::MidiClient>>,
 }
 
 /// Holds the same `SwitchableObsSink` the registered OBS runners resolve through, so a post-boot
@@ -254,7 +257,8 @@ pub async fn build_integrations(
     let obs_install_seed = build_obs(sub_actions, backend, bus).await;
     let vtube_install_seed = build_vtube(sub_actions, backend, bus).await;
     insert("discord", build_discord(sub_actions, backend, bus));
-    insert("midi", build_midi(sub_actions, bus));
+    let (midi, midi_client) = build_midi(sub_actions, backend, bus).await;
+    insert("midi", midi);
     insert("hotkey", build_hotkey(backend, bus).await);
 
     let (youtube, youtube_viewers, youtube_install_seed) =
@@ -277,6 +281,7 @@ pub async fn build_integrations(
         youtube_install_seed,
         obs_install_seed,
         vtube_install_seed,
+        midi_client,
     }
 }
 
@@ -572,7 +577,11 @@ fn build_discord(
     })
 }
 
-fn build_midi(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) -> Option<BuiltinObject> {
+async fn build_midi(
+    sub_actions: &mut SubActionRegistry,
+    backend: &Arc<dyn DataProvider>,
+    bus: &Arc<EventBus>,
+) -> (Option<BuiltinObject>, Option<Arc<forge_midi::MidiClient>>) {
     let client = match forge_midi::MidiClient::start_with_midir(
         forge_midi::MidiConfig::default(),
         publisher(bus),
@@ -580,21 +589,30 @@ fn build_midi(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) -> Optio
         Ok(client) => client,
         Err(e) => {
             eprintln!("forge-desktop: MIDI init failed; integration unavailable: {e}");
-            return None;
+            return (None, None);
         }
     };
     if let Err(e) = forge_midi::register_midi_sub_actions(sub_actions, Arc::clone(&client)) {
         eprintln!("forge-desktop: midi sub-action registration failed: {e}");
     }
-    Some(BuiltinObject {
+
+    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    if !get_bool_setting(&*settings, MIDI_ENABLED_KEY, true).await
+        && let Err(e) = client.disable_input().await
+    {
+        eprintln!("forge-desktop: midi input could not be disabled at boot: {e}");
+    }
+
+    let object = BuiltinObject {
         icon: SectionIcon::new("piano"),
         status: client.clone(),
         health: client.clone(),
         content: client.clone(),
-        quick: client,
-        control: None,
+        quick: client.clone(),
+        control: Some(client.clone()),
         obs_client: None,
-    })
+    };
+    (Some(object), Some(client))
 }
 
 async fn build_hotkey(

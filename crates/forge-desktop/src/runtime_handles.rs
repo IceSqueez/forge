@@ -32,6 +32,8 @@ pub struct RuntimeHandles {
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
+    /// `None` when the platform MIDI backend failed to initialize.
+    pub midi_client: Option<Arc<forge_midi::MidiClient>>,
     /// `None` when the server is disabled in settings or the boot bind failed.
     pub server: Option<forge_server::ServerHandle>,
     /// `None` only if speak-queue construction failed.

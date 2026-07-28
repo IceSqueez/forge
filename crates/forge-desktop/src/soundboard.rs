@@ -2046,3 +2046,93 @@ fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String {
         None => fmt_clock(elapsed_secs.max(0.0) as u64),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn progress(duration_secs: Option<f64>, looped: bool) -> PlaybackProgress {
+        PlaybackProgress {
+            started_at: Instant::now(),
+            duration_secs,
+            looped,
+        }
+    }
+
+    #[test]
+    fn time_readout_floors_elapsed_and_rounds_total() {
+        for (elapsed, total, expected) in [
+            (0.0, 23.0, "0:00/0:23"),
+            (12.9, 30.0, "0:12/0:30"),
+            (59.9, 120.0, "0:59/2:00"),
+            (10.0, 23.4, "0:10/0:23"),
+            (10.0, 23.6, "0:10/0:24"),
+        ] {
+            assert_eq!(
+                time_readout(elapsed, Some(total)),
+                expected,
+                "elapsed {elapsed} of {total}"
+            );
+        }
+    }
+
+    #[test]
+    fn time_readout_clamps_elapsed_to_the_rounded_total() {
+        for (elapsed, total, expected) in [
+            (24.0, 23.0, "0:23/0:23"),
+            (99.0, 23.6, "0:24/0:24"),
+            (23.0, 23.0, "0:23/0:23"),
+        ] {
+            assert_eq!(
+                time_readout(elapsed, Some(total)),
+                expected,
+                "elapsed {elapsed} of {total}"
+            );
+        }
+    }
+
+    #[test]
+    fn time_readout_without_a_total_shows_elapsed_alone() {
+        for (elapsed, expected) in [
+            (0.0, "0:00"),
+            (59.9, "0:59"),
+            (60.0, "1:00"),
+            (75.9, "1:15"),
+        ] {
+            assert_eq!(time_readout(elapsed, None), expected, "elapsed {elapsed}");
+        }
+    }
+
+    #[test]
+    fn readout_total_when_idle_comes_from_the_clip_duration() {
+        for (clip_secs, expected) in [
+            (Some(23.0_f32), Some(23.0_f64)),
+            (Some(0.5), Some(0.5)),
+            (Some(0.0), None),
+            (None, None),
+        ] {
+            assert_eq!(
+                readout_total(clip_secs, None),
+                expected,
+                "clip {clip_secs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn readout_total_while_playing_ignores_the_clip_duration() {
+        for (duration_secs, looped, expected) in [
+            (Some(12.0), false, Some(12.0)),
+            (None, false, None),
+            (Some(30.0), true, None),
+            (Some(0.0), false, None),
+        ] {
+            let live = progress(duration_secs, looped);
+            assert_eq!(
+                readout_total(Some(23.0), Some(&live)),
+                expected,
+                "playing {duration_secs:?} looped {looped}"
+            );
+        }
+    }
+}

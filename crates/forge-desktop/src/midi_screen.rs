@@ -1365,3 +1365,486 @@ impl Render for MidiScreenView {
             .children(self.modal.as_ref().map(|open| open.view.clone()))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use forge_storage::{ActionTelemetry, ExecutionStatus, StorageError};
+    use forge_types::{Action, ExecutionMode, QueueId, TriggerConfig, Variant};
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::midi_signal::{CONTROL_CHANGE_KIND, NOTE_ON_KIND};
+
+    #[derive(Default)]
+    struct TriggerStore {
+        instances: Vec<TriggerInstance>,
+        links: Vec<(ActionId, TriggerInstanceId, i64)>,
+        unlinks: usize,
+        fail_save: bool,
+    }
+
+    #[derive(Default)]
+    struct FakeTriggerRepo {
+        state: Mutex<TriggerStore>,
+    }
+
+    impl FakeTriggerRepo {
+        fn seed(&self, instance: TriggerInstance) {
+            self.lock().instances.push(instance);
+        }
+
+        fn seed_link(&self, action_id: ActionId, instance_id: TriggerInstanceId, position: i64) {
+            self.lock().links.push((action_id, instance_id, position));
+        }
+
+        fn failing_save() -> Self {
+            let repo = Self::default();
+            repo.lock().fail_save = true;
+            repo
+        }
+
+        fn lock(&self) -> std::sync::MutexGuard<'_, TriggerStore> {
+            self.state.lock().unwrap_or_else(|p| p.into_inner())
+        }
+
+        fn instances(&self) -> Vec<TriggerInstance> {
+            self.lock().instances.clone()
+        }
+
+        fn links(&self) -> Vec<(ActionId, TriggerInstanceId, i64)> {
+            self.lock().links.clone()
+        }
+
+        fn unlinks(&self) -> usize {
+            self.lock().unlinks
+        }
+    }
+
+    #[async_trait]
+    impl TriggerInstanceRepo for FakeTriggerRepo {
+        async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+            Ok(self.instances())
+        }
+
+        async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn list_for_action(
+            &self,
+            action_id: ActionId,
+        ) -> Result<Vec<TriggerInstance>, StorageError> {
+            let store = self.lock();
+            Ok(store
+                .links
+                .iter()
+                .filter(|(action, _, _)| *action == action_id)
+                .filter_map(|(_, instance_id, _)| {
+                    store
+                        .instances
+                        .iter()
+                        .find(|i| i.id == *instance_id)
+                        .cloned()
+                })
+                .collect())
+        }
+
+        async fn actions_using(
+            &self,
+            instance_id: TriggerInstanceId,
+        ) -> Result<Vec<ActionId>, StorageError> {
+            Ok(self
+                .lock()
+                .links
+                .iter()
+                .filter(|(_, linked, _)| *linked == instance_id)
+                .map(|(action, _, _)| *action)
+                .collect())
+        }
+
+        async fn link_action(
+            &self,
+            action_id: ActionId,
+            instance_id: TriggerInstanceId,
+            position: i64,
+        ) -> Result<(), StorageError> {
+            self.lock().links.push((action_id, instance_id, position));
+            Ok(())
+        }
+
+        async fn unlink_action(
+            &self,
+            action_id: ActionId,
+            instance_id: TriggerInstanceId,
+        ) -> Result<bool, StorageError> {
+            let mut store = self.lock();
+            store.unlinks += 1;
+            let before = store.links.len();
+            store
+                .links
+                .retain(|(action, linked, _)| !(*action == action_id && *linked == instance_id));
+            Ok(store.links.len() != before)
+        }
+
+        async fn get(
+            &self,
+            id: TriggerInstanceId,
+        ) -> Result<Option<TriggerInstance>, StorageError> {
+            Ok(self.lock().instances.iter().find(|i| i.id == id).cloned())
+        }
+
+        async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
+            let mut store = self.lock();
+            if store.fail_save {
+                return Err(StorageError::Connection {
+                    reason: "forced write failure".to_owned(),
+                });
+            }
+            match store.instances.iter_mut().find(|i| i.id == instance.id) {
+                Some(existing) => *existing = instance.clone(),
+                None => store.instances.push(instance.clone()),
+            }
+            Ok(())
+        }
+
+        async fn delete(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn upsert_default(
+            &self,
+            _kind_id: &str,
+            _name: &str,
+        ) -> Result<TriggerInstanceId, StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn set_enabled(
+            &self,
+            _id: TriggerInstanceId,
+            _enabled: bool,
+        ) -> Result<(), StorageError> {
+            Err(StorageError::NotReady)
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeActionRepo {
+        actions: Mutex<Vec<Action>>,
+    }
+
+    impl FakeActionRepo {
+        fn with(actions: Vec<Action>) -> Self {
+            Self {
+                actions: Mutex::new(actions),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ActionRepo for FakeActionRepo {
+        async fn list(&self) -> Result<Vec<Action>, StorageError> {
+            Ok(self
+                .actions
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone())
+        }
+
+        async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
+            Ok(self
+                .actions
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .iter()
+                .find(|a| a.id == id)
+                .cloned())
+        }
+
+        async fn save(&self, _action: &Action) -> Result<(), StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn delete(&self, _id: ActionId) -> Result<bool, StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn list_by_group<'a>(
+            &'a self,
+            _group: Option<&'a str>,
+        ) -> Result<Vec<Action>, StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn record_execution(
+            &self,
+            _action_id: ActionId,
+            _started_at: OffsetDateTime,
+            _duration_ms: u64,
+            _status: ExecutionStatus,
+        ) -> Result<(), StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn prune_executions_before(
+            &self,
+            _cutoff: OffsetDateTime,
+        ) -> Result<u64, StorageError> {
+            Err(StorageError::NotReady)
+        }
+    }
+
+    fn action(name: &str) -> Action {
+        Action {
+            id: ActionId::new(),
+            name: name.to_owned(),
+            group: None,
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::default(),
+            description: None,
+            sub_actions: vec![],
+        }
+    }
+
+    fn stored_instance(kind_id: &str) -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: kind_id.to_owned(),
+            name: "Stored name".to_owned(),
+            overrides: TriggerConfig::new(),
+            enabled: false,
+            user_defined: false,
+            platform_scope: PlatformScope::Any,
+            cooldown_secs: 45,
+            cooldown_global: false,
+        }
+    }
+
+    fn note_signal(selector: i64) -> MidiSignal {
+        MidiSignal {
+            kind_id: NOTE_ON_KIND.to_owned(),
+            selector: Some(selector),
+            channel: Some(3),
+            device: Some("Keys".to_owned()),
+        }
+    }
+
+    fn draft(
+        instance_id: Option<TriggerInstanceId>,
+        signal: MidiSignal,
+        action_id: ActionId,
+    ) -> MappingDraft {
+        MappingDraft {
+            instance_id,
+            signal,
+            action_id,
+            name: "Draft name".to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn save_mapping_creates_an_enabled_user_defined_instance_for_a_new_draft() {
+        let triggers = FakeTriggerRepo::default();
+        let target = action("Play sound");
+        let actions = FakeActionRepo::with(vec![target.clone()]);
+
+        save_mapping(&triggers, &actions, draft(None, note_signal(60), target.id))
+            .await
+            .unwrap();
+
+        let stored = triggers.instances();
+        assert_eq!(stored.len(), 1);
+        let created = &stored[0];
+        assert!(created.enabled, "a fresh mapping must be active");
+        assert!(created.user_defined, "a fresh mapping must be user defined");
+        assert_eq!(created.name, "Draft name");
+        assert_eq!(created.kind_id, NOTE_ON_KIND);
+        assert_eq!(created.overrides.get("note"), Some(&Variant::Int(60)));
+        assert_eq!(created.overrides.get("channel"), Some(&Variant::Int(3)));
+        assert_eq!(
+            created.overrides.get("device"),
+            Some(&Variant::String("Keys".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn save_mapping_appends_the_new_link_after_the_actions_existing_triggers() {
+        let triggers = FakeTriggerRepo::default();
+        let target = action("Play sound");
+        let actions = FakeActionRepo::with(vec![target.clone()]);
+        for _ in 0..2 {
+            let existing = stored_instance("core.manual");
+            triggers.seed_link(target.id, existing.id, 0);
+            triggers.seed(existing);
+        }
+
+        save_mapping(&triggers, &actions, draft(None, note_signal(60), target.id))
+            .await
+            .unwrap();
+
+        let created = triggers.instances()[2].id;
+        assert!(
+            triggers.links().contains(&(target.id, created, 2)),
+            "the new link must land after the two existing ones"
+        );
+    }
+
+    #[tokio::test]
+    async fn save_mapping_keeps_the_stored_name_and_cooldowns_when_editing() {
+        let triggers = FakeTriggerRepo::default();
+        let target = action("Play sound");
+        let actions = FakeActionRepo::with(vec![target.clone()]);
+        let existing = stored_instance(NOTE_ON_KIND);
+        let existing_id = existing.id;
+        triggers.seed(existing);
+
+        let mut signal = note_signal(7);
+        signal.kind_id = CONTROL_CHANGE_KIND.to_owned();
+        save_mapping(
+            &triggers,
+            &actions,
+            draft(Some(existing_id), signal, target.id),
+        )
+        .await
+        .unwrap();
+
+        let saved = triggers.instances().remove(0);
+        assert_eq!(saved.name, "Stored name");
+        assert_eq!(saved.cooldown_secs, 45);
+        assert!(!saved.cooldown_global);
+        assert!(
+            !saved.enabled,
+            "editing must not silently re-enable a mapping"
+        );
+        assert_eq!(saved.kind_id, CONTROL_CHANGE_KIND);
+        assert_eq!(saved.overrides.get("controller"), Some(&Variant::Int(7)));
+    }
+
+    #[tokio::test]
+    async fn save_mapping_leaves_the_link_untouched_when_the_action_did_not_change() {
+        let triggers = FakeTriggerRepo::default();
+        let target = action("Play sound");
+        let actions = FakeActionRepo::with(vec![target.clone()]);
+        let existing = stored_instance(NOTE_ON_KIND);
+        let existing_id = existing.id;
+        triggers.seed(existing);
+        triggers.seed_link(target.id, existing_id, 4);
+
+        save_mapping(
+            &triggers,
+            &actions,
+            draft(Some(existing_id), note_signal(61), target.id),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            triggers.unlinks(),
+            0,
+            "an unchanged action must not be relinked"
+        );
+        assert_eq!(triggers.links(), vec![(target.id, existing_id, 4)]);
+    }
+
+    #[tokio::test]
+    async fn save_mapping_moves_the_link_when_the_draft_points_at_another_action() {
+        let triggers = FakeTriggerRepo::default();
+        let previous = action("Old target");
+        let next = action("New target");
+        let actions = FakeActionRepo::with(vec![previous.clone(), next.clone()]);
+        let existing = stored_instance(NOTE_ON_KIND);
+        let existing_id = existing.id;
+        triggers.seed(existing);
+        triggers.seed_link(previous.id, existing_id, 0);
+
+        save_mapping(
+            &triggers,
+            &actions,
+            draft(Some(existing_id), note_signal(61), next.id),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(triggers.links(), vec![(next.id, existing_id, 0)]);
+    }
+
+    #[tokio::test]
+    async fn save_mapping_reports_a_missing_instance_instead_of_recreating_it() {
+        let triggers = FakeTriggerRepo::default();
+        let target = action("Play sound");
+        let actions = FakeActionRepo::with(vec![target.clone()]);
+
+        let result = save_mapping(
+            &triggers,
+            &actions,
+            draft(Some(TriggerInstanceId::new()), note_signal(60), target.id),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(triggers.instances().is_empty());
+    }
+
+    #[tokio::test]
+    async fn save_mapping_surfaces_a_repo_write_failure_as_an_error() {
+        let triggers = FakeTriggerRepo::failing_save();
+        let target = action("Play sound");
+        let actions = FakeActionRepo::with(vec![target.clone()]);
+
+        let result =
+            save_mapping(&triggers, &actions, draft(None, note_signal(60), target.id)).await;
+
+        assert!(result.is_err());
+        assert!(
+            triggers.links().is_empty(),
+            "a failed write must not link the action"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_mappings_returns_only_midi_input_rows_with_their_linked_action() {
+        let triggers = FakeTriggerRepo::default();
+        let target = action("Play sound");
+        let actions = FakeActionRepo::with(vec![target.clone()]);
+        let other_family = stored_instance("twitch.chat");
+        triggers.seed(other_family);
+        let midi = stored_instance(NOTE_ON_KIND);
+        let midi_id = midi.id;
+        triggers.seed(midi);
+        triggers.seed_link(target.id, midi_id, 0);
+
+        let rows = load_mappings(&triggers, &actions).await.unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, midi_id);
+        assert_eq!(
+            rows[0].action.as_ref().map(|(_, name)| name.as_str()),
+            Some("Play sound")
+        );
+    }
+
+    #[tokio::test]
+    async fn load_mappings_reports_a_row_whose_linked_action_no_longer_exists_as_unassigned() {
+        let triggers = FakeTriggerRepo::default();
+        let actions = FakeActionRepo::default();
+        let midi = stored_instance(NOTE_ON_KIND);
+        let midi_id = midi.id;
+        triggers.seed(midi);
+        triggers.seed_link(ActionId::new(), midi_id, 0);
+
+        let rows = load_mappings(&triggers, &actions).await.unwrap();
+
+        assert!(rows[0].action.is_none());
+    }
+}

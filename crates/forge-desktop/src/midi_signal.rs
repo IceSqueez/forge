@@ -160,3 +160,238 @@ impl MidiSignal {
         format!("ch {value}")
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use forge_midi::register_midi_triggers;
+    use forge_registry::{FormField, TriggerRegistry};
+
+    use super::*;
+
+    fn monitor_event(kind: &str, number: Option<u8>, channel: u8, port: &str) -> MidiMonitorEvent {
+        MidiMonitorEvent {
+            kind: kind.to_owned(),
+            port_name: port.to_owned(),
+            channel,
+            number,
+            value: None,
+        }
+    }
+
+    fn signal(
+        kind: &str,
+        selector: Option<i64>,
+        channel: Option<i64>,
+        device: Option<&str>,
+    ) -> MidiSignal {
+        MidiSignal {
+            kind_id: kind.to_owned(),
+            selector,
+            channel,
+            device: device.map(str::to_owned),
+        }
+    }
+
+    fn optional_field_keys(fields: &[FormField]) -> Vec<&'static str> {
+        fields
+            .iter()
+            .filter_map(|f| match f {
+                FormField::Optional { key, .. } => Some(*key),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn note_name_maps_midi_numbers_to_scientific_pitch() {
+        for (note, expected) in [
+            (0, "C-1"),
+            (11, "B-1"),
+            (12, "C0"),
+            (59, "B3"),
+            (60, "C4"),
+            (61, "C#4"),
+            (127, "G9"),
+        ] {
+            assert_eq!(note_name(note), expected, "note {note}");
+        }
+    }
+
+    #[test]
+    fn note_name_clamps_numbers_outside_the_midi_range() {
+        for (note, expected) in [
+            (-1, "C-1"),
+            (i64::MIN, "C-1"),
+            (128, "G9"),
+            (i64::MAX, "G9"),
+        ] {
+            assert_eq!(note_name(note), expected, "note {note}");
+        }
+    }
+
+    #[test]
+    fn every_signal_kind_has_a_label_that_is_not_its_raw_id() {
+        for kind in SIGNAL_KINDS {
+            assert_ne!(
+                kind_label(kind),
+                kind,
+                "{kind} falls through to the raw-id branch"
+            );
+        }
+    }
+
+    #[test]
+    fn every_signal_kind_writes_config_keys_its_trigger_descriptor_declares() {
+        let mut registry = TriggerRegistry::new();
+        register_midi_triggers(&mut registry).unwrap();
+
+        for kind in SIGNAL_KINDS {
+            let descriptor = registry
+                .get(kind)
+                .unwrap_or_else(|| panic!("{kind} is not a registered MIDI trigger"));
+            let keys = optional_field_keys(&descriptor.config_fields());
+            for key in selector_key(kind).into_iter().chain(["channel", "device"]) {
+                assert!(keys.contains(&key), "{kind} declares no {key} field");
+            }
+        }
+    }
+
+    #[test]
+    fn from_monitor_maps_each_supported_kind_and_its_fields() {
+        for (monitor_kind, number, expected) in [
+            (
+                "note_on",
+                Some(60),
+                signal(NOTE_ON_KIND, Some(60), Some(9), Some("Keys")),
+            ),
+            (
+                "note_off",
+                Some(48),
+                signal(NOTE_OFF_KIND, Some(48), Some(9), Some("Keys")),
+            ),
+            (
+                "control_change",
+                Some(7),
+                signal(CONTROL_CHANGE_KIND, Some(7), Some(9), Some("Keys")),
+            ),
+            (
+                "program_change",
+                Some(10),
+                signal(PROGRAM_CHANGE_KIND, Some(10), Some(9), Some("Keys")),
+            ),
+            (
+                "pitch_bend",
+                None,
+                signal(PITCH_BEND_KIND, None, Some(9), Some("Keys")),
+            ),
+        ] {
+            let event = monitor_event(monitor_kind, number, 9, "Keys");
+            let captured = MidiSignal::from_monitor(&event)
+                .unwrap_or_else(|| panic!("{monitor_kind} produced no signal"));
+            assert!(
+                captured == expected,
+                "{monitor_kind} captured the wrong signal"
+            );
+        }
+    }
+
+    #[test]
+    fn from_monitor_rejects_a_kind_it_cannot_map_to_a_trigger() {
+        let event = monitor_event("aftertouch", Some(60), 0, "Keys");
+        assert!(MidiSignal::from_monitor(&event).is_none());
+    }
+
+    #[test]
+    fn signal_round_trips_through_overrides_for_every_field_combination() {
+        for original in [
+            signal(NOTE_ON_KIND, Some(60), Some(0), Some("Keys")),
+            signal(NOTE_ON_KIND, Some(60), None, None),
+            signal(NOTE_OFF_KIND, Some(0), Some(15), None),
+            signal(CONTROL_CHANGE_KIND, Some(7), None, Some("Pad")),
+            signal(PROGRAM_CHANGE_KIND, Some(127), Some(9), None),
+            signal(PITCH_BEND_KIND, None, Some(3), Some("Keys")),
+            signal(PITCH_BEND_KIND, None, None, None),
+        ] {
+            let restored = MidiSignal::from_instance(&original.kind_id, &original.overrides());
+            assert!(
+                restored == original,
+                "{} lost a field through overrides",
+                original.kind_id
+            );
+        }
+    }
+
+    #[test]
+    fn overrides_drops_a_selector_the_kind_cannot_carry() {
+        let stray = signal(PITCH_BEND_KIND, Some(5), Some(1), None);
+        let written = stray.overrides();
+
+        assert_eq!(written.keys().collect::<Vec<_>>(), vec!["channel"]);
+    }
+
+    #[test]
+    fn from_instance_reads_an_empty_device_string_as_any_device() {
+        let mut config = TriggerConfig::new();
+        config.insert("device".to_owned(), Variant::String(String::new()));
+
+        let restored = MidiSignal::from_instance(NOTE_ON_KIND, &config);
+
+        assert_eq!(restored.device, None);
+    }
+
+    #[test]
+    fn is_complete_requires_a_selector_only_for_selector_bearing_kinds() {
+        for kind in SIGNAL_KINDS {
+            let needs_selector = selector_key(kind).is_some();
+            assert_eq!(
+                signal(kind, None, None, None).is_complete(),
+                !needs_selector,
+                "{kind} without a selector"
+            );
+            assert!(
+                signal(kind, Some(1), None, None).is_complete(),
+                "{kind} with a selector"
+            );
+        }
+    }
+
+    #[test]
+    fn label_renders_note_kinds_as_pitch_names_and_the_rest_as_raw_numbers() {
+        for (kind, selector, expected) in [
+            (NOTE_ON_KIND, Some(60), "Note C4"),
+            (NOTE_OFF_KIND, Some(60), "NoteOff C4"),
+            (CONTROL_CHANGE_KIND, Some(7), "CC 7"),
+            (PROGRAM_CHANGE_KIND, Some(10), "PC 10"),
+            (PITCH_BEND_KIND, None, "Pitch"),
+        ] {
+            assert_eq!(signal(kind, selector, None, None).label(), expected);
+        }
+    }
+
+    #[test]
+    fn label_replaces_a_missing_selector_with_a_placeholder_instead_of_a_number() {
+        let label = signal(CONTROL_CHANGE_KIND, None, None, None).label();
+
+        assert!(label.starts_with("CC "), "{label} lost its kind prefix");
+        assert!(
+            !label.chars().any(|c| c.is_ascii_digit()),
+            "{label} still renders a selector number"
+        );
+    }
+
+    #[test]
+    fn channel_label_renders_the_channel_number_and_a_placeholder_for_any() {
+        assert_eq!(
+            signal(NOTE_ON_KIND, None, Some(0), None).channel_label(),
+            "ch 0"
+        );
+
+        let any = signal(NOTE_ON_KIND, None, None, None).channel_label();
+        assert!(any.starts_with("ch "), "{any} lost its prefix");
+        assert!(
+            !any.chars().any(|c| c.is_ascii_digit()),
+            "{any} still renders a channel number"
+        );
+    }
+}

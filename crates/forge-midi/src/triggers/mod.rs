@@ -117,6 +117,34 @@ mod tests {
     }
 
     #[test]
+    fn every_input_descriptor_treats_an_empty_device_string_as_any_device() {
+        let reg = registry();
+        let config = device_config("");
+        for id in INPUT_TRIGGER_IDS {
+            let d = reg.get(id).unwrap();
+            for port in ["Launchkey", "Keystation"] {
+                assert!(
+                    d.matches_trigger(&config, &input_event(id, port)),
+                    "{id} filtered out {port} on an empty device string"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_input_descriptor_omits_an_empty_device_from_its_condition_display() {
+        let reg = registry();
+        let config = device_config("");
+        for id in INPUT_TRIGGER_IDS {
+            let display = reg.get(id).unwrap().condition_display(&config);
+            assert!(
+                !display.contains("device="),
+                "{id} rendered an empty device filter as {display:?}"
+            );
+        }
+    }
+
+    #[test]
     fn all_trigger_ids_are_present() {
         let mut reg = TriggerRegistry::new();
         register_midi_triggers(&mut reg).unwrap();

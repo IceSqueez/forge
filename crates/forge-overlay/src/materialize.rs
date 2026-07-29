@@ -109,6 +109,7 @@ fn write_atomic(directory: &Path, name: &str, body: &[u8]) -> Result<(), Overlay
     reject_symlink(&target)?;
 
     let staged = directory.join(format!(".{name}.tmp"));
+    reject_symlink(&staged)?;
     fs::write(&staged, body).map_err(|source| OverlayError::Io {
         path: display(&staged),
         source,

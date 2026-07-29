@@ -2,9 +2,8 @@
 
 use std::collections::BTreeSet;
 
-use forge_overlay::config::{HEADLINE, SUBLINE};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds, sample_payload};
-use forge_types::Variant;
+use serde_json::Value;
 
 fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
@@ -25,7 +24,6 @@ fn expected(names: &[&str]) -> BTreeSet<String> {
     names.iter().map(|n| (*n).to_owned()).collect()
 }
 
-/// The runtime expands `%token%` against top level fields only, so a token is a key of the payload.
 fn placeholders(template: &str) -> Vec<String> {
     template
         .split('%')
@@ -85,12 +83,23 @@ fn a_sample_carries_exactly_the_fields_of_the_family_its_kind_names() {
     }
 }
 
+/// Mirrors the runtime's resolution order: an exact top level key wins before dots walk nesting.
+fn resolve<'a>(sample: &'a Value, token: &str) -> Option<&'a Value> {
+    sample.get(token).or_else(|| {
+        token
+            .split('.')
+            .try_fold(sample, |value, segment| value.get(segment))
+    })
+}
+
 #[test]
 fn every_placeholder_a_builtin_default_writes_names_a_field_its_sample_renders_as_text() {
     let targets = [
         ("overlay.alert", "twitch.channel.subscription.message"),
         ("overlay.ticker", "twitch.channel.cheer"),
         ("overlay.frame", "twitch.channel.subscribe"),
+        ("overlay.chat", "overlay.chat"),
+        ("overlay.goal", "overlay.goal"),
     ];
     let reg = registry();
 
@@ -108,13 +117,12 @@ fn every_placeholder_a_builtin_default_writes_names_a_field_its_sample_renders_a
         let defaults = descriptor.default_config();
         let sample = sample_payload(event_kind);
 
-        for key in [HEADLINE, SUBLINE] {
-            let template = defaults
-                .get(key)
-                .and_then(Variant::as_str)
-                .unwrap_or_default();
+        for (key, held) in &defaults {
+            let Some(template) = held.as_str() else {
+                continue;
+            };
             for token in placeholders(template) {
-                let value = sample.get(token.as_str()).unwrap_or_else(|| {
+                let value = resolve(&sample, &token).unwrap_or_else(|| {
                     panic!(
                         "{kind_id} defaults {key} to %{token}%, a field {event_kind} never carries"
                     )

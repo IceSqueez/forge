@@ -3,11 +3,12 @@ use super::sub_action_modal::{
 };
 use super::*;
 use crate::async_bridge;
-use crate::presentation::ActivePresentation;
-use crate::triggers_screen::{
-    ConfigField, FILL_VAL_FS, fold_config_field, overlay_field_values, platform_dot_color,
-    render_config_row, sparse_overrides,
+use crate::config_form::{
+    ChoiceSupport, ConfigField, ConfigFieldHandlers, FILL_VAL_FS, FoldContext,
+    collect_field_values, fold_config_field, render_config_row, sparse_overrides,
 };
+use crate::presentation::ActivePresentation;
+use crate::triggers_screen::platform_dot_color;
 use forge_components::{
     BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
@@ -1158,17 +1159,15 @@ impl ScreenActionsView {
         let default = descriptor.map(|d| d.default_config()).unwrap_or_default();
         let specs = descriptor.map(|d| d.config_fields()).unwrap_or_default();
 
+        let fold = FoldContext {
+            config: &default,
+            palette: &palette,
+            choices: ChoiceSupport::Text,
+            on_committed: Self::on_trigger_config_committed,
+        };
         let mut fields: Vec<ConfigField> = Vec::new();
         for spec in &specs {
-            fold_config_field(
-                spec,
-                None,
-                &default,
-                &palette,
-                Self::on_trigger_config_committed,
-                &mut fields,
-                cx,
-            );
+            fold_config_field(spec, None, &fold, &mut fields, cx);
         }
 
         let name_field = cx.new(|cx| {
@@ -1227,6 +1226,43 @@ impl ScreenActionsView {
         cx.notify();
     }
 
+    fn slide_trigger_config_field(&mut self, key: String, next: i64, cx: &mut Context<Self>) {
+        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+            for field in &mut form.fields {
+                if let ConfigField::Slide { key: k, value, .. } = field
+                    && *k == key
+                {
+                    *value = next;
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn pick_trigger_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
+        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+            for field in &mut form.fields {
+                if let ConfigField::Swatch {
+                    key: k, selected, ..
+                } = field
+                    && *k == key
+                {
+                    selected.clone_from(&choice);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn trigger_config_handlers() -> ConfigFieldHandlers<Self> {
+        ConfigFieldHandlers {
+            toggle: Self::toggle_trigger_config_field,
+            slide: Self::slide_trigger_config_field,
+            pick: Self::pick_trigger_config_field,
+            open_choice: None,
+        }
+    }
+
     fn back_to_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_trigger_picker(window, cx);
     }
@@ -1255,7 +1291,7 @@ impl ScreenActionsView {
             .map(|d| d.default_config())
             .unwrap_or_default();
         let mut buffer = default.clone();
-        overlay_field_values(&form.fields, &mut buffer, cx);
+        collect_field_values(&form.fields, &mut buffer, cx);
         let overrides = sparse_overrides(&default, &buffer);
 
         let new_id = TriggerInstanceId::new();
@@ -1363,9 +1399,9 @@ impl ScreenActionsView {
                     field,
                     i == last,
                     palette,
-                    "actions-trigger-toggle",
+                    "actions-trigger-field",
                     &view,
-                    Self::toggle_trigger_config_field,
+                    &Self::trigger_config_handlers(),
                 ));
             }
             div()

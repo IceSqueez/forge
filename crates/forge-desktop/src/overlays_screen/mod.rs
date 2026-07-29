@@ -1,18 +1,23 @@
 mod editor_pane;
+mod event_options;
 mod form_modal;
 mod kind_visuals;
+mod property_panel;
 mod registry_pane;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_components::{
     BreadcrumbCrumb, Confirm, ConfirmTone, FONT_XS, ForgePalette, Icon, OverlayPosition, ToastKind,
     body_family, confirm_modal, drive_overlay_focus, icon, overlay, page_frame, tr,
 };
-use forge_overlay::OverlayKindRegistry;
+use forge_overlay::config::EVENT_KINDS_OPTIONS_KEY;
+use forge_overlay::{OverlayKindRegistry, effective_overlay_config};
+use forge_registry::TriggerRegistry;
 use forge_runtime::OverlayServiceHandle;
 use forge_server::ServerHandle;
-use forge_storage::{OverlayDefinition, OverlayId, OverlayRepo};
+use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FocusHandle, Pixels, Point, Subscription, Window, div,
     prelude::*, px,
@@ -23,14 +28,27 @@ use crate::overlay_url::{overlay_origin, overlay_page_url};
 use crate::presentation::ActivePresentation;
 use crate::toasts::{PushToast, copy_to_clipboard};
 
+use event_options::event_kind_options;
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
 use kind_visuals::{KindVisuals, kind_visuals};
+use property_panel::{OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
 
 const HEADER_GAP: Pixels = px(5.0);
 const HEADER_GLYPH: Pixels = px(13.0);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditorMode {
+    Design,
+    Code,
+}
+
 struct OpenForm {
     view: Entity<OverlayFormModal>,
+    _sub: Subscription,
+}
+
+struct OpenPanel {
+    view: Entity<OverlayPropertyPanel>,
     _sub: Subscription,
 }
 
@@ -44,9 +62,12 @@ pub struct OverlaysView {
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
     kinds: Arc<OverlayKindRegistry>,
+    triggers: Arc<TriggerRegistry>,
     service: OverlayServiceHandle,
     overlays: Vec<OverlayDefinition>,
     selected: Option<OverlayId>,
+    mode: EditorMode,
+    panel: Option<OpenPanel>,
     loading: bool,
     server_running: bool,
     bind_address: Option<String>,
@@ -59,11 +80,13 @@ pub struct OverlaysView {
 }
 
 impl OverlaysView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         repo: Arc<dyn OverlayRepo>,
         server: Option<ServerHandle>,
         rt_handle: tokio::runtime::Handle,
         kinds: Arc<OverlayKindRegistry>,
+        triggers: Arc<TriggerRegistry>,
         service: OverlayServiceHandle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -76,9 +99,12 @@ impl OverlaysView {
             server,
             rt_handle,
             kinds,
+            triggers,
             service,
             overlays: Vec::new(),
             selected: None,
+            mode: EditorMode::Design,
+            panel: None,
             loading: false,
             server_running,
             bind_address: None,
@@ -216,6 +242,7 @@ impl OverlaysView {
                 if !selection_survived {
                     self.selected = self.overlays.first().map(|item| item.id.clone());
                 }
+                self.sync_panel(cx);
             }
             Err(message) => self.report(&message, cx),
         }
@@ -227,7 +254,107 @@ impl OverlaysView {
             return;
         }
         self.selected = Some(id);
+        self.sync_panel(cx);
         cx.notify();
+    }
+
+    pub(super) fn mode(&self) -> EditorMode {
+        self.mode
+    }
+
+    pub(in crate::overlays_screen) fn panel_view(&self) -> Option<Entity<OverlayPropertyPanel>> {
+        self.panel.as_ref().map(|open| open.view.clone())
+    }
+
+    fn set_mode(&mut self, mode: EditorMode, cx: &mut Context<Self>) {
+        if self.mode == mode {
+            return;
+        }
+        self.mode = mode;
+        cx.notify();
+    }
+
+    /// Rebuilt only when the selection moves: a rebuild drops the live text inputs, so a reload
+    /// caused by the user's own save must leave the panel they are editing alone.
+    fn sync_panel(&mut self, cx: &mut Context<Self>) {
+        let target = self
+            .selected_definition()
+            .filter(|definition| self.kinds.get(&definition.kind_id).is_some())
+            .cloned();
+
+        let Some(definition) = target else {
+            self.panel = None;
+            return;
+        };
+        if self
+            .panel
+            .as_ref()
+            .is_some_and(|open| open.view.read(cx).overlay_id() == &definition.id)
+        {
+            return;
+        }
+        let Some(descriptor) = self.kinds.get(&definition.kind_id) else {
+            self.panel = None;
+            return;
+        };
+
+        let launch = PanelLaunch {
+            overlay_id: definition.id.clone(),
+            specs: descriptor.config_fields(),
+            defaults: descriptor.default_config(),
+            stored: definition.config.clone(),
+            effective: effective_overlay_config(descriptor, &definition.config),
+            choices: HashMap::from([(
+                EVENT_KINDS_OPTIONS_KEY.to_owned(),
+                event_kind_options(&self.triggers),
+            )]),
+            overridden_files: definition.source_overrides.clone(),
+        };
+
+        let view = cx.new(|cx| OverlayPropertyPanel::new(launch, cx));
+        let sub = cx.subscribe(&view, Self::on_panel_event);
+        self.panel = Some(OpenPanel { view, _sub: sub });
+    }
+
+    fn on_panel_event(
+        &mut self,
+        view: Entity<OverlayPropertyPanel>,
+        event: &PropertyPanelEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let PropertyPanelEvent::Save(config) = event;
+        let id = view.read(cx).overlay_id().clone();
+        self.save_config(id, config.clone(), cx);
+    }
+
+    /// Re-reads the stored record so a background change to another field is not clobbered by the
+    /// panel's cached copy; only the config document is replaced.
+    fn save_config(&mut self, id: OverlayId, config: OverlayConfig, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.repo);
+        let service = self.service.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
+                    return Ok((false, None));
+                };
+                definition.config = config;
+                repo.save(&definition).await.map_err(|e| e.to_string())?;
+                let generated = service.materialize(&id).await.err().map(|e| e.to_string());
+                Ok((true, generated))
+            },
+            |this, result: Result<(bool, Option<String>), String>, cx| match result {
+                Ok((true, generated)) => {
+                    if let Some(message) = generated {
+                        this.report(&message, cx);
+                    }
+                    this.load(cx);
+                }
+                Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
+                Err(message) => this.report(&message, cx),
+            },
+            cx,
+        );
     }
 
     fn toggle_enabled(&mut self, id: OverlayId, cx: &mut Context<Self>) {
@@ -571,7 +698,8 @@ impl Render for OverlaysView {
             .flex()
             .flex_row()
             .child(self.render_registry_pane(&palette, cx))
-            .child(self.render_editor_pane(&palette, cx));
+            .child(self.render_editor_pane(&palette, cx))
+            .children(self.render_property_pane(&palette));
 
         let frame = page_frame(
             vec![

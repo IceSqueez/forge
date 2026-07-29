@@ -86,8 +86,8 @@ pub use overlay::{
 };
 pub use page_frame::{HeaderStat, PageFrame, header_stat, header_stats, header_status, page_frame};
 pub use palette::{
-    FORGE_DEFAULT, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, platform_color,
-    with_alpha,
+    FORGE_DEFAULT, ForgePalette, LATTE, PlatformKind, TOKYO_NIGHT, ThemeId, accent_swatch,
+    platform_color, with_alpha,
 };
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use platform_hero::{PlatformHero, platform_hero};

@@ -1,11 +1,11 @@
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, empty_state, icon,
-    mono_family, tr,
+    mono_family, segment, segmented, tr,
 };
 use forge_storage::OverlayDefinition;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
 
-use super::OverlaysView;
+use super::{EditorMode, OverlaysView};
 
 const HEAD_PAD_V: Pixels = px(9.0);
 const HEAD_PAD_H: Pixels = px(16.0);
@@ -27,6 +27,9 @@ const NOTICE_PAD_H: Pixels = px(16.0);
 const NOTICE_GLYPH: Pixels = px(12.0);
 
 const STAGE_PAD: Pixels = px(20.0);
+
+const PROPERTY_PANE_W: Pixels = px(246.0);
+const PROPERTY_PANE_PAD: Pixels = px(14.0);
 
 impl OverlaysView {
     pub(super) fn render_editor_pane(
@@ -94,9 +97,84 @@ impl OverlaysView {
                     .text_color(palette.text_faint)
                     .child(definition.id.as_str().to_owned()),
             )
+            .child(self.render_mode_switch(visuals.accent, palette, cx))
             .child(div().flex_1().min_w(px(0.0)))
             .child(self.render_url_box(definition, palette, cx))
             .into_any_element()
+    }
+
+    fn render_mode_switch(
+        &self,
+        accent: gpui::Rgba,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let design = cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.set_mode(EditorMode::Design, cx);
+        });
+        let code = cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.set_mode(EditorMode::Code, cx);
+        });
+
+        div()
+            .flex_none()
+            .child(
+                segmented(
+                    vec![
+                        segment(
+                            "overlays-mode-design",
+                            tr!("overlays_mode_design"),
+                            self.mode() == EditorMode::Design,
+                            design,
+                        )
+                        .icon(Icon::Adjustments),
+                        segment(
+                            "overlays-mode-code",
+                            tr!("overlays_mode_code"),
+                            self.mode() == EditorMode::Code,
+                            code,
+                        )
+                        .icon(Icon::Code),
+                    ],
+                    palette,
+                )
+                .subtle(palette)
+                .accent(accent),
+            )
+            .into_any_element()
+    }
+
+    pub(super) fn render_property_pane(&self, palette: &ForgePalette) -> Option<AnyElement> {
+        self.selected_definition()?;
+
+        let body: AnyElement = match (self.mode(), self.panel_view()) {
+            (EditorMode::Design, Some(panel)) => return Some(panel.into_any_element()),
+            (EditorMode::Design, None) => empty_state(tr!("overlays_panel_unavailable"), palette)
+                .glyph(Icon::AlertTriangle)
+                .into_any_element(),
+            (EditorMode::Code, _) => empty_state(tr!("overlays_bindings_pending"), palette)
+                .glyph(Icon::Code)
+                .into_any_element(),
+        };
+
+        Some(
+            div()
+                .flex_none()
+                .w(PROPERTY_PANE_W)
+                .min_w(PROPERTY_PANE_W)
+                .max_w(PROPERTY_PANE_W)
+                .h_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .p(PROPERTY_PANE_PAD)
+                .bg(palette.shell)
+                .border_l(BORDER_THIN)
+                .border_color(palette.border_regular)
+                .child(body)
+                .into_any_element(),
+        )
     }
 
     fn render_url_box(
@@ -188,7 +266,10 @@ impl OverlaysView {
         palette: &ForgePalette,
     ) -> AnyElement {
         let (message, glyph) = match selection {
-            Some(_) => (tr!("overlays_editor_pending"), Icon::Adjustments),
+            Some(_) if self.mode() == EditorMode::Code => {
+                (tr!("overlays_code_pending"), Icon::Code)
+            }
+            Some(_) => (tr!("overlays_preview_pending"), Icon::PlayerPlay),
             None if self.overlays.is_empty() => (tr!("overlays_stage_empty"), Icon::Browser),
             None => (tr!("overlays_stage_select"), Icon::Browser),
         };

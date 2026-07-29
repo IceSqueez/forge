@@ -1,6 +1,9 @@
-use super::config_form::{fold_config_field, overlay_field_values, sparse_overrides};
 use super::*;
 use crate::async_bridge;
+use crate::config_form::{
+    ChoiceSupport, ConfigFieldHandlers, FoldContext, collect_field_values, fold_config_field,
+    render_config_control, sparse_overrides,
+};
 use crate::presentation::ActivePresentation;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, Radius, ResizeEdge, ResizeRange, Spacing, TextInput,
@@ -78,17 +81,15 @@ impl TriggersRegistryView {
         let specs = descriptor.map(|d| d.config_fields()).unwrap_or_default();
         let effective = effective_config(&default, &data.instance.overrides);
 
+        let fold = FoldContext {
+            config: &effective,
+            palette: &palette,
+            choices: ChoiceSupport::Text,
+            on_committed: Self::on_config_committed,
+        };
         let mut fields: Vec<ConfigField> = Vec::new();
         for spec in &specs {
-            fold_config_field(
-                spec,
-                None,
-                &effective,
-                &palette,
-                Self::on_config_committed,
-                &mut fields,
-                cx,
-            );
+            fold_config_field(spec, None, &fold, &mut fields, cx);
         }
 
         let cooldown_per_user = !data.instance.cooldown_global;
@@ -163,6 +164,43 @@ impl TriggersRegistryView {
         self.commit_config(cx);
     }
 
+    fn slide_config_field(&mut self, key: String, next: i64, cx: &mut Context<Self>) {
+        if let Some(detail) = self.detail.as_mut() {
+            for field in &mut detail.fields {
+                if let ConfigField::Slide { key: k, value, .. } = field
+                    && *k == key
+                {
+                    *value = next;
+                }
+            }
+        }
+        self.commit_config(cx);
+    }
+
+    fn pick_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
+        if let Some(detail) = self.detail.as_mut() {
+            for field in &mut detail.fields {
+                if let ConfigField::Swatch {
+                    key: k, selected, ..
+                } = field
+                    && *k == key
+                {
+                    selected.clone_from(&choice);
+                }
+            }
+        }
+        self.commit_config(cx);
+    }
+
+    fn detail_config_handlers() -> ConfigFieldHandlers<Self> {
+        ConfigFieldHandlers {
+            toggle: Self::toggle_config_field,
+            slide: Self::slide_config_field,
+            pick: Self::pick_config_field,
+            open_choice: None,
+        }
+    }
+
     fn toggle_cooldown_scope(&mut self, cx: &mut Context<Self>) {
         if let Some(detail) = self.detail.as_mut() {
             detail.cooldown_per_user = !detail.cooldown_per_user;
@@ -181,7 +219,7 @@ impl TriggersRegistryView {
             .map(|d| d.default_config())
             .unwrap_or_default();
         let mut buffer = effective_config(&default, &detail.instance.overrides);
-        overlay_field_values(&detail.fields, &mut buffer, cx);
+        collect_field_values(&detail.fields, &mut buffer, cx);
 
         let sparse = sparse_overrides(&default, &buffer);
         let cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
@@ -527,11 +565,7 @@ impl TriggersRegistryView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let key = match field {
-            ConfigField::Input { key, .. }
-            | ConfigField::Bool { key, .. }
-            | ConfigField::Hint { key } => key.clone(),
-        };
+        let key = field.key().to_owned();
         let is_overridden = overridden.contains_key(key.as_str());
         let key_color = if is_overridden {
             palette.bits
@@ -548,27 +582,13 @@ impl TriggersRegistryView {
             .text_color(key_color)
             .child(key.clone());
 
-        let value: AnyElement = match field {
-            ConfigField::Input { input, .. } => div().child(input.clone()).into_any_element(),
-            ConfigField::Bool { key, value, .. } => {
-                let toggle_key = key.clone();
-                toggle(*value, palette)
-                    .on_click(
-                        SharedString::from(format!("triggers-cfg-toggle-{key}")),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.toggle_config_field(toggle_key.clone(), cx)
-                        }),
-                    )
-                    .into_any_element()
-            }
-            ConfigField::Hint { .. } => div()
-                .italic()
-                .font_family(body_family())
-                .text_size(CFG_VAL_FS)
-                .text_color(palette.text_faint)
-                .child(tr!("triggers_sheet_config_authored"))
-                .into_any_element(),
-        };
+        let value = render_config_control(
+            field,
+            palette,
+            "triggers-cfg",
+            &cx.entity(),
+            &Self::detail_config_handlers(),
+        );
 
         let revert: AnyElement = if is_overridden && !matches!(field, ConfigField::Hint { .. }) {
             let revert_key = key.clone();

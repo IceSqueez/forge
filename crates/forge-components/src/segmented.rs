@@ -3,6 +3,7 @@ use gpui::{
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
+use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{BORDER_THIN, body_family};
 
@@ -14,12 +15,14 @@ const SEG_FS: Pixels = px(11.0);
 const SEG_RADIUS: Pixels = px(5.0);
 const GROUP_RADIUS: Pixels = px(7.0);
 const GROUP_PAD: Pixels = px(2.0);
+const SEG_GLYPH_GAP: Pixels = px(5.0);
 const HOVER_ALPHA: f32 = 0.06;
 
 pub struct Segment {
     id: ElementId,
     label: SharedString,
     active: bool,
+    glyph: Option<Icon>,
     on_click: SegClick,
 }
 
@@ -33,7 +36,16 @@ pub fn segment(
         id: id.into(),
         label: label.into(),
         active,
+        glyph: None,
         on_click: Box::new(handler),
+    }
+}
+
+impl Segment {
+    #[must_use]
+    pub fn icon(mut self, glyph: Icon) -> Self {
+        self.glyph = Some(glyph);
+        self
     }
 }
 
@@ -54,6 +66,8 @@ pub struct SegmentedControl {
     seg_pad_x: Pixels,
     seg_pad_y: Pixels,
     seg_fs: Pixels,
+    glyph_active: Rgba,
+    glyph_idle: Rgba,
 }
 
 pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedControl {
@@ -73,6 +87,8 @@ pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedCon
         seg_pad_x: SEG_PAD_H,
         seg_pad_y: SEG_PAD_V,
         seg_fs: SEG_FS,
+        glyph_active: palette.brand,
+        glyph_idle: palette.text_faint,
     }
 }
 
@@ -82,6 +98,22 @@ impl SegmentedControl {
     pub fn wrap(mut self, gap: Pixels) -> Self {
         self.joined = false;
         self.wrap_gap = gap;
+        self
+    }
+
+    /// Marks the active segment with a raised surface instead of the brand fill, for a switch that
+    /// sits inside a toolbar rather than acting as the surface's primary control.
+    #[must_use]
+    pub fn subtle(mut self, palette: &ForgePalette) -> Self {
+        self.active_bg = palette.surface_overlay;
+        self.active_fg = palette.text_primary;
+        self
+    }
+
+    /// Tints the active segment's glyph; inactive glyphs stay faint.
+    #[must_use]
+    pub fn accent(mut self, accent: Rgba) -> Self {
+        self.glyph_active = accent;
         self
     }
 }
@@ -112,8 +144,19 @@ impl RenderOnce for SegmentedControl {
             } else {
                 FontWeight::NORMAL
             };
+            let glyph = seg.glyph.map(|glyph| {
+                let tint = if seg.active {
+                    self.glyph_active
+                } else {
+                    self.glyph_idle
+                };
+                icon(glyph, self.seg_fs, tint)
+            });
             let mut chip = div()
                 .id(seg.id)
+                .flex()
+                .items_center()
+                .gap(SEG_GLYPH_GAP)
                 .py(self.seg_pad_y)
                 .px(self.seg_pad_x)
                 .rounded(self.seg_radius)
@@ -123,6 +166,7 @@ impl RenderOnce for SegmentedControl {
                 .text_size(self.seg_fs)
                 .text_color(fg)
                 .on_click(seg.on_click)
+                .children(glyph)
                 .child(seg.label);
             if seg.active {
                 chip = chip.bg(self.active_bg);

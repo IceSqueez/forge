@@ -694,7 +694,7 @@ struct AddTriggerFill {
     kind_id: String,
     kind_label: String,
     name_field: Entity<TextInput>,
-    fields: Vec<crate::triggers_screen::ConfigField>,
+    fields: Vec<crate::config_form::ConfigField>,
     saving: bool,
     _name_sub: Subscription,
 }

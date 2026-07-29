@@ -1,9 +1,9 @@
-use super::config_form::{
-    ConfigField, FILL_VAL_FS, fold_config_field, overlay_field_values, render_config_row,
-    sparse_overrides,
-};
 use super::{TriggersRegistryView, load_rows, platform_dot_color};
 use crate::async_bridge;
+use crate::config_form::{
+    ChoiceSupport, ConfigField, ConfigFieldHandlers, FILL_VAL_FS, FoldContext,
+    collect_field_values, fold_config_field, render_config_row, sparse_overrides,
+};
 use crate::presentation::ActivePresentation;
 use forge_components::{
     BORDER_THIN, Density, FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent,
@@ -108,17 +108,15 @@ impl TriggersRegistryView {
         let default = descriptor.map(|d| d.default_config()).unwrap_or_default();
         let specs = descriptor.map(|d| d.config_fields()).unwrap_or_default();
 
+        let fold = FoldContext {
+            config: &default,
+            palette: &palette,
+            choices: ChoiceSupport::Text,
+            on_committed: Self::on_create_config_committed,
+        };
         let mut fields: Vec<ConfigField> = Vec::new();
         for spec in &specs {
-            fold_config_field(
-                spec,
-                None,
-                &default,
-                &palette,
-                Self::on_create_config_committed,
-                &mut fields,
-                cx,
-            );
+            fold_config_field(spec, None, &fold, &mut fields, cx);
         }
 
         let name_field = cx.new(|cx| {
@@ -176,6 +174,43 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
+    fn slide_create_config_field(&mut self, key: String, next: i64, cx: &mut Context<Self>) {
+        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+            for field in &mut form.fields {
+                if let ConfigField::Slide { key: k, value, .. } = field
+                    && *k == key
+                {
+                    *value = next;
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn pick_create_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
+        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+            for field in &mut form.fields {
+                if let ConfigField::Swatch {
+                    key: k, selected, ..
+                } = field
+                    && *k == key
+                {
+                    selected.clone_from(&choice);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn create_config_handlers() -> ConfigFieldHandlers<Self> {
+        ConfigFieldHandlers {
+            toggle: Self::toggle_create_config_field,
+            slide: Self::slide_create_config_field,
+            pick: Self::pick_create_config_field,
+            open_choice: None,
+        }
+    }
+
     fn back_to_kind_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_create(window, cx);
     }
@@ -203,7 +238,7 @@ impl TriggersRegistryView {
             .map(|d| d.default_config())
             .unwrap_or_default();
         let mut buffer = default.clone();
-        overlay_field_values(&form.fields, &mut buffer, cx);
+        collect_field_values(&form.fields, &mut buffer, cx);
         let overrides = sparse_overrides(&default, &buffer);
 
         let new_id = TriggerInstanceId::new();
@@ -309,9 +344,9 @@ impl TriggersRegistryView {
                     field,
                     i == last,
                     palette,
-                    "triggers-create-toggle",
+                    "triggers-create-field",
                     &cx.entity(),
-                    Self::toggle_create_config_field,
+                    &Self::create_config_handlers(),
                 ));
             }
             div()

@@ -10,6 +10,7 @@ mod chat_feed;
 mod chrome;
 mod cloud_credentials;
 mod cloud_tts_boot;
+mod config_form;
 mod discord_screen;
 mod discord_webhook_modal;
 mod discord_webhooks;

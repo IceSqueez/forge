@@ -2096,7 +2096,6 @@ overlays_url_copy = Копіювати
 overlays_url_not_served = Сервер зупинено, тому адреси в цього оверлея поки немає.
 overlays_stage_select = Виберіть оверлей, щоб працювати з ним.
 overlays_stage_empty = Створіть оверлей, щоб отримати адресу для браузерного джерела OBS.
-overlays_editor_pending = Панелі дизайну, коду та перегляду для цього оверлея ще не побудовані.
 
 ## Overlays - add / rename form
 
@@ -2121,3 +2120,19 @@ overlays_toast_unknown_type = У цій збірці немає такого т�
 overlays_toast_url_unavailable = Сервер зупинено, тому копіювати нічого.
 overlays_confirm_delete_title = Видалити оверлей?
 overlays_confirm_delete_body = Будь-яке браузерне джерело OBS, що вказує на цей оверлей, перестане завантажуватися. Це не можна скасувати.
+
+overlays_mode_design = Дизайн
+overlays_mode_code = Код
+overlays_preview_pending = Живий перегляд цього оверлея ще не побудовано.
+overlays_code_pending = Редактор джерела для цього оверлея ще не побудовано.
+overlays_bindings_pending = Довідник прив'язок для редактора джерела ще не побудовано.
+overlays_panel_section_content = Вміст
+overlays_panel_section_style = Стиль
+overlays_panel_section_behavior = Поведінка
+overlays_panel_no_properties = Цей тип оверлея не оголошує властивостей.
+overlays_panel_unavailable = У цій збірці немає типу оверлея для цього запису, тож налаштовувати нічого.
+overlays_panel_choice_empty = Немає доступних варіантів.
+overlays_panel_tokens_label = Токени шаблону
+overlays_panel_tokens_none = Прив'яжіть подію, щоб побачити токени з її даних.
+overlays_panel_override_notice = Ці файли тепер ваші, тож вони ніколи не перегенеровуються: { $files }. Зміни дизайну, яким потрібна згенерована розмітка чи стилі, більше до них не доходять.
+config_form_choice_placeholder = Не задано

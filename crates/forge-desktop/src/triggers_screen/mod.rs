@@ -15,20 +15,16 @@ use std::sync::Arc;
 
 use crate::actions::LIST_CONTEXT;
 use crate::async_bridge;
+use crate::config_form::ConfigField;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 
-mod config_form;
 mod create;
 mod detail;
 mod list;
 
-pub(crate) use config_form::{
-    ConfigField, FILL_VAL_FS, fold_config_field, overlay_field_values, render_config_row,
-    sparse_overrides,
-};
 use create::CreateStage;
 pub(crate) use create::build_kind_groups;
 

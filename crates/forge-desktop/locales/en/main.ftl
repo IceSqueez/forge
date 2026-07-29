@@ -2069,7 +2069,6 @@ overlays_url_copy = Copy
 overlays_url_not_served = The server is stopped, so this overlay has no address yet.
 overlays_stage_select = Select an overlay to work on it.
 overlays_stage_empty = Create an overlay to get a browser-source address for OBS.
-overlays_editor_pending = The design, code and preview panes for this overlay are not built yet.
 
 ## Overlays - add / rename form
 
@@ -2094,3 +2093,19 @@ overlays_toast_unknown_type = This build does not have that overlay type.
 overlays_toast_url_unavailable = The server is stopped, so there is no address to copy.
 overlays_confirm_delete_title = Delete overlay?
 overlays_confirm_delete_body = Any OBS browser source pointing at this overlay will stop loading. This cannot be undone.
+
+overlays_mode_design = Design
+overlays_mode_code = Code
+overlays_preview_pending = The live preview for this overlay is not built yet.
+overlays_code_pending = The source editor for this overlay is not built yet.
+overlays_bindings_pending = The bindings reference for the source editor is not built yet.
+overlays_panel_section_content = Content
+overlays_panel_section_style = Style
+overlays_panel_section_behavior = Behavior
+overlays_panel_no_properties = This overlay type declares no properties.
+overlays_panel_unavailable = This build has no overlay type for this record, so there is nothing to configure.
+overlays_panel_choice_empty = No choices available.
+overlays_panel_tokens_label = Template tokens
+overlays_panel_tokens_none = Bind an event to see the tokens its payload offers.
+overlays_panel_override_notice = You own these files now, so they are never regenerated: { $files }. Design changes that need generated markup or styling no longer reach them.
+config_form_choice_placeholder = Not set

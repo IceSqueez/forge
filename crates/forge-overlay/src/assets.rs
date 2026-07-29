@@ -12,6 +12,8 @@ pub const RESERVED_DIRECTORY: &str = "forge-shared";
 /// Generated markup references this by a literal relative path, so a page keeps the runtime it shipped against.
 pub const RUNTIME_ASSET: &str = "runtime-v1.js";
 
+pub const RUNTIME_SOURCE: &str = include_str!("../assets/shared/runtime-v1.js");
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageAssets {
     pub markup: &'static str,

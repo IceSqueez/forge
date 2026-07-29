@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::assets::{CONFIG_FILE, RESERVED_DIRECTORY};
+use crate::assets::{CONFIG_FILE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE};
 use crate::document::config_document;
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
@@ -21,11 +21,13 @@ pub struct MaterializeReport {
     pub missing_overrides: Vec<String>,
 }
 
+/// The runtime is rewritten on every pass; the reserved subtree is generator territory, not the user's.
 pub fn ensure_shared_directory(root: &Path) -> Result<PathBuf, OverlayError> {
     let root = ensure_root(root)?;
     let shared = root.join(RESERVED_DIRECTORY);
     reject_symlink(&shared)?;
     create_dir(&shared)?;
+    write_atomic(&shared, RUNTIME_ASSET, RUNTIME_SOURCE.as_bytes())?;
     Ok(shared)
 }
 

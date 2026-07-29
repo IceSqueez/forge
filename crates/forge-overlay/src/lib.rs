@@ -11,7 +11,7 @@ pub mod registry;
 
 pub use assets::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, PageAssets, RESERVED_DIRECTORY,
-    RUNTIME_ASSET, STYLE_FILE,
+    RUNTIME_ASSET, RUNTIME_SOURCE, STYLE_FILE,
 };
 pub use config::{effective_overlay_config, validate_overlay_config};
 pub use descriptor::{OverlayConfig, OverlayKindDescriptor};

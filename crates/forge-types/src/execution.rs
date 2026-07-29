@@ -129,6 +129,23 @@ impl ArgStack {
         self
     }
 
+    /// An exact flat key wins over traversal, so shipped dotted names (`time.formatted`) keep resolving; only then is the token walked as a path, numeric segments indexing arrays.
+    fn resolve(&self, key: &str) -> Option<&Variant> {
+        if let Some(exact) = self.0.get(key) {
+            return Some(exact);
+        }
+        let (root, path) = key.split_once('.')?;
+        let mut current = self.0.get(root)?;
+        for segment in path.split('.') {
+            current = match current {
+                Variant::Object(fields) => fields.get(segment)?,
+                Variant::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
+                _ => return None,
+            };
+        }
+        Some(current)
+    }
+
     /// Single-pass `%name%` substitution over `template`. Unknown tokens remain verbatim.
     pub fn interpolate(&self, template: &str) -> String {
         let mut result = String::with_capacity(template.len());
@@ -152,7 +169,7 @@ impl ArgStack {
             if !closed {
                 continue;
             }
-            if let Some(val) = self.0.get(key.trim()) {
+            if let Some(val) = self.resolve(key.trim()) {
                 result.truncate(token_start);
                 result.push_str(&val.to_string());
             } else {

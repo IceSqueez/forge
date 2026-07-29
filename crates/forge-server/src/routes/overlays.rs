@@ -272,17 +272,161 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
-    async fn serve_overlay_returns_404_for_path_traversal_attempt() {
-        let dir = tempfile::tempdir().expect("tempdir");
+    /// Sends the request target verbatim; `reqwest` resolves dot segments while parsing a URL,
+    /// so an encoded-traversal probe never reaches the handler through the typed client.
+    async fn raw_get(addr: SocketAddr, target: &str, extra_headers: &str) -> (u16, String) {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-        let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), false, true, MemCreds::new()).await;
-
-        let resp = reqwest::get(format!("http://{}/overlays/../../etc/passwd", addr))
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        let request = format!(
+            "GET {target} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n{extra_headers}\r\n"
+        );
+        stream
+            .write_all(request.as_bytes())
             .await
-            .expect("request");
-        assert_eq!(resp.status().as_u16(), 404);
+            .expect("write request");
+        let mut raw = Vec::new();
+        stream.read_to_end(&mut raw).await.expect("read response");
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        let status = text
+            .split_whitespace()
+            .nth(1)
+            .and_then(|code| code.parse().ok())
+            .expect("status line");
+        (status, text)
+    }
+
+    fn qa_tempdir() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix("forge-qa-overlay")
+            .tempdir()
+            .expect("tempdir")
+    }
+
+    const ESCAPE_MARKER: &str = "ESCAPED-OVERLAY-ROOT";
+
+    /// Returns (root, outside-file-name) with the decoy written as a sibling of the overlay root.
+    async fn root_with_outside_decoy(base: &std::path::Path) -> (std::path::PathBuf, &'static str) {
+        let root = base.join("root");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        tokio::fs::write(base.join("secret.html"), ESCAPE_MARKER.as_bytes())
+            .await
+            .expect("write decoy");
+        (root, "secret.html")
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_rejects_encoded_traversal_that_survives_url_normalization() {
+        let dir = qa_tempdir();
+        let (root, _) = root_with_outside_decoy(dir.path()).await;
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        for target in [
+            "/overlays/%2e%2e%2fsecret.html",
+            "/overlays/..%2fsecret.html",
+            "/overlays/%2E%2E%2Fsecret.html",
+            "/overlays/sub%2f%2e%2e%2f%2e%2e%2fsecret.html",
+            "/overlays/.%2e%2fsecret.html",
+        ] {
+            let (status, body) = raw_get(addr, target, "").await;
+            assert_eq!(status, 404, "expected 404 for {target}");
+            assert!(
+                !body.contains(ESCAPE_MARKER),
+                "escaped the overlay root via {target}"
+            );
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_rejects_absolute_request_path_instead_of_rerooting() {
+        let dir = qa_tempdir();
+        let (root, _) = root_with_outside_decoy(dir.path()).await;
+        let outside = dir.path().join("secret.html");
+        let absolute = outside.to_str().expect("utf8 path");
+        let encoded = absolute.replace('/', "%2F");
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        for target in [
+            format!("/overlays/{encoded}"),
+            format!("/overlays/{absolute}"),
+        ] {
+            let (status, body) = raw_get(addr, &target, "").await;
+            assert_eq!(status, 404, "expected 404 for {target}");
+            assert!(
+                !body.contains(ESCAPE_MARKER),
+                "absolute path re-rooted the join via {target}"
+            );
+        }
+
+        handle.abort();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_overlay_rejects_symlink_pointing_outside_the_root() {
+        let dir = qa_tempdir();
+        let (root, decoy) = root_with_outside_decoy(dir.path()).await;
+        std::os::unix::fs::symlink(dir.path().join(decoy), root.join("link.html"))
+            .expect("symlink");
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        let (status, body) = raw_get(addr, "/overlays/link.html", "").await;
+        assert_eq!(status, 404);
+        assert!(!body.contains(ESCAPE_MARKER));
+
+        handle.abort();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_overlay_follows_symlink_that_resolves_inside_the_root() {
+        let dir = qa_tempdir();
+        let root = dir.path().join("root");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        tokio::fs::write(root.join("real.html"), b"<p>inside</p>")
+            .await
+            .expect("write");
+        std::os::unix::fs::symlink("real.html", root.join("alias.html")).expect("symlink");
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        let (status, body) = raw_get(addr, "/overlays/alias.html", "").await;
+        assert_eq!(status, 200);
+        assert!(body.contains("<p>inside</p>"));
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_rejection_never_echoes_a_presented_credential() {
+        let dir = qa_tempdir();
+        tokio::fs::write(dir.path().join("priv.html"), b"<p>private</p>")
+            .await
+            .expect("write");
+
+        let creds = MemCreds::with_token("overlay-secret-installation-bearer");
+        let (handle, addr) = make_overlay_server(dir.path().to_path_buf(), true, true, creds).await;
+
+        let (status, body) = raw_get(
+            addr,
+            "/overlays/priv.html?token=WRONG-QUERY-CREDENTIAL",
+            "Authorization: Bearer WRONG-HEADER-CREDENTIAL\r\n",
+        )
+        .await;
+
+        assert_eq!(status, 401);
+        for secret in [
+            "WRONG-QUERY-CREDENTIAL",
+            "WRONG-HEADER-CREDENTIAL",
+            "overlay-secret-installation-bearer",
+        ] {
+            assert!(!body.contains(secret), "rejection echoed {secret}");
+        }
 
         handle.abort();
     }

@@ -182,6 +182,10 @@ tabler_icons! {
     Camera => "camera.svg",
     UserCog => "user-cog.svg",
     Layout2 => "layout-2.svg",
+    Bell => "bell.svg",
+    Frame => "frame.svg",
+    ArrowBadgeRight => "arrow-badge-right.svg",
+    Link => "link.svg",
 }
 
 impl Icon {
@@ -340,6 +344,10 @@ impl Icon {
             "player-record" => Icon::PlayerRecord,
             "device-floppy" => Icon::DeviceFloppy,
             "user-cog" => Icon::UserCog,
+            "bell" => Icon::Bell,
+            "frame" => Icon::Frame,
+            "arrow-badge-right" => Icon::ArrowBadgeRight,
+            "link" => Icon::Link,
             _ => Icon::InfoCircle,
         }
     }

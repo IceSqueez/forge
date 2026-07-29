@@ -18,6 +18,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, ErrorSink};
+use crate::overlay_url::{extract_port, overlay_origin};
 use crate::presentation::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
@@ -1460,23 +1461,6 @@ fn subscription_chip_element(
 }
 
 const SUBSCRIBE_ALL_LABEL: &str = "*all";
-
-fn extract_port(bind_address: &str) -> &str {
-    bind_address.split(':').next_back().unwrap_or_default()
-}
-
-fn overlay_origin(bind_address: &str) -> String {
-    let port = extract_port(bind_address);
-    let host = bind_address
-        .rsplit_once(':')
-        .map(|(host, _)| host)
-        .unwrap_or(bind_address);
-    let host = match host {
-        "0.0.0.0" | "::" | "[::]" => "127.0.0.1",
-        other => other,
-    };
-    format!("http://{host}:{port}")
-}
 
 fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
     match source {

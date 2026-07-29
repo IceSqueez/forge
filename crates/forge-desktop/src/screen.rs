@@ -16,6 +16,7 @@ pub enum Screen {
     BuiltinDetail(BuiltinId),
     Tts,
     Soundboard,
+    Overlays,
     Server,
     Settings,
 }

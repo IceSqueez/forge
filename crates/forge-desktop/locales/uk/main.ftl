@@ -39,6 +39,7 @@ nav_item_platforms = Платформи
 nav_item_stream_apps = Стрім-застосунки
 nav_item_soundboard = Звукова панель
 nav_item_tts = Синтез мовлення
+nav_item_overlays = Оверлеї
 nav_item_ws_server = WebSocket-сервер
 nav_item_hotkey = Гарячі клавіші
 nav_item_settings = Налаштування
@@ -2073,3 +2074,50 @@ discord_footer_linked = { $count } пов'язаних дій
 discord_footer_healthy = Надсилання працює
 discord_footer_failing = Остання відправка не вдалася
 discord_footer_idle = Ще нічого не надіслано
+
+## Overlays - registry
+
+overlays_breadcrumb_builtin = Вбудоване
+overlays_breadcrumb_overlays = Оверлеї
+overlays_header_summary = { $enabled }/{ $total } активних - віддається на :{ $port }
+overlays_header_summary_stopped = { $enabled }/{ $total } активних - сервер зупинено
+overlays_pane_title = Оверлеї
+overlays_pane_loading = Завантаження оверлеїв...
+overlays_pane_empty = Оверлеїв ще немає.
+overlays_add_overlay = Новий оверлей
+overlays_menu_rename = Перейменувати...
+overlays_menu_copy_url = Копіювати URL
+overlays_type_unavailable = Недоступний тип
+overlays_type_unavailable_notice = Цей оверлей має тип { $kind }, якого немає в цій збірці. Запис лишається незмінним.
+
+## Overlays - selection + URL
+
+overlays_url_copy = Копіювати
+overlays_url_not_served = Сервер зупинено, тому адреси в цього оверлея поки немає.
+overlays_stage_select = Виберіть оверлей, щоб працювати з ним.
+overlays_stage_empty = Створіть оверлей, щоб отримати адресу для браузерного джерела OBS.
+overlays_editor_pending = Панелі дизайну, коду та перегляду для цього оверлея ще не побудовані.
+
+## Overlays - add / rename form
+
+overlays_form_title_create = Новий оверлей
+overlays_form_title_rename = Перейменувати оверлей
+overlays_form_subtitle_create = Адресу для OBS буде створено з цієї назви один раз, і надалі вона не змінюється.
+overlays_form_subtitle_rename = Змінюється лише видима назва - адреса у ваших сценах OBS лишається тією самою.
+overlays_form_name_label = Назва
+overlays_form_name_placeholder = Сповіщення про підписки
+overlays_form_type_label = Тип оверлея
+overlays_form_type_locked = Тип оверлея фіксується в момент створення.
+overlays_form_create = Створити оверлей
+overlays_form_save = Зберегти назву
+
+## Overlays - toasts + delete
+
+overlays_toast_created = Оверлей створено
+overlays_toast_renamed = Оверлей перейменовано
+overlays_toast_deleted = Оверлей видалено
+overlays_toast_missing = Цього оверлея вже немає у сховищі.
+overlays_toast_unknown_type = У цій збірці немає такого типу оверлея.
+overlays_toast_url_unavailable = Сервер зупинено, тому копіювати нічого.
+overlays_confirm_delete_title = Видалити оверлей?
+overlays_confirm_delete_body = Будь-яке браузерне джерело OBS, що вказує на цей оверлей, перестане завантажуватися. Це не можна скасувати.

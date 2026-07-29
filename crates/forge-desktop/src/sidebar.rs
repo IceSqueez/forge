@@ -238,6 +238,11 @@ impl SidebarNav {
                 screen: Screen::BuiltinDetail(BuiltinId::new("discord")),
             },
             NavEntry::FlatIconLeaf {
+                icon: Icon::Browser,
+                label: NavText::Key("nav_item_overlays"),
+                screen: Screen::Overlays,
+            },
+            NavEntry::FlatIconLeaf {
                 icon: Icon::Network,
                 label: NavText::Key("nav_item_ws_server"),
                 screen: Screen::Server,

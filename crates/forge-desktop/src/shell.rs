@@ -26,6 +26,7 @@ use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::midi_screen::MidiScreenView;
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
+use crate::overlays_screen::OverlaysView;
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
@@ -307,6 +308,13 @@ impl AppShell {
                     )
                 })
                 .into()
+            }
+            Screen::Overlays => {
+                let repo = handles.backend.overlay_repo();
+                let server = handles.server.clone();
+                let rt_handle = handles.rt_handle.clone();
+                cx.new(|cx| OverlaysView::new(repo, server, rt_handle, cx))
+                    .into()
             }
             Screen::Server => {
                 let server = handles.server.clone();

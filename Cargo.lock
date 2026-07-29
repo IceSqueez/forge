@@ -2476,6 +2476,7 @@ dependencies = [
  "forge-hotkey",
  "forge-midi",
  "forge-obs",
+ "forge-overlay",
  "forge-platform-core",
  "forge-platform-kick",
  "forge-platform-twitch",

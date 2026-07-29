@@ -39,6 +39,7 @@ nav_item_platforms = Platforms
 nav_item_stream_apps = Stream apps
 nav_item_soundboard = Soundboard
 nav_item_tts = Text-to-Speech
+nav_item_overlays = Overlays
 nav_item_ws_server = WebSocket server
 nav_item_hotkey = Hotkeys
 nav_item_settings = Settings
@@ -2046,3 +2047,50 @@ discord_footer_linked = { $count } linked actions
 discord_footer_healthy = Sending
 discord_footer_failing = Last send failed
 discord_footer_idle = Nothing sent yet
+
+## Overlays - registry
+
+overlays_breadcrumb_builtin = Builtin
+overlays_breadcrumb_overlays = Overlays
+overlays_header_summary = { $enabled }/{ $total } active - served on :{ $port }
+overlays_header_summary_stopped = { $enabled }/{ $total } active - server stopped
+overlays_pane_title = Overlays
+overlays_pane_loading = Loading overlays...
+overlays_pane_empty = No overlays yet.
+overlays_add_overlay = New overlay
+overlays_menu_rename = Rename...
+overlays_menu_copy_url = Copy URL
+overlays_type_unavailable = Unavailable type
+overlays_type_unavailable_notice = This overlay uses the type { $kind }, which this build does not have. The record is kept untouched.
+
+## Overlays - selection + URL
+
+overlays_url_copy = Copy
+overlays_url_not_served = The server is stopped, so this overlay has no address yet.
+overlays_stage_select = Select an overlay to work on it.
+overlays_stage_empty = Create an overlay to get a browser-source address for OBS.
+overlays_editor_pending = The design, code and preview panes for this overlay are not built yet.
+
+## Overlays - add / rename form
+
+overlays_form_title_create = New overlay
+overlays_form_title_rename = Rename overlay
+overlays_form_subtitle_create = The address OBS uses is minted from this name once and never changes afterwards.
+overlays_form_subtitle_rename = Only the display name changes - the address already in your OBS scenes stays the same.
+overlays_form_name_label = Name
+overlays_form_name_placeholder = Sub alerts
+overlays_form_type_label = Overlay type
+overlays_form_type_locked = The overlay type is fixed once the overlay exists.
+overlays_form_create = Create overlay
+overlays_form_save = Save name
+
+## Overlays - toasts + delete
+
+overlays_toast_created = Overlay created
+overlays_toast_renamed = Overlay renamed
+overlays_toast_deleted = Overlay deleted
+overlays_toast_missing = That overlay is no longer in storage.
+overlays_toast_unknown_type = This build does not have that overlay type.
+overlays_toast_url_unavailable = The server is stopped, so there is no address to copy.
+overlays_confirm_delete_title = Delete overlay?
+overlays_confirm_delete_body = Any OBS browser source pointing at this overlay will stop loading. This cannot be undone.

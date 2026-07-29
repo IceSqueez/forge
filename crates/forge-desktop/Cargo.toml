@@ -19,6 +19,7 @@ forge-events = { path = "../forge-events" }
 forge-hotkey = { path = "../forge-hotkey" }
 forge-midi = { path = "../forge-midi" }
 forge-obs = { path = "../forge-obs" }
+forge-overlay = { path = "../forge-overlay" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-platform-kick = { path = "../forge-platform-kick" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }

@@ -81,3 +81,25 @@ pub enum FormField {
         label: &'static str,
     },
 }
+
+impl FormField {
+    /// For `Optional` this is the enabling toggle; the value it guards is keyed by `inner`.
+    pub fn key(&self) -> &'static str {
+        match self {
+            Self::Text { key, .. }
+            | Self::TextArea { key, .. }
+            | Self::Code { key, .. }
+            | Self::Integer { key, .. }
+            | Self::Slider { key, .. }
+            | Self::Toggle { key, .. }
+            | Self::FilePicker { key, .. }
+            | Self::DateTime { key, .. }
+            | Self::Select { key, .. }
+            | Self::DynamicSelect { key, .. }
+            | Self::Swatch { key, .. }
+            | Self::Optional { key, .. }
+            | Self::SubChain { key, .. }
+            | Self::CaseList { key, .. } => key,
+        }
+    }
+}

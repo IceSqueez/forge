@@ -32,5 +32,5 @@ pub use preview::{
     PreviewShape,
 };
 pub use registry::OverlayKindRegistry;
-pub use sample::sample_payload;
+pub use sample::{sample_content, sample_payload};
 pub use source::{read_overlay_source, write_overlay_source};

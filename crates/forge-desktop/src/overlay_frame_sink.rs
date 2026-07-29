@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use forge_events::Event;
 use forge_runtime::OverlayFrameSink;
 use forge_server::ServerHandle;
+use forge_storage::OverlayId;
 
 pub struct ServerOverlayFrameSink {
     server: ServerHandle,
@@ -15,7 +15,18 @@ impl ServerOverlayFrameSink {
 
 #[async_trait]
 impl OverlayFrameSink for ServerOverlayFrameSink {
-    async fn deliver(&self, event: Event) {
-        self.server.deliver_event(event).await;
+    async fn deliver_content(
+        &self,
+        identity: &OverlayId,
+        content: serde_json::Value,
+        duration_ms: Option<u64>,
+    ) {
+        self.server
+            .deliver_overlay_content(identity, content, duration_ms)
+            .await;
+    }
+
+    async fn deliver_reload(&self, identity: &OverlayId) {
+        self.server.deliver_overlay_reload(Some(identity)).await;
     }
 }

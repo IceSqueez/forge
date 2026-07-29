@@ -4,19 +4,19 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_overlay::{
-    GENERATOR_VERSION, MaterializeReport, OverlayInstance, OverlayKindRegistry,
-    ensure_shared_directory, materialize_overlay, read_overlay_source, remove_overlay_directory,
-    sample_payload, write_overlay_source,
+    DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
+    OverlayKindRegistry, ensure_shared_directory, materialize_overlay, read_overlay_source,
+    remove_overlay_directory, sample_content, write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_storage::{
-    OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError, reserved_keys,
+    OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
+    reserved_keys,
 };
 use serde_json::json;
 
 use crate::bus::EventBus;
 
-pub const OVERLAY_RELOAD_KIND: &str = "overlay.reload";
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
 /// Browser-facing document keys are camelCase, matching the push envelope's `timeStamp`.
@@ -40,15 +40,29 @@ pub enum OverlayServiceError {
     Interrupted,
 }
 
-/// Reaches connected pages WITHOUT publishing to the bus, so a sample never runs an action.
+/// Addressed at one overlay identity and never at the bus, so nothing delivered here runs an action.
 #[async_trait]
 pub trait OverlayFrameSink: Send + Sync {
-    async fn deliver(&self, event: Event);
+    async fn deliver_content(
+        &self,
+        identity: &OverlayId,
+        content: serde_json::Value,
+        duration_ms: Option<u64>,
+    );
+
+    async fn deliver_reload(&self, identity: &OverlayId);
+}
+
+/// The server calls this when a page's credential validates, which is the only moment the
+/// runtime can know a browser source is back and needs what it was last showing.
+#[async_trait]
+pub trait OverlayConnectListener: Send + Sync {
+    async fn overlay_connected(&self, identity: &OverlayId);
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestFire {
-    pub payload: serde_json::Value,
+    pub content: OverlayConfig,
     /// False when nothing is serving, so the caller can say the preview ran alone.
     pub delivered: bool,
 }
@@ -154,7 +168,7 @@ impl OverlayServiceHandle {
         }
 
         let report = self.write_files(&definition).await?;
-        self.reload_page(id);
+        self.reload_page(id).await;
         Ok(report)
     }
 
@@ -191,51 +205,101 @@ impl OverlayServiceHandle {
         Ok(blocking(move || remove_overlay_directory(&root, &identity)).await??)
     }
 
-    /// Only pages carrying this identity reload; the control message is a bus event, not a sample.
-    pub fn reload_page(&self, id: &OverlayId) {
-        self.inner.bus.publish(Event::new(
-            EventSource::Core,
-            OVERLAY_RELOAD_KIND,
-            json!({ OVERLAY_ID_KEY: id.as_str() }),
-        ));
+    /// Addressed at the pages carrying this identity; every other connection is untouched.
+    pub async fn reload_page(&self, id: &OverlayId) {
+        if let Some(frames) = &self.inner.frames {
+            frames.deliver_reload(id).await;
+        }
     }
 
-    /// Builds the sample once and returns it, so the caller drives its preview from the very
-    /// payload the page received. Nothing is published: no action, script or queue observes it.
+    /// `Ok(false)` when nothing is serving. Replace content is persisted before it is sent, so a
+    /// page that reconnects is handed the same values it was showing.
+    pub async fn deliver_content(
+        &self,
+        id: &OverlayId,
+        content: OverlayConfig,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OverlayServiceError> {
+        let definition = self.load(id).await?;
+        let disposition = self.disposition_of(&definition)?;
+        self.push(&definition.id, disposition, &content, duration_ms)
+            .await
+    }
+
+    /// Builds the sample content once and returns it, so the caller previews exactly what the
+    /// page received. Nothing is published: no action, script or queue observes a test.
     pub async fn test_fire(&self, id: &OverlayId) -> Result<TestFire, OverlayServiceError> {
         let definition = self.load(id).await?;
-        if self.inner.kinds.get(&definition.kind_id).is_none() {
+        let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
             return Err(OverlayServiceError::UnavailableKind {
                 id: definition.id,
                 kind_id: definition.kind_id,
             });
-        }
+        };
 
-        let payload = sample_payload(&definition.kind_id);
-        let origin = Event::new(
+        let content = sample_content(descriptor, &definition.config);
+        let disposition = descriptor.delivery_disposition();
+        self.inner.bus.record(Event::new(
             EventSource::Core,
             OVERLAY_TEST_FIRE_KIND,
             json!({ OVERLAY_ID_KEY: definition.id.as_str() }),
-        );
-        let parent = origin.id;
-        self.inner.bus.record(origin);
+        ));
 
-        let delivered = match &self.inner.frames {
-            Some(frames) => {
-                frames
-                    .deliver(Event::caused_by(
-                        EventSource::Core,
-                        OVERLAY_TEST_FIRE_KIND,
-                        payload.clone(),
-                        parent,
-                    ))
-                    .await;
-                true
-            }
-            None => false,
+        let delivered = self
+            .push(&definition.id, disposition, &content, None)
+            .await?;
+
+        Ok(TestFire { content, delivered })
+    }
+
+    /// Only a Replace kind ever has a retained row, so what is stored is what may be replayed.
+    async fn replay_retained(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
+        let Some(content) = self.inner.repo.get_retained_content(id).await? else {
+            return Ok(false);
         };
+        Ok(self.send(id, &content, None).await)
+    }
 
-        Ok(TestFire { payload, delivered })
+    async fn push(
+        &self,
+        id: &OverlayId,
+        disposition: DeliveryDisposition,
+        content: &OverlayConfig,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OverlayServiceError> {
+        if disposition.retains_last_content() {
+            self.inner.repo.set_retained_content(id, content).await?;
+        }
+        Ok(self.send(id, content, duration_ms).await)
+    }
+
+    async fn send(
+        &self,
+        id: &OverlayId,
+        content: &OverlayConfig,
+        duration_ms: Option<u64>,
+    ) -> bool {
+        let Some(frames) = &self.inner.frames else {
+            return false;
+        };
+        frames
+            .deliver_content(id, content_json(content), duration_ms)
+            .await;
+        true
+    }
+
+    fn disposition_of(
+        &self,
+        definition: &OverlayDefinition,
+    ) -> Result<DeliveryDisposition, OverlayServiceError> {
+        self.inner
+            .kinds
+            .get(&definition.kind_id)
+            .map(|descriptor| descriptor.delivery_disposition())
+            .ok_or_else(|| OverlayServiceError::UnavailableKind {
+                id: definition.id.clone(),
+                kind_id: definition.kind_id.clone(),
+            })
     }
 
     async fn load(&self, id: &OverlayId) -> Result<OverlayDefinition, OverlayServiceError> {
@@ -263,6 +327,24 @@ impl OverlayServiceHandle {
 
         Ok(report)
     }
+}
+
+#[async_trait]
+impl OverlayConnectListener for OverlayServiceHandle {
+    async fn overlay_connected(&self, identity: &OverlayId) {
+        if let Err(error) = self.replay_retained(identity).await {
+            tracing::warn!(overlay = %identity, %error, "retained overlay content did not replay");
+        }
+    }
+}
+
+fn content_json(content: &OverlayConfig) -> serde_json::Value {
+    serde_json::Value::Object(
+        content
+            .iter()
+            .map(|(key, value)| (key.clone(), value.to_json()))
+            .collect(),
+    )
 }
 
 fn instance_of(definition: &OverlayDefinition) -> OverlayInstance {

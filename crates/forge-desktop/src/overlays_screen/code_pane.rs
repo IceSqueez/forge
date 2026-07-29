@@ -264,7 +264,7 @@ impl OverlaysView {
                     definition.source_overrides.push(file.to_owned());
                     repo.save(&definition).await.map_err(|e| e.to_string())?;
                 }
-                service.reload_page(&id);
+                service.reload_page(&id).await;
                 Ok(true)
             },
             move |this, result: Result<bool, String>, cx| {

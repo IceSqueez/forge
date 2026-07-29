@@ -8,11 +8,12 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::paths;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Config, EventBus, OverlayFrameSink,
-    OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer,
-    SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_chat_moderation_persistence,
-    spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
+    ActionCancelRegistry, ActionEngineHandle, Config, EventBus, OverlayConnectListener,
+    OverlayFrameSink, OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry,
+    SoundPlayer, SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions,
+    register_core_triggers, spawn_action_engine, spawn_chat_history_persistence,
+    spawn_chat_moderation_persistence, spawn_live_viewer_aggregator, spawn_trigger_evaluator,
+    spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -275,6 +276,13 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         Arc::clone(&bus),
         overlay_frames,
     );
+    if let Some(handle) = server.clone() {
+        handle
+            .set_overlay_connect_listener(
+                Arc::new(overlays.clone()) as Arc<dyn OverlayConnectListener>
+            )
+            .await;
+    }
     match overlays.materialize_all().await {
         Ok(pass) => tracing::info!(
             materialized = pass.materialized,

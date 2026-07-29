@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use forge_events::Event;
 use forge_platform_core::paths;
+use forge_runtime::OverlayConnectListener;
 use forge_storage::OverlayId;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
@@ -194,6 +195,12 @@ impl ServerHandle {
         adapter
             .deliver_overlay_content(identity, &content, duration_ms)
             .await;
+    }
+
+    /// Survives a restart: the listener lives on the bus adapter, which the new state carries over.
+    pub async fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
+        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
+        adapter.set_overlay_connect_listener(listener);
     }
 
     /// `identity: None` reloads every overlay-class connection.

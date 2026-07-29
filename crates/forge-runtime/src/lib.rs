@@ -39,7 +39,8 @@ pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use overlay_service::{
-    MaterializePass, OverlayFrameSink, OverlayServiceError, OverlayServiceHandle, TestFire,
+    MaterializePass, OverlayConnectListener, OverlayFrameSink, OverlayServiceError,
+    OverlayServiceHandle, TestFire,
 };
 pub use queue_scheduler::{
     MembershipOutcome, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,

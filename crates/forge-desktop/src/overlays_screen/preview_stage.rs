@@ -4,14 +4,14 @@ use forge_components::{
     BORDER_THIN, ForgePalette, Icon, body_family, empty_state, ghost_button_with_icon, icon,
     mono_family, section_label, tr, with_alpha,
 };
-use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS, HEADLINE, SUBLINE};
+use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_overlay::{
     OverlayConfig, PreviewComposition, PreviewFont, PreviewLineRole, PreviewPosition, PreviewShape,
     effective_overlay_config,
 };
 use forge_runtime::TestFire;
 use forge_storage::{OverlayDefinition, OverlayId};
-use forge_types::{ArgStack, Variant};
+use forge_types::Variant;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px,
     relative,
@@ -74,7 +74,10 @@ const UNTIMED_DECAY: Duration = Duration::from_secs(5);
 
 enum TestFirePhase {
     Sending,
-    Landed { args: ArgStack, delivered: bool },
+    Landed {
+        content: OverlayConfig,
+        delivered: bool,
+    },
 }
 
 pub(super) struct TestFireRun {
@@ -135,7 +138,7 @@ impl OverlaysView {
                 self.fire = Some(TestFireRun {
                     overlay,
                     phase: TestFirePhase::Landed {
-                        args: args_of(&fired.payload),
+                        content: fired.content,
                         delivered: fired.delivered,
                     },
                 });
@@ -189,21 +192,20 @@ impl OverlaysView {
         Some(effective_overlay_config(descriptor, &definition.config))
     }
 
-    /// Idle renders the stored template verbatim, tokens and all; only a landed sample expands them.
+    /// Idle renders the overlay's own wording; a landed test renders the content the page took.
     fn preview_composition(&self, definition: &OverlayDefinition) -> Option<PreviewComposition> {
         let descriptor = self.kinds.get(&definition.kind_id)?;
-        let effective = effective_overlay_config(descriptor, &definition.config);
-        let config = match self.landed_args(&definition.id) {
-            Some(args) => expand_lines(&effective, args),
-            None => effective,
-        };
+        let mut config = effective_overlay_config(descriptor, &definition.config);
+        if let Some(content) = self.landed_content(&definition.id) {
+            config.extend(content.iter().map(|(key, v)| (key.clone(), v.clone())));
+        }
         Some(descriptor.preview(&config))
     }
 
-    fn landed_args(&self, id: &OverlayId) -> Option<&ArgStack> {
+    fn landed_content(&self, id: &OverlayId) -> Option<&OverlayConfig> {
         let run = self.fire.as_ref().filter(|run| &run.overlay == id)?;
         match &run.phase {
-            TestFirePhase::Landed { args, .. } => Some(args),
+            TestFirePhase::Landed { content, .. } => Some(content),
             TestFirePhase::Sending => None,
         }
     }
@@ -318,39 +320,6 @@ impl OverlaysView {
 
         Some(hint_row(glyph, tint, message, tint).into_any_element())
     }
-}
-
-/// Only top-level scalars: the shipped page expander reads own properties of the payload root, so a
-/// nested entity has no token a template could name.
-fn args_of(payload: &serde_json::Value) -> ArgStack {
-    let mut stack = ArgStack::new();
-    let Some(fields) = payload.as_object() else {
-        return stack;
-    };
-    for (name, value) in fields {
-        let Ok(variant) = Variant::from_json(value.clone()) else {
-            continue;
-        };
-        if matches!(
-            variant,
-            Variant::Int(_) | Variant::Float(_) | Variant::Bool(_) | Variant::String(_)
-        ) {
-            stack = stack.set(name.clone(), variant);
-        }
-    }
-    stack
-}
-
-fn expand_lines(config: &OverlayConfig, args: &ArgStack) -> OverlayConfig {
-    let mut expanded = config.clone();
-    for key in [HEADLINE, SUBLINE] {
-        let Some(template) = expanded.get(key).and_then(Variant::as_str) else {
-            continue;
-        };
-        let text = args.interpolate(template);
-        expanded.insert(key.to_owned(), Variant::String(text));
-    }
-    expanded
 }
 
 fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<SharedString> {
@@ -587,107 +556,4 @@ fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl 
                 .text_color(text_color)
                 .child(message),
         )
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    use forge_overlay::config::ACCENT;
-    use serde_json::json;
-
-    use super::*;
-
-    #[test]
-    fn only_top_level_scalars_of_the_payload_become_template_arguments() {
-        let stack = args_of(&json!({
-            "user": "nova",
-            "months": 6,
-            "ratio": 1.5,
-            "gifted": true,
-            "reward": { "title": "Hydrate" },
-            "emotes": ["Kappa"],
-            "message": null,
-        }));
-
-        for (name, expected) in [
-            ("user", Some(Variant::String("nova".to_owned()))),
-            ("months", Some(Variant::Int(6))),
-            ("ratio", Some(Variant::Float(1.5))),
-            ("gifted", Some(Variant::Bool(true))),
-            ("reward", None),
-            ("emotes", None),
-            ("message", None),
-        ] {
-            assert_eq!(
-                stack.get(name).cloned(),
-                expected,
-                "the shipped page expander reads own scalar properties only, so {name:?} is wrong"
-            );
-        }
-    }
-
-    #[test]
-    fn a_payload_that_is_not_an_object_carries_no_arguments() {
-        for payload in [
-            json!(null),
-            json!("nova"),
-            json!(7),
-            json!(["nova"]),
-            json!([{ "user": "nova" }]),
-        ] {
-            assert!(
-                args_of(&payload).snapshot().is_empty(),
-                "a payload root of {payload} has no own properties to name"
-            );
-        }
-    }
-
-    #[test]
-    fn expanding_a_sample_touches_the_headline_and_the_subline_and_nothing_else() {
-        let config = OverlayConfig::from([
-            (HEADLINE.to_owned(), Variant::String("%user% is in!".into())),
-            (SUBLINE.to_owned(), Variant::String("for %months%".into())),
-            (ACCENT.to_owned(), Variant::String("%user%".into())),
-            (DURATION.to_owned(), Variant::Int(4)),
-        ]);
-        let args = ArgStack::new()
-            .set("user".to_owned(), Variant::String("nova".to_owned()))
-            .set("months".to_owned(), Variant::Int(6));
-
-        let expanded = expand_lines(&config, &args);
-
-        assert_eq!(
-            expanded.get(HEADLINE),
-            Some(&Variant::String("nova is in!".to_owned()))
-        );
-        assert_eq!(
-            expanded.get(SUBLINE),
-            Some(&Variant::String("for 6".to_owned()))
-        );
-        assert_eq!(
-            expanded.get(ACCENT),
-            config.get(ACCENT),
-            "an appearance value is not a template and must survive a landed sample verbatim"
-        );
-        assert_eq!(expanded.get(DURATION), config.get(DURATION));
-    }
-
-    #[test]
-    fn a_line_that_is_absent_or_not_text_is_left_exactly_as_it_was_found() {
-        let config = OverlayConfig::from([(SUBLINE.to_owned(), Variant::Int(3))]);
-        let args = ArgStack::new().set("user".to_owned(), Variant::String("nova".to_owned()));
-
-        let expanded = expand_lines(&config, &args);
-
-        assert_eq!(
-            expanded.get(SUBLINE),
-            Some(&Variant::Int(3)),
-            "a line stored with the wrong type must not be rewritten into text"
-        );
-        assert_eq!(
-            expanded.get(HEADLINE),
-            None,
-            "a line the record never set must not be conjured into existence"
-        );
-    }
 }

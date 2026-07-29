@@ -1,4 +1,8 @@
+use forge_types::{ArgStack, Variant};
 use serde_json::{Value, json};
+
+use crate::config::effective_overlay_config;
+use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor};
 
 const SAMPLE_CHANNEL: &str = "forge_demo";
 const SAMPLE_TIME: &str = "2026-07-29T18:24:05Z";
@@ -63,6 +67,44 @@ pub fn sample_payload(event_kind: &str) -> Value {
             "message": "sample payload",
         }),
     }
+}
+
+/// The content group a step would supply, with the overlay's own wording expanded against a
+/// sample variable context, so a test renders through the same path a real delivery takes.
+pub fn sample_content(
+    descriptor: &dyn OverlayKindDescriptor,
+    stored: &OverlayConfig,
+) -> OverlayConfig {
+    let configured = effective_overlay_config(descriptor, stored);
+    let args = sample_args(descriptor.id());
+
+    descriptor
+        .config_fields()
+        .iter()
+        .filter(|sectioned| sectioned.section == ConfigSection::Content)
+        .filter_map(|sectioned| {
+            let key = sectioned.field.key();
+            let value = configured.get(key)?;
+            Some((key.to_owned(), expanded(value, &args)))
+        })
+        .collect()
+}
+
+fn expanded(value: &Variant, args: &ArgStack) -> Variant {
+    match value {
+        Variant::String(template) => Variant::String(args.interpolate(template)),
+        other => other.clone(),
+    }
+}
+
+fn sample_args(event_kind: &str) -> ArgStack {
+    let Value::Object(fields) = sample_payload(event_kind) else {
+        return ArgStack::new();
+    };
+    fields
+        .into_iter()
+        .filter_map(|(name, value)| Variant::from_json(value).ok().map(|held| (name, held)))
+        .fold(ArgStack::new(), |args, (name, value)| args.set(name, value))
 }
 
 fn family(event_kind: &str) -> Family {

@@ -76,12 +76,16 @@ async fn authenticate_overlay(credential: String, ctx: &DispatchContext) -> WsRe
     let Ok(Some(definition)) = lookup else {
         return auth_failed("invalid credential");
     };
+    let identity = definition.id;
     if let Some(receiver) = ctx
         .bus_adapter
-        .promote_to_overlay(ctx.client.id, definition.id)
+        .promote_to_overlay(ctx.client.id, identity.clone())
         .await
     {
         *ctx.overlay_channel_swap.lock().await = Some(receiver);
+        if let Some(listener) = ctx.bus_adapter.overlay_connect_listener() {
+            listener.overlay_connected(&identity).await;
+        }
     }
     WsResponse::Ok(serde_json::json!({ "authenticated": true }))
 }

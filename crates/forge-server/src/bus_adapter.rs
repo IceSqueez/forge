@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::sync::{
-    Arc,
+    Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
 
 use forge_events::{Event, EventSource, EventsError};
-use forge_runtime::EventBus;
+use forge_runtime::{EventBus, OverlayConnectListener};
 use forge_storage::OverlayId;
 use forge_types::EventId;
 use serde::Serialize;
@@ -91,6 +91,8 @@ struct ConnectedClient {
 pub struct BusAdapter {
     bus: Arc<EventBus>,
     registry: Arc<RwLock<Vec<ConnectedClient>>>,
+    /// Lives on the adapter because the adapter is the one piece of state a restart carries over.
+    overlay_connect: OnceLock<Arc<dyn OverlayConnectListener>>,
 }
 
 #[derive(Serialize)]
@@ -205,7 +207,17 @@ impl BusAdapter {
         Arc::new(Self {
             bus,
             registry: Arc::new(RwLock::new(Vec::new())),
+            overlay_connect: OnceLock::new(),
         })
+    }
+
+    /// Installed once at boot, after the runtime that answers it exists.
+    pub fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
+        let _ = self.overlay_connect.set(listener);
+    }
+
+    pub(crate) fn overlay_connect_listener(&self) -> Option<Arc<dyn OverlayConnectListener>> {
+        self.overlay_connect.get().cloned()
     }
 
     pub fn spawn(self: &Arc<Self>) {

@@ -1287,6 +1287,144 @@ mod tests {
         assert_eq!(json["viewers"].as_array().unwrap().len(), 0);
     }
 
+    const OVERLAY_PAGE_CREDENTIAL: &str = "3d90f1a7c46b28e5a0d7f3b1c9e64a08";
+
+    async fn make_overlay_credential_ctx(known: bool) -> DispatchContext {
+        let mut tdp = TestDataProvider::new();
+        tdp.overlay()
+            .expect_get_by_credential()
+            .returning(move |credential| {
+                Ok(
+                    (known && credential.as_str() == OVERLAY_PAGE_CREDENTIAL).then(|| {
+                        forge_storage::OverlayDefinition {
+                            id: forge_storage::OverlayId::new("goal-box"),
+                            display_name: "Sub goal".to_owned(),
+                            kind_id: "overlay.goal".to_owned(),
+                            enabled: true,
+                            position: 0,
+                            config: forge_storage::OverlayConfig::new(),
+                            config_schema_version: 1,
+                            generator_version: 1,
+                            source_overrides: Vec::new(),
+                            credential: forge_storage::OverlayCredential::new(
+                                OVERLAY_PAGE_CREDENTIAL,
+                            ),
+                            created_at: OffsetDateTime::UNIX_EPOCH,
+                            updated_at: OffsetDateTime::UNIX_EPOCH,
+                        }
+                    }),
+                )
+            });
+        tdp.action().expect_list().returning(|| Ok(vec![]));
+        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+        let (handle, _rx) = bus_adapter
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+        let client = Arc::new(WsClient::new(
+            handle.id,
+            "127.0.0.1:0".parse().unwrap(),
+            Arc::clone(&handle.drop_counter),
+        ));
+        let action_engine = make_engine(&bus, &dp);
+        DispatchContext {
+            bus,
+            bus_adapter,
+            actions: dp.action_repo(),
+            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            overlays: dp.overlay_repo(),
+            auth_state: AuthState::for_test(true, "test-token"),
+            client,
+            auth_required_for_reads: true,
+            credentials: test_creds(),
+            server_info: ServerInfo::new(),
+            action_engine,
+            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
+            overlay_channel_swap: tokio::sync::Mutex::new(None),
+        }
+    }
+
+    fn auth_frame(token: Option<&str>, overlay_credential: Option<&str>) -> WsEnvelope<WsRequest> {
+        WsEnvelope {
+            id: Some("auth".to_owned()),
+            inner: WsRequest::Auth {
+                token: token.map(str::to_owned),
+                overlay_credential: overlay_credential.map(str::to_owned),
+            },
+        }
+    }
+
+    /// The valid token in the first row is deliberate: an implementation that reads `token` first
+    /// and ignores the extra field would let a page keep a session credential it never proved.
+    #[tokio::test]
+    async fn authenticate_refuses_a_frame_presenting_both_credential_forms_or_neither() {
+        for (token, overlay_credential, label) in [
+            (
+                Some("test-token"),
+                Some(OVERLAY_PAGE_CREDENTIAL),
+                "a valid token alongside an overlay credential",
+            ),
+            (None, None, "an auth frame carrying no credential at all"),
+        ] {
+            let ctx = make_ctx(false, true);
+
+            let resp = dispatch(auth_frame(token, overlay_credential), &ctx).await;
+
+            match resp.inner {
+                WsResponse::Error {
+                    code: Some(code), ..
+                } => assert_eq!(code, "AUTH_FAILED", "{label}"),
+                other => panic!("{label} produced {other:?} instead of AUTH_FAILED"),
+            }
+            assert!(
+                !ctx.client.authenticated.load(Ordering::Acquire),
+                "{label} still marked the session authenticated"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_overlay_credential_opens_directed_delivery_without_authenticating_the_session() {
+        let ctx = make_overlay_credential_ctx(true).await;
+
+        let resp = dispatch(auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL)), &ctx).await;
+
+        assert!(
+            matches!(resp.inner, WsResponse::Ok(_)),
+            "a page presenting its own credential was refused: {:?}",
+            resp.inner
+        );
+        assert!(
+            ctx.overlay_channel_swap.lock().await.is_some(),
+            "the connection was never promoted, so this proves nothing about what it grants"
+        );
+        assert!(
+            !ctx.client.authenticated.load(Ordering::Acquire),
+            "a read-scoped overlay credential unlocked every authenticated method"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_overlay_credential_no_record_carries_is_refused_and_promotes_nothing() {
+        let ctx = make_overlay_credential_ctx(false).await;
+
+        let resp = dispatch(auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL)), &ctx).await;
+
+        match resp.inner {
+            WsResponse::Error {
+                code: Some(code), ..
+            } => assert_eq!(code, "AUTH_FAILED"),
+            other => panic!("expected AUTH_FAILED, got {other:?}"),
+        }
+        assert!(
+            ctx.overlay_channel_swap.lock().await.is_none(),
+            "an unknown credential still put the connection onto the overlay delivery channel"
+        );
+    }
+
     #[tokio::test]
     async fn authenticate_empty_token_returns_auth_failed() {
         let ctx = make_ctx(false, true);

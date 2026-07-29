@@ -338,7 +338,7 @@ impl BusAdapter {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use forge_runtime::{EventBus, NullEventLogRepo};
@@ -500,6 +500,130 @@ mod tests {
             .expect("timeout waiting for event")
             .expect("receiver error");
         assert!(matches!(frame, WsFrame::Text(_)));
+    }
+
+    fn no_filters() -> ClientFilterSet {
+        ClientFilterSet::new(HashSet::new())
+    }
+
+    fn sample_content() -> serde_json::Value {
+        serde_json::json!({ "value": "42" })
+    }
+
+    async fn promoted_overlay(
+        adapter: &Arc<BusAdapter>,
+        identity: &OverlayId,
+    ) -> broadcast::Receiver<WsFrame> {
+        let (handle, _initial_rx) = adapter.register_client(no_filters()).await;
+        adapter
+            .promote_to_overlay(handle.id, identity.clone())
+            .await
+            .expect("a just-registered client is still on the registry")
+    }
+
+    #[tokio::test]
+    async fn delivered_content_counts_only_the_live_connections_of_the_identity_it_addresses() {
+        let adapter = BusAdapter::new(make_bus());
+        let target = OverlayId::new("goal-box");
+        let (_plain, _plain_rx) = adapter.register_client(wildcard_filter()).await;
+        let _target_rx = promoted_overlay(&adapter, &target).await;
+        let _other_rx = promoted_overlay(&adapter, &OverlayId::new("alert-box")).await;
+
+        assert_eq!(
+            adapter
+                .deliver_overlay_content(&target, &sample_content(), None)
+                .await,
+            1,
+            "content addressed at one overlay reached a different number of pages"
+        );
+        assert_eq!(
+            adapter
+                .deliver_overlay_content(&OverlayId::new("nobody"), &sample_content(), None)
+                .await,
+            0,
+            "content addressed at an overlay with no page open was counted as delivered"
+        );
+    }
+
+    #[tokio::test]
+    async fn delivered_content_counts_nothing_once_the_page_has_dropped_its_receiver() {
+        let adapter = BusAdapter::new(make_bus());
+        let target = OverlayId::new("goal-box");
+        let receiver = promoted_overlay(&adapter, &target).await;
+
+        drop(receiver);
+
+        assert_eq!(
+            adapter
+                .deliver_overlay_content(&target, &sample_content(), None)
+                .await,
+            0,
+            "a closed browser source was still counted, so the step reports a delivery that never landed"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_content_frame_names_its_shape_and_carries_a_duration_only_when_one_was_set() {
+        let adapter = BusAdapter::new(make_bus());
+        let target = OverlayId::new("goal-box");
+        let mut receiver = promoted_overlay(&adapter, &target).await;
+
+        for (duration_ms, expected) in [(Some(2_000_u64), Some(2_000_u64)), (None, None)] {
+            adapter
+                .deliver_overlay_content(&target, &sample_content(), duration_ms)
+                .await;
+
+            let WsFrame::Text(json) = receiver.try_recv().expect("a content frame") else {
+                panic!("directed content arrived as a close frame");
+            };
+            let frame: serde_json::Value = serde_json::from_str(&json).expect("valid JSON frame");
+
+            assert_eq!(frame["frame"], "content");
+            assert_eq!(frame["content"], sample_content());
+            assert_eq!(
+                frame["durationMs"].as_u64(),
+                expected,
+                "the page reads durationMs to decide whether to override its own timer"
+            );
+        }
+    }
+
+    /// An overlay connection can still send `subscribe`, so clearing its filters at promotion is
+    /// not what keeps the bus away from it - the identity check in the fan-out is.
+    #[tokio::test]
+    async fn an_overlay_connection_that_subscribes_to_everything_still_receives_no_bus_events() {
+        let bus = make_bus();
+        let adapter = BusAdapter::new(Arc::clone(&bus));
+        adapter.spawn();
+        let (handle, _initial_rx) = adapter.register_client(no_filters()).await;
+        let mut overlay_rx = adapter
+            .promote_to_overlay(handle.id, OverlayId::new("goal-box"))
+            .await
+            .expect("a just-registered client is still on the registry");
+        adapter
+            .update_subscriptions(handle.id, wildcard_filter())
+            .await;
+        assert_eq!(
+            adapter.current_subscriptions(handle.id).await,
+            wildcard_filter().subscriptions,
+            "the subscription never landed, so this proves nothing about the fan-out"
+        );
+        let (_probe, mut probe_rx) = adapter.register_client(wildcard_filter()).await;
+
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            serde_json::Value::Null,
+        ));
+        tokio::time::timeout(std::time::Duration::from_millis(200), probe_rx.recv())
+            .await
+            .expect("timeout waiting for the probe")
+            .expect("probe receiver error");
+
+        assert!(
+            overlay_rx.try_recv().is_err(),
+            "a browser source credentialed only for directed delivery received the whole bus"
+        );
     }
 
     #[tokio::test]

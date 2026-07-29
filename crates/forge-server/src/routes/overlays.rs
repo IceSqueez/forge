@@ -720,6 +720,39 @@ mod tests {
         handle.abort();
     }
 
+    /// The gate has to read the identity off the path the sandbox resolved, not off the URL the
+    /// caller typed, or any alias landing inside a disabled overlay serves it anyway.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_overlay_gates_on_the_identity_the_request_resolves_into_not_the_one_it_names() {
+        let dir = qa_tempdir();
+        let root = gated_overlay_root(dir.path()).await;
+        std::os::unix::fs::symlink("off", root.join("alias")).expect("symlink");
+
+        let (handle, addr) = make_overlay_server_with_overlays(
+            root,
+            true,
+            MemCreds::new(),
+            Some(gated_overlay_repo()),
+        )
+        .await;
+
+        for target in [
+            "/overlays/alias/index.html",
+            "/overlays/alias/asset.js",
+            "/overlays/alias/",
+        ] {
+            let (status, body) = get_status_and_body(addr, target).await;
+            assert_eq!(status, 404, "expected 404 for {target}");
+            assert!(
+                !body.contains("<p>off</p>"),
+                "a disabled overlay served itself under an alias via {target}"
+            );
+        }
+
+        handle.abort();
+    }
+
     #[tokio::test]
     async fn serve_overlay_serves_unless_the_store_reports_the_identity_disabled() {
         let dir = qa_tempdir();

@@ -94,7 +94,7 @@ pub fn remove_overlay_directory(root: &Path, id: &str) -> Result<bool, OverlayEr
     Ok(true)
 }
 
-fn overlay_directory(root: &Path, id: &str) -> Result<PathBuf, OverlayError> {
+pub(crate) fn overlay_directory(root: &Path, id: &str) -> Result<PathBuf, OverlayError> {
     check_identity(id)?;
     let root = ensure_root(root)?;
     let directory = root.join(id);
@@ -111,7 +111,7 @@ fn overlay_directory(root: &Path, id: &str) -> Result<PathBuf, OverlayError> {
     Ok(resolved)
 }
 
-fn check_identity(id: &str) -> Result<(), OverlayError> {
+pub(crate) fn check_identity(id: &str) -> Result<(), OverlayError> {
     let safe = !id.is_empty()
         && id.len() <= MAX_IDENTITY_LEN
         && id != RESERVED_DIRECTORY
@@ -132,7 +132,7 @@ fn ensure_root(root: &Path) -> Result<PathBuf, OverlayError> {
     canonicalize(root)
 }
 
-fn write_atomic(directory: &Path, name: &str, body: &[u8]) -> Result<(), OverlayError> {
+pub(crate) fn write_atomic(directory: &Path, name: &str, body: &[u8]) -> Result<(), OverlayError> {
     let target = directory.join(name);
     reject_symlink(&target)?;
 
@@ -152,7 +152,7 @@ fn write_atomic(directory: &Path, name: &str, body: &[u8]) -> Result<(), Overlay
     })
 }
 
-fn reject_symlink(path: &Path) -> Result<(), OverlayError> {
+pub(crate) fn reject_symlink(path: &Path) -> Result<(), OverlayError> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => Err(OverlayError::SymlinkedPath {
             path: display(path),
@@ -173,7 +173,7 @@ fn create_dir(path: &Path) -> Result<(), OverlayError> {
     })
 }
 
-fn optional_canonicalize(path: &Path) -> Result<Option<PathBuf>, OverlayError> {
+pub(crate) fn optional_canonicalize(path: &Path) -> Result<Option<PathBuf>, OverlayError> {
     match fs::canonicalize(path) {
         Ok(resolved) => Ok(Some(resolved)),
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -191,6 +191,6 @@ fn canonicalize(path: &Path) -> Result<PathBuf, OverlayError> {
     })
 }
 
-fn display(path: &Path) -> String {
+pub(crate) fn display(path: &Path) -> String {
     path.display().to_string()
 }

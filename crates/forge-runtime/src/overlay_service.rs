@@ -6,8 +6,8 @@ use forge_events::{Event, EventSource};
 use forge_overlay::config::EVENT;
 use forge_overlay::{
     GENERATOR_VERSION, MaterializeReport, OverlayInstance, OverlayKindRegistry,
-    effective_overlay_config, ensure_shared_directory, materialize_overlay,
-    remove_overlay_directory, sample_payload,
+    effective_overlay_config, ensure_shared_directory, materialize_overlay, read_overlay_source,
+    remove_overlay_directory, sample_payload, write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_storage::{
@@ -163,6 +163,32 @@ impl OverlayServiceHandle {
         let report = self.write_files(&definition).await?;
         self.reload_page(id);
         Ok(report)
+    }
+
+    /// Accepts only a name from `OVERRIDABLE_FILES`; `Ok(None)` while that file is not on disk yet.
+    pub async fn read_source(
+        &self,
+        id: &OverlayId,
+        file: &str,
+    ) -> Result<Option<String>, OverlayServiceError> {
+        let root = self.root().await;
+        let identity = id.as_str().to_owned();
+        let name = file.to_owned();
+        Ok(blocking(move || read_overlay_source(&root, &identity, &name)).await??)
+    }
+
+    /// Accepts only a name from `OVERRIDABLE_FILES`; the record's override list is the caller's to
+    /// keep in step, and nothing reloads until the caller says so.
+    pub async fn write_source(
+        &self,
+        id: &OverlayId,
+        file: &str,
+        body: String,
+    ) -> Result<(), OverlayServiceError> {
+        let root = self.root().await;
+        let identity = id.as_str().to_owned();
+        let name = file.to_owned();
+        Ok(blocking(move || write_overlay_source(&root, &identity, &name, &body)).await??)
     }
 
     /// `Ok(false)` when the directory was already gone.

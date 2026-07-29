@@ -18,6 +18,9 @@ pub enum OverlayError {
     #[error("overlay identity '{0}' is not a safe directory name")]
     UnsafeIdentity(String),
 
+    #[error("'{0}' is not a page file an overlay can hand over to its owner")]
+    NotOverridable(String),
+
     #[error("'{path}' resolves outside the overlay root")]
     OutsideRoot { path: String },
 

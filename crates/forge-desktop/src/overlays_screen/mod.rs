@@ -1,3 +1,4 @@
+mod code_pane;
 mod editor_pane;
 mod event_options;
 mod form_modal;
@@ -29,6 +30,7 @@ use crate::overlay_url::{overlay_origin, overlay_page_url};
 use crate::presentation::ActivePresentation;
 use crate::toasts::{PushToast, copy_to_clipboard};
 
+use code_pane::{CodeState, LeaveIntent};
 use event_options::event_kind_options;
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
 use kind_visuals::{KindVisuals, kind_visuals};
@@ -59,6 +61,27 @@ struct PendingDelete {
     display_name: String,
 }
 
+/// What a regeneration pass leaves for the screen to say: a failure to report, and the claimed
+/// files whose copy is gone from disk.
+#[derive(Default)]
+struct Regenerated {
+    failure: Option<String>,
+    missing: Vec<String>,
+}
+
+async fn regenerate(service: &OverlayServiceHandle, id: &OverlayId) -> Regenerated {
+    match service.materialize(id).await {
+        Ok(report) => Regenerated {
+            failure: None,
+            missing: report.missing_overrides,
+        },
+        Err(error) => Regenerated {
+            failure: Some(error.to_string()),
+            missing: Vec::new(),
+        },
+    }
+}
+
 pub struct OverlaysView {
     repo: Arc<dyn OverlayRepo>,
     server: Option<ServerHandle>,
@@ -69,6 +92,7 @@ pub struct OverlaysView {
     overlays: Vec<OverlayDefinition>,
     selected: Option<OverlayId>,
     mode: EditorMode,
+    code: CodeState,
     panel: Option<OpenPanel>,
     loading: bool,
     server_running: bool,
@@ -98,6 +122,7 @@ impl OverlaysView {
             .as_ref()
             .is_some_and(|handle| *handle.run_state().borrow());
 
+        let code = CodeState::new(cx);
         let mut view = Self {
             repo,
             server,
@@ -108,6 +133,7 @@ impl OverlaysView {
             overlays: Vec::new(),
             selected: None,
             mode: EditorMode::Design,
+            code,
             panel: None,
             loading: false,
             server_running,
@@ -166,6 +192,13 @@ impl OverlaysView {
             .collect();
         choices.sort_by(|a, b| a.label.cmp(&b.label));
         choices
+    }
+
+    fn apply_regenerated(&mut self, regenerated: Regenerated, cx: &mut Context<Self>) {
+        self.note_missing_overrides(regenerated.missing);
+        if let Some(message) = regenerated.failure {
+            self.report(&message, cx);
+        }
     }
 
     fn report(&mut self, message: &str, cx: &mut Context<Self>) {
@@ -250,6 +283,7 @@ impl OverlaysView {
                     self.clear_test();
                 }
                 self.sync_panel(cx);
+                self.sync_source(cx);
             }
             Err(message) => self.report(&message, cx),
         }
@@ -260,9 +294,14 @@ impl OverlaysView {
         if self.selected.as_ref() == Some(&id) {
             return;
         }
+        if self.code_dirty(cx) {
+            self.request_leave(LeaveIntent::Overlay(id), cx);
+            return;
+        }
         self.selected = Some(id);
         self.clear_test();
         self.sync_panel(cx);
+        self.sync_source(cx);
         cx.notify();
     }
 
@@ -278,7 +317,12 @@ impl OverlaysView {
         if self.mode == mode {
             return;
         }
+        if mode == EditorMode::Design && self.code_dirty(cx) {
+            self.request_leave(LeaveIntent::Design, cx);
+            return;
+        }
         self.mode = mode;
+        self.sync_source(cx);
         cx.notify();
     }
 
@@ -344,18 +388,15 @@ impl OverlaysView {
             &self.rt_handle,
             async move {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
-                    return Ok((false, None));
+                    return Ok((false, Regenerated::default()));
                 };
                 definition.config = config;
                 repo.save(&definition).await.map_err(|e| e.to_string())?;
-                let generated = service.materialize(&id).await.err().map(|e| e.to_string());
-                Ok((true, generated))
+                Ok((true, regenerate(&service, &id).await))
             },
-            |this, result: Result<(bool, Option<String>), String>, cx| match result {
-                Ok((true, generated)) => {
-                    if let Some(message) = generated {
-                        this.report(&message, cx);
-                    }
+            |this, result: Result<(bool, Regenerated), String>, cx| match result {
+                Ok((true, regenerated)) => {
+                    this.apply_regenerated(regenerated, cx);
                     this.load(cx);
                 }
                 Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
@@ -491,20 +532,14 @@ impl OverlaysView {
                     .create(&display_name, &kind_id, schema_version)
                     .await
                     .map_err(|e| e.to_string())?;
-                let generated = service
-                    .materialize(&definition.id)
-                    .await
-                    .err()
-                    .map(|e| e.to_string());
-                Ok((definition, generated))
+                let regenerated = regenerate(&service, &definition.id).await;
+                Ok((definition, regenerated))
             },
-            |this, result: Result<(OverlayDefinition, Option<String>), String>, cx| match result {
-                Ok((definition, generated)) => {
+            |this, result: Result<(OverlayDefinition, Regenerated), String>, cx| match result {
+                Ok((definition, regenerated)) => {
                     this.selected = Some(definition.id);
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_created"));
-                    if let Some(message) = generated {
-                        this.report(&message, cx);
-                    }
+                    this.apply_regenerated(regenerated, cx);
                     this.load(cx);
                 }
                 Err(message) => this.report(&message, cx),
@@ -523,19 +558,16 @@ impl OverlaysView {
             &self.rt_handle,
             async move {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
-                    return Ok((false, None));
+                    return Ok((false, Regenerated::default()));
                 };
                 definition.display_name = display_name;
                 repo.save(&definition).await.map_err(|e| e.to_string())?;
-                let generated = service.materialize(&id).await.err().map(|e| e.to_string());
-                Ok((true, generated))
+                Ok((true, regenerate(&service, &id).await))
             },
-            |this, result: Result<(bool, Option<String>), String>, cx| match result {
-                Ok((true, generated)) => {
+            |this, result: Result<(bool, Regenerated), String>, cx| match result {
+                Ok((true, regenerated)) => {
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_renamed"));
-                    if let Some(message) = generated {
-                        this.report(&message, cx);
-                    }
+                    this.apply_regenerated(regenerated, cx);
                     this.load(cx);
                 }
                 Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
@@ -694,7 +726,7 @@ impl Render for OverlaysView {
         let density = cx.density();
 
         drive_overlay_focus(
-            self.pending_delete.is_pending(),
+            self.pending_delete.is_pending() || self.code.is_pending(),
             &self.overlay_focus,
             &mut self.focus_restore,
             window,
@@ -734,5 +766,6 @@ impl Render for OverlaysView {
             .child(frame)
             .children(self.form.as_ref().map(|open| open.view.clone()))
             .children(delete)
+            .children(self.render_code_confirms(&palette, cx))
     }
 }

@@ -442,31 +442,33 @@ impl OverlayPropertyPanel {
             .child(body)
             .into_any_element()
     }
+}
 
-    fn render_override_notice(&self, palette: &ForgePalette) -> Option<AnyElement> {
-        if self.overridden_files.is_empty() {
-            return None;
-        }
-        let files = self.overridden_files.join(", ");
-        Some(
-            div()
-                .p(NOTICE_PAD)
-                .mb(SECTION_TOP_GAP)
-                .rounded(NOTICE_RADIUS)
-                .border(BORDER_THIN)
-                .border_color(palette.border_regular)
-                .bg(palette.base)
-                .font_family(body_family())
-                .text_size(FONT_XXS)
-                .line_height(NOTICE_LINE_H)
-                .text_color(palette.text_muted)
-                .child(tr!(
-                    "overlays_panel_override_notice",
-                    files = files.as_str()
-                ))
-                .into_any_element(),
-        )
+/// Both editor modes read the record's own override list, so the panel never claims a file is
+/// generated while the other mode calls it the user's.
+pub(super) fn override_notice(files: &[String], palette: &ForgePalette) -> Option<AnyElement> {
+    if files.is_empty() {
+        return None;
     }
+    let named = files.join(", ");
+    Some(
+        div()
+            .p(NOTICE_PAD)
+            .mb(SECTION_TOP_GAP)
+            .rounded(NOTICE_RADIUS)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .bg(palette.base)
+            .font_family(body_family())
+            .text_size(FONT_XXS)
+            .line_height(NOTICE_LINE_H)
+            .text_color(palette.text_muted)
+            .child(tr!(
+                "overlays_panel_override_notice",
+                files = named.as_str()
+            ))
+            .into_any_element(),
+    )
 }
 
 fn field_labels(specs: &[FormField]) -> HashMap<String, String> {
@@ -514,7 +516,7 @@ impl Render for OverlayPropertyPanel {
             .flex()
             .flex_col();
 
-        body = body.children(self.render_override_notice(&palette));
+        body = body.children(override_notice(&self.overridden_files, &palette));
 
         let mut rendered = 0usize;
         for section in PanelSection::ORDER {

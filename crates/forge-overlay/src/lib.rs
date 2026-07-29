@@ -9,6 +9,7 @@ pub mod materialize;
 pub mod preview;
 pub mod registry;
 pub mod sample;
+pub mod source;
 
 pub use assets::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, PageAssets, RESERVED_DIRECTORY,
@@ -30,3 +31,4 @@ pub use preview::{
 };
 pub use registry::OverlayKindRegistry;
 pub use sample::sample_payload;
+pub use source::{read_overlay_source, write_overlay_source};

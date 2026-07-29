@@ -5,6 +5,7 @@ use forge_components::{
 use forge_storage::OverlayDefinition;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
 
+use super::property_panel::override_notice;
 use super::{EditorMode, OverlaysView};
 
 const HEAD_PAD_V: Pixels = px(9.0);
@@ -56,6 +57,7 @@ impl OverlaysView {
 
         pane.child(self.render_selection_header(definition, palette, cx))
             .children(unavailable_notice)
+            .children(self.render_schema_notice(definition, palette))
             .child(self.render_stage(Some(definition), palette, cx))
             .into_any_element()
     }
@@ -147,15 +149,24 @@ impl OverlaysView {
     pub(super) fn render_property_pane(&self, palette: &ForgePalette) -> Option<AnyElement> {
         self.selected_definition()?;
 
-        let body: AnyElement = match (self.mode(), self.panel_view()) {
-            (EditorMode::Design, Some(panel)) => return Some(panel.into_any_element()),
-            (EditorMode::Design, None) => empty_state(tr!("overlays_panel_unavailable"), palette)
-                .glyph(Icon::AlertTriangle)
-                .into_any_element(),
-            (EditorMode::Code, _) => empty_state(tr!("overlays_bindings_pending"), palette)
-                .glyph(Icon::Code)
-                .into_any_element(),
-        };
+        let (body, notice): (AnyElement, Option<AnyElement>) =
+            match (self.mode(), self.panel_view()) {
+                (EditorMode::Design, Some(panel)) => return Some(panel.into_any_element()),
+                (EditorMode::Design, None) => (
+                    empty_state(tr!("overlays_panel_unavailable"), palette)
+                        .glyph(Icon::AlertTriangle)
+                        .into_any_element(),
+                    None,
+                ),
+                (EditorMode::Code, _) => (
+                    empty_state(tr!("overlays_bindings_pending"), palette)
+                        .glyph(Icon::Code)
+                        .into_any_element(),
+                    self.selected_definition().and_then(|definition| {
+                        override_notice(&definition.source_overrides, palette)
+                    }),
+                ),
+            };
 
         Some(
             div()
@@ -172,6 +183,7 @@ impl OverlaysView {
                 .bg(palette.shell)
                 .border_l(BORDER_THIN)
                 .border_color(palette.border_regular)
+                .children(notice)
                 .child(body)
                 .into_any_element(),
         )
@@ -270,7 +282,7 @@ impl OverlaysView {
             Some(definition) if self.mode() == EditorMode::Design => {
                 return self.render_design_stage(definition, palette, cx);
             }
-            Some(_) => (tr!("overlays_code_pending"), Icon::Code),
+            Some(definition) => return self.render_code_stage(definition, palette, cx),
             None if self.overlays.is_empty() => (tr!("overlays_stage_empty"), Icon::Browser),
             None => (tr!("overlays_stage_select"), Icon::Browser),
         };

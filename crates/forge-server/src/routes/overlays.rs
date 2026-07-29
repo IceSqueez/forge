@@ -87,10 +87,6 @@ async fn resolve_and_read(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    if !overlay_serving_enabled(state, url_path).await {
-        return Err(StatusCode::NOT_FOUND);
-    }
-
     let root = state.overlay_root.as_ref();
     let trimmed = url_path.trim_start_matches('/');
     let requested = std::path::Path::new(trimmed);
@@ -119,25 +115,40 @@ async fn resolve_and_read(
         canon_target
     };
 
+    if !overlay_serving_enabled(state, root, &canon_file).await {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
     let body = tokio::fs::read(&canon_file)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
     Ok((body, canon_file))
 }
 
-async fn overlay_serving_enabled(state: &AppState, url_path: &str) -> bool {
-    let Some(identity) = url_path
-        .trim_start_matches('/')
-        .split('/')
-        .next()
-        .filter(|seg| !seg.is_empty())
+async fn overlay_serving_enabled(
+    state: &AppState,
+    root: &std::path::Path,
+    canon_file: &std::path::Path,
+) -> bool {
+    let Ok(canon_root) = tokio::fs::canonicalize(root).await else {
+        return true;
+    };
+    let Some(identity) = canon_file
+        .strip_prefix(&canon_root)
+        .ok()
+        .and_then(|relative| relative.components().next())
+        .and_then(|first| first.as_os_str().to_str())
     else {
         return true;
     };
 
     match state.overlays.get(&OverlayId::new(identity)).await {
         Ok(Some(definition)) => definition.enabled,
-        Ok(None) | Err(_) => true,
+        Ok(None) => true,
+        Err(error) => {
+            tracing::warn!(%identity, %error, "overlay enabled lookup failed; serving anyway");
+            true
+        }
     }
 }
 

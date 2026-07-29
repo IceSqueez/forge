@@ -5,13 +5,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventSource};
 use forge_overlay::{
     CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry, RESERVED_DIRECTORY,
-    STYLE_FILE, register_builtin_kinds, sample_payload,
+    STYLE_FILE, register_builtin_kinds, sample_content,
 };
 use forge_platform_core::paths;
-use forge_runtime::overlay_service::{OVERLAY_RELOAD_KIND, OVERLAY_TEST_FIRE_KIND};
+use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
     EventBus, MaterializePass, NullEventLogRepo, OverlayFrameSink, OverlayServiceError,
     OverlayServiceHandle,
@@ -21,29 +20,62 @@ use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo, StorageError, reserved_keys,
 };
-use serde_json::json;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
 const ALERT_KIND: &str = "overlay.alert";
 const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
 
+#[derive(Debug, Clone, PartialEq)]
+struct ContentFrame {
+    identity: OverlayId,
+    content: serde_json::Value,
+    duration_ms: Option<u64>,
+}
+
 #[derive(Default)]
 struct RecordingSink {
-    frames: Mutex<Vec<Event>>,
+    frames: Mutex<Vec<ContentFrame>>,
+    reloads: Mutex<Vec<OverlayId>>,
 }
 
 impl RecordingSink {
-    fn frames(&self) -> Vec<Event> {
+    fn frames(&self) -> Vec<ContentFrame> {
         self.frames.lock().unwrap().clone()
+    }
+
+    fn reloads(&self) -> Vec<OverlayId> {
+        self.reloads.lock().unwrap().clone()
     }
 }
 
 #[async_trait]
 impl OverlayFrameSink for RecordingSink {
-    async fn deliver(&self, event: Event) {
-        self.frames.lock().unwrap().push(event);
+    async fn deliver_content(
+        &self,
+        identity: &OverlayId,
+        content: serde_json::Value,
+        duration_ms: Option<u64>,
+    ) {
+        self.frames.lock().unwrap().push(ContentFrame {
+            identity: identity.clone(),
+            content,
+            duration_ms,
+        });
     }
+
+    async fn deliver_reload(&self, identity: &OverlayId) {
+        self.reloads.lock().unwrap().push(identity.clone());
+    }
+}
+
+fn content_json(content: &OverlayConfig) -> serde_json::Value {
+    serde_json::Value::Object(
+        content
+            .iter()
+            .map(|(key, value)| (key.clone(), value.to_json()))
+            .collect(),
+    )
 }
 
 fn definition(id: &str) -> OverlayDefinition {
@@ -216,7 +248,7 @@ async fn test_fire_records_its_origin_without_broadcasting_anything() {
 }
 
 #[tokio::test]
-async fn test_fire_delivers_one_frame_carrying_the_payload_it_returns() {
+async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
     let stored = definition("sub-alert");
     let harness = harness(vec![stored.clone()], true);
 
@@ -224,37 +256,16 @@ async fn test_fire_delivers_one_frame_carrying_the_payload_it_returns() {
 
     let frames = harness.sink.frames();
     assert_eq!(frames.len(), 1, "a single test fire delivered {frames:?}");
-    assert_eq!(frames[0].kind, OVERLAY_TEST_FIRE_KIND);
     assert_eq!(
-        frames[0].payload, fired.payload,
-        "the caller previews a payload the page never received"
+        frames[0].identity, stored.id,
+        "a test fire reached an overlay it does not target"
     );
     assert_eq!(
-        frames[0].source,
-        EventSource::Core,
-        "a test fire is forge speaking for itself, never impersonating a platform"
+        frames[0].content,
+        content_json(&fired.content),
+        "the caller previews content the page never received"
     );
     assert!(fired.delivered);
-}
-
-#[tokio::test]
-async fn the_delivered_frame_is_caused_by_the_recorded_test_fire() {
-    let stored = definition("sub-alert");
-    let harness = harness(vec![stored.clone()], true);
-
-    harness.service.test_fire(&stored.id).await.expect("fire");
-
-    let origin = harness
-        .bus
-        .recent(8)
-        .into_iter()
-        .find(|event| event.kind == OVERLAY_TEST_FIRE_KIND)
-        .expect("the origin is recorded");
-    assert_eq!(
-        harness.sink.frames()[0].caused_by,
-        Some(origin.id),
-        "the sample frame is orphaned from the test fire that produced it"
-    );
 }
 
 #[tokio::test]
@@ -269,9 +280,12 @@ async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_l
         "nothing is serving, so the caller must be told the preview ran alone"
     );
     assert_eq!(
-        fired.payload,
-        sample_payload(&stored.kind_id),
-        "the caller still needs the very payload a connected page would have received"
+        fired.content,
+        sample_content(
+            registry().get(&stored.kind_id).expect("a shipped kind"),
+            &stored.config
+        ),
+        "the caller still needs the very content a connected page would have received"
     );
 }
 
@@ -416,29 +430,30 @@ async fn removing_an_overlay_folder_is_idempotent_and_spares_the_shared_subtree(
 
 #[tokio::test]
 async fn a_reload_control_frame_names_only_the_overlay_it_targets() {
-    let harness = harness(Vec::new(), false);
+    let harness = harness(Vec::new(), true);
     let mut subscription = harness.bus.subscribe();
+    let target = OverlayId::new("sub-alert");
 
-    harness.service.reload_page(&OverlayId::new("sub-alert"));
+    harness.service.reload_page(&target).await;
 
-    let frame = subscription
-        .try_recv()
-        .expect("the bus stayed open")
-        .expect("a reload must be published the moment it is asked for");
-    assert_eq!(frame.kind, OVERLAY_RELOAD_KIND);
-    assert_eq!(frame.source, EventSource::Core);
     assert_eq!(
-        frame.payload,
-        json!({ "overlayId": "sub-alert" }),
-        "a reload must carry the identity so other pages ignore it"
+        harness.sink.reloads(),
+        vec![target],
+        "a reload must name the identity it targets so other pages are untouched"
+    );
+    assert!(
+        subscription
+            .try_recv()
+            .expect("the bus stayed open")
+            .is_none(),
+        "a reload reached the bus and can drive actions, scripts and queues"
     );
 }
 
 #[tokio::test]
 async fn materializing_one_overlay_reloads_the_page_it_rebuilt() {
     let stored = definition("sub-alert");
-    let harness = harness(vec![stored.clone()], false);
-    let mut subscription = harness.bus.subscribe();
+    let harness = harness(vec![stored.clone()], true);
 
     harness
         .service
@@ -446,12 +461,11 @@ async fn materializing_one_overlay_reloads_the_page_it_rebuilt() {
         .await
         .expect("materialize");
 
-    let frame = subscription
-        .try_recv()
-        .expect("the bus stayed open")
-        .expect("a rebuilt page must be told to reload");
-    assert_eq!(frame.kind, OVERLAY_RELOAD_KIND);
-    assert_eq!(frame.payload, json!({ "overlayId": "sub-alert" }));
+    assert_eq!(
+        harness.sink.reloads(),
+        vec![stored.id],
+        "a rebuilt page was never told to reload"
+    );
 }
 
 #[tokio::test]

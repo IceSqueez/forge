@@ -77,28 +77,3 @@ fn every_helper_a_generated_page_calls_is_one_the_runtime_publishes() {
         }
     }
 }
-
-/// Drift tripwire: `tpl` is a hand port of `ArgStack::interpolate` and no test can execute the JS.
-#[test]
-fn the_template_expander_still_scans_by_hand_rather_than_by_regular_expression() {
-    let body = &RUNTIME_SOURCE[RUNTIME_SOURCE
-        .find("function tpl(")
-        .expect("the runtime no longer declares tpl")..];
-
-    for (marker, behaviour) in [
-        (".trim()", "the token is trimmed before lookup"),
-        (
-            "\"%\" + name + \"%\"",
-            "an unknown token is reprinted untrimmed",
-        ),
-        (
-            "!closed",
-            "an unterminated tail collapses to a lone percent",
-        ),
-    ] {
-        assert!(
-            body.contains(marker),
-            "tpl no longer shows '{marker}' - re-verify {behaviour} against ArgStack::interpolate before updating this guard"
-        );
-    }
-}

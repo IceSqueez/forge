@@ -88,7 +88,7 @@ fn a_page_only_binds_config_keys_its_own_form_declares() {
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
             .iter()
-            .map(|field| field_key(field))
+            .map(|field| field_key(&field.field))
             .collect();
         let bindings = quoted_after(descriptor.page_assets().markup, "data-bind=\"");
 
@@ -113,7 +113,7 @@ fn a_page_only_reads_config_members_its_own_form_declares() {
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
             .iter()
-            .map(|field| field_key(field))
+            .map(|field| field_key(&field.field))
             .collect();
         let behavior = without_line_comments(descriptor.page_assets().behavior);
         let members = members_after(&behavior, "config.");

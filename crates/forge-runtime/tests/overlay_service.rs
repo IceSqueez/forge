@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
-use forge_overlay::config::EVENT;
 use forge_overlay::{
     CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry, RESERVED_DIRECTORY,
     STYLE_FILE, register_builtin_kinds, sample_payload,
@@ -22,14 +21,12 @@ use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo, StorageError, reserved_keys,
 };
-use forge_types::Variant;
 use serde_json::json;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
 const ALERT_KIND: &str = "overlay.alert";
 const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
-const SUB_EVENT: &str = "twitch.channel.subscription.message";
 
 #[derive(Default)]
 struct RecordingSink {
@@ -56,7 +53,7 @@ fn definition(id: &str) -> OverlayDefinition {
         kind_id: ALERT_KIND.to_owned(),
         enabled: true,
         position: 0,
-        config: OverlayConfig::from([(EVENT.to_owned(), Variant::String(SUB_EVENT.to_owned()))]),
+        config: OverlayConfig::new(),
         config_schema_version: 1,
         generator_version: 0,
         source_overrides: Vec::new(),
@@ -227,15 +224,15 @@ async fn test_fire_delivers_one_frame_carrying_the_payload_it_returns() {
 
     let frames = harness.sink.frames();
     assert_eq!(frames.len(), 1, "a single test fire delivered {frames:?}");
-    assert_eq!(frames[0].kind, SUB_EVENT);
+    assert_eq!(frames[0].kind, OVERLAY_TEST_FIRE_KIND);
     assert_eq!(
         frames[0].payload, fired.payload,
         "the caller previews a payload the page never received"
     );
     assert_eq!(
         frames[0].source,
-        EventSource::Twitch,
-        "a sample must carry the source a live frame of its kind carries, or client filters drop it"
+        EventSource::Core,
+        "a test fire is forge speaking for itself, never impersonating a platform"
     );
     assert!(fired.delivered);
 }
@@ -273,7 +270,7 @@ async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_l
     );
     assert_eq!(
         fired.payload,
-        sample_payload(SUB_EVENT),
+        sample_payload(&stored.kind_id),
         "the caller still needs the very payload a connected page would have received"
     );
 }
@@ -282,10 +279,7 @@ async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_l
 async fn test_fire_refuses_and_delivers_nothing_when_no_sample_can_be_built() {
     let mut unshipped = definition("vendor-box");
     unshipped.kind_id = UNSHIPPED_KIND.to_owned();
-    let mut unbound = definition("no-event");
-    unbound.config = OverlayConfig::new();
-
-    let harness = harness(vec![unshipped.clone(), unbound.clone()], true);
+    let harness = harness(vec![unshipped.clone()], true);
     let mut subscription = harness.bus.subscribe();
 
     type Check = fn(&OverlayServiceError) -> bool;
@@ -300,11 +294,6 @@ async fn test_fire_refuses_and_delivers_nothing_when_no_sample_can_be_built() {
             (|e: &OverlayServiceError| matches!(e, OverlayServiceError::UnavailableKind { .. }))
                 as Check,
             "an overlay type this build lacks",
-        ),
-        (
-            unbound.id.clone(),
-            (|e: &OverlayServiceError| matches!(e, OverlayServiceError::NoBoundEvent(_))) as Check,
-            "an overlay with no event bound",
         ),
     ] {
         let err = harness

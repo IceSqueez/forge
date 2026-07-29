@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use forge_overlay::config::{
-    ACCENT, ANIMATION, DURATION, EVENT, FONT, HEADLINE, POSITION, SOUND, SUBLINE,
+    ACCENT, ANIMATION, DURATION, FONT, HEADLINE, POSITION, SOUND, SUBLINE,
 };
 use forge_overlay::{
     OverlayConfig, OverlayInstance, OverlayKindRegistry, config_document, register_builtin_kinds,
@@ -69,7 +69,6 @@ fn config_keys_reach_the_page_exactly_as_they_are_stored() {
     let config = doc["config"].as_object().expect("config is an object");
 
     for key in [
-        EVENT,
         HEADLINE,
         SUBLINE,
         ACCENT,

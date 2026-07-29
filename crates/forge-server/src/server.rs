@@ -232,8 +232,10 @@ mod tests {
 
     use super::{AppState, AuthState, BusAdapter, ServerHandle, serve_on, validate_lan_bind};
     use crate::ServerError;
+    use crate::bus_adapter::{ClientFilterSet, EventFilter, WsFrame};
     use crate::server_info::ServerInfo;
     use crate::test_helpers::test_dp;
+    use crate::ws_client::WsClient;
 
     struct MemCreds(Mutex<HashMap<String, String>>);
 
@@ -399,6 +401,70 @@ mod tests {
         (handle, addr, auth_ref)
     }
 
+    async fn make_server_exposing_state() -> (ServerHandle, AppState) {
+        let creds = MemCreds::new();
+        let auth = AuthState::load(false, &*creds).await.expect("auth load");
+        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
+        let state = make_app_state(auth, creds_dyn);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let observed = state.clone();
+        (serve_on(listener, state), observed)
+    }
+
+    async fn attach_client(
+        state: &AppState,
+        identification: &str,
+    ) -> tokio::sync::broadcast::Receiver<WsFrame> {
+        let filters = ClientFilterSet::new(std::collections::HashSet::from([EventFilter::new(
+            None, None,
+        )]));
+        let (client_handle, rx) = state.bus_adapter.register_client(filters).await;
+        let client = Arc::new(WsClient::new(
+            client_handle.id,
+            "203.0.113.10:5555".parse().expect("addr"),
+            Arc::clone(&client_handle.drop_counter),
+        ));
+        client
+            .identification
+            .store(Arc::new(identification.to_owned()));
+        state.server_info.register(client_handle.id, client).await;
+        rx
+    }
+
+    async fn make_server_targeting_a_free_port() -> (ServerHandle, u16) {
+        let settings = MapSettings::new();
+        let creds = MemCreds::with_token("my-token");
+        let auth = AuthState::load(false, &*creds).await.expect("auth load");
+        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
+        let state = make_app_state_with_settings(
+            auth,
+            creds_dyn,
+            Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let boot_addr = listener.local_addr().expect("local addr");
+        let handle = serve_on(listener, state);
+
+        let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
+        let new_port = probe.local_addr().expect("probe addr").port();
+        drop(probe);
+        assert_ne!(
+            boot_addr.port(),
+            new_port,
+            "target port must differ from boot"
+        );
+
+        crate::config::ServerSettings::save_bind_address(&*settings, "127.0.0.1")
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, new_port)
+            .await
+            .expect("save port");
+
+        (handle, new_port)
+    }
+
     #[tokio::test]
     async fn get_info_without_auth_returns_200_when_reads_not_required() {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
@@ -560,35 +626,7 @@ mod tests {
 
     #[tokio::test]
     async fn restart_rebinds_on_persisted_address() {
-        let settings = MapSettings::new();
-        let creds = MemCreds::with_token("my-token");
-        let auth = AuthState::load(false, &*creds).await.expect("auth load");
-        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let state = make_app_state_with_settings(
-            auth,
-            creds_dyn,
-            Arc::clone(&settings) as Arc<dyn SettingsRepo>,
-        );
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let boot_addr = listener.local_addr().expect("local addr");
-        let handle = serve_on(listener, state);
-
-        let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
-        let new_port = probe.local_addr().expect("probe addr").port();
-        drop(probe);
-        assert_ne!(
-            boot_addr.port(),
-            new_port,
-            "target port must differ from boot"
-        );
-
-        crate::config::ServerSettings::save_bind_address(&*settings, "127.0.0.1")
-            .await
-            .expect("save addr");
-        crate::config::ServerSettings::save_port(&*settings, new_port)
-            .await
-            .expect("save port");
+        let (handle, new_port) = make_server_targeting_a_free_port().await;
 
         handle.restart().await.expect("restart");
 
@@ -600,6 +638,119 @@ mod tests {
             .expect("HTTP request after restart");
         assert_eq!(resp.status().as_u16(), 200);
         assert_eq!(handle.bind_addr().await.port(), new_port);
+
+        handle.stop().await.expect("stop after restart");
+    }
+
+    #[tokio::test]
+    async fn kick_client_removes_only_the_named_client_from_the_snapshot() {
+        let (handle, state) = make_server_exposing_state().await;
+        let _kicked = attach_client(&state, "dashboard-a").await;
+        let _survivor = attach_client(&state, "dashboard-b").await;
+
+        assert!(handle.kick_client("dashboard-a").await);
+
+        let snapshot = handle.snapshot().await;
+        let remaining: Vec<&str> = snapshot
+            .connected_clients
+            .iter()
+            .map(|c| c.identification.as_str())
+            .collect();
+        assert_eq!(remaining, ["dashboard-b"]);
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn kick_client_closes_the_targeted_socket_and_spares_the_others() {
+        let (handle, state) = make_server_exposing_state().await;
+        let mut kicked_rx = attach_client(&state, "dashboard-a").await;
+        let mut survivor_rx = attach_client(&state, "dashboard-b").await;
+
+        handle.kick_client("dashboard-a").await;
+
+        assert!(matches!(
+            kicked_rx.try_recv().expect("close frame"),
+            WsFrame::Close
+        ));
+        assert!(
+            survivor_rx.try_recv().is_err(),
+            "an untargeted client must keep its socket open"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn kick_client_with_unknown_identification_returns_false_and_keeps_every_client() {
+        let (handle, state) = make_server_exposing_state().await;
+        let mut rx = attach_client(&state, "dashboard-a").await;
+
+        assert!(!handle.kick_client("dashboard-zzz").await);
+
+        assert_eq!(handle.snapshot().await.connected_clients.len(), 1);
+        assert!(
+            rx.try_recv().is_err(),
+            "a missed lookup must not close anyone"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn run_state_reports_running_right_after_bind() {
+        let (handle, _addr) = make_server(false, MemCreds::new()).await;
+        assert!(*handle.run_state().borrow());
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn stop_flips_run_state_before_the_drain_finishes() {
+        let (handle, _addr) = make_server(false, MemCreds::new()).await;
+        let mut run_state = handle.run_state();
+
+        let stopper = {
+            let handle = handle.clone();
+            tokio::spawn(async move { handle.stop().await })
+        };
+
+        tokio::time::timeout(std::time::Duration::from_millis(500), run_state.changed())
+            .await
+            .expect("run state must flip without waiting for the drain")
+            .expect("watch sender alive");
+        assert!(!*run_state.borrow());
+
+        stopper.await.expect("stop task").expect("stop");
+    }
+
+    #[tokio::test]
+    async fn abort_flips_run_state_without_awaiting() {
+        let (handle, _addr) = make_server(false, MemCreds::new()).await;
+        handle.abort();
+        assert!(!*handle.run_state().borrow());
+    }
+
+    #[tokio::test]
+    async fn run_state_subscribed_after_a_stop_reads_stopped() {
+        let (handle, _addr) = make_server(false, MemCreds::new()).await;
+        handle.stop().await.expect("stop");
+        assert!(
+            !*handle.run_state().borrow(),
+            "a late subscriber must read the live state, not a fresh channel"
+        );
+    }
+
+    #[tokio::test]
+    async fn restart_returns_run_state_to_running() {
+        let (handle, _new_port) = make_server_targeting_a_free_port().await;
+        let mut run_state = handle.run_state();
+
+        handle.restart().await.expect("restart");
+
+        assert!(
+            *run_state.borrow_and_update(),
+            "a restarted server must report running again"
+        );
 
         handle.stop().await.expect("stop after restart");
     }

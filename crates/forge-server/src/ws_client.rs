@@ -147,6 +147,33 @@ mod tests {
         assert!((eps - 1.0).abs() < 0.001, "expected ~1.0 ev/s, got {eps}");
     }
 
+    #[tokio::test]
+    async fn events_sitting_exactly_on_the_window_edge_still_count() {
+        tokio::time::pause();
+        let client = make_client();
+        for _ in 0..10 {
+            client.record_event();
+        }
+        tokio::time::advance(Duration::from_secs(EVENTS_WINDOW_SECS)).await;
+        let eps = client.events_per_second();
+        assert!(
+            (eps - 1.0).abs() < 0.001,
+            "the window edge is inclusive, got {eps}"
+        );
+    }
+
+    #[tokio::test]
+    async fn events_older_than_the_window_stop_counting() {
+        tokio::time::pause();
+        let client = make_client();
+        for _ in 0..10 {
+            client.record_event();
+        }
+        tokio::time::advance(Duration::from_secs(EVENTS_WINDOW_SECS) + Duration::from_millis(1))
+            .await;
+        assert_eq!(client.events_per_second(), 0.0);
+    }
+
     #[test]
     fn detect_from_user_agent_coverage() {
         assert_eq!(

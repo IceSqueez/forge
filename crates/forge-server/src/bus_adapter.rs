@@ -324,6 +324,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn kick_client_delivers_a_close_frame_to_the_kicked_client() {
+        let adapter = BusAdapter::new(make_bus());
+        let (kicked, mut kicked_rx) = adapter.register_client(wildcard_filter()).await;
+
+        assert!(adapter.kick_client(kicked.id).await);
+
+        assert!(matches!(
+            kicked_rx.try_recv().expect("close frame"),
+            WsFrame::Close
+        ));
+    }
+
+    #[tokio::test]
+    async fn kicked_client_stops_receiving_events_while_the_others_keep_theirs() {
+        let bus = make_bus();
+        let adapter = BusAdapter::new(Arc::clone(&bus));
+        adapter.spawn();
+
+        let (kicked, mut kicked_rx) = adapter.register_client(wildcard_filter()).await;
+        let (_survivor, mut survivor_rx) = adapter.register_client(wildcard_filter()).await;
+
+        adapter.kick_client(kicked.id).await;
+        assert!(matches!(
+            kicked_rx.try_recv().expect("close frame"),
+            WsFrame::Close
+        ));
+
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            serde_json::Value::Null,
+        ));
+
+        let frame = tokio::time::timeout(std::time::Duration::from_millis(200), survivor_rx.recv())
+            .await
+            .expect("timeout waiting for survivor")
+            .expect("survivor receiver error");
+        assert!(matches!(frame, WsFrame::Text(_)));
+
+        assert!(
+            kicked_rx.try_recv().is_err(),
+            "kicked client must be off the registry, not merely closed"
+        );
+    }
+
+    #[tokio::test]
+    async fn kick_client_with_unknown_id_returns_false_and_leaves_the_registry_intact() {
+        let bus = make_bus();
+        let adapter = BusAdapter::new(Arc::clone(&bus));
+        adapter.spawn();
+
+        let (_client, mut rx) = adapter.register_client(wildcard_filter()).await;
+
+        assert!(!adapter.kick_client(ClientId::next()).await);
+
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            serde_json::Value::Null,
+        ));
+
+        let frame = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv())
+            .await
+            .expect("timeout waiting for event")
+            .expect("receiver error");
+        assert!(matches!(frame, WsFrame::Text(_)));
+    }
+
+    #[tokio::test]
     async fn wildcard_source_filter_matches_all_twitch_kinds() {
         let bus = make_bus();
         let adapter = BusAdapter::new(Arc::clone(&bus));

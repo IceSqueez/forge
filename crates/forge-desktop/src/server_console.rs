@@ -1670,3 +1670,180 @@ fn event_source_label(source: EventSource) -> &'static str {
         EventSource::Audio => "audio",
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn snapshot_client(
+        identification: &str,
+        events_per_second: f32,
+        uptime_seconds: i64,
+    ) -> ConnectedClientSnapshot {
+        ConnectedClientSnapshot {
+            identification: identification.to_owned(),
+            remote_addr: "203.0.113.10".to_owned(),
+            client_type: "obs_browser".to_owned(),
+            subscriptions: Vec::new(),
+            events_per_second,
+            uptime_seconds,
+        }
+    }
+
+    fn filter(source: &str, kind: &str) -> EventFilterSnapshot {
+        EventFilterSnapshot {
+            source: source.to_owned(),
+            kind: kind.to_owned(),
+        }
+    }
+
+    #[test]
+    fn overlay_origin_rewrites_wildcard_binds_to_loopback() {
+        for (bind, expected) in [
+            ("127.0.0.1:9515", "http://127.0.0.1:9515"),
+            ("192.168.1.5:9515", "http://192.168.1.5:9515"),
+            ("0.0.0.0:9515", "http://127.0.0.1:9515"),
+            ("[::]:9515", "http://127.0.0.1:9515"),
+            ("[::1]:9515", "http://[::1]:9515"),
+        ] {
+            assert_eq!(overlay_origin(bind), expected, "bind {bind}");
+        }
+    }
+
+    #[test]
+    fn mask_token_keeps_only_the_last_four_characters() {
+        let token = "fg_supersecretvalue9c4a";
+        let masked = mask_token(token);
+        assert!(masked.ends_with("9c4a"), "masked = {masked}");
+        assert!(
+            !masked.contains("supersecret"),
+            "masked token leaks its body: {masked}"
+        );
+    }
+
+    #[test]
+    fn mask_token_handles_tokens_shorter_than_the_revealed_tail() {
+        for (token, expected_tail) in [("a", "a"), ("abc", "abc"), ("abcd", "abcd")] {
+            let masked = mask_token(token);
+            assert!(
+                masked.ends_with(expected_tail),
+                "token {token} masked to {masked}"
+            );
+        }
+    }
+
+    #[test]
+    fn mask_token_splits_multibyte_tokens_on_character_boundaries() {
+        let masked = mask_token("префікс-тікт");
+        assert!(masked.ends_with("тікт"), "masked = {masked}");
+        assert!(!masked.contains("префікс"), "masked = {masked}");
+    }
+
+    #[test]
+    fn mask_token_renders_a_placeholder_when_no_token_is_stored() {
+        assert_eq!(mask_token(""), "-");
+    }
+
+    #[test]
+    fn is_html_path_accepts_html_and_htm_in_any_case() {
+        for name in ["a.html", "a.htm", "a.HTML", "a.Htm"] {
+            assert!(is_html_path(std::path::Path::new(name)), "{name}");
+        }
+        for name in ["a.htmlx", "a.txt", "a.js", "html", "a."] {
+            assert!(!is_html_path(std::path::Path::new(name)), "{name}");
+        }
+    }
+
+    #[test]
+    fn count_recent_clients_counts_only_the_last_ten_minutes() {
+        let clients = [
+            snapshot_client("stale", 0.0, RECENT_CLIENT_WINDOW_SECONDS + 1),
+            snapshot_client("edge", 0.0, RECENT_CLIENT_WINDOW_SECONDS),
+            snapshot_client("fresh", 0.0, 0),
+            snapshot_client("skewed", 0.0, -1),
+        ];
+        assert_eq!(count_recent_clients(&clients), 2);
+    }
+
+    #[test]
+    fn client_row_marks_a_silent_client_idle_and_an_emitting_one_active() {
+        for (eps, expected) in [
+            (0.0, ClientLiveness::Idle),
+            (0.05, ClientLiveness::Active),
+            (12.5, ClientLiveness::Active),
+        ] {
+            let row = client_row_from_snapshot(&snapshot_client("dash", eps, 30));
+            assert_eq!(row.liveness, expected, "eps {eps}");
+        }
+    }
+
+    #[test]
+    fn client_rows_sharing_a_remote_ip_still_get_distinct_element_keys() {
+        let first = client_row_from_snapshot(&snapshot_client("127.0.0.1:51001", 0.0, 30));
+        let second = client_row_from_snapshot(&snapshot_client("127.0.0.1:51002", 0.0, 30));
+        assert_ne!(
+            first.key, second.key,
+            "two overlays on one host must not collide on the disconnect button id"
+        );
+    }
+
+    #[test]
+    fn client_row_clamps_a_negative_uptime_to_zero() {
+        let row = client_row_from_snapshot(&snapshot_client("dash", 0.0, -42));
+        assert_eq!(row.uptime_short, "0s");
+    }
+
+    #[test]
+    fn subscription_chip_collapses_a_full_wildcard_to_a_single_label() {
+        let chip = subscription_chip(&filter("*", "*"));
+        assert_eq!(chip.label, SUBSCRIBE_ALL_LABEL);
+        assert_eq!(chip.kind, SubscriptionChipKind::All);
+    }
+
+    #[test]
+    fn subscription_chip_labels_each_source_and_kind_combination() {
+        for (source, kind, expected_label, expected_kind) in [
+            (
+                "twitch",
+                "chat.message",
+                "twitch.chat.message",
+                SubscriptionChipKind::Source(EventSource::Twitch),
+            ),
+            (
+                "twitch",
+                "*",
+                "twitch.*",
+                SubscriptionChipKind::Source(EventSource::Twitch),
+            ),
+            (
+                "you_tube",
+                "*",
+                "youtube.*",
+                SubscriptionChipKind::Source(EventSource::YouTube),
+            ),
+            (
+                "v_tube",
+                "model.loaded",
+                "vtube.model.loaded",
+                SubscriptionChipKind::Source(EventSource::VTube),
+            ),
+            (
+                "*",
+                "chat.message",
+                "chat.message",
+                SubscriptionChipKind::Unknown,
+            ),
+            (
+                "peacock",
+                "chat.message",
+                "peacock.chat.message",
+                SubscriptionChipKind::Unknown,
+            ),
+        ] {
+            let chip = subscription_chip(&filter(source, kind));
+            assert_eq!(chip.label, expected_label, "source {source} kind {kind}");
+            assert_eq!(chip.kind, expected_kind, "source {source} kind {kind}");
+        }
+    }
+}

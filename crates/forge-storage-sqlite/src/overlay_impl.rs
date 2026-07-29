@@ -238,25 +238,20 @@ impl OverlayRepo for SqliteOverlayRepo {
         let enabled: i64 = if definition.enabled { 1 } else { 0 };
         let now_ms = epoch_ms_now();
 
-        sqlx::query(
-            "INSERT INTO overlays
-                 (id, display_name, kind_id, enabled, position, config,
-                  config_schema_version, generator_version, source_overrides,
-                  credential, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-                 display_name          = excluded.display_name,
-                 kind_id               = excluded.kind_id,
-                 enabled               = excluded.enabled,
-                 position              = excluded.position,
-                 config                = excluded.config,
-                 config_schema_version = excluded.config_schema_version,
-                 generator_version     = excluded.generator_version,
-                 source_overrides      = excluded.source_overrides,
-                 credential            = excluded.credential,
-                 updated_at            = excluded.updated_at",
+        let result = sqlx::query(
+            "UPDATE overlays SET
+                 display_name          = ?,
+                 kind_id               = ?,
+                 enabled               = ?,
+                 position              = ?,
+                 config                = ?,
+                 config_schema_version = ?,
+                 generator_version     = ?,
+                 source_overrides      = ?,
+                 credential            = ?,
+                 updated_at            = ?
+             WHERE id = ?",
         )
-        .bind(definition.id.as_str())
         .bind(&definition.display_name)
         .bind(&definition.kind_id)
         .bind(enabled)
@@ -266,12 +261,17 @@ impl OverlayRepo for SqliteOverlayRepo {
         .bind(definition.generator_version as i64)
         .bind(&source_overrides_json)
         .bind(definition.credential.as_str())
-        .bind(to_epoch_ms(definition.created_at))
         .bind(now_ms)
+        .bind(definition.id.as_str())
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound {
+                key: definition.id.as_str().to_owned(),
+            });
+        }
         Ok(())
     }
 

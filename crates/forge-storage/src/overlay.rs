@@ -29,7 +29,7 @@ impl std::fmt::Display for OverlayId {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OverlayCredential(String);
 
 impl OverlayCredential {
@@ -48,7 +48,7 @@ impl std::fmt::Debug for OverlayCredential {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OverlayDefinition {
     pub id: OverlayId,
     pub display_name: String,

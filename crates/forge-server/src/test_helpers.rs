@@ -41,6 +41,7 @@ pub struct TestDataProvider {
     pub viewer_repo: Arc<MockViewerRepo>,
     pub tts_filters_repo: Arc<MockTtsFiltersRepo>,
     pub chat_history_repo: Arc<MockChatHistoryRepo>,
+    pub overlay_repo: Arc<MockOverlayRepo>,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
     pub settings_repo: Arc<MockSettingsRepo>,
@@ -57,6 +58,7 @@ impl TestDataProvider {
             history_repo: Arc::new(MockHistoryRepo::new()),
             event_log_repo: Arc::new(MockEventLogRepo::new()),
             soundboard_clips_repo: Arc::new(MockSoundboardClipsRepo::new()),
+            overlay_repo: Arc::new(MockOverlayRepo::new()),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
             viewer_repo: Arc::new(MockViewerRepo::new()),
             tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
@@ -350,7 +352,7 @@ impl DataProvider for TestDataProvider {
     }
 
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
-        Arc::new(MockOverlayRepo::new())
+        Arc::clone(&self.overlay_repo) as Arc<dyn OverlayRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

@@ -256,14 +256,14 @@ impl OverlaysView {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
                     return Ok(false);
                 };
-                if !definition.source_overrides.iter().any(|held| held == file) {
-                    definition.source_overrides.push(file.to_owned());
-                    repo.save(&definition).await.map_err(|e| e.to_string())?;
-                }
                 service
                     .write_source(&id, file, stored)
                     .await
                     .map_err(|e| e.to_string())?;
+                if !definition.source_overrides.iter().any(|held| held == file) {
+                    definition.source_overrides.push(file.to_owned());
+                    repo.save(&definition).await.map_err(|e| e.to_string())?;
+                }
                 service.reload_page(&id);
                 Ok(true)
             },

@@ -5,6 +5,7 @@ use crate::category::TriggerCategory;
 use crate::evaluator::EventFilter;
 use crate::form::FormField;
 use crate::kind_platform_contract::KindPlatformContract;
+use crate::refinement::FormRefinement;
 
 pub trait TriggerKindDescriptor: Send + Sync {
     fn id(&self) -> &str;
@@ -16,6 +17,9 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn platform_contract(&self) -> KindPlatformContract;
     fn default_config(&self) -> TriggerConfig;
     fn config_fields(&self) -> Vec<FormField>;
+    fn config_refinement(&self) -> Option<FormRefinement> {
+        None
+    }
     fn condition_display(&self, config: &TriggerConfig) -> String;
     fn event_filter(&self) -> EventFilter;
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool;

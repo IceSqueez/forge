@@ -7,6 +7,7 @@ use crate::category::SubActionCategory;
 use crate::error::RegistryError;
 use crate::form::FormField;
 use crate::io::SubActionIo;
+use crate::refinement::FormRefinement;
 use crate::run_context::RunContext;
 
 #[async_trait]
@@ -19,6 +20,9 @@ pub trait SubActionRunner: Send + Sync {
     fn icon_name(&self) -> &str;
     fn default_config(&self) -> SubActionConfig;
     fn config_fields(&self) -> Vec<FormField>;
+    fn config_refinement(&self) -> Option<FormRefinement> {
+        None
+    }
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError>;
     async fn execute(
         &self,

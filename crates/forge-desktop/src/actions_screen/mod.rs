@@ -8,11 +8,12 @@ use forge_components::{
     SearchState, TextArea, TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay,
     page_frame, tr,
 };
+use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_runtime::{EventBus, QueueSchedulerHandle};
 use forge_storage::{
-    ActionRepo, ActionTelemetry, GlobalsRepo, QueueRepo, ScriptRepo, SettingsRepo,
+    ActionRepo, ActionTelemetry, GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo,
     SoundboardClipsRepo, TriggerInstanceRepo, reserved_keys,
 };
 use forge_tts_core::TtsRegistry;
@@ -32,6 +33,7 @@ mod branch;
 mod editor;
 mod list;
 mod nav;
+mod overlay_schema;
 mod run_history;
 mod sub_action_modal;
 mod test_run;
@@ -178,6 +180,8 @@ pub struct ScreenActionsView {
     soundboard_repo: Arc<dyn SoundboardClipsRepo>,
     globals_repo: Arc<dyn GlobalsRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
+    overlay_repo: Arc<dyn OverlayRepo>,
+    overlay_schema: Arc<overlay_schema::OverlayContentSchema>,
     sub_action_favorites: HashSet<SharedString>,
     trigger_favorites: HashSet<SharedString>,
     tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
@@ -229,6 +233,8 @@ impl ScreenActionsView {
         soundboard_repo: Arc<dyn SoundboardClipsRepo>,
         globals_repo: Arc<dyn GlobalsRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
+        overlay_repo: Arc<dyn OverlayRepo>,
+        overlay_kinds: Arc<OverlayKindRegistry>,
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
@@ -251,6 +257,8 @@ impl ScreenActionsView {
             soundboard_repo,
             globals_repo,
             settings_repo,
+            overlay_repo,
+            overlay_schema: Arc::new(overlay_schema::OverlayContentSchema::new(overlay_kinds)),
             sub_action_favorites: HashSet::new(),
             trigger_favorites: HashSet::new(),
             tts_registry,

@@ -342,6 +342,8 @@ impl AppShell {
                 let soundboard_repo = handles.backend.soundboard_clips_repo();
                 let globals_repo = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
                 let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+                let overlay_repo = handles.backend.overlay_repo();
+                let overlay_kinds = Arc::clone(&handles.overlay_kinds);
                 let tts_registry = handles.tts_registry.clone();
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
@@ -358,6 +360,8 @@ impl AppShell {
                         soundboard_repo,
                         globals_repo,
                         settings_repo,
+                        overlay_repo,
+                        overlay_kinds,
                         tts_registry,
                         sub_action_registry,
                         trigger_registry,

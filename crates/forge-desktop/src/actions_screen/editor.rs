@@ -18,7 +18,8 @@ use forge_components::{
     row_card, secondary_button, spacing, status_dot, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
-    SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor, TriggerRegistry,
+    FormSchemaSource, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
+    TriggerRegistry,
 };
 use forge_types::{
     ExecutionOutcome, PlatformScope, SubActionStep, TriggerInstance, TriggerInstanceId, Variant,
@@ -28,6 +29,11 @@ use gpui::{
     Window, div, px,
 };
 use std::collections::HashMap;
+
+struct SelectOptionsFetch {
+    options: HashMap<String, Vec<(String, String)>>,
+    overlay_kind_by_identity: HashMap<String, String>,
+}
 
 fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
     let text = match finding {
@@ -747,10 +753,15 @@ impl ScreenActionsView {
         let kind_id = step.kind_id.clone();
         let config = step.config.clone();
         let continue_on_error = step.continue_on_error;
-        let Some((specs, icon_name, category)) = self
-            .sub_action_registry
-            .get(&kind_id)
-            .map(|r| (r.config_fields(), r.icon_name().to_owned(), r.category()))
+        let Some((specs, icon_name, category, refinement)) =
+            self.sub_action_registry.get(&kind_id).map(|r| {
+                (
+                    r.config_fields(),
+                    r.icon_name().to_owned(),
+                    r.category(),
+                    r.config_refinement(),
+                )
+            })
         else {
             return;
         };
@@ -771,6 +782,8 @@ impl ScreenActionsView {
             category: Some(category),
             chain_len,
             options_seed: self.select_options.clone(),
+            refinement,
+            schema: Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>,
         };
         self.step_menu_open = None;
         self.open_sub_form(launch, cx);
@@ -796,11 +809,13 @@ impl ScreenActionsView {
         let script_repo = Arc::clone(&self.script_repo);
         let soundboard_repo = Arc::clone(&self.soundboard_repo);
         let globals_repo = Arc::clone(&self.globals_repo);
+        let overlay_repo = Arc::clone(&self.overlay_repo);
         let tts_registry = self.tts_registry.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
+                let mut overlay_kind_by_identity: HashMap<String, String> = HashMap::new();
                 if let Ok(actions) = action_repo.list().await {
                     map.insert(
                         "action.ids".to_owned(),
@@ -855,6 +870,19 @@ impl ScreenActionsView {
                             .collect(),
                     );
                 }
+                if let Ok(overlays) = overlay_repo.list().await {
+                    map.insert(
+                        "overlay.ids".to_owned(),
+                        overlays
+                            .iter()
+                            .map(|o| (o.id.to_string(), o.display_name.clone()))
+                            .collect(),
+                    );
+                    overlay_kind_by_identity = overlays
+                        .into_iter()
+                        .map(|o| (o.id.to_string(), o.kind_id))
+                        .collect();
+                }
                 if let Some(registry) = tts_registry {
                     let ids = registry
                         .read()
@@ -865,22 +893,33 @@ impl ScreenActionsView {
                         ids.into_iter().map(|id| (id.0.clone(), id.0)).collect(),
                     );
                 }
-                map
+                SelectOptionsFetch {
+                    options: map,
+                    overlay_kind_by_identity,
+                }
             },
-            |this, map, cx| this.on_select_options_fetched(map, cx),
+            |this, fetch, cx| this.on_select_options_fetched(fetch, cx),
             cx,
         );
     }
 
-    fn on_select_options_fetched(
-        &mut self,
-        map: HashMap<String, Vec<(String, String)>>,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_select_options_fetched(&mut self, fetch: SelectOptionsFetch, cx: &mut Context<Self>) {
+        let SelectOptionsFetch {
+            options,
+            overlay_kind_by_identity,
+        } = fetch;
+        self.overlay_schema = Arc::new(
+            self.overlay_schema
+                .with_identities(overlay_kind_by_identity),
+        );
         if let Some(form) = self.sub_form.clone() {
-            form.update(cx, |form, cx| form.apply_options(&map, cx));
+            let schema = Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>;
+            form.update(cx, |form, cx| {
+                form.apply_options(&options, cx);
+                form.set_schema(schema, cx);
+            });
         }
-        self.select_options = map;
+        self.select_options = options;
         cx.notify();
     }
 
@@ -977,10 +1016,11 @@ impl ScreenActionsView {
                     runner.config_fields(),
                     runner.icon_name().to_owned(),
                     runner.category(),
+                    runner.config_refinement(),
                 )
             });
         self.grid_picker = None;
-        let Some((config, specs, icon_name, category)) = prepared else {
+        let Some((config, specs, icon_name, category, refinement)) = prepared else {
             cx.notify();
             return;
         };
@@ -999,6 +1039,8 @@ impl ScreenActionsView {
             category: Some(category),
             chain_len,
             options_seed: self.select_options.clone(),
+            refinement,
+            schema: Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>,
         };
         self.step_menu_open = None;
         self.open_sub_form(launch, cx);

@@ -8,7 +8,9 @@ use forge_components::{
     anchored_popover, body_family, drive_overlay_focus, field_label, ghost_button_with_icon, modal,
     mono_family, primary_button, radius, secondary_button, spacing, toggle,
 };
-use forge_registry::{CodeLanguage, FormField, SubActionCategory};
+use forge_registry::{
+    CodeLanguage, FormField, FormRefinement, FormSchemaSource, SubActionCategory, refined_fields,
+};
 use forge_types::{SubActionConfig, Variant, normalize_var_name};
 use gpui::{FocusHandle, FontWeight, Rgba};
 
@@ -82,6 +84,8 @@ pub(super) struct SubFormLaunch {
     pub category: Option<SubActionCategory>,
     pub chain_len: usize,
     pub options_seed: HashMap<String, Vec<(String, String)>>,
+    pub refinement: Option<FormRefinement>,
+    pub schema: Arc<dyn FormSchemaSource>,
 }
 
 #[derive(Clone)]
@@ -107,6 +111,12 @@ pub(super) struct EditSubActionForm {
     target: SubFormTarget,
     chain_len: usize,
     fields: Vec<SubFormField>,
+    /// Fields past this index belong to the refinement and are discarded on every selector change.
+    base_field_count: usize,
+    launch_config: SubActionConfig,
+    options: HashMap<String, Vec<(String, String)>>,
+    refinement: Option<FormRefinement>,
+    schema: Arc<dyn FormSchemaSource>,
     name_input: Entity<TextInput>,
     condition_input: Entity<TextInput>,
     continue_on_error: bool,
@@ -138,14 +148,17 @@ impl EditSubActionForm {
             category,
             chain_len,
             options_seed,
+            refinement,
+            schema,
         } = launch;
 
         let palette = cx.palette();
         let fields = build_form_fields(&specs, &config, palette, &options_seed, cx);
+        let base_field_count = fields.len();
         let (name_input, condition_input) =
             build_step_meta_inputs(&kind_label, &name_value, &condition_value, cx);
 
-        Self {
+        let mut form = Self {
             kind_id,
             kind_label,
             icon_name,
@@ -153,6 +166,11 @@ impl EditSubActionForm {
             target,
             chain_len,
             fields,
+            base_field_count,
+            launch_config: config,
+            options: options_seed,
+            refinement,
+            schema,
             name_input,
             condition_input,
             continue_on_error,
@@ -161,7 +179,51 @@ impl EditSubActionForm {
             datetime_focus: cx.focus_handle(),
             datetime_focus_restore: None,
             rt_handle,
+        };
+        form.rebuild_refined(cx);
+        form
+    }
+
+    pub(super) fn set_schema(&mut self, schema: Arc<dyn FormSchemaSource>, cx: &mut Context<Self>) {
+        self.schema = schema;
+        self.rebuild_refined(cx);
+        cx.notify();
+    }
+
+    /// Seeds only from the step itself: an empty refined value means "use what the target has
+    /// configured", so prefilling from the target would destroy that fallback.
+    fn rebuild_refined(&mut self, cx: &mut Context<Self>) {
+        let Some(refinement) = self.refinement else {
+            return;
+        };
+        let seed = self.current_values(cx);
+        let specs = refined_fields(refinement, &seed, self.schema.as_ref());
+        self.fields.truncate(self.base_field_count);
+        let palette = cx.palette();
+        let options = self.options.clone();
+        let mut refined = Vec::new();
+        for spec in &specs {
+            push_form_field(spec, None, &seed, palette, &options, &mut refined, cx);
         }
+        self.fields.append(&mut refined);
+        if let Some(key) = self.select_picker.as_ref().map(|form| form.key.clone())
+            && !self
+                .fields
+                .iter()
+                .any(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
+        {
+            self.select_picker = None;
+        }
+    }
+
+    fn current_values(&self, cx: &App) -> SubActionConfig {
+        let mut values = self.launch_config.clone();
+        for field in &self.fields {
+            if let Some((key, value)) = field_value(field, cx) {
+                values.insert(key, value);
+            }
+        }
+        values
     }
 
     pub(super) fn apply_options(
@@ -169,6 +231,7 @@ impl EditSubActionForm {
         map: &HashMap<String, Vec<(String, String)>>,
         cx: &mut Context<Self>,
     ) {
+        self.options = map.clone();
         for field in &mut self.fields {
             if let SubFormField::Select {
                 options_key: Some(ok),
@@ -273,18 +336,26 @@ impl EditSubActionForm {
     }
 
     fn pick_select_option(&mut self, value: String, cx: &mut Context<Self>) {
-        if let Some(key) = self.select_picker.as_ref().map(|p| p.key.clone()) {
+        let picked = self.select_picker.as_ref().map(|p| p.key.clone());
+        if let Some(key) = &picked {
             for field in &mut self.fields {
                 if let SubFormField::Select {
                     key: k, selected, ..
                 } = field
-                    && *k == key
+                    && k == key
                 {
                     *selected = value.clone();
                 }
             }
         }
         self.select_picker = None;
+        let selector_changed = self
+            .refinement
+            .zip(picked.as_ref())
+            .is_some_and(|(refinement, key)| refinement.selector_key == key);
+        if selector_changed {
+            self.rebuild_refined(cx);
+        }
         cx.notify();
     }
 
@@ -398,66 +469,16 @@ impl EditSubActionForm {
                 _ => None,
             })
             .collect();
-        let gate_on = |gate: &Option<String>| {
-            gate.as_ref()
-                .map(|g| bool_vals.get(g).copied().unwrap_or(false))
+        let gate_on = |gate: Option<&String>| {
+            gate.map(|g| bool_vals.get(g).copied().unwrap_or(false))
                 .unwrap_or(true)
         };
-        let mut overrides: Vec<(String, Variant)> = Vec::new();
-        for field in &self.fields {
-            match field {
-                SubFormField::Bool {
-                    key, value, gate, ..
-                } => {
-                    if gate_on(gate) {
-                        overrides.push((key.clone(), Variant::Bool(*value)));
-                    }
-                }
-                SubFormField::Input {
-                    key,
-                    integer,
-                    gate,
-                    input,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let text = input.read(cx).content().to_owned();
-                    if *integer {
-                        if let Ok(n) = text.trim().parse::<i64>() {
-                            overrides.push((key.clone(), Variant::Int(n)));
-                        }
-                    } else if is_var_key(key) {
-                        let name = normalize_var_name(&text).unwrap_or_default();
-                        overrides.push((key.clone(), Variant::String(name)));
-                    } else {
-                        overrides.push((key.clone(), Variant::String(text)));
-                    }
-                }
-                SubFormField::Area {
-                    key, gate, area, ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let text = area.read(cx).content().to_owned();
-                    overrides.push((key.clone(), Variant::String(text)));
-                }
-                SubFormField::Select {
-                    key,
-                    gate,
-                    selected,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    overrides.push((key.clone(), Variant::String(selected.clone())));
-                }
-                SubFormField::Hint { .. } => {}
-            }
-        }
+        let overrides: Vec<(String, Variant)> = self
+            .fields
+            .iter()
+            .filter(|field| gate_on(field_gate(field)))
+            .filter_map(|field| field_value(field, cx))
+            .collect();
 
         cx.emit(SubFormEvent::Commit(SubFormCommit {
             target,
@@ -1006,6 +1027,48 @@ impl Render for EditSubActionForm {
             .size_full()
             .child(modal)
             .children(datetime_popover)
+    }
+}
+
+fn field_gate(field: &SubFormField) -> Option<&String> {
+    match field {
+        SubFormField::Input { gate, .. }
+        | SubFormField::Area { gate, .. }
+        | SubFormField::Bool { gate, .. }
+        | SubFormField::Select { gate, .. } => gate.as_ref(),
+        SubFormField::Hint { .. } => None,
+    }
+}
+
+/// `None` for a field that carries no value at all, and for an integer field holding non-digits.
+fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
+    match field {
+        SubFormField::Input {
+            key,
+            integer,
+            input,
+            ..
+        } => {
+            let text = input.read(cx).content().to_owned();
+            if *integer {
+                let parsed = text.trim().parse::<i64>().ok()?;
+                Some((key.clone(), Variant::Int(parsed)))
+            } else if is_var_key(key) {
+                let name = normalize_var_name(&text).unwrap_or_default();
+                Some((key.clone(), Variant::String(name)))
+            } else {
+                Some((key.clone(), Variant::String(text)))
+            }
+        }
+        SubFormField::Area { key, area, .. } => Some((
+            key.clone(),
+            Variant::String(area.read(cx).content().to_owned()),
+        )),
+        SubFormField::Bool { key, value, .. } => Some((key.clone(), Variant::Bool(*value))),
+        SubFormField::Select { key, selected, .. } => {
+            Some((key.clone(), Variant::String(selected.clone())))
+        }
+        SubFormField::Hint { .. } => None,
     }
 }
 

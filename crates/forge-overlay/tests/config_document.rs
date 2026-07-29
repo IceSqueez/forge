@@ -11,7 +11,9 @@ use serde_json::Value;
 
 const ALERT_KIND: &str = "overlay.alert";
 
-fn raw_document(config: OverlayConfig) -> String {
+const PAGE_CREDENTIAL: &str = "7c1e4a90b2d84f36a5c0e9b71d3f8a24";
+
+fn raw_document(config: OverlayConfig, credential: Option<&str>) -> String {
     let mut reg = OverlayKindRegistry::new();
     register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
     let descriptor = reg
@@ -23,14 +25,14 @@ fn raw_document(config: OverlayConfig) -> String {
         kind_id: ALERT_KIND.to_owned(),
         config,
         source_overrides: Vec::new(),
-        credential: None,
+        credential: credential.map(str::to_owned),
     };
 
     config_document(&instance, descriptor).expect("the config document builds")
 }
 
 fn document(config: OverlayConfig) -> Value {
-    serde_json::from_str(&raw_document(config)).expect("the config document is valid JSON")
+    serde_json::from_str(&raw_document(config, None)).expect("the config document is valid JSON")
 }
 
 #[test]
@@ -112,21 +114,28 @@ fn config_values_arrive_as_plain_json_rather_than_the_tagged_variant_form() {
     );
 }
 
+/// The page authenticates its own socket with this value, so the slot is deliberate; what must
+/// never happen is the credential appearing when the instance carries none, or leaking into the
+/// `config` map every kind renders field by field.
 #[test]
-fn the_document_served_to_the_browser_carries_no_credential_slot() {
-    let raw = raw_document(OverlayConfig::new()).to_lowercase();
+fn the_page_credential_is_a_top_level_slot_present_only_when_the_instance_holds_one() {
+    let bound: Value =
+        serde_json::from_str(&raw_document(OverlayConfig::new(), Some(PAGE_CREDENTIAL)))
+            .expect("the config document is valid JSON");
 
-    for probe in [
-        "credential",
-        "auth",
-        "token",
-        "secret",
-        "bearer",
-        "password",
-    ] {
-        assert!(
-            !raw.contains(probe),
-            "'{probe}' appears in a document written into a directory the static host serves"
-        );
-    }
+    assert_eq!(
+        bound["credential"].as_str(),
+        Some(PAGE_CREDENTIAL),
+        "the page cannot authenticate its socket without its own credential"
+    );
+    assert!(
+        !bound["config"].to_string().contains(PAGE_CREDENTIAL),
+        "the credential reached the config map, where kinds render every key they find"
+    );
+
+    let unbound = document(OverlayConfig::new());
+    assert!(
+        unbound.get("credential").is_none(),
+        "an instance carrying no credential still emitted the slot as null"
+    );
 }

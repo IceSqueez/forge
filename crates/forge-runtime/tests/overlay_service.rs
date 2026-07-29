@@ -12,19 +12,27 @@ use forge_overlay::{
 use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
-    EventBus, MaterializePass, NullEventLogRepo, OverlayFrameSink, OverlayServiceError,
-    OverlayServiceHandle,
+    EventBus, MaterializePass, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink,
+    OverlayServiceError, OverlayServiceHandle,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo, StorageError, reserved_keys,
 };
+use forge_types::{ArgStack, Variant};
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
 const ALERT_KIND: &str = "overlay.alert";
+const CHAT_KIND: &str = "overlay.chat";
+const GOAL_KIND: &str = "overlay.goal";
 const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
+
+const LABEL_KEY: &str = "label";
+const VALUE_KEY: &str = "value";
+const TARGET_KEY: &str = "target";
+const ACCENT_KEY: &str = "accent";
 
 #[derive(Debug, Clone, PartialEq)]
 struct ContentFrame {
@@ -96,18 +104,31 @@ fn definition(id: &str) -> OverlayDefinition {
     }
 }
 
+type RetainedStore = Arc<Mutex<Vec<(OverlayId, OverlayConfig)>>>;
+
 struct Harness {
     _home: TempDir,
     root: PathBuf,
     bus: Arc<EventBus>,
     sink: Arc<RecordingSink>,
     saved: Arc<Mutex<Vec<OverlayDefinition>>>,
+    retained: RetainedStore,
     service: OverlayServiceHandle,
 }
 
 impl Harness {
     fn saved(&self) -> Vec<OverlayDefinition> {
         self.saved.lock().unwrap().clone()
+    }
+
+    fn retained_for(&self, id: &OverlayId) -> Option<OverlayConfig> {
+        self.retained
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(stored, _)| stored == id)
+            .map(|(_, content)| content.clone())
     }
 
     fn directory_of(&self, id: &OverlayId) -> PathBuf {
@@ -138,6 +159,24 @@ fn harness(definitions: Vec<OverlayDefinition>, attach_sink: bool) -> Harness {
         Ok(())
     });
 
+    let retained: RetainedStore = Arc::new(Mutex::new(Vec::new()));
+    let writes = Arc::clone(&retained);
+    repo.expect_set_retained_content()
+        .returning(move |id, content| {
+            writes.lock().unwrap().push((id.clone(), content.clone()));
+            Ok(())
+        });
+    let reads = Arc::clone(&retained);
+    repo.expect_get_retained_content().returning(move |id| {
+        Ok(reads
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(stored, _)| stored == id)
+            .map(|(_, content)| content.clone()))
+    });
+
     let mut settings = MockSettingsRepo::new();
     let configured = root.to_string_lossy().into_owned();
     settings
@@ -166,8 +205,22 @@ fn harness(definitions: Vec<OverlayDefinition>, attach_sink: bool) -> Harness {
         bus,
         sink,
         saved,
+        retained,
         service,
     }
+}
+
+fn definition_of_kind(id: &str, kind_id: &str) -> OverlayDefinition {
+    let mut stored = definition(id);
+    stored.kind_id = kind_id.to_owned();
+    stored
+}
+
+fn text_config(pairs: &[(&str, &str)]) -> OverlayConfig {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), Variant::String((*value).to_owned())))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -466,6 +519,194 @@ async fn materializing_one_overlay_reloads_the_page_it_rebuilt() {
         harness.sink.reloads(),
         vec![stored.id],
         "a rebuilt page was never told to reload"
+    );
+}
+
+#[tokio::test]
+async fn delivered_content_is_kept_for_replay_only_by_a_kind_whose_delivery_is_the_display_itself()
+{
+    for (kind_id, label) in [
+        (GOAL_KIND, "a kind that replaces what the page shows"),
+        (
+            ALERT_KIND,
+            "a kind whose delivery is gone once it has been shown",
+        ),
+        (CHAT_KIND, "a kind that appends a row to a running list"),
+    ] {
+        let stored = definition_of_kind("box", kind_id);
+        let harness = harness(vec![stored.clone()], true);
+        let content = text_config(&[(LABEL_KEY, "Sub goal"), (VALUE_KEY, "42")]);
+
+        harness
+            .service
+            .deliver_content(&stored.id, content.clone(), None)
+            .await
+            .expect("a bound overlay accepts content");
+
+        let expected = (kind_id == GOAL_KIND).then(|| content.clone());
+        assert_eq!(
+            harness.retained_for(&stored.id),
+            expected,
+            "{label} retained the wrong thing, so the next connection replays the wrong thing"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
+    let stored = definition_of_kind("goal-box", GOAL_KIND);
+    let harness = harness(vec![stored.clone()], true);
+    let content = text_config(&[(LABEL_KEY, "Sub goal"), (VALUE_KEY, "42")]);
+    harness
+        .service
+        .deliver_content(&stored.id, content.clone(), Some(4_000))
+        .await
+        .expect("a bound overlay accepts content");
+
+    harness.service.overlay_connected(&stored.id).await;
+
+    let frames = harness.sink.frames();
+    assert_eq!(
+        frames.len(),
+        2,
+        "a reconnect delivered {} frames instead of the one replay",
+        frames.len() - 1
+    );
+    assert_eq!(
+        frames[1],
+        ContentFrame {
+            identity: stored.id.clone(),
+            content: content_json(&content),
+            duration_ms: None,
+        },
+        "the replay must restore the display without re-running the original timer"
+    );
+}
+
+#[tokio::test]
+async fn a_page_connecting_with_nothing_retained_for_it_receives_no_replay() {
+    let stored = definition_of_kind("goal-box", GOAL_KIND);
+    let harness = harness(vec![stored.clone()], true);
+
+    for identity in [stored.id.clone(), OverlayId::new("nobody")] {
+        harness.service.overlay_connected(&identity).await;
+    }
+
+    assert!(
+        harness.sink.frames().is_empty(),
+        "a page that was never delivered to was handed content on connect: {:?}",
+        harness.sink.frames()
+    );
+}
+
+#[tokio::test]
+async fn showing_content_funnels_the_step_fields_over_the_overlays_own_and_retains_the_result() {
+    let mut stored = definition_of_kind("goal-box", GOAL_KIND);
+    stored.config = text_config(&[
+        (LABEL_KEY, "%label% goal"),
+        (TARGET_KEY, "100"),
+        (ACCENT_KEY, "green"),
+    ]);
+    let harness = harness(vec![stored.clone()], true);
+    let args = ArgStack::new()
+        .set("label".to_owned(), Variant::String("Sub".to_owned()))
+        .set("bits".to_owned(), Variant::String("42".to_owned()));
+
+    let delivered = harness
+        .service
+        .show(
+            &stored.id,
+            &text_config(&[(VALUE_KEY, "%bits%"), (ACCENT_KEY, "red")]),
+            &args,
+            Some(2_000),
+        )
+        .await
+        .expect("a bound overlay of a shipped kind accepts a show");
+
+    assert!(delivered, "a connected page was not counted as reached");
+    let expected = text_config(&[
+        (LABEL_KEY, "Sub goal"),
+        (VALUE_KEY, "42"),
+        (TARGET_KEY, "100"),
+    ]);
+    assert_eq!(
+        harness.sink.frames(),
+        vec![ContentFrame {
+            identity: stored.id.clone(),
+            content: content_json(&expected),
+            duration_ms: Some(2_000),
+        }],
+        "the page received something other than the funnelled content"
+    );
+    assert_eq!(
+        harness.retained_for(&stored.id),
+        Some(expected),
+        "a replacing kind must retain exactly what it sent"
+    );
+}
+
+#[tokio::test]
+async fn showing_content_with_nothing_serving_still_retains_it_for_the_next_connection() {
+    let stored = definition_of_kind("goal-box", GOAL_KIND);
+    let harness = harness(vec![stored.clone()], false);
+
+    let delivered = harness
+        .service
+        .show(
+            &stored.id,
+            &text_config(&[(VALUE_KEY, "42")]),
+            &ArgStack::new(),
+            None,
+        )
+        .await
+        .expect("a show does not fail merely because no page is connected");
+
+    assert!(
+        !delivered,
+        "nothing is serving, so the caller must be told the content landed nowhere"
+    );
+    assert!(
+        harness.retained_for(&stored.id).is_some(),
+        "content sent while no page was connected was dropped instead of held for the next one"
+    );
+}
+
+#[tokio::test]
+async fn showing_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolve() {
+    let unshipped = definition_of_kind("vendor-box", UNSHIPPED_KIND);
+    let harness = harness(vec![unshipped.clone()], true);
+
+    type Check = fn(&OverlayServiceError) -> bool;
+    for (id, matches_expected, label) in [
+        (
+            OverlayId::new("nobody"),
+            (|e: &OverlayServiceError| matches!(e, OverlayServiceError::Unknown(_))) as Check,
+            "an identity no record carries",
+        ),
+        (
+            unshipped.id.clone(),
+            (|e: &OverlayServiceError| matches!(e, OverlayServiceError::UnavailableKind { .. }))
+                as Check,
+            "an overlay type this build lacks",
+        ),
+    ] {
+        let err = harness
+            .service
+            .show(
+                &id,
+                &text_config(&[(VALUE_KEY, "42")]),
+                &ArgStack::new(),
+                None,
+            )
+            .await
+            .expect_err("a show that cannot be resolved must be refused");
+
+        assert!(matches_expected(&err), "{label} produced {err:?}");
+    }
+
+    assert!(
+        harness.sink.frames().is_empty(),
+        "a refused show still pushed a frame to connected pages"
     );
 }
 

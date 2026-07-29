@@ -27,7 +27,13 @@ mod tests {
     use crate::config::validate_overlay_config;
     use crate::preview::PreviewShape;
 
-    const BUILTIN_IDS: &[&str] = &["overlay.alert", "overlay.frame", "overlay.ticker"];
+    const BUILTIN_IDS: &[&str] = &[
+        "overlay.alert",
+        "overlay.chat",
+        "overlay.frame",
+        "overlay.goal",
+        "overlay.ticker",
+    ];
 
     fn registry() -> OverlayKindRegistry {
         let mut reg = OverlayKindRegistry::new();

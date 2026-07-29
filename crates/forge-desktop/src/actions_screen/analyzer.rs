@@ -413,3 +413,112 @@ fn fixed_after_outputs(kind_id: &str) -> &'static [&'static str] {
         _ => &[],
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_registry::SubActionRegistry;
+    use forge_runtime::sub_action_runners::CoreLogicIfThenElseRunner;
+    use forge_runtime::{ConditionGate, Config};
+    use forge_types::SubActionConfig;
+
+    use super::*;
+
+    const BRANCH_KIND: &str = "core.logic.if_then_else";
+    const THEN_CHAIN_KEY: &str = "then_chain";
+    const ORDERED: &str = "chat-wall";
+    const UNORDERED: &str = "alert-box";
+
+    fn registry() -> SubActionRegistry {
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::new(
+            ConditionGate::new(&Config::default()),
+        ))))
+        .expect("the branching runner registers");
+        reg
+    }
+
+    fn step(kind_id: &str, config: SubActionConfig, enabled: bool) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config,
+            enabled,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    fn show(identity: &str, enabled: bool) -> SubActionStep {
+        step(
+            OVERLAY_SHOW_KIND,
+            SubActionConfig::from([(
+                OVERLAY_TARGET_KEY.to_owned(),
+                Variant::String(identity.to_owned()),
+            )]),
+            enabled,
+        )
+    }
+
+    fn branch(body: Vec<SubActionStep>, enabled: bool) -> SubActionStep {
+        step(
+            BRANCH_KIND,
+            SubActionConfig::from([(THEN_CHAIN_KEY.to_owned(), nav::encode_chain(&body))]),
+            enabled,
+        )
+    }
+
+    #[test]
+    fn an_ordered_overlay_counts_through_nested_branches_and_never_through_a_disabled_step() {
+        for (steps, expected, label) in [
+            (
+                vec![show(ORDERED, true)],
+                true,
+                "a step showing an overlay whose delivery order matters",
+            ),
+            (
+                vec![show(UNORDERED, true)],
+                false,
+                "a step showing an overlay whose delivery order does not matter",
+            ),
+            (
+                vec![show(ORDERED, false)],
+                false,
+                "a disabled step that will never deliver anything",
+            ),
+            (
+                vec![branch(vec![show(ORDERED, true)], true)],
+                true,
+                "an ordered overlay one branch deep",
+            ),
+            (
+                vec![branch(vec![branch(vec![show(ORDERED, true)], true)], true)],
+                true,
+                "an ordered overlay two branches deep",
+            ),
+            (
+                vec![branch(vec![show(ORDERED, true)], false)],
+                false,
+                "an ordered overlay inside a disabled branch",
+            ),
+            (
+                vec![branch(vec![show(ORDERED, false)], true)],
+                false,
+                "a disabled step inside a live branch",
+            ),
+            (
+                vec![show("%overlay_target%", true)],
+                false,
+                "an overlay named by a variable no stored identity matches",
+            ),
+        ] {
+            assert_eq!(
+                shows_order_sensitive_overlay(&steps, &registry(), &|id| id == ORDERED),
+                expected,
+                "{label}"
+            );
+        }
+    }
+}

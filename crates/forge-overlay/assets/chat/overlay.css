@@ -1,0 +1,144 @@
+:root {
+  --accent: #89dceb;
+  --font: sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  display: flex;
+  box-sizing: border-box;
+  padding: 24px;
+}
+
+body[data-position="top"] {
+  align-items: flex-start;
+}
+body[data-position="center"] {
+  align-items: center;
+}
+body[data-position="bottom"] {
+  align-items: flex-end;
+}
+
+#stage {
+  display: flex;
+  width: 360px;
+  max-height: 100%;
+}
+
+#rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(20, 20, 28, 0.78);
+  animation: rowEnter 0.2s ease;
+}
+
+.badges {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.badges:empty {
+  display: none;
+}
+
+.author {
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.message {
+  color: #eee;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+@keyframes rowEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+body[data-animation="slide-up"] .row {
+  animation-name: rowEnterSlideUp;
+}
+body[data-animation="slide-down"] .row {
+  animation-name: rowEnterSlideDown;
+}
+body[data-animation="slide-left"] .row {
+  animation-name: rowEnterSlideLeft;
+}
+body[data-animation="wipe-left"] .row {
+  animation-name: rowEnterSlideLeft;
+}
+body[data-animation="pop"] .row {
+  animation-name: rowEnterPop;
+}
+
+@keyframes rowEnterSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes rowEnterSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes rowEnterSlideLeft {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes rowEnterPop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat overlay</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <div id="rows"></div>
+    </div>
+    <template id="row-template">
+      <div class="row">
+        <span class="badges"></span>
+        <span class="author" data-bind="author"></span>
+        <span class="message" data-bind="message"></span>
+      </div>
+    </template>
+    <script src="../forge-shared/runtime-v1.js"></script>
+    <script src="overlay.js"></script>
+  </body>
+</html>

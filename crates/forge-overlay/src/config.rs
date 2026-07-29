@@ -13,6 +13,15 @@ pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
 
+pub const AUTHOR: &str = "author";
+pub const AUTHOR_COLOR: &str = "author_color";
+pub const BADGES: &str = "badges";
+pub const MESSAGE: &str = "message";
+
+pub const LABEL: &str = "label";
+pub const VALUE: &str = "value";
+pub const TARGET: &str = "target";
+
 pub const ACCENT_OPTIONS: &[&str] = &["mauve", "sky", "green", "peach", "yellow", "red"];
 pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas Neue"];
 pub const POSITION_OPTIONS: &[&str] = &["top", "center", "bottom"];
@@ -137,7 +146,7 @@ pub(crate) fn text(value: &str) -> Variant {
 }
 
 pub(crate) fn shared_fields() -> Vec<SectionedField> {
-    vec![
+    let mut fields = vec![
         in_section(
             ConfigSection::Content,
             FormField::Text {
@@ -154,6 +163,13 @@ pub(crate) fn shared_fields() -> Vec<SectionedField> {
                 placeholder: "Three months subscribed",
             },
         ),
+    ];
+    fields.extend(shared_style_fields());
+    fields
+}
+
+pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
+    vec![
         in_section(
             ConfigSection::Style,
             FormField::Swatch {
@@ -187,6 +203,83 @@ pub(crate) fn shared_fields() -> Vec<SectionedField> {
             },
         ),
     ]
+}
+
+pub(crate) fn author_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: AUTHOR,
+            label: "Author",
+            placeholder: "PixelPal",
+        },
+    )
+}
+
+pub(crate) fn author_color_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: AUTHOR_COLOR,
+            label: "Name color",
+            placeholder: "#f9e2af",
+        },
+    )
+}
+
+pub(crate) fn badges_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: BADGES,
+            label: "Badges",
+            placeholder: "MOD",
+        },
+    )
+}
+
+pub(crate) fn message_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: MESSAGE,
+            label: "Message",
+            placeholder: "hey chat!",
+        },
+    )
+}
+
+pub(crate) fn label_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: LABEL,
+            label: "Label",
+            placeholder: "Sub goal",
+        },
+    )
+}
+
+pub(crate) fn value_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: VALUE,
+            label: "Current value",
+            placeholder: "42",
+        },
+    )
+}
+
+pub(crate) fn target_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: TARGET,
+            label: "Target",
+            placeholder: "100",
+        },
+    )
 }
 
 pub(crate) fn duration_field() -> SectionedField {
@@ -223,12 +316,22 @@ pub(crate) fn shared_defaults(
     position: &str,
     animation: &str,
 ) -> OverlayConfig {
+    let mut defaults = shared_style_defaults(accent, font, position, animation);
+    defaults.insert(SOUND.to_owned(), text(""));
+    defaults
+}
+
+pub(crate) fn shared_style_defaults(
+    accent: &str,
+    font: &str,
+    position: &str,
+    animation: &str,
+) -> OverlayConfig {
     OverlayConfig::from([
         (ACCENT.to_owned(), text(accent)),
         (FONT.to_owned(), text(font)),
         (POSITION.to_owned(), text(position)),
         (ANIMATION.to_owned(), text(animation)),
-        (SOUND.to_owned(), text("")),
     ])
 }
 

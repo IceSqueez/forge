@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Goal overlay</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <div id="stage" class="hidden">
+      <div class="label" data-bind="label"></div>
+      <div class="track">
+        <div class="fill"></div>
+      </div>
+      <div class="figure">
+        <span data-bind="value"></span>
+        <span class="sep">/</span>
+        <span data-bind="target"></span>
+      </div>
+    </div>
+    <script src="../forge-shared/runtime-v1.js"></script>
+    <script src="overlay.js"></script>
+  </body>
+</html>

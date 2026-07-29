@@ -50,6 +50,7 @@ mod tests {
     use forge_types::Variant;
 
     use super::*;
+    use crate::assets::PageAssets;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
 
     const STUB_KEY: &str = "stub.key";
@@ -90,6 +91,13 @@ mod tests {
 
         fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
             compose(PreviewShape::Strip, config)
+        }
+        fn page_assets(&self) -> PageAssets {
+            PageAssets {
+                markup: "",
+                style: "",
+                behavior: "",
+            }
         }
     }
 

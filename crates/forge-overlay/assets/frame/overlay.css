@@ -1,0 +1,84 @@
+:root {
+  --accent: #fab387;
+  --font: sans-serif;
+  --reveal: 0.4s;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+#stage {
+  position: absolute;
+  inset: 16px;
+  border: 3px solid var(--accent);
+  border-radius: 14px;
+  font-family: var(--font);
+  transition:
+    opacity var(--reveal) ease,
+    transform var(--reveal) ease;
+}
+
+.corner {
+  position: absolute;
+  left: 22px;
+  bottom: -13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: rgba(20, 20, 28, 0.92);
+}
+
+body[data-position="top"] .corner {
+  top: -13px;
+  bottom: auto;
+}
+
+.headline {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.headline:empty {
+  display: none;
+}
+
+.subline {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+#stage.hidden {
+  opacity: 0;
+}
+
+#stage.show {
+  opacity: 1;
+  transform: none;
+}
+
+body[data-animation="pop"] #stage.hidden {
+  transform: scale(0.98);
+}
+body[data-animation="slide-up"] #stage.hidden {
+  transform: translateY(12px);
+}
+body[data-animation="slide-down"] #stage.hidden {
+  transform: translateY(-12px);
+}
+body[data-animation="slide-left"] #stage.hidden {
+  transform: translateX(12px);
+}
+body[data-animation="wipe-left"] #stage.hidden {
+  transform: translateX(24px);
+}

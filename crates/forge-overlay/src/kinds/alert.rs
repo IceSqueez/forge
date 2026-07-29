@@ -1,5 +1,6 @@
 use forge_registry::FormField;
 
+use crate::assets::PageAssets;
 use crate::config;
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -48,6 +49,14 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         fields.push(config::duration_field());
         fields.push(config::sound_field());
         fields
+    }
+
+    fn page_assets(&self) -> PageAssets {
+        PageAssets {
+            markup: include_str!("../../assets/alert/index.html"),
+            style: include_str!("../../assets/alert/overlay.css"),
+            behavior: include_str!("../../assets/alert/overlay.js"),
+        }
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {

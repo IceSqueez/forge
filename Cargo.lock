@@ -2620,6 +2620,8 @@ version = "0.4.1"
 dependencies = [
  "forge-registry",
  "forge-types",
+ "serde",
+ "serde_json",
  "thiserror 2.0.19",
 ]
 

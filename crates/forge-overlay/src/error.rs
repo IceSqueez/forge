@@ -14,4 +14,22 @@ pub enum OverlayError {
 
     #[error("'{key}' must be between {min} and {max}")]
     OutOfRange { key: String, min: i64, max: i64 },
+
+    #[error("overlay identity '{0}' is not a safe directory name")]
+    UnsafeIdentity(String),
+
+    #[error("'{path}' resolves outside the overlay root")]
+    OutsideRoot { path: String },
+
+    #[error("'{path}' is a symbolic link and will not be written through")]
+    SymlinkedPath { path: String },
+
+    #[error("could not build the config document: {0}")]
+    ConfigDocument(#[from] serde_json::Error),
+
+    #[error("{path}: {source}")]
+    Io {
+        path: String,
+        source: std::io::Error,
+    },
 }

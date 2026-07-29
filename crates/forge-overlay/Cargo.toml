@@ -12,4 +12,6 @@ workspace = true
 [dependencies]
 forge-types = { path = "../forge-types" }
 forge-registry = { path = "../forge-registry" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use forge_registry::FormField;
 use forge_types::Variant;
 
+use crate::assets::PageAssets;
 use crate::preview::PreviewComposition;
 
 pub type OverlayConfig = BTreeMap<String, Variant>;
@@ -16,6 +17,8 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn config_schema_version(&self) -> u32;
     fn default_config(&self) -> OverlayConfig;
     fn config_fields(&self) -> Vec<FormField>;
+    /// Carries no config value; the page binds against its config document at runtime.
+    fn page_assets(&self) -> PageAssets;
     /// Takes the effective config, never the sparse stored one.
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition;
 }

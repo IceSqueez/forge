@@ -217,6 +217,7 @@ pub(crate) fn shared_defaults(
 #[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::assets::PageAssets;
     use crate::kinds::alert::AlertOverlayKind;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
 
@@ -279,6 +280,13 @@ mod tests {
 
         fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
             compose(PreviewShape::Strip, config)
+        }
+        fn page_assets(&self) -> PageAssets {
+            PageAssets {
+                markup: "",
+                style: "",
+                behavior: "",
+            }
         }
     }
 

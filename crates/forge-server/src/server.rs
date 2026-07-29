@@ -239,7 +239,10 @@ mod tests {
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
 
-    use super::{AppState, AuthState, BusAdapter, ServerHandle, serve_on, validate_lan_bind};
+    use super::{
+        AppState, AuthState, BusAdapter, ServerConfig, ServerHandle, serve_on, start_server,
+        validate_lan_bind,
+    };
     use crate::ServerError;
     use crate::bus_adapter::{ClientFilterSet, EventFilter, WsFrame};
     use crate::server_info::ServerInfo;
@@ -476,6 +479,256 @@ mod tests {
             .expect("save port");
 
         (handle, new_port)
+    }
+
+    async fn reserve_a_free_port() -> u16 {
+        let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
+        let port = probe.local_addr().expect("probe addr").port();
+        drop(probe);
+        port
+    }
+
+    async fn start_on_an_ephemeral_port(
+        settings: Arc<MapSettings>,
+        additional_origins: Vec<String>,
+    ) -> (ServerHandle, std::net::SocketAddr) {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let dp: Arc<dyn DataProvider> = test_dp();
+        let action_engine = Arc::new(spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(forge_runtime::ActionCancelRegistry::new()),
+        ));
+        let mut config = ServerConfig::new(
+            settings as Arc<dyn SettingsRepo>,
+            MemCreds::new() as Arc<dyn CredentialsRepo>,
+            bus,
+            dp.action_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            action_engine,
+        );
+        config.bind_addr = "127.0.0.1:0".parse().expect("addr");
+        config.overlay_root = std::path::PathBuf::from("/tmp/forge-test-overlays");
+        config.additional_origins = additional_origins;
+
+        let handle = start_server(config).await.expect("start");
+        let addr = handle.bind_addr().await;
+        (handle, addr)
+    }
+
+    async fn ws_handshake(
+        addr: std::net::SocketAddr,
+        origin: Option<&str>,
+    ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let mut request = format!("ws://{addr}/ws/v1/")
+            .into_client_request()
+            .expect("client request");
+        if let Some(origin) = origin {
+            request.headers_mut().insert(
+                axum::http::header::ORIGIN,
+                origin.parse().expect("origin header value"),
+            );
+        }
+        tokio_tungstenite::connect_async(request).await.map(|_| ())
+    }
+
+    async fn refused_ws_handshake(
+        addr: std::net::SocketAddr,
+        origin: &str,
+    ) -> tokio_tungstenite::tungstenite::http::Response<Option<Vec<u8>>> {
+        let error = ws_handshake(addr, Some(origin))
+            .await
+            .expect_err("handshake must be refused");
+        match error {
+            tokio_tungstenite::tungstenite::Error::Http(response) => Some(*response),
+            _ => None,
+        }
+        .expect("refusal must arrive as an HTTP response, not a transport error")
+    }
+
+    #[tokio::test]
+    async fn ws_handshake_without_an_origin_header_is_accepted() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+
+        assert!(
+            ws_handshake(addr, None).await.is_ok(),
+            "a non-browser client sends no Origin and must still connect"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn ws_handshake_with_a_derived_loopback_origin_is_accepted() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let port = addr.port();
+
+        for origin in [
+            format!("http://127.0.0.1:{port}"),
+            format!("https://localhost:{port}"),
+            format!("http://[::1]:{port}"),
+        ] {
+            assert!(
+                ws_handshake(addr, Some(&origin)).await.is_ok(),
+                "expected accept for {origin}"
+            );
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn ws_handshake_with_a_configured_additional_origin_is_accepted() {
+        let (handle, addr) = start_on_an_ephemeral_port(
+            MapSettings::new(),
+            vec!["https://overlay.example.com".to_owned()],
+        )
+        .await;
+
+        assert!(
+            ws_handshake(addr, Some("https://overlay.example.com"))
+                .await
+                .is_ok()
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn ws_handshake_with_a_foreign_origin_is_refused_with_the_origin_not_allowed_code() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+
+        let response = refused_ws_handshake(addr, "https://evil.example.com").await;
+
+        assert_eq!(response.status().as_u16(), 403);
+        let body = response.body().as_deref().expect("rejection body");
+        let json: serde_json::Value = serde_json::from_slice(body).expect("json body");
+        assert_eq!(json["error"]["code"], "ORIGIN_NOT_ALLOWED");
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_refused_ws_handshake_never_echoes_the_offending_origin() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let foreign = "https://evil.example.com";
+
+        let response = refused_ws_handshake(addr, foreign).await;
+
+        for (name, value) in response.headers() {
+            let rendered = String::from_utf8_lossy(value.as_bytes());
+            assert!(
+                !rendered.contains("evil.example.com"),
+                "header {name} echoed the rejected origin: {rendered}"
+            );
+        }
+        let body = String::from_utf8_lossy(response.body().as_deref().unwrap_or_default());
+        assert!(
+            !body.contains("evil.example.com"),
+            "rejection body echoed the origin: {body}"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_refused_ws_handshake_never_registers_a_client() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+
+        refused_ws_handshake(addr, "https://evil.example.com").await;
+
+        assert!(
+            handle.snapshot().await.connected_clients.is_empty(),
+            "a refused handshake must not reach the socket loop"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn the_derived_allowlist_uses_the_live_port_not_the_requested_zero() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+
+        assert!(
+            ws_handshake(addr, Some(&format!("http://127.0.0.1:{}", addr.port())))
+                .await
+                .is_ok(),
+            "the live port must be on the allowlist"
+        );
+        let response = refused_ws_handshake(addr, "http://127.0.0.1:0").await;
+        assert_eq!(response.status().as_u16(), 403);
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn restart_rebuilds_the_allowlist_from_the_new_bind() {
+        let settings = MapSettings::new();
+        let (handle, boot_addr) =
+            start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
+        let new_port = reserve_a_free_port().await;
+        crate::config::ServerSettings::save_bind_address(&*settings, "127.0.0.1")
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, new_port)
+            .await
+            .expect("save port");
+
+        handle.restart().await.expect("restart");
+
+        let new_addr: std::net::SocketAddr = format!("127.0.0.1:{new_port}").parse().expect("addr");
+        assert!(
+            ws_handshake(new_addr, Some(&format!("http://127.0.0.1:{new_port}")))
+                .await
+                .is_ok(),
+            "the rebound port must be on the rebuilt allowlist"
+        );
+        let stale =
+            refused_ws_handshake(new_addr, &format!("http://127.0.0.1:{}", boot_addr.port())).await;
+        assert_eq!(
+            stale.status().as_u16(),
+            403,
+            "the pre-restart port must not survive on the allowlist"
+        );
+
+        handle.stop().await.expect("stop after restart");
+    }
+
+    #[tokio::test]
+    async fn restart_picks_up_additional_origins_saved_since_boot() {
+        let settings = MapSettings::new();
+        let (handle, _boot_addr) =
+            start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
+        let new_port = reserve_a_free_port().await;
+        crate::config::ServerSettings::save_bind_address(&*settings, "127.0.0.1")
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, new_port)
+            .await
+            .expect("save port");
+        crate::config::ServerSettings::save_additional_origins(
+            &*settings,
+            &["https://dash.test".to_owned()],
+        )
+        .await
+        .expect("save origins");
+
+        handle.restart().await.expect("restart");
+
+        let new_addr: std::net::SocketAddr = format!("127.0.0.1:{new_port}").parse().expect("addr");
+        assert!(
+            ws_handshake(new_addr, Some("https://dash.test"))
+                .await
+                .is_ok(),
+            "an origin saved since boot must be honoured after a restart"
+        );
+
+        handle.stop().await.expect("stop after restart");
     }
 
     #[tokio::test]

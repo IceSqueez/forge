@@ -259,6 +259,7 @@ mod tests {
         assert!(!s.http_overlay_require_token);
         assert!(s.overlay_cors_any_origin);
         assert!(s.overlay_root.is_none());
+        assert!(s.additional_origins.is_empty());
     }
 
     #[tokio::test]
@@ -283,6 +284,12 @@ mod tests {
         ServerSettings::save_overlay_root(&repo, "/overlays")
             .await
             .unwrap();
+        ServerSettings::save_additional_origins(
+            &repo,
+            &["https://overlay.example.com".to_owned(), "null".to_owned()],
+        )
+        .await
+        .unwrap();
 
         let s = ServerSettings::load(&repo).await.unwrap();
         assert_eq!(s.bind_address, "0.0.0.0");
@@ -292,6 +299,10 @@ mod tests {
         assert!(s.http_overlay_require_token);
         assert!(!s.overlay_cors_any_origin);
         assert_eq!(s.overlay_root.as_deref(), Some("/overlays"));
+        assert_eq!(
+            s.additional_origins,
+            ["https://overlay.example.com", "null"]
+        );
     }
 
     #[tokio::test]

@@ -85,8 +85,9 @@ pub trait OverlayRepo: Send + Sync {
         config_schema_version: u32,
     ) -> Result<OverlayDefinition, StorageError>;
 
-    /// Upserts every field except identity, which is immutable once minted by
-    /// [`Self::create`].
+    /// Updates every field except identity on an EXISTING row; an unknown id
+    /// yields [`StorageError::NotFound`] - rows are only ever created by
+    /// [`Self::create`], which mints the immutable identity.
     async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError>;
 
     /// Returns true if a row was found and flipped.

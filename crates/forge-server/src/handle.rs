@@ -67,7 +67,7 @@ impl ServerHandle {
             let _ = tx.send(true);
         }
 
-        let _ = self.run_state_tx.send(false);
+        self.run_state_tx.send_replace(false);
 
         bus_adapter.broadcast_close().await;
 
@@ -150,7 +150,7 @@ impl ServerHandle {
         guard.bind_addr = bind_addr;
         drop(guard);
 
-        let _ = self.run_state_tx.send(true);
+        self.run_state_tx.send_replace(true);
 
         Ok(())
     }
@@ -190,7 +190,7 @@ impl ServerHandle {
     }
 
     pub fn abort(&self) {
-        let _ = self.run_state_tx.send(false);
+        self.run_state_tx.send_replace(false);
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {
             let mut guard = inner.lock().await;

@@ -1606,7 +1606,7 @@ fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> OwnedClientRow 
         ClientLiveness::Idle
     };
     OwnedClientRow {
-        key: client.remote_addr.clone(),
+        key: client.identification.clone(),
         identification: client.identification.clone(),
         origin_label: format!("{} · {}", client.remote_addr, client.client_type),
         liveness,

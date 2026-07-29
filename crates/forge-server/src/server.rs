@@ -200,7 +200,7 @@ pub fn serve_on_with_shutdown(
             })
             .await
             .map_err(|e| ServerError::Io(std::io::Error::other(e)));
-        let _ = run_state_tx.send(false);
+        run_state_tx.send_replace(false);
         result
     });
     (join, shutdown_tx)

@@ -1234,9 +1234,11 @@ fn push_form_field(
             palette,
             cx,
         )),
-        FormField::Integer { key, label, .. } => out.push(build_input_field(
-            key, label, "0", true, false, false, gate, config, palette, cx,
-        )),
+        FormField::Integer { key, label, .. } | FormField::Slider { key, label, .. } => {
+            out.push(build_input_field(
+                key, label, "0", true, false, false, gate, config, palette, cx,
+            ))
+        }
         FormField::FilePicker { key, label } => out.push(build_input_field(
             key, label, "", false, true, false, gate, config, palette, cx,
         )),
@@ -1244,6 +1246,11 @@ fn push_form_field(
             key, label, "", false, false, true, gate, config, palette, cx,
         )),
         FormField::Select {
+            key,
+            label,
+            options,
+        }
+        | FormField::Swatch {
             key,
             label,
             options,

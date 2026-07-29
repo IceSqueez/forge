@@ -70,20 +70,31 @@ pub(crate) fn fold_config_field<V: 'static>(
         FormField::TextArea { key, .. } | FormField::Code { key, .. } => out.push(
             build_config_input(key, "", false, gate, config, palette, on_committed, cx),
         ),
-        FormField::Integer { key, .. } => out.push(build_config_input(
+        FormField::Integer { key, .. } | FormField::Slider { key, .. } => {
+            out.push(build_config_input(
+                key,
+                "0",
+                true,
+                gate,
+                config,
+                palette,
+                on_committed,
+                cx,
+            ));
+        }
+        // Select / DynamicSelect / Swatch degrade to free-text: the kit ships no value-picker yet.
+        FormField::Select { key, .. }
+        | FormField::DynamicSelect { key, .. }
+        | FormField::Swatch { key, .. } => out.push(build_config_input(
             key,
-            "0",
-            true,
+            "",
+            false,
             gate,
             config,
             palette,
             on_committed,
             cx,
         )),
-        // Select / DynamicSelect degrade to free-text: the kit ships no value-picker yet.
-        FormField::Select { key, .. } | FormField::DynamicSelect { key, .. } => out.push(
-            build_config_input(key, "", false, gate, config, palette, on_committed, cx),
-        ),
         FormField::FilePicker { key, .. } | FormField::DateTime { key, .. } => out.push(
             build_config_input(key, "", false, gate, config, palette, on_committed, cx),
         ),

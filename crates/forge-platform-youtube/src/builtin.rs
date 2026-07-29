@@ -824,7 +824,9 @@ mod tests {
             | DynamicSelect { key, .. }
             | Optional { key, .. }
             | SubChain { key, .. }
-            | CaseList { key, .. } => *key,
+            | CaseList { key, .. }
+            | Slider { key, .. }
+            | Swatch { key, .. } => *key,
         };
         out.insert(key.to_owned());
         if let Optional { inner, .. } = field {

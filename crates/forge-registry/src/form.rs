@@ -27,6 +27,14 @@ pub enum FormField {
         min: i64,
         max: i64,
     },
+    /// Stores a whole number; `unit` suffixes the value in the label.
+    Slider {
+        key: &'static str,
+        label: &'static str,
+        min: i64,
+        max: i64,
+        unit: &'static str,
+    },
     Toggle {
         key: &'static str,
         label: &'static str,
@@ -50,6 +58,12 @@ pub enum FormField {
         key: &'static str,
         label: &'static str,
         options_key: &'static str,
+    },
+    /// Static choices naming palette colors, presented as swatches rather than a dropdown.
+    Swatch {
+        key: &'static str,
+        label: &'static str,
+        options: &'static [&'static str],
     },
     Optional {
         key: &'static str,

@@ -1,0 +1,15 @@
+[package]
+name = "forge-overlay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-types = { path = "../forge-types" }
+forge-registry = { path = "../forge-registry" }
+thiserror = { workspace = true }

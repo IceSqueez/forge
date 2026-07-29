@@ -4,6 +4,7 @@ members = [
   "crates/forge-types",
   "crates/forge-events",
   "crates/forge-registry",
+  "crates/forge-overlay",
   "crates/forge-runtime",
   "crates/forge-script",
   "crates/forge-storage",

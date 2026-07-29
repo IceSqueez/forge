@@ -100,7 +100,9 @@ mod tests {
             | FormField::DynamicSelect { key, .. }
             | FormField::Optional { key, .. }
             | FormField::SubChain { key, .. }
-            | FormField::CaseList { key, .. } => key,
+            | FormField::CaseList { key, .. }
+            | FormField::Slider { key, .. }
+            | FormField::Swatch { key, .. } => key,
         }
     }
 

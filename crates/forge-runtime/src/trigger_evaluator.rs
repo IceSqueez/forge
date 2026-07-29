@@ -381,6 +381,7 @@ mod tests {
             actions,
             script_repo,
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::OverlayServiceCell::new(),
             crate::Config::default(),
         )
         .unwrap();

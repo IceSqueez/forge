@@ -1,5 +1,6 @@
 pub mod assets;
 pub mod config;
+pub mod content;
 pub mod descriptor;
 pub mod document;
 pub mod error;
@@ -16,6 +17,7 @@ pub use assets::{
     RUNTIME_ASSET, RUNTIME_SOURCE, STYLE_FILE,
 };
 pub use config::{effective_overlay_config, validate_overlay_config};
+pub use content::delivered_content;
 pub use descriptor::{
     ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };

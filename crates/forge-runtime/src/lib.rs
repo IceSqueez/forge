@@ -39,8 +39,8 @@ pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use overlay_service::{
-    MaterializePass, OverlayConnectListener, OverlayFrameSink, OverlayServiceError,
-    OverlayServiceHandle, TestFire,
+    MaterializePass, OverlayConnectListener, OverlayFrameSink, OverlayServiceCell,
+    OverlayServiceError, OverlayServiceHandle, TestFire,
 };
 pub use queue_scheduler::{
     MembershipOutcome, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,
@@ -49,7 +49,7 @@ pub use queue_scheduler::{
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
 pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
-pub use sub_action_runners::register_core_sub_actions;
+pub use sub_action_runners::{CONTENT_SCHEMA_KEY, register_core_sub_actions};
 pub use trigger_evaluator::{TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
 pub use viewer_tracker::spawn_viewer_tracker;

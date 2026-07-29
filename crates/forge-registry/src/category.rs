@@ -48,5 +48,6 @@ pub enum SubActionCategory {
     Tts,
     Http,
     Server,
+    Overlay,
     Util,
 }

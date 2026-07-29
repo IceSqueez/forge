@@ -1,8 +1,8 @@
 use forge_types::{ArgStack, Variant};
 use serde_json::{Value, json};
 
-use crate::config::effective_overlay_config;
-use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor};
+use crate::content::delivered_content;
+use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 
 const SAMPLE_CHANNEL: &str = "forge_demo";
 const SAMPLE_TIME: &str = "2026-07-29T18:24:05Z";
@@ -75,26 +75,12 @@ pub fn sample_content(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,
 ) -> OverlayConfig {
-    let configured = effective_overlay_config(descriptor, stored);
-    let args = sample_args(descriptor.id());
-
-    descriptor
-        .config_fields()
-        .iter()
-        .filter(|sectioned| sectioned.section == ConfigSection::Content)
-        .filter_map(|sectioned| {
-            let key = sectioned.field.key();
-            let value = configured.get(key)?;
-            Some((key.to_owned(), expanded(value, &args)))
-        })
-        .collect()
-}
-
-fn expanded(value: &Variant, args: &ArgStack) -> Variant {
-    match value {
-        Variant::String(template) => Variant::String(args.interpolate(template)),
-        other => other.clone(),
-    }
+    delivered_content(
+        descriptor,
+        stored,
+        &OverlayConfig::new(),
+        &sample_args(descriptor.id()),
+    )
 }
 
 fn sample_args(event_kind: &str) -> ArgStack {

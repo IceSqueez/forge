@@ -337,6 +337,7 @@ sub_cat_audio = Аудіо
 sub_cat_tts = Синтез мовлення
 sub_cat_http = HTTP
 sub_cat_server = Сервер
+sub_cat_overlay = Оверлеї
 sub_cat_util = Утиліти
 
 ## Дії - секції конфігурації кроку

@@ -121,6 +121,7 @@ fn build_core_registries(
         actions,
         script_repo,
         Arc::new(forge_runtime::ActionCancelRegistry::new()),
+        forge_runtime::OverlayServiceCell::new(),
         forge_runtime::Config::default(),
     )
     .unwrap();

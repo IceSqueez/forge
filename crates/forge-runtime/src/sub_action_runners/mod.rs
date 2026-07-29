@@ -67,6 +67,7 @@ mod core_users_shared;
 mod file_sandbox;
 pub(crate) mod interpolate;
 mod os_ports;
+mod overlay_show;
 mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
@@ -140,6 +141,7 @@ pub use os_ports::{
     ClipboardPort, DesktopNotice, NotifyPort, NotifyUrgency, OsPortError, SystemClipboardPort,
     SystemNotifyPort, SystemUrlOpenPort, UrlOpenPort,
 };
+pub use overlay_show::{CONTENT_SCHEMA_KEY, OverlayShowRunner};
 pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
@@ -159,6 +161,7 @@ use crate::action_cancel::ActionCancelRegistry;
 use crate::condition::ConditionGate;
 use crate::config::Config;
 use crate::egress::{EgressClient, HttpMethod};
+use crate::overlay_service::OverlayServiceCell;
 use crate::script_registry::ScriptRegistry;
 
 #[allow(clippy::too_many_arguments)]
@@ -174,6 +177,7 @@ pub fn register_core_sub_actions(
     actions: Arc<dyn ActionRepo>,
     script_repo: Arc<dyn ScriptRepo>,
     cancel_registry: Arc<ActionCancelRegistry>,
+    overlays: OverlayServiceCell,
     config: Config,
 ) -> Result<(), RegistryError> {
     let condition_gate = Arc::new(ConditionGate::new(&config));
@@ -269,6 +273,7 @@ pub fn register_core_sub_actions(
     )))?;
     reg.register(Box::new(ScriptEmitEventRunner::new(Arc::clone(&publisher))))?;
     reg.register(Box::new(ServerBroadcastRunner::new(Arc::clone(&publisher))))?;
+    reg.register(Box::new(OverlayShowRunner::new(overlays)))?;
     reg.register(Box::new(CoreStringConcatRunner))?;
     reg.register(Box::new(CoreStringSubstringRunner))?;
     reg.register(Box::new(CoreStringReplaceRunner))?;

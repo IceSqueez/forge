@@ -337,6 +337,7 @@ sub_cat_audio = Audio
 sub_cat_tts = Text-to-speech
 sub_cat_http = HTTP
 sub_cat_server = Server
+sub_cat_overlay = Overlays
 sub_cat_util = Utilities
 
 ## Actions - sub-action config sections

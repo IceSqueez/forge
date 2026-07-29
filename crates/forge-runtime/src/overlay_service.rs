@@ -1,18 +1,20 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use arc_swap::ArcSwapOption;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_overlay::{
     DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
-    OverlayKindRegistry, ensure_shared_directory, materialize_overlay, read_overlay_source,
-    remove_overlay_directory, sample_content, write_overlay_source,
+    OverlayKindRegistry, delivered_content, ensure_shared_directory, materialize_overlay,
+    read_overlay_source, remove_overlay_directory, sample_content, write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     reserved_keys,
 };
+use forge_types::ArgStack;
 use serde_json::json;
 
 use crate::bus::EventBus;
@@ -226,6 +228,29 @@ impl OverlayServiceHandle {
             .await
     }
 
+    /// The show-overlay step's funnel: the supplied fields are laid over the overlay's own
+    /// content, both expanded against the run's arguments. `Ok(false)` when nothing is serving.
+    pub async fn show(
+        &self,
+        id: &OverlayId,
+        supplied: &OverlayConfig,
+        args: &ArgStack,
+        duration_ms: Option<u64>,
+    ) -> Result<bool, OverlayServiceError> {
+        let definition = self.load(id).await?;
+        let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
+            return Err(OverlayServiceError::UnavailableKind {
+                id: definition.id,
+                kind_id: definition.kind_id,
+            });
+        };
+
+        let content = delivered_content(descriptor, &definition.config, supplied, args);
+        let disposition = descriptor.delivery_disposition();
+        self.push(&definition.id, disposition, &content, duration_ms)
+            .await
+    }
+
     /// Builds the sample content once and returns it, so the caller previews exactly what the
     /// page received. Nothing is published: no action, script or queue observes a test.
     pub async fn test_fire(&self, id: &OverlayId) -> Result<TestFire, OverlayServiceError> {
@@ -326,6 +351,27 @@ impl OverlayServiceHandle {
         }
 
         Ok(report)
+    }
+}
+
+/// The service is built after the server, which is built after the sub-action registry, so a
+/// runner registered at boot receives this and reads the handle once it exists.
+#[derive(Clone, Default)]
+pub struct OverlayServiceCell {
+    inner: Arc<ArcSwapOption<OverlayServiceHandle>>,
+}
+
+impl OverlayServiceCell {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, handle: OverlayServiceHandle) {
+        self.inner.store(Some(Arc::new(handle)));
+    }
+
+    pub fn get(&self) -> Option<OverlayServiceHandle> {
+        self.inner.load_full().map(|handle| (*handle).clone())
     }
 }
 

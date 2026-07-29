@@ -221,6 +221,7 @@ fn sub_category_label(cat: SubActionCategory) -> String {
         SubActionCategory::Tts => tr!("sub_cat_tts"),
         SubActionCategory::Http => tr!("sub_cat_http"),
         SubActionCategory::Server => tr!("sub_cat_server"),
+        SubActionCategory::Overlay => tr!("sub_cat_overlay"),
         SubActionCategory::Util => tr!("sub_cat_util"),
     }
 }
@@ -248,6 +249,7 @@ fn sub_category_slug(cat: SubActionCategory) -> &'static str {
         SubActionCategory::Tts => "tts",
         SubActionCategory::Http => "http",
         SubActionCategory::Server => "server",
+        SubActionCategory::Overlay => "overlay",
         SubActionCategory::Util => "util",
     }
 }
@@ -262,9 +264,10 @@ pub(super) fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette)
         SubActionCategory::Kick => platform_color(PlatformKind::Kick, palette),
         SubActionCategory::Obs => palette.text_secondary,
         SubActionCategory::VTube => palette.accent_teal,
-        SubActionCategory::Discord | SubActionCategory::Http | SubActionCategory::Server => {
-            palette.info
-        }
+        SubActionCategory::Discord
+        | SubActionCategory::Http
+        | SubActionCategory::Server
+        | SubActionCategory::Overlay => palette.info,
         SubActionCategory::Midi | SubActionCategory::Moderation => palette.random,
         SubActionCategory::ChannelPoints => palette.accent_pink_light,
         SubActionCategory::Hotkey

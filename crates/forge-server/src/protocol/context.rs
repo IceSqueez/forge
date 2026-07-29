@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::{
@@ -31,6 +31,9 @@ pub struct DispatchContext {
     /// Populated once an overlay credential validates; the WS handler takes it to swap its
     /// receiver onto the tighter overlay channel bound.
     pub overlay_channel_swap: Mutex<Option<broadcast::Receiver<WsFrame>>>,
+    /// Set when an overlay credential is refused; the WS handler closes the socket right after
+    /// sending the response so the page's own reconnect loop is what recovers it later.
+    pub close_after_auth_failure: AtomicBool,
 }
 
 pub(super) fn is_authenticated(ctx: &DispatchContext) -> bool {
@@ -74,8 +77,13 @@ async fn authenticate_overlay(credential: String, ctx: &DispatchContext) -> WsRe
         .get_by_credential(&OverlayCredential::new(credential))
         .await;
     let Ok(Some(definition)) = lookup else {
+        ctx.close_after_auth_failure.store(true, Ordering::SeqCst);
         return auth_failed("invalid credential");
     };
+    if !definition.enabled {
+        ctx.close_after_auth_failure.store(true, Ordering::SeqCst);
+        return auth_failed("invalid credential");
+    }
     let identity = definition.id;
     if let Some(receiver) = ctx
         .bus_adapter

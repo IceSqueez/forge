@@ -94,6 +94,7 @@ async fn handle_socket(
         action_engine: Arc::clone(&state.action_engine),
         overlay_root: Arc::clone(&state.overlay_root),
         overlay_channel_swap: tokio::sync::Mutex::new(None),
+        close_after_auth_failure: std::sync::atomic::AtomicBool::new(false),
     };
 
     loop {
@@ -135,6 +136,10 @@ async fn handle_socket(
                         }
                         client.bytes_sent_session.fetch_add(response_bytes, Ordering::Relaxed);
                         state.server_info.bandwidth.record(response_bytes);
+                        if ctx.close_after_auth_failure.swap(false, Ordering::SeqCst) {
+                            let _ = socket.send(Message::Close(None)).await;
+                            break;
+                        }
                     }
                     Message::Binary(_) => {
                         let _ = socket

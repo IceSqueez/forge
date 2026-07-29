@@ -29,4 +29,8 @@ impl OverlayFrameSink for ServerOverlayFrameSink {
     async fn deliver_reload(&self, identity: &OverlayId) {
         self.server.deliver_overlay_reload(Some(identity)).await;
     }
+
+    async fn revoke(&self, identity: &OverlayId) {
+        self.server.revoke_overlay(identity).await;
+    }
 }

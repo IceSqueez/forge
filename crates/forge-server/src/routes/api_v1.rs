@@ -44,6 +44,7 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
         action_engine: Arc::clone(&state.action_engine),
         overlay_root: Arc::clone(&state.overlay_root),
         overlay_channel_swap: tokio::sync::Mutex::new(None),
+        close_after_auth_failure: std::sync::atomic::AtomicBool::new(false),
     }
 }
 

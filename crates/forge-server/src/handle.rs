@@ -202,6 +202,13 @@ impl ServerHandle {
         adapter.deliver_overlay_reload(identity).await;
     }
 
+    /// Addressed at the connections identified as `identity`: blanks then closes them, so a
+    /// disabled overlay stops showing and stops receiving without waiting on anything else.
+    pub async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
+        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
+        adapter.revoke_overlay(identity).await
+    }
+
     pub async fn snapshot(&self) -> crate::snapshot::ServerSnapshot {
         let state = self.inner.lock().await.state.clone();
         crate::snapshot::build_server_snapshot(&state.server_info, &state.bus_adapter).await

@@ -45,6 +45,7 @@ struct ContentFrame {
 struct RecordingSink {
     frames: Mutex<Vec<ContentFrame>>,
     reloads: Mutex<Vec<OverlayId>>,
+    revoked: Mutex<Vec<OverlayId>>,
 }
 
 impl RecordingSink {
@@ -75,6 +76,10 @@ impl OverlayFrameSink for RecordingSink {
 
     async fn deliver_reload(&self, identity: &OverlayId) {
         self.reloads.lock().unwrap().push(identity.clone());
+    }
+
+    async fn revoke(&self, identity: &OverlayId) {
+        self.revoked.lock().unwrap().push(identity.clone());
     }
 }
 

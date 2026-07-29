@@ -157,7 +157,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
 mod tests {
     use std::collections::HashSet;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     use crate::auth::AuthState;
     use std::collections::BTreeMap;
@@ -236,6 +236,7 @@ mod tests {
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),
+            close_after_auth_failure: AtomicBool::new(false),
         }
     }
 
@@ -270,6 +271,7 @@ mod tests {
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),
+            close_after_auth_failure: AtomicBool::new(false),
         }
     }
 
@@ -316,6 +318,7 @@ mod tests {
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),
+            close_after_auth_failure: AtomicBool::new(false),
         }
     }
 
@@ -1344,6 +1347,7 @@ mod tests {
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_channel_swap: tokio::sync::Mutex::new(None),
+            close_after_auth_failure: AtomicBool::new(false),
         }
     }
 

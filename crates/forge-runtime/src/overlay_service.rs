@@ -54,6 +54,10 @@ pub trait OverlayFrameSink: Send + Sync {
     ) -> usize;
 
     async fn deliver_reload(&self, identity: &OverlayId);
+
+    /// Called when an overlay is disabled: existing connections for `identity` go blank and
+    /// close, independent of anything retained-content bookkeeping does.
+    async fn revoke(&self, identity: &OverlayId);
 }
 
 /// The server calls this when a page's credential validates, which is the only moment the
@@ -206,6 +210,23 @@ impl OverlayServiceHandle {
         let root = self.root().await;
         let identity = id.as_str().to_owned();
         Ok(blocking(move || remove_overlay_directory(&root, &identity)).await??)
+    }
+
+    /// Persists first, then revokes any live connections when the overlay was just disabled.
+    /// Retained content keeps recording either way - only delivery to a browser source stops.
+    pub async fn set_enabled(
+        &self,
+        id: &OverlayId,
+        enabled: bool,
+    ) -> Result<bool, OverlayServiceError> {
+        let changed = self.inner.repo.set_enabled(id, enabled).await?;
+        if changed
+            && !enabled
+            && let Some(frames) = &self.inner.frames
+        {
+            frames.revoke(id).await;
+        }
+        Ok(changed)
     }
 
     /// Addressed at the pages carrying this identity; every other connection is untouched.

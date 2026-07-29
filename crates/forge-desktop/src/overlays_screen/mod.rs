@@ -403,12 +403,13 @@ impl OverlaysView {
         self.overlays[index].enabled = next;
         cx.notify();
 
-        let repo = Arc::clone(&self.repo);
+        let service = self.service.clone();
         let target = id.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.set_enabled(&target, next)
+                service
+                    .set_enabled(&target, next)
                     .await
                     .map_err(|e| e.to_string())
             },

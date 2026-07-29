@@ -28,11 +28,12 @@
  * sends no first frame. The connection reconnects on its own with a capped
  * backoff, so a browser source that was closed and reopened recovers unhelped.
  *
- * Two frame shapes arrive, both addressed to this overlay by the connection
+ * Three frame shapes arrive, all addressed to this overlay by the connection
  * itself:
  *
  *   { "frame": "content", "content": { "<key>": <value>, ... }, "durationMs": 5000 }
  *   { "frame": "reload" }
+ *   { "frame": "clear" }
  *
  * A content frame carries the content group of this overlay's type with every
  * value already final: forge expanded it where the variable context lives, so the
@@ -46,6 +47,13 @@
  * A reload frame is handled here rather than by the page. forge sends it after
  * rewriting an overlay's files, which is why hand-edited pages pick up regenerated
  * markup without the browser source being refreshed by hand.
+ *
+ * A clear frame arrives just before forge closes the connection because this
+ * overlay was disabled. The page is hidden in place, not reloaded, so nothing
+ * stale keeps showing while the socket sits closed. The connection's own
+ * reconnect loop keeps retrying; once re-enabled, a validated reconnect gets its
+ * last content replayed automatically, and that content frame is what un-hides
+ * the page again.
  */
 
 (function () {
@@ -56,6 +64,7 @@
   var AUTH_REQUEST_ID = "1";
   var CONTENT_FRAME = "content";
   var RELOAD_FRAME = "reload";
+  var CLEAR_FRAME = "clear";
   var HIDDEN_CLASS = "hidden";
   var RECONNECT_BASE_MS = 500;
   var RECONNECT_CAP_MS = 15000;
@@ -226,10 +235,15 @@
       reload();
       return;
     }
+    if (frame.frame === CLEAR_FRAME) {
+      clear();
+      return;
+    }
     if (frame.frame !== CONTENT_FRAME) {
       return;
     }
 
+    unclear();
     var values =
       frame.content && typeof frame.content === "object" ? frame.content : {};
     var durationMs =
@@ -240,6 +254,14 @@
     contentCallbacks.forEach(function (callback) {
       invoke(callback, values, durationMs);
     });
+  }
+
+  function clear() {
+    document_.body.style.visibility = "hidden";
+  }
+
+  function unclear() {
+    document_.body.style.visibility = "";
   }
 
   function describeError(error) {

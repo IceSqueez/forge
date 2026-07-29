@@ -140,6 +140,7 @@ struct ContentFrame<'a> {
 }
 
 const RELOAD_FRAME_JSON: &str = r#"{"frame":"reload"}"#;
+const CLEAR_FRAME_JSON: &str = r#"{"frame":"clear"}"#;
 
 fn serialize_content_frame(
     content: &serde_json::Value,
@@ -262,6 +263,21 @@ impl BusAdapter {
             WsFrame::Text(RELOAD_FRAME_JSON.to_owned()),
         )
         .await;
+    }
+
+    /// Addressed at every connection carrying `identity`: a clear frame goes out first so the
+    /// page blanks before its socket closes, then a close frame follows on the same per-client
+    /// channel, so the two always arrive in that order even though this issues two sends.
+    /// Returns how many connections still had a live receiver for the clear frame.
+    pub async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
+        let delivered = send_to_overlay(
+            &self.registry,
+            Some(identity),
+            WsFrame::Text(CLEAR_FRAME_JSON.to_owned()),
+        )
+        .await;
+        send_to_overlay(&self.registry, Some(identity), WsFrame::Close).await;
+        delivered
     }
 
     pub async fn register_client(

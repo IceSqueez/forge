@@ -6,7 +6,9 @@ const SAMPLE_TIME: &str = "2026-07-29T18:24:05Z";
 enum Family {
     ChatMessage,
     Follow,
-    Subscription,
+    Subscribe,
+    Resubscribe,
+    GiftSubscription,
     Cheer,
     Raid,
     Plain,
@@ -25,18 +27,30 @@ pub fn sample_payload(event_kind: &str) -> Value {
             "user": viewer(),
             "followed_at": SAMPLE_TIME,
         }),
-        Family::Subscription => json!({
+        Family::Subscribe => json!({
             "user": viewer(),
             "tier": "1000",
             "is_gift": false,
+        }),
+        Family::Resubscribe => json!({
+            "user": viewer(),
+            "tier": "1000",
             "cumulative_months": 7,
             "streak_months": 3,
             "message": "love the content",
+            "share_streak": true,
+        }),
+        Family::GiftSubscription => json!({
+            "tier": "1000",
+            "is_anonymous": false,
+            "gifter": viewer(),
+            "recipient": { "id": null, "login": null, "display_name": null },
         }),
         Family::Cheer => json!({
             "user": viewer(),
             "bits": 500,
             "message": "take my bits",
+            "is_anonymous": false,
         }),
         Family::Raid => json!({
             "direction": "incoming",
@@ -56,8 +70,12 @@ fn family(event_kind: &str) -> Family {
         Family::ChatMessage
     } else if event_kind.contains("follow") {
         Family::Follow
+    } else if event_kind.contains("subscription.gift") || event_kind.contains("gifts") {
+        Family::GiftSubscription
+    } else if event_kind.contains("subscription.message") {
+        Family::Resubscribe
     } else if event_kind.contains("subscribe") || event_kind.contains("subscription") {
-        Family::Subscription
+        Family::Subscribe
     } else if event_kind.contains("cheer") {
         Family::Cheer
     } else if event_kind.contains("raid") {

@@ -149,12 +149,12 @@ pub(crate) fn shared_fields() -> Vec<FormField> {
         FormField::Text {
             key: HEADLINE,
             label: "Headline",
-            placeholder: "%user% just subscribed!",
+            placeholder: "Thanks for the sub!",
         },
         FormField::Text {
             key: SUBLINE,
             label: "Subline",
-            placeholder: "Tier %tier% · %months% months",
+            placeholder: "%cumulative_months% months subscribed",
         },
         FormField::Swatch {
             key: ACCENT,

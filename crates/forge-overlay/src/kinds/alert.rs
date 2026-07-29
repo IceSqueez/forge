@@ -34,11 +34,11 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         let mut defaults = config::shared_defaults("mauve", "Rubik", "top", "slide-up");
         defaults.insert(
             config::HEADLINE.to_owned(),
-            config::text("%user% just subscribed!"),
+            config::text("Thanks for the sub!"),
         );
         defaults.insert(
             config::SUBLINE.to_owned(),
-            config::text("Tier %tier% · %months% months"),
+            config::text("%cumulative_months% months subscribed"),
         );
         defaults.insert(config::DURATION.to_owned(), forge_types::Variant::Int(5));
         defaults

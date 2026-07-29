@@ -23,6 +23,7 @@ fn raw_document(config: OverlayConfig) -> String {
         kind_id: ALERT_KIND.to_owned(),
         config,
         source_overrides: Vec::new(),
+        credential: None,
     };
 
     config_document(&instance, descriptor).expect("the config document builds")

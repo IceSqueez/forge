@@ -42,6 +42,7 @@ fn instance(source_overrides: &[&str]) -> OverlayInstance {
         kind_id: ALERT_KIND.to_owned(),
         config: OverlayConfig::new(),
         source_overrides: source_overrides.iter().map(|n| (*n).to_owned()).collect(),
+        credential: None,
     }
 }
 

@@ -249,8 +249,6 @@ settings_ws_auth_section_title = Автентифікація
 settings_ws_auth_section_subtitle = Які клієнти мають автентифікуватися
 settings_ws_auth_require_ws_label = Вимагати токен для WebSocket-клієнтів
 settings_ws_auth_require_ws_sublabel = Відхиляти WS-підключення без дійсного bearer-токена
-settings_ws_auth_require_http_label = Вимагати токен для HTTP-файлів оверлею
-settings_ws_auth_require_http_sublabel = Браузерні джерела потребують ?token=… в URL
 settings_ws_auth_cors_label = Дозволити CORS з будь-якого походження
 settings_ws_auth_cors_sublabel = Вимкніть, щоб обмежити лише браузерними джерелами оверлею
 settings_ws_overlay_section_title = Коренева тека оверлею

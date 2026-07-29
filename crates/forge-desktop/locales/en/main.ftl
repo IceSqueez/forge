@@ -249,8 +249,6 @@ settings_ws_auth_section_title = Authentication
 settings_ws_auth_section_subtitle = Which clients need to authenticate
 settings_ws_auth_require_ws_label = Require token for WebSocket clients
 settings_ws_auth_require_ws_sublabel = Reject WS handshake without valid bearer token
-settings_ws_auth_require_http_label = Require token for HTTP overlay files
-settings_ws_auth_require_http_sublabel = Browser sources need ?token=… in URL
 settings_ws_auth_cors_label = Allow CORS from any origin
 settings_ws_auth_cors_sublabel = Disable to restrict to overlay browser sources only
 settings_ws_overlay_section_title = Overlay host root

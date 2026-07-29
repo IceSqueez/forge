@@ -40,7 +40,6 @@ struct WebSocketSnapshot {
     lan_bind_enabled: bool,
     port: u16,
     require_ws_token: bool,
-    require_http_overlay_token: bool,
     cors_any_origin: bool,
     overlay_root: Option<String>,
     additional_origins: Vec<String>,
@@ -56,7 +55,6 @@ pub struct SettingsWebSocketView {
     bind_choice: BindChoice,
     port: u16,
     require_ws_token: bool,
-    require_http_overlay_token: bool,
     cors_any_origin: bool,
     overlay_root: Option<String>,
     additional_origins: Vec<String>,
@@ -129,7 +127,6 @@ impl SettingsWebSocketView {
             bind_choice: BindChoice::Localhost,
             port: DEFAULT_PORT,
             require_ws_token: true,
-            require_http_overlay_token: false,
             cors_any_origin: true,
             overlay_root: None,
             additional_origins: Vec::new(),
@@ -208,7 +205,6 @@ impl SettingsWebSocketView {
                 self.port_input
                     .update(cx, |i, cx| i.set_content(snap.port.to_string(), cx));
                 self.require_ws_token = snap.require_ws_token;
-                self.require_http_overlay_token = snap.require_http_overlay_token;
                 self.cors_any_origin = snap.cors_any_origin;
                 self.overlay_root = snap.overlay_root.filter(|s| !s.is_empty());
                 self.additional_origins = snap.additional_origins;
@@ -544,23 +540,6 @@ impl SettingsWebSocketView {
             |this, v| this.require_ws_token = v,
             async move {
                 ServerSettings::save_auth_required_for_reads(repo.as_ref(), value)
-                    .await
-                    .map_err(|e| e.to_string())
-            },
-            cx,
-        );
-    }
-
-    fn toggle_require_http_token(&mut self, cx: &mut Context<Self>) {
-        let prev = self.require_http_overlay_token;
-        let value = !prev;
-        self.require_http_overlay_token = value;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.persist_bool(
-            prev,
-            |this, v| this.require_http_overlay_token = v,
-            async move {
-                ServerSettings::save_http_overlay_require_token(repo.as_ref(), value)
                     .await
                     .map_err(|e| e.to_string())
             },
@@ -1034,18 +1013,6 @@ impl SettingsWebSocketView {
             ))
             .child(hline(palette.border_regular))
             .child(self.auth_row(
-                "settings-ws-auth-http",
-                Icon::Globe,
-                palette.info,
-                tr!("settings_ws_auth_require_http_label"),
-                tr!("settings_ws_auth_require_http_sublabel"),
-                self.require_http_overlay_token,
-                palette,
-                density,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_require_http_token(cx)),
-            ))
-            .child(hline(palette.border_regular))
-            .child(self.auth_row(
                 "settings-ws-auth-cors",
                 Icon::AlertTriangle,
                 palette.warning,
@@ -1245,7 +1212,6 @@ async fn load_websocket_settings(repo: Arc<dyn SettingsRepo>) -> Result<WebSocke
         lan_bind_enabled: snap.lan_bind_enabled,
         port: snap.port,
         require_ws_token: snap.auth_required_for_reads,
-        require_http_overlay_token: snap.http_overlay_require_token,
         cors_any_origin: snap.overlay_cors_any_origin,
         overlay_root: snap.overlay_root,
         additional_origins: snap.additional_origins,

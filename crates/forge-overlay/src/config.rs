@@ -212,3 +212,215 @@ pub(crate) fn shared_defaults(
         (SOUND.to_owned(), text("")),
     ])
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::kinds::alert::AlertOverlayKind;
+    use crate::preview::{PreviewComposition, PreviewShape, compose};
+
+    const PROBE_TOGGLE: &str = "probe.toggle";
+    const PROBE_INTEGER: &str = "probe.integer";
+    const PROBE_OPTIONAL: &str = "probe.optional";
+    const PROBE_INNER: &str = "probe.inner";
+    const PROBE_INNER_OPTIONS: &[&str] = &["left", "right"];
+
+    struct FieldProbeKind;
+
+    impl OverlayKindDescriptor for FieldProbeKind {
+        fn id(&self) -> &str {
+            "probe"
+        }
+
+        fn label(&self) -> &str {
+            "Probe"
+        }
+
+        fn summary(&self) -> &str {
+            ""
+        }
+
+        fn icon_name(&self) -> &str {
+            ""
+        }
+
+        fn config_schema_version(&self) -> u32 {
+            1
+        }
+
+        fn default_config(&self) -> OverlayConfig {
+            OverlayConfig::new()
+        }
+
+        fn config_fields(&self) -> Vec<FormField> {
+            vec![
+                FormField::Toggle {
+                    key: PROBE_TOGGLE,
+                    label: "Toggle",
+                },
+                FormField::Integer {
+                    key: PROBE_INTEGER,
+                    label: "Integer",
+                    min: 0,
+                    max: 10,
+                },
+                FormField::Optional {
+                    key: PROBE_OPTIONAL,
+                    label: "Optional",
+                    inner: Box::new(FormField::Select {
+                        key: PROBE_INNER,
+                        label: "Inner",
+                        options: PROBE_INNER_OPTIONS,
+                    }),
+                },
+            ]
+        }
+
+        fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
+            compose(PreviewShape::Strip, config)
+        }
+    }
+
+    fn one(key: &str, value: Variant) -> OverlayConfig {
+        OverlayConfig::from([(key.to_owned(), value)])
+    }
+
+    #[test]
+    fn effective_config_layers_stored_over_defaults_and_keeps_unknown_keys() {
+        let descriptor = AlertOverlayKind;
+        let defaults = descriptor.default_config();
+        let stored = OverlayConfig::from([
+            (HEADLINE.to_owned(), text("Custom headline")),
+            ("vendor.future_key".to_owned(), Variant::Bool(true)),
+        ]);
+
+        let effective = effective_overlay_config(&descriptor, &stored);
+
+        assert_eq!(
+            effective.get(HEADLINE),
+            Some(&text("Custom headline")),
+            "the stored value must win over the kind default"
+        );
+        assert_eq!(
+            effective.get(ACCENT),
+            defaults.get(ACCENT),
+            "a key the stored config omits must fall back to the kind default"
+        );
+        assert_eq!(
+            effective.get("vendor.future_key"),
+            Some(&Variant::Bool(true)),
+            "a key written by a newer build must survive the merge"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_a_config_that_omits_every_declared_key() {
+        validate_overlay_config(&AlertOverlayKind, &OverlayConfig::new())
+            .expect("a stored config is sparse and carries no values to reject");
+    }
+
+    #[test]
+    fn validate_ignores_keys_no_field_declares() {
+        let config = one(
+            "vendor.future_key",
+            Variant::Array(vec![Variant::Int(1), Variant::Bool(false)]),
+        );
+
+        validate_overlay_config(&AlertOverlayKind, &config)
+            .expect("an undeclared key must be left alone whatever it holds");
+    }
+
+    #[test]
+    fn validate_rejects_a_choice_outside_the_declared_options() {
+        for (key, value) in [
+            (ACCENT, "teal"),
+            (FONT, "Comic Sans"),
+            (POSITION, "diagonal"),
+            (ANIMATION, "explode"),
+            (ACCENT, ""),
+        ] {
+            let err = validate_overlay_config(&AlertOverlayKind, &one(key, text(value)))
+                .expect_err("an unlisted choice must be rejected");
+
+            assert!(
+                matches!(&err, OverlayError::UnknownChoice { key: k, value: v } if k == key && v == value),
+                "{key} = {value:?} produced {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_a_value_of_the_wrong_type() {
+        let alert = AlertOverlayKind;
+        let probe = FieldProbeKind;
+
+        for (descriptor, key, value) in [
+            (
+                &alert as &dyn OverlayKindDescriptor,
+                HEADLINE,
+                Variant::Int(1),
+            ),
+            (&alert, ACCENT, Variant::Bool(true)),
+            (&alert, FONT, Variant::Array(Vec::new())),
+            (&alert, DURATION, text("5")),
+            (&alert, DURATION, Variant::Float(5.0)),
+            (&probe, PROBE_TOGGLE, text("yes")),
+            (&probe, PROBE_INTEGER, Variant::Bool(true)),
+            (&probe, PROBE_OPTIONAL, Variant::Int(1)),
+        ] {
+            let err = validate_overlay_config(descriptor, &one(key, value.clone()))
+                .expect_err("a value of the wrong shape must be rejected");
+
+            assert!(
+                matches!(&err, OverlayError::WrongType { key: k, .. } if k == key),
+                "{key} = {value:?} produced {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_accepts_the_duration_bounds_and_rejects_one_step_past_each() {
+        for accepted in [
+            DURATION_MIN_SECS,
+            DURATION_MIN_SECS + 1,
+            DURATION_MAX_SECS - 1,
+            DURATION_MAX_SECS,
+        ] {
+            validate_overlay_config(&AlertOverlayKind, &one(DURATION, Variant::Int(accepted)))
+                .unwrap_or_else(|e| panic!("duration {accepted} sits in range but produced {e:?}"));
+        }
+
+        for rejected in [
+            DURATION_MIN_SECS - 1,
+            DURATION_MAX_SECS + 1,
+            i64::MIN,
+            i64::MAX,
+        ] {
+            let err =
+                validate_overlay_config(&AlertOverlayKind, &one(DURATION, Variant::Int(rejected)))
+                    .expect_err("a duration outside the slider range must be rejected");
+
+            assert!(
+                matches!(&err, OverlayError::OutOfRange { key, .. } if key == DURATION),
+                "duration {rejected} produced {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_walks_into_the_field_an_optional_wraps() {
+        let config = OverlayConfig::from([
+            (PROBE_OPTIONAL.to_owned(), Variant::Bool(true)),
+            (PROBE_INNER.to_owned(), text("sideways")),
+        ]);
+
+        let err = validate_overlay_config(&FieldProbeKind, &config)
+            .expect_err("the wrapped field keeps its own constraints");
+
+        assert!(
+            matches!(&err, OverlayError::UnknownChoice { key, .. } if key == PROBE_INNER),
+            "the inner field was not validated: {err:?}"
+        );
+    }
+}

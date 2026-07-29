@@ -214,12 +214,58 @@ async fn save_preserves_created_at_and_restamps_updated_at() {
     assert_eq!(
         reloaded.created_at.unix_timestamp(),
         created_at.unix_timestamp(),
-        "created_at must survive an upsert"
+        "created_at must survive a save"
     );
     assert!(
         reloaded.updated_at >= created_at,
         "updated_at must be restamped by the repo, not taken from the caller"
     );
+}
+
+#[tokio::test]
+async fn saving_a_definition_whose_id_was_never_minted_inserts_nothing() {
+    let (repo, pool) = fresh().await;
+
+    let survivor = repo
+        .create("Survivor", "forge.chat", 1)
+        .await
+        .expect("create the only real overlay");
+
+    let mut fabricated = survivor.clone();
+    fabricated.id = OverlayId::new("never-minted");
+    fabricated.display_name = "Fabricated".to_owned();
+    fabricated.credential = OverlayCredential::new("f".repeat(64));
+
+    let err = repo
+        .save(&fabricated)
+        .await
+        .expect_err("save must not insert an overlay the repo never minted");
+
+    assert!(
+        matches!(&err, StorageError::NotFound { key } if key == "never-minted"),
+        "unexpected error variant: {err:?}"
+    );
+    assert_eq!(row_count(&pool).await, 1, "save must not add a row");
+    assert!(
+        repo.get(&fabricated.id)
+            .await
+            .expect("get by the fabricated id")
+            .is_none()
+    );
+    assert!(
+        repo.get_by_credential(&fabricated.credential)
+            .await
+            .expect("lookup by the fabricated credential")
+            .is_none(),
+        "a fabricated definition must not mint a working overlay credential"
+    );
+
+    let reloaded = repo
+        .get(&survivor.id)
+        .await
+        .expect("get the survivor")
+        .expect("the real overlay is untouched");
+    assert_eq!(reloaded.display_name, "Survivor");
 }
 
 #[tokio::test]

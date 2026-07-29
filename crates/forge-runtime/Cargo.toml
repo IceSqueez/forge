@@ -16,6 +16,7 @@ forge-registry = { path = "../forge-registry" }
 forge-storage = { path = "../forge-storage" }
 forge-script = { path = "../forge-script" }
 forge-obs = { path = "../forge-obs" }
+forge-overlay = { path = "../forge-overlay" }
 forge-platform-core = { path = "../forge-platform-core" }
 arboard = { workspace = true }
 arc-swap = { workspace = true }

@@ -68,6 +68,32 @@ pub fn materialize_overlay(
     Ok(report)
 }
 
+/// `Ok(false)` when there was nothing to remove; a symlinked or escaping directory is refused, never followed.
+pub fn remove_overlay_directory(root: &Path, id: &str) -> Result<bool, OverlayError> {
+    check_identity(id)?;
+
+    let Some(root) = optional_canonicalize(root)? else {
+        return Ok(false);
+    };
+    let directory = root.join(id);
+    reject_symlink(&directory)?;
+
+    let Some(resolved) = optional_canonicalize(&directory)? else {
+        return Ok(false);
+    };
+    if !resolved.starts_with(&root) {
+        return Err(OverlayError::OutsideRoot {
+            path: display(&directory),
+        });
+    }
+
+    fs::remove_dir_all(&resolved).map_err(|source| OverlayError::Io {
+        path: display(&resolved),
+        source,
+    })?;
+    Ok(true)
+}
+
 fn overlay_directory(root: &Path, id: &str) -> Result<PathBuf, OverlayError> {
     check_identity(id)?;
     let root = ensure_root(root)?;
@@ -145,6 +171,17 @@ fn create_dir(path: &Path) -> Result<(), OverlayError> {
         path: display(path),
         source,
     })
+}
+
+fn optional_canonicalize(path: &Path) -> Result<Option<PathBuf>, OverlayError> {
+    match fs::canonicalize(path) {
+        Ok(resolved) => Ok(Some(resolved)),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(OverlayError::Io {
+            path: display(path),
+            source,
+        }),
+    }
 }
 
 fn canonicalize(path: &Path) -> Result<PathBuf, OverlayError> {

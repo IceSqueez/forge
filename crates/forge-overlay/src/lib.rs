@@ -8,6 +8,7 @@ pub mod kinds;
 pub mod materialize;
 pub mod preview;
 pub mod registry;
+pub mod sample;
 
 pub use assets::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, PageAssets, RESERVED_DIRECTORY,
@@ -21,9 +22,11 @@ pub use instance::OverlayInstance;
 pub use kinds::register_builtin_kinds;
 pub use materialize::{
     GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
+    remove_overlay_directory,
 };
 pub use preview::{
     PreviewAccent, PreviewComposition, PreviewFont, PreviewLine, PreviewLineRole, PreviewPosition,
     PreviewShape,
 };
 pub use registry::OverlayKindRegistry;
+pub use sample::sample_payload;

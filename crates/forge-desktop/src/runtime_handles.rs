@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, QueueSchedulerHandle, ScriptRegistry,
-    TriggerEvaluatorHandle,
+    ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, OverlayServiceHandle,
+    QueueSchedulerHandle, ScriptRegistry, TriggerEvaluatorHandle,
 };
 use forge_storage::{DataProvider, Language};
 
@@ -21,6 +22,8 @@ pub struct RuntimeHandles {
     pub script_registry: Arc<ScriptRegistry>,
     pub sub_action_registry: Arc<SubActionRegistry>,
     pub trigger_registry: Arc<TriggerRegistry>,
+    pub overlay_kinds: Arc<OverlayKindRegistry>,
+    pub overlays: OverlayServiceHandle,
     pub action_engine: ActionEngineHandle,
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,

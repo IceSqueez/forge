@@ -313,7 +313,9 @@ impl AppShell {
                 let repo = handles.backend.overlay_repo();
                 let server = handles.server.clone();
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| OverlaysView::new(repo, server, rt_handle, cx))
+                let kinds = Arc::clone(&handles.overlay_kinds);
+                let overlays = handles.overlays.clone();
+                cx.new(|cx| OverlaysView::new(repo, server, rt_handle, kinds, overlays, cx))
                     .into()
             }
             Screen::Server => {

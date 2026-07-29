@@ -9,7 +9,8 @@ use forge_components::{
     BreadcrumbCrumb, Confirm, ConfirmTone, FONT_XS, ForgePalette, Icon, OverlayPosition, ToastKind,
     body_family, confirm_modal, drive_overlay_focus, icon, overlay, page_frame, tr,
 };
-use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
+use forge_overlay::OverlayKindRegistry;
+use forge_runtime::OverlayServiceHandle;
 use forge_server::ServerHandle;
 use forge_storage::{OverlayDefinition, OverlayId, OverlayRepo};
 use gpui::{
@@ -42,7 +43,8 @@ pub struct OverlaysView {
     repo: Arc<dyn OverlayRepo>,
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
-    kinds: OverlayKindRegistry,
+    kinds: Arc<OverlayKindRegistry>,
+    service: OverlayServiceHandle,
     overlays: Vec<OverlayDefinition>,
     selected: Option<OverlayId>,
     loading: bool,
@@ -61,13 +63,10 @@ impl OverlaysView {
         repo: Arc<dyn OverlayRepo>,
         server: Option<ServerHandle>,
         rt_handle: tokio::runtime::Handle,
+        kinds: Arc<OverlayKindRegistry>,
+        service: OverlayServiceHandle,
         cx: &mut Context<Self>,
     ) -> Self {
-        let mut kinds = OverlayKindRegistry::new();
-        if let Err(error) = register_builtin_kinds(&mut kinds) {
-            tracing::error!(%error, "overlay type registration failed");
-        }
-
         let server_running = server
             .as_ref()
             .is_some_and(|handle| *handle.run_state().borrow());
@@ -77,6 +76,7 @@ impl OverlaysView {
             server,
             rt_handle,
             kinds,
+            service,
             overlays: Vec::new(),
             selected: None,
             loading: false,
@@ -348,17 +348,28 @@ impl OverlaysView {
         self.close_form(cx);
 
         let repo = Arc::clone(&self.repo);
+        let service = self.service.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.create(&display_name, &kind_id, schema_version)
+                let definition = repo
+                    .create(&display_name, &kind_id, schema_version)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                let generated = service
+                    .materialize(&definition.id)
+                    .await
+                    .err()
+                    .map(|e| e.to_string());
+                Ok((definition, generated))
             },
-            |this, result: Result<OverlayDefinition, String>, cx| match result {
-                Ok(definition) => {
+            |this, result: Result<(OverlayDefinition, Option<String>), String>, cx| match result {
+                Ok((definition, generated)) => {
                     this.selected = Some(definition.id);
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_created"));
+                    if let Some(message) = generated {
+                        this.report(&message, cx);
+                    }
                     this.load(cx);
                 }
                 Err(message) => this.report(&message, cx),
@@ -367,26 +378,32 @@ impl OverlaysView {
         );
     }
 
-    /// Reads the stored record before writing so a background config change is not clobbered by a stale cache.
+    /// Reads the stored record before writing so a background config change is not clobbered by a
+    /// stale cache. The directory keeps its identity; only the config document is rewritten.
     fn rename(&mut self, id: OverlayId, display_name: String, cx: &mut Context<Self>) {
         self.close_form(cx);
         let repo = Arc::clone(&self.repo);
+        let service = self.service.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
-                    return Ok(false);
+                    return Ok((false, None));
                 };
                 definition.display_name = display_name;
                 repo.save(&definition).await.map_err(|e| e.to_string())?;
-                Ok(true)
+                let generated = service.materialize(&id).await.err().map(|e| e.to_string());
+                Ok((true, generated))
             },
-            |this, result: Result<bool, String>, cx| match result {
-                Ok(true) => {
+            |this, result: Result<(bool, Option<String>), String>, cx| match result {
+                Ok((true, generated)) => {
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_renamed"));
+                    if let Some(message) = generated {
+                        this.report(&message, cx);
+                    }
                     this.load(cx);
                 }
-                Ok(false) => this.report(&tr!("overlays_toast_missing"), cx),
+                Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
                 Err(message) => this.report(&message, cx),
             },
             cx,
@@ -417,16 +434,31 @@ impl OverlaysView {
             self.selected = None;
         }
         let repo = Arc::clone(&self.repo);
+        let service = self.service.clone();
         let id = prompt.id;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.delete(&id).await.map_err(|e| e.to_string()) },
-            |this, result: Result<bool, String>, cx| match result {
-                Ok(true) => {
+            async move {
+                let removed = repo.delete(&id).await.map_err(|e| e.to_string())?;
+                if !removed {
+                    return Ok((false, None));
+                }
+                let swept = service
+                    .remove_folder(&id)
+                    .await
+                    .err()
+                    .map(|e| e.to_string());
+                Ok((true, swept))
+            },
+            |this, result: Result<(bool, Option<String>), String>, cx| match result {
+                Ok((true, swept)) => {
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_deleted"));
+                    if let Some(message) = swept {
+                        this.report(&message, cx);
+                    }
                     this.load(cx);
                 }
-                Ok(false) => this.report(&tr!("overlays_toast_missing"), cx),
+                Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
                 Err(message) => this.report(&message, cx),
             },
             cx,

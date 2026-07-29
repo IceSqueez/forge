@@ -4,13 +4,14 @@ use std::time::Duration;
 
 use forge_components::{Density, ThemeId};
 use forge_events::EventPublisher;
+use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::paths;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Config, EventBus, QueueScheduler, SchedulerCell,
-    ScriptRegistry, SoundPlayer, SpeakDispatcher, register_audio_sub_actions,
-    register_core_sub_actions, register_core_triggers, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_chat_moderation_persistence,
+    ActionCancelRegistry, ActionEngineHandle, Config, EventBus, OverlayFrameSink,
+    OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer,
+    SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    spawn_action_engine, spawn_chat_history_persistence, spawn_chat_moderation_persistence,
     spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
@@ -24,6 +25,7 @@ use forge_storage::{
 use forge_storage_sqlite::SqliteBackend;
 
 use crate::integrations::build_integrations;
+use crate::overlay_frame_sink::ServerOverlayFrameSink;
 use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::build_speak_queue;
 use crate::speak_bridge::SpeakBridge;
@@ -258,6 +260,31 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
 
     let server = build_server(&backend, &bus, &action_engine).await;
 
+    let mut overlay_kinds_mut = OverlayKindRegistry::new();
+    if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
+        eprintln!("forge-desktop: overlay type registration failed: {e}");
+    }
+    let overlay_kinds = Arc::new(overlay_kinds_mut);
+    let overlay_frames: Option<Arc<dyn OverlayFrameSink>> = server
+        .clone()
+        .map(|handle| Arc::new(ServerOverlayFrameSink::new(handle)) as Arc<dyn OverlayFrameSink>);
+    let overlays = OverlayServiceHandle::new(
+        backend.overlay_repo(),
+        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+        Arc::clone(&overlay_kinds),
+        Arc::clone(&bus),
+        overlay_frames,
+    );
+    match overlays.materialize_all().await {
+        Ok(pass) => tracing::info!(
+            materialized = pass.materialized,
+            unavailable = pass.unavailable,
+            failed = pass.failed,
+            "overlay pages materialized"
+        ),
+        Err(e) => eprintln!("forge-desktop: overlay materialization pass failed: {e}"),
+    }
+
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
         backend,
@@ -279,6 +306,8 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
         midi_client: integrations.midi_client,
         hotkey_client: integrations.hotkey_client,
         server,
+        overlays,
+        overlay_kinds,
         speak,
         speak_events,
         pipeline_config,

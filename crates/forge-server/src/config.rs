@@ -40,7 +40,7 @@ impl ServerConfig {
     ) -> Self {
         Self {
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9515),
-            overlay_root: paths::data_dir().join("overlays"),
+            overlay_root: paths::overlays_dir(),
             auth_required_for_reads: false,
             http_overlay_require_token: false,
             overlay_cors_any_origin: true,

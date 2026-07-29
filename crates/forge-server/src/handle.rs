@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_events::Event;
 use forge_platform_core::paths;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
@@ -105,7 +106,7 @@ impl ServerHandle {
             .overlay_root
             .filter(|root| !root.is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(|| paths::data_dir().join("overlays"));
+            .unwrap_or_else(paths::overlays_dir);
 
         // Validated before teardown, so a bad config leaves the current server untouched.
         server::validate_lan_bind(
@@ -172,6 +173,12 @@ impl ServerHandle {
 
     pub async fn overlay_root(&self) -> Arc<std::path::PathBuf> {
         Arc::clone(&self.inner.lock().await.state.overlay_root)
+    }
+
+    /// Sends one frame straight to matching subscribers; the bus, and everything it drives, never sees it.
+    pub async fn deliver_event(&self, event: Event) {
+        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
+        adapter.deliver(&event).await;
     }
 
     pub async fn snapshot(&self) -> crate::snapshot::ServerSnapshot {

@@ -2747,6 +2747,7 @@ dependencies = [
  "base64 0.23.0",
  "forge-events",
  "forge-obs",
+ "forge-overlay",
  "forge-platform-core",
  "forge-registry",
  "forge-script",

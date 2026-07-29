@@ -124,6 +124,30 @@ fn serialize_push(event: &Event) -> Result<String, serde_json::Error> {
     serde_json::to_string(&frame)
 }
 
+async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
+    let Ok(json) = serialize_push(event) else {
+        return;
+    };
+    let frame = WsFrame::Text(json);
+
+    let mut disconnected = Vec::new();
+    {
+        let reg = registry.read().await;
+        for client in reg.iter() {
+            if client.filters.matches(event) && client.sender.send(frame.clone()).is_err() {
+                disconnected.push(client.id);
+            }
+        }
+    }
+
+    if !disconnected.is_empty() {
+        registry
+            .write()
+            .await
+            .retain(|c| !disconnected.contains(&c.id));
+    }
+}
+
 impl BusAdapter {
     pub fn new(bus: Arc<EventBus>) -> Arc<Self> {
         Arc::new(Self {
@@ -144,32 +168,14 @@ impl BusAdapter {
                     Err(EventsError::LaggingReceiver | EventsError::ReplayMiss(_)) => continue,
                 };
 
-                let json = match serialize_push(&event) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-                let frame = WsFrame::Text(json);
-
-                let mut disconnected = Vec::new();
-                {
-                    let reg = registry.read().await;
-                    for client in reg.iter() {
-                        if client.filters.matches(&event)
-                            && client.sender.send(frame.clone()).is_err()
-                        {
-                            disconnected.push(client.id);
-                        }
-                    }
-                }
-
-                if !disconnected.is_empty() {
-                    registry
-                        .write()
-                        .await
-                        .retain(|c| !disconnected.contains(&c.id));
-                }
+                fan_out(&registry, &event).await;
             }
         });
+    }
+
+    /// Reaches subscribers without touching the bus, so nothing downstream of the bus observes it.
+    pub async fn deliver(&self, event: &Event) {
+        fan_out(&self.registry, event).await;
     }
 
     pub async fn register_client(

@@ -5,6 +5,8 @@ use crate::descriptor::OverlayConfig;
 pub enum PreviewShape {
     BadgeBanner,
     BorderedFrame,
+    MessageFeed,
+    ProgressBar,
     Strip,
 }
 
@@ -44,13 +46,16 @@ pub struct PreviewLine {
 }
 
 /// Text carries whatever the config holds; `%var%` tokens are expanded by the caller, not here.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PreviewComposition {
     pub shape: PreviewShape,
     pub accent: PreviewAccent,
     pub font: PreviewFont,
     pub position: PreviewPosition,
     pub lines: Vec<PreviewLine>,
+    /// Filled share of a progress track, unset for a shape without one and for values that are
+    /// not two numbers.
+    pub fill: Option<f32>,
 }
 
 pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewComposition {
@@ -59,7 +64,8 @@ pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewCom
         accent: accent_of(config),
         font: font_of(config),
         position: position_of(config),
-        lines: lines_of(config),
+        lines: lines_of(shape, config),
+        fill: fill_of(shape, config),
     }
 }
 
@@ -89,20 +95,67 @@ fn position_of(config: &OverlayConfig) -> PreviewPosition {
     }
 }
 
-fn lines_of(config: &OverlayConfig) -> Vec<PreviewLine> {
+/// A kind that names its own content keys reads them here; every other kind speaks the shared
+/// headline and subline vocabulary.
+fn lines_of(shape: PreviewShape, config: &OverlayConfig) -> Vec<PreviewLine> {
+    match shape {
+        PreviewShape::MessageFeed => paired_lines(config, config::AUTHOR, config::MESSAGE),
+        PreviewShape::ProgressBar => progress_lines(config),
+        _ => paired_lines(config, config::HEADLINE, config::SUBLINE),
+    }
+}
+
+fn paired_lines(config: &OverlayConfig, headline: &str, subline: &str) -> Vec<PreviewLine> {
     [
-        (PreviewLineRole::Headline, config::HEADLINE),
-        (PreviewLineRole::Subline, config::SUBLINE),
+        (PreviewLineRole::Headline, headline),
+        (PreviewLineRole::Subline, subline),
     ]
     .into_iter()
-    .filter_map(|(role, key)| {
-        let text = config::read_str(config, key);
-        (!text.is_empty()).then(|| PreviewLine {
-            role,
-            text: text.to_owned(),
-        })
-    })
+    .filter_map(|(role, key)| line(role, config::read_str(config, key)))
     .collect()
+}
+
+fn progress_lines(config: &OverlayConfig) -> Vec<PreviewLine> {
+    let value = config::read_str(config, config::VALUE);
+    let target = config::read_str(config, config::TARGET);
+    let tally = if value.is_empty() || target.is_empty() {
+        String::new()
+    } else {
+        format!("{value} / {target}")
+    };
+
+    [
+        line(
+            PreviewLineRole::Headline,
+            config::read_str(config, config::LABEL),
+        ),
+        line(PreviewLineRole::Subline, &tally),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn line(role: PreviewLineRole, text: &str) -> Option<PreviewLine> {
+    (!text.is_empty()).then(|| PreviewLine {
+        role,
+        text: text.to_owned(),
+    })
+}
+
+fn fill_of(shape: PreviewShape, config: &OverlayConfig) -> Option<f32> {
+    if shape != PreviewShape::ProgressBar {
+        return None;
+    }
+    let value: f32 = config::read_str(config, config::VALUE)
+        .trim()
+        .parse()
+        .ok()?;
+    let target: f32 = config::read_str(config, config::TARGET)
+        .trim()
+        .parse()
+        .ok()?;
+    (target > 0.0).then(|| (value / target).clamp(0.0, 1.0))
 }
 
 #[cfg(test)]

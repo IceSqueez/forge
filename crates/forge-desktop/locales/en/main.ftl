@@ -2133,7 +2133,5 @@ overlays_panel_section_behavior = Behavior
 overlays_panel_no_properties = This overlay type declares no properties.
 overlays_panel_unavailable = This build has no overlay type for this record, so there is nothing to configure.
 overlays_panel_choice_empty = No choices available.
-overlays_panel_tokens_label = Template tokens
-overlays_panel_tokens_none = Bind an event to see the tokens its payload offers.
 overlays_panel_override_notice = You own these files now, so they are never regenerated: { $files }. Design changes that need generated markup or styling no longer reach them.
 config_form_choice_placeholder = Not set

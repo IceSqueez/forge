@@ -5,7 +5,7 @@ use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels, TextInput,
     anchored_popover, body_family, field_label, section_label, tr,
 };
-use forge_overlay::config::{ACCENT, ANIMATION, DURATION, FONT, POSITION, SOUND};
+use forge_overlay::{ConfigSection, SectionedField};
 use forge_registry::FormField;
 use forge_storage::{OverlayConfig, OverlayId};
 use gpui::{
@@ -34,32 +34,17 @@ const NOTICE_LINE_H: Pixels = px(15.0);
 /// browser source dozens of times per drag.
 const SLIDE_SETTLE: Duration = Duration::from_millis(400);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PanelSection {
-    Content,
-    Style,
-    Behavior,
-}
+const SECTION_ORDER: [ConfigSection; 3] = [
+    ConfigSection::Content,
+    ConfigSection::Style,
+    ConfigSection::Behavior,
+];
 
-impl PanelSection {
-    const ORDER: [Self; 3] = [Self::Content, Self::Style, Self::Behavior];
-
-    fn label(self) -> String {
-        match self {
-            Self::Content => tr!("overlays_panel_section_content"),
-            Self::Style => tr!("overlays_panel_section_style"),
-            Self::Behavior => tr!("overlays_panel_section_behavior"),
-        }
-    }
-}
-
-/// Keys outside the shared overlay vocabulary belong to a kind that names its own properties, so
-/// they land in the section that describes what an overlay says rather than being dropped.
-fn section_of(key: &str) -> PanelSection {
-    match key {
-        ACCENT | FONT | POSITION => PanelSection::Style,
-        ANIMATION | DURATION | SOUND => PanelSection::Behavior,
-        _ => PanelSection::Content,
+fn section_heading(section: ConfigSection) -> String {
+    match section {
+        ConfigSection::Content => tr!("overlays_panel_section_content"),
+        ConfigSection::Style => tr!("overlays_panel_section_style"),
+        ConfigSection::Behavior => tr!("overlays_panel_section_behavior"),
     }
 }
 
@@ -69,7 +54,7 @@ pub(super) enum PropertyPanelEvent {
 
 pub(super) struct PanelLaunch {
     pub(super) overlay_id: OverlayId,
-    pub(super) specs: Vec<FormField>,
+    pub(super) specs: Vec<SectionedField>,
     pub(super) defaults: OverlayConfig,
     pub(super) stored: OverlayConfig,
     pub(super) effective: OverlayConfig,
@@ -89,6 +74,7 @@ pub(super) struct OverlayPropertyPanel {
     defaults: OverlayConfig,
     stored: OverlayConfig,
     labels: HashMap<String, String>,
+    sections: HashMap<String, ConfigSection>,
     fields: Vec<ConfigField>,
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
@@ -108,14 +94,16 @@ impl OverlayPropertyPanel {
         };
         let mut fields: Vec<ConfigField> = Vec::new();
         for spec in &launch.specs {
-            fold_config_field(spec, None, &fold, &mut fields, cx);
+            fold_config_field(&spec.field, None, &fold, &mut fields, cx);
         }
+        let index = index_fields(&launch.specs);
 
         Self {
             overlay_id: launch.overlay_id,
             defaults: launch.defaults,
             stored: launch.stored,
-            labels: field_labels(&launch.specs),
+            labels: index.labels,
+            sections: index.sections,
             fields,
             overridden_files: launch.overridden_files,
             picker: None,
@@ -303,6 +291,15 @@ impl OverlayPropertyPanel {
             .unwrap_or_else(|| key.to_owned())
     }
 
+    /// A control the fold produced for a key the kind never declared still gets a home rather than
+    /// disappearing from the panel.
+    fn section_of(&self, key: &str) -> ConfigSection {
+        self.sections
+            .get(key)
+            .copied()
+            .unwrap_or(ConfigSection::Content)
+    }
+
     fn handlers() -> ConfigFieldHandlers<Self> {
         ConfigFieldHandlers {
             toggle: Self::toggle_field,
@@ -314,7 +311,7 @@ impl OverlayPropertyPanel {
 
     fn render_section(
         &self,
-        section: PanelSection,
+        section: ConfigSection,
         first: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -322,7 +319,7 @@ impl OverlayPropertyPanel {
         let members: Vec<&ConfigField> = self
             .fields
             .iter()
-            .filter(|field| section_of(field.key()) == section)
+            .filter(|field| self.section_of(field.key()) == section)
             .collect();
         if members.is_empty() {
             return None;
@@ -332,11 +329,10 @@ impl OverlayPropertyPanel {
             .flex()
             .flex_col()
             .when(!first, |col| col.pt(SECTION_TOP_GAP))
-            .child(
-                div()
-                    .pb(SECTION_GAP)
-                    .child(section_label(section.label().to_uppercase(), palette)),
-            );
+            .child(div().pb(SECTION_GAP).child(section_label(
+                section_heading(section).to_uppercase(),
+                palette,
+            )));
 
         let view = cx.entity();
         let handlers = Self::handlers();
@@ -381,15 +377,25 @@ pub(super) fn override_notice(files: &[String], palette: &ForgePalette) -> Optio
     )
 }
 
-fn field_labels(specs: &[FormField]) -> HashMap<String, String> {
-    let mut labels = HashMap::new();
-    for spec in specs {
-        collect_labels(spec, &mut labels);
-    }
-    labels
+struct FieldIndex {
+    labels: HashMap<String, String>,
+    sections: HashMap<String, ConfigSection>,
 }
 
-fn collect_labels(spec: &FormField, out: &mut HashMap<String, String>) {
+fn index_fields(specs: &[SectionedField]) -> FieldIndex {
+    let mut index = FieldIndex {
+        labels: HashMap::new(),
+        sections: HashMap::new(),
+    };
+    for spec in specs {
+        index_field(&spec.field, spec.section, &mut index);
+    }
+    index
+}
+
+/// A wrapped field shares the section of the field that wraps it, so a gate and the control it
+/// gates never drift into separate headings.
+fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
     match spec {
         FormField::Text { key, label, .. }
         | FormField::TextArea { key, label, .. }
@@ -404,11 +410,13 @@ fn collect_labels(spec: &FormField, out: &mut HashMap<String, String>) {
         | FormField::Swatch { key, label, .. }
         | FormField::SubChain { key, label }
         | FormField::CaseList { key, label } => {
-            out.insert((*key).to_owned(), (*label).to_owned());
+            out.labels.insert((*key).to_owned(), (*label).to_owned());
+            out.sections.insert((*key).to_owned(), section);
         }
         FormField::Optional { key, label, inner } => {
-            out.insert((*key).to_owned(), (*label).to_owned());
-            collect_labels(inner, out);
+            out.labels.insert((*key).to_owned(), (*label).to_owned());
+            out.sections.insert((*key).to_owned(), section);
+            index_field(inner, section, out);
         }
     }
 }
@@ -429,7 +437,7 @@ impl Render for OverlayPropertyPanel {
         body = body.children(override_notice(&self.overridden_files, &palette));
 
         let mut rendered = 0usize;
-        for section in PanelSection::ORDER {
+        for section in SECTION_ORDER {
             if let Some(block) = self.render_section(section, rendered == 0, &palette, cx) {
                 rendered += 1;
                 body = body.child(block);

@@ -344,11 +344,7 @@ impl OverlaysView {
 
         let launch = PanelLaunch {
             overlay_id: definition.id.clone(),
-            specs: descriptor
-                .config_fields()
-                .into_iter()
-                .map(|field| field.field)
-                .collect(),
+            specs: descriptor.config_fields(),
             defaults: descriptor.default_config(),
             stored: definition.config.clone(),
             effective: effective_overlay_config(descriptor, &definition.config),

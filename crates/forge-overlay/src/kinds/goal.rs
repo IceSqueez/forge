@@ -67,6 +67,6 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::Strip, config)
+        compose(PreviewShape::ProgressBar, config)
     }
 }

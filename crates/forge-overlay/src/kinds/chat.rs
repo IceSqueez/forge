@@ -70,6 +70,6 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::Strip, config)
+        compose(PreviewShape::MessageFeed, config)
     }
 }

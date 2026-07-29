@@ -60,6 +60,26 @@ const FRAME_LABEL_CORNER_TR: Pixels = px(10.0);
 const FRAME_LABEL_CORNER_BL: Pixels = px(12.0);
 const FRAME_WASH_ALPHA: f32 = 0.15;
 
+const FEED_W: Pixels = px(300.0);
+const FEED_PAD: Pixels = px(12.0);
+const FEED_RADIUS: Pixels = px(10.0);
+const FEED_ROW_GAP: Pixels = px(5.0);
+const FEED_NAME_GAP: Pixels = px(5.0);
+const FEED_FS: Pixels = px(13.0);
+const FEED_ALPHA: f32 = 0.7;
+
+const BAR_W: f32 = 0.8;
+const BAR_PAD_V: Pixels = px(14.0);
+const BAR_PAD_H: Pixels = px(16.0);
+const BAR_RADIUS: Pixels = px(10.0);
+const BAR_HEAD_GAP: Pixels = px(8.0);
+const BAR_LABEL_FS: Pixels = px(15.0);
+const BAR_TALLY_FS: Pixels = px(14.0);
+const BAR_ALPHA: f32 = 0.82;
+const TRACK_H: Pixels = px(12.0);
+const TRACK_RADIUS: Pixels = px(6.0);
+const TRACK_ALPHA: f32 = 0.1;
+
 const STRIP_PAD_V: Pixels = px(10.0);
 const STRIP_PAD_H: Pixels = px(18.0);
 const STRIP_RADIUS: Pixels = px(8.0);
@@ -388,6 +408,8 @@ fn render_composition(
             render_badge_banner(composition, accent, family, badge, palette)
         }
         PreviewShape::BorderedFrame => render_bordered_frame(composition, accent, family, palette),
+        PreviewShape::MessageFeed => render_message_feed(composition, accent, family, palette),
+        PreviewShape::ProgressBar => render_progress_bar(composition, accent, family, palette),
         PreviewShape::Strip => render_strip(composition, accent, family, palette),
     }
 }
@@ -501,6 +523,126 @@ fn render_bordered_frame(
                 .text_color(palette.shell)
                 .child(label),
         )
+        .into_any_element()
+}
+
+fn render_message_feed(
+    composition: &PreviewComposition,
+    accent: Rgba,
+    family: SharedString,
+    palette: &ForgePalette,
+) -> AnyElement {
+    let author = line_text(composition, PreviewLineRole::Headline);
+    let message = line_text(composition, PreviewLineRole::Subline)
+        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
+
+    let row = div()
+        .w_full()
+        .flex()
+        .items_baseline()
+        .gap(FEED_NAME_GAP)
+        .font_family(family)
+        .text_size(FEED_FS)
+        .children(author.map(|name| {
+            div()
+                .flex_none()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(accent)
+                .child(name)
+        }))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .text_color(palette.text_primary)
+                .child(message),
+        );
+
+    div()
+        .flex_none()
+        .w_full()
+        .flex()
+        .justify_start()
+        .child(
+            div()
+                .flex_none()
+                .w(FEED_W)
+                .flex()
+                .flex_col()
+                .gap(FEED_ROW_GAP)
+                .p(FEED_PAD)
+                .rounded(FEED_RADIUS)
+                .border(BORDER_THIN)
+                .border_color(accent)
+                .bg(with_alpha(palette.shell, FEED_ALPHA))
+                .child(row),
+        )
+        .into_any_element()
+}
+
+fn render_progress_bar(
+    composition: &PreviewComposition,
+    accent: Rgba,
+    family: SharedString,
+    palette: &ForgePalette,
+) -> AnyElement {
+    let label = line_text(composition, PreviewLineRole::Headline)
+        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
+    let tally = line_text(composition, PreviewLineRole::Subline)
+        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
+
+    let track = div()
+        .w_full()
+        .h(TRACK_H)
+        .overflow_hidden()
+        .rounded(TRACK_RADIUS)
+        .bg(with_alpha(palette.text_primary, TRACK_ALPHA))
+        .children(
+            composition
+                .fill
+                .map(|share| div().h_full().w(relative(share)).bg(accent)),
+        );
+
+    div()
+        .flex_none()
+        .w(relative(BAR_W))
+        .flex()
+        .flex_col()
+        .py(BAR_PAD_V)
+        .px(BAR_PAD_H)
+        .rounded(BAR_RADIUS)
+        .border(BORDER_THIN)
+        .border_color(accent)
+        .bg(with_alpha(palette.shell, BAR_ALPHA))
+        .font_family(family)
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(BAR_HEAD_GAP)
+                .pb(BAR_HEAD_GAP)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .truncate()
+                        .font_weight(FontWeight::BOLD)
+                        .text_size(BAR_LABEL_FS)
+                        .text_color(palette.text_primary)
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(BAR_TALLY_FS)
+                        .text_color(accent)
+                        .child(tally),
+                ),
+        )
+        .child(track)
         .into_any_element()
 }
 

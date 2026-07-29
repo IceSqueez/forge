@@ -95,6 +95,19 @@ pub trait OverlayRepo: Send + Sync {
 
     /// Returns true if a row was removed.
     async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError>;
+
+    /// `None` means never delivered; distinct from a delivered-but-empty map.
+    async fn get_retained_content(
+        &self,
+        id: &OverlayId,
+    ) -> Result<Option<OverlayConfig>, StorageError>;
+
+    /// Persists whatever it is given; disposition-aware retention is the caller's call.
+    async fn set_retained_content(
+        &self,
+        id: &OverlayId,
+        content: &OverlayConfig,
+    ) -> Result<(), StorageError>;
 }
 
 #[cfg(test)]

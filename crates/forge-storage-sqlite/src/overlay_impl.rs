@@ -299,4 +299,47 @@ impl OverlayRepo for SqliteOverlayRepo {
 
         Ok(result.rows_affected() > 0)
     }
+
+    async fn get_retained_content(
+        &self,
+        id: &OverlayId,
+    ) -> Result<Option<OverlayConfig>, StorageError> {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT retained_content FROM overlays WHERE id = ?")
+                .bind(id.as_str())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        let Some(json) = row.and_then(|(content,)| content) else {
+            return Ok(None);
+        };
+
+        let content: OverlayConfig = serde_json::from_str(&json).map_err(|e| {
+            SqliteStorageError::Decode(format!("invalid retained_content json: {e}"))
+        })?;
+        Ok(Some(content))
+    }
+
+    async fn set_retained_content(
+        &self,
+        id: &OverlayId,
+        content: &OverlayConfig,
+    ) -> Result<(), StorageError> {
+        let json = serde_json::to_string(content).map_err(StorageError::Serialization)?;
+
+        let result = sqlx::query("UPDATE overlays SET retained_content = ? WHERE id = ?")
+            .bind(&json)
+            .bind(id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound {
+                key: id.as_str().to_owned(),
+            });
+        }
+        Ok(())
+    }
 }

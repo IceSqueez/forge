@@ -1,7 +1,118 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-07-29
+### 🐛 Bug Fixes
+- *(discord)* Honest reset hint, storage-only name registry
+- *(discord)* Surface missing-webhook failures in health and posts
+- *(ui)* Drive the console run state from the live watch
+- *(server)* Persist run state without receivers, dedupe row keys
+- *(storage)* Strip serde from overlay secrets, make save update-only
+- *(core)* Reject a symlinked staging path in the materializer
+- *(server)* Reject a malformed origin instead of treating it as absent
+- *(core)* Ground overlay template defaults in real payload keys
+- *(ui)* Rematerialize overlays after the root moves
+- *(ui)* Write the overlay source before claiming the override
+- *(server)* Type the resolved entry document, not the request path
+- *(server)* Key the enabled gate off the canonical overlay path
+- *(ui)* Drop the stale overlay token row from websocket settings
+
+### 📚 Documentation
+- *(storage)* Describe overlay save as update-only
+- *(readme)* Describe the overlay designer and send step
+
+### 🚀 Features
+- *(ui)* Rebuild the discord screen on honest webhook data
+- *(server)* Kick a single websocket client by identity
+- *(ui)* Reshape the server console to the design canon
+- *(server)* Expose live run state on the handle
+- *(storage)* Add the overlay definition record and repo
+- *(core)* Add the overlay domain crate with three kind descriptors
+- *(core)* Add overlay page assets, config document and materializer
+- *(server)* Gate the ws handshake on a derived origin allowlist
+- *(ui)* Let settings add extra ws origins for lan clients
+- *(ui)* Add the overlays registry screen
+- *(core)* Ship the overlay client runtime into the shared subtree
+- *(core)* Wire overlay materialization, reload and test fire
+- *(ui)* Add the schema-driven overlay property panel
+- *(ui)* Render the native overlay preview with send test
+- *(ui)* Add the overlay code editor with override and revert
+- *(server)* Resolve overlay directories to index, gate disabled
+- *(core)* Resolve dotted template paths into nested values
+- *(storage)* Persist retained overlay content
+- *(core)* Give overlay kinds dispositions and sectioned fields
+- *(core)* Drive overlay pages by pushed content only
+- *(core)* Let descriptors refine their field set by a sibling key
+- *(server)* Identify overlay connections and address their frames
+- *(core)* Address overlay delivery, retain and replay content
+- *(core)* Add the show overlay sub-action
+- *(ui)* Render overlay content fields in the show overlay step
+- *(overlay)* Add chat and goal overlay kinds
+- *(ui)* Drive overlay panel sections and previews from descriptors
+- *(ui)* Warn when a concurrent queue feeds an ordered overlay
+- *(server)* Make the overlay enabled toggle a live kill switch
+
+### 🚜 Refactor
+- *(server)* Retire the dead overlay gate and count deliveries
+- *(core)* Rename the show overlay step to send to overlay
+
+### 🧪 Testing
+- *(discord)* Cover webhook storage, health projection and action joins
+- *(server)* Cover client kick and the live run-state watch
+- *(storage)* Cover overlay identity minting and credential handling
+- *(overlay)* Cover kind descriptors, validation and update-only save
+- *(overlay)* Cover materialization, config document and page assets
+- *(server)* Probe overlay traversal and credential-echo baseline
+- *(server)* Pin the ws origin allowlist derivation and handshake gate
+- *(overlay)* Pin the reserved subtree as generator territory
+- *(overlays)* Cover registry screen helpers and the runtime contract
+- *(core)* Collapse interpolation singletons, pin template parity
+- *(overlays)* Cover service materialization, reload and test fire
+- *(overlays)* Share the unsafe identity table across confinement
+- *(overlays)* Cover source confinement, preview and accent parity
+- *(server)* Cover overlay index resolution and the enabled gate
+- *(overlays)* Reorient suites to the pure push contract
+- *(overlays)* Carry the credential field through fixtures
+- *(overlays)* Re-aim the service suite at addressed frames
+- *(overlay)* Cover all builtin kinds and dotted sample tokens
+- *(overlay)* Cover retention, replay and the show funnel
+- *(server)* Cover overlay delivery counting and credential auth
+- *(overlay)* Cover the disable revoke path
+
+## [0.4.1] - 2026-07-28
+### ⚙️ Miscellaneous Tasks
+- Release
+
+### 🐛 Bug Fixes
+- *(hotkey)* Honest reconnect, disable ack and enable idempotency
+- *(hotkey)* Expose header actions, bound acks, reload after failure
+- *(ui)* Carry the edited binding id through capture, name the holder
+- *(ui)* Confirm before deleting a hotkey binding
+- *(ui)* Defer the owner unbind until the app modal saves
+
+### 🚀 Features
+- *(hotkey)* Add engine disable with a portal delivery gate
+- *(ui)* Rebuild the hotkeys screen to the design canon
+- *(ui)* Add app-scope shortcut rows to the hotkeys screen
+- *(ui)* Remove the duplicate settings hotkeys section
+- *(ui)* Per-row toggles and an edit modal on every hotkey row
+- *(ui)* App-row unbind and the add bar below the whole list
+
+### 🧪 Testing
+- *(hotkey)* Cover the engine disable gate and prune mock-only tests
+- *(hotkey)* Pin acked disable, idempotent transitions, enable failures
+- *(hotkey)* Pin the header action that reverses the engine state
+- *(hotkey)* Cover combo capture, binding load and relink paths
+- *(hotkey)* Collapse trigger match cases and drop the filter tautology
+- *(hotkeys)* Pin the edit-capture exclusion and placeholder parity
+- *(shortcuts)* Cover override verdicts, chord caps and roster wiring
+- *(i18n)* Pin that every tr! key resolves in the catalog
+- *(shortcuts)* Cover per-row toggles, pruning and legacy migration
+
 ## [0.4.0] - 2026-07-28
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(midi)* Exit on closed control channel, skip empty device filter
 - *(ui)* Keep known devices on read failure, rename edited mapping
@@ -10,6 +121,9 @@ All notable changes to this project will be documented in this file.
 - *(ui)* Make midi learn exitable and filter mappings by device
 - *(ui)* Size the dropdown menu to the design canon
 - *(ui)* Show a dash when a pad duration is unknown
+
+### 📚 Documentation
+- *(release)* Release v0.4.0
 
 ### 🚀 Features
 - *(midi)* Add engine control, device filter and input monitor feed

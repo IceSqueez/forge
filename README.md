@@ -47,7 +47,8 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
   - **TTS** - speak text, stop, pause/resume/skip/clear queue, set/switch voice alias
   - **Soundboard** - play clip, stop clip, stop all, set master volume
   - **Script** - run inline rhai snippet, run named script, emit custom event to bus
-  - **Server** - broadcast event payload to connected overlay clients
+  - **Server** - broadcast event payload to connected WebSocket clients (dashboards, companion apps)
+  - **Overlay** - send content to a registered overlay by name, with an optional per-send duration override
 - Platform sub-actions (Twitch, YouTube, Kick, OBS, VTube, Discord, MIDI) selectable in the same editor
 - Command parser for chat-triggered actions
 - Queue scheduling: Sequential or RandomPick execution
@@ -71,8 +72,11 @@ Connect to Twitch, YouTube, and Kick simultaneously. React to chat events with a
 - Named globals with `%variable%` interpolation; JSON export
 - SQLite backend with AES-GCM encrypted credentials; 7-day event log
 
-### Overlay server
-- WebSocket server at `/ws/v1/` - 14+ methods, bearer-token auth, per-client subscriptions
+### Overlays & server
+- Overlay Designer: a registry of typed browser-source overlays (Alert, Frame, Ticker, Chat, Goal) with a generated page per overlay, a properties panel, a native preview, and a source-code escape hatch per file
+- Overlays are driven entirely by actions - a "Send to Overlay" sub-action pushes content to one overlay by name; there is no separate event-subscription setup
+- Each overlay serves at a stable URL (`http://<host>:<port>/overlays/<id>/`) to paste into an OBS browser source; renaming an overlay never changes that URL
+- WebSocket server at `/ws/v1/` - 14+ methods, bearer-token auth, per-client subscriptions, Origin-checked handshake
 - HTTP overlay host with path-traversal sandbox and configurable CORS
 - Live server screen: connected-client list, bandwidth metrics, lifecycle controls
 

@@ -314,12 +314,9 @@ impl AppShell {
                 let server = handles.server.clone();
                 let rt_handle = handles.rt_handle.clone();
                 let kinds = Arc::clone(&handles.overlay_kinds);
-                let triggers = Arc::clone(&handles.trigger_registry);
                 let overlays = handles.overlays.clone();
-                cx.new(|cx| {
-                    OverlaysView::new(repo, server, rt_handle, kinds, triggers, overlays, cx)
-                })
-                .into()
+                cx.new(|cx| OverlaysView::new(repo, server, rt_handle, kinds, overlays, cx))
+                    .into()
             }
             Screen::Server => {
                 let server = handles.server.clone();

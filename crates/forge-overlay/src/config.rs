@@ -1,10 +1,9 @@
 use forge_registry::{FormField, effective_config};
 use forge_types::Variant;
 
-use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
+use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
 
-pub const EVENT: &str = "event";
 pub const HEADLINE: &str = "headline";
 pub const SUBLINE: &str = "subline";
 pub const ACCENT: &str = "accent";
@@ -26,8 +25,6 @@ pub const ANIMATION_OPTIONS: &[&str] = &[
     "wipe-left",
 ];
 
-pub const EVENT_KINDS_OPTIONS_KEY: &str = "event.kinds";
-
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
 
@@ -46,9 +43,9 @@ pub fn validate_overlay_config(
     check_fields(&descriptor.config_fields(), config)
 }
 
-fn check_fields(fields: &[FormField], config: &OverlayConfig) -> Result<(), OverlayError> {
+fn check_fields(fields: &[SectionedField], config: &OverlayConfig) -> Result<(), OverlayError> {
     for field in fields {
-        check_field(field, config)?;
+        check_field(&field.field, config)?;
     }
     Ok(())
 }
@@ -139,62 +136,85 @@ pub(crate) fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
 }
 
-pub(crate) fn shared_fields() -> Vec<FormField> {
+pub(crate) fn shared_fields() -> Vec<SectionedField> {
     vec![
-        FormField::DynamicSelect {
-            key: EVENT,
-            label: "On event",
-            options_key: EVENT_KINDS_OPTIONS_KEY,
-        },
-        FormField::Text {
-            key: HEADLINE,
-            label: "Headline",
-            placeholder: "Thanks for the sub!",
-        },
-        FormField::Text {
-            key: SUBLINE,
-            label: "Subline",
-            placeholder: "%cumulative_months% months subscribed",
-        },
-        FormField::Swatch {
-            key: ACCENT,
-            label: "Accent",
-            options: ACCENT_OPTIONS,
-        },
-        FormField::Select {
-            key: FONT,
-            label: "Font",
-            options: FONT_OPTIONS,
-        },
-        FormField::Select {
-            key: POSITION,
-            label: "Position",
-            options: POSITION_OPTIONS,
-        },
-        FormField::Select {
-            key: ANIMATION,
-            label: "Animation",
-            options: ANIMATION_OPTIONS,
-        },
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: HEADLINE,
+                label: "Headline",
+                placeholder: "Thanks for the sub!",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: SUBLINE,
+                label: "Subline",
+                placeholder: "Three months subscribed",
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Swatch {
+                key: ACCENT,
+                label: "Accent",
+                options: ACCENT_OPTIONS,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Select {
+                key: FONT,
+                label: "Font",
+                options: FONT_OPTIONS,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Select {
+                key: POSITION,
+                label: "Position",
+                options: POSITION_OPTIONS,
+            },
+        ),
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Select {
+                key: ANIMATION,
+                label: "Animation",
+                options: ANIMATION_OPTIONS,
+            },
+        ),
     ]
 }
 
-pub(crate) fn duration_field() -> FormField {
-    FormField::Slider {
-        key: DURATION,
-        label: "Duration",
-        min: DURATION_MIN_SECS,
-        max: DURATION_MAX_SECS,
-        unit: "s",
-    }
+pub(crate) fn duration_field() -> SectionedField {
+    in_section(
+        ConfigSection::Behavior,
+        FormField::Slider {
+            key: DURATION,
+            label: "Duration",
+            min: DURATION_MIN_SECS,
+            max: DURATION_MAX_SECS,
+            unit: "s",
+        },
+    )
 }
 
-pub(crate) fn sound_field() -> FormField {
-    FormField::Text {
-        key: SOUND,
-        label: "Sound",
-        placeholder: "fanfare.mp3",
-    }
+pub(crate) fn sound_field() -> SectionedField {
+    in_section(
+        ConfigSection::Behavior,
+        FormField::Text {
+            key: SOUND,
+            label: "Sound",
+            placeholder: "fanfare.mp3",
+        },
+    )
+}
+
+fn in_section(section: ConfigSection, field: FormField) -> SectionedField {
+    SectionedField { section, field }
 }
 
 pub(crate) fn shared_defaults(
@@ -204,7 +224,6 @@ pub(crate) fn shared_defaults(
     animation: &str,
 ) -> OverlayConfig {
     OverlayConfig::from([
-        (EVENT.to_owned(), text("")),
         (ACCENT.to_owned(), text(accent)),
         (FONT.to_owned(), text(font)),
         (POSITION.to_owned(), text(position)),
@@ -218,6 +237,7 @@ pub(crate) fn shared_defaults(
 mod tests {
     use super::*;
     use crate::assets::PageAssets;
+    use crate::descriptor::DeliveryDisposition;
     use crate::kinds::alert::AlertOverlayKind;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
 
@@ -246,6 +266,14 @@ mod tests {
             ""
         }
 
+        fn delivery_disposition(&self) -> DeliveryDisposition {
+            DeliveryDisposition::Transient
+        }
+
+        fn order_sensitive(&self) -> bool {
+            false
+        }
+
         fn config_schema_version(&self) -> u32 {
             1
         }
@@ -254,27 +282,36 @@ mod tests {
             OverlayConfig::new()
         }
 
-        fn config_fields(&self) -> Vec<FormField> {
+        fn config_fields(&self) -> Vec<SectionedField> {
             vec![
-                FormField::Toggle {
-                    key: PROBE_TOGGLE,
-                    label: "Toggle",
-                },
-                FormField::Integer {
-                    key: PROBE_INTEGER,
-                    label: "Integer",
-                    min: 0,
-                    max: 10,
-                },
-                FormField::Optional {
-                    key: PROBE_OPTIONAL,
-                    label: "Optional",
-                    inner: Box::new(FormField::Select {
-                        key: PROBE_INNER,
-                        label: "Inner",
-                        options: PROBE_INNER_OPTIONS,
-                    }),
-                },
+                in_section(
+                    ConfigSection::Behavior,
+                    FormField::Toggle {
+                        key: PROBE_TOGGLE,
+                        label: "Toggle",
+                    },
+                ),
+                in_section(
+                    ConfigSection::Behavior,
+                    FormField::Integer {
+                        key: PROBE_INTEGER,
+                        label: "Integer",
+                        min: 0,
+                        max: 10,
+                    },
+                ),
+                in_section(
+                    ConfigSection::Behavior,
+                    FormField::Optional {
+                        key: PROBE_OPTIONAL,
+                        label: "Optional",
+                        inner: Box::new(FormField::Select {
+                            key: PROBE_INNER,
+                            label: "Inner",
+                            options: PROBE_INNER_OPTIONS,
+                        }),
+                    },
+                ),
             ]
         }
 

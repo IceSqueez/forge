@@ -3,17 +3,15 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
-use forge_overlay::config::EVENT;
 use forge_overlay::{
     GENERATOR_VERSION, MaterializeReport, OverlayInstance, OverlayKindRegistry,
-    effective_overlay_config, ensure_shared_directory, materialize_overlay, read_overlay_source,
-    remove_overlay_directory, sample_payload, write_overlay_source,
+    ensure_shared_directory, materialize_overlay, read_overlay_source, remove_overlay_directory,
+    sample_payload, write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_storage::{
     OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError, reserved_keys,
 };
-use forge_types::Variant;
 use serde_json::json;
 
 use crate::bus::EventBus;
@@ -23,7 +21,6 @@ pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
 /// Browser-facing document keys are camelCase, matching the push envelope's `timeStamp`.
 const OVERLAY_ID_KEY: &str = "overlayId";
-const EVENT_KIND_KEY: &str = "eventKind";
 
 #[derive(Debug, thiserror::Error)]
 pub enum OverlayServiceError {
@@ -32,9 +29,6 @@ pub enum OverlayServiceError {
 
     #[error("overlay '{id}' needs an overlay type this build does not carry: {kind_id}")]
     UnavailableKind { id: OverlayId, kind_id: String },
-
-    #[error("overlay '{0}' has no event bound yet")]
-    NoBoundEvent(OverlayId),
 
     #[error(transparent)]
     Storage(#[from] StorageError),
@@ -54,7 +48,6 @@ pub trait OverlayFrameSink: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestFire {
-    pub event_kind: String,
     pub payload: serde_json::Value,
     /// False when nothing is serving, so the caller can say the preview ran alone.
     pub delivered: bool,
@@ -211,28 +204,18 @@ impl OverlayServiceHandle {
     /// payload the page received. Nothing is published: no action, script or queue observes it.
     pub async fn test_fire(&self, id: &OverlayId) -> Result<TestFire, OverlayServiceError> {
         let definition = self.load(id).await?;
-        let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
+        if self.inner.kinds.get(&definition.kind_id).is_none() {
             return Err(OverlayServiceError::UnavailableKind {
                 id: definition.id,
                 kind_id: definition.kind_id,
             });
-        };
-
-        let config = effective_overlay_config(descriptor, &definition.config);
-        let event_kind = config
-            .get(EVENT)
-            .and_then(Variant::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        if event_kind.is_empty() {
-            return Err(OverlayServiceError::NoBoundEvent(definition.id));
         }
 
-        let payload = sample_payload(&event_kind);
+        let payload = sample_payload(&definition.kind_id);
         let origin = Event::new(
             EventSource::Core,
             OVERLAY_TEST_FIRE_KIND,
-            json!({ OVERLAY_ID_KEY: definition.id.as_str(), EVENT_KIND_KEY: &event_kind }),
+            json!({ OVERLAY_ID_KEY: definition.id.as_str() }),
         );
         let parent = origin.id;
         self.inner.bus.record(origin);
@@ -241,8 +224,8 @@ impl OverlayServiceHandle {
             Some(frames) => {
                 frames
                     .deliver(Event::caused_by(
-                        source_of(&event_kind),
-                        event_kind.clone(),
+                        EventSource::Core,
+                        OVERLAY_TEST_FIRE_KIND,
                         payload.clone(),
                         parent,
                     ))
@@ -252,11 +235,7 @@ impl OverlayServiceHandle {
             None => false,
         };
 
-        Ok(TestFire {
-            event_kind,
-            payload,
-            delivered,
-        })
+        Ok(TestFire { payload, delivered })
     }
 
     async fn load(&self, id: &OverlayId) -> Result<OverlayDefinition, OverlayServiceError> {
@@ -293,27 +272,6 @@ fn instance_of(definition: &OverlayDefinition) -> OverlayInstance {
         kind_id: definition.kind_id.clone(),
         config: definition.config.clone(),
         source_overrides: definition.source_overrides.clone(),
-    }
-}
-
-/// Kind grammar puts the source in the leading segment, so a sample frame carries the same
-/// source a live frame of that kind would.
-fn source_of(event_kind: &str) -> EventSource {
-    match event_kind.split('.').next().unwrap_or_default() {
-        "twitch" => EventSource::Twitch,
-        "youtube" => EventSource::YouTube,
-        "kick" => EventSource::Kick,
-        "obs" => EventSource::Obs,
-        "vtube" => EventSource::VTube,
-        "discord" => EventSource::Discord,
-        "midi" => EventSource::Midi,
-        "hotkey" => EventSource::Hotkey,
-        "timer" => EventSource::Timer,
-        "http" => EventSource::Http,
-        "script" => EventSource::Rhai,
-        "ws" => EventSource::Server,
-        "speak" | "audio" | "sound" => EventSource::Audio,
-        _ => EventSource::Core,
     }
 }
 

@@ -74,7 +74,7 @@ mod tests {
             let declared: BTreeSet<&str> = descriptor
                 .config_fields()
                 .iter()
-                .map(|f| field_key(f))
+                .map(|f| field_key(&f.field))
                 .collect();
             let defaults = descriptor.default_config();
             let defaulted: BTreeSet<&str> = defaults.keys().map(String::as_str).collect();

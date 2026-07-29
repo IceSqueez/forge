@@ -1,8 +1,8 @@
-use forge_registry::FormField;
-
 use crate::assets::PageAssets;
 use crate::config;
-use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
+use crate::descriptor::{
+    DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
+};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.frame";
@@ -26,6 +26,14 @@ impl OverlayKindDescriptor for FrameOverlayKind {
         "frame"
     }
 
+    fn delivery_disposition(&self) -> DeliveryDisposition {
+        DeliveryDisposition::Replace
+    }
+
+    fn order_sensitive(&self) -> bool {
+        false
+    }
+
     fn config_schema_version(&self) -> u32 {
         1
     }
@@ -37,7 +45,7 @@ impl OverlayKindDescriptor for FrameOverlayKind {
         defaults
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
+    fn config_fields(&self) -> Vec<SectionedField> {
         let mut fields = config::shared_fields();
         fields.push(config::sound_field());
         fields

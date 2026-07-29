@@ -46,7 +46,7 @@ impl OverlayKindRegistry {
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
-    use forge_registry::FormField;
+    use crate::descriptor::{DeliveryDisposition, SectionedField};
     use forge_types::Variant;
 
     use super::*;
@@ -77,6 +77,14 @@ mod tests {
             ""
         }
 
+        fn delivery_disposition(&self) -> DeliveryDisposition {
+            DeliveryDisposition::Transient
+        }
+
+        fn order_sensitive(&self) -> bool {
+            false
+        }
+
         fn config_schema_version(&self) -> u32 {
             1
         }
@@ -85,7 +93,7 @@ mod tests {
             OverlayConfig::from([(STUB_KEY.to_owned(), Variant::Int(7))])
         }
 
-        fn config_fields(&self) -> Vec<FormField> {
+        fn config_fields(&self) -> Vec<SectionedField> {
             Vec::new()
         }
 

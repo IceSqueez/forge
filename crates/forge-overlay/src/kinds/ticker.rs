@@ -1,8 +1,8 @@
-use forge_registry::FormField;
-
 use crate::assets::PageAssets;
 use crate::config;
-use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
+use crate::descriptor::{
+    DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
+};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.ticker";
@@ -19,11 +19,19 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn summary(&self) -> &str {
-        "Runs a full-width strip carrying the latest event"
+        "Runs a full-width strip carrying the latest line an action sends"
     }
 
     fn icon_name(&self) -> &str {
         "arrow-badge-right"
+    }
+
+    fn delivery_disposition(&self) -> DeliveryDisposition {
+        DeliveryDisposition::Transient
+    }
+
+    fn order_sensitive(&self) -> bool {
+        false
     }
 
     fn config_schema_version(&self) -> u32 {
@@ -41,7 +49,7 @@ impl OverlayKindDescriptor for TickerOverlayKind {
         defaults
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
+    fn config_fields(&self) -> Vec<SectionedField> {
         let mut fields = config::shared_fields();
         fields.push(config::duration_field());
         fields.push(config::sound_field());

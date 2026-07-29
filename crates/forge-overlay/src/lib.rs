@@ -16,7 +16,9 @@ pub use assets::{
     RUNTIME_ASSET, RUNTIME_SOURCE, STYLE_FILE,
 };
 pub use config::{effective_overlay_config, validate_overlay_config};
-pub use descriptor::{OverlayConfig, OverlayKindDescriptor};
+pub use descriptor::{
+    ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
+};
 pub use document::{DOCUMENT_VERSION, config_document};
 pub use error::OverlayError;
 pub use instance::OverlayInstance;

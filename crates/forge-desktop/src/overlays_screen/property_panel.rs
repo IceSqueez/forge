@@ -3,16 +3,14 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels, TextInput,
-    anchored_popover, body_family, field_label, mono_family, section_label, tr,
+    anchored_popover, body_family, field_label, section_label, tr,
 };
-use forge_overlay::config::{ACCENT, ANIMATION, DURATION, EVENT, FONT, POSITION, SOUND};
-use forge_overlay::sample_payload;
+use forge_overlay::config::{ACCENT, ANIMATION, DURATION, FONT, POSITION, SOUND};
 use forge_registry::FormField;
 use forge_storage::{OverlayConfig, OverlayId};
-use forge_types::Variant;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, Context, Entity, EventEmitter, Pixels, Point, SharedString, Subscription, Window,
+    div, prelude::*, px,
 };
 
 use crate::config_form::{
@@ -20,7 +18,6 @@ use crate::config_form::{
     fold_config_field, render_config_control, sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
-use crate::toasts::copy_to_clipboard;
 
 const PANE_W: Pixels = px(246.0);
 const PANE_PAD: Pixels = px(14.0);
@@ -28,12 +25,6 @@ const PANE_PAD: Pixels = px(14.0);
 const SECTION_GAP: Pixels = px(10.0);
 const SECTION_TOP_GAP: Pixels = px(16.0);
 const FIELD_GAP: Pixels = px(12.0);
-
-const CHIP_GAP: Pixels = px(5.0);
-const CHIP_PAD_V: Pixels = px(2.0);
-const CHIP_PAD_H: Pixels = px(6.0);
-const CHIP_RADIUS: Pixels = px(4.0);
-const CHIP_FS: Pixels = px(10.0);
 
 const NOTICE_PAD: Pixels = px(9.0);
 const NOTICE_RADIUS: Pixels = px(6.0);
@@ -134,34 +125,6 @@ impl OverlayPropertyPanel {
 
     pub(super) fn overlay_id(&self) -> &OverlayId {
         &self.overlay_id
-    }
-
-    /// The kind's own event field decides which sample payload the token row offers.
-    fn bound_event(&self, cx: &Context<Self>) -> String {
-        let mut buffer = self.defaults.clone();
-        collect_field_values(&self.fields, &mut buffer, cx);
-        buffer
-            .get(EVENT)
-            .and_then(Variant::as_str)
-            .unwrap_or_default()
-            .to_owned()
-    }
-
-    /// Only top-level scalar keys: the page's expander reads own properties of the payload, so a
-    /// nested entity or a null would render a placeholder instead of a value.
-    fn template_tokens(&self, cx: &Context<Self>) -> Vec<String> {
-        let event_kind = self.bound_event(cx);
-        if event_kind.is_empty() {
-            return Vec::new();
-        }
-        let Some(fields) = sample_payload(&event_kind).as_object().cloned() else {
-            return Vec::new();
-        };
-        fields
-            .into_iter()
-            .filter(|(_, value)| value.is_string() || value.is_number() || value.is_boolean())
-            .map(|(name, _)| name)
-            .collect()
     }
 
     fn emit_save(&mut self, cx: &mut Context<Self>) {
@@ -387,60 +350,7 @@ impl OverlayPropertyPanel {
             );
         }
 
-        if section == PanelSection::Content {
-            column = column.child(self.render_tokens(palette, cx));
-        }
-
         Some(column.into_any_element())
-    }
-
-    fn render_tokens(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let tokens = self.template_tokens(cx);
-        let body: AnyElement = if tokens.is_empty() {
-            div()
-                .font_family(body_family())
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(tr!("overlays_panel_tokens_none"))
-                .into_any_element()
-        } else {
-            let mut row = div().flex().flex_row().flex_wrap().gap(CHIP_GAP);
-            for name in tokens {
-                let token = format!("%{name}%");
-                let copied = token.clone();
-                row = row.child(
-                    div()
-                        .id(SharedString::from(format!("overlays-token-{name}")))
-                        .py(CHIP_PAD_V)
-                        .px(CHIP_PAD_H)
-                        .rounded(CHIP_RADIUS)
-                        .border(BORDER_THIN)
-                        .border_color(palette.border_regular)
-                        .bg(palette.base)
-                        .cursor_pointer()
-                        .font_family(mono_family())
-                        .text_size(CHIP_FS)
-                        .text_color(palette.warning)
-                        .on_click(move |_: &ClickEvent, _window, cx| {
-                            copy_to_clipboard(copied.clone(), cx);
-                        })
-                        .child(token),
-                );
-            }
-            row.into_any_element()
-        };
-
-        div()
-            .pb(FIELD_GAP)
-            .flex()
-            .flex_col()
-            .gap(CHIP_GAP)
-            .child(section_label(
-                tr!("overlays_panel_tokens_label").to_uppercase(),
-                palette,
-            ))
-            .child(body)
-            .into_any_element()
     }
 }
 

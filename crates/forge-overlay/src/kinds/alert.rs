@@ -1,8 +1,8 @@
-use forge_registry::FormField;
-
 use crate::assets::PageAssets;
 use crate::config;
-use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
+use crate::descriptor::{
+    DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
+};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.alert";
@@ -19,11 +19,19 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn summary(&self) -> &str {
-        "Shows a banner for a few seconds when the bound event fires"
+        "Shows a banner for a few seconds each time an action sends one"
     }
 
     fn icon_name(&self) -> &str {
         "bell"
+    }
+
+    fn delivery_disposition(&self) -> DeliveryDisposition {
+        DeliveryDisposition::Transient
+    }
+
+    fn order_sensitive(&self) -> bool {
+        false
     }
 
     fn config_schema_version(&self) -> u32 {
@@ -44,7 +52,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         defaults
     }
 
-    fn config_fields(&self) -> Vec<FormField> {
+    fn config_fields(&self) -> Vec<SectionedField> {
         let mut fields = config::shared_fields();
         fields.push(config::duration_field());
         fields.push(config::sound_field());

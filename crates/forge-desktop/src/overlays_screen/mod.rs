@@ -1,6 +1,5 @@
 mod code_pane;
 mod editor_pane;
-mod event_options;
 mod form_modal;
 mod kind_visuals;
 mod preview_stage;
@@ -14,9 +13,7 @@ use forge_components::{
     BreadcrumbCrumb, Confirm, ConfirmTone, FONT_XS, ForgePalette, Icon, OverlayPosition, ToastKind,
     body_family, confirm_modal, drive_overlay_focus, icon, overlay, page_frame, tr,
 };
-use forge_overlay::config::EVENT_KINDS_OPTIONS_KEY;
 use forge_overlay::{OverlayKindRegistry, effective_overlay_config};
-use forge_registry::TriggerRegistry;
 use forge_runtime::OverlayServiceHandle;
 use forge_server::ServerHandle;
 use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo};
@@ -31,7 +28,6 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::{PushToast, copy_to_clipboard};
 
 use code_pane::{CodeState, LeaveIntent};
-use event_options::event_kind_options;
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
 use kind_visuals::{KindVisuals, kind_visuals};
 use preview_stage::TestFireRun;
@@ -87,7 +83,6 @@ pub struct OverlaysView {
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
     kinds: Arc<OverlayKindRegistry>,
-    triggers: Arc<TriggerRegistry>,
     service: OverlayServiceHandle,
     overlays: Vec<OverlayDefinition>,
     selected: Option<OverlayId>,
@@ -108,13 +103,11 @@ pub struct OverlaysView {
 }
 
 impl OverlaysView {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         repo: Arc<dyn OverlayRepo>,
         server: Option<ServerHandle>,
         rt_handle: tokio::runtime::Handle,
         kinds: Arc<OverlayKindRegistry>,
-        triggers: Arc<TriggerRegistry>,
         service: OverlayServiceHandle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -128,7 +121,6 @@ impl OverlaysView {
             server,
             rt_handle,
             kinds,
-            triggers,
             service,
             overlays: Vec::new(),
             selected: None,
@@ -352,14 +344,15 @@ impl OverlaysView {
 
         let launch = PanelLaunch {
             overlay_id: definition.id.clone(),
-            specs: descriptor.config_fields(),
+            specs: descriptor
+                .config_fields()
+                .into_iter()
+                .map(|field| field.field)
+                .collect(),
             defaults: descriptor.default_config(),
             stored: definition.config.clone(),
             effective: effective_overlay_config(descriptor, &definition.config),
-            choices: HashMap::from([(
-                EVENT_KINDS_OPTIONS_KEY.to_owned(),
-                event_kind_options(&self.triggers),
-            )]),
+            choices: HashMap::new(),
             overridden_files: definition.source_overrides.clone(),
         };
 

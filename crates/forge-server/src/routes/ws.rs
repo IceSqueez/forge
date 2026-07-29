@@ -24,8 +24,11 @@ pub async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
-    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
-    if !is_origin_allowed(&state.allowed_origins, origin) {
+    let origin_header = headers.get(header::ORIGIN);
+    let origin = origin_header.and_then(|v| v.to_str().ok());
+    if (origin_header.is_some() && origin.is_none())
+        || !is_origin_allowed(&state.allowed_origins, origin)
+    {
         return origin_rejected_response();
     }
 

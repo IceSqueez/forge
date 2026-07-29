@@ -137,6 +137,7 @@ impl ServerHandle {
             actions: Arc::clone(&state.actions),
             globals: Arc::clone(&state.globals),
             user_globals: Arc::clone(&state.user_globals),
+            overlays: Arc::clone(&state.overlays),
             credentials: Arc::clone(&state.credentials),
             settings: Arc::clone(&state.settings),
             server_info: Arc::clone(&state.server_info),

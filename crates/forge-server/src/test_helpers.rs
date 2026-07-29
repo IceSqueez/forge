@@ -51,6 +51,9 @@ pub struct TestDataProvider {
 
 impl TestDataProvider {
     pub fn new() -> Self {
+        let mut overlay_repo = MockOverlayRepo::new();
+        overlay_repo.expect_get().returning(|_| Ok(None));
+
         Self {
             action_repo: Arc::new(MockActionRepo::new()),
             trigger_instance_repo: Arc::new(MockTriggerInstanceRepo::new()),
@@ -58,7 +61,7 @@ impl TestDataProvider {
             history_repo: Arc::new(MockHistoryRepo::new()),
             event_log_repo: Arc::new(MockEventLogRepo::new()),
             soundboard_clips_repo: Arc::new(MockSoundboardClipsRepo::new()),
-            overlay_repo: Arc::new(MockOverlayRepo::new()),
+            overlay_repo: Arc::new(overlay_repo),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
             viewer_repo: Arc::new(MockViewerRepo::new()),
             tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
@@ -97,6 +100,10 @@ impl TestDataProvider {
 
     pub fn viewer(&mut self) -> &mut MockViewerRepo {
         Arc::get_mut(&mut self.viewer_repo).expect("viewer_repo already shared")
+    }
+
+    pub fn overlay(&mut self) -> &mut MockOverlayRepo {
+        Arc::get_mut(&mut self.overlay_repo).expect("overlay_repo already shared")
     }
 
     pub fn globals(&mut self) -> &mut MockGlobalsRepo {

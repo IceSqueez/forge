@@ -2,9 +2,12 @@ use axum::body::Body;
 use axum::extract::{Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use forge_storage::OverlayId;
 
 use crate::protocol::mime_for_extension;
 use crate::server::AppState;
+
+const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
 
 #[derive(serde::Deserialize)]
 pub struct TokenQuery {
@@ -81,24 +84,57 @@ async fn resolve_and_read(state: &AppState, url_path: &str) -> Result<Vec<u8>, S
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let root = state.overlay_root.as_ref();
-    let requested = std::path::Path::new(url_path.trim_start_matches('/'));
+    if !overlay_serving_enabled(state, url_path).await {
+        return Err(StatusCode::NOT_FOUND);
+    }
 
-    let canon_file = crate::sandbox::confine(root, requested)
+    let root = state.overlay_root.as_ref();
+    let trimmed = url_path.trim_start_matches('/');
+    let requested = std::path::Path::new(trimmed);
+
+    let canon_target = crate::sandbox::confine(root, requested)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let meta = tokio::fs::metadata(&canon_file)
+    let meta = tokio::fs::metadata(&canon_target)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    if meta.is_dir() {
-        return Err(StatusCode::NOT_FOUND);
-    }
+    let canon_file = if meta.is_dir() {
+        let entry_relative = std::path::Path::new(trimmed).join(OVERLAY_ENTRY_DOCUMENT);
+        let canon_entry = crate::sandbox::confine(root, &entry_relative)
+            .await
+            .ok_or(StatusCode::NOT_FOUND)?;
+        let entry_meta = tokio::fs::metadata(&canon_entry)
+            .await
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        if !entry_meta.is_file() {
+            return Err(StatusCode::NOT_FOUND);
+        }
+        canon_entry
+    } else {
+        canon_target
+    };
 
     tokio::fs::read(&canon_file)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)
+}
+
+async fn overlay_serving_enabled(state: &AppState, url_path: &str) -> bool {
+    let Some(identity) = url_path
+        .trim_start_matches('/')
+        .split('/')
+        .next()
+        .filter(|seg| !seg.is_empty())
+    else {
+        return true;
+    };
+
+    match state.overlays.get(&OverlayId::new(identity)).await {
+        Ok(Some(definition)) => definition.enabled,
+        Ok(None) | Err(_) => true,
+    }
 }
 
 #[cfg(test)]
@@ -199,6 +235,7 @@ mod tests {
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
+        let overlays = dp.overlay_repo();
         let _registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
@@ -215,6 +252,7 @@ mod tests {
             actions,
             globals,
             user_globals,
+            overlays,
             credentials: creds_dyn,
             settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
             server_info: ServerInfo::new(),

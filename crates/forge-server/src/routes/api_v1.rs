@@ -322,6 +322,7 @@ mod tests {
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
+        let overlays = dp.overlay_repo();
         let state = AppState {
             auth,
             bus,
@@ -329,6 +330,7 @@ mod tests {
             actions,
             globals,
             user_globals,
+            overlays,
             credentials: creds_dyn,
             settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
             server_info: ServerInfo::new(),

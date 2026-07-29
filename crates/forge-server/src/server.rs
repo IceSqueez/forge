@@ -11,7 +11,9 @@ use axum::{Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
-use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, UserGlobalsRepo};
+use forge_storage::{
+    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, UserGlobalsRepo,
+};
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
@@ -28,6 +30,7 @@ pub struct AppState {
     pub actions: Arc<dyn ActionRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
+    pub overlays: Arc<dyn OverlayRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub settings: Arc<dyn SettingsRepo>,
     pub server_info: Arc<ServerInfo>,
@@ -75,6 +78,7 @@ impl Server {
             actions: self.config.actions,
             globals: self.config.globals,
             user_globals: self.config.user_globals,
+            overlays: self.config.overlays,
             credentials,
             settings: self.config.settings,
             server_info: ServerInfo::new(),
@@ -356,6 +360,7 @@ mod tests {
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
+        let overlays = dp.overlay_repo();
         let _registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
@@ -371,6 +376,7 @@ mod tests {
             actions,
             globals,
             user_globals,
+            overlays,
             credentials: creds,
             settings,
             server_info: ServerInfo::new(),
@@ -508,6 +514,7 @@ mod tests {
             dp.action_repo(),
             Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
             Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            dp.overlay_repo(),
             action_engine,
         );
         config.bind_addr = "127.0.0.1:0".parse().expect("addr");

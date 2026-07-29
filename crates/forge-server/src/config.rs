@@ -5,8 +5,9 @@ use std::sync::Arc;
 use forge_platform_core::paths;
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::{
-    ActionRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
-    get_bool_setting, get_json_setting, reserved_keys, set_bool_setting, set_json_setting,
+    ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, StorageError,
+    UserGlobalsRepo, get_bool_setting, get_json_setting, reserved_keys, set_bool_setting,
+    set_json_setting,
 };
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
@@ -25,10 +26,12 @@ pub struct ServerConfig {
     pub actions: Arc<dyn ActionRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
+    pub overlays: Arc<dyn OverlayRepo>,
     pub action_engine: Arc<ActionEngineHandle>,
 }
 
 impl ServerConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         settings: Arc<dyn SettingsRepo>,
         credentials: Arc<dyn CredentialsRepo>,
@@ -36,6 +39,7 @@ impl ServerConfig {
         actions: Arc<dyn ActionRepo>,
         globals: Arc<dyn GlobalsRepo>,
         user_globals: Arc<dyn UserGlobalsRepo>,
+        overlays: Arc<dyn OverlayRepo>,
         action_engine: Arc<ActionEngineHandle>,
     ) -> Self {
         Self {
@@ -52,6 +56,7 @@ impl ServerConfig {
             actions,
             globals,
             user_globals,
+            overlays,
             action_engine,
         }
     }

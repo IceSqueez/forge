@@ -354,6 +354,7 @@ async fn build_server(
         backend.action_repo(),
         globals,
         user_globals,
+        backend.overlay_repo(),
         Arc::new(action_engine.clone()),
     );
     config.bind_addr = bind_addr;

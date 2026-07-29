@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use forge_overlay::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OverlayConfig, OverlayError, OverlayInstance,
     OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE, ensure_shared_directory,
-    materialize_overlay, register_builtin_kinds,
+    materialize_overlay, register_builtin_kinds, remove_overlay_directory,
 };
 use forge_types::Variant;
 use tempfile::TempDir;
@@ -14,6 +14,20 @@ use tempfile::TempDir;
 const ALERT_KIND: &str = "overlay.alert";
 const IDENTITY: &str = "sub-alert-1";
 const IDENTITY_LEN_LIMIT: usize = 64;
+
+const UNSAFE_IDENTITIES: &[(&str, &str)] = &[
+    ("..", "parent traversal"),
+    (".", "the current directory"),
+    ("a/b", "a nested path"),
+    ("/abs", "an absolute path"),
+    ("a\\b", "a windows separator"),
+    ("Up-Case", "an uppercase letter"),
+    ("dot.name", "a dot segment"),
+    ("with space", "a space"),
+    ("", "an empty name"),
+    ("-leading-dash", "a leading dash"),
+    (RESERVED_DIRECTORY, "the reserved shared subtree"),
+];
 
 fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
@@ -233,19 +247,7 @@ fn override_names_outside_the_overridable_set_are_ignored() {
 fn an_identity_that_is_not_a_plain_directory_name_is_rejected_before_anything_is_created() {
     let reg = registry();
 
-    for (id, label) in [
-        ("..", "parent traversal"),
-        (".", "the current directory"),
-        ("a/b", "a nested path"),
-        ("/abs", "an absolute path"),
-        ("a\\b", "a windows separator"),
-        ("Up-Case", "an uppercase letter"),
-        ("dot.name", "a dot segment"),
-        ("with space", "a space"),
-        ("", "an empty name"),
-        ("-leading-dash", "a leading dash"),
-        (RESERVED_DIRECTORY, "the reserved shared subtree"),
-    ] {
+    for &(id, label) in UNSAFE_IDENTITIES {
         let home = TempDir::new().unwrap();
         let root = unborn_root(&home);
         let mut unsafe_identity = instance(&[]);
@@ -401,5 +403,104 @@ fn a_symbolic_link_on_the_staging_path_is_not_written_through() {
     assert!(
         matches!(&result, Err(OverlayError::SymlinkedPath { .. })),
         "a linked staging path must be refused exactly like a linked target: {result:?}"
+    );
+}
+
+#[test]
+fn removing_an_overlay_takes_its_directory_and_nothing_else() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+    ensure_shared_directory(&root).unwrap();
+    let doomed = materialize_overlay(&root, &instance(&[]), &reg).expect("the doomed overlay");
+    let mut neighbour = instance(&[]);
+    neighbour.id = "keep-me".to_owned();
+    let kept = materialize_overlay(&root, &neighbour, &reg).expect("the neighbouring overlay");
+
+    let removed = remove_overlay_directory(&root, IDENTITY).expect("the directory is removable");
+
+    assert!(
+        removed,
+        "a directory that was there must be reported removed"
+    );
+    assert!(!doomed.directory.exists());
+    assert_eq!(
+        names_in(&kept.directory),
+        generated_page(),
+        "removing one overlay reached into its neighbour"
+    );
+    assert!(
+        root.join(RESERVED_DIRECTORY).join(RUNTIME_ASSET).exists(),
+        "removing one overlay took the shared runtime with it"
+    );
+}
+
+#[test]
+fn removing_reports_false_when_the_directory_or_the_whole_root_is_already_gone() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+
+    assert!(
+        !remove_overlay_directory(&root, IDENTITY).expect("a missing root is not an error"),
+        "a root that was never created must report nothing to remove"
+    );
+
+    ensure_shared_directory(&root).unwrap();
+    assert!(
+        !remove_overlay_directory(&root, IDENTITY).expect("a missing directory is not an error"),
+        "an overlay that owns no directory yet must report nothing to remove"
+    );
+}
+
+#[test]
+fn removing_refuses_an_identity_that_is_not_a_plain_directory_name() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let shared = ensure_shared_directory(&root).unwrap();
+    materialize_overlay(&root, &instance(&[]), &registry()).expect("a neighbour to protect");
+
+    for &(id, label) in UNSAFE_IDENTITIES {
+        let err = remove_overlay_directory(&root, id)
+            .expect_err("an identity is a directory name and must be refused when it is not");
+
+        assert!(
+            matches!(&err, OverlayError::UnsafeIdentity(got) if got == id),
+            "{label} ({id:?}) produced {err:?}"
+        );
+    }
+
+    assert!(
+        home.path().exists() && shared.join(RUNTIME_ASSET).exists(),
+        "a refused identity still deleted something"
+    );
+    assert_eq!(
+        names_in(&root.canonicalize().unwrap().join(IDENTITY)),
+        generated_page(),
+        "a refused identity reached the neighbouring overlay"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn removing_an_overlay_directory_that_is_a_symbolic_link_leaves_its_target_alone() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    fs::create_dir_all(&root).unwrap();
+    let elsewhere = home.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::write(elsewhere.join("keep.txt"), "victim content").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join(IDENTITY)).unwrap();
+
+    let err = remove_overlay_directory(&root, IDENTITY)
+        .expect_err("a linked overlay directory must be refused, never followed");
+
+    assert!(
+        matches!(&err, OverlayError::SymlinkedPath { .. }),
+        "{err:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(elsewhere.join("keep.txt")).unwrap(),
+        "victim content",
+        "the removal followed a link out of the overlay root"
     );
 }

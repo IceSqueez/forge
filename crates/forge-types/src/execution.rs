@@ -200,30 +200,29 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_empty_template() {
-        let stack = ArgStack::new();
-        assert_eq!(stack.interpolate(""), "");
-    }
+    fn interpolate_substitutes_known_tokens_and_leaves_surrounding_text_alone() {
+        let stack = stack_with(&[
+            ("first", Variant::String("Hello".to_string())),
+            ("second", Variant::String("World".to_string())),
+            ("count", Variant::Int(3)),
+        ]);
 
-    #[test]
-    fn interpolate_single_known_var() {
-        let stack = stack_with(&[("name", Variant::String("Twitch".to_string()))]);
-        assert_eq!(stack.interpolate("%name%"), "Twitch");
-    }
-
-    #[test]
-    fn interpolate_var_in_sentence() {
-        let stack = stack_with(&[("user", Variant::String("alice".to_string()))]);
-        assert_eq!(
-            stack.interpolate("hello %user%, welcome"),
-            "hello alice, welcome"
-        );
-    }
-
-    #[test]
-    fn interpolate_unknown_var_stays_verbatim() {
-        let stack = ArgStack::new();
-        assert_eq!(stack.interpolate("%missing%"), "%missing%");
+        for (template, expected) in [
+            ("", ""),
+            ("no substitutions here", "no substitutions here"),
+            ("%first%", "Hello"),
+            ("say %first%, then stop", "say Hello, then stop"),
+            ("%first% %second%", "Hello World"),
+            ("%first%%second%", "HelloWorld"),
+            ("%count% times", "3 times"),
+            ("100%", "100%"),
+        ] {
+            assert_eq!(
+                stack.interpolate(template),
+                expected,
+                "template {template:?}"
+            );
+        }
     }
 
     #[test]
@@ -232,31 +231,42 @@ mod tests {
         for template in ["%index %", "% index%", "% index %"] {
             assert_eq!(stack.interpolate(template), "3", "template {template:?}");
         }
-        assert_eq!(stack.interpolate("%unknown %"), "%unknown %");
     }
 
+    /// Pinned as the shared contract with the overlay client runtime, which ports this scanner to JS.
     #[test]
-    fn interpolate_is_single_pass_no_recursion() {
-        let stack = stack_with(&[("a", Variant::String("%b%".to_string()))]);
-        assert_eq!(stack.interpolate("%a%"), "%b%");
-    }
-
-    #[test]
-    fn interpolate_multiple_vars() {
+    fn interpolate_holds_the_three_behaviours_a_regex_port_would_get_wrong() {
         let stack = stack_with(&[
-            ("first", Variant::String("Hello".to_string())),
-            ("second", Variant::String("World".to_string())),
+            ("known", Variant::String("value".to_string())),
+            ("recursive", Variant::String("%known%".to_string())),
         ]);
-        assert_eq!(stack.interpolate("%first% %second%"), "Hello World");
-    }
 
-    #[test]
-    fn interpolate_no_tokens_unchanged() {
-        let stack = ArgStack::new();
-        assert_eq!(
-            stack.interpolate("no substitutions here"),
-            "no substitutions here"
-        );
+        for (label, template, expected) in [
+            ("unknown token reprinted verbatim", "%missing%", "%missing%"),
+            (
+                "unknown token reprinted untrimmed",
+                "% missing %",
+                "% missing %",
+            ),
+            (
+                "unterminated tail collapses to a lone percent",
+                "start %missing",
+                "start %",
+            ),
+            ("unterminated token alone", "%", "%"),
+            (
+                "a closed token before an unterminated tail still resolves",
+                "%known% then %dangling",
+                "value then %",
+            ),
+            (
+                "a substituted value is never rescanned",
+                "%recursive%",
+                "%known%",
+            ),
+        ] {
+            assert_eq!(stack.interpolate(template), expected, "{label}");
+        }
     }
 
     #[test]

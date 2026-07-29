@@ -4,30 +4,48 @@
  * A generated page loads this file, then its own overlay.js. Everything the page
  * needs arrives through window.forge:
  *
- *   forge.ready(callback)          callback(config) once config.json is loaded
- *   forge.on(kind, callback)       callback(payload) for every event of that kind
- *   forge.set(name, text)          writes text into every [data-bind="name"] node
- *   forge.tpl(template, payload)   expands %token% against the payload, one pass
- *   forge.show(selector)           reveals matching elements
- *   forge.show(selector, ms)       reveals them, hides them again after ms
- *   forge.sound(name)              plays a file from this overlay's folder
+ *   forge.ready(callback)        callback(config) once config.json is loaded
+ *   forge.content(callback)      callback(values, durationMs) per delivery
+ *   forge.set(name, text)        writes text into every [data-bind="name"] node
+ *   forge.show(selector)         reveals matching elements
+ *   forge.show(selector, ms)     reveals them, hides them again after ms
+ *   forge.sound(name)            plays a file from this overlay's folder
  *
- * config.json sits next to the page and holds the overlay identity plus the
- * config object handed to the ready callback. The accent, font, position and
- * animation entries are applied here, not by the page: accent and font become
- * the --accent and --font custom properties, position and animation become
- * data-position and data-animation on <body>. Stylesheets read those.
+ * config.json sits next to the page. Its config object is what the ready callback
+ * receives, and the accent, font, position and animation entries are applied here
+ * rather than by the page: accent and font become the --accent and --font custom
+ * properties, position and animation become data-position and data-animation on
+ * <body>. Stylesheets read those.
  *
- * Events arrive over the local WebSocket at ws://<this host>/ws/v1/ as frames
- * shaped { timeStamp, event: { source, type }, data }, and forge.on matches
- * event.type. The connection reconnects on its own with a capped backoff, so a
- * browser source that was closed and reopened recovers without help.
+ * The connection has no subscription surface. The page says who it is, and from
+ * then on it only receives. It opens ws://<this host>/ws/v1/ and, when config.json
+ * carries a top-level credential, presents it as the first frame:
  *
- * One frame is handled by the runtime rather than the page: type
- * "overlay.reload", with data { overlayId }. The page reloads itself when the
- * id matches its own or is absent. forge sends it after rewriting an overlay's
- * files, which is why hand-edited pages pick up regenerated markup without the
- * browser source being refreshed by hand.
+ *   { "id": "1", "request": "auth", "overlayCredential": "<credential>" }
+ *
+ * forge derives the overlay identity from that credential, so nothing arriving
+ * here is addressed by an id the page claimed. A config.json without a credential
+ * sends no first frame. The connection reconnects on its own with a capped
+ * backoff, so a browser source that was closed and reopened recovers unhelped.
+ *
+ * Two frame shapes arrive, both addressed to this overlay by the connection
+ * itself:
+ *
+ *   { "frame": "content", "content": { "<key>": <value>, ... }, "durationMs": 5000 }
+ *   { "frame": "reload" }
+ *
+ * A content frame carries the content group of this overlay's type with every
+ * value already final: forge expanded it where the variable context lives, so the
+ * page renders text and never expands it. Keys are the content field names the
+ * type declares. durationMs appears only when the delivery overrode the overlay's
+ * own duration. The wire says nothing about how content composes with what is on
+ * screen - whether it replaces, shows for a while, or appends is the page's own
+ * business, and a content group is applied whole, so a key the frame leaves out is
+ * left out of the display too.
+ *
+ * A reload frame is handled here rather than by the page. forge sends it after
+ * rewriting an overlay's files, which is why hand-edited pages pick up regenerated
+ * markup without the browser source being refreshed by hand.
  */
 
 (function () {
@@ -35,7 +53,9 @@
 
   var CONFIG_FILE = "./config.json";
   var SOCKET_PATH = "/ws/v1/";
-  var RELOAD_EVENT = "overlay.reload";
+  var AUTH_REQUEST_ID = "1";
+  var CONTENT_FRAME = "content";
+  var RELOAD_FRAME = "reload";
   var HIDDEN_CLASS = "hidden";
   var RECONNECT_BASE_MS = 500;
   var RECONNECT_CAP_MS = 15000;
@@ -54,19 +74,17 @@
   var FONT_NAME = /^[A-Za-z0-9 _-]+$/;
 
   var document_ = window.document;
-  var handlers = new Map();
   var readyCallbacks = [];
+  var contentCallbacks = [];
   var hideTimers = new Map();
 
   var config = null;
-  var overlayId = "";
+  var credential = "";
   var readyFired = false;
   var reloading = false;
 
   var socket = null;
-  var subscribed = new Set();
   var attempt = 0;
-  var requestId = 0;
 
   function warn(message) {
     if (window.console) {
@@ -85,8 +103,9 @@
       })
       .then(function (document_json) {
         config = document_json.config || {};
-        overlayId = document_json.overlayId || "";
+        credential = document_json.credential || "";
         applyAppearance(config);
+        fireReady();
         connect();
       })
       .catch(function (error) {
@@ -124,9 +143,9 @@
     });
   }
 
-  function invoke(callback, argument) {
+  function invoke(callback, first, second) {
     try {
-      callback(argument);
+      callback(first, second);
     } catch (error) {
       warn("overlay code threw: " + error);
     }
@@ -147,8 +166,7 @@
 
   function connect() {
     if (!window.location.host) {
-      warn("page was not served by forge, so no events will arrive");
-      fireReady();
+      warn("page was not served by forge, so nothing can be delivered to it");
       return;
     }
 
@@ -156,9 +174,7 @@
 
     socket.onopen = function () {
       attempt = 0;
-      subscribed = new Set();
-      subscribe(Array.from(handlers.keys()).concat(RELOAD_EVENT));
-      fireReady();
+      identify();
     };
 
     socket.onmessage = function (message) {
@@ -167,7 +183,6 @@
 
     socket.onclose = function () {
       socket = null;
-      fireReady();
       if (!reloading) {
         window.setTimeout(connect, backoffMs());
         attempt += 1;
@@ -181,24 +196,15 @@
     };
   }
 
-  function subscribe(kinds) {
-    var fresh = kinds.filter(function (kind) {
-      return kind && !subscribed.has(kind);
-    });
-    if (fresh.length === 0 || !socket || socket.readyState !== WebSocket.OPEN) {
+  function identify() {
+    if (!credential || !socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    fresh.forEach(function (kind) {
-      subscribed.add(kind);
-    });
-    requestId += 1;
     socket.send(
       JSON.stringify({
-        id: String(requestId),
-        request: "subscribe",
-        events: fresh.map(function (kind) {
-          return { type: kind };
-        }),
+        id: AUTH_REQUEST_ID,
+        request: "auth",
+        overlayCredential: credential,
       }),
     );
   }
@@ -213,23 +219,27 @@
     }
 
     if (frame.status === "error") {
-      warn("server refused a request: " + describeError(frame.error));
+      warn("forge refused this connection: " + describeError(frame.error));
       return;
     }
-    if (!frame.event || typeof frame.event.type !== "string") {
+    if (frame.frame === RELOAD_FRAME) {
+      reload();
       return;
     }
-    if (frame.event.type === RELOAD_EVENT) {
-      reloadIfAddressed(frame.data);
+    if (frame.frame !== CONTENT_FRAME) {
       return;
     }
 
-    var listeners = handlers.get(frame.event.type);
-    if (listeners) {
-      listeners.forEach(function (callback) {
-        invoke(callback, frame.data || {});
-      });
-    }
+    var values =
+      frame.content && typeof frame.content === "object" ? frame.content : {};
+    var durationMs =
+      typeof frame.durationMs === "number" && frame.durationMs > 0
+        ? frame.durationMs
+        : 0;
+
+    contentCallbacks.forEach(function (callback) {
+      invoke(callback, values, durationMs);
+    });
   }
 
   function describeError(error) {
@@ -239,11 +249,7 @@
     return (error.code || "error") + " " + (error.message || "");
   }
 
-  function reloadIfAddressed(data) {
-    var target = data && data.overlayId;
-    if (target && target !== overlayId) {
-      return;
-    }
+  function reload() {
     if (reloading) {
       return;
     }
@@ -253,17 +259,11 @@
     }, RELOAD_DELAY_MS);
   }
 
-  function on(kind, callback) {
-    if (!kind || typeof callback !== "function") {
+  function content(callback) {
+    if (typeof callback !== "function") {
       return;
     }
-    var listeners = handlers.get(kind);
-    if (listeners) {
-      listeners.push(callback);
-    } else {
-      handlers.set(kind, [callback]);
-    }
-    subscribe([kind]);
+    contentCallbacks.push(callback);
   }
 
   function ready(callback) {
@@ -287,65 +287,6 @@
         node.textContent = value;
       }
     });
-  }
-
-  /* Single pass, no recursion: a value that itself contains %tokens% is left alone,
-     and a token with no matching field survives verbatim. */
-  function tpl(template, payload) {
-    if (typeof template !== "string") {
-      return "";
-    }
-    var fields = payload && typeof payload === "object" ? payload : {};
-    var out = "";
-    var index = 0;
-
-    while (index < template.length) {
-      var character = template[index];
-      index += 1;
-      if (character !== "%") {
-        out += character;
-        continue;
-      }
-
-      var name = "";
-      var closed = false;
-      while (index < template.length) {
-        var inner = template[index];
-        index += 1;
-        if (inner === "%") {
-          closed = true;
-          break;
-        }
-        name += inner;
-      }
-
-      if (!closed) {
-        out += "%";
-        continue;
-      }
-
-      var value = fieldText(fields, name.trim());
-      out += value === undefined ? "%" + name + "%" : value;
-    }
-
-    return out;
-  }
-
-  function fieldText(fields, name) {
-    if (!Object.prototype.hasOwnProperty.call(fields, name)) {
-      return undefined;
-    }
-    var value = fields[name];
-    if (value === null || value === undefined) {
-      return undefined;
-    }
-    if (Array.isArray(value)) {
-      return "[" + value.length + " items]";
-    }
-    if (typeof value === "object") {
-      return "{" + Object.keys(value).length + " keys}";
-    }
-    return String(value);
   }
 
   function show(selector, milliseconds) {
@@ -394,9 +335,8 @@
 
   window.forge = Object.freeze({
     ready: ready,
-    on: on,
+    content: content,
     set: set,
-    tpl: tpl,
     show: show,
     sound: sound,
   });

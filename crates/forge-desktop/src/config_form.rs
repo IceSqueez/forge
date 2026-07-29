@@ -605,3 +605,64 @@ pub(crate) fn render_config_row<V: 'static>(
         )))
         .into_any_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(entries: &[(&str, Variant)]) -> FieldConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn a_value_equal_to_the_kind_default_is_not_stored_as_an_override() {
+        let default = config(&[
+            ("accent", Variant::String("mauve".into())),
+            ("duration", Variant::Int(5)),
+            ("sticky", Variant::Bool(false)),
+        ]);
+        let buffer = config(&[
+            ("accent", Variant::String("mauve".into())),
+            ("duration", Variant::Int(9)),
+            ("sticky", Variant::Bool(false)),
+            ("headline", Variant::String("%user%".into())),
+        ]);
+
+        assert_eq!(
+            sparse_overrides(&default, &buffer),
+            config(&[
+                ("duration", Variant::Int(9)),
+                ("headline", Variant::String("%user%".into())),
+            ]),
+            "a record must carry only what the user moved away from the kind default"
+        );
+    }
+
+    #[test]
+    fn a_value_that_only_looks_like_the_default_is_still_an_override() {
+        let default = config(&[("duration", Variant::Int(5))]);
+        let buffer = config(&[("duration", Variant::String("5".into()))]);
+
+        assert_eq!(
+            sparse_overrides(&default, &buffer),
+            buffer,
+            "a value stored under a different type is not the default, however it displays"
+        );
+    }
+
+    #[test]
+    fn a_default_the_buffer_never_mentions_is_not_resurrected_as_an_override() {
+        let default = config(&[
+            ("accent", Variant::String("mauve".into())),
+            ("duration", Variant::Int(5)),
+        ]);
+
+        assert!(
+            sparse_overrides(&default, &FieldConfig::new()).is_empty(),
+            "an empty form means no overrides, not every default written out longhand"
+        );
+    }
+}

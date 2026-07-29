@@ -588,3 +588,106 @@ fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl 
                 .child(message),
         )
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_overlay::config::ACCENT;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn only_top_level_scalars_of_the_payload_become_template_arguments() {
+        let stack = args_of(&json!({
+            "user": "nova",
+            "months": 6,
+            "ratio": 1.5,
+            "gifted": true,
+            "reward": { "title": "Hydrate" },
+            "emotes": ["Kappa"],
+            "message": null,
+        }));
+
+        for (name, expected) in [
+            ("user", Some(Variant::String("nova".to_owned()))),
+            ("months", Some(Variant::Int(6))),
+            ("ratio", Some(Variant::Float(1.5))),
+            ("gifted", Some(Variant::Bool(true))),
+            ("reward", None),
+            ("emotes", None),
+            ("message", None),
+        ] {
+            assert_eq!(
+                stack.get(name).cloned(),
+                expected,
+                "the shipped page expander reads own scalar properties only, so {name:?} is wrong"
+            );
+        }
+    }
+
+    #[test]
+    fn a_payload_that_is_not_an_object_carries_no_arguments() {
+        for payload in [
+            json!(null),
+            json!("nova"),
+            json!(7),
+            json!(["nova"]),
+            json!([{ "user": "nova" }]),
+        ] {
+            assert!(
+                args_of(&payload).snapshot().is_empty(),
+                "a payload root of {payload} has no own properties to name"
+            );
+        }
+    }
+
+    #[test]
+    fn expanding_a_sample_touches_the_headline_and_the_subline_and_nothing_else() {
+        let config = OverlayConfig::from([
+            (HEADLINE.to_owned(), Variant::String("%user% is in!".into())),
+            (SUBLINE.to_owned(), Variant::String("for %months%".into())),
+            (ACCENT.to_owned(), Variant::String("%user%".into())),
+            (DURATION.to_owned(), Variant::Int(4)),
+        ]);
+        let args = ArgStack::new()
+            .set("user".to_owned(), Variant::String("nova".to_owned()))
+            .set("months".to_owned(), Variant::Int(6));
+
+        let expanded = expand_lines(&config, &args);
+
+        assert_eq!(
+            expanded.get(HEADLINE),
+            Some(&Variant::String("nova is in!".to_owned()))
+        );
+        assert_eq!(
+            expanded.get(SUBLINE),
+            Some(&Variant::String("for 6".to_owned()))
+        );
+        assert_eq!(
+            expanded.get(ACCENT),
+            config.get(ACCENT),
+            "an appearance value is not a template and must survive a landed sample verbatim"
+        );
+        assert_eq!(expanded.get(DURATION), config.get(DURATION));
+    }
+
+    #[test]
+    fn a_line_that_is_absent_or_not_text_is_left_exactly_as_it_was_found() {
+        let config = OverlayConfig::from([(SUBLINE.to_owned(), Variant::Int(3))]);
+        let args = ArgStack::new().set("user".to_owned(), Variant::String("nova".to_owned()));
+
+        let expanded = expand_lines(&config, &args);
+
+        assert_eq!(
+            expanded.get(SUBLINE),
+            Some(&Variant::Int(3)),
+            "a line stored with the wrong type must not be rewritten into text"
+        );
+        assert_eq!(
+            expanded.get(HEADLINE),
+            None,
+            "a line the record never set must not be conjured into existence"
+        );
+    }
+}

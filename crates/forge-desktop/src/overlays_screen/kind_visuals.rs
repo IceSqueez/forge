@@ -52,9 +52,11 @@ pub(super) fn kind_visuals(
 mod tests {
     use std::collections::HashSet;
 
-    use forge_components::ThemeId;
-    use forge_overlay::register_builtin_kinds;
+    use forge_components::{ThemeId, accent_swatch};
+    use forge_overlay::config::{ACCENT, ACCENT_OPTIONS};
+    use forge_overlay::{OverlayConfig, register_builtin_kinds};
     use forge_storage::{OverlayCredential, OverlayId};
+    use forge_types::Variant;
     use time::OffsetDateTime;
 
     use super::*;
@@ -131,6 +133,46 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// The picker paints its dots from a name, the stage paints its composition from a
+    /// `PreviewAccent`; two independent tables that must agree or the chosen dot lies about the
+    /// color the overlay will actually render.
+    #[test]
+    fn the_picker_dot_and_the_rendered_stage_agree_on_the_color_of_every_offered_accent() {
+        let registry = registry();
+        let descriptor = registry
+            .get("overlay.alert")
+            .expect("the alert kind ships in this build");
+
+        for theme in ThemeId::ALL {
+            let palette = theme.palette();
+
+            for name in ACCENT_OPTIONS {
+                let config =
+                    OverlayConfig::from([(ACCENT.to_owned(), Variant::String((*name).to_owned()))]);
+                let rendered = accent_color(descriptor.preview(&config).accent, &palette);
+
+                assert_eq!(
+                    accent_swatch(name, &palette),
+                    Some(rendered),
+                    "{theme:?}: the '{name}' dot does not paint what the stage renders for it"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_accent_name_this_build_does_not_offer_has_no_dot_of_its_own() {
+        let palette = ThemeId::default().palette();
+
+        for unknown in ["teal", "Mauve", "", "brand", "mauve "] {
+            assert_eq!(
+                accent_swatch(unknown, &palette),
+                None,
+                "'{unknown}' is outside the offered vocabulary and must not borrow another meaning"
+            );
         }
     }
 

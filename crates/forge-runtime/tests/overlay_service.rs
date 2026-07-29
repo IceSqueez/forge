@@ -56,6 +56,10 @@ impl RecordingSink {
     fn reloads(&self) -> Vec<OverlayId> {
         self.reloads.lock().unwrap().clone()
     }
+
+    fn revoked(&self) -> Vec<OverlayId> {
+        self.revoked.lock().unwrap().clone()
+    }
 }
 
 #[async_trait]
@@ -163,6 +167,8 @@ fn harness(definitions: Vec<OverlayDefinition>, attach_sink: bool) -> Harness {
         captured.lock().unwrap().push(definition.clone());
         Ok(())
     });
+
+    repo.expect_set_enabled().returning(|_, _| Ok(true));
 
     let retained: RetainedStore = Arc::new(Mutex::new(Vec::new()));
     let writes = Arc::clone(&retained);
@@ -745,4 +751,27 @@ async fn an_overlay_root_setting_that_names_nowhere_falls_back_to_the_default_di
             "{label} must resolve to the default overlay directory, never to a relative path"
         );
     }
+}
+
+#[tokio::test]
+async fn only_a_real_disable_revokes_the_connected_page() {
+    let stored = definition("sub-alert");
+    let harness = harness(vec![stored.clone()], true);
+
+    harness
+        .service
+        .set_enabled(&stored.id, false)
+        .await
+        .expect("the disable persists");
+    harness
+        .service
+        .set_enabled(&stored.id, true)
+        .await
+        .expect("the enable persists");
+
+    assert_eq!(
+        harness.sink.revoked(),
+        vec![stored.id],
+        "exactly the disable, and only the disable, revokes the page"
+    );
 }

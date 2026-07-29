@@ -9,4 +9,6 @@ pub struct OverlayInstance {
     pub config: OverlayConfig,
     /// File names from [`crate::assets::OVERRIDABLE_FILES`]; names outside that set are ignored.
     pub source_overrides: Vec<String>,
+    /// Emitted top-level in the config document, never merged into `config`.
+    pub credential: Option<String>,
 }

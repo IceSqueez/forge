@@ -7,12 +7,16 @@ use std::sync::{
 
 use forge_events::{Event, EventSource, EventsError};
 use forge_runtime::EventBus;
+use forge_storage::OverlayId;
 use forge_types::EventId;
 use serde::Serialize;
 use time::format_description::well_known::Rfc3339;
 use tokio::sync::{RwLock, broadcast};
 
 pub(crate) const CLIENT_CHANNEL_CAP: usize = 1024;
+/// Below the general 1024 bound: append/transient overlay content gains nothing from a deep
+/// backlog, and a stalled page should rejoin near-live rather than crawl through history.
+pub(crate) const OVERLAY_CHANNEL_CAP: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClientId(pub(crate) u64);
@@ -81,6 +85,7 @@ struct ConnectedClient {
     id: ClientId,
     sender: broadcast::Sender<WsFrame>,
     filters: ClientFilterSet,
+    overlay_identity: Option<OverlayId>,
 }
 
 pub struct BusAdapter {
@@ -124,6 +129,30 @@ fn serialize_push(event: &Event) -> Result<String, serde_json::Error> {
     serde_json::to_string(&frame)
 }
 
+#[derive(Serialize)]
+struct ContentFrame<'a> {
+    frame: &'static str,
+    content: &'a serde_json::Value,
+    #[serde(rename = "durationMs", skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
+}
+
+const RELOAD_FRAME_JSON: &str = r#"{"frame":"reload"}"#;
+
+fn serialize_content_frame(
+    content: &serde_json::Value,
+    duration_ms: Option<u64>,
+) -> Option<String> {
+    serde_json::to_string(&ContentFrame {
+        frame: "content",
+        content,
+        duration_ms,
+    })
+    .ok()
+}
+
+/// Overlay-class connections never reach here: they carry no filters and receive nothing from
+/// the bus, only from directed delivery.
 async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
     let Ok(json) = serialize_push(event) else {
         return;
@@ -134,6 +163,9 @@ async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
     {
         let reg = registry.read().await;
         for client in reg.iter() {
+            if client.overlay_identity.is_some() {
+                continue;
+            }
             if client.filters.matches(event) && client.sender.send(frame.clone()).is_err() {
                 disconnected.push(client.id);
             }
@@ -145,6 +177,26 @@ async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
             .write()
             .await
             .retain(|c| !disconnected.contains(&c.id));
+    }
+}
+
+/// `identity: None` addresses every overlay-class connection; a non-overlay client never
+/// matches, since its `overlay_identity` is `None`.
+async fn send_to_overlay(
+    registry: &RwLock<Vec<ConnectedClient>>,
+    identity: Option<&OverlayId>,
+    frame: WsFrame,
+) {
+    let reg = registry.read().await;
+    for client in reg.iter() {
+        let targeted = match (&client.overlay_identity, identity) {
+            (Some(client_identity), Some(target)) => client_identity == target,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+        if targeted {
+            let _ = client.sender.send(frame.clone());
+        }
     }
 }
 
@@ -178,6 +230,29 @@ impl BusAdapter {
         fan_out(&self.registry, event).await;
     }
 
+    /// Addressed at the connections belonging to one overlay identity.
+    pub async fn deliver_overlay_content(
+        &self,
+        identity: &OverlayId,
+        content: &serde_json::Value,
+        duration_ms: Option<u64>,
+    ) {
+        let Some(json) = serialize_content_frame(content, duration_ms) else {
+            return;
+        };
+        send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await;
+    }
+
+    /// `identity: None` reloads every overlay-class connection.
+    pub async fn deliver_overlay_reload(&self, identity: Option<&OverlayId>) {
+        send_to_overlay(
+            &self.registry,
+            identity,
+            WsFrame::Text(RELOAD_FRAME_JSON.to_owned()),
+        )
+        .await;
+    }
+
     pub async fn register_client(
         &self,
         filters: ClientFilterSet,
@@ -189,9 +264,27 @@ impl BusAdapter {
             id,
             sender,
             filters,
+            overlay_identity: None,
         });
         let handle = ClientHandle { id, drop_counter };
         (handle, receiver)
+    }
+
+    /// Derives the connection's identity from a validated credential, never from a client
+    /// claim, and shrinks its outbound queue to the overlay bound. `None` means the client id
+    /// was not found (already disconnected).
+    pub async fn promote_to_overlay(
+        &self,
+        id: ClientId,
+        identity: OverlayId,
+    ) -> Option<broadcast::Receiver<WsFrame>> {
+        let mut reg = self.registry.write().await;
+        let client = reg.iter_mut().find(|c| c.id == id)?;
+        let (sender, receiver) = broadcast::channel(OVERLAY_CHANNEL_CAP);
+        client.sender = sender;
+        client.overlay_identity = Some(identity);
+        client.filters = ClientFilterSet::new(HashSet::new());
+        Some(receiver)
     }
 
     pub async fn unregister_client(&self, id: ClientId) {

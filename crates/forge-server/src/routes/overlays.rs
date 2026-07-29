@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use forge_storage::OverlayId;
@@ -9,15 +9,9 @@ use crate::server::AppState;
 
 const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
 
-#[derive(serde::Deserialize)]
-pub struct TokenQuery {
-    token: Option<String>,
-}
-
 pub async fn serve_overlay_file(
     State(state): State<AppState>,
     axum::extract::Path(path): axum::extract::Path<String>,
-    Query(query): Query<TokenQuery>,
     req_headers: axum::http::HeaderMap,
 ) -> Response {
     if state.http_overlay_require_token {
@@ -25,13 +19,10 @@ pub async fn serve_overlay_file(
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.strip_prefix("Bearer "))
-            .map(str::trim)
-            .map(str::to_owned);
+            .map(str::trim);
 
-        let token = bearer.or_else(|| query.token.clone());
-
-        let authorized = match token {
-            Some(t) => state.auth.verify(&t).await,
+        let authorized = match bearer {
+            Some(t) => state.auth.verify(t).await,
             None => false,
         };
 

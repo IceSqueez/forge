@@ -85,6 +85,7 @@ async fn handle_socket(
         actions: Arc::clone(&state.actions),
         globals: Arc::clone(&state.globals),
         user_globals: Arc::clone(&state.user_globals),
+        overlays: Arc::clone(&state.overlays),
         auth_state: Arc::clone(&state.auth),
         client: Arc::clone(&client),
         auth_required_for_reads: state.auth.auth_required_for_reads,
@@ -92,6 +93,7 @@ async fn handle_socket(
         server_info: Arc::clone(&state.server_info),
         action_engine: Arc::clone(&state.action_engine),
         overlay_root: Arc::clone(&state.overlay_root),
+        overlay_channel_swap: tokio::sync::Mutex::new(None),
     };
 
     loop {
@@ -120,6 +122,9 @@ async fn handle_socket(
                                     serialize_response_frame(&err_env).to_string()
                                 }
                             };
+                        if let Some(promoted) = ctx.overlay_channel_swap.lock().await.take() {
+                            event_rx = promoted;
+                        }
                         let response_bytes = response_json.len() as u64;
                         if socket
                             .send(Message::Text(response_json.into()))

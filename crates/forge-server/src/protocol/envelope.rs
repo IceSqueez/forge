@@ -14,7 +14,10 @@ pub struct WireEventFilter {
 #[serde(tag = "request", rename_all = "camelCase")]
 pub enum WsRequest {
     Auth {
-        token: String,
+        #[serde(default)]
+        token: Option<String>,
+        #[serde(rename = "overlayCredential", default)]
+        overlay_credential: Option<String>,
     },
     Subscribe {
         events: Vec<WireEventFilter>,

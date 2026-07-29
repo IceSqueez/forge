@@ -28,7 +28,10 @@ pub async fn dispatch(req: WsEnvelope<WsRequest>, ctx: &DispatchContext) -> WsEn
 
 async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
     match req {
-        WsRequest::Auth { token } => handle_authenticate(token, ctx).await,
+        WsRequest::Auth {
+            token,
+            overlay_credential,
+        } => handle_authenticate(token, overlay_credential, ctx).await,
 
         WsRequest::Subscribe { events } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
@@ -202,6 +205,7 @@ mod tests {
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
+        let overlays = dp.overlay_repo();
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
         let drop_counter = Arc::new(AtomicU64::new(0));
         let client = Arc::new(WsClient::new(
@@ -223,6 +227,7 @@ mod tests {
             actions,
             globals,
             user_globals,
+            overlays,
             auth_state,
             client,
             auth_required_for_reads,
@@ -230,6 +235,7 @@ mod tests {
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
+            overlay_channel_swap: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -248,12 +254,14 @@ mod tests {
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
+        let overlays = dp.overlay_repo();
         DispatchContext {
             bus,
             bus_adapter,
             actions,
             globals,
             user_globals,
+            overlays,
             auth_state,
             client,
             auth_required_for_reads: false,
@@ -261,6 +269,7 @@ mod tests {
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
+            overlay_channel_swap: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -274,6 +283,7 @@ mod tests {
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
+        let overlays = dp.overlay_repo();
         let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
         let (handle, _rx) = bus_adapter
             .register_client(ClientFilterSet::new(HashSet::new()))
@@ -297,6 +307,7 @@ mod tests {
             actions,
             globals,
             user_globals,
+            overlays,
             auth_state,
             client,
             auth_required_for_reads,
@@ -304,6 +315,7 @@ mod tests {
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
+            overlay_channel_swap: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -1168,7 +1180,8 @@ mod tests {
         let req = WsEnvelope {
             id: Some("a1".to_owned()),
             inner: WsRequest::Auth {
-                token: "test-token".to_owned(),
+                token: Some("test-token".to_owned()),
+                overlay_credential: None,
             },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1187,7 +1200,8 @@ mod tests {
         let req = WsEnvelope {
             id: Some("a2".to_owned()),
             inner: WsRequest::Auth {
-                token: "wrong-token".to_owned(),
+                token: Some("wrong-token".to_owned()),
+                overlay_credential: None,
             },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1279,7 +1293,8 @@ mod tests {
         let req = WsEnvelope {
             id: Some("a3".to_owned()),
             inner: WsRequest::Auth {
-                token: String::new(),
+                token: Some(String::new()),
+                overlay_credential: None,
             },
         };
         let resp = dispatch(req, &ctx).await;

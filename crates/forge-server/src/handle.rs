@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use forge_events::Event;
 use forge_platform_core::paths;
+use forge_storage::OverlayId;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
 
@@ -180,6 +181,25 @@ impl ServerHandle {
     pub async fn deliver_event(&self, event: Event) {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
         adapter.deliver(&event).await;
+    }
+
+    /// Addressed at the connections identified as `identity`; never reaches any other client.
+    pub async fn deliver_overlay_content(
+        &self,
+        identity: &OverlayId,
+        content: serde_json::Value,
+        duration_ms: Option<u64>,
+    ) {
+        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
+        adapter
+            .deliver_overlay_content(identity, &content, duration_ms)
+            .await;
+    }
+
+    /// `identity: None` reloads every overlay-class connection.
+    pub async fn deliver_overlay_reload(&self, identity: Option<&OverlayId>) {
+        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
+        adapter.deliver_overlay_reload(identity).await;
     }
 
     pub async fn snapshot(&self) -> crate::snapshot::ServerSnapshot {

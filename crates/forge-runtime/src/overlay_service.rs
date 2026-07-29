@@ -272,6 +272,7 @@ fn instance_of(definition: &OverlayDefinition) -> OverlayInstance {
         kind_id: definition.kind_id.clone(),
         config: definition.config.clone(),
         source_overrides: definition.source_overrides.clone(),
+        credential: Some(definition.credential.as_str().to_owned()),
     }
 }
 

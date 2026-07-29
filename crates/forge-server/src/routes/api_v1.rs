@@ -35,6 +35,7 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
         actions: Arc::clone(&state.actions),
         globals: Arc::clone(&state.globals),
         user_globals: Arc::clone(&state.user_globals),
+        overlays: Arc::clone(&state.overlays),
         auth_state: Arc::clone(&state.auth),
         client,
         auth_required_for_reads: state.auth.auth_required_for_reads,
@@ -42,6 +43,7 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
         server_info: Arc::clone(&state.server_info),
         action_engine: Arc::clone(&state.action_engine),
         overlay_root: Arc::clone(&state.overlay_root),
+        overlay_channel_swap: tokio::sync::Mutex::new(None),
     }
 }
 

@@ -16,7 +16,6 @@ pub struct ServerConfig {
     pub bind_addr: SocketAddr,
     pub overlay_root: PathBuf,
     pub auth_required_for_reads: bool,
-    pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub lan_bind_enabled: bool,
     pub additional_origins: Vec<String>,
@@ -46,7 +45,6 @@ impl ServerConfig {
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9515),
             overlay_root: paths::overlays_dir(),
             auth_required_for_reads: false,
-            http_overlay_require_token: false,
             overlay_cors_any_origin: true,
             lan_bind_enabled: false,
             additional_origins: Vec::new(),
@@ -69,7 +67,6 @@ pub struct ServerSettings {
     pub port: u16,
     pub lan_bind_enabled: bool,
     pub auth_required_for_reads: bool,
-    pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub overlay_root: Option<String>,
     pub additional_origins: Vec<String>,
@@ -83,7 +80,6 @@ impl Default for ServerSettings {
             port: 8081,
             lan_bind_enabled: false,
             auth_required_for_reads: false,
-            http_overlay_require_token: false,
             overlay_cors_any_origin: true,
             overlay_root: None,
             additional_origins: Vec::new(),
@@ -108,12 +104,6 @@ impl ServerSettings {
             get_bool_setting(repo, reserved_keys::SERVER_LAN_BIND_ENABLED, false).await;
         let auth_required_for_reads =
             get_bool_setting(repo, reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS, false).await;
-        let http_overlay_require_token = get_bool_setting(
-            repo,
-            reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
-            false,
-        )
-        .await;
         let overlay_cors_any_origin =
             get_bool_setting(repo, reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN, true).await;
         let overlay_root = repo.get_string(reserved_keys::SERVER_OVERLAY_ROOT).await?;
@@ -127,7 +117,6 @@ impl ServerSettings {
             port,
             lan_bind_enabled,
             auth_required_for_reads,
-            http_overlay_require_token,
             overlay_cors_any_origin,
             overlay_root,
             additional_origins,
@@ -171,18 +160,6 @@ impl ServerSettings {
         set_bool_setting(
             repo,
             reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS,
-            required,
-        )
-        .await
-    }
-
-    pub async fn save_http_overlay_require_token(
-        repo: &dyn SettingsRepo,
-        required: bool,
-    ) -> Result<(), StorageError> {
-        set_bool_setting(
-            repo,
-            reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN,
             required,
         )
         .await
@@ -261,7 +238,6 @@ mod tests {
         assert_eq!(s.port, 8081);
         assert!(!s.lan_bind_enabled);
         assert!(!s.auth_required_for_reads);
-        assert!(!s.http_overlay_require_token);
         assert!(s.overlay_cors_any_origin);
         assert!(s.overlay_root.is_none());
         assert!(s.additional_origins.is_empty());
@@ -278,9 +254,6 @@ mod tests {
             .await
             .unwrap();
         ServerSettings::save_auth_required_for_reads(&repo, true)
-            .await
-            .unwrap();
-        ServerSettings::save_http_overlay_require_token(&repo, true)
             .await
             .unwrap();
         ServerSettings::save_overlay_cors_any_origin(&repo, false)
@@ -301,7 +274,6 @@ mod tests {
         assert_eq!(s.port, 9000);
         assert!(s.lan_bind_enabled);
         assert!(s.auth_required_for_reads);
-        assert!(s.http_overlay_require_token);
         assert!(!s.overlay_cors_any_origin);
         assert_eq!(s.overlay_root.as_deref(), Some("/overlays"));
         assert_eq!(

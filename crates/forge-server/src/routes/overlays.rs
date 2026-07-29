@@ -12,25 +12,7 @@ const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
 pub async fn serve_overlay_file(
     State(state): State<AppState>,
     axum::extract::Path(path): axum::extract::Path<String>,
-    req_headers: axum::http::HeaderMap,
 ) -> Response {
-    if state.http_overlay_require_token {
-        let bearer = req_headers
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer "))
-            .map(str::trim);
-
-        let authorized = match bearer {
-            Some(t) => state.auth.verify(t).await,
-            None => false,
-        };
-
-        if !authorized {
-            return StatusCode::UNAUTHORIZED.into_response();
-        }
-    }
-
     match resolve_and_read(&state, &path).await {
         Ok((body_bytes, resolved)) => {
             let ext = resolved
@@ -174,14 +156,6 @@ mod tests {
         fn new() -> Arc<Self> {
             Arc::new(Self(Mutex::new(HashMap::new())))
         }
-
-        fn with_token(token: &str) -> Arc<Self> {
-            let me = Self::new();
-            me.0.lock()
-                .expect("mutex")
-                .insert("server:bearer".to_owned(), token.to_owned());
-            me
-        }
     }
 
     #[async_trait]
@@ -230,23 +204,14 @@ mod tests {
 
     async fn make_overlay_server(
         overlay_root: std::path::PathBuf,
-        http_overlay_require_token: bool,
         overlay_cors_any_origin: bool,
         creds: Arc<MemCreds>,
     ) -> (ServerHandle, SocketAddr) {
-        make_overlay_server_with_overlays(
-            overlay_root,
-            http_overlay_require_token,
-            overlay_cors_any_origin,
-            creds,
-            None,
-        )
-        .await
+        make_overlay_server_with_overlays(overlay_root, overlay_cors_any_origin, creds, None).await
     }
 
     async fn make_overlay_server_with_overlays(
         overlay_root: std::path::PathBuf,
-        http_overlay_require_token: bool,
         overlay_cors_any_origin: bool,
         creds: Arc<MemCreds>,
         overlay_repo: Option<Arc<dyn OverlayRepo>>,
@@ -283,7 +248,6 @@ mod tests {
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(overlay_root),
-            http_overlay_require_token,
             overlay_cors_any_origin,
             bind_addr,
             allowed_origins: Arc::new(crate::origin::build_allowed_origins(bind_addr, &[])),
@@ -307,7 +271,7 @@ mod tests {
             .expect("write");
 
         let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), false, true, MemCreds::new()).await;
+            make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
 
         let resp = reqwest::get(format!("http://{}/overlays/alerts.html", addr))
             .await
@@ -326,7 +290,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
 
         let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), false, true, MemCreds::new()).await;
+            make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
 
         let resp = reqwest::get(format!("http://{}/overlays/nope.html", addr))
             .await
@@ -384,7 +348,7 @@ mod tests {
         let dir = qa_tempdir();
         let (root, _) = root_with_outside_decoy(dir.path()).await;
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in [
             "/overlays/%2e%2e%2fsecret.html",
@@ -412,7 +376,7 @@ mod tests {
         let absolute = outside.to_str().expect("utf8 path");
         let encoded = absolute.replace('/', "%2F");
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in [
             format!("/overlays/{encoded}"),
@@ -437,7 +401,7 @@ mod tests {
         std::os::unix::fs::symlink(dir.path().join(decoy), root.join("link.html"))
             .expect("symlink");
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         let (status, body) = raw_get(addr, "/overlays/link.html", "").await;
         assert_eq!(status, 404);
@@ -457,40 +421,11 @@ mod tests {
             .expect("write");
         std::os::unix::fs::symlink("real.html", root.join("alias.html")).expect("symlink");
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         let (status, body) = raw_get(addr, "/overlays/alias.html", "").await;
         assert_eq!(status, 200);
         assert!(body.contains("<p>inside</p>"));
-
-        handle.abort();
-    }
-
-    #[tokio::test]
-    async fn serve_overlay_rejection_never_echoes_a_presented_credential() {
-        let dir = qa_tempdir();
-        tokio::fs::write(dir.path().join("priv.html"), b"<p>private</p>")
-            .await
-            .expect("write");
-
-        let creds = MemCreds::with_token("overlay-secret-installation-bearer");
-        let (handle, addr) = make_overlay_server(dir.path().to_path_buf(), true, true, creds).await;
-
-        let (status, body) = raw_get(
-            addr,
-            "/overlays/priv.html?token=WRONG-QUERY-CREDENTIAL",
-            "Authorization: Bearer WRONG-HEADER-CREDENTIAL\r\n",
-        )
-        .await;
-
-        assert_eq!(status, 401);
-        for secret in [
-            "WRONG-QUERY-CREDENTIAL",
-            "WRONG-HEADER-CREDENTIAL",
-            "overlay-secret-installation-bearer",
-        ] {
-            assert!(!body.contains(secret), "rejection echoed {secret}");
-        }
 
         handle.abort();
     }
@@ -503,7 +438,7 @@ mod tests {
             .expect("write");
 
         let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), false, true, MemCreds::new()).await;
+            make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
 
         let resp = reqwest::get(format!("http://{}/overlays/.secret", addr))
             .await
@@ -521,7 +456,7 @@ mod tests {
             .expect("write");
 
         let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), false, true, MemCreds::new()).await;
+            make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
 
         let resp = reqwest::get(format!("http://{}/overlays/widget.js", addr))
             .await
@@ -544,7 +479,7 @@ mod tests {
             .expect("write");
 
         let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), false, false, MemCreds::new()).await;
+            make_overlay_server(dir.path().to_path_buf(), false, MemCreds::new()).await;
 
         let resp = reqwest::get(format!("http://{}/overlays/widget.js", addr))
             .await
@@ -557,32 +492,6 @@ mod tests {
         let cors_str = cors.to_str().unwrap();
         assert_ne!(cors_str, "*");
         assert!(cors_str.starts_with("http://127.0.0.1"));
-
-        handle.abort();
-    }
-
-    #[tokio::test]
-    async fn serve_overlay_requires_bearer_when_require_token_true() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        tokio::fs::write(dir.path().join("priv.html"), b"<p>private</p>")
-            .await
-            .expect("write");
-
-        let creds = MemCreds::with_token("overlay-secret");
-        let (handle, addr) = make_overlay_server(dir.path().to_path_buf(), true, true, creds).await;
-
-        let resp = reqwest::get(format!("http://{}/overlays/priv.html", addr))
-            .await
-            .expect("request");
-        assert_eq!(resp.status().as_u16(), 401);
-
-        let resp = reqwest::Client::new()
-            .get(format!("http://{}/overlays/priv.html", addr))
-            .header("Authorization", "Bearer overlay-secret")
-            .send()
-            .await
-            .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
 
         handle.abort();
     }
@@ -619,7 +528,7 @@ mod tests {
         let root = make_root(dir.path()).await;
         write_at(root.join("alerts").join("index.html"), "<h1>Entry</h1>").await;
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in ["/overlays/alerts/", "/overlays/alerts"] {
             let resp = reqwest::get(format!("http://{addr}{target}"))
@@ -655,7 +564,7 @@ mod tests {
             .await
             .expect("create shadowed");
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in [
             "/overlays/bare/",
@@ -684,7 +593,7 @@ mod tests {
         )
         .expect("symlink");
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for target in ["/overlays/alerts/", "/overlays/alerts"] {
             let (status, body) = raw_get(addr, target, "").await;
@@ -706,7 +615,7 @@ mod tests {
         write_at(root.join("face.woff2"), "font-bytes").await;
         write_at(root.join("blob.unknownext"), "opaque").await;
 
-        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for (target, expected) in [
             ("/overlays/config.json", "application/json"),
@@ -788,7 +697,6 @@ mod tests {
 
         let (handle, addr) = make_overlay_server_with_overlays(
             root,
-            false,
             true,
             MemCreds::new(),
             Some(gated_overlay_repo()),
@@ -819,7 +727,6 @@ mod tests {
 
         let (handle, addr) = make_overlay_server_with_overlays(
             root,
-            false,
             true,
             MemCreds::new(),
             Some(gated_overlay_repo()),

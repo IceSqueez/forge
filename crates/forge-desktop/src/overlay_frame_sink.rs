@@ -20,10 +20,10 @@ impl OverlayFrameSink for ServerOverlayFrameSink {
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) {
+    ) -> usize {
         self.server
             .deliver_overlay_content(identity, content, duration_ms)
-            .await;
+            .await
     }
 
     async fn deliver_reload(&self, identity: &OverlayId) {

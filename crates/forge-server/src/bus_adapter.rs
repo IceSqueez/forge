@@ -183,23 +183,26 @@ async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
 }
 
 /// `identity: None` addresses every overlay-class connection; a non-overlay client never
-/// matches, since its `overlay_identity` is `None`.
+/// matches, since its `overlay_identity` is `None`. Returns how many targeted connections still
+/// had a live receiver on the other end.
 async fn send_to_overlay(
     registry: &RwLock<Vec<ConnectedClient>>,
     identity: Option<&OverlayId>,
     frame: WsFrame,
-) {
+) -> usize {
     let reg = registry.read().await;
+    let mut delivered = 0;
     for client in reg.iter() {
         let targeted = match (&client.overlay_identity, identity) {
             (Some(client_identity), Some(target)) => client_identity == target,
             (Some(_), None) => true,
             (None, _) => false,
         };
-        if targeted {
-            let _ = client.sender.send(frame.clone());
+        if targeted && client.sender.send(frame.clone()).is_ok() {
+            delivered += 1;
         }
     }
+    delivered
 }
 
 impl BusAdapter {
@@ -237,22 +240,18 @@ impl BusAdapter {
         });
     }
 
-    /// Reaches subscribers without touching the bus, so nothing downstream of the bus observes it.
-    pub async fn deliver(&self, event: &Event) {
-        fan_out(&self.registry, event).await;
-    }
-
-    /// Addressed at the connections belonging to one overlay identity.
+    /// Addressed at the connections belonging to one overlay identity. Returns the number of
+    /// connections that still had a live receiver when the frame was sent.
     pub async fn deliver_overlay_content(
         &self,
         identity: &OverlayId,
         content: &serde_json::Value,
         duration_ms: Option<u64>,
-    ) {
+    ) -> usize {
         let Some(json) = serialize_content_frame(content, duration_ms) else {
-            return;
+            return 0;
         };
-        send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await;
+        send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await
     }
 
     /// `identity: None` reloads every overlay-class connection.

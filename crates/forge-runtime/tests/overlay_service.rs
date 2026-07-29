@@ -56,12 +56,13 @@ impl OverlayFrameSink for RecordingSink {
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) {
+    ) -> usize {
         self.frames.lock().unwrap().push(ContentFrame {
             identity: identity.clone(),
             content,
             duration_ms,
         });
+        1
     }
 
     async fn deliver_reload(&self, identity: &OverlayId) {

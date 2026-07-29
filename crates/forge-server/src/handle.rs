@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::Event;
 use forge_platform_core::paths;
 use forge_runtime::OverlayConnectListener;
 use forge_storage::OverlayId;
@@ -145,7 +144,6 @@ impl ServerHandle {
             server_info: Arc::clone(&state.server_info),
             action_engine: Arc::clone(&state.action_engine),
             overlay_root: Arc::new(overlay_root),
-            http_overlay_require_token: settings.http_overlay_require_token,
             overlay_cors_any_origin: settings.overlay_cors_any_origin,
             bind_addr,
             allowed_origins,
@@ -178,23 +176,18 @@ impl ServerHandle {
         Arc::clone(&self.inner.lock().await.state.overlay_root)
     }
 
-    /// Sends one frame straight to matching subscribers; the bus, and everything it drives, never sees it.
-    pub async fn deliver_event(&self, event: Event) {
-        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
-        adapter.deliver(&event).await;
-    }
-
     /// Addressed at the connections identified as `identity`; never reaches any other client.
+    /// Returns the number of connections whose receiver was still alive when sent.
     pub async fn deliver_overlay_content(
         &self,
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) {
+    ) -> usize {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
         adapter
             .deliver_overlay_content(identity, &content, duration_ms)
-            .await;
+            .await
     }
 
     /// Survives a restart: the listener lives on the bus adapter, which the new state carries over.

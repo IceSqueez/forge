@@ -36,7 +36,6 @@ pub struct AppState {
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
     pub overlay_root: Arc<std::path::PathBuf>,
-    pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub bind_addr: std::net::SocketAddr,
     pub allowed_origins: Arc<HashSet<String>>,
@@ -84,7 +83,6 @@ impl Server {
             server_info: ServerInfo::new(),
             action_engine: self.config.action_engine,
             overlay_root,
-            http_overlay_require_token: self.config.http_overlay_require_token,
             overlay_cors_any_origin: self.config.overlay_cors_any_origin,
             bind_addr,
             allowed_origins,
@@ -382,7 +380,6 @@ mod tests {
             server_info: ServerInfo::new(),
             action_engine,
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
-            http_overlay_require_token: false,
             overlay_cors_any_origin: true,
             bind_addr: "127.0.0.1:9515".parse().expect("addr"),
             allowed_origins: Arc::new(crate::origin::build_allowed_origins(

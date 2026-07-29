@@ -45,12 +45,13 @@ pub enum OverlayServiceError {
 /// Addressed at one overlay identity and never at the bus, so nothing delivered here runs an action.
 #[async_trait]
 pub trait OverlayFrameSink: Send + Sync {
+    /// Returns how many connections for `identity` still had a live receiver when sent.
     async fn deliver_content(
         &self,
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    );
+    ) -> usize;
 
     async fn deliver_reload(&self, identity: &OverlayId);
 }
@@ -65,7 +66,7 @@ pub trait OverlayConnectListener: Send + Sync {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestFire {
     pub content: OverlayConfig,
-    /// False when nothing is serving, so the caller can say the preview ran alone.
+    /// False when no connected overlay page received it, so the caller can say the preview ran alone.
     pub delivered: bool,
 }
 
@@ -309,8 +310,8 @@ impl OverlayServiceHandle {
         };
         frames
             .deliver_content(id, content_json(content), duration_ms)
-            .await;
-        true
+            .await
+            > 0
     }
 
     fn disposition_of(

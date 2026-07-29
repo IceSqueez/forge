@@ -6,9 +6,9 @@ use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
     EXPECTED_SCHEMA_VERSION, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalTransit,
-    GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    GlobalsRepo, HistoryRepo, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -18,8 +18,8 @@ use crate::error::SqliteStorageError;
 use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
-    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
+    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteOverlayRepo, SqliteQueueRepo, SqliteScriptRepo,
+    SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
     SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect,
 };
 
@@ -42,6 +42,7 @@ pub struct SqliteBackend {
     viewer: Arc<SqliteViewerRepo>,
     tts_filters: Arc<SqliteTtsFiltersRepo>,
     chat_history: Arc<SqliteChatHistoryRepo>,
+    overlay: Arc<SqliteOverlayRepo>,
     shutdown: Arc<Notify>,
 }
 
@@ -144,6 +145,7 @@ impl SqliteBackend {
             viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
             tts_filters: Arc::new(SqliteTtsFiltersRepo::new(pool.clone())),
             chat_history: Arc::new(SqliteChatHistoryRepo::new(pool.clone())),
+            overlay: Arc::new(SqliteOverlayRepo::new(pool.clone())),
             credentials,
             shutdown,
             pool,
@@ -439,6 +441,10 @@ impl DataProvider for SqliteBackend {
 
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {
         Arc::clone(&self.chat_history) as Arc<dyn ChatHistoryRepo>
+    }
+
+    fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
+        Arc::clone(&self.overlay) as Arc<dyn OverlayRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

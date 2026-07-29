@@ -7,6 +7,7 @@ pub mod error;
 pub mod event_log;
 pub mod globals;
 pub mod history;
+pub mod overlay;
 pub mod provider;
 pub mod queue;
 pub mod script;
@@ -26,6 +27,7 @@ pub use error::StorageError;
 pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
+pub use overlay::{OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo};
 pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
@@ -49,5 +51,7 @@ pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};
 
+#[cfg(feature = "test-mocks")]
+pub use overlay::MockOverlayRepo;
 #[cfg(feature = "test-mocks")]
 pub use trigger_instance::MockTriggerInstanceRepo;

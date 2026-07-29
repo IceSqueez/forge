@@ -11,6 +11,7 @@ use forge_storage::credentials::MockCredentialsRepo;
 use forge_storage::event_log::MockEventLogRepo;
 use forge_storage::globals::MockGlobalsRepo;
 use forge_storage::history::MockHistoryRepo;
+use forge_storage::overlay::{MockOverlayRepo, OverlayRepo};
 use forge_storage::queue::MockQueueRepo;
 use forge_storage::script::MockScriptRepo;
 use forge_storage::settings::MockSettingsRepo;
@@ -346,6 +347,10 @@ impl DataProvider for TestDataProvider {
 
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {
         Arc::clone(&self.chat_history_repo) as Arc<dyn ChatHistoryRepo>
+    }
+
+    fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
+        Arc::new(MockOverlayRepo::new())
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

@@ -4,13 +4,13 @@ use async_trait::async_trait;
 
 use crate::{
     ActionRepo, ChatHistoryRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo,
-    QueueRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
 /// Schema version this build expects. The startup gate compares `schema_version()`
 /// against this constant; a mismatch routes to `Screen::SchemaUpgradeRequired`.
-pub const EXPECTED_SCHEMA_VERSION: u32 = 38;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 39;
 
 #[async_trait]
 pub trait DataProvider:
@@ -26,6 +26,7 @@ pub trait DataProvider:
     fn viewer_repo(&self) -> Arc<dyn ViewerRepo>;
     fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo>;
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo>;
+    fn overlay_repo(&self) -> Arc<dyn OverlayRepo>;
 
     async fn schema_version(&self) -> Result<u32, StorageError>;
 

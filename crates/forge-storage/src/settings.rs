@@ -22,6 +22,7 @@ pub mod reserved_keys {
     pub const SERVER_HTTP_OVERLAY_REQUIRE_TOKEN: &str = "server.http_overlay_require_token";
     pub const SERVER_OVERLAY_CORS_ANY_ORIGIN: &str = "server.overlay_cors_any_origin";
     pub const SERVER_OVERLAY_ROOT: &str = "server.overlay_root";
+    pub const SERVER_ADDITIONAL_ORIGINS: &str = "server.additional_origins";
     pub const SCRIPT_HTTP_ALLOWED_DOMAINS: &str = "script.http_allowed_domains";
     pub const SCRIPT_HTTP_MAX_CALLS: &str = "script.http_max_calls_per_script";
     pub const SCRIPT_HTTP_TIMEOUT_MS: &str = "script.http_timeout_ms";

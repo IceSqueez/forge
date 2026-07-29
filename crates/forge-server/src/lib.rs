@@ -8,6 +8,7 @@ pub mod bus_adapter;
 pub mod config;
 pub mod error;
 pub mod handle;
+mod origin;
 pub mod protocol;
 mod sandbox;
 pub mod server;

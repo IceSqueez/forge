@@ -3,14 +3,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use axum::Json;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use axum::extract::{ConnectInfo, State, WebSocketUpgrade};
-use axum::http::HeaderMap;
-use axum::response::Response;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::bus_adapter::{ClientFilterSet, WsFrame};
-
+use crate::origin::is_origin_allowed;
 use crate::protocol::{
     DispatchContext, WsEnvelope, WsRequest, WsResponse, dispatch, serialize_response_frame,
 };
@@ -23,11 +24,29 @@ pub async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    if !is_origin_allowed(&state.allowed_origins, origin) {
+        return origin_rejected_response();
+    }
+
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     upgrade.on_upgrade(move |socket| handle_socket(socket, state, addr, user_agent))
+}
+
+fn origin_rejected_response() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({
+            "error": {
+                "code": "ORIGIN_NOT_ALLOWED",
+                "message": "Origin not allowed"
+            }
+        })),
+    )
+        .into_response()
 }
 
 async fn handle_socket(

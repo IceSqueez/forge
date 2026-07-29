@@ -9,6 +9,7 @@ use tokio::sync::{Mutex, watch};
 
 use crate::auth::AuthState;
 use crate::config::ServerSettings;
+use crate::origin::build_allowed_origins;
 use crate::server::AppState;
 use crate::{ServerError, server};
 
@@ -116,6 +117,18 @@ impl ServerHandle {
 
         self.stop().await?;
 
+        let listener = TcpListener::bind(bind_addr)
+            .await
+            .map_err(|e| ServerError::Bind {
+                addr: bind_addr.to_string(),
+                reason: e.to_string(),
+            })?;
+        let bind_addr = listener.local_addr().unwrap_or(bind_addr);
+        let allowed_origins = Arc::new(build_allowed_origins(
+            bind_addr,
+            &settings.additional_origins,
+        ));
+
         let new_state = AppState {
             auth: Arc::clone(&state.auth),
             bus: Arc::clone(&state.bus),
@@ -131,14 +144,8 @@ impl ServerHandle {
             http_overlay_require_token: settings.http_overlay_require_token,
             overlay_cors_any_origin: settings.overlay_cors_any_origin,
             bind_addr,
+            allowed_origins,
         };
-
-        let listener = TcpListener::bind(bind_addr)
-            .await
-            .map_err(|e| ServerError::Bind {
-                addr: bind_addr.to_string(),
-                reason: e.to_string(),
-            })?;
 
         let (join, shutdown_tx) =
             server::serve_on_with_shutdown(listener, new_state.clone(), self.run_state_tx.clone());

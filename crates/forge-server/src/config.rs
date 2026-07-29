@@ -6,7 +6,7 @@ use forge_platform_core::paths;
 use forge_runtime::{ActionEngineHandle, EventBus};
 use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, StorageError, UserGlobalsRepo,
-    get_bool_setting, reserved_keys, set_bool_setting,
+    get_bool_setting, get_json_setting, reserved_keys, set_bool_setting, set_json_setting,
 };
 
 const VALID_BIND_ADDRESSES: &[&str] = &["127.0.0.1", "0.0.0.0", "::1", "::"];
@@ -18,6 +18,7 @@ pub struct ServerConfig {
     pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub lan_bind_enabled: bool,
+    pub additional_origins: Vec<String>,
     pub settings: Arc<dyn SettingsRepo>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub event_bus: Arc<EventBus>,
@@ -44,6 +45,7 @@ impl ServerConfig {
             http_overlay_require_token: false,
             overlay_cors_any_origin: true,
             lan_bind_enabled: false,
+            additional_origins: Vec::new(),
             settings,
             credentials,
             event_bus,
@@ -65,6 +67,7 @@ pub struct ServerSettings {
     pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub overlay_root: Option<String>,
+    pub additional_origins: Vec<String>,
 }
 
 impl Default for ServerSettings {
@@ -78,6 +81,7 @@ impl Default for ServerSettings {
             http_overlay_require_token: false,
             overlay_cors_any_origin: true,
             overlay_root: None,
+            additional_origins: Vec::new(),
         }
     }
 }
@@ -108,6 +112,10 @@ impl ServerSettings {
         let overlay_cors_any_origin =
             get_bool_setting(repo, reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN, true).await;
         let overlay_root = repo.get_string(reserved_keys::SERVER_OVERLAY_ROOT).await?;
+        let additional_origins =
+            get_json_setting::<Vec<String>>(repo, reserved_keys::SERVER_ADDITIONAL_ORIGINS)
+                .await
+                .unwrap_or_default();
         Ok(Self {
             enabled,
             bind_address,
@@ -117,6 +125,7 @@ impl ServerSettings {
             http_overlay_require_token,
             overlay_cors_any_origin,
             overlay_root,
+            additional_origins,
         })
     }
 
@@ -187,6 +196,13 @@ impl ServerSettings {
     ) -> Result<(), StorageError> {
         repo.set_string(reserved_keys::SERVER_OVERLAY_ROOT, path)
             .await
+    }
+
+    pub async fn save_additional_origins(
+        repo: &dyn SettingsRepo,
+        origins: &[String],
+    ) -> Result<(), StorageError> {
+        set_json_setting(repo, reserved_keys::SERVER_ADDITIONAL_ORIGINS, &origins).await
     }
 }
 

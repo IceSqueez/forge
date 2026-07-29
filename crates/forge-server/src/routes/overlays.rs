@@ -223,6 +223,7 @@ mod tests {
             http_overlay_require_token,
             overlay_cors_any_origin,
             bind_addr,
+            allowed_origins: Arc::new(crate::origin::build_allowed_origins(bind_addr, &[])),
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");

@@ -332,6 +332,7 @@ async fn build_server(
     config.lan_bind_enabled = settings.lan_bind_enabled;
     config.http_overlay_require_token = settings.http_overlay_require_token;
     config.overlay_cors_any_origin = settings.overlay_cors_any_origin;
+    config.additional_origins = settings.additional_origins.clone();
     if let Some(root) = settings.overlay_root.filter(|root| !root.is_empty()) {
         config.overlay_root = std::path::PathBuf::from(root);
     }

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -14,6 +15,7 @@ use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, SettingsRepo, User
 
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
+use crate::origin::build_allowed_origins;
 use crate::routes::{api_v1, overlays, ws};
 use crate::server_info::ServerInfo;
 use crate::{ServerConfig, ServerError, ServerHandle};
@@ -34,6 +36,7 @@ pub struct AppState {
     pub http_overlay_require_token: bool,
     pub overlay_cors_any_origin: bool,
     pub bind_addr: std::net::SocketAddr,
+    pub allowed_origins: Arc<HashSet<String>>,
 }
 
 pub struct Server {
@@ -54,6 +57,17 @@ impl Server {
         let bus_adapter = BusAdapter::new(Arc::clone(&bus));
         bus_adapter.spawn();
         let overlay_root = Arc::new(self.config.overlay_root.clone());
+        let listener = TcpListener::bind(addr)
+            .await
+            .map_err(|e| ServerError::Bind {
+                addr: addr.to_string(),
+                reason: e.to_string(),
+            })?;
+        let bind_addr = listener.local_addr().unwrap_or(addr);
+        let allowed_origins = Arc::new(build_allowed_origins(
+            bind_addr,
+            &self.config.additional_origins,
+        ));
         let state = AppState {
             auth,
             bus,
@@ -68,14 +82,9 @@ impl Server {
             overlay_root,
             http_overlay_require_token: self.config.http_overlay_require_token,
             overlay_cors_any_origin: self.config.overlay_cors_any_origin,
-            bind_addr: self.config.bind_addr,
+            bind_addr,
+            allowed_origins,
         };
-        let listener = TcpListener::bind(addr)
-            .await
-            .map_err(|e| ServerError::Bind {
-                addr: addr.to_string(),
-                reason: e.to_string(),
-            })?;
         Ok(serve_on(listener, state))
     }
 }
@@ -367,6 +376,10 @@ mod tests {
             http_overlay_require_token: false,
             overlay_cors_any_origin: true,
             bind_addr: "127.0.0.1:9515".parse().expect("addr"),
+            allowed_origins: Arc::new(crate::origin::build_allowed_origins(
+                "127.0.0.1:9515".parse().expect("addr"),
+                &[],
+            )),
         }
     }
 

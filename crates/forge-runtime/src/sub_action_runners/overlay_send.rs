@@ -15,32 +15,32 @@ const DURATION_KEY: &str = "duration_secs";
 /// Names the catalog a host resolves `overlay_id` in to get the target type's content fields.
 pub const CONTENT_SCHEMA_KEY: &str = "overlay.content_fields";
 
-pub struct OverlayShowRunner {
+pub struct OverlaySendRunner {
     overlays: OverlayServiceCell,
 }
 
-impl OverlayShowRunner {
+impl OverlaySendRunner {
     pub fn new(overlays: OverlayServiceCell) -> Self {
         Self { overlays }
     }
 
-    async fn show(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
+    async fn send(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
         let target = ctx
             .arg_stack
             .interpolate(config.str(OVERLAY_KEY).unwrap_or_default());
         let identity = target.trim();
         if identity.is_empty() {
-            return SubActionOutcome::Failed("overlay.show: no overlay is selected".to_owned());
+            return SubActionOutcome::Failed("overlay.send: no overlay is selected".to_owned());
         }
 
         let Some(overlays) = self.overlays.get() else {
             return SubActionOutcome::Failed(
-                "overlay.show: the overlay service is not running".to_owned(),
+                "overlay.send: the overlay service is not running".to_owned(),
             );
         };
 
         match overlays
-            .show(
+            .send_to(
                 &OverlayId::new(identity),
                 &supplied_content(config),
                 ctx.arg_stack,
@@ -53,15 +53,15 @@ impl OverlayShowRunner {
                 tracing::debug!(overlay = %identity, "overlay content had no page to reach");
                 SubActionOutcome::Success
             }
-            Err(error) => SubActionOutcome::Failed(format!("overlay.show: {error}")),
+            Err(error) => SubActionOutcome::Failed(format!("overlay.send: {error}")),
         }
     }
 }
 
 #[async_trait]
-impl SubActionRunner for OverlayShowRunner {
+impl SubActionRunner for OverlaySendRunner {
     fn id(&self) -> &str {
-        "overlay.show"
+        "overlay.send"
     }
 
     fn category(&self) -> SubActionCategory {
@@ -69,7 +69,7 @@ impl SubActionRunner for OverlayShowRunner {
     }
 
     fn label(&self) -> &str {
-        "Show on Overlay"
+        "Send to Overlay"
     }
 
     fn summary(&self) -> &str {
@@ -77,7 +77,7 @@ impl SubActionRunner for OverlayShowRunner {
     }
 
     fn search_text(&self) -> &str {
-        "overlay show alert browser source display banner goal ticker"
+        "overlay send show alert browser source display banner goal ticker"
     }
 
     fn icon_name(&self) -> &str {
@@ -127,8 +127,8 @@ impl SubActionRunner for OverlayShowRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "overlay.show");
-        let outcome = self.show(config, ctx).await;
+        let timer = StepTimer::start(ctx, "overlay.send");
+        let outcome = self.send(config, ctx).await;
         (timer.finish(outcome), None)
     }
 }
@@ -250,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_step_that_cannot_reach_an_overlay_fails_rather_than_reporting_success() {
-        let runner = OverlayShowRunner::new(OverlayServiceCell::new());
+        let runner = OverlaySendRunner::new(OverlayServiceCell::new());
         let stack = ArgStack::new();
 
         for (cfg, label) in [

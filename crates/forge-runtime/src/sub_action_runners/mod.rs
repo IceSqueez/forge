@@ -67,7 +67,7 @@ mod core_users_shared;
 mod file_sandbox;
 pub(crate) mod interpolate;
 mod os_ports;
-mod overlay_show;
+mod overlay_send;
 mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
@@ -141,7 +141,7 @@ pub use os_ports::{
     ClipboardPort, DesktopNotice, NotifyPort, NotifyUrgency, OsPortError, SystemClipboardPort,
     SystemNotifyPort, SystemUrlOpenPort, UrlOpenPort,
 };
-pub use overlay_show::{CONTENT_SCHEMA_KEY, OverlayShowRunner};
+pub use overlay_send::{CONTENT_SCHEMA_KEY, OverlaySendRunner};
 pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;
@@ -273,7 +273,7 @@ pub fn register_core_sub_actions(
     )))?;
     reg.register(Box::new(ScriptEmitEventRunner::new(Arc::clone(&publisher))))?;
     reg.register(Box::new(ServerBroadcastRunner::new(Arc::clone(&publisher))))?;
-    reg.register(Box::new(OverlayShowRunner::new(overlays)))?;
+    reg.register(Box::new(OverlaySendRunner::new(overlays)))?;
     reg.register(Box::new(CoreStringConcatRunner))?;
     reg.register(Box::new(CoreStringSubstringRunner))?;
     reg.register(Box::new(CoreStringReplaceRunner))?;

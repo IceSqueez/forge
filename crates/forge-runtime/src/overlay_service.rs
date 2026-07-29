@@ -229,9 +229,9 @@ impl OverlayServiceHandle {
             .await
     }
 
-    /// The show-overlay step's funnel: the supplied fields are laid over the overlay's own
+    /// The send-to-overlay step's funnel: the supplied fields are laid over the overlay's own
     /// content, both expanded against the run's arguments. `Ok(false)` when nothing is serving.
-    pub async fn show(
+    pub async fn send_to(
         &self,
         id: &OverlayId,
         supplied: &OverlayConfig,

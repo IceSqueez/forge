@@ -600,7 +600,7 @@ async fn a_page_connecting_with_nothing_retained_for_it_receives_no_replay() {
 }
 
 #[tokio::test]
-async fn showing_content_funnels_the_step_fields_over_the_overlays_own_and_retains_the_result() {
+async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retains_the_result() {
     let mut stored = definition_of_kind("goal-box", GOAL_KIND);
     stored.config = text_config(&[
         (LABEL_KEY, "%label% goal"),
@@ -614,14 +614,14 @@ async fn showing_content_funnels_the_step_fields_over_the_overlays_own_and_retai
 
     let delivered = harness
         .service
-        .show(
+        .send_to(
             &stored.id,
             &text_config(&[(VALUE_KEY, "%bits%"), (ACCENT_KEY, "red")]),
             &args,
             Some(2_000),
         )
         .await
-        .expect("a bound overlay of a shipped kind accepts a show");
+        .expect("a bound overlay of a shipped kind accepts a send");
 
     assert!(delivered, "a connected page was not counted as reached");
     let expected = text_config(&[
@@ -646,20 +646,20 @@ async fn showing_content_funnels_the_step_fields_over_the_overlays_own_and_retai
 }
 
 #[tokio::test]
-async fn showing_content_with_nothing_serving_still_retains_it_for_the_next_connection() {
+async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_connection() {
     let stored = definition_of_kind("goal-box", GOAL_KIND);
     let harness = harness(vec![stored.clone()], false);
 
     let delivered = harness
         .service
-        .show(
+        .send_to(
             &stored.id,
             &text_config(&[(VALUE_KEY, "42")]),
             &ArgStack::new(),
             None,
         )
         .await
-        .expect("a show does not fail merely because no page is connected");
+        .expect("a send does not fail merely because no page is connected");
 
     assert!(
         !delivered,
@@ -672,7 +672,7 @@ async fn showing_content_with_nothing_serving_still_retains_it_for_the_next_conn
 }
 
 #[tokio::test]
-async fn showing_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolve() {
+async fn sending_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolve() {
     let unshipped = definition_of_kind("vendor-box", UNSHIPPED_KIND);
     let harness = harness(vec![unshipped.clone()], true);
 
@@ -692,21 +692,21 @@ async fn showing_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolv
     ] {
         let err = harness
             .service
-            .show(
+            .send_to(
                 &id,
                 &text_config(&[(VALUE_KEY, "42")]),
                 &ArgStack::new(),
                 None,
             )
             .await
-            .expect_err("a show that cannot be resolved must be refused");
+            .expect_err("a send that cannot be resolved must be refused");
 
         assert!(matches_expected(&err), "{label} produced {err:?}");
     }
 
     assert!(
         harness.sink.frames().is_empty(),
-        "a refused show still pushed a frame to connected pages"
+        "a refused send still pushed a frame to connected pages"
     );
 }
 

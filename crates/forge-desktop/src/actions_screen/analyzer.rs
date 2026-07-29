@@ -50,10 +50,10 @@ impl StepHealth {
     }
 }
 
-const OVERLAY_SHOW_KIND: &str = "overlay.show";
+const OVERLAY_SEND_KIND: &str = "overlay.send";
 const OVERLAY_TARGET_KEY: &str = "overlay_id";
 
-pub(super) fn shows_order_sensitive_overlay(
+pub(super) fn sends_order_sensitive_overlay(
     steps: &[SubActionStep],
     registry: &SubActionRegistry,
     order_sensitive: &dyn Fn(&str) -> bool,
@@ -62,7 +62,7 @@ pub(super) fn shows_order_sensitive_overlay(
         if !step.enabled {
             return false;
         }
-        let hits = step.kind_id == OVERLAY_SHOW_KIND
+        let hits = step.kind_id == OVERLAY_SEND_KIND
             && step
                 .config
                 .get(OVERLAY_TARGET_KEY)
@@ -70,7 +70,7 @@ pub(super) fn shows_order_sensitive_overlay(
                 .is_some_and(order_sensitive);
         hits || nested_chains(step, registry)
             .iter()
-            .any(|chain| shows_order_sensitive_overlay(chain, registry, order_sensitive))
+            .any(|chain| sends_order_sensitive_overlay(chain, registry, order_sensitive))
     })
 }
 
@@ -451,9 +451,9 @@ mod tests {
         }
     }
 
-    fn show(identity: &str, enabled: bool) -> SubActionStep {
+    fn send(identity: &str, enabled: bool) -> SubActionStep {
         step(
-            OVERLAY_SHOW_KIND,
+            OVERLAY_SEND_KIND,
             SubActionConfig::from([(
                 OVERLAY_TARGET_KEY.to_owned(),
                 Variant::String(identity.to_owned()),
@@ -474,48 +474,48 @@ mod tests {
     fn an_ordered_overlay_counts_through_nested_branches_and_never_through_a_disabled_step() {
         for (steps, expected, label) in [
             (
-                vec![show(ORDERED, true)],
+                vec![send(ORDERED, true)],
                 true,
-                "a step showing an overlay whose delivery order matters",
+                "a step sending to an overlay whose delivery order matters",
             ),
             (
-                vec![show(UNORDERED, true)],
+                vec![send(UNORDERED, true)],
                 false,
-                "a step showing an overlay whose delivery order does not matter",
+                "a step sending to an overlay whose delivery order does not matter",
             ),
             (
-                vec![show(ORDERED, false)],
+                vec![send(ORDERED, false)],
                 false,
                 "a disabled step that will never deliver anything",
             ),
             (
-                vec![branch(vec![show(ORDERED, true)], true)],
+                vec![branch(vec![send(ORDERED, true)], true)],
                 true,
                 "an ordered overlay one branch deep",
             ),
             (
-                vec![branch(vec![branch(vec![show(ORDERED, true)], true)], true)],
+                vec![branch(vec![branch(vec![send(ORDERED, true)], true)], true)],
                 true,
                 "an ordered overlay two branches deep",
             ),
             (
-                vec![branch(vec![show(ORDERED, true)], false)],
+                vec![branch(vec![send(ORDERED, true)], false)],
                 false,
                 "an ordered overlay inside a disabled branch",
             ),
             (
-                vec![branch(vec![show(ORDERED, false)], true)],
+                vec![branch(vec![send(ORDERED, false)], true)],
                 false,
                 "a disabled step inside a live branch",
             ),
             (
-                vec![show("%overlay_target%", true)],
+                vec![send("%overlay_target%", true)],
                 false,
                 "an overlay named by a variable no stored identity matches",
             ),
         ] {
             assert_eq!(
-                shows_order_sensitive_overlay(&steps, &registry(), &|id| id == ORDERED),
+                sends_order_sensitive_overlay(&steps, &registry(), &|id| id == ORDERED),
                 expected,
                 "{label}"
             );

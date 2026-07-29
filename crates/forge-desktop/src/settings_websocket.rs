@@ -9,6 +9,7 @@ use forge_components::{
     ghost_button_with_icon, icon, mono_family, overlay, radio_row, radius, save_indicator,
     setting_row, spacing, toggle, tr, type_to_confirm,
 };
+use forge_runtime::OverlayServiceHandle;
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
@@ -49,6 +50,7 @@ pub struct SettingsWebSocketView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     server: Option<ServerHandle>,
+    overlays: OverlayServiceHandle,
 
     enable_server: bool,
     bind_choice: BindChoice,
@@ -81,6 +83,7 @@ impl SettingsWebSocketView {
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         server: Option<ServerHandle>,
+        overlays: OverlayServiceHandle,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -121,6 +124,7 @@ impl SettingsWebSocketView {
             backend,
             rt_handle,
             server,
+            overlays,
             enable_server: true,
             bind_choice: BindChoice::Localhost,
             port: DEFAULT_PORT,
@@ -598,11 +602,17 @@ impl SettingsWebSocketView {
         let path_str = path.to_string_lossy().into_owned();
         self.overlay_root = Some(path_str.clone());
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let overlays = self.overlays.clone();
         self.apply_persist(
             async move {
                 ServerSettings::save_overlay_root(repo.as_ref(), &path_str)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                overlays
+                    .materialize_all()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(())
             },
             cx,
         );

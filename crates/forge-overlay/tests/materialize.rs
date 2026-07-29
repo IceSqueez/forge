@@ -288,20 +288,26 @@ fn an_identity_at_the_length_limit_is_accepted_and_one_byte_past_it_is_not() {
 }
 
 #[test]
-fn ensuring_the_shared_directory_is_idempotent_and_keeps_what_it_already_holds() {
+fn ensuring_the_shared_directory_reclaims_the_runtime_from_hand_edits() {
     let home = TempDir::new().unwrap();
     let root = unborn_root(&home);
 
     let first = ensure_shared_directory(&root).expect("the shared subtree is created on demand");
-    fs::write(first.join(RUNTIME_ASSET), "shipped runtime").unwrap();
-    let second = ensure_shared_directory(&root).expect("a second call is a no-op");
+    assert_eq!(
+        fs::read_to_string(first.join(RUNTIME_ASSET)).unwrap(),
+        forge_overlay::RUNTIME_SOURCE,
+        "the shipped runtime lands on the first ensure"
+    );
+
+    fs::write(first.join(RUNTIME_ASSET), "hand-edited runtime").unwrap();
+    let second = ensure_shared_directory(&root).expect("a second call succeeds");
 
     assert_eq!(second, first);
     assert_eq!(first, root.canonicalize().unwrap().join(RESERVED_DIRECTORY));
     assert_eq!(
         fs::read_to_string(first.join(RUNTIME_ASSET)).unwrap(),
-        "shipped runtime",
-        "re-ensuring the shared subtree must not clear the assets already in it"
+        forge_overlay::RUNTIME_SOURCE,
+        "the reserved subtree is generator territory - hand edits are reclaimed"
     );
 }
 

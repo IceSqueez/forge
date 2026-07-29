@@ -2,6 +2,7 @@ mod editor_pane;
 mod event_options;
 mod form_modal;
 mod kind_visuals;
+mod preview_stage;
 mod property_panel;
 mod registry_pane;
 
@@ -31,6 +32,7 @@ use crate::toasts::{PushToast, copy_to_clipboard};
 use event_options::event_kind_options;
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
 use kind_visuals::{KindVisuals, kind_visuals};
+use preview_stage::TestFireRun;
 use property_panel::{OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
 
 const HEADER_GAP: Pixels = px(5.0);
@@ -75,6 +77,8 @@ pub struct OverlaysView {
     menu_click_pos: Option<Point<Pixels>>,
     form: Option<OpenForm>,
     pending_delete: Confirm<PendingDelete>,
+    fire: Option<TestFireRun>,
+    fire_epoch: u64,
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
 }
@@ -112,6 +116,8 @@ impl OverlaysView {
             menu_click_pos: None,
             form: None,
             pending_delete: Confirm::default(),
+            fire: None,
+            fire_epoch: 0,
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
         };
@@ -241,6 +247,7 @@ impl OverlaysView {
                     .is_some_and(|id| self.index_of(id).is_some());
                 if !selection_survived {
                     self.selected = self.overlays.first().map(|item| item.id.clone());
+                    self.clear_test();
                 }
                 self.sync_panel(cx);
             }
@@ -254,6 +261,7 @@ impl OverlaysView {
             return;
         }
         self.selected = Some(id);
+        self.clear_test();
         self.sync_panel(cx);
         cx.notify();
     }
@@ -559,6 +567,7 @@ impl OverlaysView {
         };
         if self.selected.as_ref() == Some(&prompt.id) {
             self.selected = None;
+            self.clear_test();
         }
         let repo = Arc::clone(&self.repo);
         let service = self.service.clone();

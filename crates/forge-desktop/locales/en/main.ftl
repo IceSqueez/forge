@@ -2096,8 +2096,15 @@ overlays_confirm_delete_body = Any OBS browser source pointing at this overlay w
 
 overlays_mode_design = Design
 overlays_mode_code = Code
-overlays_preview_pending = The live preview for this overlay is not built yet.
 overlays_code_pending = The source editor for this overlay is not built yet.
+overlays_preview_label = Live preview - 1920x1080
+overlays_preview_canvas_note = transparent - OBS browser source
+overlays_preview_approximate = Approximate preview. The real overlay is drawn by the OBS browser source on a transparent background.
+overlays_preview_unavailable = This build has no overlay type for this record, so there is nothing to preview.
+overlays_test_send = Send test
+overlays_test_sending = Building a sample for the bound event...
+overlays_test_delivered = Sample sent to every browser source showing this overlay.
+overlays_test_undelivered = The server is stopped, so no browser source received this sample. The preview above ran on its own.
 overlays_bindings_pending = The bindings reference for the source editor is not built yet.
 overlays_panel_section_content = Content
 overlays_panel_section_style = Style

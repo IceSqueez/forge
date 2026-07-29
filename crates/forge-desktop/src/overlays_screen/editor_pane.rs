@@ -47,7 +47,7 @@ impl OverlaysView {
 
         let Some(definition) = self.selected_definition() else {
             return pane
-                .child(self.render_stage(None, palette))
+                .child(self.render_stage(None, palette, cx))
                 .into_any_element();
         };
 
@@ -56,7 +56,7 @@ impl OverlaysView {
 
         pane.child(self.render_selection_header(definition, palette, cx))
             .children(unavailable_notice)
-            .child(self.render_stage(Some(definition), palette))
+            .child(self.render_stage(Some(definition), palette, cx))
             .into_any_element()
     }
 
@@ -264,12 +264,13 @@ impl OverlaysView {
         &self,
         selection: Option<&OverlayDefinition>,
         palette: &ForgePalette,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let (message, glyph) = match selection {
-            Some(_) if self.mode() == EditorMode::Code => {
-                (tr!("overlays_code_pending"), Icon::Code)
+            Some(definition) if self.mode() == EditorMode::Design => {
+                return self.render_design_stage(definition, palette, cx);
             }
-            Some(_) => (tr!("overlays_preview_pending"), Icon::PlayerPlay),
+            Some(_) => (tr!("overlays_code_pending"), Icon::Code),
             None if self.overlays.is_empty() => (tr!("overlays_stage_empty"), Icon::Browser),
             None => (tr!("overlays_stage_select"), Icon::Browser),
         };

@@ -2123,8 +2123,15 @@ overlays_confirm_delete_body = Будь-яке браузерне джерело
 
 overlays_mode_design = Дизайн
 overlays_mode_code = Код
-overlays_preview_pending = Живий перегляд цього оверлея ще не побудовано.
 overlays_code_pending = Редактор джерела для цього оверлея ще не побудовано.
+overlays_preview_label = Живий перегляд - 1920x1080
+overlays_preview_canvas_note = прозоро - браузерне джерело OBS
+overlays_preview_approximate = Приблизний перегляд. Справжній оверлей малює браузерне джерело OBS на прозорому тлі.
+overlays_preview_unavailable = У цій збірці немає типу оверлея для цього запису, тож переглядати нічого.
+overlays_test_send = Надіслати тест
+overlays_test_sending = Готуємо зразок для прив'язаної події...
+overlays_test_delivered = Зразок надіслано в усі браузерні джерела, що показують цей оверлей.
+overlays_test_undelivered = Сервер зупинено, тому жодне браузерне джерело не отримало цей зразок. Перегляд вище відпрацював локально.
 overlays_bindings_pending = Довідник прив'язок для редактора джерела ще не побудовано.
 overlays_panel_section_content = Вміст
 overlays_panel_section_style = Стиль

@@ -5,14 +5,14 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_ACCENT, BORDER_THIN, BulletItem, BulletKind, Density, FONT_LG, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
-    TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
+    TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, field_hint, field_title,
     ghost_button_with_icon, icon, mono_family, overlay, radio_row, radius, save_indicator,
     setting_row, spacing, toggle, tr, type_to_confirm,
 };
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Rgba, SharedString,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px, relative,
 };
 
@@ -26,6 +26,7 @@ const LAN_ADDR: &str = "0.0.0.0";
 const MIN_PORT: u16 = 1024;
 const DEFAULT_PORT: u16 = 8081;
 const DEFAULT_OVERLAY_HINT: &str = "~/.local/share/forge/overlays";
+const ORIGINS_AREA_HEIGHT: Pixels = px(72.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BindChoice {
@@ -41,6 +42,7 @@ struct WebSocketSnapshot {
     require_http_overlay_token: bool,
     cors_any_origin: bool,
     overlay_root: Option<String>,
+    additional_origins: Vec<String>,
 }
 
 pub struct SettingsWebSocketView {
@@ -55,6 +57,7 @@ pub struct SettingsWebSocketView {
     require_http_overlay_token: bool,
     cors_any_origin: bool,
     overlay_root: Option<String>,
+    additional_origins: Vec<String>,
 
     bearer_token: String,
     token_revealed: bool,
@@ -63,8 +66,11 @@ pub struct SettingsWebSocketView {
     save_state: SaveState,
     restarting: bool,
     running: bool,
+    origins_error: Option<SharedString>,
+    origins_need_restart: bool,
 
     port_input: Entity<TextInput>,
+    origins_input: Entity<TextArea>,
     lan_modal: Option<Entity<TypeToConfirm>>,
     lan_sub: Option<Subscription>,
     _subs: Vec<Subscription>,
@@ -84,11 +90,26 @@ impl SettingsWebSocketView {
                 .with_font_size(FONT_SM)
         });
 
+        let origins_input = cx.new(|cx| {
+            TextArea::new(tr!("settings_ws_origins_placeholder"), cx)
+                .with_palette(palette)
+                .with_font_size(FONT_XS)
+                .with_height(ORIGINS_AREA_HEIGHT)
+                .mono()
+        });
+
         let mut subs = Vec::new();
         subs.push(
             cx.subscribe(&port_input, |this, _input, event: &InputEvent, cx| {
                 if let InputEvent::Submitted(_) = event {
                     this.commit_port(cx);
+                }
+            }),
+        );
+        subs.push(
+            cx.subscribe(&origins_input, |this, _input, event: &InputEvent, cx| {
+                if let InputEvent::Changed(_) = event {
+                    this.clear_origins_error(cx);
                 }
             }),
         );
@@ -107,13 +128,17 @@ impl SettingsWebSocketView {
             require_http_overlay_token: false,
             cors_any_origin: true,
             overlay_root: None,
+            additional_origins: Vec::new(),
             bearer_token: String::new(),
             token_revealed: false,
             loading: false,
             save_state: SaveState::default(),
             restarting: false,
             running,
+            origins_error: None,
+            origins_need_restart: false,
             port_input,
+            origins_input,
             lan_modal: None,
             lan_sub: None,
             _subs: subs,
@@ -182,6 +207,12 @@ impl SettingsWebSocketView {
                 self.require_http_overlay_token = snap.require_http_overlay_token;
                 self.cors_any_origin = snap.cors_any_origin;
                 self.overlay_root = snap.overlay_root.filter(|s| !s.is_empty());
+                self.additional_origins = snap.additional_origins;
+                let joined = self.additional_origins.join("\n");
+                self.origins_input
+                    .update(cx, |i, cx| i.set_content(joined, cx));
+                self.origins_error = None;
+                self.origins_need_restart = false;
                 self.save_state = SaveState::Saved;
             }
             Err(message) => {
@@ -301,9 +332,12 @@ impl SettingsWebSocketView {
             async move { handle.restart().await.map_err(|e| e.to_string()) },
             |this, result: Result<(), String>, cx| {
                 this.restarting = false;
-                if let Err(message) = result {
-                    tracing::warn!(error = %message, "failed to restart websocket server");
-                    this.save_state = SaveState::Error(message.into());
+                match result {
+                    Ok(()) => this.origins_need_restart = false,
+                    Err(message) => {
+                        tracing::warn!(error = %message, "failed to restart websocket server");
+                        this.save_state = SaveState::Error(message.into());
+                    }
                 }
                 cx.notify();
             },
@@ -449,6 +483,48 @@ impl SettingsWebSocketView {
                 let restore = self.port.to_string();
                 self.port_input
                     .update(cx, |i, cx| i.set_content(restore, cx));
+                cx.notify();
+            }
+        }
+    }
+
+    fn clear_origins_error(&mut self, cx: &mut Context<Self>) {
+        if self.origins_error.is_none() {
+            return;
+        }
+        self.origins_error = None;
+        self.origins_input
+            .update(cx, |i, cx| i.set_invalid(false, cx));
+        cx.notify();
+    }
+
+    fn commit_origins(&mut self, cx: &mut Context<Self>) {
+        let raw = self.origins_input.read(cx).content().to_owned();
+        match parse_origins(&raw) {
+            Ok(origins) => {
+                self.origins_error = None;
+                self.origins_input
+                    .update(cx, |i, cx| i.set_invalid(false, cx));
+                if origins != self.additional_origins {
+                    self.origins_need_restart = true;
+                }
+                self.additional_origins = origins.clone();
+                self.origins_input
+                    .update(cx, |i, cx| i.set_content(origins.join("\n"), cx));
+                let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+                self.apply_persist(
+                    async move {
+                        ServerSettings::save_additional_origins(repo.as_ref(), &origins)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    cx,
+                );
+            }
+            Err(rejected) => {
+                self.origins_error = Some(rejected.into());
+                self.origins_input
+                    .update(cx, |i, cx| i.set_invalid(true, cx));
                 cx.notify();
             }
         }
@@ -717,6 +793,70 @@ impl SettingsWebSocketView {
                     BindChoice::Lan => this.open_lan_modal(window, cx),
                 }),
             )
+    }
+
+    fn origins_section(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let apply =
+            ghost_button_with_icon(Icon::Check, tr!("settings_ws_origins_apply_btn"), palette)
+                .on_click(
+                    "settings-ws-origins-apply",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.commit_origins(cx)),
+                );
+
+        let mut footer = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density));
+
+        if let Some(rejected) = &self.origins_error {
+            footer = footer.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xxs, density))
+                    .child(icon(Icon::AlertTriangle, px(12.0), palette.random))
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.random)
+                            .child(tr!("settings_ws_origins_invalid")),
+                    )
+                    .child(
+                        div()
+                            .font_family(mono_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.random)
+                            .child(rejected.clone()),
+                    ),
+            );
+        } else if self.origins_need_restart {
+            footer = footer.child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.warning)
+                    .child(tr!("settings_ws_origins_restart_warning")),
+            );
+        }
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(field_title(
+                tr!("settings_ws_origins_section_title"),
+                palette,
+            ))
+            .child(field_hint(tr!("settings_ws_origins_subtitle"), palette))
+            .child(self.origins_input.clone())
+            .child(footer.child(div().flex_1()).child(apply))
     }
 
     fn port_column(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
@@ -1071,6 +1211,8 @@ impl Render for SettingsWebSocketView {
             .child(hline(palette.border_regular))
             .child(self.bind_section(&palette, density, cx))
             .child(hline(palette.border_regular))
+            .child(self.origins_section(&palette, density, cx))
+            .child(hline(palette.border_regular))
             .child(port_token)
             .child(hline(palette.border_regular))
             .child(self.auth_section(&palette, density, cx))
@@ -1096,7 +1238,75 @@ async fn load_websocket_settings(repo: Arc<dyn SettingsRepo>) -> Result<WebSocke
         require_http_overlay_token: snap.http_overlay_require_token,
         cors_any_origin: snap.overlay_cors_any_origin,
         overlay_root: snap.overlay_root,
+        additional_origins: snap.additional_origins,
     })
+}
+
+/// Blank lines are dropped; the `Err` carries the first line that failed so the pane can name it.
+fn parse_origins(raw: &str) -> Result<Vec<String>, String> {
+    let mut accepted: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some(origin) = normalize_origin(trimmed) else {
+            return Err(trimmed.to_owned());
+        };
+        if !accepted.contains(&origin) {
+            accepted.push(origin);
+        }
+    }
+    Ok(accepted)
+}
+
+/// Lowercases to match how the server keys its allowlist; rejects anything past the authority (a browser `Origin` header carries no path).
+fn normalize_origin(raw: &str) -> Option<String> {
+    let lowered = raw.trim().to_ascii_lowercase();
+    let authority = lowered
+        .strip_prefix("http://")
+        .or_else(|| lowered.strip_prefix("https://"))?;
+    let (host, port) = split_host_port(authority)?;
+    if !host_is_valid(host) {
+        return None;
+    }
+    if let Some(port) = port
+        && !port.parse::<u16>().is_ok_and(|p| p > 0)
+    {
+        return None;
+    }
+    Some(lowered)
+}
+
+fn split_host_port(authority: &str) -> Option<(&str, Option<&str>)> {
+    if authority.starts_with('[') {
+        let close = authority.find(']')?;
+        let host = &authority[..=close];
+        let tail = &authority[close + 1..];
+        return match tail {
+            "" => Some((host, None)),
+            _ => Some((host, Some(tail.strip_prefix(':')?))),
+        };
+    }
+    match authority.split_once(':') {
+        Some((_, port)) if port.contains(':') => None,
+        Some((host, port)) => Some((host, Some(port))),
+        None => Some((authority, None)),
+    }
+}
+
+fn host_is_valid(host: &str) -> bool {
+    if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        return !inner.is_empty()
+            && inner
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.');
+    }
+    !host.starts_with('.')
+        && !host.ends_with('.')
+        && host.split('.').all(|label| {
+            !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
 }
 
 fn lan_bind_bullets() -> Vec<BulletItem> {

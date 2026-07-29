@@ -41,8 +41,8 @@ pub async fn serve_overlay_file(
     }
 
     match resolve_and_read(&state, &path).await {
-        Ok(body_bytes) => {
-            let ext = std::path::Path::new(&path)
+        Ok((body_bytes, resolved)) => {
+            let ext = resolved
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or_default();
@@ -75,7 +75,10 @@ fn cors_header_value(state: &AppState) -> HeaderValue {
     }
 }
 
-async fn resolve_and_read(state: &AppState, url_path: &str) -> Result<Vec<u8>, StatusCode> {
+async fn resolve_and_read(
+    state: &AppState,
+    url_path: &str,
+) -> Result<(Vec<u8>, std::path::PathBuf), StatusCode> {
     if url_path.split('/').any(|seg| seg.starts_with('.')) {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -116,9 +119,10 @@ async fn resolve_and_read(state: &AppState, url_path: &str) -> Result<Vec<u8>, S
         canon_target
     };
 
-    tokio::fs::read(&canon_file)
+    let body = tokio::fs::read(&canon_file)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok((body, canon_file))
 }
 
 async fn overlay_serving_enabled(state: &AppState, url_path: &str) -> bool {

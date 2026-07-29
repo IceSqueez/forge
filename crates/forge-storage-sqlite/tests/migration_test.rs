@@ -9,19 +9,37 @@ async fn all_core_tables_exist_after_migration() {
         .expect("in-memory pool");
     apply_migrations(&pool).await.expect("migrations apply");
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sqlite_master \
-         WHERE type = 'table' \
-         AND name IN ('globals', 'user_globals', 'settings', 'action_history', 'credentials',
-                      'queues', 'actions', 'scripts', 'event_log',
-                      'soundboard_clips', 'voice_aliases', 'ignore_profile',
-                      'replacement_rules', 'viewers', 'action_executions',
-                      'trigger_instances', 'action_trigger_instances',
-                      'tts_filter_rules', 'tts_pipeline_settings')",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("query sqlite_master");
+    let present: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .fetch_all(&pool)
+            .await
+            .expect("query sqlite_master");
 
-    assert_eq!(count, 19, "expected 19 tables after all migrations");
+    for table in [
+        "globals",
+        "user_globals",
+        "settings",
+        "action_history",
+        "credentials",
+        "queues",
+        "actions",
+        "scripts",
+        "event_log",
+        "soundboard_clips",
+        "voice_aliases",
+        "ignore_profile",
+        "replacement_rules",
+        "viewers",
+        "action_executions",
+        "trigger_instances",
+        "action_trigger_instances",
+        "tts_filter_rules",
+        "tts_pipeline_settings",
+        "overlays",
+    ] {
+        assert!(
+            present.iter().any(|name| name == table),
+            "missing table after migrations: {table}"
+        );
+    }
 }

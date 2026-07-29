@@ -95,3 +95,41 @@ pub trait OverlayRepo: Send + Sync {
     /// Returns true if a row was removed.
     async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOKEN: &str = "b8f1c07a4e2d9a6b5c4d3e2f1a0b9c8d";
+
+    fn definition() -> OverlayDefinition {
+        OverlayDefinition {
+            id: OverlayId::new("alert-box"),
+            display_name: "Alert Box".to_owned(),
+            kind_id: "forge.chat".to_owned(),
+            enabled: true,
+            position: 0,
+            config: OverlayConfig::new(),
+            config_schema_version: 1,
+            generator_version: 0,
+            source_overrides: Vec::new(),
+            credential: OverlayCredential::new(TOKEN),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn debug_output_never_carries_the_overlay_credential() {
+        let credential = OverlayCredential::new(TOKEN);
+
+        assert!(
+            !format!("{credential:?}").contains(TOKEN),
+            "credential leaked from its own Debug"
+        );
+        assert!(
+            !format!("{:?}", definition()).contains(TOKEN),
+            "credential leaked through the definition Debug"
+        );
+    }
+}

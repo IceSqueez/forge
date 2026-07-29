@@ -50,6 +50,30 @@ impl StepHealth {
     }
 }
 
+const OVERLAY_SHOW_KIND: &str = "overlay.show";
+const OVERLAY_TARGET_KEY: &str = "overlay_id";
+
+pub(super) fn shows_order_sensitive_overlay(
+    steps: &[SubActionStep],
+    registry: &SubActionRegistry,
+    order_sensitive: &dyn Fn(&str) -> bool,
+) -> bool {
+    steps.iter().any(|step| {
+        if !step.enabled {
+            return false;
+        }
+        let hits = step.kind_id == OVERLAY_SHOW_KIND
+            && step
+                .config
+                .get(OVERLAY_TARGET_KEY)
+                .and_then(Variant::as_str)
+                .is_some_and(order_sensitive);
+        hits || nested_chains(step, registry)
+            .iter()
+            .any(|chain| shows_order_sensitive_overlay(chain, registry, order_sensitive))
+    })
+}
+
 struct TriggerSeed {
     all: HashSet<String>,
     some_only: HashSet<String>,

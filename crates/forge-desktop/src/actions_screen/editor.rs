@@ -33,6 +33,7 @@ use std::collections::HashMap;
 struct SelectOptionsFetch {
     options: HashMap<String, Vec<(String, String)>>,
     overlay_kind_by_identity: HashMap<String, String>,
+    concurrent_queue_ids: HashSet<String>,
 }
 
 fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
@@ -529,6 +530,47 @@ fn empty_placeholder_card(
         .into_any_element()
 }
 
+fn inline_warning_card(
+    title: impl Into<SharedString>,
+    hint: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> AnyElement {
+    let title = title.into();
+    let hint = hint.into();
+    div()
+        .w_full()
+        .flex()
+        .items_start()
+        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .py(CARD_PAD_V)
+        .px(CARD_PAD_H)
+        .rounded(radius(Radius::Md))
+        .bg(with_alpha(palette.warning, STEP_HEALTH_TILE_ALPHA))
+        .child(icon(Icon::AlertTriangle, CARD_GLYPH, palette.warning))
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xxs, Density::Cozy))
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_primary)
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child(hint),
+                ),
+        )
+        .into_any_element()
+}
+
 fn trigger_unlink_btn(
     id: impl Into<ElementId>,
     palette: &ForgePalette,
@@ -816,6 +858,7 @@ impl ScreenActionsView {
             async move {
                 let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
                 let mut overlay_kind_by_identity: HashMap<String, String> = HashMap::new();
+                let mut concurrent_queue_ids: HashSet<String> = HashSet::new();
                 if let Ok(actions) = action_repo.list().await {
                     map.insert(
                         "action.ids".to_owned(),
@@ -826,6 +869,11 @@ impl ScreenActionsView {
                     );
                 }
                 if let Ok(queues) = queue_repo.list().await {
+                    concurrent_queue_ids = queues
+                        .iter()
+                        .filter(|q| !q.is_serial())
+                        .map(|q| q.id.to_string())
+                        .collect();
                     map.insert(
                         "queue.ids".to_owned(),
                         queues
@@ -896,6 +944,7 @@ impl ScreenActionsView {
                 SelectOptionsFetch {
                     options: map,
                     overlay_kind_by_identity,
+                    concurrent_queue_ids,
                 }
             },
             |this, fetch, cx| this.on_select_options_fetched(fetch, cx),
@@ -907,11 +956,13 @@ impl ScreenActionsView {
         let SelectOptionsFetch {
             options,
             overlay_kind_by_identity,
+            concurrent_queue_ids,
         } = fetch;
         self.overlay_schema = Arc::new(
             self.overlay_schema
                 .with_identities(overlay_kind_by_identity),
         );
+        self.concurrent_queue_ids = concurrent_queue_ids;
         if let Some(form) = self.sub_form.clone() {
             let schema = Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>;
             form.update(cx, |form, cx| {
@@ -1624,6 +1675,26 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
+    pub(super) fn overlay_order_at_risk(&self, action: &Action) -> bool {
+        self.concurrent_queue_ids
+            .contains(&action.queue_id.to_string())
+            && analyzer::shows_order_sensitive_overlay(
+                &action.sub_actions,
+                &self.sub_action_registry,
+                &|identity| self.overlay_schema.is_order_sensitive(identity),
+            )
+    }
+
+    fn render_order_warning(&self, action: &Action, palette: &ForgePalette) -> Option<AnyElement> {
+        self.overlay_order_at_risk(action).then(|| {
+            inline_warning_card(
+                tr!("action_editor_overlay_order_warning"),
+                tr!("action_editor_overlay_order_warning_hint"),
+                palette,
+            )
+        })
+    }
+
     fn render_editor(
         &self,
         detail: &ActionDetail,
@@ -1635,6 +1706,7 @@ impl ScreenActionsView {
             .flex_col()
             .gap(spacing(Spacing::Md, Density::Cozy))
             .child(self.render_editor_header(detail, palette, cx))
+            .children(self.render_order_warning(&detail.action, palette))
             .child(self.render_triggers_section(detail, palette, cx))
             .child(self.render_sub_actions_section(detail, palette, cx));
 

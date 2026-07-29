@@ -24,6 +24,13 @@ impl OverlayContentSchema {
             kind_by_identity,
         }
     }
+
+    pub(super) fn is_order_sensitive(&self, identity: &str) -> bool {
+        self.kind_by_identity
+            .get(identity.trim())
+            .and_then(|kind_id| self.kinds.get(kind_id))
+            .is_some_and(|descriptor| descriptor.order_sensitive())
+    }
 }
 
 impl FormSchemaSource for OverlayContentSchema {

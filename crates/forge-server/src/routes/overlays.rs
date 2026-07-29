@@ -163,7 +163,9 @@ mod tests {
     use forge_registry::SubActionRegistry;
     use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::{
-        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo,
+        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, MockOverlayRepo, OverlayConfig,
+        OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
+        UserGlobalsRepo,
     };
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
@@ -241,6 +243,23 @@ mod tests {
         overlay_cors_any_origin: bool,
         creds: Arc<MemCreds>,
     ) -> (ServerHandle, SocketAddr) {
+        make_overlay_server_with_overlays(
+            overlay_root,
+            http_overlay_require_token,
+            overlay_cors_any_origin,
+            creds,
+            None,
+        )
+        .await
+    }
+
+    async fn make_overlay_server_with_overlays(
+        overlay_root: std::path::PathBuf,
+        http_overlay_require_token: bool,
+        overlay_cors_any_origin: bool,
+        creds: Arc<MemCreds>,
+        overlay_repo: Option<Arc<dyn OverlayRepo>>,
+    ) -> (ServerHandle, SocketAddr) {
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
@@ -250,7 +269,7 @@ mod tests {
         let actions = dp.action_repo();
         let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
         let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let overlays = dp.overlay_repo();
+        let overlays = overlay_repo.unwrap_or_else(|| dp.overlay_repo());
         let _registry = Arc::new(ScriptRegistry::new());
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
@@ -573,6 +592,262 @@ mod tests {
             .await
             .expect("request");
         assert_eq!(resp.status().as_u16(), 200);
+
+        handle.abort();
+    }
+
+    async fn make_root(base: &std::path::Path) -> std::path::PathBuf {
+        let root = base.join("root");
+        tokio::fs::create_dir(&root).await.expect("create root");
+        root
+    }
+
+    async fn write_at(path: std::path::PathBuf, body: &str) {
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .expect("create parent");
+        }
+        tokio::fs::write(path, body.as_bytes())
+            .await
+            .expect("write");
+    }
+
+    async fn get_status_and_body(addr: SocketAddr, target: &str) -> (u16, String) {
+        let resp = reqwest::get(format!("http://{addr}{target}"))
+            .await
+            .expect("request");
+        let status = resp.status().as_u16();
+        let body = resp.text().await.expect("body");
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_resolves_a_directory_to_its_index_document_typed_as_html() {
+        let dir = qa_tempdir();
+        let root = make_root(dir.path()).await;
+        write_at(root.join("alerts").join("index.html"), "<h1>Entry</h1>").await;
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        for target in ["/overlays/alerts/", "/overlays/alerts"] {
+            let resp = reqwest::get(format!("http://{addr}{target}"))
+                .await
+                .expect("request");
+            assert_eq!(resp.status().as_u16(), 200, "expected 200 for {target}");
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .expect("content-type")
+                .to_str()
+                .expect("ascii content-type")
+                .to_owned();
+            assert!(
+                content_type.contains("text/html"),
+                "index document typed as {content_type} for {target}"
+            );
+            let body = resp.text().await.expect("body");
+            assert_eq!(body, "<h1>Entry</h1>", "wrong body for {target}");
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_returns_404_for_a_directory_without_an_index_document() {
+        let dir = qa_tempdir();
+        let root = make_root(dir.path()).await;
+        tokio::fs::create_dir(root.join("bare"))
+            .await
+            .expect("create bare");
+        tokio::fs::create_dir_all(root.join("shadowed").join("index.html"))
+            .await
+            .expect("create shadowed");
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        for target in [
+            "/overlays/bare/",
+            "/overlays/bare",
+            "/overlays/shadowed/",
+            "/overlays/shadowed",
+        ] {
+            let (status, _) = get_status_and_body(addr, target).await;
+            assert_eq!(status, 404, "expected 404 for {target}");
+        }
+
+        handle.abort();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_overlay_rejects_a_directory_index_symlinked_outside_the_root() {
+        let dir = qa_tempdir();
+        let (root, decoy) = root_with_outside_decoy(dir.path()).await;
+        tokio::fs::create_dir(root.join("alerts"))
+            .await
+            .expect("create overlay dir");
+        std::os::unix::fs::symlink(
+            dir.path().join(decoy),
+            root.join("alerts").join("index.html"),
+        )
+        .expect("symlink");
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        for target in ["/overlays/alerts/", "/overlays/alerts"] {
+            let (status, body) = raw_get(addr, target, "").await;
+            assert_eq!(status, 404, "expected 404 for {target}");
+            assert!(
+                !body.contains(ESCAPE_MARKER),
+                "directory index escaped the overlay root via {target}"
+            );
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_types_the_response_from_the_resolved_file_extension() {
+        let dir = qa_tempdir();
+        let root = make_root(dir.path()).await;
+        write_at(root.join("config.json"), "{}").await;
+        write_at(root.join("face.woff2"), "font-bytes").await;
+        write_at(root.join("blob.unknownext"), "opaque").await;
+
+        let (handle, addr) = make_overlay_server(root, false, true, MemCreds::new()).await;
+
+        for (target, expected) in [
+            ("/overlays/config.json", "application/json"),
+            ("/overlays/face.woff2", "font/woff2"),
+            ("/overlays/blob.unknownext", "application/octet-stream"),
+        ] {
+            let resp = reqwest::get(format!("http://{addr}{target}"))
+                .await
+                .expect("request");
+            assert_eq!(resp.status().as_u16(), 200, "expected 200 for {target}");
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .expect("content-type")
+                .to_str()
+                .expect("ascii content-type")
+                .to_owned();
+            assert!(
+                content_type.contains(expected),
+                "{target} typed as {content_type}, expected {expected}"
+            );
+        }
+
+        handle.abort();
+    }
+
+    fn overlay_definition(identity: &str, enabled: bool) -> OverlayDefinition {
+        OverlayDefinition {
+            id: OverlayId::new(identity),
+            display_name: identity.to_owned(),
+            kind_id: "forge.chat".to_owned(),
+            enabled,
+            position: 0,
+            config: OverlayConfig::new(),
+            config_schema_version: 1,
+            generator_version: 1,
+            source_overrides: Vec::new(),
+            credential: OverlayCredential::new("overlay-read-credential"),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    fn gated_overlay_repo() -> Arc<dyn OverlayRepo> {
+        let mut repo = MockOverlayRepo::new();
+        repo.expect_get().returning(|id| match id.as_str() {
+            "off" => Ok(Some(overlay_definition("off", false))),
+            "on" => Ok(Some(overlay_definition("on", true))),
+            "boom" => Err(StorageError::Connection {
+                reason: "overlay store offline".to_owned(),
+            }),
+            _ => Ok(None),
+        });
+        Arc::new(repo)
+    }
+
+    async fn gated_overlay_root(base: &std::path::Path) -> std::path::PathBuf {
+        let root = make_root(base).await;
+        for identity in ["off", "on", "boom", "stranger"] {
+            write_at(
+                root.join(identity).join("index.html"),
+                &format!("<p>{identity}</p>"),
+            )
+            .await;
+        }
+        write_at(root.join("off").join("asset.js"), "console.log('off')").await;
+        write_at(
+            root.join("forge-shared").join("runtime-v1.js"),
+            "export const runtime = 1;",
+        )
+        .await;
+        root
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_returns_404_for_every_path_under_a_disabled_overlay() {
+        let dir = qa_tempdir();
+        let root = gated_overlay_root(dir.path()).await;
+
+        let (handle, addr) = make_overlay_server_with_overlays(
+            root,
+            false,
+            true,
+            MemCreds::new(),
+            Some(gated_overlay_repo()),
+        )
+        .await;
+
+        for target in [
+            "/overlays/off/",
+            "/overlays/off",
+            "/overlays/off/index.html",
+            "/overlays/off/asset.js",
+        ] {
+            let (status, body) = get_status_and_body(addr, target).await;
+            assert_eq!(status, 404, "expected 404 for {target}");
+            assert!(
+                !body.contains("<p>off</p>"),
+                "disabled overlay served its body via {target}"
+            );
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_serves_unless_the_store_reports_the_identity_disabled() {
+        let dir = qa_tempdir();
+        let root = gated_overlay_root(dir.path()).await;
+
+        let (handle, addr) = make_overlay_server_with_overlays(
+            root,
+            false,
+            true,
+            MemCreds::new(),
+            Some(gated_overlay_repo()),
+        )
+        .await;
+
+        for (target, expected_body) in [
+            ("/overlays/on/index.html", "<p>on</p>"),
+            ("/overlays/stranger/index.html", "<p>stranger</p>"),
+            ("/overlays/boom/index.html", "<p>boom</p>"),
+            (
+                "/overlays/forge-shared/runtime-v1.js",
+                "export const runtime = 1;",
+            ),
+        ] {
+            let (status, body) = get_status_and_body(addr, target).await;
+            assert_eq!(status, 200, "expected 200 for {target}");
+            assert_eq!(body, expected_body, "wrong body for {target}");
+        }
 
         handle.abort();
     }

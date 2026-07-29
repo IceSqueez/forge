@@ -458,3 +458,45 @@ pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext)
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::mime_for_extension;
+
+    #[test]
+    fn mime_for_extension_is_case_insensitive_for_every_served_asset_type() {
+        for (ext, expected) in [
+            ("html", "text/html"),
+            ("htm", "text/html"),
+            ("js", "application/javascript"),
+            ("mjs", "application/javascript"),
+            ("css", "text/css"),
+            ("json", "application/json"),
+            ("png", "image/png"),
+            ("jpg", "image/jpeg"),
+            ("svg", "image/svg+xml"),
+            ("gif", "image/gif"),
+            ("webp", "image/webp"),
+            ("woff2", "font/woff2"),
+            ("wav", "audio/wav"),
+            ("mp3", "audio/mpeg"),
+        ] {
+            assert_eq!(mime_for_extension(ext), Some(expected), "lowercase {ext}");
+            assert_eq!(
+                mime_for_extension(&ext.to_ascii_uppercase()),
+                Some(expected),
+                "uppercase {ext}"
+            );
+        }
+    }
+
+    #[test]
+    fn mime_for_extension_leaves_unmapped_extensions_untyped() {
+        for ext in ["", "bin", "woff", "json5", "htmlx", "webp2", " json"] {
+            assert!(
+                mime_for_extension(ext).is_none(),
+                "unexpected mapping for {ext:?}"
+            );
+        }
+    }
+}

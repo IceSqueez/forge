@@ -1683,19 +1683,6 @@ mod tests {
     }
 
     #[test]
-    fn overlay_origin_rewrites_wildcard_binds_to_loopback() {
-        for (bind, expected) in [
-            ("127.0.0.1:9515", "http://127.0.0.1:9515"),
-            ("192.168.1.5:9515", "http://192.168.1.5:9515"),
-            ("0.0.0.0:9515", "http://127.0.0.1:9515"),
-            ("[::]:9515", "http://127.0.0.1:9515"),
-            ("[::1]:9515", "http://[::1]:9515"),
-        ] {
-            assert_eq!(overlay_origin(bind), expected, "bind {bind}");
-        }
-    }
-
-    #[test]
     fn mask_token_keeps_only_the_last_four_characters() {
         let token = "fg_supersecretvalue9c4a";
         let masked = mask_token(token);

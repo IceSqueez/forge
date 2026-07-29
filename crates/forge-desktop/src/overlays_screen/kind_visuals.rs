@@ -46,3 +46,113 @@ pub(super) fn kind_visuals(
         label: Some(descriptor.label().to_owned()),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use std::collections::HashSet;
+
+    use forge_components::ThemeId;
+    use forge_overlay::register_builtin_kinds;
+    use forge_storage::{OverlayCredential, OverlayId};
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    const ACCENTS: [PreviewAccent; 6] = [
+        PreviewAccent::Mauve,
+        PreviewAccent::Sky,
+        PreviewAccent::Green,
+        PreviewAccent::Peach,
+        PreviewAccent::Yellow,
+        PreviewAccent::Red,
+    ];
+
+    fn registry() -> OverlayKindRegistry {
+        let mut reg = OverlayKindRegistry::new();
+        register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
+        reg
+    }
+
+    fn definition(kind_id: &str) -> OverlayDefinition {
+        OverlayDefinition {
+            id: OverlayId::new("stage-alerts"),
+            display_name: "Stage alerts".to_owned(),
+            kind_id: kind_id.to_owned(),
+            enabled: true,
+            position: 0,
+            config: Default::default(),
+            config_schema_version: 1,
+            generator_version: 1,
+            source_overrides: Vec::new(),
+            credential: OverlayCredential::new("token"),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn every_overlay_kind_names_an_icon_this_build_actually_carries() {
+        let registry = registry();
+        let mut seen: HashSet<Icon> = HashSet::new();
+
+        for descriptor in registry.all() {
+            let resolved = Icon::from_name(descriptor.icon_name());
+            assert_ne!(
+                resolved,
+                Icon::InfoCircle,
+                "{} asks for the '{}' icon, which falls back to the generic glyph",
+                descriptor.id(),
+                descriptor.icon_name()
+            );
+            assert!(
+                seen.insert(resolved),
+                "{} shares its glyph with an earlier kind, so the registry rows look alike",
+                descriptor.id()
+            );
+        }
+    }
+
+    #[test]
+    fn every_preview_accent_gets_its_own_swatch_in_every_shipped_theme() {
+        for theme in ThemeId::ALL {
+            let palette = theme.palette();
+            let swatches: Vec<Rgba> = ACCENTS
+                .iter()
+                .map(|accent| accent_color(*accent, &palette))
+                .collect();
+
+            for (index, swatch) in swatches.iter().enumerate() {
+                for (other_index, other) in swatches.iter().enumerate().skip(index + 1) {
+                    assert_ne!(
+                        swatch, other,
+                        "{:?}: {:?} and {:?} render the same swatch",
+                        theme, ACCENTS[index], ACCENTS[other_index]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_record_is_marked_unavailable_exactly_when_this_build_lacks_its_overlay_type() {
+        let registry = registry();
+        let palette = ThemeId::default().palette();
+
+        for (kind_id, expected_label) in [
+            ("overlay.alert", Some("Alert")),
+            ("overlay.ticker", Some("Ticker")),
+            ("overlay.written.by.a.newer.build", None),
+            ("", None),
+        ] {
+            let visuals = kind_visuals(&definition(kind_id), &registry, &palette);
+
+            assert_eq!(visuals.label.as_deref(), expected_label, "kind {kind_id:?}");
+            assert_eq!(
+                visuals.is_available(),
+                expected_label.is_some(),
+                "kind {kind_id:?}"
+            );
+        }
+    }
+}

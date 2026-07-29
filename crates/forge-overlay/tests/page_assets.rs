@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use forge_overlay::config::{ANIMATION_OPTIONS, POSITION_OPTIONS};
 use forge_overlay::{
     BEHAVIOR_FILE, OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE,
     register_builtin_kinds,
@@ -143,6 +144,28 @@ fn every_kind_stylesheet_takes_its_accent_and_font_from_runtime_custom_propertie
                 "{} hardcodes what {property} should supply at runtime",
                 descriptor.id()
             );
+        }
+    }
+}
+
+#[test]
+fn every_kind_stylesheet_keys_its_appearance_rules_off_values_the_form_offers() {
+    for descriptor in registry().all() {
+        let style = descriptor.page_assets().style;
+
+        for (attribute, offered) in [
+            ("position", POSITION_OPTIONS),
+            ("animation", ANIMATION_OPTIONS),
+        ] {
+            let selected = quoted_after(style, &format!("body[data-{attribute}=\""));
+
+            for value in &selected {
+                assert!(
+                    offered.contains(&value.as_str()),
+                    "{} styles data-{attribute}='{value}', which the form never offers, so the rule can never match",
+                    descriptor.id()
+                );
+            }
         }
     }
 }

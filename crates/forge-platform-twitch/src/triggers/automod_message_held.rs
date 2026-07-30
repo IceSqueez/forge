@@ -247,4 +247,38 @@ mod tests {
             Some(&Variant::String("borderline message".to_owned()))
         );
     }
+
+    #[test]
+    fn build_arg_stack_reads_blocked_term_fields_and_defaults_them_on_classification_holds() {
+        let blocked = Event::new(
+            EventSource::Twitch,
+            "twitch.automod.message.hold",
+            serde_json::json!({
+                "automod": { "message_id": "hold-blocked", "category": null, "level": null },
+                "reason": "blocked_term",
+                "blocked_term": { "terms_found": ["term-1", 42, "term-2"] },
+            }),
+        );
+
+        for (event, reason, terms) in [
+            (blocked, "blocked_term", vec!["term-1", "term-2"]),
+            (hold_event(), "", vec![]),
+        ] {
+            let stack = AutomodMessageHeldDescriptor.build_arg_stack(&event);
+            assert_eq!(
+                stack.get("automod.reason"),
+                Some(&Variant::String(reason.to_owned())),
+            );
+            assert_eq!(
+                stack.get("automod.terms_found"),
+                Some(&Variant::Array(
+                    terms
+                        .into_iter()
+                        .map(|t| Variant::String(t.to_owned()))
+                        .collect()
+                )),
+                "terms for reason {reason:?}",
+            );
+        }
+    }
 }

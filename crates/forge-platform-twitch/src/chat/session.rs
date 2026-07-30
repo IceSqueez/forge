@@ -5394,6 +5394,108 @@ mod tests {
         );
         assert_eq!(ev.payload["automod"]["level"].as_i64(), Some(3));
         assert_eq!(ev.payload["user"]["login"].as_str(), Some("viewer_one"));
+        assert!(ev.payload["blocked_term"].is_null());
+    }
+
+    #[tokio::test]
+    async fn automod_hold_with_blocked_term_reason_nulls_the_category_and_level() {
+        // Why: a blocked-term hold carries no AutoMod classification at all, so echoing the
+        // zero-valued defaults would tell an action that the message scored category "" at
+        // level 0 rather than that no classification exists.
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_login": "viewer_one",
+            "message_id": "hold-blocked-1",
+            "held_at": "2026-06-13T20:00:00Z",
+            "message": {"text": "a banned phrase"},
+            "reason": "blocked_term",
+            "blocked_term": {
+                "terms_found": [{"term_id": "term-1"}]
+            }
+        });
+        session.publish_automod_hold_event(&event_data, "meta-automod-blocked");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(ev.payload["automod"]["category"].is_null());
+        assert!(ev.payload["automod"]["level"].is_null());
+        assert_eq!(ev.payload["reason"].as_str(), Some("blocked_term"));
+        assert_eq!(
+            ev.payload["blocked_term"]["terms_found"][0].as_str(),
+            Some("term-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn automod_hold_terms_found_keeps_only_entries_carrying_a_string_term_id() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_login": "viewer_one",
+            "message_id": "hold-blocked-2",
+            "message": {"text": "a banned phrase"},
+            "reason": "blocked_term",
+            "blocked_term": {
+                "terms_found": [
+                    {"term_id": "term-1"},
+                    {"boundary": {"start_pos": 0, "end_pos": 3}},
+                    {"term_id": 42},
+                    "term-loose",
+                    {"term_id": "term-2"}
+                ]
+            }
+        });
+        session.publish_automod_hold_event(&event_data, "meta-automod-malformed");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            ev.payload["blocked_term"]["terms_found"],
+            serde_json::json!(["term-1", "term-2"])
+        );
+    }
+
+    #[tokio::test]
+    async fn automod_message_update_with_blocked_term_reason_nulls_the_category_and_level() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+
+        let event_data = serde_json::json!({
+            "user_login": "viewer_one",
+            "message_id": "msg-blocked-1",
+            "message": {"text": "a banned phrase"},
+            "status": "Denied",
+            "reason": "blocked_term",
+            "blocked_term": {
+                "terms_found": [{"term_id": "term-9"}]
+            }
+        });
+        session.publish_automod_message_update_event(&event_data, "meta-automod-msg-blocked");
+
+        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(ev.payload["automod"]["category"].is_null());
+        assert!(ev.payload["automod"]["level"].is_null());
+        assert_eq!(ev.payload["reason"].as_str(), Some("blocked_term"));
+        assert_eq!(
+            ev.payload["blocked_term"]["terms_found"][0].as_str(),
+            Some("term-9")
+        );
     }
 
     #[tokio::test]
@@ -5699,6 +5801,7 @@ mod tests {
         );
         assert_eq!(ev.payload["moderator"]["id"].as_str(), Some("mod-55"));
         assert_eq!(ev.payload["moderator"]["login"].as_str(), Some("mod_login"));
+        assert!(ev.payload["blocked_term"].is_null());
     }
 
     #[tokio::test]

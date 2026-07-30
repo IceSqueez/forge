@@ -1005,7 +1005,7 @@ mod tests {
     }
 
     #[test]
-    fn marshal_scalar_kinds_produce_string_or_bool_variants() {
+    fn marshal_scalar_kinds_produce_matching_scalar_variants() {
         let choice = QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(vec![
             QuickActionChoiceOption {
                 value: "primary".to_owned(),
@@ -1037,6 +1037,11 @@ mod tests {
                 choice,
                 QuickActionFieldValue::Text("primary".to_owned()),
                 Variant::String("primary".to_owned()),
+            ),
+            (
+                QuickActionFieldKind::Int { min: 15, max: 1800 },
+                QuickActionFieldValue::Int(60),
+                Variant::Int(60),
             ),
         ];
         for (kind, value, expected) in cases {

@@ -145,10 +145,32 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        let reason = event
+            .payload
+            .get(automod_fields::REASON)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let terms_found = event
+            .payload
+            .get(automod_fields::BLOCKED_TERM)
+            .and_then(|b| b.get(automod_fields::TERMS_FOUND))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                Variant::Array(
+                    arr.iter()
+                        .filter_map(|t| t.as_str())
+                        .map(|s| Variant::String(s.to_owned()))
+                        .collect(),
+                )
+            })
+            .unwrap_or_else(|| Variant::Array(vec![]));
 
         ArgStack::new()
             .set("automod.message_id".to_owned(), Variant::String(message_id))
             .set("automod.status".to_owned(), Variant::String(status))
+            .set("automod.reason".to_owned(), Variant::String(reason))
+            .set("automod.terms_found".to_owned(), terms_found)
             .set("user_login".to_owned(), Variant::String(user_login))
             .set("message_text".to_owned(), Variant::String(message_text))
             .set("moderator_id".to_owned(), Variant::String(moderator_id))
@@ -171,6 +193,18 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
                         name: "automod.status".to_owned(),
                         kind: VariantKind::String,
                         label: "Automod status".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "automod.reason".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Hold reason".to_owned(),
+                        synthesis: None,
+                    },
+                    DeclaredVariable {
+                        name: "automod.terms_found".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Blocked terms found".to_owned(),
                         synthesis: None,
                     },
                     DeclaredVariable {

@@ -2695,6 +2695,12 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let reason = event_data
+            .get(automod_fields::REASON)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_blocked_term = reason == "blocked_term";
         let automod = event_data.get("automod");
         let category = automod
             .and_then(|a| a.get("category"))
@@ -2716,8 +2722,9 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let terms_found = blocked_terms_found(event_data);
 
-        info!(user_login = %user_login, category = %category, level, "automod hold received");
+        info!(user_login = %user_login, reason = %reason, category = %category, level, "automod hold received");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2725,9 +2732,15 @@ impl ChatSession {
             serde_json::json!({
                 (automod_fields::AUTOMOD): {
                     (automod_fields::MESSAGE_ID): message_id,
-                    (automod_fields::CATEGORY): category,
-                    (automod_fields::LEVEL): level,
+                    (automod_fields::CATEGORY): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::String(category) },
+                    (automod_fields::LEVEL): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::from(level) },
                     (automod_fields::HELD_AT): held_at,
+                },
+                (automod_fields::REASON): reason,
+                (automod_fields::BLOCKED_TERM): if is_blocked_term {
+                    serde_json::json!({ (automod_fields::TERMS_FOUND): terms_found })
+                } else {
+                    serde_json::Value::Null
                 },
                 (automod_fields::USER): {
                     (automod_fields::USER_ID): user_id,
@@ -3115,6 +3128,12 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let reason = event_data
+            .get(automod_fields::REASON)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let is_blocked_term = reason == "blocked_term";
         let automod = event_data.get("automod");
         let category = automod
             .and_then(|a| a.get("category"))
@@ -3125,8 +3144,9 @@ impl ChatSession {
             .and_then(|a| a.get("level"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
+        let terms_found = blocked_terms_found(event_data);
 
-        info!(user_login = %user_login, status = %status, category = %category, "automod message updated");
+        info!(user_login = %user_login, status = %status, reason = %reason, category = %category, "automod message updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3135,8 +3155,14 @@ impl ChatSession {
                 (automod_fields::AUTOMOD): {
                     (automod_fields::MESSAGE_ID): message_id,
                     (automod_fields::STATUS): status,
-                    (automod_fields::CATEGORY): category,
-                    (automod_fields::LEVEL): level,
+                    (automod_fields::CATEGORY): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::String(category) },
+                    (automod_fields::LEVEL): if is_blocked_term { serde_json::Value::Null } else { serde_json::Value::from(level) },
+                },
+                (automod_fields::REASON): reason,
+                (automod_fields::BLOCKED_TERM): if is_blocked_term {
+                    serde_json::json!({ (automod_fields::TERMS_FOUND): terms_found })
+                } else {
+                    serde_json::Value::Null
                 },
                 (automod_fields::USER): {
                     (automod_fields::USER_ID): user_id,
@@ -3615,6 +3641,22 @@ fn extract_prediction_outcomes(event_data: &serde_json::Value) -> Vec<serde_json
                         (prediction_fields::OUTCOME_CHANNEL_POINTS): outcome.get("channel_points").and_then(|v| v.as_i64()),
                     })
                 })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn blocked_terms_found(event_data: &serde_json::Value) -> Vec<String> {
+    event_data
+        .get(automod_fields::BLOCKED_TERM)
+        .and_then(|b| b.get(automod_fields::TERMS_FOUND))
+        .and_then(|v| v.as_array())
+        .map(|terms| {
+            terms
+                .iter()
+                .filter_map(|t| t.get(automod_fields::TERM_ID))
+                .filter_map(|v| v.as_str())
+                .map(str::to_owned)
                 .collect()
         })
         .unwrap_or_default()

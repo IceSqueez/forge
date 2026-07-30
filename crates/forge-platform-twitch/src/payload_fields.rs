@@ -219,6 +219,10 @@ pub(crate) mod automod {
     pub(crate) const OVERALL_LEVEL: &str = "overall_level";
     pub(crate) const ACTION: &str = "action";
     pub(crate) const TERMS: &str = "terms";
+    pub(crate) const REASON: &str = "reason";
+    pub(crate) const BLOCKED_TERM: &str = "blocked_term";
+    pub(crate) const TERMS_FOUND: &str = "terms_found";
+    pub(crate) const TERM_ID: &str = "term_id";
     pub(crate) const USER: &str = "user";
     pub(crate) const USER_ID: &str = "id";
     pub(crate) const USER_LOGIN: &str = "login";

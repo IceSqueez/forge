@@ -50,6 +50,11 @@ enum FieldControl {
     Multiline(Entity<TextArea>),
     Toggle(bool),
     Choice(ChoiceControl),
+    Int {
+        input: Entity<TextInput>,
+        min: i64,
+        max: i64,
+    },
 }
 
 struct ModalField {
@@ -139,6 +144,23 @@ impl QuickActionModal {
                     FieldControl::Multiline(area)
                 }
                 QuickActionFieldKind::Toggle => FieldControl::Toggle(default_toggle(&spec.default)),
+                QuickActionFieldKind::Int { min, max } => {
+                    let content = default_int(&spec.default).to_string();
+                    let placeholder = spec.placeholder.clone().unwrap_or_default();
+                    let input = cx.new(|cx| {
+                        let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
+                        ti.set_content(content, cx);
+                        ti
+                    });
+                    subs.push(cx.subscribe(&input, move |this, _, event, cx| {
+                        this.on_field_event(i, event, cx)
+                    }));
+                    FieldControl::Int {
+                        input,
+                        min: *min,
+                        max: *max,
+                    }
+                }
                 QuickActionFieldKind::Choice(source) => match source {
                     QuickActionChoiceSource::Static(opts) => {
                         let items = opts.iter().map(static_item).collect();
@@ -215,6 +237,10 @@ impl QuickActionModal {
                     area.update(cx, |f, cx| f.focus(window, cx));
                     return;
                 }
+                FieldControl::Int { input, .. } => {
+                    input.update(cx, |f, cx| f.focus(window, cx));
+                    return;
+                }
                 _ => {}
             }
         }
@@ -247,6 +273,10 @@ impl QuickActionModal {
             FieldControl::Multiline(area) => {
                 let area = area.clone();
                 area.update(cx, |area, cx| area.set_invalid(blank, cx));
+            }
+            FieldControl::Int { input, .. } => {
+                let input = input.clone();
+                input.update(cx, |input, cx| input.set_invalid(blank, cx));
             }
             _ => {}
         }
@@ -386,6 +416,9 @@ impl QuickActionModal {
             FieldControl::Multiline(area) => {
                 !field.required || !area.read(cx).content().trim().is_empty()
             }
+            FieldControl::Int { input, .. } => {
+                !field.required || !input.read(cx).content().trim().is_empty()
+            }
             FieldControl::Toggle(_) => true,
         })
     }
@@ -436,6 +469,7 @@ impl QuickActionModal {
         let control = match &field.control {
             FieldControl::Text(input) => input.clone().into_any_element(),
             FieldControl::Multiline(area) => area.clone().into_any_element(),
+            FieldControl::Int { input, .. } => input.clone().into_any_element(),
             FieldControl::Toggle(value) => self.render_toggle(index, *value, palette, cx),
             FieldControl::Choice(choice) => self.render_choice(index, choice, palette, cx),
         };
@@ -737,6 +771,15 @@ impl ModalField {
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
             ),
+            FieldControl::Int { input, min, max } => {
+                let parsed = input
+                    .read(cx)
+                    .content()
+                    .trim()
+                    .parse::<i64>()
+                    .unwrap_or(*min);
+                QuickActionFieldValue::Int(parsed.clamp(*min, *max))
+            }
         }
     }
 }
@@ -873,6 +916,13 @@ fn default_text(default: &Option<QuickActionFieldValue>) -> String {
 
 fn default_toggle(default: &Option<QuickActionFieldValue>) -> bool {
     matches!(default, Some(QuickActionFieldValue::Toggle(true)))
+}
+
+fn default_int(default: &Option<QuickActionFieldValue>) -> i64 {
+    match default {
+        Some(QuickActionFieldValue::Int(value)) => *value,
+        _ => 0,
+    }
 }
 
 struct PickerFetch {

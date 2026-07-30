@@ -662,6 +662,18 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     }
 }
 
+fn int_field(key: &str, label: &str, default: i64, min: i64, max: i64) -> QuickActionField {
+    QuickActionField {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        kind: QuickActionFieldKind::Int { min, max },
+        default: Some(QuickActionFieldValue::Int(default)),
+        placeholder: None,
+        hint: None,
+        required: false,
+    }
+}
+
 fn choice_field(
     key: &str,
     label: &str,
@@ -826,6 +838,7 @@ impl QuickActions for TwitchIntegrationBundle {
                         "Channel Points voting",
                         false,
                     ),
+                    int_field("duration_seconds", "Duration (seconds)", 60, 15, 1800),
                 ],
             ),
             quick_action(
@@ -880,6 +893,13 @@ impl QuickActions for TwitchIntegrationBundle {
                         "Yes, easy\nNo, we die",
                     )
                     .required(),
+                    int_field(
+                        "prediction_window_seconds",
+                        "Window (seconds)",
+                        120,
+                        30,
+                        1800,
+                    ),
                 ],
             ),
             quick_action(
@@ -987,7 +1007,13 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("slow_mode", Variant::String("on".to_owned())),
                     ("slow_mode_wait_seconds", Variant::Int(10)),
                 ]),
-                Vec::new(),
+                vec![int_field(
+                    "slow_mode_wait_seconds",
+                    "Wait time (seconds)",
+                    10,
+                    3,
+                    120,
+                )],
             ),
             quick_action(
                 "Followers-only mode",
@@ -1002,7 +1028,13 @@ impl QuickActions for TwitchIntegrationBundle {
                     ("follower_mode", Variant::String("on".to_owned())),
                     ("follower_mode_min_minutes", Variant::Int(10)),
                 ]),
-                Vec::new(),
+                vec![int_field(
+                    "follower_mode_min_minutes",
+                    "Min. account age (minutes)",
+                    10,
+                    0,
+                    129_600,
+                )],
             ),
             quick_action(
                 "Emote-only mode",
@@ -1014,7 +1046,12 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.chat.set_mode",
                 config([("emote_only", Variant::String("on".to_owned()))]),
-                Vec::new(),
+                vec![choice_field(
+                    "emote_only",
+                    "Emote-only mode",
+                    "on",
+                    &[("unchanged", "Unchanged"), ("on", "On"), ("off", "Off")],
+                )],
             ),
             quick_action(
                 "Timeout user",
@@ -1032,6 +1069,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 ]),
                 vec![
                     text_field("target_user_login", "Username", "@spammer").required(),
+                    int_field("duration_seconds", "Duration (seconds)", 600, 1, 1_209_600),
                     text_field_placeholder("reason", "Reason", "", "optional"),
                 ],
             ),
@@ -1201,7 +1239,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 "twitch.channel_points.update_reward",
                 config([("reward_id", blank()), ("cost", Variant::Int(500))]),
-                Vec::new(),
+                vec![int_field("cost", "Cost (Channel Points)", 500, 1, i64::MAX)],
             ),
             quick_action(
                 "Fulfill redemption",

@@ -352,6 +352,10 @@ pub enum QuickActionFieldKind {
     MultilineList,
     Toggle,
     Choice(QuickActionChoiceSource),
+    Int {
+        min: i64,
+        max: i64,
+    },
 }
 
 impl QuickActionFieldKind {
@@ -366,6 +370,7 @@ impl QuickActionFieldKind {
             ),
             (_, QuickActionFieldValue::Text(text)) => Variant::String(text.clone()),
             (_, QuickActionFieldValue::Toggle(toggle)) => Variant::Bool(*toggle),
+            (_, QuickActionFieldValue::Int(n)) => Variant::Int(*n),
         }
     }
 }
@@ -375,6 +380,7 @@ impl QuickActionFieldKind {
 pub enum QuickActionFieldValue {
     Text(String),
     Toggle(bool),
+    Int(i64),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

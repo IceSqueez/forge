@@ -75,10 +75,11 @@ impl SubActionRunner for SetInputSettingsRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok = matches!(config.get("source"), Some(Variant::String(_)));
+        let source_ok =
+            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         if !source_ok {
             return Err(RegistryError::InvalidConfig(
-                "obs.sources.set_input_settings: 'source' must be a string".to_owned(),
+                "obs.sources.set_input_settings: 'source' must not be empty".to_owned(),
             ));
         }
 

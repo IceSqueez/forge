@@ -76,13 +76,16 @@ impl SubActionRunner for FilterSetEnabledRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok = matches!(config.get("source"), Some(Variant::String(_)));
-        let filter_ok = matches!(config.get("filter"), Some(Variant::String(_)));
+        let source_ok =
+            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
+        let filter_ok =
+            matches!(config.get("filter"), Some(Variant::String(s)) if !s.trim().is_empty());
         if source_ok && filter_ok {
             Ok(())
         } else {
             Err(RegistryError::InvalidConfig(
-                "obs.filter.set_enabled: 'source' and 'filter' must be strings".to_owned(),
+                "obs.filter.set_enabled: 'source' and 'filter' must be non-empty strings"
+                    .to_owned(),
             ))
         }
     }

@@ -71,7 +71,10 @@ impl SubActionRunner for SetMuteRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("source") {
-            Some(Variant::String(_)) => Ok(()),
+            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
+            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
+                "obs.audio.set_mute: 'source' must not be empty".to_owned(),
+            )),
             _ => Err(RegistryError::InvalidConfig(
                 "obs.audio.set_mute: 'source' must be a string".to_owned(),
             )),

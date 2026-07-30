@@ -76,13 +76,16 @@ impl SubActionRunner for SetVisibleRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let scene_ok = matches!(config.get("scene"), Some(Variant::String(_)));
-        let source_ok = matches!(config.get("source"), Some(Variant::String(_)));
+        let scene_ok =
+            matches!(config.get("scene"), Some(Variant::String(s)) if !s.trim().is_empty());
+        let source_ok =
+            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         if scene_ok && source_ok {
             Ok(())
         } else {
             Err(RegistryError::InvalidConfig(
-                "obs.sources.set_visible: 'scene' and 'source' must be strings".to_owned(),
+                "obs.sources.set_visible: 'scene' and 'source' must be non-empty strings"
+                    .to_owned(),
             ))
         }
     }

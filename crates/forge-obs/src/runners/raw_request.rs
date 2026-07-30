@@ -71,7 +71,10 @@ impl SubActionRunner for RawRequestRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("request_type") {
-            Some(Variant::String(_)) => Ok(()),
+            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
+            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
+                "obs.misc.raw_request: 'request_type' must not be empty".to_owned(),
+            )),
             _ => Err(RegistryError::InvalidConfig(
                 "obs.misc.raw_request: 'request_type' must be a string".to_owned(),
             )),

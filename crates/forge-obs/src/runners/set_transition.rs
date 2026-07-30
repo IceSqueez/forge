@@ -61,12 +61,14 @@ impl SubActionRunner for SetTransitionRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if matches!(config.get("transition"), Some(Variant::String(_))) {
-            Ok(())
-        } else {
-            Err(RegistryError::InvalidConfig(
+        match config.get("transition") {
+            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
+            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
+                "obs.scenes.set_transition: 'transition' must not be empty".to_owned(),
+            )),
+            _ => Err(RegistryError::InvalidConfig(
                 "obs.scenes.set_transition: 'transition' must be a string".to_owned(),
-            ))
+            )),
         }
     }
 

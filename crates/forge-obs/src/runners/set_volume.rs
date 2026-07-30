@@ -71,10 +71,11 @@ impl SubActionRunner for SetVolumeRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok = matches!(config.get("source"), Some(Variant::String(_)));
+        let source_ok =
+            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         if !source_ok {
             return Err(RegistryError::InvalidConfig(
-                "obs.audio.set_volume: 'source' must be a string".to_owned(),
+                "obs.audio.set_volume: 'source' must not be empty".to_owned(),
             ));
         }
         let db_ok = config.get("volume_db").is_some_and(|v| match v {

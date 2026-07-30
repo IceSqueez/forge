@@ -61,12 +61,14 @@ impl SubActionRunner for BrowserRefreshRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        if matches!(config.get("source"), Some(Variant::String(_))) {
-            Ok(())
-        } else {
-            Err(RegistryError::InvalidConfig(
+        match config.get("source") {
+            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
+            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
+                "obs.browser.refresh: 'source' must not be empty".to_owned(),
+            )),
+            _ => Err(RegistryError::InvalidConfig(
                 "obs.browser.refresh: 'source' must be a string".to_owned(),
-            ))
+            )),
         }
     }
 

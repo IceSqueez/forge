@@ -62,7 +62,10 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("scene") {
-            Some(Variant::String(_)) => Ok(()),
+            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
+            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
+                "obs.scenes.switch_current: 'scene' must not be empty".to_owned(),
+            )),
             _ => Err(RegistryError::InvalidConfig(
                 "obs.scenes.switch_current: 'scene' must be a string".to_owned(),
             )),

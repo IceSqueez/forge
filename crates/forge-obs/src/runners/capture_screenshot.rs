@@ -71,15 +71,15 @@ impl SubActionRunner for CaptureScreenshotRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        let source_ok = matches!(config.get("source"), Some(Variant::String(_)));
+        let source_ok =
+            matches!(config.get("source"), Some(Variant::String(s)) if !s.trim().is_empty());
         let path_ok =
             matches!(config.get("path"), Some(Variant::String(s)) if !s.trim().is_empty());
         if source_ok && path_ok {
             Ok(())
         } else {
             Err(RegistryError::InvalidConfig(
-                "obs.capture.screenshot: 'source' must be a string and 'path' must not be empty"
-                    .to_owned(),
+                "obs.capture.screenshot: 'source' and 'path' must not be empty".to_owned(),
             ))
         }
     }

@@ -181,8 +181,6 @@ mod tests {
     /// reaches OBS as a lookup for `""`, which the user sees as a step that silently does
     /// nothing - so validation has to stop it at edit time.
     ///
-    /// `obs.sources.get_input_settings` is deliberately absent: it still accepts whitespace-only
-    /// sources. Add it once that is aligned with the rest.
     type RequiredStringField = (
         &'static str,
         &'static str,
@@ -201,6 +199,7 @@ mod tests {
         ("obs.audio.set_mute", "source", &[]),
         ("obs.audio.set_volume", "source", &[("volume_db", "-6.0")]),
         ("obs.misc.raw_request", "request_type", &[]),
+        ("obs.sources.get_input_settings", "source", &[]),
         ("obs.stream.send_caption", "caption_text", &[]),
         (
             "obs.sources.set_input_settings",

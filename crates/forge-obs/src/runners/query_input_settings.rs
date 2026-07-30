@@ -151,26 +151,4 @@ mod tests {
         )]));
         assert_eq!(stack.get("obs.input.settings"), Some(&expected_settings));
     }
-
-    #[test]
-    fn validate_config_takes_a_named_source_and_nothing_else() {
-        let named = BTreeMap::from([("source".to_owned(), Variant::String("Webcam".to_owned()))]);
-        assert!(runner().validate_config(&named).is_ok());
-
-        for value in [
-            None,
-            Some(Variant::String(String::new())),
-            Some(Variant::Bool(true)),
-            Some(Variant::Int(3)),
-        ] {
-            let mut config = BTreeMap::new();
-            if let Some(value) = value.clone() {
-                config.insert("source".to_owned(), value);
-            }
-            assert!(
-                runner().validate_config(&config).is_err(),
-                "accepted source = {value:?}",
-            );
-        }
-    }
 }

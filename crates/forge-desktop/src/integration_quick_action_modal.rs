@@ -54,6 +54,7 @@ enum FieldControl {
         input: Entity<TextInput>,
         min: i64,
         max: i64,
+        fallback: i64,
     },
 }
 
@@ -106,6 +107,10 @@ impl QuickActionModal {
         let mut pending_dynamic: Vec<(usize, PickerKind)> = Vec::new();
 
         for (i, spec) in specs.into_iter().enumerate() {
+            let range_hint = match &spec.kind {
+                QuickActionFieldKind::Int { min, max } => Some(int_range_hint(*min, *max)),
+                _ => None,
+            };
             let control = match &spec.kind {
                 QuickActionFieldKind::Text => {
                     let content = default_text(&spec.default);
@@ -145,11 +150,11 @@ impl QuickActionModal {
                 }
                 QuickActionFieldKind::Toggle => FieldControl::Toggle(default_toggle(&spec.default)),
                 QuickActionFieldKind::Int { min, max } => {
-                    let content = default_int(&spec.default).to_string();
+                    let fallback = default_int(&spec.default).max(*min).min(*max);
                     let placeholder = spec.placeholder.clone().unwrap_or_default();
                     let input = cx.new(|cx| {
                         let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
-                        ti.set_content(content, cx);
+                        ti.set_content(fallback.to_string(), cx);
                         ti
                     });
                     subs.push(cx.subscribe(&input, move |this, _, event, cx| {
@@ -159,6 +164,7 @@ impl QuickActionModal {
                         input,
                         min: *min,
                         max: *max,
+                        fallback,
                     }
                 }
                 QuickActionFieldKind::Choice(source) => match source {
@@ -194,7 +200,7 @@ impl QuickActionModal {
             fields.push(ModalField {
                 key: spec.key,
                 label: spec.label,
-                hint: spec.hint,
+                hint: spec.hint.or(range_hint),
                 required: spec.required,
                 control,
             });
@@ -250,33 +256,34 @@ impl QuickActionModal {
         match event {
             InputEvent::Cancelled => self.cancel(cx),
             InputEvent::Changed(text) => {
-                let blank = text.trim().is_empty();
-                self.mark_blank(index, blank, cx);
+                self.revalidate(index, text, cx);
                 cx.notify();
             }
             InputEvent::Submitted(_) => {}
         }
     }
 
-    fn mark_blank(&mut self, index: usize, blank: bool, cx: &mut Context<Self>) {
+    fn revalidate(&mut self, index: usize, text: &str, cx: &mut Context<Self>) {
         let Some(field) = self.fields.get(index) else {
             return;
         };
-        if !field.required {
-            return;
-        }
+        let invalid = match &field.control {
+            FieldControl::Int { min, max, .. } => {
+                int_entry_invalid(text, *min, *max, field.required)
+            }
+            FieldControl::Text(_) | FieldControl::Multiline(_) => {
+                field.required && text.trim().is_empty()
+            }
+            _ => return,
+        };
         match &field.control {
-            FieldControl::Text(input) => {
+            FieldControl::Text(input) | FieldControl::Int { input, .. } => {
                 let input = input.clone();
-                input.update(cx, |input, cx| input.set_invalid(blank, cx));
+                input.update(cx, |input, cx| input.set_invalid(invalid, cx));
             }
             FieldControl::Multiline(area) => {
                 let area = area.clone();
-                area.update(cx, |area, cx| area.set_invalid(blank, cx));
-            }
-            FieldControl::Int { input, .. } => {
-                let input = input.clone();
-                input.update(cx, |input, cx| input.set_invalid(blank, cx));
+                area.update(cx, |area, cx| area.set_invalid(invalid, cx));
             }
             _ => {}
         }
@@ -416,9 +423,9 @@ impl QuickActionModal {
             FieldControl::Multiline(area) => {
                 !field.required || !area.read(cx).content().trim().is_empty()
             }
-            FieldControl::Int { input, .. } => {
-                !field.required || !input.read(cx).content().trim().is_empty()
-            }
+            FieldControl::Int {
+                input, min, max, ..
+            } => !int_entry_invalid(input.read(cx).content(), *min, *max, field.required),
             FieldControl::Toggle(_) => true,
         })
     }
@@ -771,14 +778,14 @@ impl ModalField {
                     .map(|s| s.to_string())
                     .unwrap_or_default(),
             ),
-            FieldControl::Int { input, min, max } => {
-                let parsed = input
-                    .read(cx)
-                    .content()
-                    .trim()
-                    .parse::<i64>()
-                    .unwrap_or(*min);
-                QuickActionFieldValue::Int(parsed.clamp(*min, *max))
+            FieldControl::Int {
+                input,
+                min,
+                max,
+                fallback,
+            } => {
+                let raw = input.read(cx).content();
+                QuickActionFieldValue::Int(parse_int_in_range(raw, *min, *max).unwrap_or(*fallback))
             }
         }
     }
@@ -922,6 +929,33 @@ fn default_int(default: &Option<QuickActionFieldValue>) -> i64 {
     match default {
         Some(QuickActionFieldValue::Int(value)) => *value,
         _ => 0,
+    }
+}
+
+fn parse_int_in_range(raw: &str, min: i64, max: i64) -> Option<i64> {
+    raw.trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|value| (min..=max).contains(value))
+}
+
+fn int_entry_invalid(raw: &str, min: i64, max: i64, required: bool) -> bool {
+    if raw.trim().is_empty() {
+        required
+    } else {
+        parse_int_in_range(raw, min, max).is_none()
+    }
+}
+
+fn int_range_hint(min: i64, max: i64) -> String {
+    if max == i64::MAX {
+        tr!("integration_qa_field_range_open", min = min.to_string())
+    } else {
+        tr!(
+            "integration_qa_field_range",
+            min = min.to_string(),
+            max = max.to_string()
+        )
     }
 }
 

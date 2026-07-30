@@ -62,9 +62,12 @@ impl SubActionRunner for QueryInputSettingsRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("source") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
+            Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
+            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
+                "obs.sources.get_input_settings: 'source' must not be empty".to_owned(),
+            )),
             _ => Err(RegistryError::InvalidConfig(
-                "obs.sources.get_input_settings: 'source' must be a non-empty string".to_owned(),
+                "obs.sources.get_input_settings: 'source' must be a string".to_owned(),
             )),
         }
     }

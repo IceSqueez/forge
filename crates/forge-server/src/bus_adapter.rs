@@ -111,6 +111,7 @@ struct PushEventEnvelope<'a> {
     id: EventId,
     #[serde(rename = "causedBy", skip_serializing_if = "Option::is_none")]
     caused_by: Option<EventId>,
+    replay: bool,
 }
 
 fn serialize_push(event: &Event) -> Result<String, serde_json::Error> {
@@ -125,6 +126,7 @@ fn serialize_push(event: &Event) -> Result<String, serde_json::Error> {
             kind: &event.kind,
             id: event.id,
             caused_by: event.caused_by,
+            replay: event.replay,
         },
         data: &event.payload,
     };

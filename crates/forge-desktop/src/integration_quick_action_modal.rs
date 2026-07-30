@@ -1180,4 +1180,83 @@ mod tests {
         assert_eq!(specs.len(), 1);
         assert!(matches!(specs[0].kind, QuickActionFieldKind::Text));
     }
+
+    #[test]
+    fn parse_int_in_range_accepts_whole_numbers_within_the_bounds() {
+        for (min, max, raw, expected) in [
+            (1_i64, 10_i64, "5", 5_i64),
+            (1, 10, "1", 1),
+            (1, 10, "10", 10),
+            (1, 10, "  7  ", 7),
+            (1, 10, "+3", 3),
+            (-10, -1, "-10", -10),
+            (-10, -1, "-1", -1),
+            (-5, 5, "0", 0),
+            (0, 0, "0", 0),
+        ] {
+            assert_eq!(
+                parse_int_in_range(raw, min, max),
+                Some(expected),
+                "expected {raw:?} to parse inside {min}..={max}",
+            );
+        }
+    }
+
+    #[test]
+    fn parse_int_in_range_rejects_out_of_range_and_non_integer_entries() {
+        for (min, max, raw) in [
+            (1_i64, 10_i64, "0"),
+            (1, 10, "11"),
+            (-10, -1, "-11"),
+            (-10, -1, "0"),
+            (1, 10, ""),
+            (1, 10, "   "),
+            (1, 10, "abc"),
+            (1, 5000, "5.5"),
+            (1, 5000, "1e3"),
+            (1, 5000, "5 5"),
+            (1, i64::MAX, "9223372036854775808"),
+        ] {
+            assert_eq!(
+                parse_int_in_range(raw, min, max),
+                None,
+                "expected {raw:?} to be rejected for {min}..={max}",
+            );
+        }
+    }
+
+    #[test]
+    fn int_entry_invalid_flags_a_blank_entry_only_when_the_field_is_required() {
+        for raw in ["", "   ", "\t\n"] {
+            assert!(
+                int_entry_invalid(raw, 1, 10, true),
+                "expected {raw:?} to be invalid for a required field",
+            );
+            assert!(
+                !int_entry_invalid(raw, 1, 10, false),
+                "expected {raw:?} to be accepted for an optional field",
+            );
+        }
+    }
+
+    // Why: entries used to be judged blank-or-not, so an optional integer field accepted
+    // any garbage and clamped it on submit instead of telling the user the value was wrong.
+    #[test]
+    fn int_entry_invalid_flags_unparsable_and_out_of_range_entries_even_when_optional() {
+        for required in [true, false] {
+            for raw in ["abc", "11"] {
+                assert!(
+                    int_entry_invalid(raw, 1, 10, required),
+                    "expected {raw:?} to be invalid with required={required}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn int_entry_invalid_accepts_an_in_range_entry_whether_or_not_it_is_required() {
+        for required in [true, false] {
+            assert!(!int_entry_invalid("5", 1, 10, required));
+        }
+    }
 }

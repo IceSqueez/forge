@@ -166,7 +166,7 @@ impl TriggerKindDescriptor for AutomodMessageHeldDescriptor {
                     DeclaredVariable {
                         name: "automod.terms_found".to_owned(),
                         kind: VariantKind::Array,
-                        label: "Blocked terms found".to_owned(),
+                        label: "Blocked term IDs".to_owned(),
                         synthesis: None,
                     },
                     DeclaredVariable {

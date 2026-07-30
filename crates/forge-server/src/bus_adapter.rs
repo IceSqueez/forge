@@ -644,6 +644,36 @@ mod tests {
         );
     }
 
+    /// `replay` must be unconditionally present: a client reading `event.replay === undefined`
+    /// on a live frame cannot tell a re-emitted event from a fresh one.
+    #[test]
+    fn push_envelope_always_carries_replay_and_reports_re_emitted_events_as_replays() {
+        let payload = serde_json::json!({ "text": "hi" });
+        let live = Event::new(EventSource::Twitch, "chat.message", payload.clone());
+        let replayed = Event {
+            replay: true,
+            ..live.clone()
+        };
+
+        for (event, expected_replay) in [(&live, false), (&replayed, true)] {
+            let json = serialize_push(event).expect("a JSON payload serializes");
+            let frame: serde_json::Value =
+                serde_json::from_str(&json).expect("the push frame is valid JSON");
+
+            assert_eq!(
+                frame["event"],
+                serde_json::json!({
+                    "source": "twitch",
+                    "type": "chat.message",
+                    "id": event.id.to_string(),
+                    "replay": expected_replay,
+                }),
+                "push envelope drifted from the shape subscribed clients parse"
+            );
+            assert_eq!(frame["data"], payload);
+        }
+    }
+
     #[tokio::test]
     async fn wildcard_source_filter_matches_all_twitch_kinds() {
         let bus = make_bus();

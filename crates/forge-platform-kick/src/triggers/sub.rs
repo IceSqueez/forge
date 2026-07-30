@@ -79,8 +79,8 @@ impl TriggerKindDescriptor for SubDescriptor {
         let months = event
             .payload
             .get(fields::MONTHS)
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         let tier = event
             .payload
@@ -92,7 +92,7 @@ impl TriggerKindDescriptor for SubDescriptor {
         ArgStack::new()
             .set("user_id".to_owned(), Variant::String(user_id))
             .set("username".to_owned(), Variant::String(username))
-            .set("months".to_owned(), Variant::String(months))
+            .set("months".to_owned(), Variant::Int(months))
             .set("tier".to_owned(), Variant::String(tier))
     }
 
@@ -113,9 +113,9 @@ impl TriggerKindDescriptor for SubDescriptor {
                 },
                 DeclaredVariable {
                     name: "months".to_owned(),
-                    kind: VariantKind::String,
+                    kind: VariantKind::Int,
                     label: "Subscribed months".to_owned(),
-                    synthesis: None,
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 24 }),
                 },
                 DeclaredVariable {
                     name: "tier".to_owned(),
@@ -156,7 +156,7 @@ mod tests {
             stack.get("username"),
             Some(&Variant::String("new_subscriber".to_owned()))
         );
-        assert_eq!(stack.get("months"), Some(&Variant::String("3".to_owned())));
+        assert_eq!(stack.get("months"), Some(&Variant::Int(3)));
         assert_eq!(
             stack.get("tier"),
             Some(&Variant::String("tier1".to_owned()))

@@ -75,12 +75,12 @@ impl TriggerKindDescriptor for HostDescriptor {
         let viewer_count = event
             .payload
             .get(fields::VIEWER_COUNT)
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         ArgStack::new()
             .set("host_username".to_owned(), Variant::String(host_username))
-            .set("viewer_count".to_owned(), Variant::String(viewer_count))
+            .set("viewer_count".to_owned(), Variant::Int(viewer_count))
     }
 
     fn output_schema(&self) -> Option<VariableSchema> {
@@ -94,9 +94,9 @@ impl TriggerKindDescriptor for HostDescriptor {
                 },
                 DeclaredVariable {
                     name: "viewer_count".to_owned(),
-                    kind: VariantKind::String,
+                    kind: VariantKind::Int,
                     label: "Viewer count".to_owned(),
-                    synthesis: None,
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 500 }),
                 },
             ],
         })
@@ -126,9 +126,6 @@ mod tests {
             stack.get("host_username"),
             Some(&Variant::String("hosting_channel".to_owned()))
         );
-        assert_eq!(
-            stack.get("viewer_count"),
-            Some(&Variant::String("250".to_owned()))
-        );
+        assert_eq!(stack.get("viewer_count"), Some(&Variant::Int(250)));
     }
 }

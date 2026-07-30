@@ -78,8 +78,8 @@ impl TriggerKindDescriptor for BanDescriptor {
         let duration_secs = event
             .payload
             .get(fields::DURATION_SECS)
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         let reason = event
             .payload
@@ -94,7 +94,7 @@ impl TriggerKindDescriptor for BanDescriptor {
                 "banned_username".to_owned(),
                 Variant::String(banned_username),
             )
-            .set("duration_secs".to_owned(), Variant::String(duration_secs))
+            .set("duration_secs".to_owned(), Variant::Int(duration_secs))
             .set("reason".to_owned(), Variant::String(reason))
     }
 
@@ -115,9 +115,12 @@ impl TriggerKindDescriptor for BanDescriptor {
                 },
                 DeclaredVariable {
                     name: "duration_secs".to_owned(),
-                    kind: VariantKind::String,
+                    kind: VariantKind::Int,
                     label: "Ban duration (seconds)".to_owned(),
-                    synthesis: None,
+                    synthesis: Some(SynthesisHint::BoundedInt {
+                        min: 0,
+                        max: 1_209_600,
+                    }),
                 },
                 DeclaredVariable {
                     name: "reason".to_owned(),
@@ -160,9 +163,6 @@ mod tests {
             stack.get("banned_username"),
             Some(&Variant::String("bad_actor".to_owned()))
         );
-        assert_eq!(
-            stack.get("duration_secs"),
-            Some(&Variant::String("300".to_owned()))
-        );
+        assert_eq!(stack.get("duration_secs"), Some(&Variant::Int(300)));
     }
 }

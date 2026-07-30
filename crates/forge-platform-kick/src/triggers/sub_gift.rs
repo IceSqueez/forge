@@ -79,8 +79,8 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
         let count = event
             .payload
             .get(fields::COUNT)
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         let tier = event
             .payload
@@ -95,7 +95,7 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
                 "gifter_username".to_owned(),
                 Variant::String(gifter_username),
             )
-            .set("count".to_owned(), Variant::String(count))
+            .set("count".to_owned(), Variant::Int(count))
             .set("tier".to_owned(), Variant::String(tier))
     }
 
@@ -116,9 +116,9 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
                 },
                 DeclaredVariable {
                     name: "count".to_owned(),
-                    kind: VariantKind::String,
+                    kind: VariantKind::Int,
                     label: "Gifted subscription count".to_owned(),
-                    synthesis: None,
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
                 },
                 DeclaredVariable {
                     name: "tier".to_owned(),
@@ -164,7 +164,7 @@ mod tests {
             stack.get("gifter_username"),
             Some(&Variant::String("generous_viewer".to_owned()))
         );
-        assert_eq!(stack.get("count"), Some(&Variant::String("3".to_owned())));
+        assert_eq!(stack.get("count"), Some(&Variant::Int(3)));
         assert_eq!(
             stack.get("tier"),
             Some(&Variant::String("tier1".to_owned()))

@@ -2,7 +2,7 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette,
     Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput, ToastKind, badge,
     body_family, confirm_modal, icon, mono_family, overlay, page_frame, platform_hero, radius,
-    spacing, status_dot, tr,
+    spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{EventPublisher, EventSource};
 use forge_obs::ObsClient;
@@ -11,8 +11,6 @@ use forge_platform_core::{
     ControlFailure, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge,
     HeroBadgeTone, QuickAction, QuickActions, SectionIcon,
 };
-use forge_platform_kick::KickIntegrationBundle;
-use forge_platform_twitch::TwitchIntegrationBundle;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
 use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_types::{PlatformId, SubActionStep};
@@ -27,14 +25,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::async_bridge::{self, ErrorSink};
+use crate::async_bridge;
 use crate::builtin_sections::{SectionRefresh, content_sections, health_grid};
+use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch, ConnectedBundle};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integrations::{
     BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, VTubeInstallSeed,
     YoutubeInstallSeed, kick_builtin_object, twitch_builtin_object, youtube_builtin_object,
 };
-use crate::oauth_connect::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platforms::PlatformConnectivity;
@@ -42,41 +40,38 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
-use crate::twitch_panel::{TwitchDeviceState, TwitchFlowHandle};
+
+struct ActiveConnect {
+    view: Entity<ConnectFlow>,
+    _subs: Vec<Subscription>,
+}
 
 pub struct IntegrationDetail {
     status: Arc<dyn BuiltinStatus>,
     health: Arc<dyn BuiltinHealth>,
     content: Arc<dyn BuiltinContent>,
     quick: Arc<dyn QuickActions>,
-    pub(crate) control: Option<Arc<dyn BuiltinControl>>,
-    pub(crate) rt_handle: tokio::runtime::Handle,
+    control: Option<Arc<dyn BuiltinControl>>,
+    rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     obs_source: Option<Arc<ObsClient>>,
-    pub(crate) credentials: Arc<dyn CredentialsRepo>,
+    credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
-    pub(crate) bus: Arc<dyn EventPublisher>,
-    pub(crate) event_bus: Arc<EventBus>,
-    pub(crate) live_viewers: LiveViewerAggregatorHandle,
+    bus: Arc<dyn EventPublisher>,
+    event_bus: Arc<EventBus>,
+    live_viewers: LiveViewerAggregatorHandle,
     builtins: BuiltinRegistry,
-    pub(crate) kick_install_seed: Option<KickInstallSeed>,
-    pub(crate) youtube_install_seed: Option<YoutubeInstallSeed>,
+    kick_install_seed: Option<KickInstallSeed>,
+    youtube_install_seed: Option<YoutubeInstallSeed>,
     obs_install_seed: ObsInstallSeed,
     vtube_install_seed: VTubeInstallSeed,
-    pub(crate) connect_platform: Option<PlatformId>,
-    pub(crate) flow_phase: LocalCallbackFlowPhase,
-    pub(crate) flow_auth_url: Option<String>,
-    pub(crate) flow_error: Option<String>,
-    pub(crate) youtube_flow: Option<YoutubeFlowHandle>,
-    pub(crate) kick_flow: Option<KickFlowHandle>,
+    connect: Option<ActiveConnect>,
     is_twitch: bool,
     is_obs: bool,
     is_vtube: bool,
     twitch_reauth_required: bool,
-    pub(crate) twitch_flow: Option<TwitchFlowHandle>,
-    pub(crate) twitch_device: Option<TwitchDeviceState>,
     icon: SectionIcon,
-    pub(crate) display_name: String,
+    display_name: String,
     version: Option<String>,
     endpoint: Option<String>,
     connection: ConnectionState,
@@ -109,14 +104,6 @@ impl EventEmitter<NavRequested> for IntegrationDetail {}
 impl EventEmitter<ObsConnected> for IntegrationDetail {}
 impl EventEmitter<ObsSignedOut> for IntegrationDetail {}
 impl EventEmitter<VTubeSignedOut> for IntegrationDetail {}
-
-impl Drop for IntegrationDetail {
-    fn drop(&mut self) {
-        if let Some(dev) = &self.twitch_device {
-            dev.cancel.cancel();
-        }
-    }
-}
 
 impl IntegrationDetail {
     #[allow(clippy::too_many_arguments)]
@@ -182,13 +169,6 @@ impl IntegrationDetail {
         })
         .detach();
 
-        if connect_platform == Some(PlatformId::Twitch) {
-            cx.spawn(async move |this, cx| {
-                let _ = this.update(cx, |this, cx| this.begin_twitch_device(cx));
-            })
-            .detach();
-        }
-
         if is_twitch {
             Self::spawn_eventsub_tally(&event_bus, cx);
         }
@@ -200,7 +180,7 @@ impl IntegrationDetail {
             Self::spawn_detail_ticker(cx);
         }
 
-        Self {
+        let mut this = Self {
             status,
             health,
             content,
@@ -219,18 +199,11 @@ impl IntegrationDetail {
             youtube_install_seed,
             obs_install_seed,
             vtube_install_seed,
-            connect_platform,
-            flow_phase: LocalCallbackFlowPhase::Idle,
-            flow_auth_url: None,
-            flow_error: None,
-            youtube_flow: None,
-            kick_flow: None,
+            connect: None,
             is_twitch,
             is_obs,
             is_vtube,
             twitch_reauth_required: false,
-            twitch_flow: None,
-            twitch_device: None,
             icon,
             display_name,
             version,
@@ -251,7 +224,54 @@ impl IntegrationDetail {
             _obs_modal_sub: None,
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
+        };
+
+        if let Some(platform) = connect_platform {
+            this.open_connect_flow(platform, cx);
         }
+        this
+    }
+
+    fn open_connect_flow(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
+        let launch = ConnectFlowLaunch {
+            platform,
+            display_name: self.display_name.clone(),
+            rt_handle: self.rt_handle.clone(),
+            credentials: Arc::clone(&self.credentials),
+            bus: Arc::clone(&self.bus),
+            event_bus: Arc::clone(&self.event_bus),
+            live_viewers: self.live_viewers.clone(),
+            kick_install_seed: self.kick_install_seed.clone(),
+            youtube_install_seed: self.youtube_install_seed.clone(),
+        };
+        let view = cx.new(|cx| ConnectFlow::new(launch, cx));
+        let subs = vec![
+            cx.subscribe(&view, Self::on_connect_flow_event),
+            cx.observe(&view, |_, _, cx| cx.notify()),
+        ];
+        self.connect = Some(ActiveConnect { view, _subs: subs });
+        cx.notify();
+    }
+
+    fn on_connect_flow_event(
+        &mut self,
+        _view: Entity<ConnectFlow>,
+        event: &ConnectFlowEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ConnectFlowEvent::Connected(bundle) => self.adopt_connected(bundle, cx),
+            ConnectFlowEvent::Leave => self.navigate_to(Screen::Platforms, cx),
+        }
+    }
+
+    fn adopt_connected(&mut self, bundle: &ConnectedBundle, cx: &mut Context<Self>) {
+        let object = match bundle {
+            ConnectedBundle::Twitch(b) => twitch_builtin_object(Arc::clone(b)),
+            ConnectedBundle::Youtube(b) => youtube_builtin_object(Arc::clone(b)),
+            ConnectedBundle::Kick(b) => kick_builtin_object(Arc::clone(b)),
+        };
+        self.adopt_builtin(object, cx);
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
@@ -619,43 +639,6 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    pub(crate) fn open_url(&self, url: String, cx: &mut Context<Self>) {
-        async_bridge::open_external(
-            &self.rt_handle,
-            url,
-            ErrorSink::Toast,
-            tr!("integration_open_url_failed"),
-            cx,
-        );
-    }
-
-    pub(crate) fn install_twitch_bundle(
-        &mut self,
-        bundle: Arc<TwitchIntegrationBundle>,
-        cx: &mut Context<Self>,
-    ) {
-        self.twitch_flow = None;
-        self.adopt_builtin(twitch_builtin_object(bundle), cx);
-    }
-
-    pub(crate) fn install_youtube_bundle(
-        &mut self,
-        bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
-        cx: &mut Context<Self>,
-    ) {
-        self.youtube_flow = None;
-        self.adopt_builtin(youtube_builtin_object(bundle), cx);
-    }
-
-    pub(crate) fn install_kick_bundle(
-        &mut self,
-        bundle: Arc<KickIntegrationBundle>,
-        cx: &mut Context<Self>,
-    ) {
-        self.kick_flow = None;
-        self.adopt_builtin(kick_builtin_object(bundle), cx);
-    }
-
     fn adopt_builtin(&mut self, object: BuiltinObject, cx: &mut Context<Self>) {
         self.builtins.install(object.clone());
         self.icon = object.icon;
@@ -664,16 +647,13 @@ impl IntegrationDetail {
         self.content = object.content;
         self.quick = object.quick;
         self.control = object.control;
-        self.connect_platform = None;
+        self.connect = None;
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
-        self.flow_phase = LocalCallbackFlowPhase::Idle;
-        self.flow_auth_url = None;
-        self.flow_error = None;
         self.reload(cx);
     }
 
-    pub(crate) fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
+    fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         self.builtins.remove(self.status.id());
         let credentials = Arc::clone(&self.credentials);
         let control = self.control.take();
@@ -686,20 +666,10 @@ impl IntegrationDetail {
                 .delete(&forge_storage::CredentialId::new(key))
                 .await;
         });
-        self.connect_platform = Some(platform);
-        self.flow_phase = LocalCallbackFlowPhase::Idle;
-        self.flow_auth_url = None;
-        self.flow_error = None;
-        self.youtube_flow = None;
-        self.kick_flow = None;
         self.twitch_reauth_required = false;
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
-        if platform == PlatformId::Twitch {
-            self.begin_twitch_device(cx);
-        } else {
-            cx.notify();
-        }
+        self.open_connect_flow(platform, cx);
     }
 
     fn sign_out_obs(&mut self, cx: &mut Context<Self>) {
@@ -1003,6 +973,67 @@ impl IntegrationDetail {
             })
     }
 
+    fn twitch_reauth_banner(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let cta = div()
+            .id("twitch-reauth")
+            .flex_none()
+            .py(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Sm))
+            .bg(palette.warning)
+            .cursor_pointer()
+            .hover(|s| s.bg(with_alpha(palette.warning, 0.85)))
+            .on_click(cx.listener(|this, _, _, cx| this.reset_to_connect(PlatformId::Twitch, cx)))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.shell)
+                    .child(tr!("twitch_reauth_btn")),
+            );
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .py(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Md))
+            .border(BORDER_THIN)
+            .border_color(palette.warning)
+            .bg(palette.shell)
+            .child(icon(Icon::AlertTriangle, px(14.0), palette.warning))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .gap(spacing(Spacing::Xxs, density))
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_SM)
+                            .text_color(palette.text_primary)
+                            .child(tr!("twitch_reauth_title")),
+                    )
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(tr!("twitch_reauth_detail")),
+                    ),
+            )
+            .child(cta)
+            .into_any_element()
+    }
+
     fn state_banner(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
         let (accent, glyph, title, detail): (Rgba, Icon, String, String) = match self.connection {
             ConnectionState::Connected => return None,
@@ -1071,8 +1102,8 @@ impl Render for IntegrationDetail {
         let palette = cx.palette();
         let density = cx.density();
 
-        let body = match self.connect_platform {
-            Some(platform) => self.oauth_screen(platform, &palette, density, cx),
+        let body = match &self.connect {
+            Some(connect) => connect.view.clone().into_any_element(),
             None => {
                 let header_card = self.header_card(&palette, density, cx);
                 let reconnecting = matches!(
@@ -1135,9 +1166,8 @@ impl Render for IntegrationDetail {
         };
 
         let is_oauth_platform = self.is_oauth_platform();
-        let header_right = match self.connect_platform {
-            Some(PlatformId::Twitch) => Some(self.twitch_device_status(&palette, density)),
-            Some(platform) => Some(self.connect_status(platform, &palette, density)),
+        let header_right = match &self.connect {
+            Some(connect) => Some(connect.view.read(cx).status_indicator(&palette, density)),
             None if is_oauth_platform && self.connection == ConnectionState::Connected => {
                 Some(self.header_right_connected(&palette, density))
             }

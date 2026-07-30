@@ -2,11 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::async_bridge;
-use crate::screen::Screen;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, Spacing,
-    body_family, icon, mono_family, platform_color, platform_hero, radius, spacing, spinner, tr,
-    with_alpha,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
+    icon, mono_family, radius, spacing, spinner, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_storage::CredentialsRepo;
@@ -16,15 +14,15 @@ use gpui::{
     Rgba, SharedString, StyledText, div, prelude::*, px,
 };
 
-use crate::integration_detail::IntegrationDetail;
+use super::{ConnectFlow, ConnectedBundle, status_dot};
 use crate::integrations::{KickInstallSeed, YoutubeInstallSeed};
 
-pub(crate) type YoutubeFlowHandle =
+pub(super) type YoutubeFlowHandle =
     Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
-pub(crate) type KickFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_kick::KickAuthFlow>>>;
+pub(super) type KickFlowHandle = Arc<tokio::sync::Mutex<Option<forge_platform_kick::KickAuthFlow>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LocalCallbackFlowPhase {
+pub(super) enum LocalCallbackFlowPhase {
     Idle,
     Starting,
     Waiting,
@@ -39,23 +37,19 @@ enum StepState {
     Done,
 }
 
-pub(crate) struct LocalCallbackData {
-    pub(crate) auth_url: String,
+struct LocalCallbackData {
+    auth_url: String,
 }
 
-impl IntegrationDetail {
-    pub(crate) fn start_connect(&mut self, cx: &mut Context<Self>) {
-        let Some(platform) = self.connect_platform else {
-            return;
-        };
-        self.flow_phase = LocalCallbackFlowPhase::Starting;
-        self.flow_error = None;
-        match platform {
+impl ConnectFlow {
+    fn start_connect(&mut self, cx: &mut Context<Self>) {
+        self.phase = LocalCallbackFlowPhase::Starting;
+        self.error = None;
+        match self.platform {
             PlatformId::YouTube => {
                 let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
-                    self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error =
-                        Some(tr!("auth_error_credentials_missing_youtube").to_string());
+                    self.phase = LocalCallbackFlowPhase::Failed;
+                    self.error = Some(tr!("auth_error_credentials_missing_youtube").to_string());
                     cx.notify();
                     return;
                 };
@@ -67,8 +61,8 @@ impl IntegrationDetail {
             }
             PlatformId::Kick => {
                 let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
-                    self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error = Some(tr!("auth_error_credentials_missing_kick").to_string());
+                    self.phase = LocalCallbackFlowPhase::Failed;
+                    self.error = Some(tr!("auth_error_credentials_missing_kick").to_string());
                     cx.notify();
                     return;
                 };
@@ -107,23 +101,23 @@ impl IntegrationDetail {
         let data = match result {
             Ok(data) => data,
             Err(e) => {
-                self.flow_phase = LocalCallbackFlowPhase::Failed;
-                self.flow_error = Some(e);
+                self.phase = LocalCallbackFlowPhase::Failed;
+                self.error = Some(e);
                 cx.notify();
                 return;
             }
         };
         let auth_url = data.auth_url.clone();
-        self.flow_auth_url = Some(data.auth_url);
-        self.flow_phase = LocalCallbackFlowPhase::Waiting;
+        self.auth_url = Some(data.auth_url);
+        self.phase = LocalCallbackFlowPhase::Waiting;
         self.open_url(auth_url, cx);
 
         let credentials = Arc::clone(&self.credentials);
-        match self.connect_platform {
-            Some(PlatformId::YouTube) => {
+        match self.platform {
+            PlatformId::YouTube => {
                 let Some(flow) = self.youtube_flow.clone() else {
-                    self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error = Some("no active YouTube flow handle".to_owned());
+                    self.phase = LocalCallbackFlowPhase::Failed;
+                    self.error = Some("no active YouTube flow handle".to_owned());
                     cx.notify();
                     return;
                 };
@@ -132,10 +126,10 @@ impl IntegrationDetail {
                     cx,
                 );
             }
-            Some(PlatformId::Kick) => {
+            PlatformId::Kick => {
                 let Some(flow) = self.kick_flow.clone() else {
-                    self.flow_phase = LocalCallbackFlowPhase::Failed;
-                    self.flow_error = Some("no active Kick flow handle".to_owned());
+                    self.phase = LocalCallbackFlowPhase::Failed;
+                    self.error = Some("no active Kick flow handle".to_owned());
                     cx.notify();
                     return;
                 };
@@ -144,8 +138,7 @@ impl IntegrationDetail {
                     cx,
                 );
             }
-            Some(PlatformId::Twitch) => {}
-            None => {}
+            PlatformId::Twitch => {}
         }
         cx.notify();
     }
@@ -166,25 +159,22 @@ impl IntegrationDetail {
     fn apply_wait_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
         match result {
             Ok(()) => {
-                self.flow_phase = LocalCallbackFlowPhase::Authorized;
-                match self.connect_platform {
-                    Some(PlatformId::YouTube) => self.install_youtube(cx),
-                    Some(PlatformId::Kick) => self.install_kick(cx),
-                    Some(PlatformId::Twitch) | None => {}
+                self.phase = LocalCallbackFlowPhase::Authorized;
+                match self.platform {
+                    PlatformId::YouTube => self.install_youtube(cx),
+                    PlatformId::Kick => self.install_kick(cx),
+                    PlatformId::Twitch => {}
                 }
             }
             Err(e) => {
-                self.flow_phase = LocalCallbackFlowPhase::Failed;
-                self.flow_error = Some(e);
+                self.phase = LocalCallbackFlowPhase::Failed;
+                self.error = Some(e);
             }
         }
         cx.notify();
     }
 
     fn install_youtube(&mut self, cx: &mut Context<Self>) {
-        if self.control.is_some() {
-            return;
-        }
         let seed = self.youtube_install_seed.clone();
         let bus = Arc::clone(&self.event_bus);
         let live_viewers = self.live_viewers.clone();
@@ -202,20 +192,17 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(bundle) => self.install_youtube_bundle(bundle, cx),
+            Ok(bundle) => self.finish(ConnectedBundle::Youtube(bundle), cx),
             Err(e) => {
                 tracing::warn!(error = %e, "youtube in-session connect failed");
-                self.flow_phase = LocalCallbackFlowPhase::Failed;
-                self.flow_error = Some(e);
+                self.phase = LocalCallbackFlowPhase::Failed;
+                self.error = Some(e);
                 cx.notify();
             }
         }
     }
 
     fn install_kick(&mut self, cx: &mut Context<Self>) {
-        if self.control.is_some() {
-            return;
-        }
         let seed = self.kick_install_seed.clone();
         let bus = Arc::clone(&self.bus);
         let live_viewers = self.live_viewers.clone();
@@ -233,38 +220,33 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(bundle) => self.install_kick_bundle(bundle, cx),
+            Ok(bundle) => self.finish(ConnectedBundle::Kick(bundle), cx),
             Err(e) => {
                 tracing::warn!(error = %e, "kick in-session connect failed");
-                self.flow_phase = LocalCallbackFlowPhase::Failed;
-                self.flow_error = Some(e);
+                self.phase = LocalCallbackFlowPhase::Failed;
+                self.error = Some(e);
                 cx.notify();
             }
         }
     }
 
     fn retry_flow(&mut self, cx: &mut Context<Self>) {
-        self.flow_phase = LocalCallbackFlowPhase::Idle;
-        self.flow_auth_url = None;
-        self.flow_error = None;
+        self.phase = LocalCallbackFlowPhase::Idle;
+        self.auth_url = None;
+        self.error = None;
         cx.notify();
     }
 
     fn cancel_flow(&mut self, cx: &mut Context<Self>) {
-        self.flow_phase = LocalCallbackFlowPhase::Idle;
-        self.flow_auth_url = None;
-        self.flow_error = None;
+        self.phase = LocalCallbackFlowPhase::Idle;
+        self.auth_url = None;
+        self.error = None;
         cx.notify();
     }
 
-    pub(crate) fn connect_status(
-        &self,
-        platform: PlatformId,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
-        let accent = platform_accent(platform, palette);
-        let (indicator, label, color): (AnyElement, String, Rgba) = match self.flow_phase {
+    pub(super) fn connect_status(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        let accent = super::platform_accent(self.platform, palette);
+        let (indicator, label, color): (AnyElement, String, Rgba) = match self.phase {
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting => (
                 spinner("oauth-status-spin", Icon::Loader2, px(11.0), accent).into_any_element(),
                 tr!("oauth_status_authorizing"),
@@ -296,51 +278,23 @@ impl IntegrationDetail {
             .into_any_element()
     }
 
-    pub(crate) fn oauth_screen(
+    pub(super) fn local_callback_column(
         &self,
-        platform: PlatformId,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let accent = platform_accent(platform, palette);
-        let (letter, desc) = connect_copy(platform);
-        let hero = platform_hero(letter, accent, self.display_name.clone(), desc, palette)
-            .density(density);
-        let column = match platform {
-            PlatformId::Twitch => self.twitch_device_column(accent, palette, density, cx),
-            PlatformId::YouTube | PlatformId::Kick => {
-                self.local_callback_column(platform, accent, palette, density, cx)
-            }
-        };
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(hero)
-            .child(div().w_full().flex().justify_center().child(column))
-            .into_any_element()
-    }
-
-    fn local_callback_column(
-        &self,
-        platform: PlatformId,
         accent: Rgba,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let disclaimer = matches!(platform, PlatformId::Kick)
+        let disclaimer = matches!(self.platform, PlatformId::Kick)
             .then(|| self.connect_disclaimer(palette, density).into_any_element());
         let progress = matches!(
-            self.flow_phase,
+            self.phase,
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting
         )
         .then(|| self.oauth_progress_card(accent, palette));
-        let done = matches!(self.flow_phase, LocalCallbackFlowPhase::Authorized)
+        let done = matches!(self.phase, LocalCallbackFlowPhase::Authorized)
             .then(|| self.oauth_done_card(palette));
-        let error = matches!(self.flow_phase, LocalCallbackFlowPhase::Failed)
+        let error = matches!(self.phase, LocalCallbackFlowPhase::Failed)
             .then(|| self.oauth_error_card(palette, density, cx));
 
         div()
@@ -384,15 +338,15 @@ impl IntegrationDetail {
     }
 
     fn oauth_steps_card(&self, accent: Rgba, palette: &ForgePalette) -> AnyElement {
-        let phase = self.flow_phase;
+        let phase = self.phase;
         let platform_name = self.display_name.clone();
 
-        let url_text: SharedString = self
-            .flow_auth_url
-            .as_deref()
-            .map(elide_code_challenge)
-            .or_else(|| self.connect_platform.map(idle_auth_url_template))
-            .map_or_else(SharedString::default, SharedString::from);
+        let url_text: SharedString = SharedString::from(
+            self.auth_url
+                .as_deref()
+                .map(elide_code_challenge)
+                .unwrap_or_else(|| idle_auth_url_template(self.platform)),
+        );
         let url_box = div()
             .w_full()
             .py(px(7.0))
@@ -417,7 +371,7 @@ impl IntegrationDetail {
 
         let s2_active = matches!(step_state(phase, 1), StepState::Active);
         let loopback: SharedString = self
-            .flow_auth_url
+            .auth_url
             .as_deref()
             .and_then(loopback_display)
             .map_or_else(
@@ -595,17 +549,17 @@ impl IntegrationDetail {
 
     fn oauth_progress_card(&self, accent: Rgba, palette: &ForgePalette) -> AnyElement {
         let name = self.display_name.clone();
-        let line: String = match self.flow_phase {
+        let line: String = match self.phase {
             LocalCallbackFlowPhase::Starting => tr!("oauth_progress_launching"),
             _ => tr!("oauth_progress_waiting", name = name.as_str()),
         };
         let port = self
-            .flow_auth_url
+            .auth_url
             .as_deref()
             .and_then(loopback_port)
             .unwrap_or_default();
         let scopes = self
-            .flow_auth_url
+            .auth_url
             .as_deref()
             .and_then(scopes_display)
             .unwrap_or_default();
@@ -697,7 +651,7 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let error = self
-            .flow_error
+            .error
             .clone()
             .unwrap_or_else(|| tr!("oauth_failed_title"));
         let retry = div()
@@ -787,9 +741,7 @@ impl IntegrationDetail {
             .items_center()
             .gap(px(5.0))
             .cursor_pointer()
-            .on_click(
-                cx.listener(|this, _: &ClickEvent, _, cx| this.navigate_to(Screen::Platforms, cx)),
-            )
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.leave(cx)))
             .child(icon(Icon::ArrowLeft, px(13.0), palette.text_muted))
             .child(
                 div()
@@ -799,7 +751,7 @@ impl IntegrationDetail {
                     .child(tr!("oauth_footer_choose_different")),
             );
 
-        let right: Option<AnyElement> = match self.flow_phase {
+        let right: Option<AnyElement> = match self.phase {
             LocalCallbackFlowPhase::Idle => {
                 let name = self.display_name.clone();
                 Some(
@@ -900,10 +852,6 @@ impl IntegrationDetail {
     }
 }
 
-fn status_dot(color: Rgba) -> impl IntoElement {
-    div().flex_none().size(px(8.0)).rounded(px(4.0)).bg(color)
-}
-
 fn step_state(phase: LocalCallbackFlowPhase, index: usize) -> StepState {
     match phase {
         LocalCallbackFlowPhase::Idle | LocalCallbackFlowPhase::Failed => StepState::Pending,
@@ -920,26 +868,6 @@ fn step_state(phase: LocalCallbackFlowPhase, index: usize) -> StepState {
             _ => StepState::Pending,
         },
         LocalCallbackFlowPhase::Authorized => StepState::Done,
-    }
-}
-
-fn platform_accent(platform: PlatformId, palette: &ForgePalette) -> Rgba {
-    match platform {
-        PlatformId::Twitch => platform_color(PlatformKind::Twitch, palette),
-        PlatformId::YouTube => platform_color(PlatformKind::YouTube, palette),
-        PlatformId::Kick => platform_color(PlatformKind::Kick, palette),
-    }
-}
-
-pub(crate) fn twitch_accent(palette: &ForgePalette) -> Rgba {
-    platform_color(PlatformKind::Twitch, palette)
-}
-
-fn connect_copy(platform: PlatformId) -> (&'static str, String) {
-    match platform {
-        PlatformId::Twitch => ("T", tr!("twitch_description")),
-        PlatformId::Kick => ("K", tr!("kick_description")),
-        PlatformId::YouTube => ("Y", tr!("youtube_description")),
     }
 }
 

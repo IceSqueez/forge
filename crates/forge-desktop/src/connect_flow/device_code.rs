@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, icon, mono_family, radius, spacing, spinner, tr, with_alpha,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
+    icon, mono_family, radius, spacing, spinner, tr, with_alpha,
 };
 use forge_platform_core::{RateLimiter, TokenBucketRateLimiter};
 use forge_platform_twitch::{
@@ -18,22 +18,21 @@ use gpui::{
 };
 use tokio_util::sync::CancellationToken;
 
+use super::{ConnectFlow, ConnectedBundle, status_dot};
 use crate::async_bridge;
-use crate::integration_detail::IntegrationDetail;
-use crate::screen::Screen;
 
-pub type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;
+pub(super) type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;
 
 const TWITCH_DEVICE_POLL_SECS: &str = "5";
 const COPY_FLIP: Duration = Duration::from_millis(1400);
 
-pub(crate) struct TwitchAuthOutcome {
+struct TwitchAuthOutcome {
     user_info: UserInfo,
     client_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TwitchDevicePhase {
+enum TwitchDevicePhase {
     Starting,
     Waiting,
     Expired,
@@ -42,10 +41,10 @@ pub(crate) enum TwitchDevicePhase {
     Authorized,
 }
 
-pub(crate) struct DeviceCodeData {
-    pub(crate) user_code: String,
-    pub(crate) verification_uri: String,
-    pub(crate) expires_at: SystemTime,
+struct DeviceCodeData {
+    user_code: String,
+    verification_uri: String,
+    expires_at: SystemTime,
 }
 
 impl DeviceCodeData {
@@ -56,12 +55,12 @@ impl DeviceCodeData {
     }
 }
 
-pub(crate) struct TwitchDeviceState {
-    pub(crate) phase: TwitchDevicePhase,
-    pub(crate) code: Option<DeviceCodeData>,
-    pub(crate) copied: bool,
-    pub(crate) cancel: CancellationToken,
-    pub(crate) error: Option<String>,
+pub(super) struct TwitchDeviceState {
+    phase: TwitchDevicePhase,
+    code: Option<DeviceCodeData>,
+    copied: bool,
+    pub(super) cancel: CancellationToken,
+    error: Option<String>,
 }
 
 impl TwitchDeviceState {
@@ -93,7 +92,7 @@ enum TwitchWaitError {
     Other(String),
 }
 
-pub(crate) async fn request_code(flow: TwitchFlowHandle) -> Result<DeviceCodeInfo, String> {
+async fn request_code(flow: TwitchFlowHandle) -> Result<DeviceCodeInfo, String> {
     let mut guard = flow.lock().await;
     let inner = guard
         .as_mut()
@@ -145,8 +144,8 @@ fn scopes_preview() -> String {
         .join(" ")
 }
 
-impl IntegrationDetail {
-    pub(crate) fn begin_twitch_device(&mut self, cx: &mut Context<Self>) {
+impl ConnectFlow {
+    pub(super) fn begin_twitch_device(&mut self, cx: &mut Context<Self>) {
         if let Some(dev) = &self.twitch_device {
             dev.cancel.cancel();
         }
@@ -312,7 +311,7 @@ impl IntegrationDetail {
                 live_viewers.register(bundle.viewer_source());
                 bundle
             },
-            |this, bundle, cx| this.install_twitch_bundle(bundle, cx),
+            |this, bundle, cx| this.finish(ConnectedBundle::Twitch(bundle), cx),
             cx,
         );
     }
@@ -361,15 +360,15 @@ impl IntegrationDetail {
         }
         self.twitch_device = None;
         self.twitch_flow = None;
-        self.navigate_to(Screen::Platforms, cx);
+        self.leave(cx);
     }
 
-    pub(crate) fn twitch_device_status(
+    pub(super) fn twitch_device_status(
         &self,
         palette: &ForgePalette,
         density: Density,
     ) -> AnyElement {
-        let accent = crate::oauth_connect::twitch_accent(palette);
+        let accent = super::platform_accent(PlatformId::Twitch, palette);
         let phase = self
             .twitch_device
             .as_ref()
@@ -412,7 +411,7 @@ impl IntegrationDetail {
             .into_any_element()
     }
 
-    pub(crate) fn twitch_device_column(
+    pub(super) fn twitch_device_column(
         &self,
         accent: Rgba,
         palette: &ForgePalette,
@@ -966,71 +965,6 @@ impl IntegrationDetail {
             .child(later)
             .into_any_element()
     }
-
-    pub(crate) fn twitch_reauth_banner(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let cta = div()
-            .id("twitch-reauth")
-            .flex_none()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.warning)
-            .cursor_pointer()
-            .hover(|s| s.bg(with_alpha(palette.warning, 0.85)))
-            .on_click(cx.listener(|this, _, _, cx| this.reset_to_connect(PlatformId::Twitch, cx)))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.shell)
-                    .child(tr!("twitch_reauth_btn")),
-            );
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.warning)
-            .bg(palette.shell)
-            .child(icon(Icon::AlertTriangle, px(14.0), palette.warning))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Xxs, density))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(tr!("twitch_reauth_title")),
-                    )
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_muted)
-                            .child(tr!("twitch_reauth_detail")),
-                    ),
-            )
-            .child(cta)
-            .into_any_element()
-    }
-}
-
-fn status_dot(color: Rgba) -> impl IntoElement {
-    div().flex_none().size(px(8.0)).rounded(px(4.0)).bg(color)
 }
 
 fn step_card(n: u8, circle_bg: Rgba, circle_fg: Rgba, palette: &ForgePalette) -> gpui::Div {

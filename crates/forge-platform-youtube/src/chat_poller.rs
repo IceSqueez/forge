@@ -1081,8 +1081,10 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
+        let mut reached = false;
         for _ in 0..5_000 {
             if broadcast_poll_count(server).await >= min_broadcast_polls {
+                reached = true;
                 break;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1090,6 +1092,12 @@ mod tests {
 
         cancel.cancel();
         join.await.unwrap().unwrap();
+        assert!(
+            reached,
+            "poller made {} of the {min_broadcast_polls} broadcast polls the assertions below \
+             assume; any event-count mismatch after this point is a starved poller, not a bug",
+            broadcast_poll_count(server).await,
+        );
 
         let mut events = Vec::new();
         while let Ok(e) = rx.try_recv() {

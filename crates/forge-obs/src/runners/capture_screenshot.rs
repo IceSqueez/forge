@@ -128,7 +128,7 @@ impl SubActionRunner for CaptureScreenshotRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use crate::runners::test_support::{RecordingSink, make_ctx};
 
     async fn recorded_call(source: &str, path: &str) -> String {
         let sink = RecordingSink::new();
@@ -191,31 +191,5 @@ mod tests {
             sink.calls(),
             vec!["save_source_screenshot(Webcam,/tmp/shot.jpg,jpg)".to_owned()],
         );
-    }
-
-    #[test]
-    fn validate_config_rejects_a_blank_or_missing_path() {
-        let runner = CaptureScreenshotRunner::new(Arc::new(MockSink));
-        for path in [Some(""), Some("   "), None] {
-            let mut config =
-                BTreeMap::from([("source".to_owned(), Variant::String("Cam".to_owned()))]);
-            if let Some(p) = path {
-                config.insert("path".to_owned(), Variant::String(p.to_owned()));
-            }
-            assert!(
-                runner.validate_config(&config).is_err(),
-                "accepted path {path:?}",
-            );
-        }
-    }
-
-    #[test]
-    fn validate_config_rejects_a_missing_source() {
-        let runner = CaptureScreenshotRunner::new(Arc::new(MockSink));
-        let config = BTreeMap::from([(
-            "path".to_owned(),
-            Variant::String("/tmp/shot.png".to_owned()),
-        )]);
-        assert!(runner.validate_config(&config).is_err());
     }
 }

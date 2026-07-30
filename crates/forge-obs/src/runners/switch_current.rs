@@ -112,30 +112,10 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use crate::runners::test_support::{RecordingSink, make_ctx};
 
     fn scene_config(scene: &str) -> SubActionConfig {
         BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))])
-    }
-
-    #[test]
-    fn validate_config_accepts_scene_string() {
-        let runner = SwitchCurrentSceneRunner::new(Arc::new(MockSink));
-        let config = BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
-        assert!(runner.validate_config(&config).is_ok());
-    }
-
-    #[test]
-    fn validate_config_rejects_missing_scene() {
-        let runner = SwitchCurrentSceneRunner::new(Arc::new(MockSink));
-        assert!(runner.validate_config(&BTreeMap::new()).is_err());
-    }
-
-    #[test]
-    fn validate_config_rejects_non_string_scene() {
-        let runner = SwitchCurrentSceneRunner::new(Arc::new(MockSink));
-        let config = BTreeMap::from([("scene".to_owned(), Variant::Int(1))]);
-        assert!(runner.validate_config(&config).is_err());
     }
 
     // Why: OBS re-runs the whole transition when the program scene is set to the scene already on

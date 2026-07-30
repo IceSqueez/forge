@@ -110,29 +110,3 @@ impl SubActionRunner for SetMuteRunner {
         )
     }
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use crate::runners::test_support::MockSink;
-
-    #[test]
-    fn validate_config_accepts_valid_source() {
-        let runner = SetMuteRunner::new(Arc::new(MockSink));
-        let config = BTreeMap::from([
-            (
-                "source".to_owned(),
-                Variant::String("Microphone".to_owned()),
-            ),
-            ("muted".to_owned(), Variant::Bool(true)),
-        ]);
-        assert!(runner.validate_config(&config).is_ok());
-    }
-
-    #[test]
-    fn validate_config_rejects_missing_source() {
-        let runner = SetMuteRunner::new(Arc::new(MockSink));
-        assert!(runner.validate_config(&BTreeMap::new()).is_err());
-    }
-}

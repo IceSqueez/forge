@@ -176,6 +176,53 @@ mod tests {
         ),
     ];
 
+    /// Every config field naming an OBS object that the runner cannot do without, as
+    /// `(runner id, field, sibling fields the same runner also requires)`. A blank value here
+    /// reaches OBS as a lookup for `""`, which the user sees as a step that silently does
+    /// nothing - so validation has to stop it at edit time.
+    ///
+    /// `obs.sources.get_input_settings` is deliberately absent: it still accepts whitespace-only
+    /// sources. Add it once that is aligned with the rest.
+    type RequiredStringField = (
+        &'static str,
+        &'static str,
+        &'static [(&'static str, &'static str)],
+    );
+
+    const REQUIRED_STRING_FIELDS: &[RequiredStringField] = &[
+        ("obs.browser.refresh", "source", &[]),
+        ("obs.media.restart", "source", &[]),
+        ("obs.profile.switch", "name", &[]),
+        ("obs.scene_collection.switch", "name", &[]),
+        ("obs.record.set_directory", "path", &[]),
+        ("obs.scenes.switch_current", "scene", &[]),
+        ("obs.scenes.set_preview", "scene", &[]),
+        ("obs.scenes.set_transition", "transition", &[]),
+        ("obs.audio.set_mute", "source", &[]),
+        ("obs.audio.set_volume", "source", &[("volume_db", "-6.0")]),
+        ("obs.misc.raw_request", "request_type", &[]),
+        ("obs.stream.send_caption", "caption_text", &[]),
+        (
+            "obs.sources.set_input_settings",
+            "source",
+            &[("settings_json", "{}")],
+        ),
+        ("obs.sources.set_visible", "scene", &[("source", "Cam")]),
+        (
+            "obs.sources.set_visible",
+            "source",
+            &[("scene", "Gameplay")],
+        ),
+        ("obs.filter.set_enabled", "source", &[("filter", "Blur")]),
+        ("obs.filter.set_enabled", "filter", &[("source", "Cam")]),
+        (
+            "obs.capture.screenshot",
+            "source",
+            &[("path", "/tmp/shot.png")],
+        ),
+        ("obs.capture.screenshot", "path", &[("source", "Cam")]),
+    ];
+
     fn registry_with(sink: Arc<dyn ObsSink>) -> SubActionRegistry {
         let mut reg = SubActionRegistry::new();
         register_obs_sub_actions(&mut reg, sink).unwrap();
@@ -330,21 +377,45 @@ mod tests {
     }
 
     #[test]
-    fn single_string_runners_reject_a_non_string_value() {
+    fn required_string_fields_accept_a_usable_name() {
         let reg = registry_with(Arc::new(MockSink));
-        for (id, key, _) in SINGLE_STRING_RUNNERS {
+        for (id, key, siblings) in REQUIRED_STRING_FIELDS {
+            let mut config = sibling_config(siblings);
+            config.insert((*key).to_owned(), Variant::String("Late Night".to_owned()));
+            assert!(
+                reg.get(id).unwrap().validate_config(&config).is_ok(),
+                "{id} rejected a usable {key}",
+            );
+        }
+    }
+
+    #[test]
+    fn required_string_fields_reject_blank_missing_and_non_string_values() {
+        let reg = registry_with(Arc::new(MockSink));
+        for (id, key, siblings) in REQUIRED_STRING_FIELDS {
             let runner = reg.get(id).unwrap();
-            for value in [Variant::Bool(true), Variant::Int(3)] {
-                let config = BTreeMap::from([((*key).to_owned(), value.clone())]);
+            let base = sibling_config(siblings);
+
+            let rejected = [
+                None,
+                Some(Variant::String(String::new())),
+                Some(Variant::String("   \t\n".to_owned())),
+                Some(Variant::Bool(true)),
+                Some(Variant::Int(3)),
+            ];
+            for value in rejected {
+                let mut config = base.clone();
+                if let Some(value) = value.clone() {
+                    config.insert((*key).to_owned(), value);
+                }
                 assert!(
-                    runner.validate_config(&config).is_err(),
-                    "{id} accepted {value:?}",
+                    matches!(
+                        runner.validate_config(&config),
+                        Err(RegistryError::InvalidConfig(_))
+                    ),
+                    "{id} accepted {key} = {value:?}",
                 );
             }
-            assert!(
-                runner.validate_config(&BTreeMap::new()).is_err(),
-                "{id} accepted a missing {key}",
-            );
         }
     }
 
@@ -399,5 +470,12 @@ mod tests {
 
     fn one_string(key: &str, value: &str) -> BTreeMap<String, Variant> {
         BTreeMap::from([(key.to_owned(), Variant::String(value.to_owned()))])
+    }
+
+    fn sibling_config(siblings: &[(&str, &str)]) -> BTreeMap<String, Variant> {
+        siblings
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), Variant::String((*v).to_owned())))
+            .collect()
     }
 }

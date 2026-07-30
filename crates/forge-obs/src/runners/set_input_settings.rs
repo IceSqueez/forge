@@ -170,13 +170,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_rejects_missing_source() {
-        let config =
-            BTreeMap::from([("settings_json".to_owned(), Variant::String("{}".to_owned()))]);
-        assert!(runner().validate_config(&config).is_err());
-    }
-
-    #[test]
     fn validate_config_rejects_malformed_json() {
         let config = BTreeMap::from([
             ("source".to_owned(), Variant::String("Webcam".to_owned())),

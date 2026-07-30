@@ -130,7 +130,7 @@ impl SubActionRunner for FilterSetEnabledRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use crate::runners::test_support::{RecordingSink, make_ctx};
 
     #[tokio::test]
     async fn execute_forwards_the_interpolated_source_filter_and_enabled_flag() {
@@ -156,28 +156,5 @@ mod tests {
                 )],
             );
         }
-    }
-
-    #[test]
-    fn validate_config_rejects_a_missing_source_or_filter() {
-        let runner = FilterSetEnabledRunner::new(Arc::new(MockSink));
-        let source = ("source".to_owned(), Variant::String("Cam".to_owned()));
-        let filter = ("filter".to_owned(), Variant::String("Blur".to_owned()));
-        for config in [
-            BTreeMap::new(),
-            BTreeMap::from([source.clone()]),
-            BTreeMap::from([filter.clone()]),
-            BTreeMap::from([source.clone(), ("filter".to_owned(), Variant::Bool(true))]),
-        ] {
-            assert!(
-                runner.validate_config(&config).is_err(),
-                "accepted {config:?}",
-            );
-        }
-        assert!(
-            runner
-                .validate_config(&BTreeMap::from([source, filter]))
-                .is_ok()
-        );
     }
 }

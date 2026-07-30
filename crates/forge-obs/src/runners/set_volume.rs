@@ -141,45 +141,43 @@ mod tests {
         SetVolumeRunner::new(Arc::new(MockSink))
     }
 
-    #[test]
-    fn validate_config_accepts_numeric_string_db() {
-        let config = BTreeMap::from([
-            ("source".to_owned(), Variant::String("Mic".to_owned())),
-            ("volume_db".to_owned(), Variant::String("-6.0".to_owned())),
-        ]);
-        assert!(runner().validate_config(&config).is_ok());
+    fn with_db(db: Option<Variant>) -> SubActionConfig {
+        let mut config = BTreeMap::from([("source".to_owned(), Variant::String("Mic".to_owned()))]);
+        if let Some(db) = db {
+            config.insert("volume_db".to_owned(), db);
+        }
+        config
     }
 
+    /// The UI stores an interpolated `%arg%` as a string, so a decibel figure reaches the runner
+    /// either already numeric or still spelled out.
     #[test]
-    fn validate_config_accepts_float_and_int_db() {
-        for db in [Variant::Float(-3.0), Variant::Int(0)] {
-            let config = BTreeMap::from([
-                ("source".to_owned(), Variant::String("Mic".to_owned())),
-                ("volume_db".to_owned(), db),
-            ]);
-            assert!(runner().validate_config(&config).is_ok());
+    fn validate_config_accepts_a_decibel_figure_in_any_numeric_shape() {
+        for db in [
+            Variant::String("-6.0".to_owned()),
+            Variant::Float(-3.0),
+            Variant::Int(0),
+        ] {
+            assert!(
+                runner().validate_config(&with_db(Some(db.clone()))).is_ok(),
+                "rejected volume_db = {db:?}",
+            );
         }
     }
 
     #[test]
-    fn validate_config_rejects_missing_source() {
-        let config = BTreeMap::from([("volume_db".to_owned(), Variant::String("0".to_owned()))]);
-        assert!(runner().validate_config(&config).is_err());
-    }
-
-    #[test]
-    fn validate_config_rejects_non_numeric_db_string() {
-        let config = BTreeMap::from([
-            ("source".to_owned(), Variant::String("Mic".to_owned())),
-            ("volume_db".to_owned(), Variant::String("loud".to_owned())),
-        ]);
-        assert!(runner().validate_config(&config).is_err());
-    }
-
-    #[test]
-    fn validate_config_rejects_missing_db() {
-        let config = BTreeMap::from([("source".to_owned(), Variant::String("Mic".to_owned()))]);
-        assert!(runner().validate_config(&config).is_err());
+    fn validate_config_rejects_a_decibel_figure_that_is_missing_or_unparseable() {
+        for db in [
+            None,
+            Some(Variant::String("loud".to_owned())),
+            Some(Variant::String(String::new())),
+            Some(Variant::Bool(true)),
+        ] {
+            assert!(
+                runner().validate_config(&with_db(db.clone())).is_err(),
+                "accepted volume_db = {db:?}",
+            );
+        }
     }
 
     #[tokio::test]

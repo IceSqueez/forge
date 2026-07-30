@@ -114,25 +114,6 @@ mod tests {
         BTreeMap::from([("caption_text".to_owned(), Variant::String(text.to_owned()))])
     }
 
-    #[test]
-    fn validate_config_accepts_non_empty_caption() {
-        assert!(
-            runner()
-                .validate_config(&config_with("Hello world"))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn validate_config_rejects_empty_or_whitespace_caption() {
-        for blank in ["", "   ", "\t", "\n", " \t\n "] {
-            assert!(
-                runner().validate_config(&config_with(blank)).is_err(),
-                "expected reject for {blank:?}"
-            );
-        }
-    }
-
     #[tokio::test]
     async fn execute_reports_success_with_correct_kind() {
         let stack = ArgStack::new();

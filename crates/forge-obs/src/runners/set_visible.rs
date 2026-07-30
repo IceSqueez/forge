@@ -123,35 +123,3 @@ impl SubActionRunner for SetVisibleRunner {
         )
     }
 }
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use crate::runners::test_support::MockSink;
-
-    #[test]
-    fn validate_config_accepts_valid_config() {
-        let runner = SetVisibleRunner::new(Arc::new(MockSink));
-        let config = BTreeMap::from([
-            ("scene".to_owned(), Variant::String("Gameplay".to_owned())),
-            ("source".to_owned(), Variant::String("Cam".to_owned())),
-            ("visible".to_owned(), Variant::Bool(true)),
-        ]);
-        assert!(runner.validate_config(&config).is_ok());
-    }
-
-    #[test]
-    fn validate_config_rejects_missing_source() {
-        let runner = SetVisibleRunner::new(Arc::new(MockSink));
-        let config = BTreeMap::from([("scene".to_owned(), Variant::String("Gameplay".to_owned()))]);
-        assert!(runner.validate_config(&config).is_err());
-    }
-
-    #[test]
-    fn validate_config_rejects_missing_scene() {
-        let runner = SetVisibleRunner::new(Arc::new(MockSink));
-        let config = BTreeMap::from([("source".to_owned(), Variant::String("Cam".to_owned()))]);
-        assert!(runner.validate_config(&config).is_err());
-    }
-}

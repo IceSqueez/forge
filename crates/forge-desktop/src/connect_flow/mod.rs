@@ -14,6 +14,7 @@ use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px};
+use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::integrations::{KickInstallSeed, YoutubeInstallSeed};
@@ -60,6 +61,7 @@ pub struct ConnectFlow {
     error: Option<String>,
     youtube_flow: Option<YoutubeFlowHandle>,
     kick_flow: Option<KickFlowHandle>,
+    local_cancel: CancellationToken,
     twitch_flow: Option<TwitchFlowHandle>,
     twitch_device: Option<TwitchDeviceState>,
 }
@@ -71,6 +73,7 @@ impl Drop for ConnectFlow {
         if let Some(dev) = &self.twitch_device {
             dev.cancel.cancel();
         }
+        self.local_cancel.cancel();
     }
 }
 
@@ -110,6 +113,7 @@ impl ConnectFlow {
             error: None,
             youtube_flow: None,
             kick_flow: None,
+            local_cancel: CancellationToken::new(),
             twitch_flow: None,
             twitch_device: None,
         }
@@ -137,6 +141,7 @@ impl ConnectFlow {
     }
 
     fn leave(&mut self, cx: &mut Context<Self>) {
+        self.abandon_local_flow();
         cx.emit(ConnectFlowEvent::Leave);
     }
 }

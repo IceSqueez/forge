@@ -13,6 +13,7 @@ use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla,
     Rgba, SharedString, StyledText, div, prelude::*, px,
 };
+use tokio_util::sync::CancellationToken;
 
 use super::{ConnectFlow, ConnectedBundle, status_dot};
 use crate::integrations::{KickInstallSeed, YoutubeInstallSeed};
@@ -41,10 +42,15 @@ struct LocalCallbackData {
     auth_url: String,
 }
 
+const AUTH_CANCELLED: &str = "authorization cancelled";
+
 impl ConnectFlow {
     fn start_connect(&mut self, cx: &mut Context<Self>) {
         self.phase = LocalCallbackFlowPhase::Starting;
         self.error = None;
+        self.local_cancel.cancel();
+        let cancel = CancellationToken::new();
+        self.local_cancel = cancel.clone();
         match self.platform {
             PlatformId::YouTube => {
                 let Some((cid, csec)) = forge_platform_youtube::client_credentials() else {
@@ -57,7 +63,7 @@ impl ConnectFlow {
                     forge_platform_youtube::GoogleAuthFlow::new(cid, csec),
                 )));
                 self.youtube_flow = Some(Arc::clone(&handle));
-                self.spawn_start(async move { start_youtube_oauth(handle).await }, cx);
+                self.spawn_start(cancel, async move { start_youtube_oauth(handle).await }, cx);
             }
             PlatformId::Kick => {
                 let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
@@ -70,7 +76,7 @@ impl ConnectFlow {
                     forge_platform_kick::KickAuthFlow::new(cid, csec),
                 )));
                 self.kick_flow = Some(Arc::clone(&handle));
-                self.spawn_start(async move { start_kick_oauth(handle).await }, cx);
+                self.spawn_start(cancel, async move { start_kick_oauth(handle).await }, cx);
             }
             PlatformId::Twitch => {
                 self.begin_twitch_device(cx);
@@ -82,13 +88,19 @@ impl ConnectFlow {
 
     fn spawn_start(
         &self,
+        cancel: CancellationToken,
         fut: impl std::future::Future<Output = Result<LocalCallbackData, String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         async_bridge::run_async(
             &self.rt_handle,
             fut,
-            |this, result, cx| this.apply_start_result(result, cx),
+            move |this, result, cx| {
+                if cancel.is_cancelled() {
+                    return;
+                }
+                this.apply_start_result(result, cancel, cx);
+            },
             cx,
         );
     }
@@ -96,6 +108,7 @@ impl ConnectFlow {
     fn apply_start_result(
         &mut self,
         result: Result<LocalCallbackData, String>,
+        cancel: CancellationToken,
         cx: &mut Context<Self>,
     ) {
         let data = match result {
@@ -121,8 +134,10 @@ impl ConnectFlow {
                     cx.notify();
                     return;
                 };
+                let wait_cancel = cancel.clone();
                 self.spawn_wait(
-                    async move { wait_for_youtube_authorization(flow, credentials).await },
+                    cancel,
+                    async move { wait_for_youtube_authorization(flow, credentials, wait_cancel).await },
                     cx,
                 );
             }
@@ -133,8 +148,10 @@ impl ConnectFlow {
                     cx.notify();
                     return;
                 };
+                let wait_cancel = cancel.clone();
                 self.spawn_wait(
-                    async move { wait_for_kick_authorization(flow, credentials).await },
+                    cancel,
+                    async move { wait_for_kick_authorization(flow, credentials, wait_cancel).await },
                     cx,
                 );
             }
@@ -145,13 +162,19 @@ impl ConnectFlow {
 
     fn spawn_wait(
         &self,
+        cancel: CancellationToken,
         fut: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
         async_bridge::run_async(
             &self.rt_handle,
             fut,
-            |this, result, cx| this.apply_wait_result(result, cx),
+            move |this, result, cx| {
+                if cancel.is_cancelled() {
+                    return;
+                }
+                this.apply_wait_result(result, cx);
+            },
             cx,
         );
     }
@@ -230,14 +253,16 @@ impl ConnectFlow {
         }
     }
 
-    fn retry_flow(&mut self, cx: &mut Context<Self>) {
-        self.phase = LocalCallbackFlowPhase::Idle;
-        self.auth_url = None;
-        self.error = None;
-        cx.notify();
+    /// Cancels the pending loopback wait, which drops the future holding the callback
+    /// `TcpListener` and frees the port for an immediate re-authorization.
+    pub(super) fn abandon_local_flow(&mut self) {
+        self.local_cancel.cancel();
+        self.youtube_flow = None;
+        self.kick_flow = None;
     }
 
-    fn cancel_flow(&mut self, cx: &mut Context<Self>) {
+    fn reset_flow(&mut self, cx: &mut Context<Self>) {
+        self.abandon_local_flow();
         self.phase = LocalCallbackFlowPhase::Idle;
         self.auth_url = None;
         self.error = None;
@@ -663,7 +688,7 @@ impl ConnectFlow {
             .bg(palette.brand)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.brand, 0.85)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.retry_flow(cx)))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
             .child(
                 div()
                     .font_family(body_family())
@@ -681,7 +706,7 @@ impl ConnectFlow {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.border_regular, 0.06)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
             .child(
                 div()
                     .font_family(body_family())
@@ -790,7 +815,7 @@ impl ConnectFlow {
                     .border_color(palette.border_regular)
                     .cursor_pointer()
                     .hover(|s| s.border_color(palette.border_input))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_flow(cx)))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
                     .child(
                         div()
                             .font_family(body_family())
@@ -992,6 +1017,7 @@ async fn start_kick_oauth(flow_handle: KickFlowHandle) -> Result<LocalCallbackDa
 async fn wait_for_youtube_authorization(
     flow_handle: YoutubeFlowHandle,
     credentials_repo: Arc<dyn CredentialsRepo>,
+    cancel: CancellationToken,
 ) -> Result<(), String> {
     let mut flow = {
         let mut guard = flow_handle.lock().await;
@@ -999,10 +1025,13 @@ async fn wait_for_youtube_authorization(
             .take()
             .ok_or_else(|| "OAuth flow already consumed".to_owned())?
     };
-    let bundle = flow
-        .wait_for_authorization(Duration::from_secs(300))
-        .await
-        .map_err(|e| e.to_string())?;
+    let bundle = tokio::select! {
+        biased;
+        () = cancel.cancelled() => return Err(AUTH_CANCELLED.to_owned()),
+        outcome = flow.wait_for_authorization(Duration::from_secs(300)) => {
+            outcome.map_err(|e| e.to_string())?
+        }
+    };
     let manager = forge_platform_youtube::YoutubeCredentialsManager::new(credentials_repo, flow);
     manager
         .save_from_bundle(bundle)
@@ -1013,6 +1042,7 @@ async fn wait_for_youtube_authorization(
 async fn wait_for_kick_authorization(
     flow_handle: KickFlowHandle,
     credentials_repo: Arc<dyn CredentialsRepo>,
+    cancel: CancellationToken,
 ) -> Result<(), String> {
     let mut flow = {
         let mut guard = flow_handle.lock().await;
@@ -1020,10 +1050,13 @@ async fn wait_for_kick_authorization(
             .take()
             .ok_or_else(|| "OAuth flow already consumed".to_owned())?
     };
-    let bundle = flow
-        .wait_for_authorization(Duration::from_secs(300))
-        .await
-        .map_err(|e| e.to_string())?;
+    let bundle = tokio::select! {
+        biased;
+        () = cancel.cancelled() => return Err(AUTH_CANCELLED.to_owned()),
+        outcome = flow.wait_for_authorization(Duration::from_secs(300)) => {
+            outcome.map_err(|e| e.to_string())?
+        }
+    };
     let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
         return Err("Kick OAuth client credentials are not configured".to_owned());
     };

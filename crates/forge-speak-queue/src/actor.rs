@@ -1281,7 +1281,7 @@ mod tests {
         deps: QueueDeps,
         events: Arc<std::sync::Mutex<Vec<Event>>>,
         tx: tokio::sync::broadcast::Sender<SpeakEvent>,
-        _rx: tokio::sync::broadcast::Receiver<SpeakEvent>,
+        rx: tokio::sync::broadcast::Receiver<SpeakEvent>,
         high: VecDeque<SpeakRequest>,
         normal: VecDeque<SpeakRequest>,
         counts: HashMap<String, usize>,
@@ -1302,7 +1302,7 @@ mod tests {
                 deps,
                 events,
                 tx,
-                _rx: rx,
+                rx,
                 high: VecDeque::new(),
                 normal: VecDeque::new(),
                 counts: HashMap::new(),
@@ -1343,6 +1343,154 @@ mod tests {
                 .cloned()
                 .unwrap_or_else(|| panic!("no bus event of kind {kind}"))
         }
+
+        fn published(&self, kind: &str) -> bool {
+            self.events.lock().unwrap().iter().any(|e| e.kind == kind)
+        }
+
+        fn drain_events(&mut self) -> Vec<SpeakEvent> {
+            std::iter::from_fn(|| self.rx.try_recv().ok()).collect()
+        }
+    }
+
+    fn stage(h: &mut Harness, items: &[(&str, Priority)]) -> Vec<RequestId> {
+        items
+            .iter()
+            .map(|(text, priority)| {
+                let req = request(text, text, *priority);
+                let id = req.request_id.clone();
+                h.run(SpeakCommand::Enqueue(req));
+                id
+            })
+            .collect()
+    }
+
+    fn texts(queue: &VecDeque<SpeakRequest>) -> Vec<&str> {
+        queue.iter().map(|r| r.text.as_str()).collect()
+    }
+
+    #[test]
+    fn reorder_recomputes_the_anchor_position_after_removing_the_moved_item() {
+        let mut h = Harness::new();
+        let ids = stage(
+            &mut h,
+            &[
+                ("a", Priority::Normal),
+                ("b", Priority::Normal),
+                ("c", Priority::Normal),
+            ],
+        );
+
+        h.run(SpeakCommand::Reorder {
+            request_id: ids[0].clone(),
+            before: Some(ids[2].clone()),
+        });
+
+        assert_eq!(texts(&h.normal), vec!["b", "a", "c"]);
+    }
+
+    #[test]
+    fn reorder_without_an_anchor_moves_the_item_to_the_tail() {
+        let mut h = Harness::new();
+        let ids = stage(
+            &mut h,
+            &[
+                ("a", Priority::Normal),
+                ("b", Priority::Normal),
+                ("c", Priority::Normal),
+            ],
+        );
+
+        h.run(SpeakCommand::Reorder {
+            request_id: ids[0].clone(),
+            before: None,
+        });
+
+        assert_eq!(texts(&h.normal), vec!["b", "c", "a"]);
+    }
+
+    #[test]
+    fn reorder_onto_a_high_anchor_moves_the_item_into_the_high_queue() {
+        let mut h = Harness::new();
+        let ids = stage(
+            &mut h,
+            &[
+                ("h1", Priority::High),
+                ("h2", Priority::High),
+                ("n1", Priority::Normal),
+                ("n2", Priority::Normal),
+            ],
+        );
+
+        h.run(SpeakCommand::Reorder {
+            request_id: ids[3].clone(),
+            before: Some(ids[1].clone()),
+        });
+
+        assert_eq!(texts(&h.high), vec!["h1", "n2", "h2"]);
+        assert_eq!(texts(&h.normal), vec!["n1"]);
+    }
+
+    #[test]
+    fn reorder_no_op_inputs_leave_both_queues_and_the_bus_untouched() {
+        for case in ["absent request id", "self anchor", "absent anchor"] {
+            let mut h = Harness::new();
+            let ids = stage(
+                &mut h,
+                &[
+                    ("a", Priority::Normal),
+                    ("b", Priority::Normal),
+                    ("c", Priority::Normal),
+                ],
+            );
+            let absent = RequestId::new();
+            let (request_id, before) = match case {
+                "absent request id" => (absent, Some(ids[0].clone())),
+                "self anchor" => (ids[1].clone(), Some(ids[1].clone())),
+                _ => (ids[1].clone(), Some(absent)),
+            };
+            let _ = h.drain_events();
+
+            h.run(SpeakCommand::Reorder { request_id, before });
+
+            assert_eq!(texts(&h.normal), vec!["a", "b", "c"], "{case}");
+            assert!(h.high.is_empty(), "{case}");
+            assert!(
+                !h.drain_events()
+                    .iter()
+                    .any(|e| matches!(e, SpeakEvent::QueueChanged { .. })),
+                "{case}: a no-op must not report a queue change",
+            );
+            assert!(
+                !h.published("speak.reordered"),
+                "{case}: a no-op must not publish a reorder",
+            );
+        }
+    }
+
+    #[test]
+    fn reorder_bus_event_identifies_the_moved_item_and_its_anchor() {
+        let mut h = Harness::new();
+        let anchor = request("anchor", "stay put", Priority::Normal);
+        let anchor_id = anchor.request_id.clone();
+        let mut moved = request("nova", "move me", Priority::Normal);
+        let src = forge_types::EventId::new();
+        moved.source_event_id = Some(src);
+        let moved_id = moved.request_id.clone();
+        h.run(SpeakCommand::Enqueue(anchor));
+        h.run(SpeakCommand::Enqueue(moved));
+
+        h.run(SpeakCommand::Reorder {
+            request_id: moved_id.clone(),
+            before: Some(anchor_id.clone()),
+        });
+
+        let ev = h.bus("speak.reordered");
+        assert_eq!(ev.payload["request_id"].as_str(), Some(moved_id.0.as_str()));
+        assert_eq!(ev.payload["before"].as_str(), Some(anchor_id.0.as_str()));
+        assert_eq!(ev.payload["viewer_name"].as_str(), Some("nova"));
+        assert_eq!(ev.payload["text"].as_str(), Some("move me"));
+        assert_eq!(ev.caused_by, Some(src));
     }
 
     #[test]

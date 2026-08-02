@@ -26,6 +26,7 @@ use forge_storage::{
 use forge_storage_sqlite::SqliteBackend;
 
 use crate::integrations::build_integrations;
+use crate::log_tail::LogTail;
 use crate::overlay_frame_sink::ServerOverlayFrameSink;
 use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::build_speak_queue;
@@ -95,7 +96,7 @@ async fn load_fonts_from_storage() -> (Option<String>, Option<String>) {
 }
 
 /// Must run within the tokio runtime: the engine/scheduler/evaluator spawn tasks internally.
-pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
+pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFailure> {
     let db_path = default_db_path();
     if let Some(parent) = db_path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
@@ -298,6 +299,7 @@ pub async fn build_runtime() -> Result<RuntimeHandles, BootFailure> {
 
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
+        log_tail,
         backend,
         startup_language,
         bus,

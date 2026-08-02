@@ -31,6 +31,7 @@ mod integration_detail;
 mod integration_quick_action_modal;
 mod integration_quick_actions;
 mod integrations;
+mod log_tail;
 mod midi_mapping_modal;
 mod midi_screen;
 mod midi_signal;
@@ -88,6 +89,7 @@ use gpui::{
 };
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
+use crate::log_tail::LogTail;
 use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 
@@ -118,11 +120,12 @@ fn default_env_filter(
     tracing_subscriber::EnvFilter::new(directives)
 }
 
-fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
+fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTail) {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(default_env_filter);
     let console_layer = fmt::layer().with_target(false);
+    let log_tail = LogTail::new();
 
     let log_dir = paths::data_dir().join("logs");
     let (file_layer, guard) = match std::fs::create_dir_all(&log_dir) {
@@ -142,6 +145,7 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
         .with(env_filter)
         .with(console_layer)
         .with(file_layer)
+        .with(log_tail.layer())
         .init();
 
     if guard.is_some() {
@@ -149,11 +153,11 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     } else {
         tracing::warn!("file logging disabled: could not create log directory");
     }
-    guard
+    (guard, log_tail)
 }
 
 fn main() {
-    let log_guard = init_tracing();
+    let (log_guard, log_tail) = init_tracing();
 
     let _instance_lock = match instance_lock::acquire(&paths::data_dir()) {
         instance_lock::LockOutcome::Acquired(lock) => Some(lock),
@@ -230,8 +234,11 @@ fn main() {
             };
 
             let rt_handle_for_root = rt_handle.clone();
+            let log_tail_for_root = log_tail.clone();
             let window = match cx.open_window(options, move |_window, cx| {
-                cx.new(|cx| RootView::new(rt_handle_for_root.clone(), cx))
+                cx.new(|cx| {
+                    RootView::new(rt_handle_for_root.clone(), log_tail_for_root.clone(), cx)
+                })
             }) {
                 Ok(window) => window,
                 Err(err) => {
@@ -245,6 +252,6 @@ fn main() {
                 .update(cx, |root, _window, _cx| root.set_window(window))
                 .ok();
 
-            run_boot(rt_handle.clone(), window, cx);
+            run_boot(rt_handle.clone(), log_tail.clone(), window, cx);
         });
 }

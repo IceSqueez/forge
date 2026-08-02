@@ -11,10 +11,12 @@ use forge_storage::{DataProvider, Language};
 use crate::integrations::{
     BuiltinRegistry, KickInstallSeed, ObsInstallSeed, VTubeInstallSeed, YoutubeInstallSeed,
 };
+use crate::log_tail::LogTail;
 
 #[allow(dead_code)]
 pub struct RuntimeHandles {
     pub rt_handle: tokio::runtime::Handle,
+    pub log_tail: LogTail,
     pub backend: Arc<dyn DataProvider>,
     /// Resolved + persisted on the tokio side; `install_language` must run on the render thread.
     pub startup_language: Language,

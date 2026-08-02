@@ -19,6 +19,7 @@ use crate::chat_feed::{ChatFeed, ChatMessage, chat_source, platform_of};
 use crate::event_log::EventLog;
 use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
+use crate::log_tail::LogTail;
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queue_health::QueueHealth;
@@ -43,16 +44,22 @@ enum BootState {
 pub struct RootView {
     state: BootState,
     rt_handle: tokio::runtime::Handle,
+    log_tail: LogTail,
     window: Option<WindowHandle<RootView>>,
 }
 
 impl RootView {
-    pub fn new(rt_handle: tokio::runtime::Handle, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        rt_handle: tokio::runtime::Handle,
+        log_tail: LogTail,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
         Self {
             state: BootState::Booting,
             rt_handle,
+            log_tail,
             window: None,
         }
     }
@@ -74,13 +81,19 @@ impl RootView {
             return;
         };
         let rt_handle = self.rt_handle.clone();
+        let log_tail = self.log_tail.clone();
         self.state = BootState::Booting;
         cx.notify();
-        run_boot(rt_handle, window, cx);
+        run_boot(rt_handle, log_tail, window, cx);
     }
 }
 
-pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView>, cx: &mut App) {
+pub fn run_boot(
+    rt_handle: tokio::runtime::Handle,
+    log_tail: LogTail,
+    window: WindowHandle<RootView>,
+    cx: &mut App,
+) {
     let status = cx.new(|_| RuntimeStatus::new());
     let chat_feed = cx.new(|_| ChatFeed::new());
     let home_stats = cx.new(|_| HomeStats::new());
@@ -93,7 +106,7 @@ pub fn run_boot(rt_handle: tokio::runtime::Handle, window: WindowHandle<RootView
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
     rt_handle.spawn(async move {
-        let _ = result_tx.send(build_runtime().await);
+        let _ = result_tx.send(build_runtime(log_tail).await);
     });
 
     cx.spawn(async move |cx| {

@@ -11,8 +11,9 @@ use forge_platform_core::{
     ControlFailure, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge,
     HeroBadgeTone, QuickAction, QuickActions, SectionIcon,
 };
+use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
-use forge_storage::{CredentialsRepo, SettingsRepo};
+use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
 use forge_types::{PlatformId, SubActionStep};
 use futures_util::StreamExt as _;
 use gpui::{
@@ -37,6 +38,7 @@ use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
+use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
@@ -57,6 +59,8 @@ pub struct IntegrationDetail {
     obs_source: Option<Arc<ObsClient>>,
     credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
+    history: Arc<dyn HistoryRepo>,
+    trigger_registry: Arc<TriggerRegistry>,
     bus: Arc<dyn EventPublisher>,
     event_bus: Arc<EventBus>,
     live_viewers: LiveViewerAggregatorHandle,
@@ -86,8 +90,10 @@ pub struct IntegrationDetail {
     pending_disconnect: Confirm<()>,
     quick_action_modal: Option<Entity<QuickActionModal>>,
     obs_settings_modal: Option<Entity<ObsSettingsModal>>,
+    history_modal: Option<Entity<RunHistoryModal>>,
     _qa_modal_sub: Option<Subscription>,
     _obs_modal_sub: Option<Subscription>,
+    _history_modal_sub: Option<Subscription>,
     _conn_obs: Subscription,
     _qa_search_sub: Subscription,
 }
@@ -96,6 +102,7 @@ const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
 const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
+const HISTORY_LIMIT: u32 = 50;
 
 pub struct ObsSignedOut;
 pub struct VTubeSignedOut;
@@ -113,6 +120,8 @@ impl IntegrationDetail {
         action_engine: ActionEngineHandle,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
+        history: Arc<dyn HistoryRepo>,
+        trigger_registry: Arc<TriggerRegistry>,
         bus: Arc<dyn EventPublisher>,
         event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
@@ -191,6 +200,8 @@ impl IntegrationDetail {
             obs_source,
             credentials,
             settings,
+            history,
+            trigger_registry,
             bus,
             event_bus,
             live_viewers,
@@ -220,8 +231,10 @@ impl IntegrationDetail {
             pending_disconnect: Confirm::default(),
             quick_action_modal: None,
             obs_settings_modal: None,
+            history_modal: None,
             _qa_modal_sub: None,
             _obs_modal_sub: None,
+            _history_modal_sub: None,
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
         };
@@ -636,6 +649,45 @@ impl IntegrationDetail {
     fn close_quick_action_modal(&mut self, cx: &mut Context<Self>) {
         self.quick_action_modal = None;
         self._qa_modal_sub = None;
+        cx.notify();
+    }
+
+    pub(crate) fn open_run_history(&mut self, cx: &mut Context<Self>) {
+        let registry = Arc::clone(&self.trigger_registry);
+        let modal = cx.new(|_| RunHistoryModal::new(self.display_name.clone(), registry));
+        self._history_modal_sub = Some(cx.subscribe(&modal, Self::on_run_history_event));
+        self.history_modal = Some(modal.clone());
+
+        let history = Arc::clone(&self.history);
+        let builtin_id = self.status.id().as_str().to_owned();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                history
+                    .recent_for_builtin(&builtin_id, HISTORY_LIMIT)
+                    .await
+                    .map_err(|err| err.to_string())
+            },
+            move |_detail, result, cx| match result {
+                Ok(runs) => modal.update(cx, |modal, cx| modal.set_runs(runs, cx)),
+                Err(message) => {
+                    tracing::warn!(error = %message, "quick action run history load failed");
+                    cx.push_toast(ToastKind::Error, tr!("integration_run_history_failed"));
+                }
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn on_run_history_event(
+        &mut self,
+        _modal: Entity<RunHistoryModal>,
+        _event: &RunHistoryDismissed,
+        cx: &mut Context<Self>,
+    ) {
+        self.history_modal = None;
+        self._history_modal_sub = None;
         cx.notify();
     }
 
@@ -1195,6 +1247,7 @@ impl Render for IntegrationDetail {
             .children(disconnect_overlay)
             .children(self.quick_action_modal.clone())
             .children(self.obs_settings_modal.clone())
+            .children(self.history_modal.clone())
     }
 }
 

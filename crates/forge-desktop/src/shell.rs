@@ -206,6 +206,8 @@ impl AppShell {
                 let connectivity = topics.platforms.clone();
                 let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
                 let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+                let history = handles.backend.history_repo();
+                let trigger_registry = handles.trigger_registry.clone();
                 let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
                 let event_bus = Arc::clone(&handles.bus);
                 let rt_handle = handles.rt_handle.clone();
@@ -223,6 +225,8 @@ impl AppShell {
                         action_engine,
                         credentials,
                         settings,
+                        history,
+                        trigger_registry,
                         bus,
                         event_bus,
                         live_viewers,

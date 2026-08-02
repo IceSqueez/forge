@@ -44,7 +44,8 @@ impl IntegrationDetail {
                     .flex_none()
                     .w(px(240.0))
                     .child(self.qa_search.field().clone()),
-            );
+            )
+            .child(self.history_button(palette, cx));
 
         let divider = div().w_full().h(BORDER_THIN).bg(palette.border_regular);
 
@@ -97,6 +98,34 @@ impl IntegrationDetail {
             .child(header)
             .child(divider)
             .child(body)
+            .into_any_element()
+    }
+
+    fn history_button(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let text_color = palette.text_secondary;
+        let hover_border = palette.border_input;
+        div()
+            .id("integration-run-history")
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .py(px(5.0))
+            .px(px(11.0))
+            .rounded(radius(Radius::Sm))
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .cursor_pointer()
+            .hover(move |s| s.border_color(hover_border))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_run_history(cx)))
+            .child(icon(Icon::History, FONT_XS, text_color))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(text_color)
+                    .child(tr!("integration_run_history")),
+            )
             .into_any_element()
     }
 

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::AudioError;
 
 pub const CANONICAL_OUTPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
+pub const CANONICAL_INPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
 
 const NOISE_ID_PREFIXES: &[&str] = &[
     "sysdefault",
@@ -44,6 +45,7 @@ pub use forge_types::OutputDevice;
 const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
 
 static DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
+static INPUT_DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
 
 /// Backend-defined string under the hood; callers must not parse it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -148,6 +150,100 @@ fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
 
 pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
     CANONICAL_OUTPUT_CHAIN
+        .iter()
+        .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
+        .or_else(|| {
+            devices
+                .iter()
+                .find(|d| d.is_default && d.id.as_str() != "null")
+        })
+        .or_else(|| devices.iter().find(|d| d.id.as_str() != "null"))
+        .or_else(|| devices.first())
+        .map(|d| d.id.clone())
+}
+
+/// Cached for 5s: cpal enumeration is expensive on Linux (PipeWire round-trip).
+pub fn list_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
+    if let Ok(guard) = INPUT_DEVICE_CACHE.lock()
+        && let Some((stamp, ref devices)) = *guard
+        && stamp.elapsed() < DEVICE_CACHE_TTL
+    {
+        return Ok(devices.clone());
+    }
+    let fresh = enumerate_input_uncached()?;
+    if let Ok(mut guard) = INPUT_DEVICE_CACHE.lock() {
+        *guard = Some((Instant::now(), fresh.clone()));
+    }
+    Ok(fresh)
+}
+
+/// Bypasses the 5s cache so a device picker refresh sees just-plugged hardware.
+pub fn refresh_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
+    let fresh = enumerate_input_uncached()?;
+    if let Ok(mut guard) = INPUT_DEVICE_CACHE.lock() {
+        *guard = Some((Instant::now(), fresh.clone()));
+    }
+    Ok(fresh)
+}
+
+fn enumerate_input_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let host = cpal::default_host();
+    let default_name: String = host
+        .default_input_device()
+        .and_then(|d| d.description().ok())
+        .map(|d| d.name().to_owned())
+        .unwrap_or_default();
+
+    let devices = host
+        .input_devices()
+        .map_err(|e| AudioError::Host(e.to_string()))?;
+
+    let mut all = Vec::new();
+    for device in devices {
+        let Ok(desc) = device.description() else {
+            continue;
+        };
+        let name = desc.name().to_owned();
+        let id_str = device
+            .id()
+            .map(|id| id.id().to_owned())
+            .unwrap_or_else(|_| name.clone());
+        let is_default = !default_name.is_empty() && name == default_name;
+        all.push(DeviceInfo {
+            id: DeviceId::new(id_str),
+            name,
+            is_default,
+        });
+    }
+
+    let default_entry = all.iter().find(|d| d.is_default).cloned();
+
+    let mut out = Vec::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+    for device in all {
+        if is_noise_device_id(device.id.as_str()) {
+            continue;
+        }
+        if !seen_names.insert(device.name.clone()) {
+            continue;
+        }
+        out.push(device);
+    }
+
+    if !out.iter().any(|d| d.is_default)
+        && let Some(default_entry) = default_entry
+        && !is_noise_device_id(default_entry.id.as_str())
+    {
+        out.push(default_entry);
+    }
+
+    Ok(out)
+}
+
+pub fn pick_default_input_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
+    CANONICAL_INPUT_CHAIN
         .iter()
         .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
         .or_else(|| {

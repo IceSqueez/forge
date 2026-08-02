@@ -2,7 +2,7 @@ use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextInput, badge,
     body_family, chip, confirm_modal, empty_state, fmt_clock, hash_accent, icon, install_resize,
-    mono_family, overlay, radius, slider, spacing, status_dot, tooltip_builder, tr,
+    mono_family, overlay, radius, slider, spacing, status_dot, tooltip_builder, tr, with_alpha,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -11,8 +11,9 @@ use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, Spe
 use forge_storage::SettingsRepo;
 use forge_tts_core::{TtsRegistry, TtsVoice};
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba,
-    SharedString, Subscription, Window, bounce, div, ease_in_out, prelude::*, px, relative,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, CursorStyle, Entity, FontWeight,
+    Pixels, Rgba, SharedString, Subscription, Window, bounce, div, ease_in_out, prelude::*, px,
+    relative,
 };
 
 use crate::async_bridge;
@@ -65,6 +66,9 @@ const QUEUE_PREVIEW_FONT: Pixels = px(10.0);
 const QUEUE_MSG_FONT: Pixels = px(11.0);
 const QUEUE_DUR_FONT: Pixels = px(10.0);
 const QUEUE_ACTION_GLYPH: Pixels = px(13.0);
+const QUEUE_DRAG_OPACITY: f32 = 0.4;
+const QUEUE_DROP_TINT_ALPHA: f32 = 0.06;
+const QUEUE_GHOST_MAX_W: Pixels = px(280.0);
 
 const TOOLBAR_PAD_V: Pixels = px(9.0);
 const BTN_PAD_V: Pixels = px(5.0);
@@ -100,6 +104,53 @@ const ENGINE_NAME_MB: Pixels = px(3.0);
 
 struct TtsRailResizeDrag;
 
+struct QueueRowDrag {
+    request_id: RequestId,
+}
+
+#[derive(Clone)]
+struct QueueRowGhost {
+    name: SharedString,
+    name_color: Rgba,
+    text: SharedString,
+    text_color: Rgba,
+    surface: Rgba,
+    border: Rgba,
+}
+
+impl Render for QueueRowGhost {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .gap(QUEUE_NAME_GAP)
+            .max_w(QUEUE_GHOST_MAX_W)
+            .py(QUEUE_ROW_PAD_V)
+            .px(QUEUE_ROW_GAP)
+            .bg(self.surface)
+            .border(BORDER_THIN)
+            .border_color(self.border)
+            .rounded(radius(Radius::Sm))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .font_family(body_family())
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(QUEUE_NAME_FONT)
+                    .text_color(self.name_color)
+                    .child(self.name.clone()),
+            )
+            .child(
+                div()
+                    .truncate()
+                    .font_family(body_family())
+                    .text_size(QUEUE_MSG_FONT)
+                    .text_color(self.text_color)
+                    .child(self.text.clone()),
+            )
+    }
+}
+
 struct EngineStatus {
     id: String,
     name: String,
@@ -116,6 +167,7 @@ pub struct TtsDashboardView {
     rail_width: Pixels,
     engines: Vec<EngineStatus>,
     pending_stop_all: bool,
+    dragged_row: Option<RequestId>,
     test_input: Entity<TextInput>,
     volume_debounce: async_bridge::Debounced,
     _test_sub: Subscription,
@@ -158,6 +210,7 @@ impl TtsDashboardView {
             rail_width: RAIL_DEFAULT_W,
             engines: load_engine_roster(registry.as_ref()),
             pending_stop_all: false,
+            dragged_row: None,
             test_input,
             volume_debounce: async_bridge::Debounced::new(async_bridge::SLIDER_PERSIST_DEBOUNCE),
             _test_sub: test_sub,
@@ -201,6 +254,31 @@ impl TtsDashboardView {
 
     fn remove_queued(&mut self, request_id: RequestId, _cx: &mut Context<Self>) {
         self.dispatch(SpeakCommand::RemoveQueued(request_id));
+    }
+
+    fn begin_row_drag(&mut self, request_id: RequestId, cx: &mut Context<Self>) {
+        self.dragged_row = Some(request_id);
+        cx.notify();
+    }
+
+    fn release_row_drag(&mut self, drag_active: bool) {
+        if !drag_active {
+            self.dragged_row = None;
+        }
+    }
+
+    fn reorder_queued(
+        &mut self,
+        request_id: RequestId,
+        before: Option<RequestId>,
+        cx: &mut Context<Self>,
+    ) {
+        self.dragged_row = None;
+        cx.notify();
+        if before.as_ref() == Some(&request_id) {
+            return;
+        }
+        self.dispatch(SpeakCommand::Reorder { request_id, before });
     }
 
     fn arm_stop_all(&mut self, cx: &mut Context<Self>) {
@@ -668,6 +746,9 @@ impl TtsDashboardView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
+                    .on_drop(cx.listener(|this, drag: &QueueRowDrag, _window, cx| {
+                        this.reorder_queued(drag.request_id.clone(), None, cx)
+                    }))
                     .child(list),
             )
             .into_any_element()
@@ -766,7 +847,22 @@ impl TtsDashboardView {
             }))
             .child(icon(Icon::X, QUEUE_ACTION_GLYPH, palette.text_faint));
 
-        div()
+        let ghost = QueueRowGhost {
+            name: item.viewer_name.clone().into(),
+            name_color: hash_accent(&item.viewer_name, palette),
+            text: item.text.clone().into(),
+            text_color: palette.text_muted,
+            surface: palette.elevated,
+            border: palette.border_regular,
+        };
+        let view = cx.entity().downgrade();
+        let drop_tint = with_alpha(palette.brand, QUEUE_DROP_TINT_ALPHA);
+        let brand = palette.brand;
+        let hovered_id = item.request_id.clone();
+        let dropped_on_id = item.request_id.clone();
+
+        let row = div()
+            .id(("tts-q-row", index))
             .w_full()
             .flex()
             .items_center()
@@ -775,13 +871,43 @@ impl TtsDashboardView {
             .px(spacing(Spacing::Md, density))
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
+            .cursor(CursorStyle::OpenHand)
+            .on_drag(
+                QueueRowDrag {
+                    request_id: item.request_id.clone(),
+                },
+                move |drag, _offset, _window, cx| {
+                    let dragged = drag.request_id.clone();
+                    view.update(cx, |this, cx| this.begin_row_drag(dragged, cx))
+                        .ok();
+                    cx.new(|_| ghost.clone())
+                },
+            )
+            .drag_over::<QueueRowDrag>(move |style, drag, _window, _cx| {
+                if drag.request_id == hovered_id {
+                    return style;
+                }
+                style
+                    .bg(drop_tint)
+                    .border_color(brand)
+                    .border_t(BORDER_THIN)
+                    .border_b(px(0.0))
+            })
+            .on_drop(cx.listener(move |this, drag: &QueueRowDrag, _window, cx| {
+                this.reorder_queued(drag.request_id.clone(), Some(dropped_on_id.clone()), cx)
+            }))
             .child(pos)
             .child(grip)
             .child(content)
             .child(duration)
             .child(play_btn)
-            .child(remove_btn)
-            .into_any_element()
+            .child(remove_btn);
+
+        if self.dragged_row.as_ref() == Some(&item.request_id) {
+            row.opacity(QUEUE_DRAG_OPACITY).into_any_element()
+        } else {
+            row.into_any_element()
+        }
     }
 }
 
@@ -789,6 +915,7 @@ impl Render for TtsDashboardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
+        self.release_row_drag(cx.has_active_drag());
 
         let manual_paused = self.speak_state.read(cx).manual_paused();
         let gate_held = self.speak_state.read(cx).gate_held();

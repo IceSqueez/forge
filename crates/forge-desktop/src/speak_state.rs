@@ -200,3 +200,93 @@ impl SpeakState {
         self.stats.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manual_pause() -> SpeakEvent {
+        SpeakEvent::Paused {
+            reason: "user paused".into(),
+        }
+    }
+
+    #[test]
+    fn manual_pause_events_leave_the_voice_gate_hold_untouched() {
+        let mut state = SpeakState::new();
+        state.apply_event(SpeakEvent::VoiceGateHeld);
+
+        state.apply_event(manual_pause());
+        assert!(state.gate_held());
+        assert!(state.manual_paused());
+
+        state.apply_event(SpeakEvent::Resumed);
+        assert!(
+            state.gate_held(),
+            "clicking resume must not hide an active gate hold"
+        );
+        assert!(!state.manual_paused());
+    }
+
+    #[test]
+    fn voice_gate_events_leave_the_manual_pause_untouched() {
+        let mut state = SpeakState::new();
+        state.apply_event(manual_pause());
+
+        state.apply_event(SpeakEvent::VoiceGateHeld);
+        assert!(state.manual_paused());
+        assert!(state.gate_held());
+
+        state.apply_event(SpeakEvent::VoiceGateReleased);
+        assert!(
+            state.manual_paused(),
+            "the gate going quiet must not un-pause the queue"
+        );
+        assert!(!state.gate_held());
+    }
+
+    #[test]
+    fn apply_event_reports_change_only_when_a_pause_flag_flips() {
+        for (case, prime, probe, expected) in [
+            ("first manual pause", vec![], manual_pause(), true),
+            (
+                "repeated manual pause",
+                vec![manual_pause()],
+                manual_pause(),
+                false,
+            ),
+            (
+                "resume after pause",
+                vec![manual_pause()],
+                SpeakEvent::Resumed,
+                true,
+            ),
+            ("resume while running", vec![], SpeakEvent::Resumed, false),
+            ("first gate hold", vec![], SpeakEvent::VoiceGateHeld, true),
+            (
+                "repeated gate hold",
+                vec![SpeakEvent::VoiceGateHeld],
+                SpeakEvent::VoiceGateHeld,
+                false,
+            ),
+            (
+                "release after hold",
+                vec![SpeakEvent::VoiceGateHeld],
+                SpeakEvent::VoiceGateReleased,
+                true,
+            ),
+            (
+                "release while open",
+                vec![],
+                SpeakEvent::VoiceGateReleased,
+                false,
+            ),
+        ] {
+            let mut state = SpeakState::new();
+            for event in prime {
+                state.apply_event(event);
+            }
+            assert_eq!(state.apply_event(probe), expected, "{case}");
+        }
+    }
+}

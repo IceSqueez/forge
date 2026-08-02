@@ -190,7 +190,7 @@ async fn pause_prevents_synthesis_until_resume() {
 }
 
 #[tokio::test]
-async fn voicegate_pause_independent_from_manual_pause() {
+async fn manual_resume_does_not_release_a_voice_gate_hold() {
     let (sink, play_count) = CountingSink::new();
     let config = QueueConfig {
         per_user_limit: 10,
@@ -206,12 +206,14 @@ async fn voicegate_pause_independent_from_manual_pause() {
         .send(SpeakCommand::Enqueue(speak_req("mic is hot")))
         .await
         .unwrap();
+    handle.send(SpeakCommand::Resume).await.unwrap();
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Resumed), 500).await;
 
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert_eq!(
         *play_count.lock().unwrap(),
         0,
-        "must not synthesize while VoiceGate active"
+        "manual resume must leave the voice gate hold in place"
     );
 
     handle
@@ -227,6 +229,57 @@ async fn voicegate_pause_independent_from_manual_pause() {
     assert_eq!(
         *play_count.lock().unwrap(),
         1,
-        "must synthesize after VoiceGate deactivated"
+        "only the gate itself releases a gate hold"
+    );
+}
+
+#[tokio::test]
+async fn voice_gate_release_does_not_clear_a_manual_pause() {
+    let (sink, play_count) = CountingSink::new();
+    let config = QueueConfig {
+        per_user_limit: 10,
+        max_queue_len: 50,
+        ..QueueConfig::default()
+    };
+    let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
+
+    handle.send(SpeakCommand::Pause).await.unwrap();
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    handle.send(SpeakCommand::VoiceGateActivated).await.unwrap();
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateHeld), 500).await;
+
+    handle
+        .send(SpeakCommand::Enqueue(speak_req("still paused")))
+        .await
+        .unwrap();
+    handle
+        .send(SpeakCommand::VoiceGateDeactivated)
+        .await
+        .unwrap();
+    wait_for(
+        &mut stream,
+        |e| matches!(e, SpeakEvent::VoiceGateReleased),
+        500,
+    )
+    .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert_eq!(
+        *play_count.lock().unwrap(),
+        0,
+        "gate release must leave the manual pause in place"
+    );
+
+    handle.send(SpeakCommand::Resume).await.unwrap();
+    wait_for(
+        &mut stream,
+        |e| matches!(e, SpeakEvent::Finished { .. }),
+        2_000,
+    )
+    .await;
+    assert_eq!(
+        *play_count.lock().unwrap(),
+        1,
+        "only a manual resume clears a manual pause"
     );
 }

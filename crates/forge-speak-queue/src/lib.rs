@@ -62,6 +62,13 @@ pub enum SpeakCommand {
     Skip,
     PlayNow(RequestId),
     RemoveQueued(RequestId),
+    /// No-op if `request_id` or `before` (when set) is absent from the pending queues, or if
+    /// `before` equals `request_id`. Moves `request_id` to the tail of `normal_queue` when
+    /// `before` is `None`.
+    Reorder {
+        request_id: RequestId,
+        before: Option<RequestId>,
+    },
     Clear,
     /// Unlike `Clear`, leaves the in-flight item playing to completion.
     ClearPending,

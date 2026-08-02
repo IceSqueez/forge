@@ -900,6 +900,57 @@ fn handle_command(
                 let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
             }
         }
+        SpeakCommand::Reorder { request_id, before } => {
+            let anchor_in_high = match &before {
+                Some(anchor_id) => {
+                    if anchor_id == &request_id {
+                        return;
+                    }
+                    if high_queue.iter().any(|r| &r.request_id == anchor_id) {
+                        true
+                    } else if normal_queue.iter().any(|r| &r.request_id == anchor_id) {
+                        false
+                    } else {
+                        return;
+                    }
+                }
+                None => false,
+            };
+            let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) else {
+                return;
+            };
+            let viewer_name = req.viewer_name.clone();
+            let text = req.text.clone();
+            let source_event_id = req.source_event_id;
+            match &before {
+                None => normal_queue.push_back(req),
+                Some(anchor_id) => {
+                    let queue = if anchor_in_high {
+                        &mut *high_queue
+                    } else {
+                        &mut *normal_queue
+                    };
+                    let pos = queue
+                        .iter()
+                        .position(|r| &r.request_id == anchor_id)
+                        .unwrap_or(queue.len());
+                    queue.insert(pos, req);
+                }
+            }
+            let total = high_queue.len() + normal_queue.len();
+            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+            publish(
+                deps.event_bus.as_ref(),
+                "speak.reordered",
+                serde_json::json!({
+                    "request_id": request_id.0,
+                    "before": before.map(|id| id.0),
+                    "viewer_name": viewer_name,
+                    "text": text,
+                }),
+                source_event_id,
+            );
+        }
         SpeakCommand::Clear => {
             stop_active(
                 "stopped by clear",

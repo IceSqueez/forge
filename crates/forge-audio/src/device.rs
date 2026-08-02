@@ -290,6 +290,14 @@ mod tests {
                 "default",
             ),
             (vec![dev("pipewire", false), dev("pulse", true)], "pipewire"),
+            (
+                vec![
+                    dev("pulse", false),
+                    dev("pipewire", false),
+                    dev("default", false),
+                ],
+                "default",
+            ),
         ] {
             assert_eq!(
                 pick_default_output_device(&devices),
@@ -320,11 +328,50 @@ mod tests {
 
     #[test]
     fn canonical_chain_ids_survive_noise_filtering() {
-        for id in CANONICAL_OUTPUT_CHAIN {
+        for id in CANONICAL_OUTPUT_CHAIN.iter().chain(CANONICAL_INPUT_CHAIN) {
             assert!(
                 !is_noise_device_id(id),
                 "chain member wrongly filtered as noise: {id}"
             );
         }
+    }
+
+    #[test]
+    fn input_picker_walks_the_canonical_then_default_then_non_null_ladder() {
+        for (devices, expected) in [
+            (
+                vec![dev("sysdefault", true), dev("pipewire", false)],
+                "pipewire",
+            ),
+            (
+                vec![
+                    dev("pulse", false),
+                    dev("pipewire", false),
+                    dev("default", true),
+                ],
+                "default",
+            ),
+            (vec![dev("pulse", true), dev("pipewire", false)], "pipewire"),
+            (
+                vec![dev("Built-in Mic", false), dev("USB Mic", true)],
+                "USB Mic",
+            ),
+            (
+                vec![dev("null", true), dev("Webcam Mic", false)],
+                "Webcam Mic",
+            ),
+            (vec![dev("null", false)], "null"),
+        ] {
+            assert_eq!(
+                pick_default_input_device(&devices),
+                Some(DeviceId::new(expected)),
+                "input ladder violated for {devices:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn input_picker_returns_none_when_the_host_reports_no_devices() {
+        assert_eq!(pick_default_input_device(&[]), None);
     }
 }

@@ -1,8 +1,14 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use forge_storage::reserved_keys::EVENT_LOG_RETENTION_DAYS;
+use forge_storage::reserved_keys::{
+    AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_INPUT_DEVICE_ID, AUDIO_VOICE_GATE_THRESHOLD,
+    EVENT_LOG_RETENTION_DAYS,
+};
 use forge_storage::{
-    Language, SettingsRepo, event_log_retention_days, set_event_log_retention_days,
+    Language, SettingsRepo, VOICE_GATE_DEFAULT_HOLD_MS, VOICE_GATE_DEFAULT_THRESHOLD,
+    VoiceGateSettings, event_log_retention_days, set_event_log_retention_days,
+    set_voice_gate_enabled, set_voice_gate_hold_ms, set_voice_gate_input_device_id,
+    set_voice_gate_threshold, voice_gate_settings,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo, apply_migrations};
 
@@ -200,4 +206,140 @@ async fn unsetting_a_font_that_was_never_stored_succeeds() {
         .await
         .expect("unset on absent key must not error");
     assert_eq!(backend.font_mono().await.expect("get mono"), None);
+}
+
+#[tokio::test]
+async fn voice_gate_settings_with_no_stored_keys_yields_the_type_defaults() {
+    let backend = setup_backend().await;
+    let settings = voice_gate_settings(&backend).await.expect("load defaults");
+    assert_eq!(settings, VoiceGateSettings::default());
+}
+
+#[tokio::test]
+async fn voice_gate_settings_round_trip_through_the_typed_setters() {
+    let backend = setup_backend().await;
+    set_voice_gate_enabled(&backend, true)
+        .await
+        .expect("enable");
+    set_voice_gate_input_device_id(&backend, Some("alsa_input.usb-Yeti".to_owned()))
+        .await
+        .expect("set device");
+    set_voice_gate_threshold(&backend, 0.42)
+        .await
+        .expect("set threshold");
+    set_voice_gate_hold_ms(&backend, 250)
+        .await
+        .expect("set hold");
+
+    let settings = voice_gate_settings(&backend).await.expect("load");
+    assert_eq!(
+        settings,
+        VoiceGateSettings {
+            enabled: true,
+            input_device_id: Some("alsa_input.usb-Yeti".to_owned()),
+            threshold: 0.42,
+            hold_ms: 250,
+        }
+    );
+}
+
+#[tokio::test]
+async fn voice_gate_threshold_falls_back_to_the_default_for_unparsable_or_non_finite_values() {
+    let backend = setup_backend().await;
+    for stored in ["abc", "", " 0.5", "NaN", "inf", "-inf", "1e40"] {
+        backend
+            .set_string(AUDIO_VOICE_GATE_THRESHOLD, stored)
+            .await
+            .expect("inject threshold");
+        let settings = voice_gate_settings(&backend).await.expect("load");
+        assert_eq!(
+            settings.threshold, VOICE_GATE_DEFAULT_THRESHOLD,
+            "stored threshold {stored:?} must not survive as a usable gain",
+        );
+    }
+}
+
+#[tokio::test]
+async fn voice_gate_threshold_read_clamps_stored_values_into_the_unit_range() {
+    let backend = setup_backend().await;
+    for (stored, expected) in [
+        ("-0.5", 0.0),
+        ("0", 0.0),
+        ("1", 1.0),
+        ("1.5", 1.0),
+        ("340282350000000000000000000000000000000", 1.0),
+    ] {
+        backend
+            .set_string(AUDIO_VOICE_GATE_THRESHOLD, stored)
+            .await
+            .expect("inject threshold");
+        let settings = voice_gate_settings(&backend).await.expect("load");
+        assert_eq!(
+            settings.threshold, expected,
+            "stored threshold {stored:?} clamped wrong",
+        );
+    }
+}
+
+#[tokio::test]
+async fn voice_gate_hold_ms_falls_back_to_the_default_for_unparsable_values() {
+    let backend = setup_backend().await;
+    for stored in ["abc", "", "-100", "3.5", "4294967296"] {
+        backend
+            .set_string(AUDIO_VOICE_GATE_HOLD_MS, stored)
+            .await
+            .expect("inject hold");
+        let settings = voice_gate_settings(&backend).await.expect("load");
+        assert_eq!(
+            settings.hold_ms, VOICE_GATE_DEFAULT_HOLD_MS,
+            "stored hold {stored:?} must fall back, not collapse to zero",
+        );
+    }
+}
+
+#[tokio::test]
+async fn set_voice_gate_threshold_persists_an_already_clamped_value() {
+    let backend = setup_backend().await;
+    for (written, expected) in [(2.0f32, 1.0f32), (-1.0, 0.0), (0.42, 0.42)] {
+        set_voice_gate_threshold(&backend, written)
+            .await
+            .expect("set threshold");
+        let raw = backend
+            .get_string(AUDIO_VOICE_GATE_THRESHOLD)
+            .await
+            .expect("read raw")
+            .expect("threshold key present");
+        let parsed: f32 = raw.parse().expect("stored threshold is numeric");
+        assert_eq!(
+            parsed, expected,
+            "writing {written} must store a clamped value, got {raw:?}",
+        );
+    }
+}
+
+#[tokio::test]
+async fn clearing_the_voice_gate_input_device_removes_the_key_rather_than_blanking_it() {
+    let backend = setup_backend().await;
+    set_voice_gate_input_device_id(&backend, Some("hw:CARD=Yeti".to_owned()))
+        .await
+        .expect("set device");
+    assert_eq!(
+        voice_gate_settings(&backend)
+            .await
+            .expect("load after set")
+            .input_device_id,
+        Some("hw:CARD=Yeti".to_owned())
+    );
+
+    set_voice_gate_input_device_id(&backend, None)
+        .await
+        .expect("clear device");
+    assert_eq!(
+        backend
+            .get_string(AUDIO_VOICE_GATE_INPUT_DEVICE_ID)
+            .await
+            .expect("read raw after clear"),
+        None,
+        "clearing must delete the key, not store an empty string",
+    );
 }

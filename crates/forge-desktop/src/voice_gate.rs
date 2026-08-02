@@ -129,3 +129,59 @@ async fn notify_inactive(speak: &SpeakQueueHandle) {
         tracing::warn!(error = %e, "failed to release the speak queue from the voice gate");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_from_settings_maps_stored_values_onto_the_monitor_config() {
+        for (settings, expected) in [
+            (
+                VoiceGateSettings {
+                    enabled: true,
+                    input_device_id: Some("alsa_input.usb-Yeti".to_owned()),
+                    threshold: 0.42,
+                    hold_ms: 250,
+                },
+                VoiceGateConfig {
+                    device: Some(DeviceId::new("alsa_input.usb-Yeti")),
+                    threshold: 0.42,
+                    hold: Duration::from_millis(250),
+                },
+            ),
+            (
+                VoiceGateSettings {
+                    enabled: false,
+                    input_device_id: None,
+                    threshold: 0.0,
+                    hold_ms: 0,
+                },
+                VoiceGateConfig {
+                    device: None,
+                    threshold: 0.0,
+                    hold: Duration::ZERO,
+                },
+            ),
+            (
+                VoiceGateSettings {
+                    enabled: true,
+                    input_device_id: None,
+                    threshold: 1.0,
+                    hold_ms: u32::MAX,
+                },
+                VoiceGateConfig {
+                    device: None,
+                    threshold: 1.0,
+                    hold: Duration::from_millis(4_294_967_295),
+                },
+            ),
+        ] {
+            assert_eq!(
+                config_from_settings(&settings),
+                expected,
+                "mapping drifted for {settings:?}",
+            );
+        }
+    }
+}

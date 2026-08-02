@@ -26,7 +26,7 @@ pub trait HistoryRepo: Send + Sync {
         builtin_id: &str,
         limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError>;
-    /// Only includes actions with at least one history entry.
+    /// Only includes actions with at least one trigger-run entry; quick action runs are excluded.
     async fn stats_summary(
         &self,
         since: OffsetDateTime,

@@ -99,6 +99,35 @@ impl HistoryRepo for SqliteHistoryRepo {
             .collect()
     }
 
+    async fn recent_for_builtin(
+        &self,
+        builtin_id: &str,
+        limit: u32,
+    ) -> Result<Vec<ExecutionContext>, StorageError> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT context FROM action_history
+             WHERE json_extract(context, '$.metadata.kind') = 'quick_action'
+               AND json_extract(context, '$.metadata.builtin_id') = ?
+             ORDER BY started_at DESC
+             LIMIT ?",
+        )
+        .bind(builtin_id)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|(ctx_json,)| {
+                serde_json::from_str::<ExecutionContext>(&ctx_json).map_err(|e| {
+                    StorageError::from(SqliteStorageError::Decode(format!(
+                        "invalid ExecutionContext json: {e}"
+                    )))
+                })
+            })
+            .collect()
+    }
+
     async fn stats_summary(
         &self,
         since: OffsetDateTime,
@@ -117,6 +146,7 @@ impl HistoryRepo for SqliteHistoryRepo {
                     MAX(started_at) AS last_started,
                     SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS runs_24h
              FROM action_history
+             WHERE triggering_event_id IS NOT NULL
              GROUP BY action_id",
         )
         .bind(since_ms)

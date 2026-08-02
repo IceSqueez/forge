@@ -21,6 +21,11 @@ pub trait HistoryRepo: Send + Sync {
         action_id: ActionId,
         limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError>;
+    async fn recent_for_builtin(
+        &self,
+        builtin_id: &str,
+        limit: u32,
+    ) -> Result<Vec<ExecutionContext>, StorageError>;
     /// Only includes actions with at least one history entry.
     async fn stats_summary(
         &self,

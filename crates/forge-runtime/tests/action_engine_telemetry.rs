@@ -131,6 +131,13 @@ impl HistoryRepo for SpyHistoryRepo {
     ) -> Result<Vec<ExecutionContext>, StorageError> {
         Ok(vec![])
     }
+    async fn recent_for_builtin(
+        &self,
+        _builtin_id: &str,
+        _limit: u32,
+    ) -> Result<Vec<ExecutionContext>, StorageError> {
+        Ok(vec![])
+    }
     async fn stats_summary(
         &self,
         _since: OffsetDateTime,

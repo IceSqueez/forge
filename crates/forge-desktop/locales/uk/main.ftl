@@ -157,13 +157,19 @@ settings_nav_audio = Аудіо
 
 ## Налаштування → панель діагностики
 
-settings_about_build_label = Збірка
-settings_about_rust_label = Rust
-settings_about_os_label = ОС
-settings_diagnostics_log_dir_hint = Журнали середовища виконання пишуться в цю теку.
 settings_diagnostics_section_title = Журнали та діагностика
-settings_diagnostics_log_dir_label = Тека журналів
+settings_diagnostics_subtitle = Стеж за журналами Forge та експортуй їх для підтримки
 settings_diagnostics_open_log_dir = Відкрити теку журналів
+settings_diagnostics_export_bundle = Експортувати діагностичний пакет
+settings_diagnostics_clear_logs = Очистити журнали
+settings_diagnostics_tail_empty = Записів журналу ще немає.
+settings_diagnostics_clear_confirm_title = Очистити журнали?
+settings_diagnostics_clear_confirm_body = Архівні файли журналів буде видалено, а сьогоднішній - очищено. Це незворотно.
+settings_diagnostics_clear_confirm_action = Очистити журнали
+settings_diagnostics_cleared = Журнали очищено
+settings_diagnostics_clear_failed = Не вдалося очистити журнали: { $error }
+settings_diagnostics_exported = Діагностичний пакет збережено до { $path }
+settings_diagnostics_export_failed = Не вдалося експортувати діагностичний пакет: { $error }
 
 ## Налаштування → панель версії
 

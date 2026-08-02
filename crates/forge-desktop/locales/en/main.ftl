@@ -157,13 +157,19 @@ settings_nav_audio = Audio
 
 ## Settings → Diagnostics pane
 
-settings_about_build_label = Build
-settings_about_rust_label = Rust
-settings_about_os_label = OS
-settings_diagnostics_log_dir_hint = Runtime logs stream to this folder.
 settings_diagnostics_section_title = Logs & diagnostics
-settings_diagnostics_log_dir_label = Log directory
-settings_diagnostics_open_log_dir = Open log directory
+settings_diagnostics_subtitle = Tail Forge runtime logs and export for support
+settings_diagnostics_open_log_dir = Open logs folder
+settings_diagnostics_export_bundle = Export diagnostic bundle
+settings_diagnostics_clear_logs = Clear logs
+settings_diagnostics_tail_empty = No log lines captured yet.
+settings_diagnostics_clear_confirm_title = Clear logs?
+settings_diagnostics_clear_confirm_body = Archived log files are deleted and today's log is emptied. This cannot be undone.
+settings_diagnostics_clear_confirm_action = Clear logs
+settings_diagnostics_cleared = Logs cleared
+settings_diagnostics_clear_failed = Could not clear logs: { $error }
+settings_diagnostics_exported = Diagnostic bundle saved to { $path }
+settings_diagnostics_export_failed = Could not export diagnostic bundle: { $error }
 
 ## Settings → Version pane
 

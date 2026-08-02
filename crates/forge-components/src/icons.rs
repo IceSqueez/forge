@@ -186,6 +186,7 @@ tabler_icons! {
     Frame => "frame.svg",
     ArrowBadgeRight => "arrow-badge-right.svg",
     Link => "link.svg",
+    Bug => "bug.svg",
 }
 
 impl Icon {
@@ -227,6 +228,7 @@ impl Icon {
             "message-circle" | "chat" => Icon::MessageCircle,
             "globe" => Icon::Globe,
             "activity" => Icon::Activity,
+            "bug" => Icon::Bug,
             "rss" => Icon::Rss,
             "variable" | "hash" => Icon::Variable,
             "chevron-down" => Icon::ChevronDown,

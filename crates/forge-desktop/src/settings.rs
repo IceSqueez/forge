@@ -4,8 +4,8 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
     Spacing, ThemeId, badge, body_family, card, field_hint, field_label, field_title,
-    ghost_button_with_icon, icon, metric_card, mono_family, overlay, page_frame, primary_button,
-    primary_button_with_icon, radius, set_body_family, set_mono_family, spacing, tr, with_alpha,
+    ghost_button_with_icon, icon, mono_family, overlay, page_frame, primary_button_with_icon,
+    radius, set_body_family, set_mono_family, spacing, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
@@ -17,14 +17,13 @@ use crate::async_bridge::{self, ErrorSink};
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
+use crate::settings_diagnostics::SettingsDiagnosticsView;
 use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_storage::SettingsStorageView;
 use crate::settings_websocket::SettingsWebSocketView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
-
-const RUST_VERSION: &str = "1.96.0";
 
 const RECENT_RELEASES: [(&str, &str, &str); 3] = [
     ("v0.9.2", "Server panel, settings → websocket", "today"),
@@ -102,7 +101,7 @@ impl SettingsSection {
             SettingsSection::Storage => Icon::Folder,
             SettingsSection::WebSocket => Icon::Server,
             SettingsSection::Version => Icon::Diamond,
-            SettingsSection::Diagnostics => Icon::Activity,
+            SettingsSection::Diagnostics => Icon::Bug,
         }
     }
 
@@ -179,6 +178,7 @@ pub struct SettingsView {
     websocket: Entity<SettingsWebSocketView>,
     shortcuts: Entity<SettingsShortcutsView>,
     storage: Entity<SettingsStorageView>,
+    diagnostics: Entity<SettingsDiagnosticsView>,
     font_picker: Option<FontPicker>,
 }
 
@@ -219,6 +219,9 @@ impl SettingsView {
         let storage = cx.new(|cx| {
             SettingsStorageView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });
+        let diagnostics = cx.new(|cx| {
+            SettingsDiagnosticsView::new(handles.log_tail.clone(), handles.rt_handle.clone(), cx)
+        });
         Self {
             section: SettingsSection::Appearance,
             handles,
@@ -228,12 +231,17 @@ impl SettingsView {
             websocket,
             shortcuts,
             storage,
+            diagnostics,
             font_picker: None,
         }
     }
 
     fn select_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
         self.section = section;
+        let diagnostics_open = section == SettingsSection::Diagnostics;
+        self.diagnostics.update(cx, |view, cx| {
+            view.set_active(diagnostics_open, cx);
+        });
         cx.notify();
     }
 
@@ -441,11 +449,6 @@ impl SettingsView {
         );
     }
 
-    fn open_log_dir(&mut self, cx: &mut Context<Self>) {
-        let dir = forge_platform_core::paths::data_dir().join("logs");
-        cx.reveal_path(&dir);
-    }
-
     fn render_status(&self, palette: &ForgePalette) -> impl IntoElement + use<> {
         div()
             .flex()
@@ -534,7 +537,7 @@ impl SettingsView {
             SettingsSection::Queues => self.queues_pane(palette, density),
             SettingsSection::Storage => self.storage.clone().into_any_element(),
             SettingsSection::Version => self.version_pane(palette, density, cx),
-            SettingsSection::Diagnostics => self.diagnostics_pane(palette, density, cx),
+            SettingsSection::Diagnostics => self.diagnostics.clone().into_any_element(),
         };
 
         div()
@@ -1001,86 +1004,6 @@ impl SettingsView {
             ))
             .child(card(identity, palette))
             .child(card(releases, palette))
-            .into_any_element()
-    }
-
-    fn diagnostics_pane(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let version = env!("CARGO_PKG_VERSION");
-        let log_dir = forge_platform_core::paths::data_dir().join("logs");
-        let log_display = log_dir.display().to_string();
-
-        let metric = |label: String, value: String| {
-            div()
-                .flex_1()
-                .child(metric_card(label, value, None::<&str>, None, palette))
-        };
-        let metrics = div()
-            .flex()
-            .flex_row()
-            .gap(spacing(Spacing::Sm, density))
-            .child(metric(
-                tr!("settings_about_build_label"),
-                version.to_owned(),
-            ))
-            .child(metric(
-                tr!("settings_about_rust_label"),
-                RUST_VERSION.to_owned(),
-            ))
-            .child(metric(
-                tr!("settings_about_os_label"),
-                std::env::consts::OS.to_owned(),
-            ));
-
-        let path_box = div()
-            .w_full()
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .py(px(7.0))
-            .rounded(radius(Radius::Sm))
-            .bg(palette.base)
-            .border(BORDER_THIN)
-            .border_color(palette.border_input)
-            .font_family(mono_family())
-            .text_size(FONT_XS)
-            .text_color(palette.text_primary)
-            .child(log_display);
-        let open_btn = primary_button(tr!("settings_diagnostics_open_log_dir"), palette).on_click(
-            "settings-open-logs",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.open_log_dir(cx)),
-        );
-        let logs_card = card(
-            div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Xs, density))
-                .child(field_title(
-                    tr!("settings_diagnostics_log_dir_label"),
-                    palette,
-                ))
-                .child(path_box)
-                .child(open_btn)
-                .child(field_hint(
-                    tr!("settings_diagnostics_log_dir_hint"),
-                    palette,
-                )),
-            palette,
-        );
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::Activity,
-                tr!("settings_diagnostics_section_title"),
-                palette,
-            ))
-            .child(metrics)
-            .child(logs_card)
             .into_any_element()
     }
 

@@ -10,7 +10,6 @@ use tracing_subscriber::layer::Context;
 const CAPACITY: usize = 500;
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct LogLine {
     pub at: OffsetDateTime,
     pub level: Level,
@@ -35,10 +34,14 @@ impl LogTail {
     }
 
     /// Oldest first; the caller gets an owned copy, never the lock.
-    #[allow(dead_code)]
     pub fn snapshot(&self) -> Vec<LogLine> {
         let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
         lines.iter().cloned().collect()
+    }
+
+    pub fn clear(&self) {
+        let mut lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
+        lines.clear();
     }
 
     fn push(&self, line: LogLine) {

@@ -688,6 +688,7 @@ tts_dash_pause_btn = Pause queue
 tts_dash_resume_btn = Resume
 tts_dash_skip_btn = Skip
 tts_dash_stop_all_btn = Stop all
+tts_dash_voice_gate_held = Held by voice gate
 tts_dash_stop_all_confirm_name = Stop all TTS
 tts_dash_stop_all_confirm_hint = Currently speaking message will be cut off and all queued messages dropped. Engines remain ready to handle new messages.
 tts_dash_test_placeholder = Type to test a voice…

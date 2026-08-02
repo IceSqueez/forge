@@ -139,6 +139,8 @@ pub enum SpeakEvent {
         reason: String,
     },
     Resumed,
+    VoiceGateHeld,
+    VoiceGateReleased,
     Cleared,
 }
 

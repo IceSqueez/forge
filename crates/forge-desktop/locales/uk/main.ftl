@@ -690,6 +690,7 @@ tts_dash_pause_btn = Пауза черги
 tts_dash_resume_btn = Продовжити
 tts_dash_skip_btn = Пропустити
 tts_dash_stop_all_btn = Зупинити все
+tts_dash_voice_gate_held = Утримано голосовим гейтом
 tts_dash_stop_all_confirm_name = Зупинити всю озвучку
 tts_dash_stop_all_confirm_hint = Повідомлення, що зараз озвучується, буде обірвано, а всі повідомлення в черзі - скинуто. Рушії залишаться готові обробляти нові повідомлення.
 tts_dash_test_placeholder = Введіть текст для тестування…

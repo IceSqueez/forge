@@ -1033,9 +1033,7 @@ fn handle_command(
         }
         SpeakCommand::VoiceGateActivated => {
             *voicegate_active = true;
-            let _ = event_tx.send(SpeakEvent::Paused {
-                reason: "voicegate".into(),
-            });
+            let _ = event_tx.send(SpeakEvent::VoiceGateHeld);
             publish(
                 deps.event_bus.as_ref(),
                 "speak.paused",
@@ -1045,7 +1043,7 @@ fn handle_command(
         }
         SpeakCommand::VoiceGateDeactivated => {
             *voicegate_active = false;
-            let _ = event_tx.send(SpeakEvent::Resumed);
+            let _ = event_tx.send(SpeakEvent::VoiceGateReleased);
             publish(
                 deps.event_bus.as_ref(),
                 "speak.resumed",

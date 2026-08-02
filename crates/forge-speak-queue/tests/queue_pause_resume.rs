@@ -200,7 +200,7 @@ async fn voicegate_pause_independent_from_manual_pause() {
     let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
 
     handle.send(SpeakCommand::VoiceGateActivated).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused { .. }), 500).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::VoiceGateHeld), 500).await;
 
     handle
         .send(SpeakCommand::Enqueue(speak_req("mic is hot")))

@@ -1,8 +1,8 @@
 use forge_components::{
-    BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextInput, badge, body_family,
-    confirm_modal, empty_state, fmt_clock, hash_accent, icon, install_resize, mono_family, overlay,
-    radius, slider, spacing, status_dot, tooltip_builder, tr,
+    BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextInput, badge,
+    body_family, chip, confirm_modal, empty_state, fmt_clock, hash_accent, icon, install_resize,
+    mono_family, overlay, radius, slider, spacing, status_dot, tooltip_builder, tr,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -35,6 +35,8 @@ const EQ_BAR_MAX_H: Pixels = px(11.0);
 const EQ_BAR_HEIGHTS: [f32; 4] = [5.0, 11.0, 7.0, 9.0];
 const EQ_MIN_SCALE: f32 = 0.35;
 const VOLUME_GLYPH: Pixels = px(14.0);
+const STRIP_DIVIDER_H: Pixels = px(16.0);
+const STRIP_DIVIDER_MX: Pixels = px(4.0);
 
 const NOW_HEADER_MB: Pixels = px(8.0);
 const NOW_ROW_GAP: Pixels = px(10.0);
@@ -176,14 +178,14 @@ impl TtsDashboardView {
     }
 
     fn toggle_pause(&mut self, cx: &mut Context<Self>) {
-        let paused = self.speak_state.read(cx).paused();
+        let paused = self.speak_state.read(cx).manual_paused();
         let cmd = if paused {
             SpeakCommand::Resume
         } else {
             SpeakCommand::Pause
         };
         self.speak_state.update(cx, |state, cx| {
-            state.set_paused(!paused);
+            state.set_manual_paused(!paused);
             cx.notify();
         });
         self.dispatch(cmd);
@@ -252,11 +254,12 @@ impl TtsDashboardView {
 
     fn control_strip(
         &self,
-        paused: bool,
+        manual_paused: bool,
+        gate_held: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (pause_label, pause_glyph, btn_bg) = if paused {
+        let (pause_label, pause_glyph, btn_bg) = if manual_paused {
             (
                 tr!("tts_dash_resume_btn"),
                 Icon::PlayerPlay,
@@ -305,12 +308,6 @@ impl TtsDashboardView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.arm_stop_all(cx)),
         );
 
-        let divider = div()
-            .w(BORDER_THIN)
-            .h(px(16.0))
-            .mx(px(4.0))
-            .bg(palette.border_regular);
-
         let vol_pct = (self.volume * 100.0).round() as u32;
         let vol_text = div()
             .w(VOL_PCT_W)
@@ -333,6 +330,21 @@ impl TtsDashboardView {
             .child(vol_slider)
             .child(vol_text);
 
+        let gate_indicator = gate_held.then(|| {
+            div()
+                .flex()
+                .items_center()
+                .gap(STRIP_GAP)
+                .child(strip_divider(palette))
+                .child(chip(
+                    tr!("tts_dash_voice_gate_held"),
+                    ChipGlyph::Icon(Icon::Microphone2, palette.warning),
+                    true,
+                    palette,
+                ))
+                .into_any_element()
+        });
+
         let left = div()
             .flex()
             .items_center()
@@ -340,8 +352,9 @@ impl TtsDashboardView {
             .child(pause_btn)
             .child(skip_btn)
             .child(stop_btn)
-            .child(divider)
-            .child(volume_row);
+            .child(strip_divider(palette))
+            .child(volume_row)
+            .children(gate_indicator);
 
         let test_field = div()
             .flex()
@@ -777,7 +790,8 @@ impl Render for TtsDashboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let paused = self.speak_state.read(cx).paused();
+        let manual_paused = self.speak_state.read(cx).manual_paused();
+        let gate_held = self.speak_state.read(cx).gate_held();
         let now = self.speak_state.read(cx).now_speaking_snapshot();
         let queue = self.speak_state.read(cx).queue_snapshot();
         let stats = self.speak_state.read(cx).stats_snapshot();
@@ -796,12 +810,12 @@ impl Render for TtsDashboardView {
             .as_ref()
             .and_then(|ns| resolve_now_voice(&ns.engine_id, &ns.voice_id, &voices));
 
-        let control_strip = self.control_strip(paused, &palette, cx);
+        let control_strip = self.control_strip(manual_paused, gate_held, &palette, cx);
         let now_speaking = now_speaking_panel(
             now.as_ref(),
             now_voice,
             last_drop.as_deref(),
-            paused,
+            manual_paused,
             &palette,
             density,
         );
@@ -839,6 +853,14 @@ impl Render for TtsDashboardView {
             .child(main_row)
             .children(confirm)
     }
+}
+
+fn strip_divider(palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .w(BORDER_THIN)
+        .h(STRIP_DIVIDER_H)
+        .mx(STRIP_DIVIDER_MX)
+        .bg(palette.border_regular)
 }
 
 fn eq_bars(animate: bool, color: Rgba) -> impl IntoElement {
@@ -879,11 +901,11 @@ fn now_speaking_panel(
     now: Option<&NowSpeaking>,
     now_voice: Option<SharedString>,
     last_drop: Option<&str>,
-    paused: bool,
+    manual_paused: bool,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    let animate = now.is_some() && !paused;
+    let animate = now.is_some() && !manual_paused;
     let bar_color = if animate {
         palette.success
     } else {

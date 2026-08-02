@@ -31,7 +31,8 @@ pub struct SessionStats {
 }
 
 pub struct SpeakState {
-    paused: bool,
+    manual_paused: bool,
+    gate_held: bool,
     now_speaking: Option<NowSpeaking>,
     queue: Vec<QueueItem>,
     stats: SessionStats,
@@ -41,7 +42,8 @@ pub struct SpeakState {
 impl SpeakState {
     pub fn new() -> Self {
         Self {
-            paused: false,
+            manual_paused: false,
+            gate_held: false,
             now_speaking: None,
             queue: Vec::new(),
             stats: SessionStats {
@@ -139,12 +141,24 @@ impl SpeakState {
             }
             SpeakEvent::QueueChanged { .. } => false,
             SpeakEvent::Paused { .. } => {
-                self.paused = true;
-                true
+                let changed = !self.manual_paused;
+                self.manual_paused = true;
+                changed
             }
             SpeakEvent::Resumed => {
-                self.paused = false;
-                true
+                let changed = self.manual_paused;
+                self.manual_paused = false;
+                changed
+            }
+            SpeakEvent::VoiceGateHeld => {
+                let changed = !self.gate_held;
+                self.gate_held = true;
+                changed
+            }
+            SpeakEvent::VoiceGateReleased => {
+                let changed = self.gate_held;
+                self.gate_held = false;
+                changed
             }
             SpeakEvent::Cleared => {
                 self.queue.clear();
@@ -155,8 +169,8 @@ impl SpeakState {
     }
 
     /// Optimistic: the confirming `Paused`/`Resumed` event re-seats the actual state.
-    pub fn set_paused(&mut self, paused: bool) {
-        self.paused = paused;
+    pub fn set_manual_paused(&mut self, paused: bool) {
+        self.manual_paused = paused;
     }
 
     /// Optimistic: the confirming `Cleared` event re-seats the actual state.
@@ -165,8 +179,13 @@ impl SpeakState {
         self.queue.clear();
     }
 
-    pub fn paused(&self) -> bool {
-        self.paused
+    pub fn manual_paused(&self) -> bool {
+        self.manual_paused
+    }
+
+    /// Released by the voice gate itself when the microphone goes quiet - not user-clearable.
+    pub fn gate_held(&self) -> bool {
+        self.gate_held
     }
 
     pub fn now_speaking_snapshot(&self) -> Option<NowSpeaking> {

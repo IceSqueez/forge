@@ -11,8 +11,8 @@ use forge_types::Shared;
 use forge_voice::{AliasState, ResolveResult, VoiceAliasResolver};
 
 use crate::{
-    PipelineConfigHandle, Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent,
-    SpeakRequest,
+    PipelineConfigHandle, Priority, QueueConfig, QueueDeps, QueuedOrderEntry, RequestId,
+    SpeakCommand, SpeakEvent, SpeakRequest,
 };
 
 struct SynthTaskResult {
@@ -253,6 +253,27 @@ fn resolve_with_overrides(
     resolver.resolve(&req.viewer_id, &req.viewer_name, catalog)
 }
 
+fn queue_changed_event(
+    high_queue: &VecDeque<SpeakRequest>,
+    normal_queue: &VecDeque<SpeakRequest>,
+) -> SpeakEvent {
+    let order: Vec<QueuedOrderEntry> = high_queue
+        .iter()
+        .map(|r| QueuedOrderEntry {
+            request_id: r.request_id.clone(),
+            is_high_priority: true,
+        })
+        .chain(normal_queue.iter().map(|r| QueuedOrderEntry {
+            request_id: r.request_id.clone(),
+            is_high_priority: false,
+        }))
+        .collect();
+    SpeakEvent::QueueChanged {
+        queue_len: order.len(),
+        order,
+    }
+}
+
 fn publish(
     bus: &dyn EventPublisher,
     kind: &str,
@@ -312,6 +333,7 @@ pub(crate) async fn run_actor(
             && let Some(req) = pop_next(&mut high_queue, &mut normal_queue, &mut per_user_counts)
         {
             let queue_len = high_queue.len() + normal_queue.len();
+            let _ = event_tx.send(queue_changed_event(&high_queue, &normal_queue));
             let _ = event_tx.send(SpeakEvent::Started {
                 request_id: req.request_id.clone(),
                 voice_id: VoiceId(String::new()),
@@ -462,8 +484,6 @@ pub(crate) async fn run_actor(
                         &mut active_request_id,
                         &mut last_successful,
                         current,
-                        &high_queue,
-                        &normal_queue,
                     ).await;
                 }
             }
@@ -513,7 +533,6 @@ async fn handle_synth_result(
                 }),
                 result.request.source_event_id,
             );
-            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
         }
         SynthOutcome::Failed { reason, detail } => {
             *active_request_id = None;
@@ -534,7 +553,6 @@ async fn handle_synth_result(
                 }),
                 result.request.source_event_id,
             );
-            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
         }
         SynthOutcome::Speak {
             mut pcm,
@@ -596,14 +614,12 @@ async fn handle_synth_result(
                         }),
                         result.request.source_event_id,
                     );
-                    let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
                 }
             }
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn finish_playback(
     play_result: Result<(), forge_audio::AudioError>,
     deps: &QueueDeps,
@@ -611,11 +627,8 @@ async fn finish_playback(
     active_request_id: &mut Option<RequestId>,
     last_successful: &mut Option<SpeakRequest>,
     current: CurrentPlayback,
-    high_queue: &VecDeque<SpeakRequest>,
-    normal_queue: &VecDeque<SpeakRequest>,
 ) {
     *active_request_id = None;
-    let queue_len = high_queue.len() + normal_queue.len();
 
     match play_result {
         Ok(()) => {
@@ -654,7 +667,6 @@ async fn finish_playback(
             );
         }
     }
-    let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len });
 }
 
 fn stop_active(
@@ -842,9 +854,7 @@ fn handle_command(
                 }),
                 req.source_event_id,
             );
-            let _ = event_tx.send(SpeakEvent::QueueChanged {
-                queue_len: total_after,
-            });
+            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
         }
         SpeakCommand::Skip => {
             stop_active(
@@ -856,8 +866,6 @@ fn handle_command(
                 current_playback,
                 progress_ticker,
             );
-            let total = high_queue.len() + normal_queue.len();
-            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
         }
         SpeakCommand::PlayNow(request_id) => {
             if let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) {
@@ -871,8 +879,7 @@ fn handle_command(
                     current_playback,
                     progress_ticker,
                 );
-                let total = high_queue.len() + normal_queue.len();
-                let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+                let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
             }
         }
         SpeakCommand::RemoveQueued(request_id) => {
@@ -896,8 +903,7 @@ fn handle_command(
                     }),
                     req.source_event_id,
                 );
-                let total = high_queue.len() + normal_queue.len();
-                let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+                let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
             }
         }
         SpeakCommand::Reorder { request_id, before } => {
@@ -937,8 +943,7 @@ fn handle_command(
                     queue.insert(pos, req);
                 }
             }
-            let total = high_queue.len() + normal_queue.len();
-            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
             publish(
                 deps.event_bus.as_ref(),
                 "speak.reordered",
@@ -971,7 +976,7 @@ fn handle_command(
                 serde_json::json!({ "keep_current": false }),
                 None,
             );
-            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: 0 });
+            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
         }
         SpeakCommand::ClearPending => {
             high_queue.clear();
@@ -983,7 +988,7 @@ fn handle_command(
                 serde_json::json!({ "keep_current": true }),
                 None,
             );
-            let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: 0 });
+            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
         }
         SpeakCommand::SetAlias(alias) => {
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
@@ -1079,7 +1084,7 @@ fn handle_command(
                     }),
                     replay.source_event_id,
                 );
-                let _ = event_tx.send(SpeakEvent::QueueChanged { queue_len: total });
+                let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
             }
         }
         SpeakCommand::VoiceGateActivated => {

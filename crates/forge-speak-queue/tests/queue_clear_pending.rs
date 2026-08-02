@@ -87,7 +87,7 @@ async fn clear_pending_lets_the_in_flight_item_finish() {
     handle.send(SpeakCommand::ClearPending).await.unwrap();
     wait_for(
         &mut stream,
-        |e| matches!(e, SpeakEvent::QueueChanged { queue_len: 0 }),
+        |e| matches!(e, SpeakEvent::QueueChanged { queue_len: 0, .. }),
         2_000,
     )
     .await;

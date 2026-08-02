@@ -97,6 +97,15 @@ pub enum SpeakCommand {
     VoiceGateDeactivated,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueuedOrderEntry {
+    pub request_id: RequestId,
+    /// Reflects current queue membership, not the request's original `Priority` - a
+    /// reorder can move an item between `high_queue` and `normal_queue` without
+    /// touching the field it was enqueued with.
+    pub is_high_priority: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SpeakEvent {
     Enqueued {
@@ -141,6 +150,9 @@ pub enum SpeakEvent {
     },
     QueueChanged {
         queue_len: usize,
+        /// All of `high_queue` in order, then all of `normal_queue` in order - the exact
+        /// future playback order.
+        order: Vec<QueuedOrderEntry>,
     },
     Paused {
         reason: String,
@@ -384,8 +396,11 @@ mod tests {
         let (tx, rx) = tokio::sync::broadcast::channel::<SpeakEvent>(2);
         let mut stream = SpeakEventStream(rx);
         for queue_len in 0..4 {
-            tx.send(SpeakEvent::QueueChanged { queue_len })
-                .expect("send must succeed while a receiver is alive");
+            tx.send(SpeakEvent::QueueChanged {
+                queue_len,
+                order: vec![],
+            })
+            .expect("send must succeed while a receiver is alive");
         }
 
         let lagged = stream.recv().await;
